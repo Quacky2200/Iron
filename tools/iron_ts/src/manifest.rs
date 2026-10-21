@@ -33,6 +33,8 @@ pub struct ClassFns {
     pub methods: HashMap<String, ExternFn>,
     pub getters: HashMap<String, ExternFn>,
     pub setters: HashMap<String, ExternFn>,
+    /// Setters of static properties (no receiver: the value is the only parameter).
+    pub static_setters: HashMap<String, ExternFn>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -164,9 +166,14 @@ impl Manifest {
                 .ok_or("manifest: a class needs `functions`")?
             {
                 let (name, kind, func) = self.parse_fn(f)?;
+                // A getter or setter without `this` is a static property of the class (`Window.main`);
+                // compiled code reads a static getter like a no-argument static (`ext_static_prop`).
+                let has_this = func.params.first().is_some_and(|p| p.0 == "this");
                 let table = match kind.as_str() {
                     "static" => &mut class.statics,
                     "method" => &mut class.methods,
+                    "get" if !has_this => &mut class.statics,
+                    "set" if !has_this => &mut class.static_setters,
                     "get" => &mut class.getters,
                     "set" => &mut class.setters,
                     other => return Err(format!("manifest: unknown function kind `{other}`")),

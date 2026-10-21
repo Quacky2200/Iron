@@ -138,6 +138,15 @@ Rust newtype: `Transform` is `TransformRef(ObjectId)` and shares the object's ra
   property name. Namespace functions keep `iron_<Namespace>_<jsName>`.
 - **QuickJS.** A class is a JS class whose instances are opaque handle objects; see "Handles in QuickJS".
 
+**Static properties.** Inside an `impl`, `#[property] pub fn main() -> T` (no `self`, no parameters) is a static getter and
+`pub fn set_main(v: T)` next to it (same type) the static setter: `Window.main` reads like a property in both backends. The
+manifest has a `get` / `set` function of the class without a `this` parameter (the compiler keeps a static getter with the
+class statics, so `ext_static_prop` reads it, and the setter in `static_setters`). The `.d.ts` says `static readonly main: T;`
+(`static get` / `static set` for a writable one), and `iron-build types` the same. In QuickJS the property is an accessor on the
+class object (configurable, not enumerable), so strict-mode assignment to a read-only one throws `TypeError`. A static function
+and a static property of one class cannot share a script name (compile error). A static and an instance member may (`Window.focused`
+and `win.focused`): the instance one lives on the prototype. Tests: `crates/iron_api/tests/static_props.rs` (`M9-API-1490`, `1491`).
+
 ## What the macro adds
 
 The module's code is kept as it is. Inside the module the macro adds:

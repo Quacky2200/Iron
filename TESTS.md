@@ -1395,3 +1395,5 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1405 | Unit | `place` centres on the parent and cascades 24 px per axis, wrapping after 8. |
 | M9-API-1406 | Unit | `WindowTree::close_order` lists children deepest first. |
 | M9-API-1407 | Unit | A parent that would make a cycle is dropped. |
+| M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/iron_api/tests/static_props.rs`). |
+| M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |

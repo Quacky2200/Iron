@@ -678,6 +678,8 @@ struct Api {
     /// The handle class (TypeScript name, Rust type) of an `impl` function.
     class: Option<(String, Type)>,
     tag: Tag,
+    /// An `impl` function that takes `self` (a static of the class has none).
+    receiver: bool,
     /// A method of a value class: the receiver (first parameter) travels as the value's fields.
     value_recv: Option<(Ident, Kind)>,
     /// Not including the receiver.
@@ -732,7 +734,8 @@ fn api_of(
     let property = attrs.iter().any(|a| a.path().is_ident("property"));
     let tag = match (has_receiver, property) {
         // A namespace property: `#[property] pub fn color() -> Color` (and `set_color(v)`).
-        (false, true) if class.is_none() && params.is_empty() => Tag::Get,
+        // A static property of a handle class: `impl Window { #[property] pub fn main() -> Window }`.
+        (false, true) if params.is_empty() => Tag::Get,
         (_, true) if !has_receiver || !params.is_empty() => {
             return Err(syn::Error::new(
                 sig.span(),
@@ -779,6 +782,7 @@ fn api_of(
         stem,
         class,
         tag,
+        receiver: has_receiver,
         value_recv: None,
         params,
         optional,
@@ -951,7 +955,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         }
     }
     // `set_x(self, v)` next to a `#[property] fn x(self) -> T` is the property's setter.
-    let getters: Vec<(String, String, String)> = apis
+    // (owner, instance member?, name, type); a static property of a class is not an instance one.
+    let getters: Vec<(String, bool, String, String)> = apis
         .iter()
         .filter(|a| a.tag == Tag::Get)
         .map(|a| {
@@ -959,6 +964,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 a.class
                     .as_ref()
                     .map_or_else(|| args.namespace.clone(), |c| c.0.clone()),
+                a.receiver || a.value_recv.is_some(),
                 a.js_name.clone(),
                 manifest_ty(&a.ret, &args).to_string(),
             )
@@ -971,7 +977,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             .map_or_else(|| args.namespace.clone(), |c| c.0.clone());
         let rust = a.name.to_string();
         // A method of a handle class, or a plain function of the namespace.
-        let settable = if a.class.is_some() {
+        let settable = if a.class.is_some() && a.receiver {
             a.tag == Tag::Method
         } else {
             a.tag == Tag::Static
@@ -983,12 +989,32 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         {
             let prop = camel(prop);
             let ty = manifest_ty(&a.params[0].1, &args).to_string();
+            let instance = a.class.is_some() && a.receiver;
             if getters
                 .iter()
-                .any(|(c, n, t)| c == class && *n == prop && *t == ty)
+                .any(|(c, i, n, t)| c == class && *i == instance && *n == prop && *t == ty)
             {
                 a.tag = Tag::Set;
                 a.js_name = prop;
+            }
+        }
+    }
+
+    // A static function and a static property of one class must not share a script name.
+    for a in apis.iter().filter(|a| a.tag == Tag::Static) {
+        let owner = a.class.as_ref().map(|c| &c.0);
+        for g in apis.iter().filter(|g| g.tag == Tag::Get && !g.receiver) {
+            if g.class.as_ref().map(|c| &c.0) == owner
+                && g.value_recv.is_none()
+                && g.js_name == a.js_name
+            {
+                return Err(syn::Error::new(
+                    a.name.span(),
+                    format!(
+                        "`{}` is both a static function and a static property of the same class",
+                        a.js_name
+                    ),
+                ));
             }
         }
     }
@@ -1030,6 +1056,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         (String, String),
         (Option<TokenStream2>, Option<TokenStream2>),
     > = std::collections::BTreeMap::new();
+    // Static properties of handle classes: (class, name) to (getter, setter).
+    let mut js_sprops: std::collections::BTreeMap<
+        (String, String),
+        (Option<TokenStream2>, Option<TokenStream2>),
+    > = std::collections::BTreeMap::new();
     let mut js_hidden: Vec<TokenStream2> = Vec::new();
     let mut js_value_methods: std::collections::BTreeMap<String, Vec<(String, bool, String)>> =
         std::collections::BTreeMap::new();
@@ -1050,9 +1081,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let symbol_ident = format_ident!("{}", symbol);
         symbol_entries.push(quote!((#symbol, #symbol_ident as *const () as usize)));
         let doc = &a.doc;
-        let has_receiver = a.class.is_some()
-            && matches!(a.tag, Tag::Method | Tag::Get | Tag::Set)
-            && a.value_recv.is_none();
+        let has_receiver = a.class.is_some() && a.receiver && a.value_recv.is_none();
 
         // The manifest entry (a receiver is listed first, as `this`).
         let mut pnames: Vec<String> = Vec::new();
@@ -1348,6 +1377,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             // "" is the namespace object, else the handle class.
             let target = handle_class.map(|(ts, _)| ts.clone()).unwrap_or_default();
             match (a.tag, handle_class.is_some()) {
+                // A static property of the class: an accessor on the class object.
+                (Tag::Get, true) if !has_receiver => {
+                    js_sprops.entry((target, js_name.clone())).or_default().0 = Some(closure)
+                }
+                (Tag::Set, true) if !has_receiver => {
+                    js_sprops.entry((target, js_name.clone())).or_default().1 = Some(closure)
+                }
                 (Tag::Get, true) => {
                     js_cprops.entry((target, js_name.clone())).or_default().0 = Some(closure)
                 }
@@ -1493,6 +1529,28 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 proto.prop(#name, #acc)?;
             }
         });
+    }
+
+    // Static accessors on the class object (not enumerable): `Window.main` reads as a property.
+    for ((target, name), (get, set)) in &js_sprops {
+        let holder = if *target == args.namespace {
+            quote!(ns)
+        } else {
+            quote!(ctx.globals().get::<_, ::iron_api::rquickjs::Object>(#target)?)
+        };
+        let acc = match (get, set) {
+            (Some(g), Some(st)) => {
+                quote!(::iron_api::rquickjs::object::Accessor::from(#g).set(#st).configurable())
+            }
+            (Some(g), None) => {
+                quote!(::iron_api::rquickjs::object::Accessor::from(#g).configurable())
+            }
+            (None, Some(st)) => {
+                quote!(::iron_api::rquickjs::object::Accessor::new_set(#st).configurable())
+            }
+            (None, None) => continue,
+        };
+        js_sets.push(quote! { #holder.prop(#name, #acc)?; });
     }
 
     for (name, (get, set)) in &js_props {

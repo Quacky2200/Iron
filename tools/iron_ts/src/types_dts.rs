@@ -334,8 +334,30 @@ impl Decls {
                             push_unique(members, format!("{}({o}): {};", f.name, f.ret));
                         }
                     }
+                    "get" if f.params.is_empty() => {
+                        // A static property of the class (no receiver).
+                        let writable = fs
+                            .iter()
+                            .any(|g| g.kind == "set" && g.name == f.name && g.params.len() == 1);
+                        let line = if writable {
+                            format!("static {}: {};", f.name, f.ret)
+                        } else {
+                            format!("static readonly {}: {};", f.name, f.ret)
+                        };
+                        push_unique(members, line);
+                    }
+                    "set" if f.params.len() == 1 => {
+                        let has_getter = fs
+                            .iter()
+                            .any(|g| g.kind == "get" && g.name == f.name && g.params.is_empty());
+                        if !has_getter {
+                            push_unique(members, format!("static {}: {};", f.name, f.params[0].1));
+                        }
+                    }
                     "get" => {
-                        let writable = fs.iter().any(|g| g.kind == "set" && g.name == f.name);
+                        let writable = fs
+                            .iter()
+                            .any(|g| g.kind == "set" && g.name == f.name && g.params.len() > 1);
                         let line = if writable {
                             props.push((f.name.clone(), f.ret.clone()));
                             format!("{}: {};", f.name, f.ret)
@@ -351,7 +373,9 @@ impl Decls {
                         }
                     }
                     "set" => {
-                        let has_getter = fs.iter().any(|g| g.kind == "get" && g.name == f.name);
+                        let has_getter = fs
+                            .iter()
+                            .any(|g| g.kind == "get" && g.name == f.name && !g.params.is_empty());
                         if !has_getter {
                             let ty = f
                                 .params

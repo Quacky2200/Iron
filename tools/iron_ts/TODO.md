@@ -204,7 +204,7 @@ screenshot runs, `examples/windows`.
 - [ ] Step 4: compiled side: `engine_ts.d.ts` supplement, `UiRoot.mount(window, ..)` (`ts_ui_mount_window`), `bench/windows.ts`.
 - [ ] Steps 5 to 10: platform runner, `Gpu::create_window_surface`, `iron_app` routing, drawing, screenshots, hot reload, QuickJS games.
 - [ ] Step 11: `examples/windows`. Step 12: docs.
-- [ ] Step 1b: static accessor properties on handle classes in QuickJS (`Window.main` is a property in both backends).
+- [x] Step 1b: static accessor properties on handle classes in QuickJS (`Window.main` is a property in both backends).
 - [ ] Steps F1 to F4: window families and event domains (per-family input, focus, pause, timers, UI roots; one winit loop,
   per-domain queues; threads / processes per domain are later phases).
 - [ ] Steps M1 to M3: messages (`postMessage`, `onMessage<T>`, `request<R>`, `onRequest`, `broadcast`; JSON of the static type,

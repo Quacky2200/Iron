@@ -429,6 +429,11 @@ fn class_dts(c: &ClassDef) -> String {
     s
 }
 
+/// A class function with no receiver (`this` is the first parameter of an instance member).
+fn is_static_member(f: &Function) -> bool {
+    f.params.first().is_none_or(|p| p.name != "this")
+}
+
 /// The statics, methods and accessors of a class (a handle class or a value class).
 fn class_members(c: &ClassDef) -> String {
     let mut s = String::new();
@@ -464,24 +469,75 @@ fn class_members(c: &ClassDef) -> String {
             }
             FnKind::Get => {
                 s += &jsdoc(f.doc, "  ");
-                s += &format!("  get {}(): {};\n", f.name, f.ret.ts());
+                let st = is_static_member(f);
                 // A setter right after its getter keeps them together in the declaration.
-                if let Some(set) = c
-                    .functions
-                    .iter()
-                    .find(|g| g.kind == FnKind::Set && g.name == f.name)
-                {
-                    s += &format!("  set {}(value: {});\n", f.name, set.params[1].ty.ts());
+                let set = c.functions.iter().find(|g| {
+                    g.kind == FnKind::Set && g.name == f.name && is_static_member(g) == st
+                });
+                if st {
+                    match set {
+                        None => {
+                            s += &format!(
+                                "  static readonly {}: {};
+",
+                                f.name,
+                                f.ret.ts()
+                            )
+                        }
+                        Some(set) => {
+                            s += &format!(
+                                "  static get {}(): {};
+",
+                                f.name,
+                                f.ret.ts()
+                            );
+                            s += &format!(
+                                "  static set {}(value: {});
+",
+                                f.name,
+                                set.params[0].ty.ts()
+                            );
+                        }
+                    }
+                } else {
+                    s += &format!(
+                        "  get {}(): {};
+",
+                        f.name,
+                        f.ret.ts()
+                    );
+                    if let Some(set) = set {
+                        s += &format!(
+                            "  set {}(value: {});
+",
+                            f.name,
+                            set.params[1].ty.ts()
+                        );
+                    }
                 }
             }
             FnKind::Set => {
                 // Declared with its getter, unless there is none.
-                let has_getter = c
-                    .functions
-                    .iter()
-                    .any(|g| g.kind == FnKind::Get && g.name == f.name);
+                let st = is_static_member(f);
+                let has_getter = c.functions.iter().any(|g| {
+                    g.kind == FnKind::Get && g.name == f.name && is_static_member(g) == st
+                });
                 if !has_getter {
-                    s += &format!("  set {}(value: {});\n", f.name, f.params[1].ty.ts());
+                    if st {
+                        s += &format!(
+                            "  static set {}(value: {});
+",
+                            f.name,
+                            f.params[0].ty.ts()
+                        );
+                    } else {
+                        s += &format!(
+                            "  set {}(value: {});
+",
+                            f.name,
+                            f.params[1].ty.ts()
+                        );
+                    }
                 }
             }
         }
