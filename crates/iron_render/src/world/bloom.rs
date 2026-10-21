@@ -219,7 +219,8 @@ struct ViewParams {
     snap: u32,
     /// 1: don't adapt (hold where it is).
     hold: u32,
-    _pad: u32,
+    /// What the world was multiplied by on its way in (pre-exposure; 1 outside HD).
+    pre: f32,
 }
 
 /// One camera's exposure state.
@@ -238,6 +239,8 @@ struct Eye {
     reading_value: Option<ExposureReading>,
     /// The frame it was last drawn in (eyes no camera uses for a while are dropped).
     last_used: u64,
+    /// The pre-exposure this frame's world was drawn with (see `pre_exposure`).
+    pre: f32,
 }
 
 /// A view in this frame's image: whose exposure it uses and where it is (pixels).
@@ -487,6 +490,17 @@ impl BloomPass {
         self.eyes.get(&key).and_then(|e| e.reading_value)
     }
 
+    /// The multiplier camera `key`'s world is pre-exposed by this frame (HD pipeline): its
+    /// last read-back exposure, kept inside a sane range. Remembered, so the post pass divides
+    /// by the same value.
+    pub fn pre_exposure(&mut self, key: u32) -> Option<f32> {
+        let eye = self.eyes.get_mut(&key)?;
+        let reading = eye.reading_value?;
+        let k = (1.0 / (1.2 * 2f32.powf(reading.ev))).clamp(1e-6, 1e6);
+        eye.pre = k;
+        Some(k)
+    }
+
     /// Makes camera `key`'s auto exposure jump straight to the view next frame (a cut).
     pub fn reset_exposure(&mut self, key: u32) {
         if let Some(e) = self.eyes.get_mut(&key) {
@@ -572,6 +586,7 @@ impl BloomPass {
                 copied: false,
                 reading_value: None,
                 last_used: 0,
+                pre: 1.0,
             }
         })
     }
@@ -680,7 +695,7 @@ impl BloomPass {
                 weight: eye.weight,
                 snap: u32::from(eye.snap),
                 hold: u32::from(auto.hold),
-                _pad: 0,
+                pre: eye.pre,
             };
             gpu.queue
                 .write_buffer(&eye.view, 0, bytemuck::bytes_of(&params));

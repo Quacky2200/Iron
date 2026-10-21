@@ -47,7 +47,8 @@ struct View {
     snap: u32,
     // 1: don't adapt.
     hold: u32,
-    _pad: u32,
+    // What the world was pre-exposed by on its way into the HDR image (1 outside HD).
+    pre: f32,
 };
 
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -61,10 +62,11 @@ struct View {
 @group(0) @binding(5) var<storage, read_write> meter_out: vec4<f32>;
 @group(0) @binding(6) var<uniform> view: View;
 
-// The histogram: log2 luminance from HIST_MIN over HIST_RANGE stops in HIST_BINS bins.
+// The histogram: log2 luminance from HIST_MIN over HIST_RANGE stops in HIST_BINS bins
+// (0.1875 stops each): starlight to the sun's glare in real-world units (the HD pipeline).
 const HIST_BINS: u32 = 256u;
 const HIST_MIN: f32 = -16.0;
-const HIST_RANGE: f32 = 32.0;
+const HIST_RANGE: f32 = 48.0;
 var<workgroup> bins: array<atomic<u32>, 256>;
 
 fn curve_point(i: u32) -> vec2<f32> {
@@ -107,7 +109,7 @@ fn cs_meter(@builtin(local_invocation_index) i: u32, @builtin(local_invocation_i
             let local = (vec2<f32>(id.xy * 4u + vec2<u32>(x, y)) + 0.5) / 64.0;
             let uv = view.rect.xy + local * view.rect.zw;
             let c = textureLoad(base, vec2<i32>(uv * size), 0).rgb;
-            let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+            let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)) / view.pre;
             let d = local - 0.5;
             var w = 1.0;
             if (p.metering == 1u) {
@@ -210,7 +212,8 @@ fn up(uv: vec2<f32>) -> vec3<f32> {
 // exposure's (by how far it has faded in), before the post exposure.
 fn auto_scale() -> f32 {
     let adapted = select(p.fixed_stops, meter.x, meter.y > 0.5);
-    return exp2(mix(p.fixed_stops, adapted, view.weight));
+    // The world came in pre-exposed: divide that back out.
+    return exp2(mix(p.fixed_stops, adapted, view.weight)) / view.pre;
 }
 
 // The threshold applies to light as auto exposure shows it, so what blooms is what looks

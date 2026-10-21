@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { Camera, CameraFollow, CameraOrbit, GameObject, Matrix4x4, QualitySettings, Quaternion, Rect, RenderSettings, RenderTexture, Vector3 } from "../src/index.ts";
+import { Camera, CameraFollow, CameraOrbit, GameObject, Light, Matrix4x4, QualitySettings, Quaternion, Rect, RenderSettings, RenderTexture, Vector3 } from "../src/index.ts";
 import { _resetCamerasForTests } from "../src/rendering.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 import { _setScreenForTests } from "../src/screen.ts";
@@ -152,5 +152,28 @@ describe("exposure", () => {
     QualitySettings.autoExposure = true;
     expect((ops.filter((o) => o[0] === "render.post").at(-1)![4] as number[])[0]).toBe(1);
     RenderSettings.autoExposure = null;
+  });
+});
+
+// M7-HD-02
+describe("real-world light", () => {
+  test("a physical camera's exposure and a light meter", () => {
+    const cam = camera(Vector3.zero);
+    // HDRP's defaults: f/16, 1/200 s, ISO 200.
+    expect(cam.physicalExposure).toBeCloseTo(Math.log2((16 * 16) / (1 / 200)) - 1, 6);
+    cam.aperture = 2.8;
+    cam.shutterSpeed = 1 / 60;
+    cam.iso = 800;
+    expect(cam.physicalExposure).toBeCloseTo(Math.log2(2.8 * 2.8 * 60) - 3, 6);
+    // A sun of 100000 lux straight down, and an 800 lumen bulb 2 m above the point.
+    const sun = new GameObject("sun", { rotation: Quaternion.lookRotation(new Vector3(0, -1, 0)) });
+    sun.addComponent(Light, { type: "directional", intensity: 100000 });
+    const bulb = new GameObject("bulb", { position: new Vector3(0, 2, 0) });
+    bulb.addComponent(Light, { type: "point", intensity: 800, range: 1000 });
+    const up = new Vector3(0, 1, 0);
+    const lux = Light.illuminanceAt(Vector3.zero, up);
+    expect(lux).toBeCloseTo(100000 + 800 / (4 * Math.PI) / 4, 0);
+    // Facing away, neither lights it.
+    expect(Light.illuminanceAt(Vector3.zero, new Vector3(0, -1, 0))).toBe(0);
   });
 });

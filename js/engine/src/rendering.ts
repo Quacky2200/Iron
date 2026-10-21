@@ -300,6 +300,21 @@ export class Camera extends Component {
     __iron_op("render.exposureReset", this.id);
   }
 
+  /**
+   * A physical camera's settings (HDRP's), for the manual exposure: the aperture's
+   * f-number, the shutter's time in seconds and the sensor's ISO. Their exposure is
+   * `physicalExposure`; use it as `RenderSettings.fixedExposure`. HDRP's defaults (f/16,
+   * 1/200 s, ISO 200) suit a sunny day in real-world light units (the HD pipeline).
+   */
+  aperture = 16;
+  shutterSpeed = 1 / 200;
+  iso = 200;
+
+  /** The EV100 the physical settings give: log2(N² / t) - log2(ISO / 100). */
+  get physicalExposure(): number {
+    return Math.log2((this.aperture * this.aperture) / Math.max(this.shutterSpeed, 1e-6)) - Math.log2(Math.max(this.iso, 1) / 100);
+  }
+
   /** @internal By id, for `__iron_exposure`. */
   static byId(id: number): Camera | undefined {
     return cameras.find((c) => c.id === id);
@@ -1235,13 +1250,57 @@ export class Light extends Component {
 
   override onAwake(): void {
     this.started = true;
+    allLights.add(this);
     this.send();
   }
 
   override onDestroy(): void {
+    allLights.delete(this);
     __iron_op("render.remove", this.id);
   }
+
+  /**
+   * A light meter: how much light falls on `point` from every light, in lux in the HD
+   * pipeline (where lights are in lux and lumens; elsewhere in Iron's own units). Facing
+   * `normal` if given (a surface's), else each light head-on. Shadows aren't counted.
+   */
+  static illuminanceAt(point: Vector3Like, normal?: Vector3Like): number {
+    let sum = 0;
+    for (const l of allLights) {
+      if (!l.gameObject.activeInHierarchy) continue;
+      const forward = l.transform.forward;
+      if (l._type === "directional") {
+        const cos = normal ? Math.max(0, -(normal.x * forward.x + normal.y * forward.y + normal.z * forward.z)) : 1;
+        sum += l._intensity * cos;
+        continue;
+      }
+      const p = l.transform.position;
+      const dx = point.x - p.x;
+      const dy = point.y - p.y;
+      const dz = point.z - p.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d >= l._range || d === 0) continue;
+      // As the renderer: a smooth fade to zero at the range.
+      const x = d / l._range;
+      const fade = (1 - x ** 4) ** 2;
+      // Lumens to candela, all round (HDRP's spots without "reflector").
+      let candela = l._intensity / (4 * Math.PI);
+      if (l._type === "spot") {
+        const c = (dx * forward.x + dy * forward.y + dz * forward.z) / d;
+        const outer = Math.cos(((l._spotAngle / 2) * Math.PI) / 180);
+        const inner = Math.cos(((l._innerSpotAngle / 2) * Math.PI) / 180);
+        const t = Math.min(1, Math.max(0, (c - outer) / Math.max(inner - outer, 1e-4)));
+        candela *= t * t * (3 - 2 * t);
+      }
+      const cos = normal ? Math.max(0, -(normal.x * dx + normal.y * dy + normal.z * dz) / d) : 1;
+      sum += ((candela * fade) / (d * d)) * cos;
+    }
+    return sum;
+  }
 }
+
+/** Every awake light, for `Light.illuminanceAt`. */
+const allLights = new Set<Light>();
 
 let ambient = new Color(0.2, 0.2, 0.22);
 

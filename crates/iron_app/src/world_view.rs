@@ -356,6 +356,9 @@ pub struct WorldViews {
     /// Cameras whose auto exposure jumps to what they see next frame (`render.exposureReset`),
     /// applied by the app.
     pub exposure_resets: Vec<u32>,
+    /// Lights in real-world units (the HD pipeline, HDRP's): directional lights' intensity
+    /// in lux, spot and point lights' in lumens.
+    pub physical_units: bool,
     /// The sky (`render.sky`), applied by the app before drawing.
     pub sky: Option<Sky>,
     /// Reflection / sky light intensity, and whether ambient light comes from the sky.
@@ -409,6 +412,7 @@ impl Default for WorldViews {
             quality: Quality::default(),
             grading: Grading::default(),
             exposure_resets: Vec::new(),
+            physical_units: false,
             sky: None,
             environment: (1.0, true),
             fog: None,
@@ -604,6 +608,14 @@ impl WorldViews {
     /// Whether the game asked for light shafts (`RenderSettings.volumetricFog`).
     pub fn uses_volumetric_fog(&self) -> bool {
         self.fog.is_some_and(|f| f.volumetric.is_some())
+    }
+
+    /// Empty, with lights in real-world units (the HD pipeline) or not.
+    pub fn with_physical_units(physical_units: bool) -> Self {
+        Self {
+            physical_units,
+            ..Default::default()
+        }
     }
 
     /// The ids of every camera, for reading their exposure back.
@@ -1006,7 +1018,17 @@ impl WorldViews {
                     other => return Err(format!("unknown light type {other:?}")),
                 };
                 let [r, g, b] = nums::<3>(args.get(3)).unwrap_or([1.0; 3]);
-                let intensity = num(4).unwrap_or(1.0);
+                let mut intensity = num(4).unwrap_or(1.0);
+                if self.physical_units {
+                    // Into the renderer's units (Unity Built-in's: diffuse light isn't divided
+                    // by pi): lux / pi for the sun; lumens to candela (/ 4 pi, all round, as
+                    // HDRP's spots without "reflector"), then / pi, for lamps.
+                    use std::f32::consts::PI;
+                    intensity /= match kind {
+                        LightKind::Directional => PI,
+                        _ => 4.0 * PI * PI,
+                    };
+                }
                 let light = LightComponent {
                     object: id_at(1)?,
                     kind,
@@ -1805,6 +1827,28 @@ impl WorldViews {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M7-HD-01
+    #[test]
+    fn the_hd_pipeline_reads_lights_in_lux_and_lumens() {
+        let light = |physical: bool, kind: &str, intensity: f64| {
+            let mut views = WorldViews::with_physical_units(physical);
+            let args = [
+                Value::from(1.0),
+                Value::from(2.0),
+                Value::String(kind.into()),
+                Value::Array(vec![Value::from(1.0), Value::from(1.0), Value::from(1.0)]),
+                Value::from(intensity),
+            ];
+            views.apply("light", &args).unwrap();
+            views.lights[&1].color[0]
+        };
+        use std::f32::consts::PI;
+        // As it is outside HD; the sun's lux / pi, a lamp's lumens / 4 pi² in HD.
+        assert_eq!(light(false, "directional", 3.0), 3.0);
+        assert!((light(true, "directional", 100_000.0) - 100_000.0 / PI).abs() < 1.0);
+        assert!((light(true, "point", 800.0) - 800.0 / (4.0 * PI * PI)).abs() < 1e-3);
+    }
 
     // M5-AST-01
     #[test]

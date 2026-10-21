@@ -44,6 +44,10 @@ struct Globals {
     fog_sharp: vec4<f32>,
     // x: how many fog volumes `local_fogs` holds.
     fog_local: vec4<f32>,
+    // x: pre-exposure: what everything drawn is multiplied by on its way into the HDR target
+    // (the camera's last exposure, in the HD pipeline, so real-world light stays inside
+    // fp16's range); the post pass divides it back out. 1 elsewhere.
+    exposure: vec4<f32>,
     local_fogs: array<LocalFog, 8>,
 };
 
@@ -306,6 +310,11 @@ fn through_volumes(c: vec4<f32>, eye: vec3<f32>, p: vec3<f32>) -> vec4<f32> {
 
 // A premultiplied colour at `p` (pixel `px`) seen through the fog: what it covers turns
 // to fog colour, light it adds (alpha 0) fades out, and lit fog in front adds light.
+// A colour as it goes into the target: pre-exposed (see `Globals::exposure`).
+fn pre(c: vec4<f32>) -> vec4<f32> {
+    return vec4<f32>(c.rgb * g.exposure.x, c.a);
+}
+
 fn fogged(c: vec4<f32>, p: vec3<f32>, px: vec2<f32>) -> vec4<f32> {
     var out = c;
     if (g.fog.w > 0.5) {
@@ -320,7 +329,7 @@ fn fogged(c: vec4<f32>, p: vec3<f32>, px: vec2<f32>) -> vec4<f32> {
     if (g.fog.w > 0.5 && g.fog_volume.w > 0.0 && c.a > 0.002) {
         out = vec4<f32>(out.rgb + shafts(p, px, true) * c.a, c.a);
     }
-    return out;
+    return pre(out);
 }
 
 // Henyey-Greenstein, scaled so scattering evenly (anisotropy 0) gives 1.
@@ -734,7 +743,7 @@ fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     if (heavy && g.fog_volume.w > 0.0) {
         c = vec4<f32>(c.rgb + shafts(far, pos.xy, false) * c.a, c.a);
     }
-    return c;
+    return pre(c);
 }
 
 // The editor's ground grid: each pixel's view ray meets y = 0, where 1 m and 10 m lines
@@ -791,7 +800,7 @@ fn fs_grid(@builtin(position) pos: vec4<f32>) -> GridOut {
     var out: GridOut;
     let clip = g.view_proj * vec4<f32>(p, 1.0);
     out.depth = clamp(clip.z / clip.w, 0.0, 1.0);
-    out.color = vec4<f32>(c.rgb * alpha, alpha);
+    out.color = pre(vec4<f32>(c.rgb * alpha, alpha));
     if (t <= 0.0 || t >= 1.0 || alpha <= 0.002) {
         discard;
     }
@@ -863,12 +872,12 @@ fn line_alpha(side: f32) -> f32 {
 
 @fragment
 fn fs_line(in: LineOut) -> @location(0) vec4<f32> {
-    return in.color * line_alpha(in.side);
+    return pre(in.color * line_alpha(in.side));
 }
 
 @fragment
 fn fs_line_hidden(in: LineOut) -> @location(0) vec4<f32> {
-    return in.color * line_alpha(in.side) * 0.25;
+    return pre(in.color * line_alpha(in.side) * 0.25);
 }
 
 // Fills (`LineRenderer2D.fillColor`): the tessellated shape's triangles, one colour.

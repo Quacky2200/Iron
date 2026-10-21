@@ -507,6 +507,8 @@ layout pass):
 | M7-RP-01 | Unit + JS unit | Render pipelines (Unity's): `iron.renderPipeline` in the manifest (`builtin`, `universal` / `urp`, `hd` / `hdrp`; missing or unknown: Built-in) reaches the renderer and scripts (`GraphicsSettings.renderPipeline`, `supportsVolumetricFog`, `supportsAutoExposure`, `maxAdditionalLights`). |
 | M7-RP-02 | Integration | The Universal pipeline leaves out auto exposure (a dim view stays as the manual exposure shows it) and light shafts, and draws the nearest 32 lights besides the main one where Built-in draws all 40. |
 | M7-RP-03 | Integration + Unit + JS unit | A pipeline asset's settings (`PipelineAsset`, `iron.renderPipelineSettings`): with HDR off a bright view clips at white instead of being tonemapped; URP gives spot lights no shadows unless `additionalLightShadows` asks, Built-in does; the manifest's settings reach scripts (`GraphicsSettings.hdr`, `additionalLightShadows`, `maxAdditionalLights`). |
+| M7-HD-01 | Integration + Unit | Real-world light (the HD pipeline): directional lights' intensity is read as lux (renderer units lux / pi), spot and point lights' as lumens (/ 4 pi²); everything drawn is pre-exposed by the camera's last exposure and the post pass divides it out, so a view at 200000 nits (past fp16's 65504) settles to the same grey as one at 2 nits (the histogram reaching +32 stops). |
+| M7-HD-02 | JS unit | A physical camera (`Camera.aperture`, `shutterSpeed`, `iso`, HDRP's defaults f/16, 1/200 s, ISO 200) gives `physicalExposure` = log2(N²/t) - log2(ISO/100); `Light.illuminanceAt(point, normal)` sums lux from every light (lumens to candela over 4 pi, inverse square, cosine). |
 
 ---
 

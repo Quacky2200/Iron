@@ -274,7 +274,9 @@ fn run() -> Result<()> {
         components,
         scene,
         scene_events,
-        world_view: world_view::WorldViews::default(),
+        world_view: world_view::WorldViews::with_physical_units(
+            manifest.render_pipeline.pipeline == iron_render::RenderPipeline::HighDefinition,
+        ),
         panels: panels::Panels::default(),
         pointer_on: Surface::Screen,
         keys_on: Surface::Screen,
@@ -596,7 +598,9 @@ impl App {
         (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
         self.ui_scale = ui_scale::UiScale::None;
         self.scene = scene;
-        self.world_view = world_view::WorldViews::default();
+        self.world_view = world_view::WorldViews::with_physical_units(
+            self.pipeline.pipeline == iron_render::RenderPipeline::HighDefinition,
+        );
         // Tell the new scripts the screen size on the next frame.
         self.screen = (0.0, 0.0, 0.0);
         self.physics = iron_physics::Physics::new();

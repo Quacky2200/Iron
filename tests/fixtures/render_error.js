@@ -10746,6 +10746,12 @@ ${err.stack}` : ""}`);
     resetExposure() {
       __iron_op("render.exposureReset", this.id);
     }
+    aperture = 16;
+    shutterSpeed = 1 / 200;
+    iso = 200;
+    get physicalExposure() {
+      return Math.log2(this.aperture * this.aperture / Math.max(this.shutterSpeed, 0.000001)) - Math.log2(Math.max(this.iso, 1) / 100);
+    }
     static byId(id) {
       return cameras.find((c) => c.id === id);
     }
@@ -11453,12 +11459,48 @@ ${err.stack}` : ""}`);
     }
     onAwake() {
       this.started = true;
+      allLights.add(this);
       this.send();
     }
     onDestroy() {
+      allLights.delete(this);
       __iron_op("render.remove", this.id);
     }
+    static illuminanceAt(point, normal) {
+      let sum = 0;
+      for (const l of allLights) {
+        if (!l.gameObject.activeInHierarchy)
+          continue;
+        const forward = l.transform.forward;
+        if (l._type === "directional") {
+          const cos = normal ? Math.max(0, -(normal.x * forward.x + normal.y * forward.y + normal.z * forward.z)) : 1;
+          sum += l._intensity * cos;
+          continue;
+        }
+        const p = l.transform.position;
+        const dx = point.x - p.x;
+        const dy = point.y - p.y;
+        const dz = point.z - p.z;
+        const d = Math.hypot(dx, dy, dz);
+        if (d >= l._range || d === 0)
+          continue;
+        const x = d / l._range;
+        const fade = (1 - x ** 4) ** 2;
+        let candela = l._intensity / (4 * Math.PI);
+        if (l._type === "spot") {
+          const c = (dx * forward.x + dy * forward.y + dz * forward.z) / d;
+          const outer = Math.cos(l._spotAngle / 2 * Math.PI / 180);
+          const inner = Math.cos(l._innerSpotAngle / 2 * Math.PI / 180);
+          const t = Math.min(1, Math.max(0, (c - outer) / Math.max(inner - outer, 0.0001)));
+          candela *= t * t * (3 - 2 * t);
+        }
+        const cos = normal ? Math.max(0, -(normal.x * dx + normal.y * dy + normal.z * dz) / d) : 1;
+        sum += candela * fade / (d * d) * cos;
+      }
+      return sum;
+    }
   }
+  var allLights = new Set;
   var ambient = new Color(0.2, 0.2, 0.22);
   var RenderStats = {
     meshes: 0,

@@ -3750,6 +3750,36 @@ fn a_pipeline_assets_hdr_and_additional_light_shadows_settings_apply() {
     );
 }
 
+// M7-HD-01
+#[test]
+fn the_hd_pipeline_pre_exposes_light_too_bright_for_the_hdr_target() {
+    use iron_render::{AutoExposure, RenderPipeline};
+    let size = (64, 48);
+    // Sunlit concrete in real units is thousands of nits; past fp16's 65504 the HDR target
+    // overflows (or clamps). A view at 200000 nits: pre-exposed (HD), it settles to the same
+    // grey as a view at 2 nits does, metered across the histogram's range.
+    let settle = |pipeline: RenderPipeline, level: f64| {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.pipeline = pipeline.into();
+        world.grading = auto_grading(AutoExposure {
+            max_ev: 28.0,
+            ..Default::default()
+        });
+        exposure_frames(
+            &mut world,
+            size,
+            &[flat_view(level, [0.0, 0.0, 1.0, 1.0], 0)],
+            300,
+        )[0]
+    };
+    let dim = settle(RenderPipeline::HighDefinition, 2.0);
+    let blazing = settle(RenderPipeline::HighDefinition, 200_000.0);
+    assert!(
+        (blazing - dim).abs() <= 4,
+        "200000 nits {blazing}, 2 nits {dim}"
+    );
+}
+
 // M7-FOG-06
 #[test]
 fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {

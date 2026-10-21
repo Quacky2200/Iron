@@ -882,6 +882,8 @@ struct GpuGlobals {
     fog_sharp: [f32; 4],
     /// x: how many fog volumes follow.
     fog_local: [f32; 4],
+    /// x: pre-exposure (world.wgsl's `Globals::exposure`).
+    exposure: [f32; 4],
     local_fogs: [GpuFogVolume; MAX_FOG_VOLUMES],
 }
 
@@ -3414,6 +3416,17 @@ impl WorldRenderer {
             (self.env_map.mips - 1) as f32,
             f32::from(u8::from(has_env && self.ambient_from_sky)),
         ];
+        // Pre-exposure (HD pipeline, the final pass): each camera's last exposure, so
+        // real-world light stays inside the HDR target's range; the post pass divides it out.
+        let hd = final_pass && self.pipeline.pipeline == RenderPipeline::HighDefinition;
+        let pres: Vec<f32> = views
+            .iter()
+            .map(|view| {
+                hd.then(|| self.bloom_pass.as_mut()?.pre_exposure(view.exposure_key))
+                    .flatten()
+                    .unwrap_or(1.0)
+            })
+            .collect();
         for (i, view) in views.iter().enumerate() {
             let c = view.camera.clear;
             let p = view.camera.position;
@@ -3443,6 +3456,7 @@ impl WorldRenderer {
                 ],
                 clip: view.clip_plane.unwrap_or([0.0; 4]),
                 view_dir: [f.x, f.y, f.z, f32::from(u8::from(view.camera.orthographic))],
+                exposure: [pres[i], 0.0, 0.0, 0.0],
                 ..Zeroable::zeroed()
             };
             globals.set_fog(self.pipeline_fog(view.fog).as_ref());
