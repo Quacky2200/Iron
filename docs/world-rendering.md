@@ -588,7 +588,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.bloom` | `0 threshold intensity scatter`, or `0 null` for off |
 | `render.post` | `0 exposureStops tonemapping auto fixedEV transition`; `auto` is `[minEV, maxEV, compensation, darkToLight, lightToDark, metering(0 average, 1 centre, 2 spot), lowPercent, highPercent, hold, darkAdaptation, darkBelow, curvePoints, ev0, stops0, ...]` or null; `fixedEV` is EV100 or null |
 | `render.exposureReset` | `cameraId` (that camera's auto exposure jumps to what it sees) |
-| `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias vSyncCount` (see Quality settings) |
+| `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias vSyncCount anisotropic mipLimit volumetricFog hdr additionalLights(-1: all) additionalLightShadows` (see Quality settings) |
 | `render.lodGroup` | `component object size [heights per level] [[renderer ids] per level] forcedLevel(-1: none)` |
 | `render.shadowSettings` | `0 distance resolution` |
 | `render.panel` | `component object [w h] pixelsPerMeter resolution [r g b a] interactive` (handled by `Panels`) |
@@ -829,6 +829,47 @@ engine loads; the app copies the values onto the renderer before each frame.
   `Enable` uses the texture's level, `ForceEnable` uses at least 9. The mip limit drops that many top
   levels of every texture. Samplers are cached per filter, wrap and anisotropy.
 
+### Render pipeline
+
+Iron has one render pipeline, as Unity 7 does (it keeps URP; HDRP and the Built-in pipeline go
+away). `PipelineAsset` (`world/pipeline.rs`, Unity's URP asset) is plain settings, all on by
+default: `volumetric_fog`, `max_additional_lights`, `additional_light_shadows` and `hdr`. Each frame
+the app copies the quality level's asset onto `WorldRenderer.pipeline` (`world_view::Quality.pipeline`,
+parsed from `render.quality` arguments 9 to 12; a light count of -1 means no cap). What they do:
+
+- **No `volumetric_fog`:** the fog's light shafts and god rays are dropped; fog is drawn without them.
+- **`max_additional_lights`:** a view gets the main light (the brightest directional) plus the nearest N others.
+- **No `additional_light_shadows`:** the shadow plan has no spot or point light maps (the main light still casts).
+- **No `hdr`:** no post pass, so no bloom, exposure or tonemapping; colours clip at white.
+
+The quality levels set them: Low (the phones' tier) has no shafts, 8 additional lights and no local
+shadows; Medium 32 lights and no local shadows; High and Ultra everything. `QualitySettings` has
+`volumetricFog`, `hdr`, `additionalLights` and `additionalLightShadows` (and `autoExposure`).
+`iron.quality.default` in `package.json` is a level name, or a map by `operatingSystemFamily` with a
+`default` key (`{ "Android": "Low", "default": "High" }`). `iron.renderPipeline` and
+`renderPipelineSettings` no longer pick anything: they log a warning. (History: a Built-in /
+Universal / HD choice existed briefly before this.) Tests `M7-RP-01` to `M7-RP-03`.
+
+### Real-world light units
+
+`iron.lightUnits` in `package.json` is `"physical"` or `"legacy"` (the default: Iron's own units);
+scripts read it as `GraphicsSettings.lightUnits`. It is a project switch, not a pipeline
+(`Manifest.physical_units` in `info.rs`, passed to `WorldViews::with_physical_units` and
+`WorldRenderer.physical_units`). With `physical`:
+
+- Light intensity is read as lux for directional lights (divided by pi into the renderer's units) and
+  as lumens for spot and point lights (divided by 4 pi squared: lumens to candela over a sphere,
+  then by pi). The app does this when it handles the light op.
+- **Pre-exposure:** in the final pass everything drawn is multiplied by each camera's last exposure,
+  so real-world values (a 200000 nit view is past fp16's 65504) fit the HDR target, and the post pass
+  divides it out. Test `M7-HD-01`.
+- `Camera.aperture`, `shutterSpeed` and `iso` (defaults f/16, 1/200 s, ISO 200, HDRP's) give
+  `physicalExposure` = log2(N^2 / t) - log2(ISO / 100), an EV100 to use as `RenderSettings.fixedExposure`.
+- `Light.illuminanceAt(point, normal?)` is a light meter: the lux from every light (lumens to candela over
+  4 pi, inverse square, cosine), ignoring shadows. `Light.measureIlluminance` also counts shadows with
+  physics rays (walls need colliders) and resolves after the next physics tick. Test `M7-HD-02`;
+  `examples/light-units` is the manual check.
+
 ## Cooked texture uploads
 
 `WorldRenderer::set_texture` builds the mip chain (`mip_chain`) and calls the shared upload with a
@@ -877,6 +918,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
+Render pipeline and light units: `M7-RP-01`..`03`, `M7-HD-01`, `M7-HD-02`.
 Auto exposure: `M7-EXP-01` (adapts to the view), `-02` (per camera, split screens), `-03` (metering modes and percentiles), `-04` (fixed exposure, blending, hold, freeze), `-05` (read-back, `Camera.exposure`, reset), `-06` (soft floor and compensation curve).
 
 Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them) and `M7-FOG-11` (the temporal volume: averaged frames ripple less than one) and `M7-FOG-12` (a turning sun's beams follow without trailing).
