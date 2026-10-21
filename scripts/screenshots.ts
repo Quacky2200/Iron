@@ -1,6 +1,6 @@
 // Renders every example to tests/output/examples-<name>.png (git-ignored), and the
 // editor (`iron_editor`) to tests/output/editor.png, for checking by eye. Run
-// `bun run build` first so each dist/ is current.
+// `iron-build build <example>` (or the editor's `bun run build`) first so each dist/ is current.
 //
 //   bun run screenshots            all examples and the editor
 //   bun run screenshots css form   just these (`editor` for the editor)

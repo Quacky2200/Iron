@@ -14,14 +14,16 @@ cargo run -p iron_build -- build ../examples/hello
 | `types [<game>] [--out file]` | Writes `<game>/types/iron.d.ts` (type declarations for `tsc`). |
 | `assets <folder>... [--prune]` | Writes `.meta` GUID files (the port of `scripts/assets.ts`). |
 | `dev <game> [--no-tsc]` | Rebuilds on every change and signals the running app. |
-| `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table (`bun run check:examples`). |
+| `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/iron.d.ts` (`bun run typecheck:examples`). |
 | `init [<dir>] [flags]` | Writes a default `project.json` (see "`project.json`"). |
 | `package <game> [flags]` | One executable for the game: `dist/<exe>.exe` (see "Packaging a single executable"). |
 
 ## `project.json`: the project file
 
 A game's product metadata lives in `project.json` in the game folder (`iron_core::project`, shared by `iron-build` and `iron_app`).
-`package.json` stays for npm-style things (scripts, dependencies); its `iron` section is only the **fallback** for old projects: with no
+The examples' `package.json` files hold only `name`, `version`, `private` and `type` (no scripts or dependencies: `iron-build` builds them and
+plain `tsc` cannot check them, since the engine names are globals from the generated `types/iron.d.ts`; use `iron-build check --tsc`).
+`package.json` stays for npm-style things; its `iron` section is only the **fallback** for old projects: with no
 `project.json` the loader reads `package.json`'s `iron` section (without templates) plus its `name`, `version`, `author` and
 `description`. With a `project.json`, the `iron` section is ignored (`package.json` still gives `name`, `version`, `author` and
 `description` as defaults). A leading `//` comment line is allowed; otherwise plain JSON.
@@ -370,6 +372,6 @@ unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built 
 `M9-API-1300..1318` the project loader (`iron_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples.
 
 `M9-TS-1800..1806` module graph, `1810` declarations, `1830..1831` `.meta` files, `1840` CSS bundling, `1850..1852` config and a
-full build, `1860..1861` the dev status file and the change fingerprint. `bun run check:examples` (`iron-build check examples`)
+full build, `1860..1861` the dev status file and the change fingerprint. `bun run typecheck:examples` (`iron-build check ../examples --tsc`, from `tools`)
 builds all 20 examples and prints a table; failures there are missing language or engine features, listed in
 `docs/research/iron-examples-on-iron-ts.md`.

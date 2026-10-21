@@ -172,12 +172,12 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
 
 ## From TypeScript to a running game
 
-1. A game folder (e.g. [examples/css](../examples/css)) has `src/main.tsx` and a `build` script:
+1. The examples are compiled by `iron-build` (see [iron-build.md](iron-build.md); they no longer have Bun `build` / `dev` /
+   `typecheck` scripts). The QuickJS path below is what remains for the editor (`editor/`) and the test fixtures: a folder with
+   `src/main.tsx` and a `build` script:
    `bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser
    --define process.env.NODE_ENV='"development"'`. Bun strips types, bundles React and the `@iron/*`
    workspace packages into one IIFE, and (when CSS is imported) writes `dist/game.css` next to it.
-   Examples build with `NODE_ENV="production"` (smaller, faster React); `bun run build:dev` in an
-   example keeps the development build.
    The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
 2. `iron <folder>` ([main.rs](../crates/iron_app/src/main.rs)) runs the current folder when no game is
    given (`parse_args_from`; the folder may come before or after the options, `M5-APP-03`). It calls
@@ -196,7 +196,7 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
    drive letters. `data:` URLs (Bun inlines small assets) go through `decode_data_url`.
    Game scripts therefore cannot read arbitrary files.
 
-**Dev builds.** `bun run dev` in an example runs [scripts/dev.ts](../scripts/dev.ts) instead of the
+**Dev builds.** `bun run dev` in `editor/` runs [scripts/dev.ts](../scripts/dev.ts) instead of the
 `build` script. It writes two files to `dist/`:
 
 - `vendor.js`: an IIFE with React, the reconciler, the `react-refresh` runtime, `@iron/engine` and
@@ -225,7 +225,7 @@ An experimental ahead-of-time compiler for a TypeScript subset exists in `tools/
 
 Flow, from an edit to the new code running:
 
-1. `bun run dev` in an example runs `scripts/dev.ts` (see "Dev builds" above), which builds
+1. `bun run dev` in `editor/` runs `scripts/dev.ts` (see "Dev builds" above), which builds
    `dist/vendor.js` once and runs `bun build --watch` for the game's code, so every save
    rewrites `dist/game.js` and, when CSS is imported, `dist/game.css`.
 2. `iron <folder>` starts a `BundleWatcher` ([reload.rs](../crates/iron_app/src/reload.rs)). It uses

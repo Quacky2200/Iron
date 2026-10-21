@@ -1,14 +1,15 @@
 {
   "name": "iron",
   "private": true,
-  "workspaces": ["js/*", "examples/*", "editor", "tests/fixtures"],
+  "workspaces": ["js/*", "editor", "tests/fixtures"],
   "scripts": {
-    "build": "bun run --filter hello --filter boxes --filter text --filter css --filter form --filter physics --filter world --filter sine-circle-demo --filter raindrop-demo --filter iron-editor build",
+    "build": "bun run --filter iron-editor build",
     "build:fixtures": "bun run --filter iron-fixtures build",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "bun run typecheck:js && bun run typecheck:examples",
+    "typecheck:js": "bun run --filter '*' typecheck",
+    "typecheck:examples": "cd tools && cargo run -q -p iron_build -- check ../examples --tsc",
     "test": "bun test",
-    "screenshots": "bun scripts/screenshots.ts",
-    "check:examples": "cargo run -q --manifest-path tools/Cargo.toml -p iron_build -- check examples"
+    "screenshots": "bun scripts/screenshots.ts"
   },
   "devDependencies": {
     "typescript": "^5.9.0"

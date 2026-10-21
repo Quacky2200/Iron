@@ -33,8 +33,8 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|
 | M1-BLD-01 | CI | `cargo build --workspace` succeeds on Windows and Linux. |
 | M1-BLD-02 | CI | `cargo clippy --workspace -- -D warnings` and `cargo fmt --check` pass. |
-| M1-BLD-03 | CI | `bun install && bun run build` produces `examples/hello/dist/game.js`. |
-| M1-BLD-04 | CI | `bunx tsc --noEmit` passes for all JS packages and examples. |
+| M1-BLD-03 | CI | `bun install && bun run build` produces `editor/dist/game.js` (the examples are built by `iron-build`, `M9-TS-1850`). |
+| M1-BLD-04 | CI | `bun run typecheck` passes: `tsc --noEmit` for the JS packages, the editor and the fixtures, then `iron-build check ../examples --tsc` for the examples (20 built, 0 failed). |
 
 ### Platform
 | ID | Kind | Checks |

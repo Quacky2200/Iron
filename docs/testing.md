@@ -10,6 +10,7 @@ or add one. Every test that implements a plan item carries its ID in a comment (
 ```bash
 cargo test --workspace          # Rust unit + integration + headless render + golden
 bun test                        # js/engine and js/react
+bun run typecheck               # js/*, editor, fixtures with tsc; then every example via iron-build check --tsc
 bun run build:fixtures          # rebuild tests/fixtures/*.js after changing js/
 cargo bench -p iron_ui --bench restyle
 ```
@@ -58,7 +59,7 @@ typechecks, runs `bun test` and checks that **committed fixtures match their Typ
 | `layout_props.rs` | Layout properties (M3d steps 2a-2c; `order` re-sorting layout, `zIndex` paint and hit order, Tab order unchanged, `display: contents` flattening and `position: fixed` placement, paint and hit): `gridTemplateAreas` and `gridArea` by name or lines, `gridTemplate` forms, line longhands, `gridAutoRows`, `placeItems`/`placeSelf` setting both axes, bad grid/place/logical values rejected, logical properties mapped left-to-right |
 | `layout_props.rs` (more) | Transforms (M3-XF-02): hit testing follows rotation, 3D turns and `backface-visibility`, every property form and keyword is accepted and resets, `preserve-3d` combines turns before flattening; `visibility` (M3-VIS-01): hidden boxes keep space but draw and hit nothing, visible children and spans still do |
 | `wide_keywords.rs` | CSS-wide keywords (M3d step 1c): `inherit` on non-inherited properties, `initial` stopping inheritance, `unset`/`revert`, stylesheets without warnings, `inherit` at the root, `::before` inheriting |
-| `typing_profile.rs` | `#[ignore]`d profile of typing into `examples/form` (needs `bun run build`): `cargo test --release -p iron_ui --test typing_profile -- --ignored --nocapture` |
+| `typing_profile.rs` | `#[ignore]`d profile of typing into `examples/form` (needs a Bun-built `examples/form/dist/game.js`, no longer made by an example script): `cargo test --release -p iron_ui --test typing_profile -- --ignored --nocapture` |
 | `react_quickjs.rs`, `events_quickjs.rs` | Real React in QuickJS driving a real `UiTree` |
 | `common/mod.rs` | `Dom` builder helper: builds ops with a CSS string and lays out a 400x400 tree |
 
@@ -106,7 +107,7 @@ returns the captured messages.
 - Every `assert_golden` call also writes its render to `tests/output/<id>.png`, passing or
   not, for inspection. The folder is git-ignored.
 - `bun run screenshots [names...]` builds `iron_app` and renders each example to
-  `tests/output/examples-<name>.png` (run `bun run build` first). `tests/output/history/`
+  `tests/output/examples-<name>.png` (build the examples with `iron-build build` first). `tests/output/history/`
   keeps older screenshots for comparison.
   Updating goldens is always explicit; review the PNG by eye before committing.
 - `shared_gpu()` is **required** in GPU tests: one device per test binary behind a mutex

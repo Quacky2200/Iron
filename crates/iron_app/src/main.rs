@@ -5,7 +5,7 @@
 //! game's script bundle and runs it.
 //!
 //! `[game]` is either a game folder (loads `<game>/dist/game.js`, built with
-//! `bun run build`) or a `.js` bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
+//! `iron-build build`) or a `.js` bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 pub(crate) mod asset_db;
@@ -453,7 +453,7 @@ fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
         let bundle = path.join("dist").join("game.js");
         if !bundle.is_file() {
             bail!(
-                "{} not found; build it first with `bun run build` in {}",
+                "{} not found; build it first with `iron-build build {}`",
                 bundle.display(),
                 path.display()
             );

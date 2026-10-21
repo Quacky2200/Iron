@@ -39,7 +39,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `js/editor-ui` | `@iron/editor-ui`: editor components drawn by Iron's UI (`MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`), logic in plain modules (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) |
 | `editor/` | The editor's UI, run by `iron_editor` (`crates/iron_app/src/bin/iron_editor.rs`, `editor.rs`); see `docs/editor.md` |
 | `js/react` | `@iron/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
-| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth`, `windows` (extra OS windows: owned tools, an isolated Inspector over messages) games (each has `bun run build`) |
+| `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth`, `windows` (extra OS windows: owned tools, an isolated Inspector over messages) games (built with `iron-build build`; no per-example `package.json` scripts) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md` |
 | `tools/iron_build` | `iron-build` (build/types/assets/dev/check/package): module graph (`iron_ts::modules`) -> `dist/game.irbundle` + `game.css` + assets for a game compiled by iron_ts, no bun; see `docs/iron-build.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
@@ -71,6 +71,9 @@ bun test
 bun run typecheck
 ```
 ```bash
+cd tools && cargo run -p iron_build -- build ../examples/hello
+```
+```bash
 bun run build
 ```
 ```bash
@@ -88,17 +91,23 @@ cd tools && cargo run -p iron_build -- package ../examples/boxes --icon icon.png
 `iron-build package <game>` writes `<game>/dist/<name>.exe`: one file holding `iron_app` (the host, from `target/{release,debug}` or `--host`),
 the game's bundle, CSS and assets, and the icon and version info from `project.json` (`docs/iron-build.md`).
 
-- `bun run build` builds all the examples.
+- Examples are games compiled by `iron-build` (no bun, no `node_modules`; engine and UI names are the globals of the generated,
+  git-ignored `types/iron.d.ts`), so plain `tsc` in an example folder fails with "Cannot find name". `bun run typecheck` checks
+  the real bun packages (`js/*`, `editor`, `tests/fixtures`: `typecheck:js`) and then every example with the generated types
+  (`typecheck:examples` = `cd tools && cargo run -q -p iron_build -- check ../examples --tsc`).
+  `cd tools && cargo run -p iron_build -- check ../examples` builds all 20 examples (no `tsc`).
+- `bun run build` builds the editor (`editor/`, still bundled by Bun for QuickJS); `bun run build:fixtures` is the same for
+  `tests/fixtures`.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
-- `bun run dev` in an example (`scripts/dev.ts`) makes a dev build (vendor.js + game.js) and rebuilds
-  game.js on every edit; a running `iron` window reloads it in place (React Fast Refresh, components
-  swap classes, the world stays). Other reloads keep state through scene serialization.
+- Examples: `iron-build dev <game>` rebuilds on every edit and signals the running `iron` window. `bun run dev` in `editor/`
+  (`scripts/dev.ts`) is the Bun dev build (vendor.js + game.js, React Fast Refresh) that remains for the editor and QuickJS
+  bundles. Other reloads keep state through scene serialization.
 - The `cargo run` line renders a screenshot and exits; check it by eye. `--cook` prepares a
   game's textures and models into `.iron/cooked/` (git-ignored) and exits.
 - `bun scripts/assets.ts <game folder>` writes `.meta` files (GUIDs, import settings) for new
-  assets; `bun run dev` runs it.
+  assets; `bun run dev` in `editor/` and `iron-build assets` / `iron-build dev` run it.
 - `bun run screenshots` renders every example to `tests/output/` (git-ignored), next to the
-  golden tests' renders.
+  golden tests' renders (build the examples with `iron-build` first).
 - Benchmarks: `cargo bench -p iron_ui --bench restyle` (and the other benches in `crates/iron_ui/benches`).
 
 ## Working agreements
