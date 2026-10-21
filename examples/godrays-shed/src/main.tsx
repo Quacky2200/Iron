@@ -311,9 +311,9 @@ class Shed extends Component {
    */
   private buildDust() {
     dust = new GameObject("Dust");
-    this.moteDim = Material.create({ color: Color.black, emission: new Color(0.008, 0.009, 0.012, 1), unlit: true });
-    for (let i = 0; i < 700; i++) {
-      const size = 0.004 + 0.012 * Random.value ** 2;
+    this.moteDim = Material.create({ color: Color.black, emission: new Color(0.004, 0.0045, 0.006, 1), unlit: true });
+    for (let i = 0; i < 260; i++) {
+      const size = 0.0015 + 0.004 * Random.value ** 3;
       const b = Random.value;
       const level = b < 0.45 ? 0 : b < 0.75 ? 1 : b < 0.93 ? 2 : 3;
       const go = shape("Mote", "sphere", Vector3.zero, Vector3.one.scale(size), this.moteDim, dust);
