@@ -31,6 +31,8 @@ pub struct Manifest {
     /// `iron.runInBackground`: keep running while the window is in the background
     /// (Unity's `Application.runInBackground`, off by default).
     pub run_in_background: bool,
+    /// `iron.fps`: `false` turns the FPS counter off.
+    pub fps: Option<bool>,
 }
 
 impl Manifest {
@@ -71,6 +73,7 @@ impl Manifest {
             start_scene: text(&iron["startScene"]),
             display: iron["display"].clone(),
             run_in_background: iron["runInBackground"].as_bool().unwrap_or(false),
+            fps: iron["fps"].as_bool(),
             name,
         }
     }
@@ -223,6 +226,16 @@ mod tests {
         assert!(script.contains("\"productName\":\"Fox Run\""));
         assert!(script.contains("\"graphicsDeviceName\":\"Test GPU\""));
         assert!(script.contains("\"processorCount\":"));
+    }
+
+    // M9-API-910
+    #[test]
+    fn fps_comes_from_the_manifest() {
+        assert_eq!(
+            Manifest::from_json(&json!({ "iron": { "fps": false } }), "g").fps,
+            Some(false)
+        );
+        assert_eq!(Manifest::from_json(&Value::Null, "g").fps, None);
     }
 
     // M5-APP-09

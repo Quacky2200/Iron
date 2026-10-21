@@ -1301,3 +1301,16 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2421 | Unit | A non-square image is centred on a square; an `.ico` passes through unchanged; garbage is an error. |
 | M9-TS-2430 | Unit | Version info (ProductName, CompanyName, FileDescription, LegalCopyright, FileVersion, ProductVersion, OriginalFilename, 1.2.3.0 numbers) and the four icon sizes written into a PE file read back, and a payload appended after the edit is found (Windows; `iron_build/src/pe.rs`). |
 | M9-TS-2440 | Manual | `cargo test -p iron_build -- --ignored standalone` (needs a built `iron_app`, GPU): packages `examples/hello`, deletes the game folder and runs the exe from another folder with `--screenshot out.png --frames 5`. Checked by eye for hello (a log-only game, background colour) and boxes (the stripes image from `assets/` shows). |
+| M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
+| M9-API-901 | Unit | The rate rounds to the nearest integer. |
+| M9-API-902 | Unit | `FpsCounter` closes a window once 0.25 s have passed and reports it; 100 FPS over 0.6 s gives two windows of `100 FPS`. |
+| M9-API-903 | Unit | The rate is not smoothed: a fast window then a slow window shows the slow rate. |
+| M9-API-904 | Unit | Before a first window closes (short screenshot runs) `text` shows the partial window. |
+| M9-API-905 | Unit | The overlay is on by default and off in screenshot runs. |
+| M9-API-906 | Unit | `IRON_FPS=0` and `iron.fps: false` turn it off. |
+| M9-API-907 | Unit | `--fps` / `--no-fps` override the defaults, the env and the manifest. |
+| M9-API-908 | Unit | `FpsOverlay` draws commands for its text (and fewer for no text). |
+| M9-API-909 | Unit | `--fps` and `--no-fps` parse. |
+| M9-API-910 | Unit | `iron.fps` is read from the manifest. |
+| M9-API-911 | Integration | `iron_app <fixture> --screenshot --frames 3 --fps` saves the file and the log has no errors (needs a GPU). |
+| M9-API-912 | Integration | The same with `--no-fps`. |

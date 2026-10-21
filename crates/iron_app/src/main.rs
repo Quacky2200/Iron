@@ -15,6 +15,7 @@ mod cursor;
 mod display;
 mod editor;
 mod file_drop;
+mod fps;
 mod game_input;
 // `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
 // re-exports these at its root, for the `crate::` paths between modules.
@@ -68,6 +69,8 @@ struct Args {
     frames: u32,
     /// Cook the game's assets (`--cook`) and exit.
     cook: bool,
+    /// `--fps` / `--no-fps`: the FPS counter on or off, over the defaults.
+    fps: Option<bool>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -86,8 +89,7 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage =
-        "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook]";
+    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps]";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
@@ -95,11 +97,14 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         screenshot: None,
         frames: 60,
         cook: false,
+        fps: None,
     };
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
             Some("--cook") => parsed.cook = true,
+            Some("--fps") => parsed.fps = Some(true),
+            Some("--no-fps") => parsed.fps = Some(false),
             Some("--frames") => {
                 parsed.frames = args
                     .next()
@@ -350,6 +355,15 @@ fn run() -> Result<()> {
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, args.screenshot.is_some()),
         frames: 0,
+        fps_on: fps::enabled(
+            args.fps
+                .or((editor::ENABLED && args.screenshot.is_none()).then_some(false)),
+            args.screenshot.is_some(),
+            std::env::var("IRON_FPS").ok().as_deref(),
+            manifest.fps,
+        ),
+        fps: fps::FpsCounter::default(),
+        fps_overlay: fps::FpsOverlay::new(),
         screenshot: args.screenshot.map(|path| (path, args.frames)),
         done: false,
         info,
@@ -496,6 +510,10 @@ struct App {
     lifecycle: lifecycle::Lifecycle,
     frames: u32,
     screenshot: Option<(PathBuf, u32)>,
+    /// The FPS counter overlay (drawn last, at window resolution).
+    fps_on: bool,
+    fps: fps::FpsCounter,
+    fps_overlay: fps::FpsOverlay,
     /// Stylesheets added by scripts: script id -> tree id.
     sheets: HashMap<u32, u32>,
     interaction: Interaction,
@@ -1849,6 +1867,22 @@ impl App {
             &textures,
             &cmds,
         );
+        if self.fps_on {
+            let now = self.started.elapsed().as_secs_f64();
+            let scale = gfx.window.scale_factor() as f32;
+            let text = self.fps.text(now);
+            let fps_cmds = self.fps_overlay.draw_list(&text, w, h, scale);
+            gfx.renderer.render_overlay(
+                &gfx.gpu,
+                &RenderTarget {
+                    view: &view,
+                    format: target.format(),
+                    size: (w, h),
+                    scale,
+                },
+                &fps_cmds,
+            );
+        }
         let pixels = target.read_pixels(&gfx.gpu)?;
         iron_render::testing::write_png(path, w, h, &pixels)?;
         Ok(())
@@ -2211,6 +2245,7 @@ impl PlatformApp for App {
             }
         }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
+        let gfx_window_scale = gfx.window.scale_factor() as f32;
         let (scene, world_view) = (&self.scene, &self.world_view);
         let Gfx {
             gpu,
@@ -2226,6 +2261,12 @@ impl PlatformApp for App {
                 load_images(tree, renderer, gpu)
             });
         let textures: Vec<&wgpu::TextureView> = textures.iter().collect();
+        // The FPS counter: at window resolution and scale, over the world and the UI.
+        let window_scale = gfx_window_scale;
+        let fps_text = self
+            .fps_on
+            .then(|| self.fps.text(self.started.elapsed().as_secs_f64()));
+        let fps_overlay = &mut self.fps_overlay;
         surface.present_with(gpu, |view, format, size| {
             let target = RenderTarget {
                 view,
@@ -2242,8 +2283,24 @@ impl PlatformApp for App {
                 &textures,
                 &cmds,
             );
+            if let Some(text) = &fps_text {
+                let fps_cmds = fps_overlay.draw_list(text, size.0, size.1, window_scale);
+                renderer.render_overlay(
+                    gpu,
+                    &RenderTarget {
+                        view,
+                        format,
+                        size,
+                        scale: window_scale,
+                    },
+                    &fps_cmds,
+                );
+            }
         });
         self.world_view.probes_rendered();
+        if self.fps_on {
+            self.fps.frame(self.started.elapsed().as_secs_f64());
+        }
 
         self.frames += 1;
         // `IRON_RELOAD_AT_FRAME=N`: a screenshot run reloads its scripts after frame N,
@@ -2558,6 +2615,14 @@ mod tests {
         assert_eq!(args.game, PathBuf::from("."));
         assert_eq!(args.screenshot, Some(PathBuf::from("out.png")));
         assert_eq!(args.frames, 5);
+    }
+
+    // M9-API-909
+    #[test]
+    fn fps_flags_parse() {
+        assert_eq!(parse(&[]).unwrap().fps, None);
+        assert_eq!(parse(&["--fps"]).unwrap().fps, Some(true));
+        assert_eq!(parse(&["g", "--no-fps"]).unwrap().fps, Some(false));
     }
 
     // M5-APP-03

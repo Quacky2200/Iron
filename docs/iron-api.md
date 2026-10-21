@@ -632,3 +632,16 @@ own `UiTree` (`panels.rs`) and its own `iron_ui_native::Runtime` (flushed every 
 (`App::native_panel_events`) go to that runtime. `WorldPanel` components give the panel's size, density and tint through `Panels::apply`.
 Not done: glTF animation clips (`Model.animations`) are not turned into clips; animation events are not delivered to components;
 colliders of models (`colliders: "mesh"`) need the physics hook (agent H).
+
+## The FPS counter (`crates/iron_app/src/fps.rs`)
+
+A raw frame-rate overlay drawn by the app for every game, QuickJS (`dist/game.js`) or native (`dist/game.irbundle`): lime green
+(`#32ff32`), bold, 13px, `0 1px 2px #000` shadow, no background, in the top right corner 10px from the top and right edges,
+right-aligned, text like `144 FPS`. `FpsCounter` counts frames over windows of 0.25 s of real time and shows `round(frames / elapsed)`
+(no smoothing, no cap). `FpsOverlay` is a tiny `UiTree` (one absolutely placed box, `pointer-events: none`, so no hit testing or focus)
+drawn with `render_overlay` after the world and the game's UI, in `frame()` and in `save_screenshot`, at window resolution and window
+scale factor (not the UI scale, not the render scale).
+
+On or off, in order: `--fps` / `--no-fps` on the command line; off with `IRON_FPS=0` (or `false`, `off`, `no`) or `"iron": { "fps": false }`
+in `package.json`; otherwise on, except in `--screenshot` runs (off unless `--fps`, so goldens and `bun run screenshots` don't change).
+`iron_editor` has it off unless `--fps`. A short screenshot run shows the partial window.
