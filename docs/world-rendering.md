@@ -385,11 +385,11 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   fog to it out to the far plane, so the horizon sinks into the fog. Match the camera's background colour
   to `fogColor` for a seamless horizon with distance fog alone.
 - **Light shafts.** `RenderSettings.volumetricFog` (`{ intensity, anisotropy, steps, distance }`, defaults
-  1, 0.4, 4, 50, plus an optional `albedo` colour, white by default, and `sharpDistance` / `sharpSamples`, below; `null` by default, used only while
+  1, 0.4, 4, 50, plus an optional `albedo` colour, white by default, `sharpDistance` / `sharpSamples`, below, and `resolution` (`"low"|"medium"|"high"|"ultra"`, `high` by default); `null` by default, used only while
   `fog` is on, saved with scenes) sends an eighth `render.fog` argument, `[intensity anisotropy steps
-  distance r g b sharpDistance sharpSamples]` (albedo and the last two optional; anisotropy clamped to +-0.95, steps to 1..16, sharpSamples to 4..128), and sets `Fog.volumetric:
+  distance r g b sharpDistance sharpSamples detail]` (albedo and the last three optional; `detail` 0..3 is `Fog.volumetric.detail`; anisotropy clamped to +-0.95, steps to 1..16, sharpSamples to 4..128), and sets `Fog.volumetric:
   Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
-  `volume.rs` (`VolumePass`) owns a 240x135x64 `Rgba16Float` 3D texture per view slot. Once per view with
+  `volume.rs` (`VolumePass`) owns an `Rgba16Float` 3D texture per view slot, sized by `volume::SIZES` (`VolumetricFog.detail`: low 160x90x48, medium 240x135x64, high 320x180x96, ultra 480x270x128; finer means sharper beams and a dearer fill). `encode` takes the size and remakes the slot's texture when it changes. Once per view with
   shafts, before the render pass, the compute entry `cs_volume` (8x8 workgroups, one thread per screen
   cell) walks the cell's view ray. Slices are spaced by the square of their index out to the reach
   (`slice_distance(w) = reach * w * w`), with `steps` sub-samples per slice. Each sample adds the drop in
@@ -410,10 +410,13 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
 - **God rays.** The volume's cells blur beams finer than themselves (window bars, grates, leaves). With
   `volumetricFog.sharpDistance` > 0 (default 0, off; `VolumetricFog.sharp_distance`, `GpuGlobals.fog_sharp` x)
   the directional lights' shafts within that distance are worked out per pixel by `sharp_sun` in `world.wgsl`:
-  `sharpSamples` (default 32, `fog_sharp` y) hard shadow lookups spaced by the square of their index, so
-  closer together near the eye. Each sample sits at a fixed per-pixel offset within its step
-  (`pixel_offset`, interleaved gradient noise). At the same points for every pixel, a thin beam lit up shell
-  by shell in stacked slabs; offset, it becomes faint grain, and more samples mean less grain. The volume
+  `sharpSamples` (default 32, `fog_sharp` y) points on the ray, spaced by the square of their index, so
+  closer together near the eye, are tested with `sun_visible` (the sun's shadow map, PCF radius 1). Where
+  two neighbouring points disagree (one lit, one shadowed), the step is binary-searched (`EDGE_SEARCH` = 6)
+  for the exact edge and only the lit length counts. There is no per-pixel dither, so beams don't shimmer
+  or lens as the camera moves. It suits large openings (a canopy, a roof hole); a shadow thinner than a
+  step, wholly between two samples, is missed and thin bars alias into a hatch: use a finer `resolution`
+  for those, or more samples.
   then supplies only what lies beyond: `shafts` adds `sharp_sun` minus `volume_to(uv, near)` (the volume's
   light out to a distance) to the volume's total. It costs `sharpSamples` shadow lookups per fogged pixel.
 - **Spot and point shafts.** The volume's cells are several pixels wide, which blurred spot cones, so
@@ -521,7 +524,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
-| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance [r g b [sharpDistance sharpSamples]]]\|null cull`, or `0 null` for clear air |
+| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance [r g b [sharpDistance sharpSamples [detail]]]]\|null cull`, or `0 null` for clear air |
 | `render.fogVolume` | `component object [sx sy sz] density [r g b] blendDistance shape(box\|ellipsoid)` |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
