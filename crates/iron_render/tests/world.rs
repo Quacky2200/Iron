@@ -3795,6 +3795,93 @@ fn real_world_units_pre_expose_light_too_bright_for_the_hdr_target() {
     );
 }
 
+// M7-FOG-15
+#[test]
+fn a_spot_light_behind_a_wall_puts_no_haze_in_front_of_it() {
+    use iron_render::{
+        Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
+        primitive_id,
+    };
+    let size = (160, 120);
+    let gpu = shared_gpu();
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let tv = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &tv,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // A solid wall 2 m ahead; behind it a green spot light shines straight at its back. In
+    // front (the camera's side) there's no light, so no haze: the cells at the wall's depth
+    // reach a little behind it, into the beam, and reading them showed its round
+    // cross-section on the wall.
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(
+            Vec3::new(0.0, 1.5, 2.0),
+            Vec3::new(0.0, 1.5, 0.0),
+            Vec3::Y,
+        )
+        .inverse(),
+        60.0,
+        0.1,
+        40.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    v.ambient = [0.0, 0.0, 0.0];
+    v.meshes = vec![MeshInstance {
+        mesh: primitive_id("cube").unwrap(),
+        model: Mat4::from_scale_rotation_translation(
+            Vec3::new(8.0, 6.0, 0.05),
+            Quat::IDENTITY,
+            Vec3::new(0.0, 1.5, 0.0),
+        ),
+        color: [0.5, 0.5, 0.5, 1.0],
+        cast_shadows: true,
+        ..Default::default()
+    }];
+    v.lights = vec![Light {
+        kind: LightKind::Spot {
+            inner_degrees: 8.0,
+            outer_degrees: 12.0,
+        },
+        color: [0.5, 6.0, 0.8],
+        position: Vec3::new(0.0, 1.5, -4.0),
+        direction: Vec3::Z,
+        range: 10.0,
+        shadows: Some(Shadows {
+            soft: false,
+            strength: 1.0,
+        }),
+        culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
+    }];
+    v.fog = Some(Fog {
+        mode: FogMode::Exponential,
+        color: [0.0, 0.0, 0.0],
+        density: 0.1,
+        volumetric: Some(VolumetricFog {
+            intensity: 2.0,
+            distance: 14.0,
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let mut world = WorldRenderer::new(&gpu);
+    for _ in 0..16 {
+        world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+    }
+    let pixels = target.read_pixels(&gpu).unwrap();
+    let green = |x: u32, y: u32| pixels[((y * size.0 + x) * 4 + 1) as usize] as i32;
+    // The wall's middle (where the beam meets its back) against well outside the beam.
+    let middle = green(size.0 / 2, size.1 / 2);
+    let aside = green(size.0 / 8, size.1 / 2);
+    assert!(middle <= aside + 2, "middle {middle}, aside {aside}");
+}
+
 // M7-FOG-13
 /// How much the haze changes from one frame to the next with the camera still under a
 /// grate's beams (all of it noise): the mean change in green over the frame (0..255).

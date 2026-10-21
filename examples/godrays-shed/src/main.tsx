@@ -59,10 +59,12 @@ const BEAM_HAZE = [1, 0.6, 0.3];
 let refreshMenu = () => {};
 
 function apply(): void {
-  RenderSettings.fog = state.dust;
+  // Dust in the air, or settled: thinner haze (with none, there'd be nothing for the beam to
+  // light at all).
+  RenderSettings.fogDensity = state.dust ? 0.12 : 0.04;
   const h = HAZE[state.haze]!;
   RenderSettings.volumetricFog = {
-    intensity: 1.6,
+    intensity: state.dust ? 1.6 : 0.5,
     anisotropy: 0.3,
     steps: 6,
     distance: 14,
@@ -78,6 +80,14 @@ function apply(): void {
 
 /** The scanning beam, for `apply`. */
 let scanner: Light | null = null;
+/** Colours the beam, the craft's glow and its lights by `state.beam`. */
+let setBeam = () => {};
+
+function nextBeam() {
+  state.beam = state.beam === "green" ? "red" : "green";
+  setBeam();
+  apply();
+}
 
 function shape(name: string, mesh: "cube" | "sphere" | "cylinder", at: Vector3, scale: Vector3, material: Material, parent?: GameObject, rotation?: Quaternion) {
   const go = new GameObject(name, { position: at, scale, parent, rotation });
@@ -244,6 +254,7 @@ class Shed extends Component {
     const glow = new GameObject("Craft glow", { position: CRAFT.add(new Vector3(0, -0.5, 0)) });
     this.glow = glow.addComponent(Light, { type: "point", range: 8, intensity: 1.5, volumetricIntensity: 0.3 });
     scanner = this.scanner;
+    setBeam = () => this.setBeam();
     this.setBeam();
     apply();
   }
@@ -256,11 +267,7 @@ class Shed extends Component {
   }
 
   override onUpdate(dt: number) {
-    if (input.getKeyDown("KeyC")) {
-      state.beam = state.beam === "green" ? "red" : "green";
-      this.setBeam();
-      apply();
-    }
+    if (input.getKeyDown("KeyC")) nextBeam();
     if (input.getKeyDown("KeyF")) toggle("dust");
     if (input.getKeyDown("KeyG")) cycle("haze", HAZE.length);
     if (input.getKeyDown("KeyB")) cycle("beamHaze", BEAM_HAZE.length);
@@ -324,12 +331,9 @@ function Menu() {
           value={state.beam === "green" ? "Green" : "Red"}
           on={true}
           keyName="C"
-          onClick={() => {
-            state.beam = state.beam === "green" ? "red" : "green";
-            apply();
-          }}
+          onClick={nextBeam}
         />
-        <Button label="Dust" value={state.dust ? "In the air" : "Off"} on={state.dust} keyName="F" onClick={() => toggle("dust")} />
+        <Button label="Dust" value={state.dust ? "In the air" : "Settled (thin)"} on={state.dust} keyName="F" onClick={() => toggle("dust")} />
         <Button label="Haze" value={HAZE[state.haze]!.name} on={state.haze === 0} keyName="G" onClick={() => cycle("haze", HAZE.length)} />
         <Button label="Beam haze" value={`${Math.round(BEAM_HAZE[state.beamHaze]! * 100)}%`} on={state.beamHaze === 0} keyName="B" onClick={() => cycle("beamHaze", BEAM_HAZE.length)} />
         <Button label="Scan" value={state.paused ? "Paused" : "Scanning"} on={!state.paused} keyName="Space" onClick={() => toggle("paused")} />

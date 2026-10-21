@@ -770,10 +770,12 @@ fn sharp_sun(eye: vec3<f32>, dir: vec3<f32>, len: f32, distance: bool, px: vec2<
     return sum;
 }
 
-// The volume's light from the eye out to `d` along this pixel's ray.
+// The volume's light from the eye out to `d` along this pixel's ray, read a slice and a half
+// short (Unreal's depth bias): the cells at a surface's depth reach behind it, and a wall's
+// cells would show the beam on its far side as a disc of haze on its face.
 fn volume_to(uv: vec2<f32>, d: f32) -> vec3<f32> {
-    let w = sqrt(max(d, 0.0) / g.fog_volume.w);
-    return textureSampleLevel(volume, volume_samp, vec3<f32>(uv, w), 0.0).rgb;
+    let w = sqrt(max(d, 0.0) / g.fog_volume.w) - 1.5 / f32(textureDimensions(volume).z);
+    return textureSampleLevel(volume, volume_samp, vec3<f32>(uv, max(w, 0.0)), 0.0).rgb;
 }
 
 // Light the fog between the camera and `p` (pixel `px`) sends to the camera: the volume
