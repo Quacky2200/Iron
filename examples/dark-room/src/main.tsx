@@ -518,11 +518,14 @@ function Graph() {
       .filter(([, v]) => Number.isFinite(v))
       .map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
       .join(" ");
+  const scene = line((h) => h.scene);
+  const exposure = line((h) => h.exposure);
   return (
     <box style={{ flexDirection: "column", gap: 4 }}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: W, height: H, backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 4 }}>
-        <polyline points={line((h) => h.scene)} fill="none" stroke="#f0a040" strokeWidth={2} />
-        <polyline points={line((h) => h.exposure)} fill="none" stroke="#ffffff" strokeWidth={2} />
+        {/* A line needs two points: none until the first samples are in. */}
+        {scene.includes(" ") && <polyline points={scene} fill="none" stroke="#f0a040" strokeWidth={2} />}
+        {exposure.includes(" ") && <polyline points={exposure} fill="none" stroke="#ffffff" strokeWidth={2} />}
       </svg>
       <box style={{ flexDirection: "row", justifyContent: "space-between" }}>
         <text style={{ color: "#f0a040", fontSize: 12 }}>view meters {ev(Camera.main?.sceneBrightness)}</text>
