@@ -355,18 +355,52 @@ non-identity grading also draws through the HDR texture.
 
 **Auto exposure.** `Grading.auto_exposure: Option<AutoExposure>` (`min_ev` -10, `max_ev` 20, `compensation` 0,
 `speed_dark_to_light` 3, `speed_light_to_dark` 1) adapts the exposure to the view, like HDRP's Automatic mode.
-Each HDR target size in `BloomPass` has `Targets { hdr, levels, meter }`; `meter` is a 16-byte storage buffer
-(x: the adapted exposure in stops, y: 1 once set). Before the composite, the compute entry `cs_meter` (one 16x16
-workgroup) samples a 64x64 grid of the HDR image, takes log2 of the luminance and weights it towards the
-middle (`exp(-|uv-0.5|^2*6)`). That average becomes EV100 (+3), is clamped to `min_ev..max_ev`, and gives the
-target stops `-ev - log2(1.2) + compensation` (HDRP's `1/(1.2*2^EV100)`). The first use snaps to the target;
-after that the meter eases with `1 - exp(-dt*speed)`, using `speed_dark_to_light` when the target is lower
-(the view got brighter). `Grading.delta_time` is set by the app from the frame time; the pass caps it at 1/15 s.
-The composite and `fs_grade` multiply by `exposure * exp2(meter.x)` (`auto_scale()`). Bloom's prefilter
-threshold is applied to the light times `auto_scale()`, not to post exposure, so what blooms is what looks
-bright now. `RenderSettings.autoExposure` (`{ minEV, maxEV, compensation, speedDarkToLight, speedLightToDark }`
-or `null`, the default) rides on `render.post 0 postExposure tonemapping auto`, where `auto` is
-`[minEV, maxEV, compensation, darkToLight, lightToDark]` or null. Test `M7-EXP-01`.
+The HDRP-style settings are in `AutoExposure`; the state is per camera.
+
+- **Per camera.** Each `WorldView` has an `exposure_key`; the app sets it to the camera's id. `BloomPass` keeps
+  `eyes: HashMap<u32, Eye>`. An `Eye` has a 16-byte `meter` storage buffer (x: the adapted exposure in stops,
+  y: 1 once set, z: the metered EV100), a `ViewParams` uniform (`rect` in uv, `weight`, `snap`, `hold`), a
+  `MAP_READ` staging buffer for read-back and a blend `weight` (0..1). `encode` takes an `ExposureView { key,
+  rect }` per view: the biggest first (drawn over everything), the others with scissor rects. The meter
+  compute runs once per view over its own rect; the prefilter and the composite draw per view with that
+  view's eye. An eye unused for 600 frames is dropped. HDR textures are still cached per size, but no longer
+  hold the meter. Split screens each adapt to what they show. Test `M7-EXP-02`.
+- **Metering.** `cs_meter` (one workgroup of 256) bins the log2 luminance of a 64x64 grid of the view's rect
+  into a 256-bin histogram (-16..+16). Samples are weighted by `Metering`: `Average` (all alike),
+  `CenterWeighted` (`exp(-|d|^2*6)`, the default) or `Spot` (a circle of radius 0.12 in the middle). The
+  average is taken between `low_percent` and `high_percent` of the histogram (0 and 100 by default). That
+  becomes EV100 (+3), clamped to `min_ev..max_ev`, and gives the target stops `-ev - log2(1.2) +
+  compensation` (HDRP's `1/(1.2*2^EV100)`). Test `M7-EXP-03`.
+- **Soft floor and curve.** Below `dark_below` (EV100, 5) the metered EV becomes `dark_below + (ev -
+  dark_below) * dark_adaptation` (1 by default: no change), so a dark place brightens only part of the way
+  instead of hitting `min_ev`'s wall. The compensation curve has up to `MAX_CURVE_POINTS` (8) points of
+  (EV100, stops), joined by straight lines, flat past the ends, and is added to `compensation`. Test
+  `M7-EXP-06`.
+- **Adapting.** The first use snaps to the target (so does a per-eye `snap`, set for new cameras and
+  `reset_exposure`); after that the meter eases with `1 - exp(-dt*speed)`, using `speed_dark_to_light` when the
+  target is lower (the view got brighter). `hold` keeps the adapted value as it is. `Grading.delta_time` is set
+  by the app from the frame time; the pass caps it at 1/15 s.
+- **Blending.** `Grading.fixed_ev: Option<f32>` is a manual exposure in EV100 (`None`: x1), and
+  `Grading.transition` is the seconds auto exposure takes to blend in and out. Each eye's `weight` moves
+  towards 1 while auto is on and 0 while it is off, by `dt / transition` (at once for 0). The shader multiplies
+  by `exposure * exp2(mix(fixed_stops, adapted, weight))` (`auto_scale()`). `BloomPass::fading()` keeps the post
+  pass running while a weight fades out after auto is switched off. Test `M7-EXP-04`.
+- **Bloom.** The prefilter threshold is applied to the light times `auto_scale()`, not to post exposure, so
+  what blooms is what looks bright now.
+- **Read-back.** After submit, `after_submit` maps each eye's staging buffer (`device.poll(Poll)`); `collect`
+  reads them next frame into `ExposureReading { ev, scene_ev }` (the EV100 in use, and how bright it metered;
+  NaN before the first). `WorldRenderer::exposure(key)` and `reset_exposure(key)` expose them. When a camera's
+  values change, the app calls `__iron_exposure(id, ev, sceneEv|null)`, which sets `Camera.exposure` and
+  `Camera.sceneBrightness`. `Camera.resetExposure()` sends `render.exposureReset id`; `WorldViews` queues it
+  and the app applies it. Test `M7-EXP-05`.
+- **Script settings.** `RenderSettings.autoExposure` is `{ minEV, maxEV, compensation, speedDarkToLight,
+  speedLightToDark, metering ("average" | "centerWeighted" | "spot"), lowPercent, highPercent, darkAdaptation,
+  darkBelow, curve: [ev, stops][], hold }` or `null` (the default). `RenderSettings.fixedExposure` (EV100 or
+  `null`) and `exposureTransition` (seconds) go with it, and `freezeExposure()` turns auto off after copying
+  the main camera's `exposure` into `fixedExposure`, so nothing changes on screen.
+  `QualitySettings.autoExposure` (on by default, saved with quality) is the player's switch: off, the
+  game's `auto` is sent as null, so it blends out to the manual exposure. All of it rides on `render.post`.
+  Test `M7-EXP-01`.
 
 **FXAA.** `Camera.antialiasing = "fxaa"` (camera op argument 14) sets `WorldView.fxaa`. If the main view
 has it, `FxaaPass` runs over the finished, tonemapped image: it finds edges by gamma-space luma contrast
@@ -552,7 +586,8 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
 | `render.bloom` | `0 threshold intensity scatter`, or `0 null` for off |
-| `render.post` | `0 exposureStops tonemapping auto`; `auto` is `[minEV, maxEV, compensation, darkToLight, lightToDark]` or null |
+| `render.post` | `0 exposureStops tonemapping auto fixedEV transition`; `auto` is `[minEV, maxEV, compensation, darkToLight, lightToDark, metering(0 average, 1 centre, 2 spot), lowPercent, highPercent, hold, darkAdaptation, darkBelow, curvePoints, ev0, stops0, ...]` or null; `fixedEV` is EV100 or null |
+| `render.exposureReset` | `cameraId` (that camera's auto exposure jumps to what it sees) |
 | `render.quality` | `0 antiAliasing renderScale shadows(disable\|hardOnly\|all) softRadius lodBias vSyncCount` (see Quality settings) |
 | `render.lodGroup` | `component object size [heights per level] [[renderer ids] per level] forcedLevel(-1: none)` |
 | `render.shadowSettings` | `0 distance resolution` |
@@ -809,7 +844,7 @@ then decodes the cooked texture and uses `set_texture`. How cooking makes them:
 
 - Only the first directional light with shadows casts sun shadows; spot and point lights share 24 layers,
   nearest first. Casters come from the main screen view's opaque and cutout meshes (no transparent casters).
-- Bloom, exposure and tonemapping are one setting for every camera; FXAA follows the main view's camera.
+- Bloom, exposure settings and tonemapping are one setting for every camera (auto exposure's adapted state is per camera); FXAA follows the main view's camera.
   Mirrors, probes and render textures are ungraded.
 - Mirrors are flat, rendered only for the main view, show no mirrors inside mirrors, and cost a full
   extra scene render each. Other views see the sky in them.
@@ -842,6 +877,8 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
+Auto exposure: `M7-EXP-01` (adapts to the view), `-02` (per camera, split screens), `-03` (metering modes and percentiles), `-04` (fixed exposure, blending, hold, freeze), `-05` (read-back, `Camera.exposure`, reset), `-06` (soft floor and compensation curve).
+
 Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them) and `M7-FOG-11` (the temporal volume: averaged frames ripple less than one) and `M7-FOG-12` (a turning sun's beams follow without trailing).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
