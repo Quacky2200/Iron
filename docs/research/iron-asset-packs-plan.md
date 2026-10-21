@@ -257,6 +257,9 @@ pub fn cook_scene(text: &str, root: &Path) -> Result<String, String>;   // minif
 
 ### Step 12. Texture mip streaming (`IRTX` v2)
 
+(Partly blocked by step 17: store each mip with a 256-byte row pitch and 512-byte-aligned offsets now, see
+`iron-directstorage-and-codecs.md` 5.5; chunk-boundary padding of large mips for DirectStorage waits for step 17.)
+
 - `cook.rs`: `VERSION_V2 = 2`: header as v1 plus `mip_count u16` followed by `(offset u64, size u64)` per mip relative to the payload
   start, mips stored **smallest first**; `texture_from_bytes` reads v1 and v2; the cooker writes v2. Move `IRTX` read/write to
   `iron_render::world::texture` (or `crates/iron_cook`, step 15) so the pack builder and the app share it.
@@ -304,6 +307,34 @@ pub fn cook_scene(text: &str, root: &Path) -> Result<String, String>;   // minif
 - Android: `Pack::open_at` over `AAsset_openFileDescriptor64`; the Gradle template stores `irpk` and `json` uncompressed; a startup
   check that `AAsset_getLength64` equals the manifest `size`. iOS: `data/` in the bundle's resources. No new pack format work.
 
+## Group E: codecs and DirectStorage
+
+### Step 17. Codec decision after the DirectStorage research (`CODEC-1`; **needs the user's OK for crates and a D3D12 probe**)
+
+Research: `docs/research/iron-directstorage-and-codecs.md` (2026-10-21). Decided there: LZ4 stays the default, xz/LZMA and Brotli are
+out, zstd is the recommended second codec. Open: whether Windows builds get a GPU-decompressed codec (GDeflate, or DirectStorage 1.4
+zstd once it is GA) for texture and mesh chunks.
+
+- Now (no dependency, any time): `Codec::GDeflate = 4` reserved in `format.rs` next to zstd's 3 (a reader refuses it with
+  `Error::Format("codec 4 (GDeflate) not supported by this build")`); test `M9-API-1135` a chunk with codec 3 or 4 fails `read` with
+  that error and `open` still succeeds.
+- The prototype of that note's section 6 (`ds_probe`, headless D3D12, cold cache, LZ4 vs stored-through-DirectStorage vs GDeflate vs
+  zstd into wgpu buffers, 2 GB photographic BC textures + 500 MB meshes).
+- **Acceptance** (the decision rule, copied from the note): a GPU codec mode is added only if it is at least 1.5x faster in wall time
+  than CPU LZ4 on 8 threads, or needs at most half the CPU time at no more than 1.1x the wall time, with a pack no larger than 0.8x the
+  LZ4 pack, and the wgpu interop correctness test passes (buffer bytes equal the raw entry; a texture copied from it equals a direct
+  upload). zstd is preferred over GDeflate when both pass and DirectStorage 1.4 is GA. DirectStorage for I/O only (stored/LZ4 chunks
+  through the custom decompression queue) is kept only if at least 1.2x faster than today's path. The numbers go into the note, the
+  decision into `iron-asset-packs.md` section 10.
+- If a GPU codec is chosen, follow-ups (separate steps then): its CPU decoder in `iron_pack` (Windows), `iron-build pack --target` with
+  per-kind codec tables and `data-<target>/` folders (note 4.1), a `DirectStorage` loader in `iron_app` behind the `Vfs` for the DX12
+  backend (and the question of making DX12 the Windows default).
+
+**Blocked by step 17:** only the GPU-codec work itself. Steps 1 to 11, 13, 15, 16 are not blocked (LZ4 assumed). Partly blocked:
+step 4 (`--codec` accepts `lz4|deflate|none`; `zstd`/`gdeflate` values wait), step 12 (the 256-byte row pitch and 512-byte mip offsets
+of the note's 5.5 go in now; padding large mips to chunk boundaries for DirectStorage texture destinations waits), step 14 (one `data/`
+per target only if step 17 picks a per-target codec).
+
 ## One-line summary of the steps
 
 0. (done) `crates/iron_pack`: container, LZ4, writer, reader, VFS (`M9-API-1100..1112`).
@@ -323,10 +354,14 @@ pub fn cook_scene(text: &str, root: &Path) -> Result<String, String>;   // minif
 14. `package --release`: exe + `data/` (`M9-TS-2540..2541`).
 15. `crates/iron_cook`, cooking inside `iron-build` (`M9-TS-2542`).
 16. Android/iOS packaging notes into code when those targets exist.
+17. Codec decision after the DirectStorage research: reserve GDeflate (codec 4), then the `CODEC-1` prototype decides a Windows GPU
+    codec (`M9-API-1135`; blocks only the GPU-codec work, parts of 4, 12, 14).
 
 ## Needs the user
 
-- Decision 1 (codec) before step 4 ships its default: LZ4 assumed.
+- Decision 1 (codec) before step 4 ships its default: LZ4 assumed (the research confirms it, `iron-directstorage-and-codecs.md`);
+  zstd as the second codec needs the OK for a crate; step 17's prototype needs the OK for DirectStorage, `gdeflate` and `zstd`
+  downloads and a D3D12 probe on this machine.
 - Decisions 3 and 4 (DLC, mods) before step 13.
 - Decision 5 (unreferenced assets), 6 (both forms for code-literal textures), 7 (one shared pack) before step 3: the plan assumes the
   recommended answers.

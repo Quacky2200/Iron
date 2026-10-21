@@ -406,6 +406,13 @@ deflate's ratio at near-LZ4 read speed, but no zstd crate is in the dependency t
 codec later without changing packs), deflate selectable (`--codec deflate`) for download-size-bound targets (mobile), zstd codec id 3
 reserved for a user decision.
 
+**Codec decision (2026-10-21).** The DirectStorage and codec research is `docs/research/iron-directstorage-and-codecs.md`. Outcome:
+LZ4 stays the default on every platform; zstd (codec 3) is the recommended second codec once its crate is OKed; xz/LZMA and Brotli are
+ruled out for load-time data; a Windows GPU codec (GDeflate, reserved as codec 4, or DirectStorage 1.4 zstd) is **pending** the
+`CODEC-1` prototype in that note. The design stays codec-pluggable: the codec is a byte per chunk, the manifest names it, a build can
+pick codecs per target and per entry kind (that note, 4.1), and nothing in the container changes for either GPU codec (256 KiB chunks
+are four GDeflate tiles and the zstd shader's preferred size; entries are already 4 KiB aligned).
+
 ## 8. Risks
 
 - **Mapped files and external truncation**: a pack truncated while mapped faults the process (SIGBUS / an access violation). Packs are
@@ -429,7 +436,8 @@ deterministic packs keep those diffs small).
 ## 10. Decisions for the user
 
 1. **Codec**: LZ4 default with deflate as an option (recommended), or add zstd (needs a new crate: `zstd` (C, `cc`) or `ruzstd`
-   (pure Rust, decoder only; the build would still need an encoder)).
+   (pure Rust, decoder only; the build would still need an encoder)). Windows GPU decompression (GDeflate or DirectStorage zstd):
+   pending `CODEC-1` in `iron-directstorage-and-codecs.md`.
 2. **Encryption/obfuscation**: out of scope (recommended).
 3. **DLC policy**: DLC as extra `index.json` + packs under `dlc/<id>/`, mounted after base and patches, installed-ness decided by the
    platform (Steam's DLC folders, store APIs); can DLC override base assets (recommended yes, as patches do) or only add?

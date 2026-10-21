@@ -176,6 +176,19 @@ Differences to keep in mind:
 - [ ] Packs hold `IRTX` v1 (largest mip first) until step 12; no mip streaming before that.
 - [ ] `iron-build pack` needs a built `iron_app` for cooking until `crates/iron_cook` (step 15).
 - [ ] The in-crate LZ4 decoder reads at 0.9 to 1.9 GB/s; `lz4_flex` (same format, a new crate) would be about twice that.
+- [x] DirectStorage / codec research done (`docs/research/iron-directstorage-and-codecs.md`, 2026-10-21): decision: LZ4 stays the
+  default everywhere, zstd (codec 3) recommended as the second codec (needs the user's OK for the crate), xz/LZMA and Brotli out;
+  the Windows GPU codec (GDeflate as codec 4, or DirectStorage 1.4 zstd, still preview) is **pending**.
+- [ ] Next measurement: `CODEC-1` (plan step 17): headless D3D12 probe, cold cache, 2 GB photographic BC textures + 500 MB meshes:
+  CPU LZ4 on 8 threads vs DirectStorage stored/LZ4 (custom queue) vs GDeflate GPU vs zstd GPU, into wgpu buffers; add a GPU codec
+  only if it is 1.5x faster in wall time (or half the CPU time) with a pack at most 0.8x the LZ4 pack. Needs the user's OK for the
+  DirectStorage/`gdeflate`/`zstd` downloads.
+
+### End-of-project review (asset packs)
+
+- [ ] **Windows DirectStorage**: revisit `CODEC-1` once DirectStorage 1.4 is GA and vendor zstd drivers ship (announced for 2H 2026);
+  DirectStorage needs the DX12 backend while Iron defaults to Vulkan on Windows (decide the default, or Vulkan's
+  `VK_EXT_memory_decompression` GDeflate path instead); redistribute `dstorage.dll` / `dstoragecore.dll` under the SDK licence.
 
 ## Backlog
 
