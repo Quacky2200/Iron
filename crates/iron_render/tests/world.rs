@@ -3775,6 +3775,97 @@ fn real_world_units_pre_expose_light_too_bright_for_the_hdr_target() {
     );
 }
 
+// M7-FOG-13
+/// How much the haze changes from one frame to the next with the camera still under a
+/// grate's beams (all of it noise): the mean change in green over the frame (0..255).
+fn grate_shimmer(volumetric: iron_render::VolumetricFog) -> f32 {
+    let gpu = shared_gpu();
+    let size = (320, 160);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let mut world = WorldRenderer::new(&gpu);
+    world.shadow_distance = 30.0;
+    let frame = |i: usize| {
+        let mut v = grate_view(size, 20.0);
+        let turn = Mat4::IDENTITY;
+        let _ = i;
+        v.camera = WorldCamera::perspective(
+            (iron_core::glam::camera::rh::view::look_at_mat4(
+                Vec3::new(0.0, 1.5, 8.0),
+                Vec3::new(0.0, 3.0, 0.0),
+                Vec3::Y,
+            )
+            .inverse())
+                * turn,
+            60.0,
+            0.1,
+            60.0,
+            size,
+            Color::rgb(0.0, 0.0, 0.0),
+        );
+        if let Some(f) = v.fog.as_mut() {
+            f.volumetric = Some(volumetric);
+        }
+        v
+    };
+    let mut last: Vec<u8> = Vec::new();
+    let mut total = 0.0;
+    let mut count = 0;
+    for i in 0..90 {
+        world.render_views(&gpu, &rt, &[frame(i)], &[]);
+        if i >= 60 {
+            let pixels = target.read_pixels(&gpu).unwrap();
+            if !last.is_empty() {
+                let d: i64 = pixels
+                    .chunks(4)
+                    .zip(last.chunks(4))
+                    .map(|(a, b)| (a[1] as i64 - b[1] as i64).abs())
+                    .sum();
+                total += d as f32 / (size.0 * size.1) as f32;
+                count += 1;
+            }
+            last = pixels;
+        }
+    }
+    total / count as f32
+}
+
+#[test]
+fn more_history_and_samples_take_the_shimmer_out_of_fine_beams() {
+    use iron_render::{Denoising, VolumetricFog};
+    let base = VolumetricFog {
+        intensity: 0.25,
+        distance: 30.0,
+        detail: 2,
+        ..Default::default()
+    };
+    let none = grate_shimmer(VolumetricFog {
+        denoising: Denoising::None,
+        ..base
+    });
+    let both = grate_shimmer(base);
+    let smooth = grate_shimmer(VolumetricFog {
+        history_weight: 0.96,
+        samples: 4,
+        ..base
+    });
+    eprintln!("shimmer: none {none:.3}, both {both:.3}, history 0.96 x4 samples {smooth:.3}");
+    // Without denoising nothing moves (but beams step); with it, the default shimmers a
+    // little, and more history and samples take most of that out.
+    assert!(none < 0.005, "no jitter, no shimmer: {none}");
+    assert!(
+        smooth * 3.0 < both,
+        "more history and samples: {smooth} against {both}"
+    );
+}
+
 // M7-FOG-06
 #[test]
 fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {

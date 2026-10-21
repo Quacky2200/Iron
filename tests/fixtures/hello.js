@@ -2110,7 +2110,7 @@ ${err.stack}` : ""}`);
     { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true, volumetricFog: false, hdr: true, additionalLights: 8, additionalLightShadows: false },
     { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: 32, additionalLightShadows: false },
     { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
-    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "high", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true }
+    { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "medium", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true }
   ];
   var manifest = () => {
     const q = globalThis.__iron_info?.app?.quality;
@@ -2135,7 +2135,7 @@ ${err.stack}` : ""}`);
   var current = { ...levels[levelIndex] };
   function sendQuality() {
     const c = current;
-    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit, c.volumetricFog ?? true, c.hdr ?? true, c.additionalLights ?? -1, c.additionalLightShadows ?? true);
+    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 3 : c.softShadowQuality === "medium" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit, c.volumetricFog ?? true, c.hdr ?? true, c.additionalLights ?? -1, c.additionalLightShadows ?? true);
     remember();
   }
   function sendShadows() {
@@ -3465,7 +3465,7 @@ ${err.stack}` : ""}`);
     const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
     const v = volumetricFog;
     const a = v?.albedo;
-    const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"]] : null;
+    const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"], v.historyWeight ?? 0.9, v.samples ?? 1] : null;
     __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
   }
   var skybox = null;

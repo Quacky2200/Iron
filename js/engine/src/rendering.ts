@@ -1558,6 +1558,14 @@ export interface VolumetricFogSettings {
    * samples each frame afresh (beams through fine patterns step and shimmer).
    */
   denoising?: "none" | "reprojection" | "gaussian" | "both";
+  /**
+   * With reprojection, how much of each cell comes from earlier frames (0.9, Unreal's
+   * history weight): up to 0.98 is smoother still, but slower to follow a moving sun or
+   * camera.
+   */
+  historyWeight?: number;
+  /** Shadow samples per cell each frame, 1 to 8 (1): more is less noise, at that much the cost. */
+  samples?: number;
 }
 
 const DENOISING = { none: 0, reprojection: 1, gaussian: 2, both: 3 } as const;
@@ -1576,7 +1584,7 @@ function sendFog(): void {
   const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
   const v = volumetricFog;
   const a = v?.albedo;
-  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"]] : null;
+  const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"], v.historyWeight ?? 0.9, v.samples ?? 1] : null;
   __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
 }
 

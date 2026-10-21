@@ -1180,7 +1180,7 @@ impl WorldViews {
                         Some("hardOnly") => ShadowQuality::HardOnly,
                         _ => ShadowQuality::All,
                     },
-                    soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 2.0) as u32,
+                    soft_radius: num(4).unwrap_or(1.0).clamp(1.0, 3.0) as u32,
                     lod_bias: num(5).unwrap_or(1.0).max(0.01),
                     vsync: num(6).ok().is_none_or(|v| v >= 1.0),
                     anisotropic: match args.get(7).and_then(Value::as_str) {
@@ -1323,6 +1323,8 @@ impl WorldViews {
                                     2 => Denoising::Gaussian,
                                     _ => Denoising::Both,
                                 },
+                                history_weight: v.get(11).copied().unwrap_or(0.9).clamp(0.0, 0.98),
+                                samples: v.get(12).copied().unwrap_or(1.0).clamp(1.0, 8.0) as u32,
                             }
                         }),
                         cull: !matches!(args.get(8), Some(Value::Bool(false))),
@@ -2504,6 +2506,8 @@ mod tests {
                 sharp_samples: 32,
                 detail: 2,
                 denoising: Denoising::Both,
+                history_weight: 0.9,
+                samples: 1,
             })
         );
         views.apply("camera", &camera(Some(false))).unwrap();

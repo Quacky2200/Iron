@@ -630,6 +630,12 @@ pub struct VolumetricFog {
     pub detail: u8,
     /// How the volume's sampling noise is cleaned up (HDRP's denoising mode).
     pub denoising: Denoising,
+    /// With reprojection, how much of each cell comes from earlier frames (Unreal's history
+    /// weight, 0.9): higher is smoother, slower to follow a moving sun or camera.
+    pub history_weight: f32,
+    /// Shadow samples per cell each frame (1 to 8): more is less noise, at that many times
+    /// the volume's lighting cost.
+    pub samples: u32,
 }
 
 /// How the light volume's sampling is cleaned up (HDRP's volumetric denoising mode).
@@ -669,6 +675,8 @@ impl Default for VolumetricFog {
             sharp_samples: 32,
             detail: 2,
             denoising: Denoising::Both,
+            history_weight: 0.9,
+            samples: 1,
         }
     }
 }
@@ -3633,6 +3641,8 @@ impl WorldRenderer {
                             orthographic: view.camera.orthographic,
                             distance: v.distance.max(1e-3),
                             reprojection: v.denoising.temporal(),
+                            blend: 1.0 - v.history_weight.clamp(0.0, 0.98),
+                            samples: v.samples.clamp(1, 8),
                             lights: view
                                 .lights
                                 .iter()

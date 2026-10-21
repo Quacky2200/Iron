@@ -25,8 +25,6 @@ pub const SIZES: [(u32, u32, u32); 4] = [
     (480, 270, 128),
 ];
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-/// How much of each new frame goes into a cell: about the last 1 / BLEND frames count.
-const BLEND: f32 = 0.1;
 /// Where in its cell each frame samples: a Halton (2, 3, 5) sequence, so any run of frames
 /// spreads its samples evenly over the cell. Frame 0 takes the middle.
 const JITTER: usize = 64;
@@ -65,6 +63,10 @@ pub struct VolumeCamera {
     /// Blending with last frame's cells (`Denoising::temporal`); without it each frame
     /// samples the cells' middles and stands alone.
     pub reprojection: bool,
+    /// How much of each new frame goes into a cell (1 - the history weight).
+    pub blend: f32,
+    /// Shadow samples per cell each frame.
+    pub samples: u32,
 }
 
 /// `VolumeFrame` in world.wgsl.
@@ -75,6 +77,8 @@ struct GpuFrame {
     prev_camera: [f32; 4],
     prev_view_dir: [f32; 4],
     jitter: [f32; 4],
+    /// x: samples per cell.
+    samples: [f32; 4],
 }
 
 /// One view slot's textures and what it last held.
@@ -316,7 +320,9 @@ impl VolumePass {
         };
         // Without last frame's cells, this frame's stand alone.
         let (prev, blend) = match s.last {
-            Some(last) if last.lights == camera.lights && camera.reprojection => (last, BLEND),
+            Some(last) if last.lights == camera.lights && camera.reprojection => {
+                (last, camera.blend.clamp(0.02, 1.0))
+            }
             _ => (camera, 1.0),
         };
         let p = prev.position;
@@ -326,6 +332,7 @@ impl VolumePass {
             prev_camera: [p.x, p.y, p.z, f32::from(u8::from(prev.orthographic))],
             prev_view_dir: [f.x, f.y, f.z, prev.distance],
             jitter: [jx, jy, jz, blend],
+            samples: [camera.samples.max(1) as f32, 0.0, 0.0, 0.0],
         };
         gpu.queue
             .write_buffer(&s.frame, 0, bytemuck::bytes_of(&frame));

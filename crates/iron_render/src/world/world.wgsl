@@ -395,6 +395,8 @@ struct VolumeFrame {
     // xyz: where in each cell to sample (0..1); w: how much of this frame to keep (1: all,
     // no history).
     jitter: vec4<f32>,
+    // x: shadow samples per cell this frame.
+    samples: vec4<f32>,
 };
 @group(3) @binding(4) var<uniform> frame: VolumeFrame;
 
@@ -572,8 +574,15 @@ fn cs_volume_light(@builtin(global_invocation_id) id: vec3<u32>) {
     // moire bands; shifted, it's grain the blending smooths. The first frame (no history)
     // samples each cell's middle.
     let shift = select(vec3<f32>(0.0), cell_hash(id), blend < 1.0);
-    let at = cell_point((cell + fract(frame.jitter.xyz + shift)) / n);
-    var light = scattered_all(at.x, at.dir);
+    // More samples a frame: spread along an R3 sequence (evenly in 3D) from the first.
+    let count = max(1, i32(frame.samples.x));
+    var light = vec3<f32>(0.0);
+    for (var k = 0; k < count; k++) {
+        let r3 = vec3<f32>(0.8191725, 0.6710436, 0.5497005) * f32(k);
+        let at = cell_point((cell + fract(frame.jitter.xyz + shift + r3)) / n);
+        light += scattered_all(at.x, at.dir);
+    }
+    light /= f32(count);
     if (blend < 1.0) {
         let was = last_cell(cell_point((cell + 0.5) / n).x);
         if (all(was >= vec3<f32>(0.0)) && all(was <= vec3<f32>(1.0))) {
