@@ -3,7 +3,7 @@
 //! into a real `UiTree`. Each test runs normally and with a collection at every allocation.
 //! IDs are in TESTS.md (M9-TS-575..).
 use iron_core::NodeId;
-use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
 use iron_ts_tests::uic::*;
 use iron_ui::{ROOT, UiTree};
 use iron_ui_native::{Event, Runtime};
@@ -27,6 +27,10 @@ fn in_every_gc_mode(f: impl Fn()) {
     unsafe { ts_uic_init() };
     f();
     ts_rt_gc_enable(true);
+}
+
+fn text(s: *mut u8) -> String {
+    String::from_utf16_lossy(&unsafe { Str::from_raw(s as *const Str) }.to_utf16())
 }
 
 fn dump(tree: &UiTree, id: NodeId) -> String {
@@ -422,5 +426,40 @@ fn a_style_value_that_is_a_string_or_a_number_by_condition() {
         let b = ui.tree.children(ROOT)[0];
         ui.tree.layout_if_needed();
         assert_eq!(ui.tree.rect(b).unwrap().width, 50.0);
+    });
+}
+
+// M9-TS-2847
+//
+// A function that returns a number, a string, a class object, an object literal or an element is
+// a valid `onClick` (TypeScript lets any return type stand for `void`); the result is dropped,
+// also under a collection at every allocation.
+#[test]
+fn a_function_that_returns_a_value_is_an_event_handler() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_valueHandlersApp() });
+        let list = ui.tree.children(ROOT)[0];
+        let boxes: Vec<NodeId> = ui.tree.children(list).to_vec();
+        assert_eq!(boxes.len(), 7);
+        let before = text(unsafe { ts_uic_tapLogText() });
+        for b in &boxes {
+            ui.click(*b);
+            iron_ts_rt::ts_rt_gc_collect();
+        }
+        let after = text(unsafe { ts_uic_tapLogText() });
+        assert_eq!(after[before.len()..], *"nsmoenm");
+    });
+}
+
+// M9-TS-2848
+//
+// The same functions as callback arguments (`runTwice(f: () => void)`), as top-level functions and
+// as arrows.
+#[test]
+fn a_function_that_returns_a_value_is_a_void_callback() {
+    in_every_gc_mode(|| {
+        let s = text(unsafe { ts_uic_valueCallbacks() });
+        assert_eq!(s, "nnssmmooeemmoo:14");
     });
 }

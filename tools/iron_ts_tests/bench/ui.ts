@@ -336,3 +336,82 @@ export function listenerCount(): number {
 export function radiusApp(ball: boolean): UiElement {
   return <box style={{ width: 50, borderRadius: ball ? "50%" : 4 }} />;
 }
+
+// ---- functions that return a value where `() => void` is expected ----
+
+const tapLog: string[] = [];
+
+class Marker {
+  n = 0;
+}
+
+interface Info {
+  id: number;
+}
+
+function tapNumber(): number {
+  tapLog.push("n");
+  return 42;
+}
+
+function tapString(): string {
+  tapLog.push("s");
+  return "x" + tapLog.length;
+}
+
+function tapMarker(): Marker {
+  tapLog.push("m");
+  const m = new Marker();
+  m.n = tapLog.length;
+  return m;
+}
+
+function tapInfo(): Info {
+  tapLog.push("o");
+  return { id: tapLog.length };
+}
+
+function tapElement(): UiElement {
+  tapLog.push("e");
+  return <text>hi</text>;
+}
+
+function ValueHandlers(): UiElement {
+  return (
+    <box>
+      <box onClick={tapNumber} />
+      <box onClick={tapString} />
+      <box onClick={tapMarker} />
+      <box onClick={tapInfo} />
+      <box onClick={tapElement} />
+      <box onClick={() => tapNumber()} />
+      <box onClick={() => tapMarker()} />
+    </box>
+  );
+}
+
+export function valueHandlersApp(): UiElement {
+  return <ValueHandlers />;
+}
+
+export function tapLogText(): string {
+  return tapLog.join("");
+}
+
+function runTwice(f: () => void): void {
+  f();
+  f();
+}
+
+/** The same functions as callback arguments, with garbage made between the calls. */
+export function valueCallbacks(): string {
+  tapLog.length = 0;
+  runTwice(tapNumber);
+  runTwice(tapString);
+  runTwice(tapMarker);
+  runTwice(tapInfo);
+  runTwice(tapElement);
+  runTwice(() => tapMarker());
+  runTwice(() => tapInfo());
+  return tapLog.join("") + ":" + tapLog.length;
+}

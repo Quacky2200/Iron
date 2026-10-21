@@ -220,9 +220,9 @@ function App() {
       )}
       <text style={{ fontSize: 14, color: "#8fa0c0" }}>{`Selected: ${thingAt(pick).name} (y ${thingAt(pick).position[1]})`}</text>
       <box style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-        <Button label="Palette" onClick={() => openPalette()} />
+        <Button label="Palette" onClick={openPalette} />
         <Button label="New counter" onClick={openCounter} />
-        <Button label="Inspector" onClick={() => openInspector()} />
+        <Button label="Inspector" onClick={openInspector} />
         <Button label="Next object" onClick={() => select((selected + 1) % things.length)} />
       </box>
       <box style={{ backgroundColor: "#10141c", borderRadius: 8, padding: 10, gap: 4, flexGrow: 1, flexDirection: "column", alignItems: "flex-start" }}>

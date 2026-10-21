@@ -2,9 +2,13 @@
 
 use super::*;
 
-/// Can `a` stand for `g` because the caller's extra arguments are ignored?
+/// Can `a` stand for `g` because the caller's extra arguments are ignored, or because `g` returns
+/// `void` and the result of `a` is dropped (TypeScript allows any return type there)? Both are
+/// sound for the one scalar return register of the calling conventions the JIT targets: the
+/// caller of a `void` function never reads it, and the collector finds roots in frames, not in
+/// return registers.
 fn fn_ignores_extra(a: &FnTy, g: &FnTy) -> bool {
-    a.params.len() < g.params.len()
+    a.params.len() <= g.params.len()
         && (a.ret == g.ret || g.ret == Ty::Void)
         && a.params.iter().zip(&g.params).all(|(x, y)| x == y)
 }
