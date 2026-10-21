@@ -385,41 +385,68 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   fog to it out to the far plane, so the horizon sinks into the fog. Match the camera's background colour
   to `fogColor` for a seamless horizon with distance fog alone.
 - **Light shafts.** `RenderSettings.volumetricFog` (`{ intensity, anisotropy, steps, distance }`, defaults
-  1, 0.4, 4, 50; `null` by default, used only while `fog` is on, saved with scenes) sends an eighth
-  `render.fog` argument (anisotropy clamped to +-0.95, steps to 1..16) and sets `Fog.volumetric:
+  1, 0.4, 4, 50, plus an optional `albedo` colour, white by default; `null` by default, used only while
+  `fog` is on, saved with scenes) sends an eighth `render.fog` argument, `[intensity anisotropy steps
+  distance r g b]` (albedo optional; anisotropy clamped to +-0.95, steps to 1..16), and sets `Fog.volumetric:
   Option<VolumetricFog>` and `GpuGlobals.fog_volume` (x intensity, y anisotropy, z steps, w reach; 0 off).
   `volume.rs` (`VolumePass`) owns a 240x135x64 `Rgba16Float` 3D texture per view slot. Once per view with
   shafts, before the render pass, the compute entry `cs_volume` (8x8 workgroups, one thread per screen
   cell) walks the cell's view ray. Slices are spaced by the square of their index out to the reach
   (`slice_distance(w) = reach * w * w`), with `steps` sub-samples per slice. Each sample adds the drop in
   `fog_clear` times `scattered_all` and the running total is stored at each slice centre. `scattered_all`
-  sums every light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): falloff, spot cone, a hard
+  sums every directional light with `Light.volumetricIntensity` > 0 (in `GpuLight.color.w`): a hard
   shadow (`sun_shadow` / `local_shadow` with PCF radius 0), times `phase(cos)` (Henyey-Greenstein,
-  isotropic = 1). The pass binds the view's globals (dynamic offset), the lighting group and a write-only
+  isotropic = 1). Only directional lights are in the volume: spot and point lights are worked out per pixel
+  (below). The pass binds the view's globals (dynamic offset), the lighting group and a write-only
   storage texture at group 3 binding 1, so the globals and shadow group layouts are visible to COMPUTE.
   Draws read the volume through group 3 (binding 0 `texture_3d`, binding 2 a linear sampler; the world
   pipeline layout has this fourth group) in `shafts(p, px, distance)`: a sample at the screen uv and
   `sqrt(min(len, last) / reach)`. Past the last slice the sun lights the rest of the fog as at its middle.
-  The result is tinted by the fog colour (its albedo) and scaled by `intensity`. Views without shafts bind
+  The result is tinted by `albedo` (`VolumetricFog.albedo`, `GpuGlobals.fog_albedo`) and scaled by
+  `intensity`. The albedo is separate from the fog colour, which is how the fog looks in ambient light: a
+  night fog can be dark yet glow white under a lamp. Views without shafts bind
   `VolumePass::empty()`, a black 1-texel volume. `fs_fill` adds shafts to the background only when height
   fog is on. The cost doesn't depend on overdraw.
+- **Spot and point shafts.** The volume's cells are several pixels wide, which blurred spot cones, so
+  spot and point lights light the fog per pixel. `local_shafts(eye, dir, len, distance)` finds each such
+  light's stretch of the view ray: inside its range sphere and, for a spot, its cone (a quadratic), so the
+  cone has sharp edges up to its tip and a point light a round glow. Up to three stretches (before, inside
+  and after the cone) are tested at their middles; each lit one gets 12 fixed samples
+  (`LOCAL_SHAFT_SAMPLES`). The fog's transmittance (`media_clear`: distance and height fog and the
+  volumes) is taken at the stretch's ends and shared evenly between the samples. `shafts` adds the result
+  to the volume's.
 - **Fog volumes.** `FogVolume` (a component; size default 10x2x10, `density` 0.5, `color` (0.75, 0.78, 0.82),
   `blendDistance` 1) is a box of fog in its own colour: mist over a pond, smoke in a room. It sends
   `render.fogVolume` and follows its object's position and scale (world-aligned; rotation is ignored).
   Each camera gets the 8 nearest volumes (`MAX_FOG_VOLUMES`) its layers show, none when `Camera.fog` is
   off, as `WorldView.fog_volumes: Vec<FogVolume { centre, half_extents, density, color, blend }>`.
   `render.remove` and destroyed objects drop them. `GpuGlobals.fog_local` (x count) and `local_fogs`
-  (`GpuFogVolume`: centre + density, half extents + blend, colour) carry them to the shader.
+  (`GpuFogVolume`: centre + density, half extents + blend, colour; colour w = 1 for an ellipsoid) carry
+  them to the shader. `shape` (`"box"` by default, or `"ellipsoid"`; `render.fogVolume` seventh argument,
+  `FogVolume.ellipsoid`) makes a soft round blob inside the box, with the edge fade measured in from the
+  ellipsoid's surface.
   `local_fog_clear(a, b, i)` finds with a slab test where the view segment crosses the box, then takes 8
   fixed samples of `density` times a smoothstep edge fade over `blend` metres, so it is smooth from pixel
   to pixel. `local_clear` multiplies the volumes together, and `through_volumes` applies each in its own
-  colour after the global fog in `fogged`, and in `fs_fill` for the background. They work without
+  colour after the global fog in `fogged`, and in `fs_fill` for the background. Lit fog (the shafts)
+  is added last, after the volumes, so a lamp glows in its mist rather than being darkened by it. They work without
   `RenderSettings.fog`. `cs_volume` multiplies `local_clear` into its transmittance, so light shafts
   light the volumes.
+- **Culling.** `Fog.cull` (`RenderSettings.fogCulling`, default on; the ninth `render.fog` argument)
+  skips what the distance fog hides completely. `Fog::cull_distance()` is the linear end, `ln(255) /
+  density` (exponential) or `sqrt(ln 255) / density` (squared): under one 8-bit step gets through.
+  `cull::FogReach` tests a world box against it: perspective cameras by the distance to the box's nearest
+  point, orthographic ones by depth. Meshes, quads and point/spot lights wholly past it are skipped and
+  counted in `WorldStats::fog_culled`. Height fog and fog volumes never cull. With a background unlike the
+  fog colour, culled things would have been fog-coloured silhouettes, so turn culling off there.
+  Scripts read `RenderStats` (`meshes`, `culledMeshes`, `quads`, `culledQuads`, `fogCulled`, `lights`,
+  `culledLights`, `shadowMaps`); `main.rs` calls `__iron_render_stats` with them each frame they change.
 - **Left clear.** The editor grid and gizmo lines.
 
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
-and a lamp post, showing every kind of fog (menu or keys F, H, L, Q).
+and a lamp post, showing every kind of fog (menu or keys F, H, L, Q). `examples/fog-teapots` (teapots
+fading into fog), `fog-raider` (a PS1-style scene, renamed from `fog-ps1`), `fog-blocks` (a block hill in
+fog and cloud) and `fog-park` (a Victorian park in the fog) show it in scenes.
 
 ## Render textures
 
@@ -482,8 +509,8 @@ Screenshot runs and window frames both go through `draw_frame`.
 | `render.particles`, `render.particleControl` | see [particles.md](particles.md) |
 | `render.texture`, `render.textureRemove`, `render.model` | see [assets-and-models.md](assets-and-models.md) |
 | `render.ambient` | `0 [r g b]` |
-| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance]\|null`, or `0 null` for clear air |
-| `render.fogVolume` | `component object [sx sy sz] density [r g b] blendDistance` |
+| `render.fog` | `0 mode(linear\|exponential\|exponentialSquared) [r g b] density start end [heightDensity baseHeight falloff]\|null [intensity anisotropy steps distance [r g b]]\|null cull`, or `0 null` for clear air |
+| `render.fogVolume` | `component object [sx sy sz] density [r g b] blendDistance shape(box\|ellipsoid)` |
 | `render.sky` | `0 [zenith rgb] [horizon rgb] [ground rgb] [sun dir xyz]\|null [sun rgb] sunSize intensity ambientFromSky`, or `0 null` for none |
 | `render.mirror` | `component object [nx ny nz] cullingMask` (local plane normal) |
 | `render.probe`, `render.probeRender` | `component object [sx sy sz] resolution boxProjection everyFrame cullingMask`; `component` (render again next frame) |
@@ -777,7 +804,7 @@ monitor quad) and `-20` (cascades, a spot light and a point light; it also check
 Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
 `js/engine/test`.
-Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit).
+Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
 (per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
 in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
