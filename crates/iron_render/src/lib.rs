@@ -20,11 +20,11 @@ pub use world::{
     DEFAULT_PARTICLE_TEXTURE, ExposureReading, FillRule, FillVertex, Fog, FogMode, FogVolume,
     GizmoLine, Grading, HeightFog, Light, LightKind, MAX_CURVE_POINTS, MAX_FOG_VOLUMES,
     MISSING_TEXTURE, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering, Mirror,
-    PRIMITIVE_BASE, PRIMITIVES, Projection, RENDER_TEXTURE_FORMAT, ReflectionProbe, RenderMode,
-    ShadowQuality, Shadows, ShapeRun, Sky, Stroke, TexelFormat, TextureData, TextureFilter,
-    TextureWrap, Tonemapping, VolumetricFog, WorldCamera, WorldQuad, WorldRenderer, WorldStats,
-    WorldTexture, WorldView, in_mask, mip_chain, primitive, primitive_id, tessellate_fill,
-    viewport_size,
+    PRIMITIVE_BASE, PRIMITIVES, PipelineFeatures, Projection, RENDER_TEXTURE_FORMAT,
+    ReflectionProbe, RenderMode, RenderPipeline, ShadowQuality, Shadows, ShapeRun, Sky, Stroke,
+    TexelFormat, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog, WorldCamera,
+    WorldQuad, WorldRenderer, WorldStats, WorldTexture, WorldView, in_mask, mip_chain, primitive,
+    primitive_id, tessellate_fill, viewport_size,
 };
 
 /// A linear RGBA colour.

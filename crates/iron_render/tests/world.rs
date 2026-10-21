@@ -3639,6 +3639,63 @@ fn a_soft_floor_and_a_curve_keep_dark_places_darker_than_full_adaptation() {
     assert!(curved < full - 20, "curve {curved}, full {full}");
 }
 
+// M7-RP-02
+#[test]
+fn the_universal_pipeline_leaves_out_auto_exposure_and_shafts_and_caps_lights() {
+    use iron_render::{
+        AutoExposure, Fog, FogMode, Light, LightKind, RenderPipeline, VolumetricFog,
+    };
+    let size = (64, 48);
+    let dim = [flat_view(0.01, [0.0, 0.0, 1.0, 1.0], 0)];
+    let render = |pipeline: RenderPipeline, auto: bool| {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.pipeline = pipeline;
+        if auto {
+            world.grading = auto_grading(AutoExposure::default());
+        }
+        exposure_frames(&mut world, size, &dim, 120)[0]
+    };
+    let plain = render(RenderPipeline::BuiltIn, false);
+    // Built-in brightens the dim view; URP leaves it as the manual exposure shows it.
+    assert!(render(RenderPipeline::BuiltIn, true) > plain + 40);
+    assert!((render(RenderPipeline::Universal, true) - plain).abs() <= 2);
+
+    // Forty point lights in view: URP draws the nearest 32 (no directional: no main light).
+    let mut lit = flat_view(0.01, [0.0, 0.0, 1.0, 1.0], 0);
+    lit.lights = (0..40)
+        .map(|i| Light {
+            kind: LightKind::Point,
+            color: [1.0, 1.0, 1.0],
+            position: Vec3::new(
+                (i % 8) as f32 - 3.5,
+                (i / 8) as f32 - 2.0,
+                -6.0 - i as f32 * 0.1,
+            ),
+            direction: Vec3::NEG_Z,
+            range: 1.0,
+            shadows: None,
+            culling_mask: ALL_LAYERS,
+            volumetric: 1.0,
+        })
+        .collect();
+    // Light shafts asked for: URP renders as without them.
+    lit.fog = Some(Fog {
+        mode: FogMode::Exponential,
+        color: [0.0, 0.0, 0.0],
+        density: 0.05,
+        volumetric: Some(VolumetricFog::default()),
+        ..Default::default()
+    });
+    let lights = |pipeline: RenderPipeline| {
+        let mut world = WorldRenderer::new(&shared_gpu());
+        world.pipeline = pipeline;
+        exposure_frames(&mut world, size, std::slice::from_ref(&lit), 1);
+        world.stats().lights
+    };
+    assert_eq!(lights(RenderPipeline::BuiltIn), 40);
+    assert_eq!(lights(RenderPipeline::Universal), 32);
+}
+
 // M7-FOG-06
 #[test]
 fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {

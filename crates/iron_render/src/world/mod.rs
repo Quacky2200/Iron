@@ -15,6 +15,7 @@ pub mod environment;
 mod fill;
 mod fxaa;
 pub mod mesh;
+pub mod pipeline;
 mod shadows;
 pub mod texture;
 mod upscale;
@@ -33,6 +34,7 @@ pub use bloom::{
 pub use environment::Sky;
 pub use fill::{FillRule, tessellate_fill};
 pub use mesh::{MeshData, primitive};
+pub use pipeline::{PipelineFeatures, RenderPipeline};
 use texture::SamplerKey;
 pub use texture::{
     Anisotropic, CookedTexture, TexelFormat, TextureData, TextureFilter, TextureWrap, mip_chain,
@@ -1138,6 +1140,8 @@ pub struct WorldRenderer {
     bloom_pass: Option<bloom::BloomPass>,
     /// Exposure and tonemapping over every view.
     pub grading: Grading,
+    /// Which features run (Unity's render pipelines; the project's choice).
+    pub pipeline: RenderPipeline,
     /// Made the first time a view asks for FXAA.
     fxaa: Option<fxaa::Fxaa>,
 }
@@ -1575,6 +1579,7 @@ impl WorldRenderer {
             bloom: None,
             bloom_pass: None,
             grading: Grading::default(),
+            pipeline: RenderPipeline::BuiltIn,
             fxaa: None,
         };
         for (i, name) in PRIMITIVES.iter().enumerate() {
@@ -1683,6 +1688,15 @@ impl WorldRenderer {
     /// What the last [`WorldRenderer::render_views`] drew and what culling skipped.
     pub fn stats(&self) -> WorldStats {
         self.stats
+    }
+
+    /// `fog` as the pipeline runs it: without its light shafts where they're not supported.
+    fn pipeline_fog(&self, fog: Option<Fog>) -> Option<Fog> {
+        let shafts = self.pipeline.features().volumetric_fog;
+        fog.map(|f| Fog {
+            volumetric: f.volumetric.filter(|_| shafts),
+            ..f
+        })
     }
 
     /// Camera `key`'s exposure as last read back from the GPU (a frame or two late; None
@@ -2919,7 +2933,11 @@ impl WorldRenderer {
             area(&views[a]).total_cmp(&area(&views[b]))
         });
         let fxaa = final_pass && main.is_some_and(|m| views[m].fxaa);
-        let grading = self.grading;
+        let mut grading = self.grading;
+        // Pipelines without auto exposure (URP) keep the manual one.
+        if !self.pipeline.features().auto_exposure {
+            grading.auto_exposure = None;
+        }
         // Auto exposure fading out keeps the pass going until it has.
         let fading = self.bloom_pass.as_ref().is_some_and(|b| b.fading());
         let post = final_pass && (bloom.is_some() || fxaa || fading || !grading.is_identity());
@@ -3207,7 +3225,7 @@ impl WorldRenderer {
                 }
             }
             // Point and spot lights whose range doesn't reach the view are left out.
-            let kept: Vec<usize> = view
+            let mut kept: Vec<usize> = view
                 .lights
                 .iter()
                 .enumerate()
@@ -3223,6 +3241,29 @@ impl WorldRenderer {
                 })
                 .map(|(i, _)| i)
                 .collect();
+            // The pipeline's cap (URP's): the main light (the brightest directional one) and
+            // the nearest others.
+            let cap = self.pipeline.features().max_additional_lights;
+            if kept.len() > cap.saturating_add(1) {
+                let strength = |k: &usize| view.lights[*k].color.iter().sum::<f32>();
+                let main = kept
+                    .iter()
+                    .copied()
+                    .filter(|&k| view.lights[k].kind == LightKind::Directional)
+                    .max_by(|a, b| strength(a).total_cmp(&strength(b)));
+                let eye = view.camera.position;
+                let mut others: Vec<usize> =
+                    kept.iter().copied().filter(|&k| Some(k) != main).collect();
+                others.sort_by(|&a, &b| {
+                    let d = |k: usize| match view.lights[k].kind {
+                        LightKind::Directional => 0.0,
+                        _ => view.lights[k].position.distance_squared(eye),
+                    };
+                    d(a).total_cmp(&d(b))
+                });
+                others.truncate(cap);
+                kept = main.into_iter().chain(others).collect();
+            }
             let drawn = opaque_runs
                 .iter()
                 .chain(blended.iter().filter(|(mesh, _)| *mesh).map(|(_, r)| r))
@@ -3395,7 +3436,7 @@ impl WorldRenderer {
                 view_dir: [f.x, f.y, f.z, f32::from(u8::from(view.camera.orthographic))],
                 ..Zeroable::zeroed()
             };
-            globals.set_fog(view.fog.as_ref());
+            globals.set_fog(self.pipeline_fog(view.fog).as_ref());
             globals.set_fog_volumes(&view.fog_volumes);
             gpu.queue.write_buffer(
                 &self.globals,
@@ -3525,37 +3566,41 @@ impl WorldRenderer {
             .collect();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         // Views with light shafts fill their fog volumes first.
+        let shafts = self.pipeline.features().volumetric_fog;
         let volume_groups: Vec<Option<wgpu::BindGroup>> = views
             .iter()
             .enumerate()
             .map(|(i, view)| {
-                view.fog.and_then(|f| f.volumetric).map(|v| {
-                    let camera = volume::VolumeCamera {
-                        view_proj: view.camera.view_proj,
-                        position: view.camera.position,
-                        forward: view.camera.forward,
-                        orthographic: view.camera.orthographic,
-                        distance: v.distance.max(1e-3),
-                        lights: view
-                            .lights
-                            .iter()
-                            .filter(|l| l.kind == LightKind::Directional && l.volumetric > 0.0)
-                            .fold(u64::from(self.shadow_plan.cascades), |k, l| {
-                                k.wrapping_mul(4)
-                                    .wrapping_add(1 + u64::from(l.shadows.is_some()))
-                            }),
-                    };
-                    self.volume.encode(
-                        gpu,
-                        &mut encoder,
-                        i,
-                        volume::SIZES[usize::from(v.detail.min(3))],
-                        camera,
-                        &globals_groups[i],
-                        (self.stride * i as u64) as u32,
-                        &shadow_group,
-                    )
-                })
+                view.fog
+                    .and_then(|f| f.volumetric)
+                    .filter(|_| shafts)
+                    .map(|v| {
+                        let camera = volume::VolumeCamera {
+                            view_proj: view.camera.view_proj,
+                            position: view.camera.position,
+                            forward: view.camera.forward,
+                            orthographic: view.camera.orthographic,
+                            distance: v.distance.max(1e-3),
+                            lights: view
+                                .lights
+                                .iter()
+                                .filter(|l| l.kind == LightKind::Directional && l.volumetric > 0.0)
+                                .fold(u64::from(self.shadow_plan.cascades), |k, l| {
+                                    k.wrapping_mul(4)
+                                        .wrapping_add(1 + u64::from(l.shadows.is_some()))
+                                }),
+                        };
+                        self.volume.encode(
+                            gpu,
+                            &mut encoder,
+                            i,
+                            volume::SIZES[usize::from(v.detail.min(3))],
+                            camera,
+                            &globals_groups[i],
+                            (self.stride * i as u64) as u32,
+                            &shadow_group,
+                        )
+                    })
             })
             .collect();
         {

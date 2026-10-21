@@ -32,6 +32,9 @@ pub struct Manifest {
     /// `iron.runInBackground`: keep running while the window is in the background
     /// (Unity's `Application.runInBackground`, off by default).
     pub run_in_background: bool,
+    /// `iron.renderPipeline` (Unity's render pipelines): `builtin` (the default),
+    /// `universal` / `urp` or `hd` / `hdrp`.
+    pub render_pipeline: iron_render::RenderPipeline,
 }
 
 impl Manifest {
@@ -72,6 +75,13 @@ impl Manifest {
             start_scene: text(&iron["startScene"]),
             display: iron["display"].clone(),
             run_in_background: iron["runInBackground"].as_bool().unwrap_or(false),
+            render_pipeline: match iron["renderPipeline"].as_str() {
+                None => iron_render::RenderPipeline::BuiltIn,
+                Some(p) => iron_render::RenderPipeline::parse(p).unwrap_or_else(|| {
+                    tracing::warn!("iron.renderPipeline `{p}`: not builtin, universal or hd");
+                    iron_render::RenderPipeline::BuiltIn
+                }),
+            },
             name,
         }
     }
@@ -114,6 +124,7 @@ impl Info {
                 "layers": manifest.layers,
                 "startScene": manifest.start_scene,
                 "runInBackground": manifest.run_in_background,
+                "renderPipeline": manifest.render_pipeline.name(),
                 "targetFrameRate": -1,
                 "isEditor": super::editor::ENABLED,
                 "project": super::editor::project().map(|p| p.to_string_lossy().into_owned()),
@@ -224,6 +235,29 @@ mod tests {
         assert!(script.contains("\"productName\":\"Fox Run\""));
         assert!(script.contains("\"graphicsDeviceName\":\"Test GPU\""));
         assert!(script.contains("\"processorCount\":"));
+    }
+
+    // M7-RP-01
+    #[test]
+    fn the_render_pipeline_comes_from_the_manifest() {
+        use iron_render::RenderPipeline;
+        let pipeline = |v: Value| {
+            Manifest::from_json(&json!({ "iron": { "renderPipeline": v } }), "g").render_pipeline
+        };
+        assert_eq!(pipeline(json!("URP")), RenderPipeline::Universal);
+        assert_eq!(pipeline(json!("hdrp")), RenderPipeline::HighDefinition);
+        // Missing or unknown: Built-in.
+        assert_eq!(
+            Manifest::from_json(&Value::Null, "g").render_pipeline,
+            RenderPipeline::BuiltIn
+        );
+        assert_eq!(pipeline(json!("lwrp")), RenderPipeline::BuiltIn);
+        let script = Info::new(&Manifest::from_json(
+            &json!({ "iron": { "renderPipeline": "universal" } }),
+            "g",
+        ))
+        .script();
+        assert!(script.contains("\"renderPipeline\":\"universal\""));
     }
 
     // M5-APP-09

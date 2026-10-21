@@ -601,6 +601,11 @@ impl WorldViews {
 
     /// A texture that failed to load: sprites using it draw the renderer's missing
     /// checker (an 8 × 8 texel image) in its place.
+    /// Whether the game asked for light shafts (`RenderSettings.volumetricFog`).
+    pub fn uses_volumetric_fog(&self) -> bool {
+        self.fog.is_some_and(|f| f.volumetric.is_some())
+    }
+
     /// The ids of every camera, for reading their exposure back.
     pub fn camera_ids(&self) -> Vec<u32> {
         self.cameras.keys().copied().collect()

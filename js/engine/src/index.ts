@@ -70,6 +70,7 @@ export {
 export { type Gamepad, type InputEvents, input, type KeyEvent } from "./input.ts";
 export { Cursor, CursorLockMode } from "./cursor.ts";
 export { type QualityLevel, QualitySettings, type ShadowQualityMode } from "./quality.ts";
+export { GraphicsSettings, type RenderPipelineName } from "./graphics.ts";
 export { type InstantiateOptions, Model } from "./models.ts";
 export { LayerMask } from "./layers.ts";
 export { _loadingGame, _onHotEnd } from "./hot.ts";

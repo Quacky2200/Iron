@@ -312,6 +312,8 @@ fn run() -> Result<()> {
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, args.screenshot.is_some()),
+        pipeline: manifest.render_pipeline,
+        pipeline_warned: (false, false),
         frames: 0,
         screenshot: args.screenshot.map(|path| (path, args.frames)),
         done: false,
@@ -485,6 +487,10 @@ struct App {
     custom_cursor: Option<CustomCursorRequest>,
     /// The game's manifest and the machine, as scripts see them (`__iron_info`).
     info: info::Info,
+    /// The project's render pipeline, and whether it has warned about a feature it lacks
+    /// (light shafts, auto exposure) yet.
+    pipeline: iron_render::RenderPipeline,
+    pipeline_warned: (bool, bool),
     /// Scripts' `Cursor`: shown or not, how it's held, and their default image.
     script_cursor: ScriptCursor,
     /// Whether the window has focus (raw mouse motion only counts then).
@@ -1633,6 +1639,7 @@ impl App {
         for id in self.world_view.exposure_resets.drain(..) {
             gfx.world.reset_exposure(id);
         }
+        warn_pipeline(self.pipeline, &mut self.pipeline_warned, &self.world_view);
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,
@@ -1741,7 +1748,9 @@ impl PlatformApp for App {
                 }
                 let mut renderer = UiRenderer::new(&gpu);
                 renderer.set_asset_root(&self.asset_root);
-                let world = WorldRenderer::new(&gpu);
+                let mut world = WorldRenderer::new(&gpu);
+                world.pipeline = self.pipeline;
+                tracing::info!(pipeline = self.pipeline.name(), "render pipeline");
                 self.gfx = Some(Gfx {
                     gpu,
                     surface,
@@ -2058,6 +2067,7 @@ impl PlatformApp for App {
         for id in self.world_view.exposure_resets.drain(..) {
             gfx.world.reset_exposure(id);
         }
+        warn_pipeline(self.pipeline, &mut self.pipeline_warned, &self.world_view);
         (
             gfx.world.shadow_distance,
             gfx.world.shadow_resolution,
@@ -2415,6 +2425,25 @@ fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &
         load_font(ui, root, &face.family, &face.src, face.weight, face.italic);
     }
     added.id
+}
+
+/// Says once in the log when the game asks for something its render pipeline doesn't run
+/// (URP has no light shafts or auto exposure): it's left out, as Unity does.
+fn warn_pipeline(
+    pipeline: iron_render::RenderPipeline,
+    warned: &mut (bool, bool),
+    world: &world_view::WorldViews,
+) {
+    let features = pipeline.features();
+    let name = pipeline.name();
+    if !features.volumetric_fog && !warned.0 && world.uses_volumetric_fog() {
+        warned.0 = true;
+        tracing::warn!("RenderSettings.volumetricFog: the {name} pipeline has no light shafts");
+    }
+    if !features.auto_exposure && !warned.1 && world.grading.auto_exposure.is_some() {
+        warned.1 = true;
+        tracing::warn!("RenderSettings.autoExposure: the {name} pipeline has no auto exposure");
+    }
 }
 
 #[cfg(test)]

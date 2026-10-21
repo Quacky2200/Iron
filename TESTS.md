@@ -504,6 +504,8 @@ layout pass):
 | M7-EXP-04 | Integration + JS unit | Auto exposure blends with the manual exposure (`Grading.fixed_ev`, `transition`): turned off, it's halfway between adapted and manual half a transition later and manual after it; `fixedExposure` / `exposureTransition` / `freezeExposure()` ride on `render.post`. |
 | M7-EXP-05 | Integration + JS unit | Scripts read each camera's exposure back (`WorldRenderer::exposure`, `__iron_exposure` → `Camera.exposure` / `sceneBrightness`): a flat 0.05 view meters and is shown at EV100 log2(0.4); a reset (`reset_exposure`, `Camera.resetExposure()`) makes a cut to a bright view show settled at once where without it it dazzles. |
 | M7-EXP-06 | Integration + JS unit | A soft floor (`dark_adaptation` / `dark_below`) and a compensation curve keep a very dark view darker than full adaptation; `QualitySettings.autoExposure` (the player's switch) turns auto exposure off and on. |
+| M7-RP-01 | Unit + JS unit | Render pipelines (Unity's): `iron.renderPipeline` in the manifest (`builtin`, `universal` / `urp`, `hd` / `hdrp`; missing or unknown: Built-in) reaches the renderer and scripts (`GraphicsSettings.renderPipeline`, `supportsVolumetricFog`, `supportsAutoExposure`, `maxAdditionalLights`). |
+| M7-RP-02 | Integration | The Universal pipeline leaves out auto exposure (a dim view stays as the manual exposure shows it) and light shafts, and draws the nearest 32 lights besides the main one where Built-in draws all 40. |
 
 ---
 
