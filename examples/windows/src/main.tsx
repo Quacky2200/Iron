@@ -1,7 +1,7 @@
 // Windows showcase: a main window with a small UI, owned tool windows (a palette and counters,
 // keyed so they survive a hot reload) and an isolated Inspector window with no parent. The
-// Inspector shares nothing with the main window: it hears the selected object through
-// postMessage / onMessage, asks for it with request, and sends edits back the same way.
+// Inspector shares nothing with the main window: it hears the selected object through named
+// events (emit / on), asks for it with ask / answer, and sends edits back with emit.
 // Where windows cannot exist (phones, web) Window.isSupported is false and the UI says so.
 
 interface Thing {
@@ -19,8 +19,8 @@ function thingAt(i: number): Thing {
   return things[i] ?? { name: "?", position: [0, 0, 0] };
 }
 
-type ToInspector = { kind: "select"; thing: Thing };
-type ToMain = { kind: "edit"; name: string; y: number };
+// The payload of the "edit" event.
+type Edit = { name: string; y: number };
 
 const palette: IronStyle = { backgroundColor: "#181d27", color: "#e6ebf5", flexDirection: "column", padding: 14, gap: 10 };
 
@@ -66,22 +66,20 @@ function select(i: number): void {
   for (const f of selectionListeners) f();
   const inspector = Window.find("inspector");
   if (inspector !== undefined) {
-    const msg: ToInspector = { kind: "select", thing: thingAt(i) };
-    inspector.postMessage(msg);
+    inspector.emit("select", thingAt(i));
   }
 }
 
 // The Inspector's edits arrive here, in the main window's domain.
-Window.main.onMessage<ToMain>((from, m) => {
-  if (m.kind !== "edit") return;
+Window.main.on("edit", (m: Edit, from: Window) => {
   for (const t of things) if (t.name === m.name) t.position[1] = m.y;
   note(`edit from window ${from.handle}: ${m.name}.y = ${m.y}`);
   select(selected);
 });
 // ...and so does its first question, "what is selected?".
-Window.main.onRequest<{ kind: string }, number>((from, req, reply) => {
-  note(`request "${req.kind}" from window ${from.handle}`);
-  reply(selected);
+Window.main.answer("selected", (): Thing => {
+  note(`"selected" asked`);
+  return thingAt(selected);
 });
 
 // ---- Tool windows: owned by the main window, kept by key across reloads -----------------------------
@@ -150,15 +148,13 @@ function Inspector() {
   const [status, setStatus] = useState("asking the main window...");
   useEffect(() => {
     // These run in the Inspector's domain; Window.current is the Inspector.
-    Window.current.onMessage<ToInspector>((from, m) => {
-      if (m.kind === "select") {
-        setThing(m.thing);
-        setStatus(`selected by window ${from.handle}`);
-      }
+    Window.current.on("select", (picked: Thing, from: Window) => {
+      setThing(picked);
+      setStatus(`selected by window ${from.handle}`);
     });
-    Window.main.request<number>({ kind: "selected" }).then(
-      (index) => {
-        setThing(thingAt(index));
+    Window.main.ask<Thing>("selected").then(
+      (answer) => {
+        setThing(answer);
         setStatus("answered by the main window");
       },
       (e: Error) => setStatus(`no answer: ${e.message}`),
@@ -166,8 +162,8 @@ function Inspector() {
   }, []);
   const send = (dy: number) => {
     if (thing === null) return;
-    const msg: ToMain = { kind: "edit", name: thing.name, y: Math.round((thing.position[1] + dy) * 10) / 10 };
-    Window.main.postMessage(msg);
+    const edit: Edit = { name: thing.name, y: Math.round((thing.position[1] + dy) * 10) / 10 };
+    Window.main.emit("edit", edit);
   };
   return (
     <box style={{ ...palette, flexGrow: 1 }}>

@@ -110,7 +110,7 @@ the window in.
 
 ## Messages
 
-Windows exchange data with `postMessage`, `onMessage`, `request` / `onRequest` and `Window.broadcast`.
+Windows exchange data with `postMessage`, `onMessage`, `request` / `onRequest` and `Window.broadcast`, or with named events (`emit` / `on` / `ask` / `answer`, below).
 
 ```ts
 // Sender
@@ -134,9 +134,50 @@ Window.current.onRequest<{ kind: string }, number>((from, req, reply) => reply(3
   next dispatch. Order is kept per sender. A message to a window that closes before delivery is dropped.
 - **Requests:** `request` resolves with the reply, and rejects with an `Error` when the window closes, when its domain has no
   `onRequest` listener at delivery, or after the timeout. A listener may reply later; a second `reply` is ignored.
-- Compiled games: the reply type of `request<R>` must be a type the compiler can name at the call (a number, string or an
-  object literal type); a program's own interface as `R` is not accepted yet, so reply with an index or a primitive (as
-  `examples/windows` does) and look the object up locally.
+- Compiled games: the type argument decodes the payload: `request<R>`, `postMessage` / `onMessage<T>` and `onRequest<T, R>` accept
+  a program's own interface or type alias, an object literal type, arrays and nested objects (no handles, functions, `Map` or
+  `Set`); the compiler refuses anything else with the path to the field.
+
+### Named events
+
+For "something happened" and "tell me X", name the message instead of switching on a `kind` field. Named events are sugar over the
+raw messages above: `emit` is a `postMessage`, `on` an `onMessage` that only runs for its name, `ask` a `request`, `answer` an
+`onRequest` for its name.
+
+```ts
+interface Thing { name: string; position: [number, number, number] }
+
+// Main window
+Window.main.answer("selected", (): Thing => thingAt(selected));               // the return value is the reply
+Window.main.on("edit", (e: { name: string; y: number }, from: Window) => { /* from is the sender */ });
+inspector.emit("select", thingAt(2));                                       // payload is optional: emit("close-all")
+Window.emitAll("theme", { dark: true });                                     // broadcast of a named event
+
+// Inspector (another domain)
+const t = Window.current.on("select", (thing: Thing) => setThing(thing));   // a token, like every listener
+Window.current.off(t);
+const thing = await Window.main.ask<Thing>("selected");                      // ask<R>(name, payload?, timeoutMs?)
+Window.main.emit("edit", { name: thing.name, y: 2 });
+```
+
+- **Typing:** the handler's parameter type (or the explicit `on<T>(..)` / `answer<T, R>(..)`) tells the compiler how to decode the
+  payload; a handler without parameters (`on("ping", () => ..)`) takes none, and an `answer` handler's return type is `R`.
+  `ask<R>` needs its reply type, as `request<R>` does. QuickJS games treat the types as hints only. A later idea: one shared
+  event-type map (`interface Events { select: Thing; ... }`) so a name fixes both ends.
+- **Names:** any non-empty string (an empty one throws `Window event names must not be empty`). Events never collide with the
+  built-in events (`onClosed`, `onResized`, ...): those stay `onX` methods, a custom name is only ever matched against other
+  custom events.
+- **Behaviour is the raw layer's:** the same JSON limits (1 MiB, no handles; `emit` returns `false`, `ask` rejects with
+  `request refused`), asynchronous delivery per domain, the same rejection reasons for `ask` (window closed, no request listener,
+  timeout, default 10000 ms), and `off(token)`. An `ask` for a name the window has no `answer` for is not answered: it times out
+  (`no request listener` only when the domain has no request listener at all). Listeners ignore events of other names and
+  messages that are no events without parsing them.
+- **Wire form:** `{"$e":"name","d":payload}` (no `d` without a payload; compiled code sends `null` to a handler that decodes one).
+  A raw `onMessage` / `onRequest` listener of the same window sees these envelopes too; a sender that writes the same text by
+  hand is understood.
+- **When to use the raw layer:** one message type for a whole window (a protocol with its own `kind` field), or a handler that
+  must reply later or from a callback: `onRequest` gives you `reply`. `answer` replies once, with the handler's return value
+  (`undefined` becomes `null` in QuickJS).
 
 ## Event domains and isolation
 
@@ -189,8 +230,8 @@ inspector.run(() => {
 });
 ```
 
-`examples/windows` shows the pattern: the main window owns the data, the Inspector (no parent) asks for it with `request`, hears
-changes through `onMessage`, and posts its edits back to `Window.main`.
+`examples/windows` shows the pattern: the main window owns the data, the Inspector (no parent) asks for it with `ask<Thing>`, hears
+changes through `on("select", ..)`, and emits its edits back to `Window.main`.
 
 ## Screenshots
 

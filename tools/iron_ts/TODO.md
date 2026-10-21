@@ -223,6 +223,14 @@ screenshot runs, `examples/windows`.
     payload are a compile error). `request<R>` is written per reply type by `facade.rs` (a promise class exists per written
     type, so `Promise<R>` cannot be generic); `Lowerer::infer_targs_skip` lets a facade method infer from the arguments after
     the receiver, and a closure's own parameter annotations fix type parameters. [x] M3 (the QuickJS prelude `window::QUICKJS_PRELUDE`, installed by `window::register_quickjs`; `js/engine/src/window.ts` is step 10).
+  - [x] Typed replies (`M9-TS-2854`): `request<R>` with a program's interface or alias failed with `unknown type`, because the classes
+    written per promise type sit in front of the program and name it; interfaces and aliases are now registered before any class
+    is declared (`lower/mod.rs`, step 0).
+  - [x] Named events (`M9-TS-2855..2863`): `win.emit(name, payload?)`, `win.on(name, (payload: T, from) => ..)`, `win.ask<R>(name, payload?, timeoutMs?)`,
+    `win.answer(name, (payload: T, from) => R)` and `Window.emitAll`, over the raw messages with the envelope `{"$e":name,"d":payload}`
+    (`facade.ts` chunk, `ASK_TEMPLATE` in `facade.rs`; a call without payload or a handler without parameters uses the `..0` facade
+    variants with a dummy type argument). QuickJS: `QUICKJS_PRELUDE`. Open idea: a shared event-type map so one name fixes the payload type
+    at both ends; `answer` handlers cannot return a promise yet.
 - Answered by the user (2026-10-21): `isChild` = has a parent; hot reload keeps keyed windows; secondary windows vsync off; no OS
   windows for secondary windows in screenshot runs; D1..D4 optional later.
 
