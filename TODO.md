@@ -1496,6 +1496,31 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     to reach, no edge to fall off. The player can run and jump with gravity (a
     CharacterController on a floor collider that follows them). Lighting: soft, bright, the
     tiles' grid lines glowing; fog close and white, height fog where the floor meets the sky
+- [ ] Post-processing (asked for 2026-10-21; today: bloom, exposure and tonemapping, FXAA,
+  render scale, fog and light shafts, and CSS filter / backdrop-filter / blend modes for
+  screen UI only)
+  - [ ] Crisp pixel upscale: a point-filtered choice for `QualitySettings.renderScale`'s
+    upscale (it's bilinear, so a low render scale looks soft, not like real low-res pixels);
+    `examples/fog-raider`'s PS1 look uses it
+  - [ ] Custom post-process passes: a `PostProcess` API where a game supplies a WGSL fragment
+    function (scene colour and UV in, colour out; depth and normals once available) and named
+    float / colour parameters; passes run in order after the world (decide where against
+    bloom, tonemapping and FXAA), compiled once, errors to the log
+  - [ ] Built-in effects on that API: pixelate, vignette, colour grading (lift / gamma /
+    gain, saturation, a LUT later), CRT scanlines and curvature, film grain, chromatic
+    aberration
+  - [ ] Depth of field, like a real camera's focus: a focal distance (or a target object the
+    camera auto-focuses on, with a smooth pull), an aperture (f-stop) and focal length
+    setting how quickly things blur away from the focal plane, bokeh-shaped highlights
+    (hexagonal or round), near and far blur done separately so foreground edges don't bleed;
+    tilt-shift as a variant. Needs the scene's depth readable after the world pass (a
+    resolve of the multisampled depth, or a depth copy)
+  - [ ] Ink outlines like Borderlands: dark lines along silhouettes and creases, found from
+    jumps in depth and normals (a Sobel-style edge pass), thickness easing off with
+    distance, per-object opt-out (layers), and a cel / toon shading option for materials
+    (banded light) to pair with it. Needs depth and view-space normals after the world pass
+    (a normals target, or normals rebuilt from depth)
+  - [ ] `examples/postfx`: a scene with keys toggling each effect
 
 ## M8 — Multiplayer
 
