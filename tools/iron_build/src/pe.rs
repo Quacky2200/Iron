@@ -45,6 +45,11 @@ pub fn version_info(meta: &Metadata) -> VersionInfo {
     for (k, v) in fields {
         table.strings.insert(k.into(), v.into());
     }
+    if meta.license != "private" {
+        table
+            .strings
+            .insert("Comments".into(), format!("License: {}", meta.license));
+    }
     let mut info = VersionInfo::default();
     info.info.file_version = packed;
     info.info.product_version = packed;
@@ -149,14 +154,14 @@ pub fn read_resources(pe: &[u8]) -> Result<Resources, String> {
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
-    use crate::package::{Overrides, resolve};
+    use iron_core::project::Project;
     use serde_json::json;
 
     fn meta() -> Metadata {
         let pkg = json!({"name": "demo", "version": "1.2.3", "iron": {
             "title": "Demo Game", "company": "Acme Ltd", "copyright": "(c) 2026 Acme",
             "description": "A demo", "exe": "demo"}});
-        resolve(&pkg, "demo", &Overrides::default())
+        Metadata::from_project(&Project::from_package_json(&pkg, "demo"))
     }
 
     // M9-TS-2430

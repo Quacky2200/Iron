@@ -7,6 +7,7 @@ mod assets;
 mod ids;
 mod ops;
 pub mod payload;
+pub mod project;
 mod value;
 
 pub use assets::{decode_data_url, resolve_asset};

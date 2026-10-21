@@ -49,14 +49,14 @@ pub struct DataSearch<'a> {
     pub env: Option<&'a OsStr>,
     /// The folder the exe is in.
     pub exe_dir: Option<&'a Path>,
-    /// The extracted payload (the code folder), which holds the payload's `package.json`.
+    /// The extracted payload (the code folder), which holds the payload's `project.json`.
     pub code_dir: &'a Path,
 }
 
 /// The data folder of a packaged game. Order: `--data`, `$IRON_DATA`, `<exe dir>/<dataDir>`
-/// (`iron.dataDir` of the payload's `package.json`, default `data`). A flag or variable that names
+/// (`dataDir` of the payload's `project.json`, default `data`). A flag or variable that names
 /// a missing folder is an error (it is a request, not a guess). When none is found, a game that
-/// does not need data (`iron.dataRequired` false: no assets, or only the embedded essentials)
+/// does not need data (`dataRequired` false: no assets, or only the embedded essentials)
 /// runs from the extracted folder; any other is an error that names every folder looked in.
 pub fn locate_data(s: &DataSearch<'_>) -> Result<PathBuf, String> {
     if let Some(p) = s.flag {
@@ -74,19 +74,22 @@ pub fn locate_data(s: &DataSearch<'_>) -> Result<PathBuf, String> {
             Err(format!("IRON_DATA {}: not a folder", p.display()))
         };
     }
-    let pkg: serde_json::Value = std::fs::read_to_string(s.code_dir.join("package.json"))
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default();
-    let name = pkg["iron"]["dataDir"]
-        .as_str()
+    let user = iron_core::project::SystemUser;
+    let project = iron_core::project::Project::load(
+        s.code_dir,
+        &iron_core::project::LoadOptions::new(iron_core::project::Platform::current(), &user),
+    )
+    .ok();
+    let name = project
+        .as_ref()
+        .and_then(|p| p.data_dir.as_deref())
         .filter(|n| !n.is_empty() && !n.contains(['/', '\\']) && !n.starts_with('.'))
         .unwrap_or("data");
     let beside = s.exe_dir.map(|d| d.join(name));
     if let Some(b) = beside.as_ref().filter(|b| b.is_dir()) {
         return Ok(b.clone());
     }
-    if pkg["iron"]["dataRequired"].as_bool() == Some(false) {
+    if project.as_ref().and_then(|p| p.data_required) == Some(false) {
         return Ok(s.code_dir.to_path_buf());
     }
     Err(format!(
@@ -113,15 +116,11 @@ mod tests {
     fn code_dir(d: &Path, required: bool, data_dir: Option<&str>) -> PathBuf {
         let code = d.join("code");
         std::fs::create_dir_all(&code).unwrap();
-        let mut iron = serde_json::json!({ "dataRequired": required });
+        let mut project = serde_json::json!({ "resolved": true, "dataRequired": required });
         if let Some(n) = data_dir {
-            iron["dataDir"] = n.into();
+            project["dataDir"] = n.into();
         }
-        std::fs::write(
-            code.join("package.json"),
-            serde_json::json!({ "iron": iron }).to_string(),
-        )
-        .unwrap();
+        std::fs::write(code.join("project.json"), project.to_string()).unwrap();
         code
     }
 

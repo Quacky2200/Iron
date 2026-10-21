@@ -1,13 +1,14 @@
 //! What scripts learn about the game and the machine: the game's manifest (its
-//! `package.json`) for `Application`, and the OS, hardware, GPU and screen for
+//! `project.json`) for `Application`, and the OS, hardware, GPU and screen for
 //! `SystemInfo`. It reaches scripts as `globalThis.__iron_info` before the bundle runs.
 
 use std::path::Path;
 
+use iron_core::project::{LoadOptions, Platform, Project, SystemUser};
 use serde_json::{Map, Value, json};
 
-/// The game's details, from `package.json` in its folder: `name`, `version`, and an
-/// `iron` section with `title`, `company`, `identifier` and `icon` (a PNG path).
+/// The game's details, from `project.json` in its folder (else the `iron` section of
+/// `package.json`): `name`, `title`, `version`, `company`, `identifier` and `icon` (a PNG path).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Manifest {
     pub name: String,
@@ -36,45 +37,46 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// Reads `package.json` in `root`; a missing or broken one gives defaults named
-    /// after the folder.
+    /// Reads the project of `root` (`project.json`, else the `iron` section of `package.json`,
+    /// see `iron_core::project`) for this platform and user. A broken file is logged and the
+    /// defaults named after the folder are used.
     pub fn load(root: &Path) -> Self {
-        // `.` (the current folder) has no name of its own until it's made absolute.
-        let absolute = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-        let folder = absolute
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "game".into());
-        let text = std::fs::read_to_string(root.join("package.json")).ok();
-        let parsed = text.as_deref().and_then(|t| match serde_json::from_str(t) {
-            Ok(v) => Some(v),
+        let user = SystemUser;
+        let opts = LoadOptions::new(Platform::current(), &user);
+        match Project::load(root, &opts) {
+            Ok(p) => Self::from_project(p),
             Err(e) => {
-                tracing::warn!("package.json: {e}");
-                None
+                tracing::error!("{e}");
+                // `.` (the current folder) has no name of its own until it's made absolute.
+                let absolute = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+                let folder = absolute
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "game".into());
+                Self::from_json(&Value::Null, &folder)
             }
-        });
-        Self::from_json(parsed.as_ref().unwrap_or(&Value::Null), &folder)
+        }
     }
 
+    /// From a `package.json` value (its `iron` section), without templates.
     pub fn from_json(json: &Value, folder: &str) -> Self {
-        let text = |v: &Value| v.as_str().map(str::to_owned);
-        let iron = &json["iron"];
-        let name = text(&json["name"]).unwrap_or_else(|| folder.to_owned());
+        Self::from_project(Project::from_package_json(json, folder))
+    }
+
+    pub fn from_project(p: Project) -> Self {
         Self {
-            title: text(&iron["title"]).unwrap_or_else(|| name.clone()),
-            version: text(&json["version"]).unwrap_or_else(|| "0.0.0".into()),
-            company: text(&iron["company"])
-                .or_else(|| text(&json["author"]))
-                .unwrap_or_default(),
-            identifier: text(&iron["identifier"]).unwrap_or_default(),
-            icon: text(&iron["icon"]),
-            quality: iron["quality"].clone(),
-            layers: iron["layers"].clone(),
-            start_scene: text(&iron["startScene"]),
-            display: iron["display"].clone(),
-            run_in_background: iron["runInBackground"].as_bool().unwrap_or(false),
-            fps: iron["fps"].as_bool(),
-            name,
+            name: p.name,
+            title: p.title,
+            version: p.version,
+            company: p.company,
+            identifier: p.identifier,
+            icon: p.icon,
+            quality: p.quality,
+            layers: p.layers,
+            start_scene: p.start_scene,
+            display: p.display,
+            run_in_background: p.run_in_background,
+            fps: p.fps,
         }
     }
 }
@@ -226,6 +228,40 @@ mod tests {
         assert!(script.contains("\"productName\":\"Fox Run\""));
         assert!(script.contains("\"graphicsDeviceName\":\"Test GPU\""));
         assert!(script.contains("\"processorCount\":"));
+    }
+
+    // M9-API-1320
+    #[test]
+    fn a_folder_with_project_json_uses_it_for_title_identifier_and_start_scene() {
+        let d = std::env::temp_dir().join(format!("iron_app_manifest_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("package.json"),
+            r#"{ "name": "npm-name", "iron": { "title": "FROM PACKAGE" } }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("project.json"),
+            r#"{ "title": "Fox ${env:IRON_NO_SUCH_VAR_1320:-Run}", "identifier": "dev.iron.fox",
+                 "startScene": "scenes/a.scene.json", "layers": { "8": "Detail" },
+                 "windows": { "fps": false }, "macos": { "fps": false }, "linux": { "fps": false } }"#,
+        )
+        .unwrap();
+        let m = Manifest::load(&d);
+        assert_eq!(m.title, "Fox Run");
+        assert_eq!(m.name, "npm-name");
+        assert_eq!(m.identifier, "dev.iron.fox");
+        assert_eq!(m.start_scene.as_deref(), Some("scenes/a.scene.json"));
+        assert_eq!(m.layers["8"], "Detail");
+        assert_eq!(m.fps, Some(false));
+        // A broken template leaves the defaults and does not stop the game.
+        std::fs::write(d.join("project.json"), r#"{ "title": "${nope}" }"#).unwrap();
+        assert_eq!(
+            Manifest::load(&d).title,
+            d.file_name().unwrap().to_string_lossy()
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     // M9-API-910

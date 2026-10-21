@@ -8,6 +8,7 @@ const USAGE: &str = "usage:
   iron-build types [<game>] [--out file]                write types/iron.d.ts (default <game>/types/iron.d.ts)
   iron-build assets <folder>... [--prune]               write .meta files
   iron-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.iron-reload)
+  iron-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json (see: iron-build init --help)
   iron-build package <game> [--host exe] [--out f] ...   one executable (see: iron-build package --help)
   iron-build check <examples folder> [--tsc] [--full]   build every game in it and print a table";
 
@@ -142,6 +143,7 @@ fn main() {
             0
         }
         "package" => package::run_cli(&args[1..]),
+        "init" => iron_build::init::run_cli(&args[1..]),
         "dev" => {
             let game = pos.first().map_or(".", |g| g.as_str());
             match dev::run(Path::new(game), &options(&args)) {
@@ -170,7 +172,7 @@ fn check(dir: &Path, opts: &Options) -> i32 {
         .map(|rd| {
             rd.flatten()
                 .map(|e| e.path())
-                .filter(|p| p.join("package.json").exists())
+                .filter(|p| p.join("package.json").exists() || p.join("project.json").exists())
                 .collect()
         })
         .unwrap_or_default();

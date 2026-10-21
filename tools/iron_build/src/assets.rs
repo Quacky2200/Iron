@@ -19,7 +19,13 @@ pub fn kind(ext: &str) -> Option<&'static str> {
 
 /// Folders that hold no assets.
 const SKIP: &[&str] = &["dist", "node_modules", "src", "target", "types"];
-const NOT_ASSETS: &[&str] = &["package.json", "tsconfig.json", "bun.lock", "bun.lockb"];
+const NOT_ASSETS: &[&str] = &[
+    "package.json",
+    "project.json",
+    "tsconfig.json",
+    "bun.lock",
+    "bun.lockb",
+];
 
 pub fn is_asset(file: &str) -> bool {
     let name = file.rsplit('/').next().unwrap_or(file);

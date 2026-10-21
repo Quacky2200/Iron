@@ -5,11 +5,12 @@
 
 use crate::{Options, build, icon, pe};
 use iron_core::payload::{self, Archive};
-use serde_json::{Value, json};
+use iron_core::project::{FixedUser, LoadOptions, Platform, Project, SystemUser, UserInfo};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-/// What the executable says about itself. Resolved from `package.json` (`iron` section, then the
-/// top level) and the command line.
+/// What the executable says about itself. Resolved from the project (`project.json`, else
+/// `package.json`) and the command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
     pub title: String,
@@ -22,6 +23,8 @@ pub struct Metadata {
     pub description: String,
     /// The icon file (`.png` or `.ico`), relative to the game folder, or as given on the command line.
     pub icon: Option<String>,
+    /// `private`, `custom` or an SPDX identifier.
+    pub license: String,
 }
 
 impl Metadata {
@@ -43,116 +46,110 @@ pub struct Overrides {
     pub icon: Option<String>,
 }
 
-/// A name that is safe as a file name on every system.
-fn file_safe(s: &str) -> String {
-    let t: String = s
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || "-_ .".contains(c) {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let t = t.trim().trim_matches('.').to_string();
-    if t.is_empty() { "game".into() } else { t }
+/// The command-line overrides as the loader takes them (literal values, field names).
+fn override_pairs(ov: &Overrides) -> Vec<(String, String)> {
+    [
+        ("title", &ov.title),
+        ("exe", &ov.exe),
+        ("company", &ov.company),
+        ("version", &ov.version),
+        ("copyright", &ov.copyright),
+        ("description", &ov.description),
+        ("icon", &ov.icon),
+    ]
+    .into_iter()
+    .filter_map(|(k, v)| v.as_ref().map(|v| (k.to_owned(), v.clone())))
+    .collect()
 }
 
-/// Resolves the metadata. Order: command line, `iron.<field>`, the `package.json` field of the
-/// same meaning, a default (title: `name`; exe: the title; version: `0.0.0`; copyright:
-/// "Copyright (c) <company>"; description: the title).
-pub fn resolve(pkg: &Value, folder: &str, ov: &Overrides) -> Metadata {
-    let iron = &pkg["iron"];
-    let text = |v: &Value| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned);
-    let name = text(&pkg["name"]).unwrap_or_else(|| folder.to_owned());
-    let title = ov
-        .title
-        .clone()
-        .or_else(|| text(&iron["title"]))
-        .unwrap_or_else(|| name.clone());
-    let exe = ov
-        .exe
-        .clone()
-        .or_else(|| text(&iron["exe"]))
-        .map(|e| e.trim_end_matches(".exe").to_string())
-        .map(|e| file_safe(&e))
-        .unwrap_or_else(|| file_safe(&title));
-    let company = ov
-        .company
-        .clone()
-        .or_else(|| text(&iron["company"]))
-        .or_else(|| text(&pkg["author"]))
-        .unwrap_or_default();
-    let copyright = ov
-        .copyright
-        .clone()
-        .or_else(|| text(&iron["copyright"]))
-        .unwrap_or_else(|| {
-            if company.is_empty() {
-                String::new()
-            } else {
-                format!("Copyright (c) {company}")
-            }
-        });
-    Metadata {
-        exe,
-        company,
-        copyright,
-        identifier: text(&iron["identifier"]).unwrap_or_else(|| format!("dev.iron.{name}")),
-        version: ov
-            .version
-            .clone()
-            .or_else(|| text(&iron["version"]))
-            .or_else(|| text(&pkg["version"]))
-            .unwrap_or_else(|| "0.0.0".into()),
-        description: ov
-            .description
-            .clone()
-            .or_else(|| text(&iron["description"]))
-            .or_else(|| text(&pkg["description"]))
-            .unwrap_or_else(|| title.clone()),
-        icon: ov.icon.clone().or_else(|| text(&iron["icon"])),
-        title,
-    }
-}
-
-/// The `package.json` that goes into the payload: the game's, with the resolved metadata, so the
-/// running game (`Application`, the window title and icon, the settings folder) sees the same.
-pub fn payload_package_json(
-    pkg: &Value,
-    meta: &Metadata,
-    icon_entry: Option<&str>,
-    data: &DataInfo,
-) -> Value {
-    let mut out = if pkg.is_object() {
-        pkg.clone()
-    } else {
-        json!({})
-    };
-    out["version"] = json!(meta.version);
-    if !out["iron"].is_object() {
-        out["iron"] = json!({});
-    }
-    let iron = &mut out["iron"];
-    iron["title"] = json!(meta.title);
-    iron["company"] = json!(meta.company);
-    iron["identifier"] = json!(meta.identifier);
-    iron["exe"] = json!(meta.exe);
-    iron["copyright"] = json!(meta.copyright);
-    iron["description"] = json!(meta.description);
-    // Where the running exe looks for the assets, and whether it may start without them.
-    iron["dataDir"] = json!(data.dir);
-    iron["dataRequired"] = json!(data.required);
-    match icon_entry {
-        Some(p) => iron["icon"] = json!(p),
-        None => {
-            if let Some(o) = iron.as_object_mut() {
-                o.remove("icon");
-            }
+impl Metadata {
+    pub fn from_project(p: &Project) -> Metadata {
+        Metadata {
+            title: p.title.clone(),
+            exe: p.exe.clone(),
+            company: p.company.clone(),
+            identifier: p.identifier.clone(),
+            version: p.version.clone(),
+            copyright: p.copyright.clone(),
+            description: p.description.clone(),
+            icon: p.icon.clone(),
+            license: p.license.clone(),
         }
     }
-    out
+}
+
+/// The minimal `package.json` of the payload: name, version, description and the npm spelling of
+/// the license (`UNLICENSED` for `private`), for tools that look for one.
+pub fn payload_npm_json(project: &Project) -> Value {
+    serde_json::json!({
+        "name": project.name,
+        "version": project.version,
+        "description": project.description,
+        "license": iron_core::project::npm_license(&project.license, project.license_file.as_deref()),
+    })
+}
+
+const LICENSE_NAMES: &[&str] = &[
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "COPYING",
+    "UNLICENSE",
+];
+
+/// The license text to ship: `licenseFile`, else the first of LICENSE, LICENSE.md, ... in the
+/// game folder. None for `private` and for an SPDX license without a file (the identifier alone
+/// goes into the metadata); an error for `custom` without a file or a missing `licenseFile`.
+pub fn find_license_file(game: &Path, project: &Project) -> Result<Option<PathBuf>, String> {
+    if project.license == "private" {
+        return Ok(None);
+    }
+    if let Some(rel) = &project.license_file {
+        if !payload::safe_path(rel) {
+            return Err(format!("licenseFile: unsafe path {rel:?}"));
+        }
+        let p = game.join(rel);
+        return if p.is_file() {
+            Ok(Some(p))
+        } else {
+            Err(format!("licenseFile {} does not exist", p.display()))
+        };
+    }
+    let found = LICENSE_NAMES
+        .iter()
+        .map(|n| game.join(n))
+        .find(|p| p.is_file());
+    if found.is_none() && project.license == "custom" {
+        return Err("license is `custom` but there is no licenseFile and no LICENSE file".into());
+    }
+    Ok(found)
+}
+
+/// Resolves the project of `game` for `platform` (`iron_core::project`: `project.json` with its
+/// templates and platform section, else the `iron` section of `package.json`), with the command
+/// line on top, and the metadata of the executable.
+pub fn resolve(
+    game: &Path,
+    ov: &Overrides,
+    platform: Platform,
+    user: &dyn UserInfo,
+) -> Result<(Metadata, Project), String> {
+    let mut opts = LoadOptions::new(platform, user);
+    opts.overrides = override_pairs(ov);
+    let project = Project::load(game, &opts).map_err(|e| e.to_string())?;
+    Ok((Metadata::from_project(&project), project))
+}
+
+/// The `project.json` that goes into the payload: the resolved project (no templates, no platform
+/// sections) with the icon's name inside the payload and where the exe looks for its data, so the
+/// running game (`Application`, the window title and icon, the settings folder) sees the same
+/// values as the version info.
+pub fn payload_project_json(project: &Project, icon_entry: Option<&str>, data: &DataInfo) -> Value {
+    let mut p = project.clone();
+    p.icon = icon_entry.map(str::to_owned);
+    p.data_dir = Some(data.dir.clone());
+    p.data_required = Some(data.required);
+    p.to_json()
 }
 
 fn io(path: &Path, e: std::io::Error) -> String {
@@ -273,8 +270,7 @@ pub fn copy_data(files: &[DataFile], dir: &Path) -> Result<u64, String> {
 /// them (apart from `.meta`): such a game starts without a data folder.
 pub fn collect_files(
     game: &Path,
-    pkg: &Value,
-    meta: &Metadata,
+    project: &Project,
     icon_bytes: Option<(&str, Vec<u8>)>,
     data_dir: &str,
     exclude: &[PathBuf],
@@ -291,19 +287,18 @@ pub fn collect_files(
         named.extend(a.as_str().map(str::to_owned));
     }
     let mut wanted = named.clone();
-    wanted.extend(pkg["iron"]["startScene"].as_str().map(str::to_owned));
+    wanted.extend(project.start_scene.clone());
     // The build finds assets by the string literals of the program; a path built at run time
     // (`"assets/" + name`) or inside CSS text is missed, so the `assets` folder goes in whole
     // unless `iron.include` says what to take instead.
-    let include = pkg["iron"]["include"]
-        .as_array()
-        .cloned()
-        .unwrap_or_else(|| vec![json!("assets")]);
+    let include = project
+        .include
+        .clone()
+        .unwrap_or_else(|| vec!["assets".to_owned()]);
     for inc in &include {
-        let Some(rel) = inc.as_str() else { continue };
-        let rel = rel.trim_end_matches('/');
+        let rel = inc.trim_end_matches('/');
         if !payload::safe_path(rel) {
-            return Err(format!("iron.include: unsafe path {rel:?}"));
+            return Err(format!("include: unsafe path {rel:?}"));
         }
         let p = game.join(rel);
         if p.is_dir() {
@@ -383,9 +378,13 @@ pub fn collect_files(
     };
 
     let icon_entry = icon_bytes.as_ref().map(|(name, _)| name.to_string());
-    let json = payload_package_json(pkg, meta, icon_entry.as_deref(), &info);
     files.push((
         "package.json".into(),
+        serde_json::to_vec_pretty(&payload_npm_json(project)).map_err(|e| e.to_string())?,
+    ));
+    let json = payload_project_json(project, icon_entry.as_deref(), &info);
+    files.push((
+        "project.json".into(),
         serde_json::to_vec_pretty(&json).map_err(|e| e.to_string())?,
     ));
     if let Some((name, bytes)) = icon_bytes {
@@ -415,6 +414,8 @@ pub struct PackageOptions {
     pub data_dir: Option<String>,
     /// Do not copy the assets (the exe still looks for the data folder).
     pub no_data: bool,
+    /// The person the templates of `project.json` see (default: the system's user).
+    pub user: Option<FixedUser>,
 }
 
 #[derive(Debug)]
@@ -431,6 +432,8 @@ pub struct Packaged {
     /// The names of the embedded files.
     pub embedded: Vec<String>,
     pub meta: Metadata,
+    /// License files copied next to the exe (and into the data folder).
+    pub license_files: Vec<PathBuf>,
     /// Windows resources were written (the host is a PE file).
     pub resources: bool,
 }
@@ -514,17 +517,28 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
             },
         )?;
     }
-    let pkg_path = game.join("package.json");
-    let pkg: Value = match std::fs::read_to_string(&pkg_path) {
-        Ok(t) => serde_json::from_str(&t).map_err(|e| format!("{}: {e}", pkg_path.display()))?,
-        Err(_) => json!({}),
+    // The host without any payload of its own (read first: its kind picks the platform section).
+    let host_path = find_host(game, opts.host.as_deref())?;
+    let host_len = payload::host_len(&host_path)?;
+    let mut host = std::fs::read(&host_path).map_err(|e| io(&host_path, e))?;
+    host.truncate(host_len as usize);
+    let is_pe = host.starts_with(b"MZ");
+    let platform = if is_pe {
+        Platform::Windows
+    } else if host.starts_with(b"\x7fELF") {
+        Platform::Linux
+    } else if host.starts_with(&[0xCF, 0xFA, 0xED, 0xFE])
+        || host.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE])
+    {
+        Platform::Macos
+    } else {
+        Platform::current()
     };
-    let folder = game
-        .canonicalize()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "game".into());
-    let meta = resolve(&pkg, &folder, &opts.overrides);
+    let user: &dyn UserInfo = match &opts.user {
+        Some(u) => u,
+        None => &SystemUser,
+    };
+    let (meta, project) = resolve(game, &opts.overrides, platform, user)?;
 
     // The icon: relative to the game folder (from package.json) or a path given on the command line.
     let icon_path = meta.icon.as_deref().map(|i| {
@@ -556,12 +570,6 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         ));
     }
 
-    // The host without any payload of its own.
-    let host_path = find_host(game, opts.host.as_deref())?;
-    let host_len = payload::host_len(&host_path)?;
-    let mut host = std::fs::read(&host_path).map_err(|e| io(&host_path, e))?;
-    host.truncate(host_len as usize);
-    let is_pe = host.starts_with(b"MZ");
     let out = opts.out.clone().unwrap_or_else(|| {
         let name = if is_pe {
             meta.file_name()
@@ -577,8 +585,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         .join(&data_dir);
     let collected = collect_files(
         game,
-        &pkg,
-        &meta,
+        &project,
         icon.as_ref().map(|(n, d)| (n.as_str(), d.clone())),
         &data_dir,
         &[abs(&data_path)],
@@ -610,6 +617,27 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         copy_data(&collected.data, &data_path)?
     };
     let copied = !(opts.no_data || collected.data.is_empty());
+    // The license text goes beside the exe (and into the data folder when it was named).
+    let mut license_files = Vec::new();
+    if let Some(src) = find_license_file(game, &project)? {
+        let file = src
+            .file_name()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| "LICENSE".into());
+        let mut dests = vec![
+            out.parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default()
+                .join(&file),
+        ];
+        if copied && project.license_file.is_some() {
+            dests.push(data_path.join(&file));
+        }
+        for d in dests {
+            std::fs::copy(&src, &d).map_err(|e| io(&d, e))?;
+            license_files.push(d);
+        }
+    }
     if let Some(cmd) = &opts.sign_cmd {
         run_sign(cmd, &out)?;
     }
@@ -627,6 +655,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         info: collected.info,
         embedded: check.entries.iter().map(|e| e.path.clone()).collect(),
         meta,
+        license_files,
         resources: is_pe,
     })
 }
@@ -709,6 +738,18 @@ pub fn run_cli(args: &[String]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn proj(pkg: &Value, folder: &str, ov: &Overrides) -> Project {
+        let user = FixedUser::default();
+        let mut o = LoadOptions::new(Platform::Windows, &user);
+        o.overrides = override_pairs(ov);
+        Project::from_package_json_with(pkg, folder, &o)
+    }
+
+    fn resolve_json(pkg: &Value, folder: &str, ov: &Overrides) -> Metadata {
+        Metadata::from_project(&proj(pkg, folder, ov))
+    }
 
     fn pkg() -> Value {
         json!({
@@ -720,7 +761,7 @@ mod tests {
     // M9-TS-2400
     #[test]
     fn metadata_defaults_come_from_package_json() {
-        let m = resolve(&pkg(), "folder", &Overrides::default());
+        let m = resolve_json(&pkg(), "folder", &Overrides::default());
         assert_eq!(m.title, "My Game");
         assert_eq!(m.exe, "My Game");
         assert_eq!(m.company, "Acme");
@@ -730,7 +771,7 @@ mod tests {
         assert_eq!(m.identifier, "com.acme.mygame");
         assert_eq!(m.icon.as_deref(), Some("assets/icon.png"));
         // Nothing at all: the folder names it.
-        let m = resolve(&json!({}), "cool", &Overrides::default());
+        let m = resolve_json(&json!({}), "cool", &Overrides::default());
         assert_eq!(
             (m.title.as_str(), m.exe.as_str(), m.version.as_str()),
             ("cool", "cool", "0.0.0")
@@ -747,7 +788,7 @@ mod tests {
         p["iron"]["version"] = json!("2.0.0");
         p["iron"]["exe"] = json!("mygame.exe");
         p["iron"]["copyright"] = json!("(c) 2026 Acme Inc.");
-        let m = resolve(&p, "f", &Overrides::default());
+        let m = resolve_json(&p, "f", &Overrides::default());
         assert_eq!((m.version.as_str(), m.exe.as_str()), ("2.0.0", "mygame"));
         assert_eq!(m.copyright, "(c) 2026 Acme Inc.");
         let ov = Overrides {
@@ -757,7 +798,7 @@ mod tests {
             description: Some("d".into()),
             ..Default::default()
         };
-        let m = resolve(&p, "f", &ov);
+        let m = resolve_json(&p, "f", &ov);
         assert_eq!((m.version.as_str(), m.exe.as_str()), ("3.1", "bad_na_me"));
         assert_eq!(
             (m.icon.as_deref(), m.description.as_str()),
@@ -767,8 +808,8 @@ mod tests {
 
     // M9-TS-2402
     #[test]
-    fn the_payload_package_json_carries_the_resolved_metadata() {
-        let m = resolve(
+    fn the_payload_project_json_carries_the_resolved_metadata() {
+        let project = proj(
             &pkg(),
             "f",
             &Overrides {
@@ -780,15 +821,16 @@ mod tests {
             dir: "data".into(),
             required: true,
         };
-        let j = payload_package_json(&pkg(), &m, Some("iron-icon.png"), &data);
+        let j = payload_project_json(&project, Some("iron-icon.png"), &data);
+        assert_eq!(j["resolved"], true);
         assert_eq!(j["version"], "9.9.9");
-        assert_eq!(j["iron"]["icon"], "iron-icon.png");
-        assert_eq!(j["iron"]["title"], "My Game");
-        assert_eq!(j["iron"]["dataDir"], "data");
-        assert_eq!(j["iron"]["dataRequired"], true);
+        assert_eq!(j["icon"], "iron-icon.png");
+        assert_eq!(j["title"], "My Game");
+        assert_eq!(j["dataDir"], "data");
+        assert_eq!(j["dataRequired"], true);
         assert_eq!(j["name"], "my-game");
         assert!(
-            payload_package_json(&pkg(), &m, None, &data)["iron"]
+            payload_project_json(&project, None, &data)
                 .get("icon")
                 .is_none()
         );
@@ -828,9 +870,8 @@ mod tests {
         let d = game_folder("collect");
         // The unsafe `../evil` in the asset list is refused.
         let mut p = pkg();
-        let m = resolve(&p, "f", &Overrides::default());
         assert!(
-            collect_files(&d, &p, &m, None, "data", &[])
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[])
                 .unwrap_err()
                 .contains("unsafe")
         );
@@ -840,7 +881,14 @@ mod tests {
         )
         .unwrap();
         p["iron"]["include"] = json!(["extra"]);
-        let c = collect_files(&d, &p, &m, Some(("iron-icon.png", vec![1])), "data", &[]).unwrap();
+        let c = collect_files(
+            &d,
+            &proj(&p, "f", &Overrides::default()),
+            Some(("iron-icon.png", vec![1])),
+            "data",
+            &[],
+        )
+        .unwrap();
         let data: Vec<&str> = c.data.iter().map(|f| f.rel.as_str()).collect();
         for want in [
             "dist/font-1.ttf",
@@ -868,11 +916,19 @@ mod tests {
         assert_eq!(std::fs::read(&a.src).unwrap(), b"PNG");
         // Without `iron.include` the whole assets folder goes to data.
         p["iron"].as_object_mut().unwrap().remove("include");
-        let c = collect_files(&d, &p, &m, None, "data", &[]).unwrap();
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         assert!(c.data.iter().any(|f| f.rel == "assets/unused.png"));
         assert!(!c.data.iter().any(|f| f.rel == "extra/x.txt"));
         // Anything under `exclude` (the output's own data folder) is not collected.
-        let c = collect_files(&d, &p, &m, None, "data", &[d.join("dist")]).unwrap();
+        let c = collect_files(
+            &d,
+            &proj(&p, "f", &Overrides::default()),
+            None,
+            "data",
+            &[d.join("dist")],
+        )
+        .unwrap();
         assert!(!c.data.iter().any(|f| f.rel.starts_with("dist/")));
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -887,14 +943,20 @@ mod tests {
         )
         .unwrap();
         let p = pkg();
-        let m = resolve(&p, "f", &Overrides::default());
-        let c = collect_files(&d, &p, &m, Some(("iron-icon.png", vec![1])), "data", &[]).unwrap();
+        let c = collect_files(
+            &d,
+            &proj(&p, "f", &Overrides::default()),
+            Some(("iron-icon.png", vec![1])),
+            "data",
+            &[],
+        )
+        .unwrap();
         let names: Vec<&str> = c.payload.iter().map(|(n, _)| n.as_str()).collect();
         // Small named assets are essentials: embedded, with the code.
         for want in [
             "dist/game.irbundle",
             "dist/game.css",
-            "package.json",
+            "project.json",
             "iron-icon.png",
             "assets/a.png",
             "scenes/s.scene.json",
@@ -910,13 +972,13 @@ mod tests {
         let j: Value = serde_json::from_slice(
             &c.payload
                 .iter()
-                .find(|(n, _)| n == "package.json")
+                .find(|(n, _)| n == "project.json")
                 .unwrap()
                 .1,
         )
         .unwrap();
-        assert_eq!(j["iron"]["dataDir"], "data");
-        assert_eq!(j["iron"]["dataRequired"], true);
+        assert_eq!(j["dataDir"], "data");
+        assert_eq!(j["dataRequired"], true);
 
         // Exactly at the limit (the scene is 2 bytes): embedded. One byte over: nothing is.
         std::fs::write(d.join("scenes/s.scene.json"), b"{}").unwrap();
@@ -925,17 +987,19 @@ mod tests {
             vec![7u8; ESSENTIALS_LIMIT as usize - 2],
         )
         .unwrap();
-        let c = collect_files(&d, &p, &m, None, "data", &[]).unwrap();
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         assert!(c.payload.iter().any(|(n, _)| n == "assets/a.png"));
         std::fs::write(
             d.join("assets/a.png"),
             vec![7u8; ESSENTIALS_LIMIT as usize - 1],
         )
         .unwrap();
-        let c = collect_files(&d, &p, &m, None, "data", &[]).unwrap();
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         let names: Vec<&str> = c.payload.iter().map(|(n, _)| n.as_str()).collect();
         assert!(!names.contains(&"assets/a.png") && !names.contains(&"scenes/s.scene.json"));
-        assert_eq!(names.len(), 3, "{names:?}");
+        assert_eq!(names.len(), 4, "{names:?}");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -947,9 +1011,9 @@ mod tests {
         std::fs::create_dir_all(d.join("dist")).unwrap();
         std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         let p = json!({});
-        let m = resolve(&p, "f", &Overrides::default());
         // No assets at all (hello): nothing to need.
-        let c = collect_files(&d, &p, &m, None, "data", &[]).unwrap();
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         assert!(c.data.is_empty() && !c.info.required);
         // Tiny named assets only (the `.meta` is not needed): complete.
         std::fs::create_dir_all(d.join("assets")).unwrap();
@@ -960,12 +1024,14 @@ mod tests {
             r#"{"format":1,"assets":["assets/t.png"]}"#,
         )
         .unwrap();
-        let c = collect_files(&d, &p, &m, None, "data", &[]).unwrap();
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         assert!(!c.info.required);
         assert!(c.payload.iter().any(|(n, _)| n == "assets/t.png"));
         // A file the bundle does not name (the whole folder is included): required.
         std::fs::write(d.join("assets/other.bin"), b"O").unwrap();
-        let c = collect_files(&d, &p, &m, None, "data", &[]).unwrap();
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         assert!(c.info.required);
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -1031,9 +1097,9 @@ mod tests {
         assert_eq!(p.path, out);
         assert!(p.files >= 5);
         let mut a = Archive::open(&out).unwrap().unwrap();
-        let j: Value = serde_json::from_slice(&a.read("package.json").unwrap()).unwrap();
+        let j: Value = serde_json::from_slice(&a.read("project.json").unwrap()).unwrap();
         assert_eq!(j["version"], "4.5.6");
-        assert_eq!(j["iron"]["icon"], "iron-icon.png");
+        assert_eq!(j["icon"], "iron-icon.png");
         assert_eq!(a.read("iron-icon.png").unwrap(), png_bytes());
         assert_eq!(a.read("assets/a.png").unwrap(), b"PNG");
         if cfg!(windows) {
@@ -1060,6 +1126,158 @@ mod tests {
         assert_eq!(again.files, p.files);
         // Nothing of `out/data` (the first run's assets) is collected into the second.
         assert!(d.join("out/data/assets/a.png").is_file());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2710
+    #[test]
+    fn templates_resolve_at_package_time_into_the_payload_and_the_version_info() {
+        let d = game_folder("templates");
+        std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(
+            d.join("project.json"),
+            r#"{ "name": "fox", "title": "${firstName}'s Game", "company": "${fullName}",
+                 "identifier": "com.${username}.${name}", "version": "1.0.0",
+                 "copyright": "Copyright (c) ${year} ${company}",
+                 "startScene": "scenes/s.scene.json", "layers": { "8": "Detail" },
+                 "windows": { "description": "Windows build of ${title}" },
+                 "linux": { "description": "Linux build" } }"#,
+        )
+        .unwrap();
+        // Different from the package.json the other tests use: it must not be read.
+        std::fs::write(d.join("package.json"), pkg().to_string()).unwrap();
+        let out = d.join("out/g.exe");
+        let p = package(
+            &d,
+            &PackageOptions {
+                host: Some(std::env::current_exe().unwrap()),
+                out: Some(out.clone()),
+                no_build: true,
+                user: Some(FixedUser {
+                    username: "mattb".into(),
+                    full_name: "Matthew Brown".into(),
+                    date: (2026, 10, 21),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(p.meta.title, "Matthew's Game");
+        assert_eq!(p.meta.exe, "Matthews Game");
+        let mut a = Archive::open(&out).unwrap().unwrap();
+        let j: Value = serde_json::from_slice(&a.read("project.json").unwrap()).unwrap();
+        let npm: Value = serde_json::from_slice(&a.read("package.json").unwrap()).unwrap();
+        assert_eq!(
+            (npm["name"].as_str(), npm["license"].as_str()),
+            (Some("fox"), Some("UNLICENSED"))
+        );
+        assert_eq!(j["license"], "private");
+        assert!(p.license_files.is_empty());
+        assert_eq!(j["resolved"], true);
+        assert_eq!(j["title"], "Matthew's Game");
+        assert_eq!(j["company"], "Matthew Brown");
+        assert_eq!(j["identifier"], "com.mattb.fox");
+        assert_eq!(j["copyright"], "Copyright (c) 2026 Matthew Brown");
+        assert_eq!(j["startScene"], "scenes/s.scene.json");
+        assert_eq!(j["layers"]["8"], "Detail");
+        assert!(j.get("windows").is_none() && j.get("linux").is_none());
+        if cfg!(windows) {
+            // The test program is a PE file: the Windows section applies, and the version info matches.
+            assert_eq!(j["description"], "Windows build of Matthew's Game");
+            let r = pe::read_resources(&std::fs::read(&out).unwrap()).unwrap();
+            for (k, v) in [
+                ("ProductName", "Matthew's Game"),
+                ("CompanyName", "Matthew Brown"),
+                ("LegalCopyright", "Copyright (c) 2026 Matthew Brown"),
+                ("FileDescription", "Windows build of Matthew's Game"),
+            ] {
+                assert!(
+                    r.strings.contains(&(k.into(), v.into())),
+                    "{k}: {:?}",
+                    r.strings
+                );
+            }
+        }
+        // A reader of the payload (the app) sees the same values without the user's information.
+        let dir = d.join("extracted");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("project.json"), a.read("project.json").unwrap()).unwrap();
+        let other = FixedUser::default();
+        let back = Project::load(&dir, &LoadOptions::new(Platform::Linux, &other)).unwrap();
+        assert_eq!(
+            (back.title.as_str(), back.identifier.as_str()),
+            ("Matthew's Game", "com.mattb.fox")
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2711
+    #[test]
+    fn a_license_ships_beside_the_exe_and_in_the_metadata() {
+        let d = game_folder("license");
+        std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("LICENSE"), "MIT text").unwrap();
+        std::fs::write(d.join("EULA.txt"), "custom text").unwrap();
+        let run = |project: &str, out: &str| {
+            std::fs::write(d.join("project.json"), project).unwrap();
+            package(
+                &d,
+                &PackageOptions {
+                    host: Some(std::env::current_exe().unwrap()),
+                    out: Some(d.join(out)),
+                    no_build: true,
+                    ..Default::default()
+                },
+            )
+        };
+        let p = run(r#"{ "name": "g", "license": "MIT" }"#, "mit/g.exe").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(d.join("mit/LICENSE")).unwrap(),
+            "MIT text"
+        );
+        assert_eq!(p.license_files.len(), 1);
+        let mut a = Archive::open(&d.join("mit/g.exe")).unwrap().unwrap();
+        let npm: Value = serde_json::from_slice(&a.read("package.json").unwrap()).unwrap();
+        assert_eq!(npm["license"], "MIT");
+        if cfg!(windows) {
+            let r = pe::read_resources(&std::fs::read(d.join("mit/g.exe")).unwrap()).unwrap();
+            assert!(
+                r.strings
+                    .contains(&("Comments".into(), "License: MIT".into())),
+                "{:?}",
+                r.strings
+            );
+        }
+        // A named file also goes into the data folder.
+        let p = run(
+            r#"{ "name": "g", "license": "custom", "licenseFile": "EULA.txt" }"#,
+            "cu/g.exe",
+        )
+        .unwrap();
+        assert!(d.join("cu/EULA.txt").is_file() && d.join("cu/data/EULA.txt").is_file());
+        assert_eq!(p.license_files.len(), 2);
+        let mut a = Archive::open(&d.join("cu/g.exe")).unwrap().unwrap();
+        let npm: Value = serde_json::from_slice(&a.read("package.json").unwrap()).unwrap();
+        assert_eq!(npm["license"], "SEE LICENSE IN EULA.txt");
+        // Errors: custom without a file, a missing licenseFile; private copies nothing.
+        std::fs::remove_file(d.join("LICENSE")).unwrap();
+        assert!(run(r#"{ "name": "g", "license": "custom" }"#, "e1/g.exe").is_err());
+        assert!(
+            run(
+                r#"{ "name": "g", "license": "MIT", "licenseFile": "nope" }"#,
+                "e2/g.exe"
+            )
+            .is_err()
+        );
+        assert!(
+            run(r#"{ "name": "g", "license": "MIT" }"#, "e3/g.exe")
+                .unwrap()
+                .license_files
+                .is_empty()
+        );
+        run(r#"{ "name": "g" }"#, "pr/g.exe").unwrap();
+        assert!(!d.join("pr/LICENSE").exists());
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -1116,7 +1334,7 @@ mod tests {
         // The exe's table of contents has the code and no asset beyond the tiny essentials.
         let a = Archive::open(&p.path).unwrap().unwrap();
         let names: Vec<&str> = a.entries.iter().map(|e| e.path.as_str()).collect();
-        assert!(names.contains(&"dist/game.irbundle") && names.contains(&"package.json"));
+        assert!(names.contains(&"dist/game.irbundle") && names.contains(&"project.json"));
         for not in [
             "assets/big.bin",
             "assets/unused.png",
@@ -1132,8 +1350,8 @@ mod tests {
         assert!(d.join("out2/game-data/assets/big.bin").is_file());
         assert!(!d.join("out2/data").exists());
         let mut a = Archive::open(&p.path).unwrap().unwrap();
-        let j: Value = serde_json::from_slice(&a.read("package.json").unwrap()).unwrap();
-        assert_eq!(j["iron"]["dataDir"], "game-data");
+        let j: Value = serde_json::from_slice(&a.read("project.json").unwrap()).unwrap();
+        assert_eq!(j["dataDir"], "game-data");
 
         // --no-data writes no folder, but the exe still looks for it.
         let p = package_with(&d, "out3/g.exe", None, true);

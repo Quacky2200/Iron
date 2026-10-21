@@ -1,7 +1,7 @@
 //! `iron-build`: builds a game written in TypeScript into `dist/` for `iron_app`, with no bun and no
 //! `node_modules` (see `docs/iron-build.md`).
 //!
-//! A build reads `package.json` (`iron` section) and `tsconfig.json`, resolves the module graph from the
+//! A build reads `project.json` (else the `iron` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
 //! entry file (`iron_ts::modules`), runs `tsc --noEmit -p .` when `tsc` can be found, compiles the
 //! bundle with all engine manifests (so errors are found now, not when the game starts), and writes
 //! `dist/game.irbundle` (the resolved source, the CSS and asset lists), `dist/game.css`, and the assets
@@ -11,13 +11,14 @@ pub mod assets;
 pub mod css;
 pub mod dev;
 pub mod icon;
+pub mod init;
 pub mod package;
 pub mod pe;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// What `package.json` and `tsconfig.json` say about a game.
+/// What `project.json` (or `package.json`) and `tsconfig.json` say about a game.
 #[derive(Debug, Clone)]
 pub struct GameConfig {
     pub root: PathBuf,
@@ -35,21 +36,13 @@ pub struct GameConfig {
 
 impl GameConfig {
     pub fn load(root: &Path) -> Result<GameConfig, String> {
-        let pkg_path = root.join("package.json");
-        let pkg: serde_json::Value = match std::fs::read_to_string(&pkg_path) {
-            Ok(t) => {
-                serde_json::from_str(&t).map_err(|e| format!("{}: {e}", pkg_path.display()))?
-            }
-            Err(_) => serde_json::json!({}),
-        };
-        let dir_name = root
-            .canonicalize()
-            .ok()
-            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-            .unwrap_or_else(|| "game".into());
-        let name = pkg["name"].as_str().unwrap_or(&dir_name).to_string();
-        let iron = &pkg["iron"];
-        let get = |k: &str, d: &str| iron[k].as_str().unwrap_or(d).to_string();
+        let user = iron_core::project::SystemUser;
+        let project = iron_core::project::Project::load(
+            root,
+            &iron_core::project::LoadOptions::new(iron_core::project::Platform::current(), &user),
+        )
+        .map_err(|e| e.to_string())?;
+        let name = project.name.clone();
         let ts_path = root.join("tsconfig.json");
         let ts: serde_json::Value = std::fs::read_to_string(&ts_path)
             .ok()
@@ -63,8 +56,8 @@ impl GameConfig {
                     .collect()
             })
             .unwrap_or_else(|| vec!["src".to_string()]);
-        let entry = match iron["main"].as_str() {
-            Some(m) => m.to_string(),
+        let entry = match project.main.clone() {
+            Some(m) => m,
             None => [
                 "src/main.tsx",
                 "src/main.ts",
@@ -85,9 +78,9 @@ impl GameConfig {
         };
         Ok(GameConfig {
             root: root.to_path_buf(),
-            title: get("title", &name),
-            company: get("company", ""),
-            identifier: get("identifier", &format!("dev.iron.{name}")),
+            title: project.title,
+            company: project.company,
+            identifier: project.identifier,
             name,
             entry,
             include,
@@ -515,6 +508,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    // M9-TS-2720
+    #[test]
+    fn config_reads_project_json_before_the_iron_section() {
+        let d = temp("projectjson");
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("src/app.ts"), "").unwrap();
+        std::fs::write(
+            d.join("package.json"),
+            r#"{"name":"g","iron":{"title":"FROM PACKAGE","main":"src/other.ts"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("project.json"),
+            r#"{"title":"T ${env:IRON_NO_SUCH_VAR_2720:-ok}","identifier":"dev.x.g","main":"src/app.ts"}"#,
+        )
+        .unwrap();
+        let c = GameConfig::load(&d).unwrap();
+        assert_eq!(
+            (c.title.as_str(), c.identifier.as_str(), c.entry.as_str()),
+            ("T ok", "dev.x.g", "src/app.ts")
+        );
+        // A typo in a template stops the build and names the file and line.
+        std::fs::write(d.join("project.json"), "{\n  \"title\": \"${titel}\"\n}").unwrap();
+        let e = GameConfig::load(&d).unwrap_err();
+        assert!(
+            e.contains("project.json:2:") && e.contains("unknown variable"),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     // M9-TS-1852
     #[test]
     fn a_build_writes_the_bundle_css_and_the_assets_the_code_names() {
@@ -770,6 +794,48 @@ mod tests {
         let text = String::from_utf8_lossy(&o.stdout);
         assert!(o.status.success(), "{text}");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2721
+    #[test]
+    fn every_example_has_a_project_json_and_package_json_has_no_iron_section() {
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let user = iron_core::project::FixedUser {
+            username: "tester".into(),
+            full_name: "Test Person".into(),
+            ..Default::default()
+        };
+        let mut games = 0;
+        for e in std::fs::read_dir(&examples).unwrap().flatten() {
+            let p = e.path();
+            if !p.join("package.json").exists() {
+                continue;
+            }
+            games += 1;
+            let name = p.file_name().unwrap().to_string_lossy().to_string();
+            let pkg: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(p.join("package.json")).unwrap())
+                    .unwrap();
+            assert!(
+                pkg.get("iron").is_none(),
+                "{name}: package.json still has `iron`"
+            );
+            let proj = iron_core::project::Project::load(
+                &p,
+                &iron_core::project::LoadOptions::new(iron_core::project::Platform::Windows, &user),
+            )
+            .unwrap();
+            assert_eq!(
+                proj.source,
+                iron_core::project::Source::ProjectJson,
+                "{name}"
+            );
+            assert_eq!(proj.identifier, format!("dev.iron.{name}"));
+            assert_eq!(proj.company, "Test's Company");
+            assert_eq!(proj.license, "private");
+            assert!(!proj.title.is_empty());
+        }
+        assert_eq!(games, 19);
     }
 
     // M9-TS-2307
