@@ -270,7 +270,7 @@ The file (`iron_ts::types_dts`, one deterministic file, about 3000 lines) is, in
    handle class (one with `static create`) gets constructors `new Material()`, `new Material({ color })`, `new GameObject(name, { .. })`
    and `Class.create({ .. })` with its writable properties as keys. A component handle (it has `gameObject`) also gets `transform` and
    `getComponent(Class)`. A parameter list never has a required parameter after an optional one (the later ones become optional).
-2. **The UI declarations** (`tools/iron_ts/src/ui_dts.rs`, from the tables of `crates/iron_ui_tables`): `IronStyle` (one entry per style
+2. **The UI declarations** (`tools/iron_ts/src/ui_dts.rs`, from the tables of `crates/iron_ui/src/tables`): `IronStyle` (one entry per style
    property: name, TypeScript type, doc; `iron_ui` tests that `apply_style` applies each and that nothing it applies is missing), the
    event interfaces and `IronProps` (attributes and `on*` props with their event types), `JSX.IntrinsicElements` and the
    `Text`/`Span`/`Input`/`TextArea`/`Image`/`List`/`Dialog` components (from the element table), the hooks and `createRoot` (raw

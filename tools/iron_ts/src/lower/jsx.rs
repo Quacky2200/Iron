@@ -66,7 +66,7 @@ fn is_element_expr(e: &Expression<'_>) -> bool {
 
 /// The intrinsic element a capitalised `@iron/react` component name stands for.
 fn intrinsic_alias(name: &str) -> Option<&'static str> {
-    iron_ui_tables::elements::tag_of_component(name)
+    iron_ui::tables::elements::tag_of_component(name)
 }
 
 /// A stable component id from its name (FNV-1a, 31 bits).
@@ -298,7 +298,7 @@ impl<'s> Finder<'s> {
                     let v = self.attr_value(&a.value, at);
                     // The event type of the prop comes from the table (`onChange` is `input`, `onFocus`
                     // is `focusin`); a name it lacks listens to its lower-cased name.
-                    let (mut kind, capture) = match iron_ui_tables::events::kind_of_prop(n) {
+                    let (mut kind, capture) = match iron_ui::tables::events::kind_of_prop(n) {
                         Some((k, c)) => (k.to_string(), c),
                         None => {
                             let k = n[2..].to_lowercase();
@@ -1129,7 +1129,7 @@ mod tests {
     fn components_stand_for_the_elements_of_the_table() {
         let t = lowered("export function A(): UiElement { return <TextArea rows={3} />; }");
         assert!(t.contains("Ui.begin(\"textarea\")"), "{t}");
-        for e in iron_ui_tables::elements::ELEMENTS {
+        for e in iron_ui::tables::elements::ELEMENTS {
             if let Some(c) = e.component {
                 assert_eq!(intrinsic_alias(c), Some(e.tag));
             }

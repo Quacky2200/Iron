@@ -1,9 +1,0 @@
-[package]
-name = "iron_ui_tables"
-version.workspace = true
-edition.workspace = true
-publish.workspace = true
-
-# Plain data, no dependencies: the compiler (tools/iron_ts) reads these tables to write the UI
-# declarations, and iron_ui / iron_ts_ui test them against what they implement.
-[dependencies]

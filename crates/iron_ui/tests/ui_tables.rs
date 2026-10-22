@@ -1,4 +1,4 @@
-//! The tables in `iron_ui_tables` against what this crate implements: every style property, attribute,
+//! The tables in `iron_ui::tables` against what this crate implements: every style property, attribute,
 //! element and event the tables declare (and so the compiler writes into `types/iron.d.ts`) is
 //! handled, and what the code handles is declared.
 
@@ -7,13 +7,13 @@ mod common;
 use common::Dom;
 use iron_core::Value;
 use iron_ui::events::Modifiers;
-use iron_ui::{Attrs, EventKind, LayoutStyle, StyleError, UiEvent, Visual, apply_style};
-use iron_ui_tables::attrs::{ATTRS, Scope};
-use iron_ui_tables::elements::{ELEMENTS, SVG_KINDS, tag_of_component};
-use iron_ui_tables::events::{EVENT_FIELDS, EVENT_INTERFACES, EVENT_PROPS, Init, kind_of_prop};
-use iron_ui_tables::style::{
+use iron_ui::tables::attrs::{ATTRS, Scope};
+use iron_ui::tables::elements::{ELEMENTS, SVG_KINDS, tag_of_component};
+use iron_ui::tables::events::{EVENT_FIELDS, EVENT_INTERFACES, EVENT_PROPS, Init, kind_of_prop};
+use iron_ui::tables::style::{
     CURSORS, LENGTH_UNITS, NAMED_TYPES, SHORTHANDS, STYLE_PROPS, StyleProp,
 };
+use iron_ui::{Attrs, EventKind, LayoutStyle, StyleError, UiEvent, Visual, apply_style};
 use std::collections::BTreeSet;
 
 fn apply(prop: &str, v: Value) -> Result<(), StyleError> {
@@ -162,7 +162,7 @@ fn everything_apply_style_matches_on_is_in_the_table() {
         .collect();
     assert!(
         missing.is_empty(),
-        "apply_style handles these but the table in iron_ui_tables::style does not declare them (add them with a type and a doc, or list them in NOT_PROPERTIES if they are values): {missing:?}"
+        "apply_style handles these but the table in iron_ui::tables::style does not declare them (add them with a type and a doc, or list them in NOT_PROPERTIES if they are values): {missing:?}"
     );
 }
 
@@ -174,7 +174,7 @@ fn the_names_in_the_table_are_unique_and_the_named_unions_apply() {
         assert!(seen.insert(p.name), "{} is listed twice", p.name);
         assert!(!p.name.is_empty());
         for part in p.ty {
-            if let iron_ui_tables::style::Part::Named(n) = part {
+            if let iron_ui::tables::style::Part::Named(n) = part {
                 assert!(
                     NAMED_TYPES.iter().any(|(k, _)| k == n),
                     "{} names the unknown type {n}",

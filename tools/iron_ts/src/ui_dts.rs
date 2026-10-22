@@ -1,4 +1,4 @@
-//! The UI half of the generated declarations, written from the tables of `iron_ui_tables` (style
+//! The UI half of the generated declarations, written from the tables of `iron_ui::tables` (style
 //! properties, attributes, elements, events, React names) and from the `Ui` manifest: `interface
 //! IronStyle`, the event interfaces, `IronProps`, `JSX`, the hooks, `createRoot` and the element
 //! components. Nothing here is a declaration file written by hand; the TypeScript text a few names need
@@ -8,13 +8,13 @@
 //! It also writes the compiled side of the same names (`prelude`): `StyleValue`, `StyleEntry`, the
 //! `UiEvent` class whose fields read the event's slots, and the aliases `type IronPointerEvent = UiEvent`.
 
-use iron_ui_tables::attrs::ATTRS;
-use iron_ui_tables::elements::ELEMENTS;
-use iron_ui_tables::events::{
+use iron_ui::tables::attrs::ATTRS;
+use iron_ui::tables::elements::ELEMENTS;
+use iron_ui::tables::events::{
     EVENT_FIELDS, EVENT_INTERFACES, EVENT_METHODS, EVENT_PROPS, EventField, Init,
 };
-use iron_ui_tables::react::{CREATE_ROOT, HOOKS, IRON_REACT_TYPES, Module, REACT_TYPES};
-use iron_ui_tables::style::{NAMED_TYPES, STYLE_PROPS, ts_type};
+use iron_ui::tables::react::{CREATE_ROOT, HOOKS, IRON_REACT_TYPES, Module, REACT_TYPES};
+use iron_ui::tables::style::{NAMED_TYPES, STYLE_PROPS, ts_type};
 use std::sync::OnceLock;
 
 /// `/** doc */` for one line, a block for several; empty for no doc.
@@ -134,7 +134,7 @@ fn props_interface() -> String {
     let mut s = String::from("interface IronProps {\n");
     let mut svg_comment = false;
     for a in ATTRS {
-        if a.scope == iron_ui_tables::attrs::Scope::Svg && !svg_comment {
+        if a.scope == iron_ui::tables::attrs::Scope::Svg && !svg_comment {
             svg_comment = true;
             s += "  // Inline SVG (`<svg>` and the shapes inside it): attributes as React names them.\n";
         }
@@ -214,7 +214,7 @@ declare const console: {
 /// node_modules. `iron-build types` puts this after the engine globals in `types/iron.d.ts`.
 pub fn declarations() -> String {
     let mut s = String::from(
-        "// The ambient declarations of an Iron program: what `@iron/react` and `react` give, without node_modules.\n// Generated from the tables of iron_ui_tables (style, attributes, events, elements, React names).\n\n",
+        "// The ambient declarations of an Iron program: what `@iron/react` and `react` give, without node_modules.\n// Generated from the tables of iron_ui::tables (style, attributes, events, elements, React names).\n\n",
     );
     for (name, members) in NAMED_TYPES {
         s += &union_alias(name, members);

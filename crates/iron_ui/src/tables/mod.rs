@@ -1,5 +1,5 @@
 //! Tables of what a script can say to the UI: style properties, element attributes, elements,
-//! events and the React names. Plain data with no dependencies, read by
+//! events and the React names. Plain data (the module has no dependencies on the rest of the crate), read by
 //!
 //! - `tools/iron_ts` (`ui_dts.rs`) to print the UI half of the generated `types/iron.d.ts` and the
 //!   compiled prelude (`StyleEntry`, `UiEvent`, ...), so no declaration file is written by hand;

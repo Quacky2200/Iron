@@ -2387,7 +2387,7 @@ dependencies = [
  "cranelift-object",
  "iron_api",
  "iron_ts_rt",
- "iron_ui_tables",
+ "iron_ui",
  "oxc_allocator",
  "oxc_ast",
  "oxc_ast_visit",
@@ -2438,7 +2438,6 @@ dependencies = [
  "cssparser 0.38.0",
  "iron_core",
  "iron_script",
- "iron_ui_tables",
  "parley",
  "precomputed-hash",
  "rustc-hash 2.1.3",
@@ -2457,10 +2456,6 @@ dependencies = [
  "iron_core",
  "iron_ui",
 ]
-
-[[package]]
-name = "iron_ui_tables"
-version = "0.1.0"
 
 [[package]]
 name = "itertools"

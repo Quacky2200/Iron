@@ -246,9 +246,9 @@ fn parse_cursor(value: &str) -> Option<(&'static str, Vec<CursorImage>)> {
     Some((keyword, images))
 }
 
-/// CSS `cursor` keywords (the table in `iron_ui_tables`). `auto` is the text cursor over text and the
+/// CSS `cursor` keywords (the table in `tables::style`). `auto` is the text cursor over text and the
 /// arrow elsewhere.
-pub const CURSORS: &[&str] = iron_ui_tables::style::CURSORS;
+pub const CURSORS: &[&str] = crate::tables::style::CURSORS;
 
 /// `scrollbarWidth`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

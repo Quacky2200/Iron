@@ -1255,9 +1255,9 @@ when `cond` is false.
 - **Lazy state, node methods.** `useState(() => init)` and `useState(read)` (an arrow, or a top-level function) compute the first
   value once (`useStateLazy`); state may be an array of numbers. `ref.current?.focus()`, `.blur()`, `.scrollTo(x, y)` queue a
   `NodeCommand` that the host applies to its tree (`iron_ts_ui::take_node_commands`); `useRef<T>(null)` is `useRef<T | null>(null)`.
-- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, the UI tables (`iron_ui_tables`, written by `ui_dts.rs`) and the hand-written `engine_ts.d.ts`; see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
+- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, the UI tables (`iron_ui::tables`, written by `ui_dts.rs`) and the hand-written `engine_ts.d.ts`; see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
 - **Ambient types** (the prelude and the `.d.ts` are both written by [ui_dts.rs](../tools/iron_ts/src/ui_dts.rs) from the tables of
-  `crates/iron_ui_tables`; the hook helpers stay in [ui.ts](../tools/iron_ts/src/lower/ui.ts)):
+  `crates/iron_ui/src/tables`; the hook helpers stay in [ui.ts](../tools/iron_ts/src/lower/ui.ts)):
   `ReactNode`, `React.ReactNode`, `IronElement`, `IronKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,
   `Collision2D` (= `Collision`) and `IronStyle`. `number | string` is the class `StyleValue` (a number or a string converts where it
   is expected). `IronStyle` is a list of entries: `const card: IronStyle = { width: 100, padding: "4px" }` builds it,

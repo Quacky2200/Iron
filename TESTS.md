@@ -1801,7 +1801,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3223 | Integration | `!v` / `if (v)` on unions (`number \| string \| number[] \| null`, `string \| Pt`, `number \| number[]`) test the member held (0, "" and null are false) and the falsy branch narrows to the members that can be falsy, equal to bun (`lang2.rs`). |
 | M9-TS-3224 | Integration | `flat(depth)` with a depth variable that reaches the full flattening (2, 10, `Infinity`) equals bun (`lang2.rs`). |
 | M9-TS-3225 | Integration | (retired: `flat(depth)` no longer throws, see `M9-TS-3313..3315`.) |
-| M9-TS-3301 | Integration | Every style property of the `iron_ui_tables` table is applied by `apply_style` (each keyword of its type, a number where the type takes one, a free string where it takes one) and resetting it is accepted (`crates/iron_ui/tests/ui_tables.rs`). |
+| M9-TS-3301 | Integration | Every style property of the `iron_ui::tables` table is applied by `apply_style` (each keyword of its type, a number where the type takes one, a free string where it takes one) and resetting it is accepted (`crates/iron_ui/tests/ui_tables.rs`). |
 
 | M9-TS-3302 | Integration | Every `"camelCase" =>` name `apply_style` matches in `style.rs`, `text_style.rs` and `paint.rs` is in the style table (`ui_tables.rs`). |
 

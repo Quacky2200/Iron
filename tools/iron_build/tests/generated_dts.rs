@@ -43,7 +43,7 @@ fn rel(p: &Path) -> String {
 
 /// The hand-written declaration files still allowed, each with why and what removes it. Lower this
 /// list, never raise it: a new `.d.ts` under `tools/` fails the test. The UI declarations
-/// (`ambient.d.ts`) are generated from `iron_ui_tables` now (`tools/iron_ts/src/ui_dts.rs`).
+/// (`ambient.d.ts`) are generated from `iron_ui::tables` now (`tools/iron_ts/src/ui_dts.rs`).
 const ALLOWED_D_TS: &[(&str, &str)] = &[(
     "tools/iron_ts/src/lower/engine_ts.d.ts",
     "TypeScript-side engine shapes (records, enums, promises, overloads) the manifests cannot carry yet:      plan phase 2 (F-REC, F-ENUM, F-UNION, F-PROMISE) moves them into #[iron_api]; phase 5 deletes the file",

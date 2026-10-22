@@ -21,6 +21,7 @@ mod paint;
 mod style;
 pub mod svg;
 mod svg_path;
+pub mod tables;
 pub mod text;
 pub mod text_style;
 pub mod transform;
