@@ -542,6 +542,7 @@ impl Native {
         iron_engine_api::screen::reset();
         iron_engine_api::audio::reset();
         iron_engine_api::audio_components::reset();
+        iron_engine_api::spline::reset();
         iron_engine_api::animation::reset();
         iron_engine_api::camera::reset();
         iron_render_api::reset();
@@ -597,6 +598,7 @@ impl Native {
         iron_engine_api::screen::reset();
         iron_engine_api::audio::reset();
         iron_engine_api::audio_components::reset();
+        iron_engine_api::spline::reset();
         iron_engine_api::animation::reset();
         iron_engine_api::camera::reset();
         iron_render_api::reset();

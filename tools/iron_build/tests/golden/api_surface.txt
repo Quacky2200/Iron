@@ -1150,28 +1150,34 @@ declare class SphereCollider :: static attach(object: GameObject): SphereCollide
 declare class SphereCollider :: static findOn(object: GameObject): SphereCollider;
 declare class Spline
 declare class Spline :: addKnot(position: Vector3Like, mode?: TangentMode, tangentIn?: Vector3Like, tangentOut?: Vector3Like): number;
+declare class Spline :: addKnot(position: Vector3Like, options?: { mode?: TangentMode; tangentIn?: Vector3Like; tangentOut?: Vector3Like }): number;
 declare class Spline :: closed: boolean;
 declare class Spline :: constructor(points?: readonly Vector3Like[], options?: { closed?: boolean; tension?: number; mode?: TangentMode });
+declare class Spline :: destroy(): void;
 declare class Spline :: evaluate(t: number): Vector3;
 declare class Spline :: handleIn(index: number): Vector3;
 declare class Spline :: handleOut(index: number): Vector3;
 declare class Spline :: insertKnot(index: number, position: Vector3Like, mode?: TangentMode, tangentIn?: Vector3Like, tangentOut?: Vector3Like): number;
-declare class Spline :: locate(t: number): { segment: number; u: number };
-declare class Spline :: nearest(p: Vector3Like): { t: number; point: Vector3; distance: number };
+declare class Spline :: insertKnot(index: number, position: Vector3Like, options?: { mode?: TangentMode; tangentIn?: Vector3Like; tangentOut?: Vector3Like }): number;
+declare class Spline :: locate(t: number): SplineHit;
+declare class Spline :: nearest(p: Vector3Like): SplineNearest;
 declare class Spline :: readonly count: number;
 declare class Spline :: readonly knots: SplineKnot[];
 declare class Spline :: readonly length: number;
 declare class Spline :: readonly segmentCount: number;
+declare class Spline :: readonly version: number;
 declare class Spline :: removeKnot(index: number): void;
+declare class Spline :: sample(options?: { perSegment?: number }): Vector3[];
 declare class Spline :: sample(perSegment?: number): Vector3[];
 declare class Spline :: segmentDerivative(i: number, u: number): Vector3;
 declare class Spline :: segmentPoint(i: number, u: number): Vector3;
 declare class Spline :: setMode(index: number, mode: TangentMode): void;
 declare class Spline :: setPosition(index: number, position: Vector3Like): void;
 declare class Spline :: setTangents(index: number, tangentIn: Vector3Like, tangentOut: Vector3Like): void;
+declare class Spline :: static create(options?: { points?: readonly Vector3Like[]; closed?: boolean; tension?: number; mode?: TangentMode }): Spline;
+declare class Spline :: static create(points?: readonly Vector3Like[], closed?: boolean, tension?: number, mode?: TangentMode): Spline;
 declare class Spline :: tangent(t: number): Vector3;
 declare class Spline :: tension: number;
-declare class Spline :: version: number;
 declare class SplineAnimate extends Component
 declare class SplineAnimate extends Component :: alignment: "none" | "path";
 declare class SplineAnimate extends Component :: container: GameObject | null;
@@ -1509,6 +1515,18 @@ declare function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): [S, (a: 
 declare function useRef<T>(init: T): Ref<T>;
 declare function useRef<T>(init: null): Ref<T | null>;
 declare function useState<T>(init: T | (() => T)): [T, (v: T | ((prev: T) => T)) => void];
+declare interface SplineHit
+declare interface SplineHit :: segment: number;
+declare interface SplineHit :: u: number;
+declare interface SplineKnot
+declare interface SplineKnot :: mode: TangentMode;
+declare interface SplineKnot :: position: Vector3;
+declare interface SplineKnot :: tangentIn: Vector3;
+declare interface SplineKnot :: tangentOut: Vector3;
+declare interface SplineNearest
+declare interface SplineNearest :: distance: number;
+declare interface SplineNearest :: point: Vector3;
+declare interface SplineNearest :: t: number;
 declare module "@iron/engine"
 declare module "@iron/engine" :: export import Animation = globalThis.Animation;
 declare module "@iron/engine" :: export import AnimationBlendTree = globalThis.AnimationBlendTree;
@@ -1652,7 +1670,9 @@ declare module "@iron/engine" :: export import Sound = globalThis.Sound;
 declare module "@iron/engine" :: export import SphereCollider = globalThis.SphereCollider;
 declare module "@iron/engine" :: export import Spline = globalThis.Spline;
 declare module "@iron/engine" :: export import SplineAnimate = globalThis.SplineAnimate;
+declare module "@iron/engine" :: export import SplineHit = globalThis.SplineHit;
 declare module "@iron/engine" :: export import SplineKnot = globalThis.SplineKnot;
+declare module "@iron/engine" :: export import SplineNearest = globalThis.SplineNearest;
 declare module "@iron/engine" :: export import SpringJoint = globalThis.SpringJoint;
 declare module "@iron/engine" :: export import Sprite = globalThis.Sprite;
 declare module "@iron/engine" :: export import SpriteRenderer = globalThis.SpriteRenderer;
@@ -2227,6 +2247,9 @@ declare namespace SystemInfo :: const screenRefreshRate: number;
 declare namespace SystemInfo :: const screenWidth: number;
 declare namespace SystemInfo :: const systemMemorySize: number;
 declare namespace SystemInfo :: const touchSupported: boolean;
+declare namespace TangentMode
+declare namespace TangentMode :: function name(index: number): TangentMode;
+declare namespace TangentMode :: function parse(name: string): number;
 declare namespace Texture
 declare namespace Texture :: function create(width: number, height: number, colors: readonly Color[], options?: TextureOptions): Texture;
 declare namespace Texture :: function load(src: string, options?: TextureOptions): Texture;
@@ -2360,6 +2383,7 @@ declare namespace input :: function onGamepadConnected(f: (a0: number) => void):
 declare namespace input :: function onGamepadDisconnected(f: (a0: number) => void): number;
 declare namespace input :: function onKeyDown(f: (a0: string, a1: boolean) => void): number;
 declare namespace input :: function onKeyUp(f: (a0: string) => void): number;
+declare type TangentMode = "auto" | "bezier" | "linear";
 interface AnimationController
 interface AnimationController :: addParameter(name: string, type: string, defaultValue?: number): AnimationController;
 interface AnimationController :: addState(name: string, motion: AnimationClip | BlendSpec, opts?: StateOpts): AnimationController;
@@ -2899,11 +2923,6 @@ interface SizeKey :: time: number;
 interface SizeKey :: value: number;
 interface SkinnedMeshRenderer
 interface SkinnedMeshRenderer :: bones: GameObject[];
-interface SplineKnot
-interface SplineKnot :: mode: TangentMode;
-interface SplineKnot :: position: Vector3;
-interface SplineKnot :: tangentIn: Vector3;
-interface SplineKnot :: tangentOut: Vector3;
 interface StateOpts
 interface StateOpts :: speed?: number;
 interface StateOpts :: speedParameter?: string;
@@ -2985,7 +3004,6 @@ type PrimitiveType = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "qua
 type QuaternionLike = { x: number; y: number; z: number; w: number };
 type ReactNode = ReactElementLike | string | number | boolean | null | undefined | ReactNode[];
 type ShadowQualityMode = "disable" | "hardOnly" | "all";
-type TangentMode = "auto" | "bezier" | "linear";
 type TextureWrapMode = "repeat" | "clamp" | "mirror";
 type Vector2Like = { x: number; y: number };
 type Vector3Like = { x: number; y: number; z: number };

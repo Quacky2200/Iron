@@ -715,11 +715,9 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
 - **`Shapes`** (`rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
   `bezier`, `curve`, `closedCurve`) is native Rust now (`iron_math::outlines`, see "Enums, records, lists, rest parameters and
   docs"). **`Spline`** (knots, tangent modes, `evaluate` / `tangent` by distance, `segmentPoint`,
-  `sample`, `nearest`, `version`) and **`SplineAnimate`** are TypeScript, ported from `js/engine/src/spline.ts` into
-  `facade.ts` and compiled into every game that names them. Differences:
-  `Spline.knots` is an array of `{ position, tangentIn, tangentOut, mode }` and `mode` a plain `string` inside (the d.ts says
-  `"auto" | "bezier" | "linear"`); points are `Vector2` / `Vector3` (not `...Like` objects); `SplineAnimate` fields are plain
-  fields, not `@property`s (no scene-file saving, not kept across a hot reload).
+  `sample`, `nearest`, `version`) is native Rust too (the next paragraph). **`SplineAnimate`** is still TypeScript, ported from
+  `js/engine/src/spline.ts` into `facade.ts` and compiled into every game that names it: its fields are plain fields, not
+  `@property`s (no scene-file saving, not kept across a hot reload).
 - **`Camera.screenToWorldPoint(p)`** is a facade method (frustum maths over `rect`, `Screen.width` / `height`, `fieldOfView` or
   `orthographicSize` and the transform). The other `viewportTo...` / `screenPointToRay` members are not there yet.
 - **Facade chunk requirements.** A chunk header may end with `@ Name ..`: `//# when Spline @ Vector3`. The chunk is added only
@@ -782,3 +780,16 @@ alias of the global `Shapes`.
 called `Window`'s `register_quickjs`, including after a hot reload. The globals it adds (`Shapes`, `Spline`, `TangentMode`, ...)
 are the ones compiled games call. `js/engine`'s own classes are still module values; they do not read these globals except the
 ones a thin wrapper names (`Shapes`).
+
+**Spline** is native too: `iron_math::spline` (`crates/iron_math/src/spline.rs`, plain maths: knots, `closed`, `tension`, the cached
+control points and length table, `locate` / `evaluate` / `tangent` / `sample` / `nearest`) and `iron_engine_api::spline` (the
+`Spline` handle class over a per-thread registry; `new Spline(points?, { closed?, tension?, mode? })` is `create` with
+`#[options(after = points)]`). The d.ts comes from the manifest: `TangentMode` (an enum), `SplineKnot`, `SplineHit` and
+`SplineNearest` (records), `Spline` (class). Differences from the TypeScript class: `knots` is a read-only snapshot (a fresh array of
+fresh objects: edit with `setPosition` / `setTangents` / `setMode` / `insertKnot` / `removeKnot`), `version` is read-only, a handle
+is not garbage collected (`Spline.destroy()` frees it), a knot index must be a whole number in range (anything else is ignored, as an
+out-of-range one was) and a `NaN` `t` gives NaN points. The oracle is the old compiled TypeScript, kept renamed (`RefSpline`) in
+`bench/outlines.ts`: `M9-TS-3112` builds splines of 0 to 6 knots (open and closed, three tensions, auto and linear), edits them
+with every mutator and compares every number (`count`, `length`, handles, `segmentPoint`, `segmentDerivative`, `locate`,
+`evaluate`, `tangent`, `sample`, `nearest`, the knots) bit for bit. In QuickJS `Spline` is the same global class
+(`js/engine/src/spline.ts` types it; its bun tests became the QuickJS tests `M9-API-1603`..`1605`).

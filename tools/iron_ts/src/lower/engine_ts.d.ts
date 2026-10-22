@@ -255,44 +255,6 @@ interface LineRenderer2D {
   fillColor: Color | null;
 }
 
-/** `auto`: smooth through the neighbours; `bezier`: the knot's own handles; `linear`: none. */
-type TangentMode = "auto" | "bezier" | "linear";
-interface SplineKnot {
-  position: Vector3;
-  /** The handle before the knot, relative to it (used in `bezier` mode). */
-  tangentIn: Vector3;
-  /** The handle after the knot, relative to it (used in `bezier` mode). */
-  tangentOut: Vector3;
-  mode: TangentMode;
-}
-/** A path through knots, every segment a cubic Bezier (Unity's Splines package, the core of it). */
-declare class Spline {
-  constructor(points?: readonly Vector3Like[], options?: { closed?: boolean; tension?: number; mode?: TangentMode });
-  readonly knots: SplineKnot[];
-  readonly count: number;
-  closed: boolean;
-  tension: number;
-  readonly segmentCount: number;
-  /** Goes up on every change. */
-  version: number;
-  readonly length: number;
-  addKnot(position: Vector3Like, mode?: TangentMode, tangentIn?: Vector3Like, tangentOut?: Vector3Like): number;
-  insertKnot(index: number, position: Vector3Like, mode?: TangentMode, tangentIn?: Vector3Like, tangentOut?: Vector3Like): number;
-  removeKnot(index: number): void;
-  setPosition(index: number, position: Vector3Like): void;
-  setTangents(index: number, tangentIn: Vector3Like, tangentOut: Vector3Like): void;
-  setMode(index: number, mode: TangentMode): void;
-  handleOut(index: number): Vector3;
-  handleIn(index: number): Vector3;
-  segmentPoint(i: number, u: number): Vector3;
-  segmentDerivative(i: number, u: number): Vector3;
-  locate(t: number): { segment: number; u: number };
-  /** The point `t` of the way along (0 to 1, by distance). */
-  evaluate(t: number): Vector3;
-  tangent(t: number): Vector3;
-  sample(perSegment?: number): Vector3[];
-  nearest(p: Vector3Like): { t: number; point: Vector3; distance: number };
-}
 /** Moves its object along a spline (Unity's `SplineAnimate`). */
 declare class SplineAnimate extends Component {
   spline: Spline | null;

@@ -28,6 +28,7 @@ pub mod objects;
 pub mod prefs;
 pub mod random;
 pub mod screen;
+pub mod spline;
 pub mod time;
 pub mod ui_resources;
 pub mod window;
@@ -80,6 +81,7 @@ pub fn manifests() -> Vec<String> {
         app::system_info_api::MANIFEST.to_json(),
         ui_resources::ui_resources_api::MANIFEST.to_json(),
         window::window_api::MANIFEST.to_json(),
+        spline::spline_api::MANIFEST.to_json(),
     ]);
     all
 }
@@ -133,5 +135,6 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     cursor::cursor_api::register_quickjs(ctx)?;
     cursor::cursor_lock_mode_api::register_quickjs(ctx)?;
     window::register_quickjs(ctx)?;
+    spline::spline_api::register_quickjs(ctx)?;
     Ok(())
 }

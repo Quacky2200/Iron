@@ -11,6 +11,7 @@ pub mod math;
 pub mod outlines;
 pub mod quat;
 pub mod shapes;
+pub mod spline;
 
 pub use math::*;
 pub use outlines::*;

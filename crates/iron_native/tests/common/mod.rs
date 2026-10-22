@@ -12,6 +12,7 @@ pub fn with_world<R>(f: impl FnOnce(&Ctx<'_>) -> R) -> R {
     iron_engine_api::input::reset();
     iron_engine_api::audio::reset();
     iron_engine_api::audio_components::reset();
+    iron_engine_api::spline::reset();
     iron_engine_api::gizmos::reset();
     iron_engine_api::assets::reset();
     iron_engine_api::app::reset();

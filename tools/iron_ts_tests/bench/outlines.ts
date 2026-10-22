@@ -1,4 +1,4 @@
-// Differential oracle for the native `Shapes`: the TypeScript the compiled facade used
+// Differential oracle for the native `Shapes` and `Spline`: the TypeScript the compiled facade used
 // (`tools/iron_ts/src/lower/facade.ts` before they became native Rust, renamed `Ref*`), run next to
 // the native API on the same inputs. Every point must be the same double (bit for bit). Test
 // code only; the engine has one implementation (iron_math). tests/all/outlines.rs reads the results.
@@ -224,3 +224,522 @@ export function shapePointsAreVectors(): string {
   return `${c.length}|${Math.round(c[0]!.x)}|${Math.round(d.y * 100)}|${poly.length}|${poly[1]!.x}`;
 }
 
+// ---- Spline ----
+type RefTangentMode = "auto" | "bezier" | "linear";
+interface RefKnot {
+  position: Vector3;
+  tangentIn: Vector3;
+  tangentOut: Vector3;
+  mode: RefTangentMode;
+}
+interface RefOptions {
+  closed?: boolean;
+  tension?: number;
+  mode?: RefTangentMode;
+}
+interface RefHit {
+  segment: number;
+  u: number;
+}
+interface RefNearest {
+  t: number;
+  point: Vector3;
+  distance: number;
+}
+
+/** A path through knots (Unity Splines, the core of it): see `js/engine/src/spline.ts`. */
+class RefSpline {
+  private _knots: RefKnot[] = [];
+  private _closed: boolean;
+  private _tension: number;
+  private table: number[] | null = null;
+  private ctrl: Float64Array | null = null;
+  /** Scratch for one point, so evaluating allocates nothing. */
+  private scratch: Float64Array = new Float64Array(3);
+  /** Goes up on every change, so anything drawing the spline can tell it moved. */
+  version: number = 0;
+
+  constructor(points?: Vector3[], options?: RefOptions) {
+    this._closed = false;
+    this._tension = 0.5;
+    let mode: RefTangentMode = "auto";
+    if (options !== undefined) {
+      if (options.closed !== undefined) this._closed = options.closed;
+      if (options.tension !== undefined) this._tension = options.tension;
+      if (options.mode !== undefined) mode = options.mode;
+    }
+    if (points !== undefined) {
+      for (let i = 0; i < points.length; i++) this.addKnot(points[i]!, mode);
+    }
+  }
+
+  get knots(): RefKnot[] {
+    return this._knots;
+  }
+
+  get count(): number {
+    return this._knots.length;
+  }
+
+  /** Whether the last knot joins back to the first. */
+  get closed(): boolean {
+    return this._closed;
+  }
+  set closed(on: boolean) {
+    this._closed = on;
+    this.changed();
+  }
+
+  /** How strongly `auto` knots bend: 0 is straight lines, 0.5 Catmull-Rom. */
+  get tension(): number {
+    return this._tension;
+  }
+  set tension(t: number) {
+    this._tension = t;
+    this.changed();
+  }
+
+  get segmentCount(): number {
+    const n = this._knots.length;
+    if (n < 2) return 0;
+    return this._closed ? n : n - 1;
+  }
+
+  /** Adds a knot at the end; returns its index. */
+  addKnot(position: Vector3, mode: RefTangentMode = "auto", tangentIn?: Vector3, tangentOut?: Vector3): number {
+    return this.insertKnot(this._knots.length, position, mode, tangentIn, tangentOut);
+  }
+
+  /** Puts a knot before index `index` (the count: at the end); returns its index. */
+  insertKnot(index: number, position: Vector3, mode: RefTangentMode = "auto", tangentIn?: Vector3, tangentOut?: Vector3): number {
+    const i = Math.max(0, Math.min(this._knots.length, Math.trunc(index)));
+    const out = tangentOut !== undefined ? new Vector3(tangentOut.x, tangentOut.y, tangentOut.z) : new Vector3(0, 0, 0);
+    const tin = tangentIn !== undefined ? new Vector3(tangentIn.x, tangentIn.y, tangentIn.z) : out.scale(-1);
+    const knot: RefKnot = { position: new Vector3(position.x, position.y, position.z), tangentIn: tin, tangentOut: out, mode: mode };
+    this._knots.splice(i, 0, knot);
+    this.changed();
+    return i;
+  }
+
+  removeKnot(index: number): void {
+    if (index < 0 || index >= this._knots.length) return;
+    this._knots.splice(index, 1);
+    this.changed();
+  }
+
+  setPosition(index: number, position: Vector3): void {
+    if (index < 0 || index >= this._knots.length) return;
+    this._knots[index]!.position = new Vector3(position.x, position.y, position.z);
+    this.changed();
+  }
+
+  /** Sets a knot's handles (relative to it) and makes it a `bezier` knot. */
+  setTangents(index: number, tangentIn: Vector3, tangentOut: Vector3): void {
+    if (index < 0 || index >= this._knots.length) return;
+    const k = this._knots[index]!;
+    k.tangentIn = new Vector3(tangentIn.x, tangentIn.y, tangentIn.z);
+    k.tangentOut = new Vector3(tangentOut.x, tangentOut.y, tangentOut.z);
+    k.mode = "bezier";
+    this.changed();
+  }
+
+  /** Changes a knot's mode; a knot turning `bezier` keeps the handles it had (auto ones included). */
+  setMode(index: number, mode: RefTangentMode): void {
+    if (index < 0 || index >= this._knots.length) return;
+    const k = this._knots[index]!;
+    if (k.mode === mode) return;
+    if (mode === "bezier" && k.mode !== "bezier") {
+      k.tangentIn = this.handleIn(index);
+      k.tangentOut = this.handleOut(index);
+    }
+    k.mode = mode;
+    this.changed();
+  }
+
+  /** A knot's handle after it, relative to it, whatever its mode (zero when straight). */
+  handleOut(index: number): Vector3 {
+    if (index < 0 || index >= this._knots.length) return new Vector3(0, 0, 0);
+    const k = this._knots[index]!;
+    if (k.mode === "bezier") return k.tangentOut;
+    // Straight: a third of the way to the next knot, so the segment keeps an even speed.
+    if (k.mode === "linear") return this.neighbour(index, 1).sub(k.position).scale(1 / 3);
+    // GDI+ cardinal handles: a third of `tension` times the chord across the knot.
+    return this.neighbour(index, 1).sub(this.neighbour(index, -1)).scale(this._tension / 3);
+  }
+
+  /** A knot's handle before it, relative to it, whatever its mode. */
+  handleIn(index: number): Vector3 {
+    if (index < 0 || index >= this._knots.length) return new Vector3(0, 0, 0);
+    const k = this._knots[index]!;
+    if (k.mode === "bezier") return k.tangentIn;
+    if (k.mode === "linear") return this.neighbour(index, -1).sub(k.position).scale(1 / 3);
+    return this.handleOut(index).scale(-1);
+  }
+
+  /** The knot `step` along from `index` (wrapping when closed, else the end knot itself). */
+  private neighbour(index: number, step: number): Vector3 {
+    const n = this._knots.length;
+    const i = index + step;
+    return this._closed ? this._knots[((i % n) + n) % n]!.position : this._knots[Math.max(0, Math.min(n - 1, i))]!.position;
+  }
+
+  /** Every segment's four Bezier points as plain numbers (12 each), cached until a change. */
+  private controls(): Float64Array {
+    if (this.ctrl !== null) return this.ctrl;
+    const n = this._knots.length;
+    const segments = this.segmentCount;
+    const c = new Float64Array(segments * 12);
+    for (let i = 0; i < segments; i++) {
+      const j = (i + 1) % n;
+      const p0 = this._knots[i]!.position;
+      const p3 = this._knots[j]!.position;
+      const h1 = this.handleOut(i);
+      const h2 = this.handleIn(j);
+      const o = i * 12;
+      c[o] = p0.x;
+      c[o + 1] = p0.y;
+      c[o + 2] = p0.z;
+      c[o + 3] = p0.x + h1.x;
+      c[o + 4] = p0.y + h1.y;
+      c[o + 5] = p0.z + h1.z;
+      c[o + 6] = p3.x + h2.x;
+      c[o + 7] = p3.y + h2.y;
+      c[o + 8] = p3.z + h2.z;
+      c[o + 9] = p3.x;
+      c[o + 10] = p3.y;
+      c[o + 11] = p3.z;
+    }
+    this.ctrl = c;
+    return c;
+  }
+
+  /** Segment `i`'s point at `u` into `out` (x, y, z); no allocation. */
+  private pointInto(i: number, u: number, out: Float64Array): void {
+    const c = this.controls();
+    const o = Math.max(0, Math.min(this.segmentCount - 1, i)) * 12;
+    const v = 1 - u;
+    const a = v * v * v;
+    const b = 3 * v * v * u;
+    const d = 3 * v * u * u;
+    const e = u * u * u;
+    out[0] = a * c[o]! + b * c[o + 3]! + d * c[o + 6]! + e * c[o + 9]!;
+    out[1] = a * c[o + 1]! + b * c[o + 4]! + d * c[o + 7]! + e * c[o + 10]!;
+    out[2] = a * c[o + 2]! + b * c[o + 5]! + d * c[o + 8]! + e * c[o + 11]!;
+  }
+
+  /** A point on segment `i` (0 to `segmentCount` - 1), `u` 0 to 1 by the segment's own parameter. */
+  segmentPoint(i: number, u: number): Vector3 {
+    if (this.segmentCount === 0) return this._knots.length > 0 ? this._knots[0]!.position : new Vector3(0, 0, 0);
+    this.pointInto(i, u, this.scratch);
+    return new Vector3(this.scratch[0]!, this.scratch[1]!, this.scratch[2]!);
+  }
+
+  private derivativeAxis(o: number, axis: number, u: number): number {
+    const c = this.controls();
+    const v = 1 - u;
+    const a = 3 * v * v;
+    const b = 6 * v * u;
+    const e = 3 * u * u;
+    return a * (c[o + 3 + axis]! - c[o + axis]!) + b * (c[o + 6 + axis]! - c[o + 3 + axis]!) + e * (c[o + 9 + axis]! - c[o + 6 + axis]!);
+  }
+
+  /** The direction (not normalized) segment `i` is going at `u`. */
+  segmentDerivative(i: number, u: number): Vector3 {
+    if (this.segmentCount === 0) return new Vector3(0, 0, 0);
+    const c = this.controls();
+    const o = Math.max(0, Math.min(this.segmentCount - 1, i)) * 12;
+    const x = this.derivativeAxis(o, 0, u);
+    const y = this.derivativeAxis(o, 1, u);
+    const z = this.derivativeAxis(o, 2, u);
+    // Where the handles sit on the knots, the direction comes from the chord.
+    if (x * x + y * y + z * z > 1e-18) return new Vector3(x, y, z);
+    return new Vector3(c[o + 9]! - c[o]!, c[o + 10]! - c[o + 1]!, c[o + 11]! - c[o + 2]!);
+  }
+
+  private lengths(): number[] {
+    if (this.table !== null) return this.table;
+    const table: number[] = [0];
+    let total = 0;
+    for (let i = 0; i < this.segmentCount; i++) {
+      this.pointInto(i, 0, this.scratch);
+      let px = this.scratch[0]!;
+      let py = this.scratch[1]!;
+      let pz = this.scratch[2]!;
+      for (let s = 1; s <= 32; s++) {
+        this.pointInto(i, s / 32, this.scratch);
+        const dx = this.scratch[0]! - px;
+        const dy = this.scratch[1]! - py;
+        const dz = this.scratch[2]! - pz;
+        total += Math.sqrt(dx * dx + dy * dy + dz * dz);
+        table.push(total);
+        px = this.scratch[0]!;
+        py = this.scratch[1]!;
+        pz = this.scratch[2]!;
+      }
+    }
+    this.table = table;
+    return table;
+  }
+
+  /** The whole length. */
+  get length(): number {
+    const t = this.lengths();
+    return t[t.length - 1]!;
+  }
+
+  /** Where `t` (0 to 1 by distance) falls: a segment and its own parameter. */
+  locate(t: number): RefHit {
+    const segments = this.segmentCount;
+    if (segments === 0) return { segment: 0, u: 0 };
+    const table = this.lengths();
+    const total = table[table.length - 1]!;
+    const want = Math.max(0, Math.min(1, t)) * total;
+    // The first sample at or past `want` (binary search over the increasing distances).
+    let lo = 0;
+    let hi = table.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (table[mid]! < want) lo = mid + 1;
+      else hi = mid;
+    }
+    const j = Math.max(1, lo);
+    const a = table[j - 1]!;
+    const b = table[j]!;
+    const frac = b > a ? (want - a) / (b - a) : 0;
+    const step = j - 1 + frac;
+    const segment = Math.min(segments - 1, Math.floor(step / 32));
+    return { segment: segment, u: (step - segment * 32) / 32 };
+  }
+
+  /** The point `t` of the way along (0 to 1, by distance). */
+  evaluate(t: number): Vector3 {
+    const h = this.locate(t);
+    return this.segmentPoint(h.segment, h.u);
+  }
+
+  /** The direction the spline goes at `t` (by distance), normalized. */
+  tangent(t: number): Vector3 {
+    const h = this.locate(t);
+    return this.segmentDerivative(h.segment, h.u).normalized;
+  }
+
+  /** Points along the whole spline, `perSegment` to a segment; open ones include the last knot. */
+  sample(perSegment: number = 16): Vector3[] {
+    const out: Vector3[] = [];
+    const segments = this.segmentCount;
+    if (segments === 0) {
+      for (let i = 0; i < this._knots.length; i++) out.push(this._knots[i]!.position);
+      return out;
+    }
+    for (let i = 0; i < segments; i++) {
+      for (let s = 0; s < perSegment; s++) out.push(this.segmentPoint(i, s / perSegment));
+    }
+    if (!this._closed) out.push(this._knots[this._knots.length - 1]!.position);
+    return out;
+  }
+
+  private distanceAt(t: number, target: Vector3): number {
+    const h = this.locate(t);
+    this.pointInto(h.segment, h.u, this.scratch);
+    const dx = this.scratch[0]! - target.x;
+    const dy = this.scratch[1]! - target.y;
+    const dz = this.scratch[2]! - target.z;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  /** The nearest point on the spline to `p`: its `t` (by distance), the point and how far. */
+  nearest(p: Vector3): RefNearest {
+    const target = new Vector3(p.x, p.y, p.z);
+    const total = this.length;
+    if (this.segmentCount === 0 || total === 0) {
+      const point = this._knots.length > 0 ? this._knots[0]!.position : new Vector3(0, 0, 0);
+      return { t: 0, point: point, distance: point.distance(target) };
+    }
+    // Coarse: every table sample; then narrow down around the best.
+    const samples = this.segmentCount * 32;
+    let best = 0;
+    let bestD = Infinity;
+    for (let s = 0; s <= samples; s++) {
+      const d = this.distanceAt(s / samples, target);
+      if (d < bestD) {
+        bestD = d;
+        best = s / samples;
+      }
+    }
+    let step = 1 / samples;
+    for (let k = 0; k < 20; k++) {
+      step /= 2;
+      for (let side = 0; side < 2; side++) {
+        const t = side === 0 ? best - step : best + step;
+        const c = this._closed ? ((t % 1) + 1) % 1 : Math.max(0, Math.min(1, t));
+        const d = this.distanceAt(c, target);
+        if (d < bestD) {
+          bestD = d;
+          best = c;
+        }
+      }
+    }
+    const point = this.evaluate(best);
+    return { t: best, point: point, distance: point.distance(target) };
+  }
+
+  private changed(): void {
+    this.table = null;
+    this.ctrl = null;
+    this.version++;
+  }
+}
+
+
+const spts: Vector3[] = [new Vector3(0, 0, 0), new Vector3(3, 1, 0), new Vector3(6, -2, 1), new Vector3(8, 4, -1), new Vector3(2, 5, 2), new Vector3(-1, 2, 0.5)];
+
+function sameV3(name: string, a: Vector3, b: Vector3): string {
+  return same(a.x, b.x) && same(a.y, b.y) && same(a.z, b.z) ? "" : `${name}: (${a.x}, ${a.y}, ${a.z}) expected (${b.x}, ${b.y}, ${b.z})`;
+}
+
+function sameNum(name: string, a: number, b: number): string {
+  return same(a, b) ? "" : `${name}: ${a} expected ${b}`;
+}
+
+/** Everything a spline can tell, native against the TypeScript one, as the first difference ("" when equal). */
+function compareSplines(label: string, s: Spline, r: RefSpline): string {
+  const out: string[] = [];
+  out.push(sameNum(`${label} count`, s.count, r.count));
+  out.push(sameNum(`${label} segmentCount`, s.segmentCount, r.segmentCount));
+  out.push(sameNum(`${label} version`, s.version, r.version));
+  out.push(sameNum(`${label} tension`, s.tension, r.tension));
+  out.push(s.closed === r.closed ? "" : `${label} closed`);
+  out.push(sameNum(`${label} length`, s.length, r.length));
+  const k = s.knots;
+  if (k.length !== r.knots.length) return `${label} knots: ${k.length} expected ${r.knots.length}`;
+  for (let i = 0; i < k.length; i++) {
+    out.push(sameV3(`${label} knot ${i} position`, k[i]!.position, r.knots[i]!.position));
+    out.push(sameV3(`${label} knot ${i} tangentIn`, k[i]!.tangentIn, r.knots[i]!.tangentIn));
+    out.push(sameV3(`${label} knot ${i} tangentOut`, k[i]!.tangentOut, r.knots[i]!.tangentOut));
+    out.push(k[i]!.mode === r.knots[i]!.mode ? "" : `${label} knot ${i} mode ${k[i]!.mode} expected ${r.knots[i]!.mode}`);
+  }
+  for (const i of [-1, 0, 1, 2, 3, 4, 5, 6]) {
+    out.push(sameV3(`${label} handleOut(${i})`, s.handleOut(i), r.handleOut(i)));
+    out.push(sameV3(`${label} handleIn(${i})`, s.handleIn(i), r.handleIn(i)));
+  }
+  for (const i of [-1, 0, 1, 2, 5, 7]) {
+    for (const u of [0, 0.25, 0.5, 1, 1.5]) {
+      out.push(sameV3(`${label} segmentPoint(${i}, ${u})`, s.segmentPoint(i, u), r.segmentPoint(i, u)));
+      out.push(sameV3(`${label} segmentDerivative(${i}, ${u})`, s.segmentDerivative(i, u), r.segmentDerivative(i, u)));
+    }
+  }
+  for (const t of [0, 0.1, 0.25, 1 / 3, 0.5, 0.75, 0.999, 1, -0.5, 2, NaN]) {
+    const h = s.locate(t);
+    const rh = r.locate(t);
+    out.push(sameNum(`${label} locate(${t}).segment`, h.segment, rh.segment));
+    out.push(sameNum(`${label} locate(${t}).u`, h.u, rh.u));
+    // (A NaN `t` makes NaN points; the compiled typed-array read the old code did gives 0 there.)
+    if (t === t) {
+      out.push(sameV3(`${label} evaluate(${t})`, s.evaluate(t), r.evaluate(t)));
+      out.push(sameV3(`${label} tangent(${t})`, s.tangent(t), r.tangent(t)));
+    }
+  }
+  for (const per of [16, 1, 4, 3.5, 0]) {
+    const a = s.sample(per);
+    const b = r.sample(per);
+    if (a.length !== b.length) return `${label} sample(${per}): ${a.length} expected ${b.length}`;
+    for (let i = 0; i < a.length; i++) out.push(sameV3(`${label} sample(${per})[${i}]`, a[i]!, b[i]!));
+  }
+  out.push(s.sample().length === r.sample().length ? "" : `${label} sample() length`);
+  for (const p of [new Vector3(1.5, 2, 0), new Vector3(-5, -5, -5), new Vector3(6, -2, 1), new Vector3(3, 3, 3), new Vector3(100, 0, 0)]) {
+    const n = s.nearest(p);
+    const rn = r.nearest(p);
+    out.push(sameNum(`${label} nearest.t`, n.t, rn.t));
+    out.push(sameNum(`${label} nearest.distance`, n.distance, rn.distance));
+    out.push(sameV3(`${label} nearest.point`, n.point, rn.point));
+  }
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] !== "") return out[i]!;
+  }
+  return "";
+}
+
+/** Builds splines both ways, edits them the same way, and compares everything after each step. */
+export function splineMatch(): string {
+  for (let n = 0; n <= 6; n++) {
+    const pts = spts.slice(0, n);
+    for (const closed of [false, true]) {
+      for (const tension of [0.5, 0, 1]) {
+        const s = new Spline(pts, { closed, tension });
+        const r = new RefSpline(pts, { closed: closed, tension: tension });
+        let d = compareSplines(`n=${n} closed=${closed} tension=${tension}`, s, r);
+        if (d !== "") return d;
+        const lin = new Spline(pts, { closed, tension, mode: "linear" });
+        const rlin = new RefSpline(pts, { closed: closed, tension: tension, mode: "linear" });
+        d = compareSplines(`linear n=${n} closed=${closed}`, lin, rlin);
+        if (d !== "") return d;
+      }
+    }
+  }
+  // Edits: every mutator, in an order that mixes the modes.
+  const s = new Spline(spts.slice(0, 4));
+  const r = new RefSpline(spts.slice(0, 4));
+  const steps: string[] = [];
+  s.setMode(1, "bezier");
+  r.setMode(1, "bezier");
+  steps.push(compareSplines("setMode bezier", s, r));
+  s.setTangents(2, new Vector3(-1, 0.5, 0), new Vector3(1.5, -0.5, 0.25));
+  r.setTangents(2, new Vector3(-1, 0.5, 0), new Vector3(1.5, -0.5, 0.25));
+  steps.push(compareSplines("setTangents", s, r));
+  const i1 = s.insertKnot(2, new Vector3(4, 4, 4), "linear");
+  const j1 = r.insertKnot(2, new Vector3(4, 4, 4), "linear");
+  steps.push(i1 === j1 ? "" : `insertKnot index ${i1} expected ${j1}`);
+  steps.push(compareSplines("insertKnot", s, r));
+  const i2 = s.insertKnot(99, new Vector3(1, 1, 1), "bezier", new Vector3(0, 1, 0), new Vector3(0, -1, 0));
+  const j2 = r.insertKnot(99, new Vector3(1, 1, 1), "bezier", new Vector3(0, 1, 0), new Vector3(0, -1, 0));
+  steps.push(i2 === j2 ? "" : `insertKnot(99) index ${i2} expected ${j2}`);
+  steps.push(compareSplines("insertKnot at end", s, r));
+  const i3 = s.insertKnot(-3, new Vector3(9, 9, 9), "auto", new Vector3(1, 2, 3));
+  const j3 = r.insertKnot(-3, new Vector3(9, 9, 9), "auto", new Vector3(1, 2, 3));
+  steps.push(i3 === j3 ? "" : `insertKnot(-3) index ${i3} expected ${j3}`);
+  steps.push(compareSplines("insertKnot at start", s, r));
+  s.setPosition(1, new Vector3(5, 5, 5));
+  r.setPosition(1, new Vector3(5, 5, 5));
+  steps.push(compareSplines("setPosition", s, r));
+  s.setMode(1, "linear");
+  r.setMode(1, "linear");
+  s.setMode(2, "auto");
+  r.setMode(2, "auto");
+  steps.push(compareSplines("setMode back", s, r));
+  s.removeKnot(0);
+  r.removeKnot(0);
+  s.removeKnot(77);
+  r.removeKnot(77);
+  steps.push(compareSplines("removeKnot", s, r));
+  s.closed = true;
+  r.closed = true;
+  s.tension = 0.25;
+  r.tension = 0.25;
+  steps.push(compareSplines("closed, tension", s, r));
+  s.addKnot(new Vector3(-4, 0, 0));
+  r.addKnot(new Vector3(-4, 0, 0));
+  s.setPosition(-1, new Vector3(0, 0, 0));
+  r.setPosition(-1, new Vector3(0, 0, 0));
+  steps.push(compareSplines("addKnot", s, r));
+  // Duplicated points: zero-length segments and a zero total length.
+  const dup = new Spline([new Vector3(1, 1, 1), new Vector3(1, 1, 1), new Vector3(1, 1, 1)]);
+  const rdup = new RefSpline([new Vector3(1, 1, 1), new Vector3(1, 1, 1), new Vector3(1, 1, 1)]);
+  steps.push(compareSplines("duplicates", dup, rdup));
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i] !== "") return steps[i]!;
+  }
+  return "";
+}
+
+/** A spline made, read back through its snapshot and used as a plain object. */
+export function splineSnapshotsAreObjects(): string {
+  const s = new Spline([new Vector3(0, 0, 0), new Vector3(2, 0, 0)], { closed: false, tension: 0.25, mode: "linear" });
+  const k = s.knots;
+  const mode: TangentMode = k[1]!.mode;
+  const hit = s.locate(0.5);
+  const near = s.nearest(new Vector3(1, 3, 0));
+  const parsed = TangentMode.parse("bezier");
+  const name = TangentMode.name(2);
+  s.setMode(0, mode === "linear" ? "bezier" : "auto");
+  return `${k.length}|${mode}|${k[1]!.position.x}|${Math.round(hit.u * 100)}|${hit.segment}|${Math.round(near.distance * 100)}|${parsed}|${name}|${s.knots[0]!.mode}|${TangentMode.parse("nope")}|${s.tension}`;
+}
