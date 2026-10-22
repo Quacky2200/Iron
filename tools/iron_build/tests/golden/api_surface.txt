@@ -1796,11 +1796,14 @@ declare namespace Application :: let runInBackground: boolean;
 declare namespace Application :: let targetFrameRate: number;
 declare namespace Assets
 declare namespace Assets :: function count(): number;
+declare namespace Assets :: function exists(path: string): boolean;
 declare namespace Assets :: function guidAt(index: number): string;
 declare namespace Assets :: function guidToPath(guid: string): string;
 declare namespace Assets :: function importer(path: string): string;
+declare namespace Assets :: function list(glob: string): string;
 declare namespace Assets :: function offChanged(token: number): boolean;
 declare namespace Assets :: function onChanged(fn: (path: string) => void): () => void;
+declare namespace Assets :: function packOf(path: string): string;
 declare namespace Assets :: function pathAt(index: number): string;
 declare namespace Assets :: function pathToGuid(path: string): string;
 declare namespace Assets :: function resolve(src: string): string;

@@ -186,6 +186,56 @@ fn assets_look_up_guids_paths_and_changes() {
     assets::reset();
 }
 
+// M9-API-1151
+//
+// `Assets.exists` / `list` / `packOf` answer from the index the host fills: sorted keys, the
+// glob rules of `project.json`, `guid:` and `data:` sources, and the pack of each path.
+#[test]
+fn assets_exists_list_and_pack_of_answer_from_the_index() {
+    assets::reset();
+    assets::set_assets(vec![assets::AssetEntry {
+        path: "assets/sfx/b.wav".into(),
+        guid: "g1".into(),
+        importer_json: "{}".into(),
+    }]);
+    // Given out of order: the index sorts it.
+    assets::set_asset_index(vec![
+        ("assets/sfx/b.wav".into(), "assets".into()),
+        ("assets/emoji/1f600.svg".into(), "assets".into()),
+        ("assets/sfx/a.wav".into(), "scene-level1".into()),
+        ("assets/sfx/loud/c.wav".into(), "assets".into()),
+        ("assets/sfx/a.mp3".into(), "".into()),
+        ("scenes/level1.scene.json".into(), "scene-level1".into()),
+    ]);
+    with_js(|ctx| {
+        let s: String = ctx
+            .eval(
+                r#"
+                JSON.stringify([
+                  Assets.exists("assets/sfx/a.wav"), Assets.exists("./assets\\sfx\\a.wav"), Assets.exists("assets/sfx/none.wav"),
+                  Assets.exists("data:,hi"), Assets.exists("guid:g1"), Assets.exists("guid:nope"),
+                  Assets.list("assets/sfx/*.wav"), Assets.list("assets/sfx/**/*.wav"), Assets.list("assets/sfx"),
+                  Assets.list("assets/SFX/*.wav"), Assets.list("*.wav"),
+                  Assets.packOf("assets/sfx/a.wav"), Assets.packOf("assets/sfx/b.wav"), Assets.packOf("assets/sfx/a.mp3"),
+                  Assets.packOf("assets/none.wav"), Assets.packOf("guid:g1")]);
+                "#,
+            )
+            .unwrap();
+        assert_eq!(
+            s,
+            r#"[true,true,false,true,true,false,"assets/sfx/a.wav\nassets/sfx/b.wav","assets/sfx/a.wav\nassets/sfx/b.wav\nassets/sfx/loud/c.wav","assets/sfx/a.mp3\nassets/sfx/a.wav\nassets/sfx/b.wav\nassets/sfx/loud/c.wav","","","scene-level1","assets","","","assets"]"#
+        );
+    });
+    // Without an index nothing exists.
+    assets::reset();
+    with_js(|ctx| {
+        let s: String = ctx
+            .eval(r#"JSON.stringify([Assets.exists("a.png"), Assets.list("**"), Assets.packOf("a.png")])"#)
+            .unwrap();
+        assert_eq!(s, r#"[false,"",""]"#);
+    });
+}
+
 // M9-API-42
 //
 // `Application` and `SystemInfo`: the manifest the host installs, writes by scripts returned to

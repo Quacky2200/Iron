@@ -1,6 +1,7 @@
 //! `Assets`: the asset database (each asset `.meta` file gives it a GUID and importer settings),
-//! `"guid:<guid>"` sources, and the paths of files that changed on disk (hot reload). The host
-//! fills it ([`set_assets`], [`changed`]); scripts read it. `js/engine/src/assets.ts` had
+//! `"guid:<guid>"` sources, the index of every asset the game can load (`exists`, `list`,
+//! `packOf`) and the paths of files that changed on disk (hot reload). The host fills it
+//! ([`set_assets`], [`set_asset_index`], [`changed`]); scripts read it. `js/engine/src/assets.ts` had
 //! `onChanged(fn)`: here `onChanged(fn)` returns a token for `offChanged(token)` and `fn` gets the
 //! changed paths as one string, a path per line; `takeChanges()` polls the same list.
 
@@ -21,6 +22,8 @@ pub struct AssetEntry {
 #[derive(Default)]
 struct State {
     entries: Vec<AssetEntry>,
+    /// Every loadable asset: (game path, the pack that holds it or ""), sorted by path.
+    index: Vec<(String, String)>,
     changed: Vec<String>,
     listeners: Listeners<(String,)>,
 }
@@ -31,6 +34,15 @@ thread_local! {
 
 pub fn set_assets(entries: Vec<AssetEntry>) {
     STATE.with(|s| s.borrow_mut().entries = entries);
+}
+
+/// Every asset the game can load, as (game path, pack name or `""` for a loose file). The host
+/// builds it from the file system it mounted (packs, or the game folder), so this crate needs
+/// no pack code.
+pub fn set_asset_index(mut index: Vec<(String, String)>) {
+    index.sort();
+    index.dedup_by(|a, b| a.0 == b.0);
+    STATE.with(|s| s.borrow_mut().index = index);
 }
 
 /// Files that changed on disk: scripts read them with `takeChanges()`.
@@ -49,6 +61,19 @@ pub fn changed(paths: impl IntoIterator<Item = String>) {
 
 pub fn reset() {
     STATE.with(|s| *s.borrow_mut() = State::default());
+}
+
+/// The index row for a path (`guid:` sources resolved, `./` and `\` cleaned).
+fn indexed(path: &str) -> Option<(String, String)> {
+    let path = resolve(path.trim());
+    let p = clean(&path);
+    STATE.with(|s| {
+        let s = s.borrow();
+        s.index
+            .binary_search_by(|(k, _)| k.as_str().cmp(&p))
+            .ok()
+            .map(|i| s.index[i].clone())
+    })
 }
 
 fn clean(path: &str) -> String {
@@ -150,6 +175,35 @@ pub mod assets_api {
     /// A path for `"guid:<guid>"` sources (others unchanged). Unknown GUIDs stay as given.
     pub fn resolve(src: &str) -> String {
         super::resolve(src)
+    }
+
+    /// Whether the game can load this path: a file of a pack or of the game folder, a `data:`
+    /// URL, or a `guid:` source of a known asset.
+    pub fn exists(path: &str) -> bool {
+        path.trim_start().starts_with("data:") || super::indexed(path).is_some()
+    }
+
+    /// The paths of every asset matching a glob (`*` and `?` inside one folder name, `**` across
+    /// folders, case-sensitive; a plain folder matches everything below it), sorted, one per
+    /// line. A script splits the text: `Assets.list("assets/sfx/*.wav").split("\n")`.
+    pub fn list(glob: &str) -> String {
+        STATE.with(|s| {
+            s.borrow()
+                .index
+                .iter()
+                .filter(|(k, _)| iron_core::glob::include_match(glob.trim(), k))
+                .map(|(k, _)| k.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+    }
+
+    /// The pack that holds the asset at this path (`assets`, `scene-level1`), `""` for a loose
+    /// file (the dev loop), a `data:` URL or a path nothing has.
+    pub fn pack_of(path: &str) -> String {
+        super::indexed(path)
+            .map(|(_, pack)| pack)
+            .unwrap_or_default()
     }
 
     /// The paths of asset files that changed since the last call, one per line.

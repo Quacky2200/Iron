@@ -112,6 +112,7 @@ fn main() {
         ("callbacks", "cbk_", 7000),
         ("audio_native", "aud_", 7100),
         ("render_native", "rdn_", 7200),
+        ("assets_native", "asn_", 7500),
         ("facade", "fac_", 7300),
         ("windows", "win_", 7400),
         ("outlines", "otl_", 7800),
@@ -130,7 +131,9 @@ fn main() {
             | "rotations" | "shapes" | "anim_clips" | "anim_player" | "anim_animator"
             | "scene_objects" | "comp_query" | "comp_life" | "scenes" | "physics" | "contacts"
             | "comp_api" | "physics_comp" | "callbacks" | "audio_native" | "render_native"
-            | "facade" | "windows" | "outlines" | "originals_engine" => engine_manifests(),
+            | "assets_native" | "facade" | "windows" | "outlines" | "originals_engine" => {
+                engine_manifests()
+            }
             "scene" | "components" | "components2" | "sine_demo" => {
                 let mut v = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
                 v.extend(iron_engine_api::iron_math::manifests());

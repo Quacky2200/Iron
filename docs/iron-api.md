@@ -315,7 +315,13 @@ the TypeScript, all because a call has fixed typed parameters:
 - logging functions take one string (compiled code writes a template literal); objects are not printed as JSON;
 - `getMask` takes up to four names; a left-out lookup (`guidToPath`) returns `""` instead of `undefined`;
 - `Assets` has `count()` / `pathAt(i)` / `guidAt(i)` / `importer(path)` as JSON text / `takeChanges()` (a
-  newline-separated string to poll) instead of `all`, an object and `onChanged(fn)`;
+  newline-separated string to poll) instead of `all`, an object and `onChanged(fn)`. It also has `exists(path)`,
+  `list(glob)` (the sorted paths matching a glob, `*` / `?` inside one folder name, `**` across folders, case-sensitive,
+  **one per line as a string**: the API has no string-array results yet, so a script writes `list(g).split("
+")`) and
+  `packOf(path)` (`assets`, `scene-level1`, `""` for a loose file). They answer from the index the host fills with
+  `iron_engine_api::assets::set_asset_index` (every path of the mounted packs or game folder, `asset_db::index`), so they see assets
+  without a `.meta`;
 - `SystemInfo.screenWidth` / `screenHeight` / `screenRefreshRate` / `screenDpi` replace `SystemInfo.screen`;
 - `Application.onFocusChanged(fn)`, `Task` and the vector-valued `Random` members wait for closures and the
   Rust math types.

@@ -802,6 +802,18 @@ pub mod assets_t {
     include!(concat!(env!("OUT_DIR"), "/assets_bindings.rs"));
 }
 
+/// `bench/assets_native.ts`, prefix `asn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod assets_native_t {
+    include!(concat!(env!("OUT_DIR"), "/assets_native_bindings.rs"));
+}
+
 /// `bench/render_native.ts`, prefix `rdn_`.
 #[allow(
     dead_code,

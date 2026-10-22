@@ -263,6 +263,8 @@ fn run() -> Result<()> {
     info.set("prefs", serde_json::Value::Object(prefs.all().clone()));
     // Assets' GUIDs and importer settings from their `.meta` files.
     info.set("assets", asset_db::scan_vfs(&vfs, &asset_root));
+    info.set("assetIndex", asset_db::index(&vfs));
+    native_pump::seed_asset_index(&info);
     info.set("display", display::state(None, &display_settings));
     let mut scripts = QuickJsRuntime::new();
     // The native API (`Window`, `Shapes`, `Spline`, ...) for bundled (JavaScript) games: the same
@@ -1443,6 +1445,11 @@ impl App {
     /// Asset files changed on disk: textures, models and sounds from them load again
     /// under their ids, then scripts hear which files (`__iron_assets_changed`).
     fn reload_assets(&mut self, keys: &[String]) {
+        // Files came or went: the index `Assets.exists` / `list` answer from (packs never change).
+        if self.vfs.root().is_some() {
+            self.info.set("assetIndex", asset_db::index(&self.vfs));
+            native_pump::seed_asset_index(&self.info);
+        }
         // New or changed `.meta` files: the database scripts read.
         if keys.iter().any(|k| k.ends_with(".meta")) {
             self.info

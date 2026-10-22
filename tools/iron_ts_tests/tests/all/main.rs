@@ -5,6 +5,7 @@ mod app;
 mod arraylib;
 mod arrays2;
 mod assets;
+mod assets_native;
 mod audio_native;
 mod bigint;
 mod buffers;

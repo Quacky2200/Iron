@@ -104,6 +104,18 @@ pub fn seed_prefs(saved: &prefs::Prefs) {
     }));
 }
 
+/// Gives `Assets.exists` / `list` / `packOf` the index the host put in `info` (`assetIndex`).
+pub fn seed_asset_index(info: &info::Info) {
+    let rows = info
+        .0
+        .get("assetIndex")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|r| Some((r[0].as_str()?.to_owned(), r[1].as_str()?.to_owned())));
+    iron_engine_api::assets::set_asset_index(rows.collect());
+}
+
 /// What the program reads at start and after each reload: `Application`, `SystemInfo`, the
 /// layer names, and the quality levels (the manifest's, then the player's saved choice).
 pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
@@ -119,6 +131,7 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
         target_frame_rate: -1,
     });
     iron_render_api::set_physical_light_units(manifest.physical_units);
+    seed_asset_index(info);
     let sys = info.0.get("system").cloned().unwrap_or_default();
     let text = |k: &str| sys[k].as_str().unwrap_or_default().to_owned();
     let num = |k: &str| sys[k].as_f64().unwrap_or(0.0) as u32;

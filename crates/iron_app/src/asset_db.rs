@@ -47,6 +47,20 @@ pub fn scan_vfs(vfs: &iron_pack::Vfs, root: &Path) -> Value {
     Value::Array(out)
 }
 
+/// Every asset the game can load, as `[[path, pack]]` (`""` for a loose file): what `Assets.exists`,
+/// `list` and `packOf` answer from.
+pub fn index(vfs: &iron_pack::Vfs) -> Value {
+    Value::Array(
+        vfs.paths()
+            .into_iter()
+            .map(|p| {
+                let pack = vfs.pack_of(&p);
+                json!([p, pack])
+            })
+            .collect(),
+    )
+}
+
 fn walk(root: &Path, dir: &Path, out: &mut Vec<Value>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
