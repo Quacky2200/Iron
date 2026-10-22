@@ -69,6 +69,9 @@ pub struct Manifest {
     /// Functions that take a callback and return a token (`Screen.onChange`): (namespace, name) ->
     /// the name of the function that stops the listener. Scripts get a function that does it.
     pub subscriptions: HashMap<(String, String), String>,
+    /// Subscriptions whose callback gets a record as JSON text: (namespace, name) -> the record's
+    /// name (`input.on`: `GamepadChange`).
+    pub json_callbacks: HashMap<(String, String), String>,
     /// Functions that settle a promise through their last two callbacks (`SceneManager.loadSceneAsync`):
     /// (owner namespace or class, name, owner is a class, is a method).
     pub promises: Vec<(String, String, bool, bool)>,
@@ -113,6 +116,10 @@ pub enum RecField {
     Numbers,
     /// A list of records (`BlendChild[]`). JSON only.
     Records(String),
+    /// A record inside a record (`Gamepad` in `GamepadChange`). JSON only.
+    Record(String),
+    /// A dictionary of numbers by name (`Record<string, number>`); a list of pairs in JSON.
+    Dict,
 }
 
 impl RecField {
@@ -126,6 +133,8 @@ impl RecField {
                 | RecField::HandleList(_)
                 | RecField::Numbers
                 | RecField::Records(_)
+                | RecField::Record(_)
+                | RecField::Dict
         )
     }
 
@@ -136,7 +145,11 @@ impl RecField {
             "string" => RecField::Str,
             "list:pair" => RecField::Pairs,
             "list:f64" => RecField::Numbers,
+            "dict:f64" => RecField::Dict,
             other => {
+                if let Some(n) = other.strip_prefix("record:") {
+                    return Ok(RecField::Record(n.to_string()));
+                }
                 if let Some(n) = other.strip_prefix("records:") {
                     return Ok(RecField::Records(n.to_string()));
                 }
@@ -335,6 +348,10 @@ impl Manifest {
             if let Some(off) = f["subscription"]["off"].as_str() {
                 self.subscriptions
                     .insert((ns.clone(), name.clone()), off.to_string());
+                if let Some(r) = f["subscription"]["json"].as_str().filter(|r| !r.is_empty()) {
+                    self.json_callbacks
+                        .insert((ns.clone(), name.clone()), r.to_string());
+                }
             }
             if kind == "get" || kind == "set" {
                 let p = self

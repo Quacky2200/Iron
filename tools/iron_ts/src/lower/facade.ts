@@ -6,36 +6,6 @@
 // `engine_ts.d.ts`. Keep module-level state out of a chunk: a top-level initialiser of the
 // program may run a chunk's code before the chunk's own `const`s are set.
 
-//# when input.gamepads()|input.on(
-interface Gamepad {
-  id: number;
-  name: string;
-  connected: boolean;
-  buttons: Record<string, number>;
-  axes: Record<string, number>;
-}
-interface GamepadEvent {
-  gamepad: Gamepad;
-}
-// A pad as the TypeScript API has it: the standard buttons and axes by name (0 when not reported).
-function __pad(id: number): Gamepad {
-  const buttons: Record<string, number> = {};
-  for (const b of ["South", "East", "West", "North", "C", "Z", "LeftBumper", "RightBumper", "LeftTrigger", "RightTrigger", "Select", "Start", "Mode", "LeftStick", "RightStick", "DPadUp", "DPadDown", "DPadLeft", "DPadRight"]) buttons[b] = input.gamepadButton(id, b);
-  const axes: Record<string, number> = {};
-  for (const a of ["LeftStickX", "LeftStickY", "RightStickX", "RightStickY", "LeftZ", "RightZ", "DPadX", "DPadY"]) axes[a] = input.gamepadAxis(id, a);
-  return { id, name: input.gamepadName(id), connected: input.gamepadConnected(id), buttons, axes };
-}
-function __xt_input_gamepads(): Gamepad[] {
-  const out: Gamepad[] = [];
-  const n = input.gamepadCount();
-  for (let i = 0; i < n; i++) out.push(__pad(input.gamepadId(i)));
-  return out;
-}
-function __xt_input_on(type: string, fn: (e: GamepadEvent) => void): () => void {
-  const token = type === "gamepaddisconnected" ? input.onGamepadDisconnected((id: number) => { fn({ gamepad: __pad(id) }); }) : input.onGamepadConnected((id: number) => { fn({ gamepad: __pad(id) }); });
-  return () => { input.off(token); };
-}
-
 //# when postMessage&Window|onMessage&Window|onRequest&Window|.request<&Window|.request(&Window|broadcast&Window
 // Messages between windows travel as JSON of the static type (the compiler refuses handles in it).
 function __xm_Window_postMessage<T>(self: Window, data: T): boolean {

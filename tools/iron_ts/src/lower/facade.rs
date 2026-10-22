@@ -197,17 +197,35 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
         let Some(f) = manifest.namespaces.get(ns).and_then(|n| n.get(name)) else {
             continue;
         };
-        let Some((_, crate::ir::ExtTy::Fn(ps, _))) = f.params.first() else {
+        // The callback is the last parameter; the ones before it (an event type) go through.
+        let Some((_, crate::ir::ExtTy::Fn(ps, _))) = f.params.last() else {
             continue;
         };
-        let params: Vec<String> = ps
+        let lead = &f.params[..f.params.len() - 1];
+        let mut decl: Vec<String> = lead
             .iter()
-            .enumerate()
-            .map(|(i, p)| format!("a{i}: {}", ext_ts(p)))
+            .map(|(p, t)| format!("{p}: {}", ext_ts(t)))
             .collect();
+        let mut pass: Vec<String> = lead.iter().map(|(p, _)| p.clone()).collect();
+        if let Some(record) = manifest.json_callbacks.get(&(ns.clone(), name.clone())) {
+            // The engine gives the record as JSON text.
+            decl.push(format!("fn: (e: {record}) => void"));
+            pass.push(format!(
+                "(text: string) => {{ const e: {record} = JSON.parse(text); fn(e); }}"
+            ));
+        } else {
+            let params: Vec<String> = ps
+                .iter()
+                .enumerate()
+                .map(|(i, p)| format!("a{i}: {}", ext_ts(p)))
+                .collect();
+            decl.push(format!("fn: ({}) => void", params.join(", ")));
+            pass.push("fn".to_string());
+        }
         extra.push_str(&format!(
-            "\nfunction __xt_{ns}_{name}(fn: ({}) => void): () => void {{\n  const token = {ns}.{name}$n(fn);\n  return () => {{ {ns}.{off}(token); }};\n}}\n",
-            params.join(", ")
+            "\nfunction __xt_{ns}_{name}({}): () => void {{\n  const token = {ns}.{name}$n({});\n  return () => {{ {ns}.{off}(token); }};\n}}\n",
+            decl.join(", "),
+            pass.join(", ")
         ));
     }
     // `#[promise]` functions: a promise whose resolve and reject are the engine's two callbacks.

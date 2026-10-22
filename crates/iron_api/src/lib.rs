@@ -76,6 +76,10 @@ pub enum Ty {
     /// A value class in a declaration that takes a plain object too (`Vector3Like`): the manifest
     /// name of the class and the TypeScript name.
     Like(&'static str, &'static str),
+    /// A dictionary of numbers by name (`Record<string, number>`), a record field: the manifest
+    /// name of the value type and the TypeScript type. On the wire it is a list of `[name, value]`
+    /// pairs, which keeps the order.
+    Dict(&'static str, &'static str),
 }
 
 impl Ty {
@@ -93,7 +97,7 @@ impl Ty {
             Ty::Callback(_, ts) => ts,
             Ty::Enum(name) | Ty::Record(name) => name,
             Ty::List(_, arr) => arr,
-            Ty::Opt(_, ts) | Ty::Like(_, ts) => ts,
+            Ty::Opt(_, ts) | Ty::Like(_, ts) | Ty::Dict(_, ts) => ts,
         }
     }
 
@@ -120,6 +124,7 @@ impl Ty {
             Ty::List(inner, _) => format!("list:{inner}"),
             Ty::Opt(inner, _) => format!("opt:{inner}"),
             Ty::Like(n, _) => format!("like:{n}"),
+            Ty::Dict(inner, _) => format!("dict:{inner}"),
         }
     }
 }
@@ -204,7 +209,7 @@ pub struct Function {
     /// `#[subscription(off = ..)]`: the call returns a function that stops the listener (the
     /// script name of the stopping function; the declared type of the callback, or `""`). The C
     /// function returns a token and the stopping function takes it.
-    pub subscription: Option<(&'static str, &'static str)>,
+    pub subscription: Option<(&'static str, &'static str, &'static str)>,
     /// `#[promise]`: the last two parameters are the resolve and reject callbacks of a promise
     /// scripts get back (declared `Promise<T>`, `T` the resolve callback's argument).
     pub promise: bool,
@@ -988,11 +993,13 @@ fn function_json(f: &Function) -> String {
         f.ts_type
             .map_or(String::new(), |t| format!(",\"tsType\":{}", json_str(t))),
         if f.like { ",\"like\":true" } else { "" },
-        f.subscription.map_or(String::new(), |(off, ts)| format!(
-            ",\"subscription\":{{\"off\":{},\"ts\":{}}}",
-            json_str(off),
-            json_str(ts)
-        )),
+        f.subscription
+            .map_or(String::new(), |(off, ts, json)| format!(
+                ",\"subscription\":{{\"off\":{},\"ts\":{},\"json\":{}}}",
+                json_str(off),
+                json_str(ts),
+                json_str(json)
+            )),
         if f.promise { ",\"promise\":true" } else { "" },
         if f.global { ",\"global\":true" } else { "" },
         if f.constructor {

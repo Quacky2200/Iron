@@ -1650,6 +1650,14 @@ declare interface FontFace :: family: string;
 declare interface FontFace :: src: string;
 declare interface FontFace :: style?: string;
 declare interface FontFace :: weight?: number;
+declare interface Gamepad
+declare interface Gamepad :: axes: Record<string, number>;
+declare interface Gamepad :: buttons: Record<string, number>;
+declare interface Gamepad :: connected: boolean;
+declare interface Gamepad :: id: number;
+declare interface Gamepad :: name: string;
+declare interface GamepadChange
+declare interface GamepadChange :: gamepad: Gamepad;
 declare interface HeightFogSettings
 declare interface HeightFogSettings :: baseHeight: number;
 declare interface HeightFogSettings :: density: number;
@@ -1828,6 +1836,8 @@ declare module "@iron/engine" :: export import FullScreenMode = globalThis.FullS
 declare module "@iron/engine" :: export import GameObject = globalThis.GameObject;
 declare module "@iron/engine" :: export import GameObjectOptions = globalThis.GameObjectOptions;
 declare module "@iron/engine" :: export import Gamepad = globalThis.Gamepad;
+declare module "@iron/engine" :: export import GamepadChange = globalThis.GamepadChange;
+declare module "@iron/engine" :: export import GamepadEventType = globalThis.GamepadEventType;
 declare module "@iron/engine" :: export import Gizmos = globalThis.Gizmos;
 declare module "@iron/engine" :: export import GraphicsSettings = globalThis.GraphicsSettings;
 declare module "@iron/engine" :: export import HeightFogSettings = globalThis.HeightFogSettings;
@@ -2096,6 +2106,9 @@ declare namespace GameObject :: function createPrimitive(type: PrimitiveType, op
 declare namespace GameObject :: function dontDestroyOnLoad(go: GameObject): void;
 declare namespace GameObject :: function findObjectOfType<T>(cls: ClassOf<T>): T | undefined;
 declare namespace GameObject :: function instantiate(original: GameObject | Prefab, options?: InstantiateObjectOptions): GameObject;
+declare namespace GamepadEventType
+declare namespace GamepadEventType :: function name(index: number): GamepadEventType;
+declare namespace GamepadEventType :: function parse(name: string): number;
 declare namespace Gizmos
 declare namespace Gizmos :: const lineCount: number;
 declare namespace Gizmos :: function clear(): void;
@@ -2629,7 +2642,7 @@ declare namespace input :: function getMouseButtonUp(button: number): boolean;
 declare namespace input :: function isButtonDown(button: string): boolean;
 declare namespace input :: function isKeyDown(code: string): boolean;
 declare namespace input :: function off(token: number): boolean;
-declare namespace input :: function on(type: "gamepadconnected" | "gamepaddisconnected", fn: (e: { gamepad: Gamepad }) => void): () => void;
+declare namespace input :: function on(kind: GamepadEventType, f: (e: GamepadChange) => void): () => void;
 declare namespace input :: function onGamepadAxis(f: (a0: number, a1: string, a2: number) => void): number;
 declare namespace input :: function onGamepadButtonDown(f: (a0: number, a1: string) => void): number;
 declare namespace input :: function onGamepadButtonUp(f: (a0: number, a1: string) => void): number;
@@ -2642,6 +2655,7 @@ declare type ExposureMetering = "average" | "centerWeighted" | "spot";
 declare type FilterMode = "point" | "bilinear" | "trilinear";
 declare type FogMode = "linear" | "exponential" | "exponentialSquared";
 declare type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
+declare type GamepadEventType = "gamepadconnected" | "gamepaddisconnected";
 declare type LoadSceneMode = "single" | "additive";
 declare type PrimitiveMesh = PrimitiveType;
 declare type PrimitiveType = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
@@ -2677,12 +2691,6 @@ interface GameObjectOptions :: parent?: GameObject | null;
 interface GameObjectOptions :: position?: Vector3Like;
 interface GameObjectOptions :: rotation?: QuaternionLike;
 interface GameObjectOptions :: scale?: Vector3Like;
-interface Gamepad
-interface Gamepad :: connected: boolean;
-interface Gamepad :: readonly axes: Record<string, number>;
-interface Gamepad :: readonly buttons: Record<string, number>;
-interface Gamepad :: readonly id: number;
-interface Gamepad :: readonly name: string;
 interface InstantiateObjectOptions
 interface InstantiateObjectOptions :: parent?: GameObject | null;
 interface InstantiateObjectOptions :: position?: Vector3Like;

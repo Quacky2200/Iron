@@ -1332,7 +1332,7 @@ struct Api {
     /// token; scripts get a function that stops the listener (`off_x(token)`). (Rust name of the
     /// stopping function, the declared TypeScript type of the callback when it is not the
     /// callback's own.)
-    subscription: Option<(String, Option<String>)>,
+    subscription: Option<(String, Option<String>, Option<String>)>,
     /// `#[global]`: a namespace function that is also a global function of the same name.
     global: bool,
     /// `#[constructor]`: the positional `new Class(a, b, ..)` of the class.
@@ -1578,6 +1578,7 @@ fn api_of(
     for at in attrs.iter().filter(|a| a.path().is_ident("subscription")) {
         let mut off = None;
         let mut ts = None;
+        let mut json = None;
         let metas = at.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         for m in metas {
             match m {
@@ -1605,10 +1606,21 @@ fn api_of(
                     };
                     ts = Some(s.value());
                 }
+                // `json = "GamepadEvent"`: the callback gets a record, which arrives as its JSON
+                // text (a string argument).
+                Meta::NameValue(nv) if nv.path.is_ident("json") => {
+                    let Expr::Lit(l) = &nv.value else {
+                        return Err(syn::Error::new(nv.value.span(), "a record name string"));
+                    };
+                    let Lit::Str(s) = &l.lit else {
+                        return Err(syn::Error::new(nv.value.span(), "a record name string"));
+                    };
+                    json = Some(s.value());
+                }
                 other => {
                     return Err(syn::Error::new(
                         other.span(),
-                        "expected `off = \"stop_fn\"` or `ts = \"(..) => void\"`",
+                        "expected `off = \"stop_fn\"`, `ts = \"(..) => void\"` or `json = \"Record\"`",
                     ));
                 }
             }
@@ -1619,16 +1631,17 @@ fn api_of(
                 "#[subscription(off = \"..\")] names the function that stops it",
             ));
         };
-        if !(params.len() == 1
-            && matches!(params[0].1, Kind::Callback(_))
+        if !(params
+            .last()
+            .is_some_and(|p| matches!(p.1, Kind::Callback(_)))
             && matches!(ret, Kind::U32 | Kind::F64))
         {
             return Err(syn::Error::new(
                 sig.span(),
-                "a subscription takes one `Callback` and returns its token (`u32`)",
+                "a subscription ends with a `Callback` and returns its token (`u32`)",
             ));
         }
-        subscription = Some((off, ts));
+        subscription = Some((off, ts, json));
     }
     Ok(Api {
         name: sig.ident.clone(),
@@ -1871,6 +1884,11 @@ enum RecTy {
     Numbers,
     /// `Vec<R>` of a declared record (index into `Args::records`).
     Records(usize),
+    /// A declared record (index into `Args::records`) inside a record.
+    Record(usize),
+    /// `dict`: a `Vec<(String, f64)>` shown as `Record<string, number>` (a list of
+    /// `[name, value]` pairs on the wire, in order).
+    Dict,
 }
 
 fn parse_rec_ty(s: &str, args: &Args) -> Result<RecTy, String> {
@@ -1883,6 +1901,7 @@ fn parse_rec_ty(s: &str, args: &Args) -> Result<RecTy, String> {
         "string" => RecTy::Str,
         "pairs" => RecTy::Pairs,
         "Vec<f64>" => RecTy::Numbers,
+        "dict" => RecTy::Dict,
         other
             if other.starts_with("Vec<")
                 && args
@@ -1905,7 +1924,9 @@ fn parse_rec_ty(s: &str, args: &Args) -> Result<RecTy, String> {
             }
         }
         other => {
-            if let Some(i) = args.values.iter().position(|v| v.ts == other) {
+            if let Some(i) = args.records.iter().position(|r| r.ts == other) {
+                RecTy::Record(i)
+            } else if let Some(i) = args.values.iter().position(|v| v.ts == other) {
                 RecTy::Value(i, false)
             } else if let Some(i) = other
                 .strip_suffix("Like")
@@ -1944,6 +1965,8 @@ fn rec_flat(t: &RecTy) -> bool {
             | RecTy::Handles(_)
             | RecTy::Numbers
             | RecTy::Records(_)
+            | RecTy::Record(_)
+            | RecTy::Dict
     )
 }
 
@@ -1960,6 +1983,8 @@ fn rec_ty_name(t: &RecTy, args: &Args) -> String {
         RecTy::Pairs => "list:pair".into(),
         RecTy::Numbers => "list:f64".into(),
         RecTy::Records(i) => format!("records:{}", args.records[*i].ts),
+        RecTy::Record(i) => format!("record:{}", args.records[*i].ts),
+        RecTy::Dict => "dict:f64".into(),
         RecTy::Handle(i) => format!("handle:{}", args.handles[*i].0),
         RecTy::Handles(i) => format!("list:handle:{}", args.handles[*i].0),
     }
@@ -1978,6 +2003,8 @@ fn rec_ty_ts(t: &RecTy, args: &Args) -> String {
         RecTy::Pairs => "[number, number][]".into(),
         RecTy::Numbers => "number[]".into(),
         RecTy::Records(i) => format!("{}[]", args.records[*i].ts),
+        RecTy::Record(i) => args.records[*i].ts.clone(),
+        RecTy::Dict => "Record<string, number>".into(),
         RecTy::Handle(i) => args.handles[*i].0.clone(),
         RecTy::Handles(i) => format!("{}[]", args.handles[*i].0),
     }
@@ -2014,6 +2041,11 @@ fn rec_ty_manifest(t: &RecTy, args: &Args) -> TokenStream2 {
             let arr = format!("{n}[]");
             quote!(::iron_api::Ty::Records(#n, #arr))
         }
+        RecTy::Record(i) => {
+            let n = &args.records[*i].ts;
+            quote!(::iron_api::Ty::Record(#n))
+        }
+        RecTy::Dict => quote!(::iron_api::Ty::Dict("f64", "Record<string, number>")),
         RecTy::Handle(i) => {
             let n = &args.handles[*i].0;
             quote!(::iron_api::Ty::Handle(#n))
@@ -2047,7 +2079,9 @@ fn rec_flat_stmt(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
         | RecTy::Handle(_)
         | RecTy::Handles(_)
         | RecTy::Numbers
-        | RecTy::Records(_) => {
+        | RecTy::Records(_)
+        | RecTy::Record(_)
+        | RecTy::Dict => {
             quote!(compile_error!("not a flat record field");)
         }
     }
@@ -2074,6 +2108,15 @@ fn rec_json_value(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
             let to = format_ident!("__to_json_{}", args.records[*i].ts);
             quote!(::iron_api::serde_json::Value::Array(#x.iter().map(#to).collect()))
         }
+        RecTy::Record(i) => {
+            let to = format_ident!("__to_json_{}", args.records[*i].ts);
+            quote!(#to(#x))
+        }
+        RecTy::Dict => quote!(::iron_api::serde_json::Value::Array(
+            #x.iter()
+                .map(|(k, v)| ::iron_api::serde_json::json!([k, v]))
+                .collect()
+        )),
         RecTy::Pairs => quote!(::iron_api::serde_json::Value::Array(
             #x.iter()
                 .map(|p| ::iron_api::serde_json::json!([p.0, p.1]))
@@ -2145,6 +2188,22 @@ fn rec_parse_value(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenS
             quote!(#x.as_str().and_then(#parse).ok_or_else(#bad))
         }
         RecTy::Pairs => quote!(::iron_api::json_pairs(#x).ok_or_else(#bad)),
+        RecTy::Record(i) => {
+            let from = format_ident!("__from_json_{}", args.records[*i].ts);
+            quote!(#from(#x))
+        }
+        RecTy::Dict => quote! {
+            #x.as_array()
+                .and_then(|a| {
+                    a.iter()
+                        .map(|p| {
+                            let pair = p.as_array()?;
+                            Some((pair.first()?.as_str()?.to_string(), pair.get(1)?.as_f64()?))
+                        })
+                        .collect::<::std::option::Option<::std::vec::Vec<(::std::string::String, f64)>>>()
+                })
+                .ok_or_else(#bad)
+        },
         RecTy::Records(i) => {
             let from = format_ident!("__from_json_{}", args.records[*i].ts);
             quote! {
@@ -2257,6 +2316,19 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
                 }
             }
         }
+        RecTy::Record(i) => {
+            let build = format_ident!("__js_rec_{}", args.records[*i].ts);
+            quote!(o.set(#key, #build(ctx, #x)?)?;)
+        }
+        RecTy::Dict => quote! {
+            {
+                let dict = ::iron_api::rquickjs::Object::new(ctx.clone())?;
+                for (name, value) in #x.iter() {
+                    dict.set(name.as_str(), *value)?;
+                }
+                o.set(#key, dict)?;
+            }
+        },
         RecTy::Records(i) => {
             let build = format_ident!("__js_rec_{}", args.records[*i].ts);
             quote! {
@@ -2576,10 +2648,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let global = a.global;
         let constructor = a.constructor;
         let subscription = match &a.subscription {
-            Some((off, ts)) => {
+            Some((off, ts, json)) => {
                 let off = camel(off);
                 let ts = ts.clone().unwrap_or_default();
-                quote!(::std::option::Option::Some((#off, #ts)))
+                let json = json.clone().unwrap_or_default();
+                quote!(::std::option::Option::Some((#off, #ts, #json)))
             }
             None => quote!(::std::option::Option::None),
         };
@@ -2980,7 +3053,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                         Ok(__promise)
                     },
                 )
-            } else if let Some((off, _)) = &a.subscription {
+            } else if let Some((off, _, _)) = &a.subscription {
                 // The token goes into a function that stops the listener.
                 let off_fn = format_ident!("{}", off);
                 (

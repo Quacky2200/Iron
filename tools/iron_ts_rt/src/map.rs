@@ -278,6 +278,36 @@ pub extern "C" fn ts_rt_map_new_gc(key_kind: f64, val_ptr: f64) -> *mut MapObj {
     })
 }
 
+/// A new map for the JSON parser: never collects.
+pub(crate) fn new_map_in(h: &mut Heap, key_kind: u32, val_ptr: u32) -> *mut MapObj {
+    let p = new_obj(h, HDR_MAP, std::mem::size_of::<MapObj>()) as *mut MapObj;
+    // SAFETY: just allocated (zeroed).
+    unsafe {
+        (*p).next_seq = 1;
+        (*p).key_kind = key_kind;
+        (*p).val_ptr = val_ptr;
+    }
+    p
+}
+
+/// `map.set(key, value)` for the JSON parser: never collects.
+pub(crate) fn set_in(h: &mut Heap, map: *mut MapObj, key: u64, value: u64) {
+    insert(h, m(map), key, value);
+}
+
+/// The live entries of a map in insertion order, as (key word, value word).
+///
+/// # Safety
+/// `map` must be a live map.
+pub(crate) unsafe fn live_entries(map: *mut MapObj) -> Vec<(u64, u64)> {
+    m(map)
+        .entries()
+        .iter()
+        .filter(|e| e.deleted == 0)
+        .map(|e| (e.key, e.value))
+        .collect()
+}
+
 /// The entry number of `key`, or -1.
 ///
 /// # Safety

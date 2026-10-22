@@ -789,7 +789,7 @@ mod tests {
             "\ninterface IronStyle {",
             "\ninterface IronKeyboardEvent ",
             "\ndeclare type FullScreenMode =",
-            "\ninterface Gamepad {",
+            "\ndeclare interface Gamepad {",
             "\ninterface Collision {",
             "\ntype Collision2D =",
             "\ndeclare module \"@iron/engine\" {",

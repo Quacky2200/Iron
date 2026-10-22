@@ -919,6 +919,8 @@ impl<'a> Lowerer<'a> {
             RecField::HandleList(h) => Ty::Arr(Box::new(Ty::Handle(h.clone()))),
             RecField::Numbers => Ty::Arr(Box::new(Ty::Num)),
             RecField::Records(r) => Ty::Arr(Box::new(Ty::Obj(self.record_struct(r)))),
+            RecField::Record(r) => Ty::Obj(self.record_struct(r)),
+            RecField::Dict => Ty::Map(Box::new(Ty::Str), Box::new(Ty::Num)),
         }
     }
 
@@ -1054,7 +1056,9 @@ impl<'a> Lowerer<'a> {
                         | crate::manifest::RecField::Handle(_)
                         | crate::manifest::RecField::HandleList(_)
                         | crate::manifest::RecField::Numbers
-                        | crate::manifest::RecField::Records(_) => {
+                        | crate::manifest::RecField::Records(_)
+                        | crate::manifest::RecField::Record(_)
+                        | crate::manifest::RecField::Dict => {
                             unreachable!(
                                 "a record with optional keys or lists is not a flat result"
                             )

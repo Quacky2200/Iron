@@ -46,6 +46,39 @@ fn input_listeners_fire_with_the_events_arguments() {
     });
 }
 
+// M9-API-1644
+//
+// `input.gamepads()` is a list of records with dictionaries (standard names first, 0 when not
+// reported); `input.on(type, f)` gives the event as JSON text and returns a stop function.
+#[test]
+fn gamepads_are_records_with_dictionaries_and_events_carry_the_pad() {
+    with_world(|ctx| {
+        input::reset();
+        input::gamepad_connected(2, "pad");
+        input::gamepad_button(2, "South", 1.0);
+        let out: String = js(
+            ctx,
+            r#"
+            const pads = input.gamepads();
+            globalThis.heard = [];
+            globalThis.stop = input.on('gamepadconnected', (text) => heard.push(text));
+            JSON.stringify([pads.length, pads[0].name, pads[0].connected, pads[0].buttons.South,
+                Object.keys(pads[0].buttons)[1], pads[0].axes.LeftStickX])
+            "#,
+        );
+        assert_eq!(out, r#"[1,"pad",true,1,"East",0]"#);
+        input::gamepad_connected(7, "second");
+        let heard: String = js(
+            ctx,
+            "stop(); heard.length === 1 && JSON.parse(heard[0]).gamepad.id === 7 ? 'ok' : heard.join()",
+        );
+        assert_eq!(heard, "ok");
+        input::gamepad_connected(8, "third");
+        assert_eq!(js::<f64>(ctx, "heard.length"), 1.0, "stopped");
+        input::reset();
+    });
+}
+
 // M9-API-135
 //
 // Assets, Application and Screen listeners, and the time services.

@@ -11,6 +11,8 @@
 //!        | 5 nullable: desc
 //!        | 6 object: n u32, (struct header u64, body offset u32)*   (the class and its subclasses)
 //!        | 7 map or set                                      (stringifies as {}; cannot be parsed)
+//!        | 10 dictionary: values-are-pointers u8, desc       (a `Map<string, V>` in the records the
+//!          engine API takes and gives; the JSON is a list of `[name, value]` pairs, in order)
 //!        | 9 engine handle: the 64-bit id as a number (only in the records the engine API takes and gives)
 //!        | 8 value class: count u8, struct header u64, (len u8, name)*   (stringifies as [x,y,z];
 //!          parses that or {"x":..,"y":..,"z":..}, left-out fields are 0, alpha 1)
@@ -37,6 +39,7 @@ const D_NULLABLE: u8 = 5;
 const D_OBJ: u8 = 6;
 const D_VALUE: u8 = 8;
 const D_ID: u8 = 9;
+const D_DICT: u8 = 10;
 
 /// The whole blob behind a pointer to it (its first word is its length).
 ///
@@ -69,7 +72,7 @@ fn desc_len(b: &[u8], o: usize) -> usize {
             }
             p - o
         }
-        D_ARR => 2 + desc_len(b, o + 2),
+        D_ARR | D_DICT => 2 + desc_len(b, o + 2),
         D_NULLABLE => 1 + desc_len(b, o + 1),
         D_OBJ => 5 + 12 * u32_at(b, o + 1) as usize,
         D_VALUE => {
@@ -229,6 +232,24 @@ impl<'a> Out<'a> {
                 } else {
                     self.value(d + 1, bits);
                 }
+            }
+            D_DICT => {
+                // SAFETY: a dictionary slot holds a live map.
+                let entries = unsafe { super::map::live_entries(bits as *mut super::map::MapObj) };
+                self.s.push(b'[');
+                for (i, (k, v)) in entries.into_iter().enumerate() {
+                    if i > 0 {
+                        self.s.push(b',');
+                    }
+                    self.s.push(b'[');
+                    // SAFETY: the keys of a dictionary are live strings.
+                    let key = unsafe { &*(k as *const Str) };
+                    quote(&mut self.s, key.as_bytes());
+                    self.s.push(b',');
+                    self.value(d + 2, v);
+                    self.s.push(b']');
+                }
+                self.s.push(b']');
             }
             D_VALUE => {
                 // A value class (`Vector3`, `Color`, ...) is its numbers, compact: `[1,2,3]`.
@@ -777,6 +798,61 @@ impl Parser<'_, '_> {
                     unsafe { super::ts_rt_arr_push(a, v) };
                 }
                 Ok(a as u64)
+            }
+            D_DICT => {
+                if self.peek() != Some(b'[') {
+                    return match self.peek() {
+                        Some(b'{' | b'"' | b't' | b'f' | b'n' | b'-' | b'0'..=b'9') => {
+                            self.skip()?;
+                            self.soft(type_err("expected a list of [name, value] pairs"))
+                        }
+                        _ => Err(self.bad_start()),
+                    };
+                }
+                self.p += 1;
+                let map = super::map::new_map_in(self.h, 1, u32::from(b[d + 1]));
+                self.ws();
+                if self.peek() == Some(b']') {
+                    self.p += 1;
+                    return Ok(map as u64);
+                }
+                loop {
+                    self.ws();
+                    if self.peek() != Some(b'[') {
+                        self.skip()?;
+                        self.soft(type_err("expected a [name, value] pair"))?;
+                    } else {
+                        self.p += 1;
+                        self.ws();
+                        if self.peek() != Some(b'"') {
+                            return Err(self.bad_key(true));
+                        }
+                        let key = self.string()?;
+                        self.ws();
+                        if self.peek() != Some(b',') {
+                            return Err(syntax("Expected ',' between the name and the value"));
+                        }
+                        self.p += 1;
+                        let v = self.value(d + 2)?;
+                        self.ws();
+                        if self.peek() != Some(b']') {
+                            return Err(syntax("Expected ']'"));
+                        }
+                        self.p += 1;
+                        let k = alloc_str_pub(self.h, &key) as u64;
+                        super::map::set_in(self.h, map, k, v);
+                    }
+                    self.ws();
+                    match self.peek() {
+                        Some(b',') => self.p += 1,
+                        Some(b']') => {
+                            self.p += 1;
+                            break;
+                        }
+                        _ => return Err(syntax("Expected ']'")),
+                    }
+                }
+                Ok(map as u64)
             }
             D_VALUE if self.peek() == Some(b'{') => {
                 // The object form: fields by name; unknown keys are skipped, missing ones are 0.

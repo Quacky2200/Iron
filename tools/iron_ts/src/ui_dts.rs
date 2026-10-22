@@ -163,14 +163,7 @@ fn jsx_namespace() -> String {
 
 /// Names the engine used to declare in `ambient.d.ts` but are not UI: they wait for `#[iron_enum]` /
 /// `#[iron_record]` on their Rust types (plan phase 2, `FullScreenMode` / `Gamepad` / `Collision`).
-const ENGINE_AMBIENT: &str = "interface Gamepad {
-  readonly id: number;
-  readonly name: string;
-  connected: boolean;
-  readonly buttons: Record<string, number>;
-  readonly axes: Record<string, number>;
-}
-interface Collision {
+const ENGINE_AMBIENT: &str = "interface Collision {
   readonly gameObject: GameObject;
   readonly collider: Collider;
   readonly relativeSpeed: number;
@@ -181,7 +174,7 @@ type Collision2D = Collision;
 ";
 
 /// The names of [`ENGINE_AMBIENT`], re-exported from `@iron/engine`.
-pub const ENGINE_AMBIENT_NAMES: &[&str] = &["Gamepad", "Collision", "Collision2D"];
+pub const ENGINE_AMBIENT_NAMES: &[&str] = &["Collision", "Collision2D"];
 
 /// React's own types and the compiler's console, as TypeScript text.
 const REACT_TYPES_TS: &str = "type ReactNode = ReactElementLike | string | number | boolean | null | undefined | ReactNode[];
@@ -523,7 +516,6 @@ pub fn prelude() -> &'static str {
 type IronDroppedFile = UiDroppedFile;
 ";
         s += "type FullScreenMode = \"ExclusiveFullScreen\" | \"FullScreenWindow\" | \"MaximizedWindow\" | \"Windowed\";\n";
-        s += "interface Gamepad {\n  id: number;\n  name: string;\n  connected: boolean;\n  buttons: Record<string, number>;\n  axes: Record<string, number>;\n}\n";
         s += STYLE_ENTRIES;
         s += &ui_event_class();
         s

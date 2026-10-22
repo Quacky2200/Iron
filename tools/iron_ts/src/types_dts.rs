@@ -59,6 +59,7 @@ fn ts_type(t: &str) -> String {
         "list:string" => "string[]".into(),
         "list:f64" => "number[]".into(),
         "list:pair" => "[number, number][]".into(),
+        "dict:f64" => "Record<string, number>".into(),
         "ptr" => "unknown".into(),
         other => {
             if let Some(inner) = other.strip_prefix("opt:") {
@@ -178,13 +179,23 @@ fn funcs(v: &Value, like: bool) -> Vec<Func> {
             // `#[subscription(off = ..)]`: scripts get a function that stops the listener.
             if let Some(sub) = f["subscription"].as_object() {
                 func.ret = "() => void".to_string();
-                if let Some(ts) = sub
+                // The callback is the last parameter.
+                let ts = sub
                     .get("ts")
                     .and_then(|t| t.as_str())
                     .filter(|t| !t.is_empty())
-                    && let Some(p) = func.params.first_mut()
+                    .map(str::to_string)
+                    .or_else(|| {
+                        // `json = "GamepadChange"`: the callback gets that record.
+                        sub.get("json")
+                            .and_then(|t| t.as_str())
+                            .filter(|t| !t.is_empty())
+                            .map(|r| format!("(e: {r}) => void"))
+                    });
+                if let Some(ts) = ts
+                    && let Some(p) = func.params.last_mut()
                 {
-                    p.1 = ts.to_string();
+                    p.1 = ts;
                 }
             }
             // `#[ts_type = ".."]`: what a property reads as, a string-literal union where the Rust

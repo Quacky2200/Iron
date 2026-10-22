@@ -106,6 +106,12 @@ impl<'a> Lowerer<'a> {
                     }
                 }
             }
+            // A dictionary of an engine record (`Gamepad.buttons`): its entries in order.
+            Ty::Map(k, v) if b.ids && matches!(k.strip(), Ty::Str) => {
+                b.out.push(10);
+                b.out.push(v.is_ptr() as u8);
+                self.json_desc(b, v)?;
+            }
             // Engine objects (GameObject, Camera, ...) stringify as `{}` like host objects in a
             // browser: their members are not own properties. They cannot be parsed.
             Ty::Handle(_) if b.ids => b.out.push(9),
@@ -136,6 +142,12 @@ impl<'a> Lowerer<'a> {
         while let Some(s) = b.queue.pop() {
             let at = b.out.len();
             b.body_at.insert(s, at);
+            // An engine record (`Gamepad`) is its wire form wherever it is parsed or written: its
+            // handles are ids and its dictionaries lists of pairs.
+            let outer_ids = b.ids;
+            if self.manifest.records.contains_key(&self.m.structs[s].name) {
+                b.ids = true;
+            }
             // Own, visible fields in JavaScript's key order: array indices ascending, then the rest.
             let mut fields: Vec<(String, Ty, usize, bool)> = self.m.structs[s]
                 .fields
@@ -163,6 +175,7 @@ impl<'a> Lowerer<'a> {
                 b.out.extend_from_slice(name.as_bytes());
                 self.json_desc(&mut b, &fty)?;
             }
+            b.ids = outer_ids;
         }
         for (pos, s) in std::mem::take(&mut b.patches) {
             let at = b.body_at[&s] as u32;

@@ -25,6 +25,82 @@ struct Pad {
     axes: Vec<(String, f64)>,
 }
 
+/// A gamepad as scripts get it (`Gamepad`): the standard buttons and axes by name, 0 when it
+/// does not report one (and for a pad that is gone).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PadState {
+    pub id: f64,
+    pub name: String,
+    pub connected: bool,
+    pub buttons: Vec<(String, f64)>,
+    pub axes: Vec<(String, f64)>,
+}
+
+/// What a `gamepadconnected` / `gamepaddisconnected` listener gets.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PadEvent {
+    pub gamepad: PadState,
+}
+
+/// Which gamepad event `input.on` listens to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PadEventType {
+    #[default]
+    Connected,
+    Disconnected,
+}
+
+const STANDARD_BUTTONS: &[&str] = &[
+    "South",
+    "East",
+    "West",
+    "North",
+    "C",
+    "Z",
+    "LeftBumper",
+    "RightBumper",
+    "LeftTrigger",
+    "RightTrigger",
+    "Select",
+    "Start",
+    "Mode",
+    "LeftStick",
+    "RightStick",
+    "DPadUp",
+    "DPadDown",
+    "DPadLeft",
+    "DPadRight",
+];
+
+const STANDARD_AXES: &[&str] = &[
+    "LeftStickX",
+    "LeftStickY",
+    "RightStickX",
+    "RightStickY",
+    "LeftZ",
+    "RightZ",
+    "DPadX",
+    "DPadY",
+];
+
+/// The pad `id` as scripts see it now.
+fn pad_state(s: &State, id: i64) -> PadState {
+    let pad = s.connected(id);
+    let read = |list: Option<&Vec<(String, f64)>>, names: &[&str]| {
+        names
+            .iter()
+            .map(|n| ((*n).to_string(), list.map_or(0.0, |l| value_of(l, n))))
+            .collect()
+    };
+    PadState {
+        id: id as f64,
+        name: pad.map(|p| p.name.clone()).unwrap_or_default(),
+        connected: pad.is_some(),
+        buttons: read(pad.map(|p| &p.buttons), STANDARD_BUTTONS),
+        axes: read(pad.map(|p| &p.axes), STANDARD_AXES),
+    }
+}
+
 fn value_of(list: &[(String, f64)], name: &str) -> f64 {
     list.iter().find(|e| e.0 == name).map_or(0.0, |e| e.1)
 }
@@ -379,11 +455,67 @@ fn button_def(name: &str) -> Option<(&'static [&'static str], &'static [&'static
 /// Raw mouse movement per "Mouse X" / "Mouse Y" unit (Unity's default sensitivity).
 const MOUSE_SENSITIVITY: f64 = 0.1;
 
-#[iron_api(namespace = "input", quickjs, values(Vector2 = V2 [x: f64, y: f64]))]
+/// Keyboard, mouse and gamepads. Input belongs to the window's event domain: it reads the keys of the window
+/// family whose code is running; main-game components always read the main window's, an isolated window's keys
+/// never reach it (send a message), and focus loss clears held keys. See docs/windows.md.
+#[iron_api(
+    namespace = "input", quickjs,
+    values(Vector2 = V2 [x: f64, y: f64]),
+    enums(
+        /// The gamepad events `input.on` listens to.
+        GamepadEventType = PadEventType [Connected = "gamepadconnected", Disconnected = "gamepaddisconnected"]
+    ),
+    records(
+        /// A gamepad: its buttons (0 to 1) and axes (-1 to 1) by name; a standard name it does not report is 0.
+        Gamepad = PadState [
+            id: f64,
+            name: string,
+            connected: bool,
+            buttons: dict,
+            axes: dict
+        ],
+        /// What a `gamepadconnected` or `gamepaddisconnected` listener gets.
+        GamepadChange = PadEvent [gamepad: Gamepad]
+    )
+)]
 pub mod input_api {
-    use super::{MOUSE_SENSITIVITY, STATE, axis_def, button_def, mouse_code, value_of};
+    use super::{
+        MOUSE_SENSITIVITY, PadEvent, PadEventType, PadState, STATE, axis_def, button_def,
+        mouse_code, pad_state, value_of,
+    };
     use iron_api::Callback;
     use iron_math::V2;
+
+    /// Every connected gamepad.
+    pub fn gamepads() -> Vec<PadState> {
+        STATE.with(|s| {
+            let s = s.borrow();
+            s.pads
+                .iter()
+                .filter(|p| p.connected)
+                .map(|p| pad_state(&s, p.id))
+                .collect()
+        })
+    }
+
+    /// Calls `fn({ gamepad })` when a gamepad connects (`gamepadconnected`) or disconnects
+    /// (`gamepaddisconnected`); returns a function that stops listening. The callback gets the
+    /// event as JSON text, which the compiler parses.
+    #[subscription(off = "off", json = "GamepadChange")]
+    pub fn on(kind: PadEventType, f: Callback<(String,)>) -> u32 {
+        let wrap = move |(id,): (f64,)| {
+            let state = STATE.with(|s| pad_state(&s.borrow(), id as i64));
+            let event = PadEvent { gamepad: state };
+            f.call((__to_json_GamepadChange(&event).to_string(),));
+        };
+        STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            match kind {
+                PadEventType::Connected => s.on_pad_connected.add(Callback::from_fn(wrap)),
+                PadEventType::Disconnected => s.on_pad_disconnected.add(Callback::from_fn(wrap)),
+            }
+        })
+    }
 
     /// Calls `f(code, repeat)` when a key goes down; returns a token for `off`.
     pub fn on_key_down(f: Callback<(String, bool)>) -> u32 {
