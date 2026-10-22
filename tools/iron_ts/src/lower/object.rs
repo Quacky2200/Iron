@@ -203,24 +203,35 @@ impl<'a> Lowerer<'a> {
                 let mut stmts = vec![Stmt::Assign(t, target.clone())];
                 for i in 1..c.arguments.len() {
                     let src = self.object_arg(c, i, "Object.assign")?;
-                    let Ty::Obj(ssid) = src.ty.strip().clone() else {
-                        bail!(
-                            "{at}: Object.assign into an object cannot copy the entries of a dictionary (its keys are known only at run time): assign the properties you need"
-                        )
-                    };
-                    let s = self.new_local(src.ty.clone());
-                    stmts.push(Stmt::Assign(s, src));
-                    for (name, ty, fi) in self.own_fields(ssid) {
-                        let Some(j) = self.m.structs[tsid].field(&name) else {
-                            bail!(
-                                "{at}: Object.assign: {} has no field `{name}` (objects cannot gain fields)",
-                                self.m.structs[tsid].name
-                            )
-                        };
-                        let want = self.m.structs[tsid].fields[j].ty.clone();
-                        let read = mk(ExprKind::Field(Box::new(self.var_expr(s)), ssid, fi), ty);
-                        let v = self.coerce(read, &want)?;
-                        stmts.push(Stmt::StoreField(self.var_expr(t), tsid, j, v));
+                    match src.ty.strip().clone() {
+                        Ty::Obj(ssid) => {
+                            let s = self.new_local(src.ty.clone());
+                            stmts.push(Stmt::Assign(s, src));
+                            for (name, ty, fi) in self.own_fields(ssid) {
+                                let Some(j) = self.m.structs[tsid].field(&name) else {
+                                    // JavaScript adds the property; a struct has a fixed layout.
+                                    let msg = format!(
+                                        "Object.assign: `{name}` is not a field of {}; it was not copied (objects have fixed fields)",
+                                        self.m.structs[tsid].name
+                                    );
+                                    let msg = self.str_lit(&msg);
+                                    let warn = self.warn_once(msg);
+                                    stmts.push(warn);
+                                    continue;
+                                };
+                                let want = self.m.structs[tsid].fields[j].ty.clone();
+                                let read =
+                                    mk(ExprKind::Field(Box::new(self.var_expr(s)), ssid, fi), ty);
+                                let v = self.coerce(read, &want)?;
+                                stmts.push(Stmt::StoreField(self.var_expr(t), tsid, j, v));
+                            }
+                        }
+                        // A dictionary: its keys are known only at run time.
+                        Ty::Map(_, vty) => {
+                            let tv = self.var_expr(t);
+                            self.assign_map_into_struct(&mut stmts, tv, tsid, src, &vty)?;
+                        }
+                        other => bail!("{at}: Object.assign needs objects, found {other}"),
                     }
                 }
                 let ty = target.ty.clone();
@@ -242,65 +253,158 @@ impl<'a> Lowerer<'a> {
         let mut stmts = vec![Stmt::Assign(t, target.clone())];
         for i in 1..c.arguments.len() {
             let src = self.object_arg(c, i, "Object.assign")?;
-            match src.ty.strip().clone() {
-                Ty::Obj(ssid) => {
-                    let s = self.new_local(src.ty.clone());
-                    stmts.push(Stmt::Assign(s, src));
-                    for (name, ty, fi) in self.own_fields(ssid) {
-                        let read = mk(
-                            ExprKind::Field(Box::new(self.var_expr(s)), ssid, fi),
-                            ty.clone(),
-                        );
-                        let v = self.coerce(read.clone(), vty)?;
-                        let key = self.str_lit(&name);
-                        let set = self.map_set_value(self.var_expr(t), key, Some(v))?;
-                        // An optional property that is not there is not copied.
-                        if self.absent_able(ssid, fi) {
-                            let absent = mk(ExprKind::IsNull(Box::new(read)), Ty::Bool);
-                            stmts.push(Stmt::If(absent, vec![], vec![Stmt::Eval(set)]));
-                        } else {
-                            stmts.push(Stmt::Eval(set));
-                        }
-                    }
-                }
-                Ty::Map(..) => {
-                    let (keys, vals, pre) = self.object_parts(src, "Object.assign", true)?;
-                    if !matches!(vals.ty.strip(), Ty::Arr(e) if e.strip() == vty.strip()) {
-                        bail!("{at}: Object.assign: the dictionaries hold different value types")
-                    }
-                    stmts.extend(pre);
-                    let values = self.new_local(vals.ty.clone());
-                    stmts.push(Stmt::Assign(values, vals));
-                    let it = self.begin_iter(keys)?;
-                    stmts.extend(it.pre);
-                    let raw_ty = if vty.is_ptr() || *vty == Ty::Num {
-                        vty.clone().nullable()
-                    } else {
-                        vty.clone()
-                    };
-                    let raw = mk(
-                        ExprKind::Index(
-                            Box::new(self.var_expr(values)),
-                            Box::new(self.var_expr(it.idx)),
-                        ),
-                        raw_ty.clone(),
-                    );
-                    let entry = if raw_ty == *vty {
-                        raw
-                    } else {
-                        mk(ExprKind::Cast(Box::new(raw)), vty.clone())
-                    };
-                    let set =
-                        self.map_set_value(self.var_expr(t), self.var_expr(it.elem), Some(entry))?;
-                    let mut body = it.head;
-                    body.push(Stmt::Eval(set));
-                    stmts.push(Stmt::Loop(it.label, body));
-                }
-                other => bail!("{at}: Object.assign needs objects, found {other}"),
-            }
+            self.assign_source_into_map(&mut stmts, t, src, vty, at)?;
         }
         let ty = target.ty.clone();
         Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(t))), ty))
+    }
+
+    /// The properties of an object, or the entries of another dictionary, set into the
+    /// dictionary in `t` (later sources win). Also `{ ...a }` into a `Record<string, V>`.
+    pub(crate) fn assign_source_into_map(
+        &mut self,
+        stmts: &mut Vec<Stmt>,
+        t: VarId,
+        src: Expr,
+        vty: &Ty,
+        at: &str,
+    ) -> R<()> {
+        match src.ty.strip().clone() {
+            Ty::Obj(ssid) => {
+                let s = self.new_local(src.ty.clone());
+                stmts.push(Stmt::Assign(s, src));
+                for (name, ty, fi) in self.own_fields(ssid) {
+                    let read = mk(
+                        ExprKind::Field(Box::new(self.var_expr(s)), ssid, fi),
+                        ty.clone(),
+                    );
+                    let v = self.coerce(read.clone(), vty)?;
+                    let key = self.str_lit(&name);
+                    let set = self.map_set_value(self.var_expr(t), key, Some(v))?;
+                    // An optional property that is not there is not copied.
+                    if self.absent_able(ssid, fi) {
+                        let absent = mk(ExprKind::IsNull(Box::new(read)), Ty::Bool);
+                        stmts.push(Stmt::If(absent, vec![], vec![Stmt::Eval(set)]));
+                    } else {
+                        stmts.push(Stmt::Eval(set));
+                    }
+                }
+            }
+            Ty::Map(..) => {
+                let (keys, vals, pre) = self.object_parts(src, "Object.assign", true)?;
+                if !matches!(vals.ty.strip(), Ty::Arr(e) if e.strip() == vty.strip()) {
+                    bail!("{at}: Object.assign: the dictionaries hold different value types")
+                }
+                stmts.extend(pre);
+                let values = self.new_local(vals.ty.clone());
+                stmts.push(Stmt::Assign(values, vals));
+                let it = self.begin_iter(keys)?;
+                stmts.extend(it.pre);
+                let entry = self.dict_entry(values, it.idx, vty);
+                let set =
+                    self.map_set_value(self.var_expr(t), self.var_expr(it.elem), Some(entry))?;
+                let mut body = it.head;
+                body.push(Stmt::Eval(set));
+                stmts.push(Stmt::Loop(it.label, body));
+            }
+            other => bail!("{at}: Object.assign needs objects, found {other}"),
+        }
+        Ok(())
+    }
+
+    /// `values[idx]` of the values array of a dictionary, as its value type.
+    fn dict_entry(&mut self, values: VarId, idx: VarId, vty: &Ty) -> Expr {
+        let raw_ty = if vty.is_ptr() || *vty == Ty::Num {
+            vty.clone().nullable()
+        } else {
+            vty.clone()
+        };
+        let raw = mk(
+            ExprKind::Index(
+                Box::new(self.var_expr(values)),
+                Box::new(self.var_expr(idx)),
+            ),
+            raw_ty.clone(),
+        );
+        if raw_ty == *vty {
+            raw
+        } else {
+            mk(ExprKind::Cast(Box::new(raw)), vty.clone())
+        }
+    }
+
+    /// The entries of a dictionary copied into a struct by key, at run time: an entry whose key
+    /// is a field of the struct is stored (a value of the wrong type is a `TypeError` naming the
+    /// key and the struct); one that is no field cannot be added to a fixed layout, so a dev
+    /// warning names it (once per call site). `t` is the struct (a variable).
+    pub(crate) fn assign_map_into_struct(
+        &mut self,
+        stmts: &mut Vec<Stmt>,
+        t: Expr,
+        tsid: StructId,
+        src: Expr,
+        vty: &Ty,
+    ) -> R<()> {
+        let (keys, vals, pre) = self.object_parts(src, "Object.assign", true)?;
+        stmts.extend(pre);
+        let values = self.new_local(vals.ty.clone());
+        stmts.push(Stmt::Assign(values, vals));
+        let it = self.begin_iter(keys)?;
+        stmts.extend(it.pre.clone());
+        let entry = self.dict_entry(values, it.idx, vty);
+        let key = self.var_expr(it.elem);
+        let sname = self.m.structs[tsid].name.clone();
+        // No field of that name: the warning.
+        let head = self.str_lit("Object.assign: `");
+        let tail = self.str_lit(&format!(
+            "` is not a field of {sname}; it was not copied (objects have fixed fields)"
+        ));
+        let msg = self.str_concat(head, key.clone())?;
+        let msg = self.str_concat(msg, tail)?;
+        let mut chain = vec![self.warn_once(msg)];
+        for (name, fty, j) in self.own_fields(tsid).into_iter().rev() {
+            let then = match self.coerce(entry.clone(), &fty) {
+                Ok(v) => vec![Stmt::StoreField(t.clone(), tsid, j, v)],
+                Err(_) => match self.fids.get("__rtThrow").copied() {
+                    Some(fid) => {
+                        let msg = self.str_lit(&format!(
+                            "Object.assign: the value of `{name}` is {vty}, but the field `{name}` of {sname} is {fty}"
+                        ));
+                        vec![Stmt::Eval(mk(
+                            ExprKind::Call(fid, vec![num(2.0), msg]),
+                            Ty::Void,
+                        ))]
+                    }
+                    None => vec![],
+                },
+            };
+            let lit = self.str_lit(&name);
+            let is = self.lower_compare(CmpOp::Eq, key.clone(), lit, 0)?;
+            chain = vec![Stmt::If(is, then, chain)];
+        }
+        let mut body = it.head;
+        body.extend(chain);
+        stmts.push(Stmt::Loop(it.label, body));
+        Ok(())
+    }
+
+    /// A dev warning (`console.warn`) the first time this statement runs.
+    pub(crate) fn warn_once(&mut self, msg: Expr) -> Stmt {
+        let g = self.m.globals.len();
+        self.m.globals.push(Global {
+            name: format!("__warned{g}"),
+            ty: Ty::Bool,
+        });
+        let flag = mk(ExprKind::GlobalVar(g), Ty::Bool);
+        let log = self.rt_str("ts_rt_console", vec![num(3.0), msg], Ty::Void);
+        Stmt::If(
+            flag,
+            vec![],
+            vec![
+                Stmt::StoreGlobal(g, mk(ExprKind::Bool(true), Ty::Bool)),
+                Stmt::Eval(log),
+            ],
+        )
     }
 
     /// `"key" in obj` for a string literal key: decided by the object's type.

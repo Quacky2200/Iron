@@ -806,8 +806,14 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   `keys`, `values`, `entries`, `in` and `for ... in` (as for `JSON.stringify`). `for (const i in xs)` over an array gives the
   indices as strings (`"0"`, `"1"`, ..); `Object.assign(dict, a, b)` sets the properties of objects and the entries of other
   dictionaries into a `Record<string, V>` (`{ [key: string]: V }` is the same type; `M9-TS-3216/3217`); `Object.assign(obj, ..)`
-  into an object needs sources whose properties the target has. Not built: `Object.hasOwn(dictionary, k)`, copying a dictionary
-  into an object.
+  into an object copies the properties of object sources and the entries of dictionary sources (several sources, later ones win):
+  a dictionary's keys are matched against the struct's field names at run time (`assign_map_into_struct`, a chain of key
+  comparisons per call site), a value that does not fit the field is a `TypeError` naming the key and the struct, and a key that
+  is no field cannot be added to a fixed layout, so a dev warning (`console.warn`, once per call site: `warn_once`, a global
+  flag) names the key and the struct and the entry is skipped (JavaScript would add the property). The same warning replaces the
+  old compile error for a source property the target lacks. `{ ...dict }` into an object of a declared type does the same by
+  key; with no object type expected it is a new dictionary (`{ ...dict, z: 1 }`, also several spreads and object spreads into a
+  `Record<string, V>`). `M9-TS-3319..3322`. Not built: `Object.hasOwn(dictionary, k)`.
 - **`as const` arrays.** `["a", "b"] as const` of string literals is an array of union members (`Lit[]`), so its elements go
   where the union is expected (`(typeof NAMES)[number]`); the engine's own enums are strings, and a string reaches a union member
   through the tag table (`StrTag`), so the two meet either way: a generic parameter bound to both a union and a string is the

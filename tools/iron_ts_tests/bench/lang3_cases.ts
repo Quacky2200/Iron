@@ -156,3 +156,76 @@ function t(): string {
   };
   return `${a.count} ${b.count} ${a.label} ${b.label} ${fn()} ${shared.take(5)} ${shared.inner.plus} ${arrow.run()} ${arrow.sum()}`;
 }
+//## object_assign_a_dictionary_into_an_object
+interface Settings {
+  volume: number;
+  speed: number;
+  gain: number;
+}
+function show(s: Settings): string {
+  return s.volume + "/" + s.speed + "/" + s.gain;
+}
+function load(entries: [string, number][]): Record<string, number> {
+  const d: Record<string, number> = {};
+  for (const [k, v] of entries) d[k] = v;
+  return d;
+}
+function t(): string {
+  const a: Settings = { volume: 1, speed: 2, gain: 3 };
+  const d = load([["speed", 20], ["unknown", 99], ["gain", 30]]);
+  const r = Object.assign(a, d);
+  const b: Settings = { volume: 1, speed: 2, gain: 3 };
+  Object.assign(b, { volume: 7 }, d, { gain: 0.5 });
+  const c: Settings = { volume: 4, speed: 4, gain: 4 };
+  Object.assign(c, load([]));
+  return show(a) + " " + (r === a) + " " + show(b) + " " + show(c);
+}
+//## spread_a_dictionary_into_an_object_type_and_into_a_dictionary
+interface Pose {
+  x: number;
+  y: number;
+}
+function mk(d: Record<string, number>): Pose {
+  return { x: 0, y: 0, ...d };
+}
+function t(): string {
+  const d: Record<string, number> = {};
+  d["y"] = 5;
+  d["w"] = 8;
+  const p = mk(d);
+  const copy = { ...d, z: 1 };
+  copy["y"] = 6;
+  const merged: Record<string, number> = { ...copy, ...{ q: 2 } };
+  return p.x + "," + p.y + " " + Object.keys(copy).length + " " + d["y"] + " " + copy["y"] + " " + merged["z"] + merged["q"] + " " + Object.keys(merged).length;
+}
+//## object_keys_values_and_entries_of_objects
+interface Box {
+  w: number;
+  h: number;
+  d: number;
+}
+function t(): string {
+  const b: Box = { w: 2, h: 3, d: 4 };
+  const keys = Object.keys(b).join(",");
+  const vals = Object.values(b).join(",");
+  let pairs = "";
+  for (const [k, v] of Object.entries(b)) pairs += k + "=" + v + ";";
+  let area = 1;
+  for (const k of Object.keys(b)) area *= b[k as keyof Box];
+  return keys + " " + vals + " " + pairs + " " + area;
+}
+//## object_assign_a_dictionary_value_of_the_wrong_type
+interface Named {
+  title: string;
+  n: number;
+}
+function t(): string {
+  const o: Named = { title: "a", n: 1 };
+  const d: Record<string, number> = { n: 2, title: 9 };
+  try {
+    Object.assign(o, d);
+  } catch (e) {
+    return "threw:" + (e as Error).message;
+  }
+  return o.title;
+}

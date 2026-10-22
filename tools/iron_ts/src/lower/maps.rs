@@ -368,8 +368,15 @@ impl<'a> Lowerer<'a> {
         let m = self.new_local(ty.clone());
         let mut stmts = vec![Stmt::Assign(m, self.new_collection(ty)?)];
         for p in &o.properties {
-            let ObjectPropertyKind::ObjectProperty(p) = p else {
-                bail!("spread in a Record literal is not supported")
+            let p = match p {
+                ObjectPropertyKind::ObjectProperty(p) => p,
+                // `{ ...a, ...dict }`: the properties and entries, in order.
+                ObjectPropertyKind::SpreadProperty(sp) => {
+                    let src = self.lower_expr(&sp.argument, None)?;
+                    let at = self.loc(sp.span.start);
+                    self.assign_source_into_map(&mut stmts, m, src, &v, &at)?;
+                    continue;
+                }
             };
             let key = if p.computed {
                 let Some(e) = p.key.as_expression() else {

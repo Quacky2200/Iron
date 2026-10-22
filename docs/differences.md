@@ -142,6 +142,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `globalThis` | Not available | Available | Globals are program variables, not properties of an object |
 | Callback return literals | A callback returning a string literal is typed `string` | The literal type | Inferred callback return types widen |
 | BigInt | `bigint` is a leaf object on `num-bigint`. Not built: `BigInt64Array` / `BigUint64Array`, `toLocaleString`, bigints as `Map` / `Set` keys, bigints in `JSON` types (a compile error). Mixing a bigint with a number in arithmetic, unary `+` and `>>>` are compile errors. | Mixing, unary `+` and `>>>` throw a `TypeError` at run time; `&&` / `\|\|` give an operand | Types are checked at compile time |
+| `Object.assign` / `{ ...dict }` into an object | Copies the properties of objects and the entries of dictionaries into the target's fields by name; a key that is not a field of the target cannot be added (fixed layout): a `console.warn` names the key and the struct once per call site and the entry is skipped; a dictionary value of a type the field cannot hold is a `TypeError` | Adds the property | Objects are fixed structs |
 | `Object.keys/values/entries`, `in`, `hasOwn` | Keys are the struct's fields, fixed at compile time; `hasOwn` and `in` need a string literal key | Keys are looked up at run time | The program is typed and closed; run-time dictionaries need `Map` |
 
 ## SVG (M3d step 5.1)

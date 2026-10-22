@@ -2544,6 +2544,8 @@ impl<'a> Lowerer<'a> {
         enum Item<'b> {
             Spread(Expr),
             Prop(String, Expr),
+            /// `...dict` into an object of a known type: copied by key at run time.
+            Dict(Expr),
             /// A method or accessor that uses `this`: lowered once the object's struct exists.
             Pending(&'b ObjectProperty<'b>),
         }
@@ -2552,6 +2554,17 @@ impl<'a> Lowerer<'a> {
             match p {
                 ObjectPropertyKind::SpreadProperty(s) => {
                     let e = self.lower_expr(&s.argument, exp)?;
+                    if let Ty::Map(k, _) = e.ty.strip()
+                        && **k == Ty::Str
+                    {
+                        if exp_sid.is_some() {
+                            items.push(Item::Dict(e));
+                            continue;
+                        }
+                        // No object type is expected: a dictionary spread makes a dictionary.
+                        let ty = e.ty.strip().clone();
+                        return self.lower_record_map(o, &ty);
+                    }
                     if !matches!(e.ty.strip(), Ty::Obj(_)) {
                         bail!(
                             "{}: spread of {}, not an object",
@@ -2679,6 +2692,7 @@ impl<'a> Lowerer<'a> {
                             record.cloned().unwrap_or_else(|| v.ty.clone()),
                             false,
                         ),
+                        Item::Dict(_) => {}
                         Item::Pending(p) => {
                             let n = self.key_name(&p.key)?;
                             let ty = self.pending_placeholder(p)?;
@@ -2700,7 +2714,7 @@ impl<'a> Lowerer<'a> {
                                 Item::Prop(n, v) => self.m.structs[*s].field(n).is_some_and(|i| {
                                     self.m.structs[*s].fields[i].ty.strip() == v.ty.strip()
                                 }),
-                                Item::Pending(_) => false,
+                                Item::Pending(_) | Item::Dict(_) => false,
                             })
                     });
                     match only_spread {
@@ -2791,6 +2805,12 @@ impl<'a> Lowerer<'a> {
                     }
                 }
                 Item::Pending(_) => unreachable!("lowered above"),
+                Item::Dict(d) => {
+                    let Ty::Map(_, vty) = d.ty.strip().clone() else {
+                        unreachable!("checked")
+                    };
+                    self.assign_map_into_struct(&mut stmts, t.clone(), sid, d, &vty)?;
+                }
                 Item::Prop(name, v) => {
                     let Some(i) = self.m.structs[sid].field(&name) else {
                         bail!("{} has no field `{name}`", self.m.structs[sid].name)
