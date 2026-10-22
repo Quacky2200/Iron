@@ -27,7 +27,7 @@ describe("QualitySettings", () => {
     // The choice is also saved (prefs.set), checked in display.test.ts.
     ops = ops.filter((o) => o[0] !== "prefs.set");
     expect(ops).toEqual([
-      ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4, 1, "disable", 1, false, true, 8, false],
+      ["render.quality", 0, 1, 0.75, "hardOnly", 1, 0.4, 0, "disable", 1, false, true, 8, false],
       ["render.shadowSettings", 0, 20, 1024, 1],
     ]);
     expect(heard).toBe(0);
@@ -36,8 +36,8 @@ describe("QualitySettings", () => {
     QualitySettings.renderScale = 5;
     ops = ops.filter((o) => o[0] !== "prefs.set");
     expect(ops).toEqual([
-      ["render.quality", 0, 4, 0.75, "hardOnly", 1, 0.4, 1, "disable", 1, false, true, 8, false],
-      ["render.quality", 0, 4, 2, "hardOnly", 1, 0.4, 1, "disable", 1, false, true, 8, false],
+      ["render.quality", 0, 4, 0.75, "hardOnly", 1, 0.4, 0, "disable", 1, false, true, 8, false],
+      ["render.quality", 0, 4, 2, "hardOnly", 1, 0.4, 0, "disable", 1, false, true, 8, false],
     ]);
     QualitySettings.lodBias = 3;
     expect(ops.filter((o) => o[0] === "render.quality").at(-1)![6]).toBe(3);

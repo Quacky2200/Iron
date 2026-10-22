@@ -338,7 +338,6 @@ impl<'a> Lowerer<'a> {
         c: &'a CallExpression<'a>,
         exp: Option<&Ty>,
     ) -> R<Expr> {
-        use super::expr::mk;
         let at = self.loc(c.span.start);
         let Some(e) = c.arguments.first().and_then(|a| a.as_expression()) else {
             bail!("{at}: JSON.parse needs a string")
@@ -354,15 +353,7 @@ impl<'a> Lowerer<'a> {
         let text = self.lower_expr(e, Some(&Ty::Str))?;
         let text = self.widen_lit(text);
         let text = self.coerce(text, &Ty::Str)?;
-        let blob = self.json_blob(&ty)?;
-        let raw = mk(
-            ExprKind::Rt(
-                RtFn::Str("ts_rt_json_parse_gc"),
-                vec![self.blob_expr(blob), text],
-            ),
-            Ty::Handle("bits".into()),
-        );
-        let value = mk(ExprKind::Unbits(Box::new(raw)), ty.clone());
-        Ok(self.checked(value, ty))
+        // The text goes through a local (a GC root): the parser allocates while it reads it.
+        self.json_value_of(text, ty)
     }
 }

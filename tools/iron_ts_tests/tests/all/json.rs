@@ -126,3 +126,15 @@ fn a_shape_mismatch_is_a_type_error_and_a_syntax_error_wins() {
         );
     });
 }
+
+// M9-TS-3344
+//
+// `JSON.parse(f())`: the text a call returns is kept alive while the parser allocates the value.
+#[test]
+fn parse_of_a_call_result_survives_collections() {
+    in_every_gc_mode(|| unsafe {
+        let got = ts_json_parseOfCall();
+        let want: Vec<u16> = "50:1515".encode_utf16().collect();
+        assert_eq!(Str::from_raw(got as *const Str).to_utf16(), want);
+    });
+}

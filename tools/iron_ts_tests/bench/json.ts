@@ -163,3 +163,19 @@ export function shapeMismatches(): string {
   }
   return out;
 }
+
+function jsonTextOfItems(n: number): string {
+  let s = "[";
+  for (let i = 0; i < n; i++) {
+    s += (i ? "," : "") + '{"id":' + i + ',"name":"item' + i + '","tags":["a","b"],"meta":{"ok":true,"note":null}}';
+  }
+  return s + "]";
+}
+
+/** `JSON.parse` of a call result: the fresh text is only an operand while the parser allocates. */
+export function parseOfCall(): string {
+  const items = JSON.parse(jsonTextOfItems(50)) as Item[];
+  let total = 0;
+  for (const it of items) total += it.id + it.name.length;
+  return items.length + ":" + total;
+}
