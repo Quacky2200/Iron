@@ -144,8 +144,9 @@ that plane. In the plan, culling bounds and `PushLayer`/`BackdropBlur` bounds go
 - Fragments compute the window point, then `local_point` maps it back with `xf_unapply` to the
   instance's plane for the shape, glyph atlas lookup and gradients (`shade`, `glyph`, `fs_image`).
   `clip_coverage` runs on the window point and un-applies each clip's own transform.
-- Glyph masks are sampled nearest-neighbour in the plane, so rotated text is slightly jagged
-  ([differences.md](differences.md)).
+- Glyph masks of text under a rotation, skew, uneven scale, mirror or perspective are sampled
+  nearest-neighbour in the plane, so such text is slightly jagged ([differences.md](differences.md)).
+  Text under a map that only scales evenly and moves takes the path under **Text** instead.
 
 **Text.** For each `GlyphRun`, glyph positions are snapped to whole pixels vertically and to
 quarter pixels horizontally (`SUBPIXEL_BINS` = 4; the sub-pixel offset is baked into the cached
@@ -154,6 +155,14 @@ raster). `GlyphAtlas::glyph` returns an atlas entry; each glyph becomes a `KIND_
 (`font-smooth: never`; the shader thresholds coverage at 0.5). A `GlyphRun.stroke` draws a second
 glyph per glyph from an outline-stroked raster (`atlas.glyph(..., stroke_px)`) in the stroke colour
 over the fill.
+
+Under a transform that only scales evenly (`s > 0`) and translates (`Homography::as_scale_translate`),
+a `DrawCmd::Text` is drawn like a browser does: glyphs are rasterized at `font_size * s * scale`, their
+positions mapped (`g.x * s + tx`, `g.y * s + ty`), the stroke width scaled by `s`, and the instances
+placed in window space. They are marked `xf[0] = -1`, which `tag()` turns into transform 0 instead of
+the current one. `background-clip: text` fill rects are mapped with `world()` too. Rasters are cached
+by size in 0.25 px steps (the atlas key), so a short scale animation rasterizes only a few sizes.
+(`M3-XF-03`, golden `M3-XF-02`.)
 
 **Text decorations** (`TextCmd.decorations`): `solid` is one quad, `double` two (the second
 `2 x thickness` below), `dotted`/`dashed` a `KIND_BORDER` instance with a one-sided styled-border

@@ -162,7 +162,7 @@ without `tabIndex`. Engine side: [ui-tree.md](ui-tree.md#text-fields) and
 | `blur()` | `op("blur", id)` | `Input::Blur(id)`: only if that node has focus |
 | `setPointerCapture()` / `releasePointerCapture()` | `op("setPointerCapture", id)` etc. | `Input::SetPointerCapture/ReleasePointerCapture`; only effective while a button is held, so call it from `onPointerDown` |
 | `hasPointerCapture()` | none (local) | True when `pointerCapture.element` (host.ts) is this element; `dispatchUiEvent` updates it on `gotpointercapture` / `lostpointercapture` |
-| `scrollTo(left, top)` / `scrollBy(dx, dy)` / `scrollIntoView()` | `op("scrollTo", ...)` etc. | `Input::ScrollTo/ScrollBy/ScrollIntoView` |
+| `scrollTo` / `scrollBy` / `scrollIntoView(arg)` | `scrollTo`/`scrollBy` take `(x, y)` or the DOM's `ScrollToOptions` `{ left, top, behavior }` (`behavior`: `ScrollBehavior` `"auto"`, `"instant"`, `"smooth"`; a missing axis is kept); `op("scrollTo", ...)` etc. send `behavior` as 4th arg; `scrollIntoView` sends `block`, `inline` and `behavior` (`"start"`, `"center"`, `"end"`, `"nearest"`; the DOM's defaults `start` / `nearest`, `false` is `end`) | `Input::ScrollTo/ScrollBy/ScrollIntoView { block, inline, behavior }` (`ScrollAlign`, `ScrollBehavior`) |
 
 Ops are drained once per frame, so focus changes apply on the next frame, not synchronously.
 `tabIndex` is just an attribute prop (see below).

@@ -3,6 +3,8 @@
 
 use std::borrow::Cow;
 
+use iron_core::NodeId;
+
 use parley::fontique::{
     Blob, Collection, CollectionOptions, FontInfoOverride, GenericFamily, SourceCache,
 };
@@ -41,6 +43,8 @@ pub struct Brush {
     pub smooth: bool,
     /// `visibility: hidden` text keeps its place but isn't drawn.
     pub hidden: bool,
+    /// The node these characters came from, for hit testing spans.
+    pub node: Option<NodeId>,
 }
 
 /// The initial text style's brush (anti-aliased, black).
@@ -63,6 +67,7 @@ impl Brush {
             stroke_color: style.stroke_color,
             smooth: style.smooth,
             hidden: !style.visible,
+            node: None,
         }
     }
 }
@@ -189,28 +194,38 @@ impl TextEngine {
         block: &ComputedText,
         runs: &[(String, ComputedText)],
     ) -> Layout<Brush> {
-        self.build_with_text(block, runs).0
+        self.build_with_text(block, runs, None).0
     }
 
     /// [`Self::build`], also returning the text as laid out (white space collapsed),
-    /// which selection byte ranges index.
+    /// which selection byte ranges index. `nodes`, when given, holds each run's node,
+    /// kept in its brush for [`node_at`].
     pub fn build_with_text(
         &mut self,
         block: &ComputedText,
         runs: &[(String, ComputedText)],
+        nodes: Option<&[NodeId]>,
     ) -> (Layout<Brush>, String) {
         let root = to_parley(block);
         let mut builder = self
             .layout_cx
             .tree_builder(&mut self.font_cx, 1.0, true, &root);
         builder.set_base_direction(base_direction(block.direction));
-        for (text, style) in runs {
-            builder.push_style_span(to_parley(style));
+        for (i, (text, style)) in runs.iter().enumerate() {
+            let mut style = to_parley(style);
+            style.brush.node = nodes.and_then(|n| n.get(i).copied());
+            builder.push_style_span(style);
             builder.push_text(text);
             builder.pop_style_span();
         }
         builder.build()
     }
+}
+
+/// The node whose characters are under layout point (x, y), if any.
+pub fn node_at(layout: &Layout<Brush>, x: f32, y: f32) -> Option<NodeId> {
+    let (cluster, _) = parley::Cluster::from_point_exact(layout, x, y)?;
+    cluster.style().brush.node
 }
 
 /// WOFF and WOFF2 fonts (recognized by their signature) decompressed to plain TTF/OTF

@@ -33,6 +33,9 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   (`Declaration { prop, value, important }`), with `prop` converted by `camel_case` (kebab to
   camelCase; `--custom` names kept). Values are re-parsed later by `apply_style`, which is why
   they can contain `var()`.
+  `space_after_calls` spaces minified function lists (`translateY(0)scale(1)` becomes
+  `translateY(0) scale(1)`: a `)` followed by a letter or `#`, outside strings) in every value but
+  `--*` ones, since the property parsers split on spaces and transitions compare the text. Test: M3-CSS-13.
 - Failures never abort the sheet: an invalid selector, unsupported at-rule, or unknown pseudo-class yields a message in `Stylesheet.warnings` and the next rule
   still applies. `@font-face` becomes a `FontFace`; its `src` is the first `url(...)` entry
   Iron can load (`first_url`): TrueType, OpenType, WOFF or WOFF2, judged by `format()` or else the

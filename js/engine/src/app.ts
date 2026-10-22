@@ -27,6 +27,8 @@ interface InfoApp {
   targetFrameRate?: number;
   /** True in `iron_editor`. */
   isEditor?: boolean;
+  /** The command line's arguments after `--` (`iron game -- --level 2`). */
+  args?: string[];
 }
 
 interface InfoSystem {
@@ -104,6 +106,13 @@ export const Application = {
   get systemLanguage(): string {
     return sys().language ?? "en-US";
   },
+  /**
+   * The command line's arguments for the game: everything after `--`
+   * (`iron examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`.
+   */
+  get args(): string[] {
+    return [...(app().args ?? [])];
+  },
   /** Whether this runs in the editor (`iron_editor`) rather than the player (`iron`). */
   get isEditor(): boolean {
     return app().isEditor === true;
@@ -150,9 +159,9 @@ export const Application = {
       focusListeners.delete(f);
     };
   },
-  /** Closes the game after this frame. */
-  quit(): void {
-    __iron_op("app.quit");
+  /** Closes the game after this frame; `iron` exits with `exitCode` (0, success, by default). */
+  quit(exitCode = 0): void {
+    __iron_op("app.quit", Math.trunc(exitCode));
   },
 };
 

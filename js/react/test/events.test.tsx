@@ -313,10 +313,24 @@ describe("@iron/react events", () => {
     ref.current!.scrollTo(0, 50);
     ref.current!.scrollBy(0, -10);
     ref.current!.scrollIntoView();
+    ref.current!.scrollIntoView(false);
+    ref.current!.scrollIntoView({ block: "center" });
+    ref.current!.scrollIntoView({ block: "nearest", inline: "end" });
+    // M3-EVT-09: the DOM's option objects and `behavior`; a missing `scrollTo` axis is null.
+    ref.current!.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    ref.current!.scrollTo({ top: 80, behavior: "smooth" });
+    ref.current!.scrollBy({ top: 20, behavior: "instant" });
+    // M3-EVT-08: the DOM's defaults (block "start", inline "nearest").
     expect(ops).toEqual([
-      ["scrollTo", id, 0, 50],
-      ["scrollBy", id, 0, -10],
-      ["scrollIntoView", id],
+      ["scrollTo", id, 0, 50, "auto"],
+      ["scrollBy", id, 0, -10, "auto"],
+      ["scrollIntoView", id, "start", "nearest", "auto"],
+      ["scrollIntoView", id, "end", "nearest", "auto"],
+      ["scrollIntoView", id, "center", "nearest", "auto"],
+      ["scrollIntoView", id, "nearest", "end", "auto"],
+      ["scrollIntoView", id, "nearest", "nearest", "smooth"],
+      ["scrollTo", id, null, 80, "smooth"],
+      ["scrollBy", id, 0, 20, "instant"],
     ]);
     delete (globalThis as { __iron_op?: unknown }).__iron_op;
   });

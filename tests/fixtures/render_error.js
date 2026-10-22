@@ -17217,13 +17217,20 @@ ${err.stack}` : ""}`);
       return pointerCapture.element === this;
     }
     scrollTo(left, top) {
-      op("scrollTo", this.id, left, top);
+      const o = typeof left === "object" ? left : { left, top };
+      op("scrollTo", this.id, o.left ?? null, o.top ?? null, o.behavior ?? "auto");
     }
     scrollBy(dx, dy) {
-      op("scrollBy", this.id, dx, dy);
+      const o = typeof dx === "object" ? dx : { left: dx, top: dy };
+      op("scrollBy", this.id, o.left ?? 0, o.top ?? 0, o.behavior ?? "auto");
     }
-    scrollIntoView() {
-      op("scrollIntoView", this.id);
+    scrollIntoView(arg = true) {
+      const {
+        block = "start",
+        inline = "nearest",
+        behavior = "auto"
+      } = typeof arg === "boolean" ? { block: arg ? "start" : "end" } : arg;
+      op("scrollIntoView", this.id, block, inline, behavior);
     }
   }
   var pointerCapture = { element: null };

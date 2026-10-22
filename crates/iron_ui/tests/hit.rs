@@ -204,6 +204,41 @@ fn text_hits_its_text_element_and_generated_content_its_owner() {
     );
 }
 
+// M3-EVT-07
+#[test]
+fn a_span_is_hit_over_its_own_characters() {
+    let mut d = Dom::new();
+    let para = d.add(0, "text", &[("fontSize", px(20.0)), ("width", px(400.0))]);
+    d.text(para, "Read ");
+    let link = d.add(para, "span", &[]);
+    d.text(link, "the docs");
+    d.text(para, " now");
+    let quiet = d.add(para, "span", &[("pointerEvents", "none".into())]);
+    d.text(quiet, " later");
+    let mut tree = d.build("");
+    let r = tree.rect(NodeId(para)).unwrap();
+    let y = r.y + r.height / 2.0;
+    assert_eq!(hit(&mut tree, r.x + 3.0, y), Some(para), "plain text");
+    // "Read " is about 50px wide at 20px; "the docs" follows it.
+    assert_eq!(hit(&mut tree, r.x + 80.0, y), Some(link));
+    assert_eq!(
+        tree.event_path(NodeId(link)),
+        vec![NodeId(link), NodeId(para)]
+    );
+    assert_eq!(
+        hit(&mut tree, r.x + 390.0, y),
+        Some(para),
+        "past the end of the line"
+    );
+    let layout = tree.text_layout(NodeId(para)).unwrap();
+    let end = layout.width();
+    assert_eq!(
+        hit(&mut tree, r.x + end - 3.0, y),
+        Some(para),
+        "a span with pointerEvents: none passes to its text"
+    );
+}
+
 #[test]
 fn opacity_zero_still_hits() {
     // CSS: transparent elements are still targets (unlike `visibility: hidden`).

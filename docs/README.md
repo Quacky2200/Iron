@@ -80,6 +80,8 @@ The window is created hidden and shown after its first frame; a resize also draw
                                        __iron_ui_event(type, path, data) in QuickJS
                                                               |  React handlers run, setState
  frame():                                                     v
+   0. sync_screen: UiTree::set_size(window / scale), __iron_screen if the size changed (first,
+      so the first frame's script output lays out and scrolls at the window's size, not 1x1)
    1. per fixed 60 Hz tick: ComponentHost::fixed_update -> apply_script_output -> step_physics
       -> cloth step -> send_scene_moves (onFixedUpdate, then commits and ops, then bodies follow
       moved objects, rapier, objects follow bodies, __iron_physics, cloth, then __iron_scene)
@@ -91,8 +93,8 @@ The window is created hidden and shown after its first frame; a resize also draw
    4. drain_ops (loadFont, addStyleSheet, focus, scroll, cursor.*, render.texture/model, app.quit...)
       handled by the app; __iron_textures / __iron_models report loads
    5. Interaction::handle(Input::Refresh)         -> re-hit-test under a still pointer
-   5b. ComponentHost::pre_render (onPreRender) -> apply_script_output; __iron_screen if the size changed
-   6. UiTree::set_size(window / scale)
+   5b. ComponentHost::pre_render (onPreRender) -> apply_script_output
+   6. sync_screen again (a UI scale set this frame)
       load_images: take_image_requests -> image_size -> set_image_size (before each draw_list)
    7. UiTree::draw_list()                         -> layout_if_needed: restyle -> text shaping
                                                      -> Taffy -> absolute rects -> Vec<DrawCmd>

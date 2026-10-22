@@ -106,6 +106,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-LAY-05 | Unit | The same fixtures pass through the `LayoutEngine` trait, so a Yoga backend can run them later. |
 | M2-UI-OP-01 | Integration | `UiTree::apply_ops` with typed `Op`s builds the same tree as the script arrays; `Op::decode` rejects bad arity, types and opcodes (`crates/iron_ui/tests/tree.rs`). |
 | M2-LAY-06 | Integration | A React render error unmounts the UI (with absolutely positioned boxes in it) and the tree still lays out: removing a node takes it off its containing block's out-of-flow list, so no cached layout visits it. |
+| M2-LAY-07 | Integration | Appending a child to a long column measures only the new text: the cost doesn't grow with the column's length, alone or inside a row flex item sized from its content. |
 
 ### Drawing
 | ID | Kind | Checks |
@@ -118,6 +119,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-06 | Golden | Outer and inset box shadows with blur and spread, including on rounded boxes. |
 | M2-DRW-07 | Golden | `filter: blur` blurs a box and its children; nothing outside the layer bounds changes. |
 | M2-DRW-08 | Golden | `backdropFilter: blur` blurs only what's behind the box, clipped to its rounded shape. |
+| M2-DRW-09 | Integration | Drawing skips subtrees scrolled out of a clipping container (beyond a margin), also below intermediate boxes; scrolling brings them back; a far-off box with a shadow is still drawn. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |
@@ -223,6 +225,10 @@ layout pass):
 | M3-EVT-04 | Integration | Tab / Shift-Tab follow `tabIndex` and tree order; the focused node gets key events; `:focus`, `:focus-visible`, `:focus-within` apply. |
 | M3-EVT-06 | Integration + JS unit | Pointer capture needs a held button; while captured, moves and hover go to the capturer even over another element; the release goes to it and clicks it, then `lostpointercapture` and hover returns to what's under the pointer; capture ends on `releasePointerCapture`, removal and window blur; React sends the ops and `hasPointerCapture` follows the events. |
 | M3-EVT-05 | Integration + Golden | `overflow: hidden` clips children (including rounded clips); `overflow: scroll` scrolls with the wheel and keeps hit testing consistent with what's drawn. |
+| M3-EVT-07 | Integration | A span inside text is the target over its own characters (and in event paths, under its text); elsewhere, and over a `pointerEvents: none` span, the text element is hit. |
+| M3-EVT-08 | Integration + JS unit | `scrollIntoView` puts an element at the start, centre or end of each scroll container, or (`nearest`) scrolls only as far as needed and not at all when it's visible, clamped to the scroll range; `ref.scrollIntoView()` takes the DOM's arguments and defaults (`block: "start"`, `inline: "nearest"`; `false` is the end). |
+| M3-EVT-09 | Integration + JS unit | Smooth scrolling: `behavior: "smooth"` (or `auto` under `scroll-behavior: smooth`) on `scrollTo` / `scrollBy` / `scrollIntoView` eases in and out over 250 to 500 ms by distance, sends `scroll` events as it moves, stops when something scrolls it directly, and `scrollBy` steps add up from where it is heading; refs take the DOM's option objects (`{ left, top, behavior }`). |
+| M3-EVT-10 | Integration | `scroll-padding` (1 to 4 lengths, the side longhands, `block` / `inline`) insets the view `scrollIntoView` aligns to, so an element lands clear of a header or fade at the container's edges. |
 | M3-IME-01 | Integration | IME composition (pre-edit) text shows in a text field and the committed text is inserted; the candidate window is positioned at the caret. |
 | M3-BG-01 | Unit + Golden | `conic-gradient` (start angle, centre, angle/percentage stops, two-position stops) and the `repeating-` gradients parse, and render as a pie, repeating stripes and a rotated off-centre conic. |
 | M3-BG-02 | Unit + Golden | Background layer lists (images, clips, repeats, positions, `position-x/-y`) parse; `round`/`space` fit whole tiles; a content-box-clipped colour, two clipped layers, spaced tiles and gradient text (`background-clip: text`) render. |
@@ -239,6 +245,7 @@ layout pass):
 | M3-FX-04 | Unit + Golden | Mask lists and modes parse; alpha and luminance gradient masks fade a box; a repeated dot mask cuts out the box and its child. |
 | M3-XF-01 | Unit | Every 2D and 3D transform function maps points like CSS (rotation direction, order, origin, `matrix`/`matrix3d` layouts, perspective scaling); homographies invert; back faces are detected; the individual properties and `transform-origin` parse; bad functions are rejected. |
 | M3-XF-02 | Integration + Golden | Hit testing follows rotation, 3D turns and `backface-visibility`; `preserve-3d` combines turns before flattening; transform properties accept every form and keyword; a rotated bordered box with text, a skewed gradient, a card in perspective with a clipped child, and scaled text render. |
+| M3-XF-03 | Unit + Golden | Text under a transform that only scales evenly and moves (`Homography::as_scale_translate`) is rasterized at its on-screen size in window space, so it stays sharp while it pops in or is scaled (golden `M3-XF-02`); rotated, skewed, unevenly scaled or perspective text keeps sampling its masks in the plane. |
 | M3-VIS-01 | Integration | `visibility: hidden` keeps layout space, draws nothing and takes no hits (the element behind is hit); a `visible` child still draws and is hit; a visible span in hidden text draws only its own glyphs. |
 | M3-LST-01 | Integration + Golden | List items get markers numbered by position (renumbered after removals); every marker type, strings and `none`; outside markers hang in the padding while inside ones take space; `::marker` rules style markers; discs, numbers, inside roman numerals, string markers on text items and image markers render. |
 | M3-SEL-01 | Integration | Static text: dragging selects and Ctrl+C copies; a click collapses; double-click selects a word and triple-click a line; `user-select: none` blocks it (and shows the arrow cursor), `all` takes the whole block, a child can opt back in with `text`; presses map through transforms. |
@@ -258,6 +265,7 @@ layout pass):
 | M3-GAME-02 | Unit + JS unit | UI scale modes (none, fixed, target height, fit a design) give the right factor, clamped and safe for a minimised window; the `uiScale` op's arguments parse; `setUiScale` sends each form. |
 | M3-CSS-11 | Unit + Integration | Nested rules flatten against their parent (`&`, implicit descendant, `>`, compound `&.x`, ident-first `text:first-child`, selector lists via `:is()`), declarations after nested rules still belong to the parent, bad nested rules and nested at-rules warn; nested `:hover` rules restyle children. |
 | M3-CSS-12 | Integration | `@import` loads files relative to the importing sheet (nested imports relative to theirs), applies them before the importer's rules, rebases their `url()`s, and warns about missing files, cycles and conditional imports. |
+| M3-CSS-13 | Unit | Minified function lists get a space between calls (`translateY(0)scale(1)` → `translateY(0) scale(1)`, also before `#` colours); strings and custom properties are kept as written. |
 | M3-SVG-01 | Golden | An SVG file (gradient, dashed stroke, path, text) as a 32px background and a 96px `image` rasterized sharp at that size, and a tiled `data:image/svg+xml` background. |
 | M3-SVG-02 | Unit + Integration | Attribute names (camelCase kept, kebab otherwise), natural sizes from width/height/viewBox, escaping, CSS transforms in SVG syntax; an `svg` sizes from its attributes, serializes its content with attributes, CSS presentation properties and `currentColor`, restyles on `:hover` and transitions `fill`; its content isn't laid out, it's hit as one box, its `text` isn't an Iron text block, and attribute/CSS size changes resize it. |
 | M3-SVG-03 | Golden | Inline SVG at 2x: a gradient from `defs` clipped by a `clipPath`, a dashed `currentColor` ring, a CSS-rotated polygon and SVG text, all styled from a stylesheet. |
@@ -269,6 +277,7 @@ layout pass):
 | M3-INP-01 | Integration | A controlled `<input>`: typing calls `onChange`, the value round-trips, selection with mouse and Shift+arrows works, copy/paste uses the clipboard. |
 | M3-INP-02 | Integration | Text-field shortcuts (Ctrl/Cmd+A/C/X/V) follow the physical key `code` when the layout's `key` isn't a Latin letter (Russian layout: `key` "ф", `code` "KeyA" selects all); AltGr (Ctrl+Alt) still types. |
 | M3-PAD-01 | Integration | Gamepad button events from `gilrs` reach scripts (using a simulated device where possible). |
+| M3-PAD-02 | Unit | Each pad connection reaches scripts once: pads already plugged in are announced on the first poll, a repeated `Connected` for a known pad is dropped, and one that disconnects and comes back is announced again. |
 | M3-MAN-01 | Manual | `iron examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
 
 ---
@@ -364,6 +373,8 @@ layout pass):
 | M5-APP-01 | Unit | The game's manifest comes from its `package.json` (`name`, `version`, `author`, and `iron.title` / `company` / `identifier` / `icon`), with the folder name and defaults when missing; `__iron_info` carries the app and system sections and later GPU / screen additions. |
 | M5-APP-02 | JS unit | `Application` and `SystemInfo` read `__iron_info` (defaults before it exists); `Application.quit()` is an op. |
 | M5-APP-04 | Unit | The log goes to `Player.log` in the game's settings folder (or `IRON_LOG_FILE`); the last run's is kept as `Player-prev.log`. |
+| M5-APP-11 | Unit + JS unit | Arguments after `--` on `iron`'s command line go to scripts as `Application.args` (Iron's own options before it still apply); a copy each read. |
+| M5-APP-12 | JS unit + Manual | `Application.quit(code)` sends `app.quit` with a whole exit code (0 by default) and `iron` exits with it (checked by hand: the md-reader's `--root` exits with 2). |
 | M5-APP-03 | Unit | `iron` without a game argument runs the current folder; the game folder may come before or after the options, and a second folder or an unknown option is an error. |
 | M5-APP-05 | Unit | winit's `Focused` and `Occluded` window events become `InputEvent::Focused` / `Occluded`. |
 | M5-APP-06 | Integration | Muting the mixer for the background silences everything and fades back to the scripts' master volume, including a master set while muted. |

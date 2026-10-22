@@ -14,6 +14,7 @@ use crate::draw::{ClipShape, DrawCmd, ImageFill, LayerShadow, Quad, Radii, Rect,
 use crate::editor::{Editor, KeyOutcome, PointerSelect, TEXTAREA_ROWS, is_editor_kind};
 use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
+use crate::motion::Timing;
 use crate::opcodes;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle, Overflow, Shadow,
@@ -337,6 +338,17 @@ fn is_inline(kind: &str) -> bool {
     matches!(kind, "span" | TEXT_NODE)
 }
 
+/// A smooth scroll in progress ([`UiTree::smooth_scroll_to`]).
+#[derive(Clone, Copy, Debug)]
+struct SmoothScroll {
+    from: (f32, f32),
+    to: (f32, f32),
+    start_ms: f64,
+    duration_ms: f64,
+    timing: Timing,
+    by_user: bool,
+}
+
 /// The UI node tree, owned by Rust and built from React commits (DESIGN.md §3, §5).
 pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Boxed: nodes are large (~700 bytes), so the map stays cheap to grow.
@@ -349,6 +361,10 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     rects: HashMap<NodeId, Rect>,
     /// Scroll offsets of scrolled elements (x, y), clamped to their range at layout.
     scroll: HashMap<NodeId, (f32, f32)>,
+    /// Smooth scrolls in progress, moved on by [`Self::set_time`].
+    smooth_scrolls: HashMap<NodeId, SmoothScroll>,
+    /// Containers a smooth scroll moved since [`Self::take_smooth_scrolled`].
+    smooth_scrolled: Vec<NodeId>,
     /// Nodes whose styles use relative units (`em`, `rem`, viewport units), restyled
     /// when what those resolve against changes.
     unit_uses: HashMap<NodeId, Uses>,
@@ -381,12 +397,21 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     text: TextEngine,
     /// Parley layouts of text blocks, rebuilt when a block is dirty.
     text_layouts: HashMap<NodeId, parley::Layout<Brush>>,
+    /// The content width each text block's lines were last broken at for drawing; a
+    /// relayout that leaves it unchanged (a scroll, say) skips breaking them again.
+    /// Measuring or re-shaping a block forgets it.
+    finished: HashMap<NodeId, f32>,
+    /// What each node and its descendants may paint over, as of the last layout (see
+    /// [`Self::compute_ink`]); drawing skips subtrees outside the clips around them.
+    ink: HashMap<NodeId, Rect>,
     /// `…` laid out in the style of text blocks with `text-overflow: ellipsis`.
     ellipses: HashMap<NodeId, parley::Layout<Brush>>,
     /// Nodes whose list marker may need adding, removing or renumbering.
     markers_dirty: HashSet<NodeId>,
     /// How many text blocks have been shaped (for tests and profiling).
     text_builds: u64,
+    /// How many times layout has measured a text block (for tests and profiling).
+    text_measures: u64,
     /// The text each block laid out (white space collapsed), which selections index.
     layout_texts: HashMap<NodeId, String>,
     /// Selected static text: the text block and Parley's selection in it.
@@ -467,6 +492,8 @@ impl<L: LayoutEngine> UiTree<L> {
             needs_layout: true,
             rects: HashMap::default(),
             scroll: HashMap::default(),
+            smooth_scrolls: HashMap::default(),
+            smooth_scrolled: Vec::new(),
             unit_uses: HashMap::default(),
             fixed: HashSet::default(),
             image_sizes: HashMap::default(),
@@ -485,6 +512,8 @@ impl<L: LayoutEngine> UiTree<L> {
             next_generated: FIRST_GENERATED_ID,
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
+            finished: HashMap::default(),
+            ink: HashMap::default(),
             layout_texts: HashMap::default(),
             text_selection: None,
             pseudo_styles: HashMap::default(),
@@ -507,6 +536,7 @@ impl<L: LayoutEngine> UiTree<L> {
             ellipses: HashMap::default(),
             markers_dirty: HashSet::default(),
             text_builds: 0,
+            text_measures: 0,
         }
     }
 
@@ -1986,10 +2016,12 @@ impl<L: LayoutEngine> UiTree<L> {
             .filter(|(id, since)| {
                 let mut stack = vec![**id];
                 while let Some(n) = stack.pop() {
-                    // Transitions, and animations the exit started (not an ongoing
-                    // spinner, which would hold it forever).
+                    // Transitions and animations the exit started: not one already
+                    // running (a fade-in cut short, a spinner that would hold it forever).
+                    // An `:outro` that redirects a running transition restarts it, so
+                    // that one counts.
                     let exiting = self.motion.get(&n).is_some_and(|m| {
-                        !m.transitions.is_empty()
+                        m.transitions.iter().any(|t| t.start_ms >= **since)
                             || m.animations
                                 .iter()
                                 .any(|a| !a.ended && a.paused_at.is_none() && a.start_ms >= **since)
@@ -2033,9 +2065,11 @@ impl<L: LayoutEngine> UiTree<L> {
         std::mem::take(&mut self.motion_events)
     }
 
-    /// Whether any transition is running (the app keeps drawing frames while so).
+    /// Whether any transition or smooth scroll is running (the app keeps drawing frames
+    /// while so).
     pub fn is_animating(&self) -> bool {
-        self.motion.values().any(crate::motion::Motion::is_moving)
+        !self.smooth_scrolls.is_empty()
+            || self.motion.values().any(crate::motion::Motion::is_moving)
     }
 
     /// The node's attributes (`className`, `id`, `data-*`, ...).
@@ -2278,6 +2312,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.ellipses.remove(&root);
         }
         let mut runs = Vec::new();
+        let mut nodes = Vec::new();
         let mut word_start = true;
         // Walk the inline content in order, carrying each node's computed style.
         let mut stack = vec![(root, block.clone())];
@@ -2293,18 +2328,25 @@ impl<L: LayoutEngine> UiTree<L> {
             if let Some(t) = &node.text {
                 let text = style.text_transform.apply(t, &mut word_start);
                 runs.push((text, style.clone()));
+                nodes.push(id);
             }
             for child in node.children.iter().rev() {
                 stack.push((*child, style.clone()));
             }
         }
         self.text_builds += 1;
-        self.text.build_with_text(&block, &runs)
+        self.text.build_with_text(&block, &runs, Some(&nodes))
     }
 
     /// How many text blocks have been shaped since the tree was created.
     pub fn text_build_count(&self) -> u64 {
         self.text_builds
+    }
+
+    /// How many times layout has measured a text block (broken its lines for a width)
+    /// since the tree was created.
+    pub fn text_measure_count(&self) -> u64 {
+        self.text_measures
     }
 
     /// Text blocks changed since the last call (clears the set).
@@ -2848,6 +2890,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let mut stack = vec![id];
         while let Some(id) = stack.pop() {
             self.scroll.remove(&id);
+            self.smooth_scrolls.remove(&id);
             self.editors.remove(&id);
             self.unit_uses.remove(&id);
             self.fixed.remove(&id);
@@ -2895,6 +2938,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.text_selection = None;
             }
             self.text_layouts.insert(root, layout);
+            self.finished.remove(&root);
             self.layout_texts.insert(root, laid_out);
             self.layout.mark_dirty(root);
         }
@@ -2905,6 +2949,8 @@ impl<L: LayoutEngine> UiTree<L> {
             nodes,
             image_sizes,
             size,
+            text_measures,
+            finished,
             ..
         } = self;
         layout.compute(
@@ -2912,7 +2958,11 @@ impl<L: LayoutEngine> UiTree<L> {
             size.0,
             size.1,
             &mut |id, known, available| match text_layouts.get_mut(&id) {
-                Some(l) => text::measure(l, known.0, available),
+                Some(l) => {
+                    *text_measures += 1;
+                    finished.remove(&id);
+                    text::measure(l, known.0, available)
+                }
                 None => match editors.get(&id) {
                     Some(e) => e.intrinsic_size(known.0),
                     None => {
@@ -2950,10 +3000,13 @@ impl<L: LayoutEngine> UiTree<L> {
             if self.text_layouts.contains_key(&id) {
                 // Final line breaking and alignment at the block's real content width.
                 let content_width =
-                    l.width - l.border[1] - l.border[3] - l.padding[1] - l.padding[3];
-                let align = self.computed_text(id).text_align;
-                if let Some(layout) = self.text_layouts.get_mut(&id) {
-                    text::finish(layout, content_width.max(0.0), align);
+                    (l.width - l.border[1] - l.border[3] - l.padding[1] - l.padding[3]).max(0.0);
+                if self.finished.get(&id) != Some(&content_width) {
+                    let align = self.computed_text(id).text_align;
+                    if let Some(layout) = self.text_layouts.get_mut(&id) {
+                        text::finish(layout, content_width, align);
+                    }
+                    self.finished.insert(id, content_width);
                 }
             }
             if let Some(node) = self.nodes.get(&id)
@@ -2980,9 +3033,88 @@ impl<L: LayoutEngine> UiTree<L> {
                 }));
             }
         }
+        self.compute_ink();
         self.refresh_editors();
         self.needs_layout = false;
         true
+    }
+
+    /// Fills [`Self::ink`]: each laid-out node's rect (and its text, which may run past
+    /// it) joined with its children's ink. A node that can paint beyond its box in ways
+    /// rects don't show (transforms, filters, shadows, outlines, animations, SVG,
+    /// inherited text shadows) gets an unbounded area, and so does every ancestor.
+    fn compute_ink(&mut self) {
+        const UNBOUNDED: Rect = Rect {
+            x: -UNCLIPPED,
+            y: -UNCLIPPED,
+            width: 2.0 * UNCLIPPED,
+            height: 2.0 * UNCLIPPED,
+        };
+        self.ink.clear();
+        // Pre-order (parent before children), with each node's parent and whether a
+        // text shadow is inherited there.
+        let mut order: Vec<(NodeId, Option<NodeId>)> = Vec::with_capacity(self.rects.len());
+        let mut stack = vec![(ROOT, None, false)];
+        while let Some((id, parent, shadowed)) = stack.pop() {
+            let Some(node) = self.nodes.get(&id) else {
+                continue;
+            };
+            let shadowed = node
+                .visual
+                .text
+                .text_shadow
+                .as_ref()
+                .map_or(shadowed, |s| !s.is_empty());
+            let v = &node.visual;
+            let unbounded = v.transform.is_some()
+                || v.filter_blur > 0.0
+                || !v.drop_shadows.is_empty()
+                || v.backdrop_blur > 0.0
+                || !v.shadows.is_empty()
+                || (v.outline_width > 0.0 && v.outline_style != BorderStyle::None)
+                || v.border_image.is_some()
+                || !v.transitions.specs().is_empty()
+                || !v.animations.specs().is_empty()
+                || node.kind == SVG
+                || self.leaving.contains_key(&id)
+                || (shadowed && is_inline_container(&node.kind));
+            let own = if unbounded {
+                Some(UNBOUNDED)
+            } else if is_contents(node) {
+                None
+            } else {
+                self.rects.get(&id).map(|&rect| {
+                    match (self.text_layouts.get(&id), self.content_box(id)) {
+                        (Some(text), Some(content)) => rect.union(Rect::new(
+                            content.x,
+                            content.y,
+                            text.width().max(text.full_width()),
+                            text.height(),
+                        )),
+                        _ => rect,
+                    }
+                })
+            };
+            if let Some(own) = own {
+                self.ink.insert(id, own);
+            }
+            order.push((id, parent));
+            // Inline content is drawn by its text block; fixed nodes paint on their own.
+            if !is_inline_container(&node.kind) {
+                for c in &node.children {
+                    if !self.nodes.get(c).is_some_and(|n| is_fixed(*c, n)) {
+                        stack.push((*c, Some(id), shadowed));
+                    }
+                }
+            }
+        }
+        for (id, parent) in order.into_iter().rev() {
+            let (Some(parent), Some(ink)) = (parent, self.ink.get(&id).copied()) else {
+                continue;
+            };
+            let joined = self.ink.get(&parent).map_or(ink, |p| p.union(ink));
+            self.ink.insert(parent, joined);
+        }
     }
 
     /// Restyles, resizes and re-lays out text fields after layout.
@@ -3022,6 +3154,7 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Sets engine time (ms) for caret blinking.
     pub fn set_time(&mut self, now_ms: f64) {
         self.time_ms = now_ms;
+        self.step_smooth_scrolls();
         // Running transitions restyle every frame.
         let moving: Vec<NodeId> = self
             .motion
@@ -3359,7 +3492,107 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Scrolls `id` to (x, y), clamped to its range on the axes it can scroll (see
     /// [`Self::scroll_axes`]; `by_user` limits it to user-scrollable axes). Lays out
     /// first if needed. Returns whether the offset changed.
+    /// Stops any smooth scroll of `id`.
     pub fn scroll_to(&mut self, id: NodeId, x: f32, y: f32, by_user: bool) -> bool {
+        self.smooth_scrolls.remove(&id);
+        self.set_scroll(id, x, y, by_user)
+    }
+
+    /// Starts scrolling `id` smoothly toward (x, y) (clamped as [`Self::scroll_to`] does):
+    /// `behavior: "smooth"`. It eases in and out over 250 to 500 ms, longer for longer
+    /// distances; a new target mid-flight carries on from where it is, easing out only, so
+    /// repeated steps (a held key) don't stall. Returns the clamped target, or `None` when
+    /// it's already there.
+    pub fn smooth_scroll_to(
+        &mut self,
+        id: NodeId,
+        x: f32,
+        y: f32,
+        by_user: bool,
+    ) -> Option<(f32, f32)> {
+        let from = self.scroll_offset(id);
+        let running = self.smooth_scrolls.remove(&id).is_some();
+        // Find the clamped target, then put the offset back.
+        if !self.set_scroll(id, x, y, by_user) {
+            return None;
+        }
+        let to = self.scroll_offset(id);
+        self.scroll.insert(id, from);
+        let distance = (to.0 - from.0).hypot(to.1 - from.1) as f64;
+        self.smooth_scrolls.insert(
+            id,
+            SmoothScroll {
+                from,
+                to,
+                start_ms: self.time_ms,
+                duration_ms: (200.0 + distance * 0.25).clamp(250.0, 500.0),
+                timing: if running {
+                    Timing::CubicBezier(0.0, 0.0, 0.58, 1.0)
+                } else {
+                    Timing::CubicBezier(0.42, 0.0, 0.58, 1.0)
+                },
+                by_user,
+            },
+        );
+        Some(to)
+    }
+
+    /// Where `id`'s scroll is heading: a smooth scroll's target, else its offset.
+    pub fn scroll_goal(&self, id: NodeId) -> (f32, f32) {
+        self.smooth_scrolls
+            .get(&id)
+            .map_or_else(|| self.scroll_offset(id), |s| s.to)
+    }
+
+    /// `id`'s `scroll-padding` (top, right, bottom, left) in px.
+    pub fn scroll_padding(&self, id: NodeId) -> [f32; 4] {
+        self.nodes
+            .get(&id)
+            .map_or([0.0; 4], |n| n.visual.scroll_padding)
+    }
+
+    /// Whether `id` has `scroll-behavior: smooth`.
+    pub fn smooth_by_default(&self, id: NodeId) -> bool {
+        self.nodes.get(&id).is_some_and(|n| n.visual.scroll_smooth)
+    }
+
+    /// Whether `id` is scrolling smoothly.
+    pub fn is_smooth_scrolling(&self, id: NodeId) -> bool {
+        self.smooth_scrolls.contains_key(&id)
+    }
+
+    /// Containers smooth scrolls moved since the last call (for `scroll` events).
+    pub fn take_smooth_scrolled(&mut self) -> Vec<NodeId> {
+        std::mem::take(&mut self.smooth_scrolled)
+    }
+
+    fn step_smooth_scrolls(&mut self) {
+        if self.smooth_scrolls.is_empty() {
+            return;
+        }
+        let now = self.time_ms;
+        let scrolls: Vec<(NodeId, SmoothScroll)> = self
+            .smooth_scrolls
+            .iter()
+            .map(|(id, s)| (*id, *s))
+            .collect();
+        for (id, s) in scrolls {
+            let t = ((now - s.start_ms) / s.duration_ms).clamp(0.0, 1.0) as f32;
+            let e = s.timing.eval(t);
+            let (x, y) = (
+                s.from.0 + (s.to.0 - s.from.0) * e,
+                s.from.1 + (s.to.1 - s.from.1) * e,
+            );
+            if self.set_scroll(id, x, y, s.by_user) && !self.smooth_scrolled.contains(&id) {
+                self.smooth_scrolled.push(id);
+            }
+            if t >= 1.0 {
+                self.smooth_scrolls.remove(&id);
+            }
+        }
+    }
+
+    fn set_scroll(&mut self, id: NodeId, x: f32, y: f32, by_user: bool) -> bool {
         self.layout_if_needed();
         let axes = self.scroll_axes(id, by_user);
         let (max_x, max_y) = self.scroll_max(id);
@@ -3654,10 +3887,34 @@ impl<L: LayoutEngine> UiTree<L> {
         if !rect.contains_rounded(radii, x, y) {
             return None;
         }
+        if is_inline_container(&node.kind)
+            && let Some(span) = self.span_at(id, x, y)
+        {
+            return Some(span);
+        }
         // Generated content belongs to its originating element.
         match node.generated {
             Some(_) => node.parent.filter(|p| *p != ROOT),
             None => Some(id),
+        }
+    }
+
+    /// The span under point (x, y) of text block `root` (in its plane): the innermost
+    /// element around the characters there that takes pointer events, below `root`.
+    fn span_at(&self, root: NodeId, x: f32, y: f32) -> Option<NodeId> {
+        let layout = self.text_layouts.get(&root)?;
+        let content = self.content_box(root)?;
+        let mut at = text::node_at(layout, x - content.x, y - content.y)?;
+        loop {
+            if at == root {
+                return None;
+            }
+            let node = self.nodes.get(&at)?;
+            let takes_events = node.visual.pointer_events != Some(false);
+            if node.kind != TEXT_NODE && node.generated.is_none() && takes_events {
+                return Some(at);
+            }
+            at = node.parent?;
         }
     }
 
@@ -3745,6 +4002,7 @@ impl<L: LayoutEngine> UiTree<L> {
             ROOT,
             &ComputedText::default(),
             TransformContext::ROOT,
+            None,
             &mut out,
         );
         // Fixed nodes paint last, outside their ancestors' clips and layers.
@@ -3753,7 +4011,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 Some(p) => self.computed_text(p),
                 None => ComputedText::default(),
             };
-            self.collect(id, &text, TransformContext::ROOT, &mut out);
+            self.collect(id, &text, TransformContext::ROOT, None, &mut out);
         }
         self.collect_drag_image(&mut out);
         out
@@ -3799,7 +4057,7 @@ impl<L: LayoutEngine> UiTree<L> {
             shadows: Vec::new(),
         });
         let content = out.len();
-        self.collect(id, &text, xf, out);
+        self.collect(id, &text, xf, None, out);
         if out.len() == content {
             out.truncate(start);
             return;
@@ -3815,13 +4073,21 @@ impl<L: LayoutEngine> UiTree<L> {
         out.push(DrawCmd::PopTransform);
     }
 
+    /// `cull`, when set, is the area the clips around `id` leave visible, in its layout
+    /// space: a subtree whose ink lies outside it isn't drawn.
     fn collect(
         &self,
         id: NodeId,
         inherited: &ComputedText,
         xf: TransformContext,
+        cull: Option<Rect>,
         out: &mut Vec<DrawCmd>,
     ) {
+        if let (Some(cull), Some(ink)) = (cull, self.ink.get(&id))
+            && !overlaps(*ink, cull)
+        {
+            return;
+        }
         let Some(node) = self.nodes.get(&id) else {
             return;
         };
@@ -3833,7 +4099,7 @@ impl<L: LayoutEngine> UiTree<L> {
             let text = inherited.child(&v.text);
             for child in self.paint_order(node).iter() {
                 if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
-                    self.collect(*child, &text, xf, out);
+                    self.collect(*child, &text, xf, cull, out);
                 }
             }
             return;
@@ -4079,6 +4345,14 @@ impl<L: LayoutEngine> UiTree<L> {
             out.push(DrawCmd::PushClip(clip.clone()));
         }
         let overflow_clip = overflow_clip(v, rect, &l, radii);
+        // Children are culled against this node's overflow clip too, unless a transform
+        // puts them in another space.
+        let child_cull = match (&overflow_clip, cull) {
+            _ if transformed => None,
+            (Some(clip), Some(c)) => Some(c.intersect(clip.rect)),
+            (Some(clip), None) => Some(clip.rect),
+            (None, c) => c,
+        };
 
         if text.visible && (v.backdrop_blur > 0.0 || v.backdrop_matrix.is_some()) {
             out.push(DrawCmd::BackdropBlur {
@@ -4122,7 +4396,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 shadows,
             });
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, child_xf, out);
+            self.collect_children(node, &text, overflow_clip, child_xf, child_cull, out);
             self.collect_scrollbars(id, out);
             out.extend(outline);
             // The layer must cover everything drawn into it, plus the blur's spread.
@@ -4157,7 +4431,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
             }
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, child_xf, out);
+            self.collect_children(node, &text, overflow_clip, child_xf, child_cull, out);
             self.collect_scrollbars(id, out);
             if let Some(mut outline) = outline {
                 if v.opacity < 1.0 {
@@ -4180,6 +4454,7 @@ impl<L: LayoutEngine> UiTree<L> {
         text: &ComputedText,
         clip: Option<ClipShape>,
         xf: TransformContext,
+        cull: Option<Rect>,
         out: &mut Vec<DrawCmd>,
     ) {
         if node.children.is_empty() {
@@ -4191,7 +4466,7 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         for child in self.paint_order(node).iter() {
             if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
-                self.collect(*child, text, xf, out);
+                self.collect(*child, text, xf, cull, out);
             }
         }
         if clipped {
@@ -4539,6 +4814,19 @@ const SCROLLBAR_THUMB: Rgba = Rgba {
 
 /// Far enough to never matter: the clip edge on an axis that doesn't clip.
 const UNCLIPPED: f32 = 1.0e7;
+
+/// Drawing culls subtrees this far outside the visible area, not just outside it, for
+/// glyph overhangs and other small spills past an element's box.
+const CULL_MARGIN: f32 = 64.0;
+
+/// Whether `ink` comes within [`CULL_MARGIN`] of `visible` (edges touching count).
+fn overlaps(ink: Rect, visible: Rect) -> bool {
+    let v = visible.expand(CULL_MARGIN);
+    ink.x <= v.x + v.width
+        && v.x <= ink.x + ink.width
+        && ink.y <= v.y + v.height
+        && v.y <= ink.y + ink.height
+}
 
 /// The clip `overflow` puts on an element's children: its padding box with inner
 /// corner radii. An axis that doesn't clip (`overflow: clip visible`) is unbounded.

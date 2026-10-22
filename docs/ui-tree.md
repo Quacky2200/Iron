@@ -172,7 +172,12 @@ work. `TaffyLayout` instead holds a map of `NodeData` (style, children, parent, 
 unrounded/final layout, hoisted out-of-flow children, cache) and a per-pass `View` that implements
 Taffy's tree traits, mirroring `TaffyTree`'s own view: dirty propagation up the parents
 (`mark_dirty_up`, stopping at an already-clear cache), `compute_cached_layout` caching, `round_layout`
-rounding, and hoisting of out-of-flow (absolute) children. `View` resolves calc handles through
+rounding, and hoisting of out-of-flow (absolute) children. Besides Taffy's `Cache` (nine measure
+entries, evicting), each node keeps `sizes`: up to `MAX_SIZES` (32) exact `ComputeSize` inputs with their
+results, oldest dropped. Intrinsic sizing through nested containers (a scroller inside a row flex) asks one
+node more ways than nine, so every pass re-measured whole subtrees (appending a child to a long column
+re-measured every sibling's text). `cache_get` tries Taffy's cache, then `sizes`; `clear_caches` clears
+both (`M2-LAY-07`). `View` resolves calc handles through
 `crate::calc::resolve`, for containers (`resolve_calc_value`) and for measured leaves
 (`compute_leaf_layout`; the measure callback sizes text content).
 
@@ -198,7 +203,14 @@ basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc:
    `self.rects`. Children of a scrolled element are shifted by its (clamped) scroll offset.
    `display: contents` nodes get a zero rect at the parent origin; `position: fixed` nodes are placed
    from (0,0), ignoring ancestor scroll. For
-   text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`.
+   text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`;
+   `finished` remembers that width, and the pass skips `finish` when it is unchanged (a scroll only
+   moves things). Measuring or re-shaping a block forgets it. `text_measure_count()` counts measures.
+5. `compute_ink()` fills `ink`: each node's rect (joined with its text layout's extent) unioned bottom-up
+   with its children's. Nodes that can paint outside their box get an unbounded rect, and so do their
+   ancestors: transform, filter blur, drop shadows, backdrop blur, box shadows, outline, border-image,
+   transitions/animations, SVG, `:outro` leavers, and text blocks inheriting a text shadow.
+   `display: contents` nodes have no own ink; inline content and fixed nodes aren't walked.
 
 `NodeLayout` also carries resolved `border`, `padding` and `scroll_max` (Taffy's scrollable
 overflow), used for clipping, scrollbars and event data.
@@ -206,7 +218,7 @@ overflow), used for clipping, scrollbars and event data.
 ## Text
 
 [text.rs](../crates/iron_ui/src/text.rs) wraps Parley (`TextEngine` = `FontContext` +
-`LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour, `smooth` and `hidden` (`visibility: hidden`); `Brush::of(&ComputedText)`). Fonts: bundled Inter (variable, upright and
+`LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour, `smooth`, `hidden` (`visibility: hidden`) and `node` (the source node of the run's characters, set by `build_with_text`, `None` from `Brush::of(&ComputedText)`); `node_at(layout, x, y)` maps a point to that node via `Cluster::from_point_exact`, for span hit testing). Fonts: bundled Inter (variable, upright and
 italic) is always registered and put first for the generic sans-serif families; `with_system_fonts`
 adds platform fonts for fallback (CJK, emoji). Tests use `UiTree::new` (no system fonts) to stay
 deterministic. `register_font` first runs the data through `decode_web_font`, which decompresses WOFF and WOFF2
@@ -365,6 +377,12 @@ CSS painting order: `PushTransform` if the element has a transform (see [Transfo
 `collect` skips `position: fixed` children and paints only the children of a `display: contents`
 node. `draw_list` paints the fixed nodes after the root (see below).
 
+**Culling.** `collect` and `collect_children` take `cull: Option<Rect>`, the area the clips around the
+node leave visible (layout space). `collect` returns early when the node's `ink` doesn't come within
+`CULL_MARGIN` (64 px, for glyph overhangs) of it, so a long scroller only emits what shows. Children get
+`cull` intersected with the node's overflow clip rect, or `None` below a transformed node (another
+space). `draw_list` (root and fixed nodes) and the drag image pass `None` (`M2-DRW-09`).
+
 ### Backgrounds, borders and blending
 
 - **Layers.** `Visual` keeps `background_images`, `background_sizes/positions/repeats/clips/blends`
@@ -482,7 +500,18 @@ them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin
   `scroll_axes(id, by_user)` (user: `scroll`/`auto`; scripts also `hidden`) and
   `scroll_to(id, x, y, by_user)`, which clamps to `0..=scroll_max` per scrollable axis, sets
   `needs_layout` and returns whether the offset changed. Taffy's layout is cached; only the
-  absolute rects are recomputed.
+  absolute rects are recomputed. It cancels a running smooth scroll on that node; the old body is
+  private `set_scroll`.
+- **Smooth scrolling** (`M3-EVT-09`): `smooth_scroll_to(id, x, y, by_user)` starts an eased scroll
+  (cubic-bezier(.42,0,.58,1); retargeting mid-flight eases out from the current position; duration
+  `200 + distance * 0.25` ms, clamped to 250..500) and returns the clamped goal. `set_time` advances
+  them (`step_smooth_scrolls`), `is_animating` includes them, `take_smooth_scrolled` lists containers
+  moved, `scroll_goal` is where one is heading. `scrollBehavior: smooth` (`Visual.scroll_smooth`;
+  `smooth_by_default`) makes script scrolls with `Auto` behavior smooth.
+- **Scroll padding** (`M3-EVT-10`): `Visual.scroll_padding: [f32; 4]` (top, right, bottom, left, px) from
+  `scrollPadding` (1 to 4 lengths or `auto` = 0) and the `Top/Right/Bottom/Left/Block/Inline`
+  longhands; `UiTree::scroll_padding(id)` reads it. `Interaction::scroll_into_view` insets the
+  container's view by it. Not inherited; px only.
 - **Applied in `layout_if_needed`**: while building `rects`, an element's offset is first clamped
   to the current `scroll_max` (content may have shrunk), then subtracted from the origin passed to
   its children. Hit testing and drawing both read these shifted rects, and the `overflow` clip is

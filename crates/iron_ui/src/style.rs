@@ -108,6 +108,11 @@ pub struct Visual {
     /// `overscrollBehavior` (x, y): `true` for `contain` / `none`, which stop scrolling
     /// from passing to the scroll containers outside once this one hits its end.
     pub overscroll_contain: [bool; 2],
+    /// `scrollBehavior: smooth`: script scrolls that don't name a behaviour animate.
+    pub scroll_smooth: bool,
+    /// `scrollPadding` (top, right, bottom, left) in px: insets of a scroll container's view
+    /// that scrolling an element into view keeps it clear of (a sticky header, a fade).
+    pub scroll_padding: [f32; 4],
     /// `scrollbarColor` as (thumb, track); `None` inherits, `Some(None)` is `auto`.
     pub scrollbar_color: Option<Option<(Rgba, Rgba)>>,
     /// `display: contents`: no box of its own; children join the parent's layout.
@@ -185,6 +190,8 @@ impl Default for Visual {
             scrollbar_width: ScrollbarWidth::Auto,
             scrollbar_gutter: false,
             overscroll_contain: [false; 2],
+            scroll_smooth: false,
+            scroll_padding: [0.0; 4],
             scrollbar_color: None,
             contents: false,
             list_item: false,
@@ -1131,6 +1138,54 @@ fn apply_property(
                 _ => return Err(invalid()),
             }
         }
+        "scrollPadding"
+        | "scrollPaddingTop"
+        | "scrollPaddingRight"
+        | "scrollPaddingBottom"
+        | "scrollPaddingLeft"
+        | "scrollPaddingBlock"
+        | "scrollPaddingInline" => {
+            // `auto` is 0 here: Iron has no UA-chosen padding.
+            let one = |t: &str| match t {
+                "auto" => Some(0.0),
+                t => match Len::parse(t) {
+                    Some(Len::Px(px)) if px >= 0.0 => Some(px),
+                    _ => None,
+                },
+            };
+            let words: Vec<f32> = match value {
+                Value::Number(n) if *n >= 0.0 => vec![*n as f32],
+                Value::String(s) => s
+                    .split_whitespace()
+                    .map(one)
+                    .collect::<Option<_>>()
+                    .ok_or_else(invalid)?,
+                _ => return Err(invalid()),
+            };
+            let p = &mut visual.scroll_padding;
+            match (prop, &words[..]) {
+                ("scrollPadding", [a]) => *p = [*a; 4],
+                ("scrollPadding", [a, b]) => *p = [*a, *b, *a, *b],
+                ("scrollPadding", [a, b, c]) => *p = [*a, *b, *c, *b],
+                ("scrollPadding", [a, b, c, d]) => *p = [*a, *b, *c, *d],
+                ("scrollPaddingTop", [a]) => p[0] = *a,
+                ("scrollPaddingRight", [a]) => p[1] = *a,
+                ("scrollPaddingBottom", [a]) => p[2] = *a,
+                ("scrollPaddingLeft", [a]) => p[3] = *a,
+                ("scrollPaddingBlock", [a]) => (p[0], p[2]) = (*a, *a),
+                ("scrollPaddingBlock", [a, b]) => (p[0], p[2]) = (*a, *b),
+                ("scrollPaddingInline", [a]) => (p[3], p[1]) = (*a, *a),
+                ("scrollPaddingInline", [a, b]) => (p[3], p[1]) = (*a, *b),
+                _ => return Err(invalid()),
+            }
+        }
+        "scrollBehavior" => {
+            visual.scroll_smooth = match kw()?.trim() {
+                "auto" => false,
+                "smooth" => true,
+                _ => return Err(invalid()),
+            };
+        }
         "scrollbarColor" => {
             visual.scrollbar_color = match kw()?.trim() {
                 "auto" => Some(None),
@@ -1466,6 +1521,20 @@ pub(crate) fn copy_prop(
         }
         "overscrollBehaviorY" | "overscrollBehaviorBlock" => {
             visual.overscroll_contain[1] = v.overscroll_contain[1]
+        }
+        "scrollBehavior" => visual.scroll_smooth = v.scroll_smooth,
+        "scrollPadding" => visual.scroll_padding = v.scroll_padding,
+        "scrollPaddingTop" => visual.scroll_padding[0] = v.scroll_padding[0],
+        "scrollPaddingRight" => visual.scroll_padding[1] = v.scroll_padding[1],
+        "scrollPaddingBottom" => visual.scroll_padding[2] = v.scroll_padding[2],
+        "scrollPaddingLeft" => visual.scroll_padding[3] = v.scroll_padding[3],
+        "scrollPaddingBlock" => {
+            visual.scroll_padding[0] = v.scroll_padding[0];
+            visual.scroll_padding[2] = v.scroll_padding[2];
+        }
+        "scrollPaddingInline" => {
+            visual.scroll_padding[1] = v.scroll_padding[1];
+            visual.scroll_padding[3] = v.scroll_padding[3];
         }
         "scrollbarColor" => visual.scrollbar_color = v.scrollbar_color,
         "pointerEvents" => visual.pointer_events = v.pointer_events,

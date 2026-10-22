@@ -54,7 +54,9 @@ use iron_render::{
     Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface, WorldRenderer,
 };
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Clipboard, Input, Interaction, UiEvent, UiTree, events};
+use iron_ui::{
+    Clipboard, Input, Interaction, ScrollAlign, ScrollBehavior, UiEvent, UiTree, events,
+};
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
@@ -80,6 +82,8 @@ struct Args {
     asset_root: Option<PathBuf>,
     /// `--force`: run a deprecated QuickJS game anyway.
     force: bool,
+    /// Everything after `--`, for the game's scripts (`Application.args`).
+    script_args: Vec<String>,
 }
 
 /// The deprecation note for the QuickJS backend (logged once per run).
@@ -132,8 +136,8 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder] [--force]
---force runs a QuickJS (deprecated) bundle; games built with `iron-build build` are native";
+    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder] [--force] [-- script args]
+--force runs a QuickJS (deprecated) bundle; games built with `iron-build build` are native; arguments after -- reach scripts as Application.args";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
@@ -145,6 +149,7 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         data: None,
         asset_root: None,
         force: false,
+        script_args: Vec::new(),
     };
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -154,6 +159,10 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
             Some("--force") => parsed.force = true,
             Some("--fps") => parsed.fps = Some(true),
             Some("--no-fps") => parsed.fps = Some(false),
+            Some("--") => {
+                parsed.script_args = args.map(|a| a.to_string_lossy().into_owned()).collect();
+                break;
+            }
             Some("--frames") => {
                 parsed.frames = args
                     .next()
@@ -171,6 +180,9 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
     Ok(parsed)
 }
 
+/// The process's exit code, set by `Application.quit(code)`.
+static EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
 pub(crate) fn main() -> Result<()> {
     logging::attach_console();
     // The editor's console shows the log from the start.
@@ -179,6 +191,10 @@ pub(crate) fn main() -> Result<()> {
     if let Err(e) = &result {
         // Into the log as well as stderr: a windowed program's stderr may go nowhere.
         tracing::error!("{e:#}");
+    }
+    let code = EXIT_CODE.load(std::sync::atomic::Ordering::Relaxed);
+    if result.is_ok() && code != 0 {
+        std::process::exit(code);
     }
     result
 }
@@ -280,6 +296,7 @@ fn run() -> Result<()> {
     iron_engine_api::window::set_main(&manifest.title, (1280.0, 720.0), 1.0);
     iron_engine_api::window::set_supported(iron_platform::Os::current().supports_windows());
     let mut info = info::Info::new(&manifest);
+    info.set_app("args", serde_json::json!(args.script_args));
     // The player's saved settings (not for screenshot runs, which stay the same every
     // time) and the window mode: the manifest's default, then the player's choice.
     let prefs = match args.screenshot {
@@ -698,6 +715,27 @@ struct App {
 }
 
 impl App {
+    /// Sizes the UI to the window (in UI pixels: the window size divided by its DPI and UI
+    /// scale) and tells scripts' `Screen` when that changes. Nothing before the window
+    /// exists.
+    fn sync_screen(&mut self) {
+        let Some(gfx) = &self.gfx else {
+            return;
+        };
+        let scale = ui_factor(&gfx.window, self.ui_scale);
+        let size = gfx.window.inner_size();
+        self.ui
+            .set_size(size.width as f32 / scale, size.height as f32 / scale);
+        // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
+        let screen = (size.width as f32 / scale, size.height as f32 / scale, scale);
+        if self.screen != screen {
+            self.screen = screen;
+            let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
+            // Games without @iron/engine's Screen don't have the hook.
+            let _ = self.scripts.call_global("__iron_screen", &args);
+        }
+    }
+
     /// Hot reload (DESIGN.md §6.1): loads the rebuilt bundle into a new runtime and
     /// swaps it in, or keeps the old one running if it fails. For now the world is
     /// wiped too: UI, script stylesheets, physics and audio start over, and components
@@ -1297,14 +1335,51 @@ impl App {
                         tracing::warn!("{} needs an element id", op.name);
                         continue;
                     };
-                    let (a, b) = (num(1).unwrap_or(0.0) as f32, num(2).unwrap_or(0.0) as f32);
+                    // `scrollTo` keeps an axis it isn't given (NaN); the others default to 0.
+                    let missing = if op.name == "scrollTo" { f64::NAN } else { 0.0 };
+                    let (a, b) = (
+                        num(1).unwrap_or(missing) as f32,
+                        num(2).unwrap_or(missing) as f32,
+                    );
+                    // The last argument: `"auto"`, `"instant"` or `"smooth"`.
+                    let behavior = op
+                        .args
+                        .get(3)
+                        .and_then(iron_core::Value::as_str)
+                        .and_then(ScrollBehavior::parse)
+                        .unwrap_or_default();
                     let surface = self.surface_of(id);
                     self.handle_on(
                         surface,
                         match op.name.as_str() {
-                            "scrollTo" => Input::ScrollTo { id, x: a, y: b },
-                            "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
-                            _ => Input::ScrollIntoView(id),
+                            "scrollTo" => Input::ScrollTo {
+                                id,
+                                x: a,
+                                y: b,
+                                behavior,
+                            },
+                            "scrollBy" => Input::ScrollBy {
+                                id,
+                                dx: a,
+                                dy: b,
+                                behavior,
+                            },
+                            // `scrollIntoView id block inline behavior`; the DOM's defaults otherwise.
+                            _ => {
+                                let align = |i: usize, default| {
+                                    op.args
+                                        .get(i)
+                                        .and_then(iron_core::Value::as_str)
+                                        .and_then(ScrollAlign::parse)
+                                        .unwrap_or(default)
+                                };
+                                Input::ScrollIntoView {
+                                    id,
+                                    block: align(1, ScrollAlign::Start),
+                                    inline: align(2, ScrollAlign::Nearest),
+                                    behavior,
+                                }
+                            }
                         },
                     );
                 }
@@ -1386,7 +1461,15 @@ impl App {
                         }
                     });
                 }
-                "app.quit" => self.done = true,
+                "app.quit" => {
+                    let code = op
+                        .args
+                        .first()
+                        .and_then(iron_core::Value::as_f64)
+                        .unwrap_or(0.0);
+                    EXIT_CODE.store(code as i32, std::sync::atomic::Ordering::Relaxed);
+                    self.done = true;
+                }
                 "app.targetFrameRate" => {
                     let rate = op.args.first().and_then(iron_core::Value::as_f64);
                     self.target_frame_rate = rate.map_or(-1, |r| r.round() as i32);
@@ -1728,6 +1811,7 @@ impl App {
                         id: iron_core::NodeId(id),
                         x: x as f32,
                         y: y as f32,
+                        behavior: ScrollBehavior::Auto,
                     },
                 ),
                 NodeCommand::DragImage(..) => unreachable!("handled above"),
@@ -2527,6 +2611,10 @@ impl PlatformApp for App {
     }
 
     fn frame(&mut self) {
+        // Size the UI before scripts run and their output applies: on the first frame the
+        // tree is still 1x1, and their layout and scrolling (`scrollIntoView` on mount)
+        // would happen at that size.
+        self.sync_screen();
         // Domain turns: the main game's messages first, then its tick, then the isolated domains
         // (messages, timers, input), then the setup window of new windows ends.
         if !self.lifecycle.paused() {
@@ -2560,23 +2648,12 @@ impl PlatformApp for App {
         self.ui.set_time(self.now_ms());
         // The caret may have moved with layout.
         self.update_ime();
+        // Again, for a UI scale the scripts changed this frame.
+        self.sync_screen();
         let Some(gfx) = &mut self.gfx else {
             return;
         };
-
-        // The UI lays out in UI pixels: the window size divided by its DPI and UI scale.
         let scale = ui_factor(&gfx.window, self.ui_scale);
-        let size = gfx.window.inner_size();
-        self.ui
-            .set_size(size.width as f32 / scale, size.height as f32 / scale);
-        // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
-        let screen = (size.width as f32 / scale, size.height as f32 / scale, scale);
-        if self.screen != screen {
-            self.screen = screen;
-            let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
-            // Games without @iron/engine's Screen don't have the hook.
-            let _ = self.scripts.call_global("__iron_screen", &args);
-        }
         // Scripts' `RenderStats`: what the last frame drew and culled, when it changes.
         let stats = gfx.world.stats();
         if self.render_stats != stats {
@@ -3161,5 +3238,17 @@ mod tests {
         let e = load(mixer.as_mut(), 4.0, "assets/sfx/none.wav", true).unwrap_err();
         assert!(e.contains("not found in assets.dat"), "{e}");
         mixer.advance(0.1);
+    }
+
+    // M5-APP-11
+    #[test]
+    fn arguments_after_a_double_dash_are_for_scripts() {
+        let args = parse(&["examples/md-reader", "--", "--goto", "a.md#b", "x"]).unwrap();
+        assert_eq!(args.game, PathBuf::from("examples/md-reader"));
+        assert_eq!(args.script_args, ["--goto", "a.md#b", "x"]);
+        // Iron's own options before `--` still count; nothing after it does.
+        let args = parse(&["--frames", "3", "--", "--frames", "9"]).unwrap();
+        assert_eq!((args.frames, args.script_args.len()), (3, 2));
+        assert!(parse(&["examples/css"]).unwrap().script_args.is_empty());
     }
 }

@@ -133,6 +133,15 @@ pub const SHORTHANDS: &[(&str, &[&str])] = &[
     ),
     ("flexFlow", &["flexDirection", "flexWrap"]),
     ("overflow", &["overflowX", "overflowY"]),
+    (
+        "scrollPadding",
+        &[
+            "scrollPaddingTop",
+            "scrollPaddingRight",
+            "scrollPaddingBottom",
+            "scrollPaddingLeft",
+        ],
+    ),
 ];
 
 /// `cursor` keywords. `auto` is the text cursor over text and the arrow elsewhere.
@@ -761,6 +770,34 @@ images to try first: `url(sword.png) 4 4, pointer` (PNG, JPEG or `.cur`, up to
         "overscrollBehaviorBlock",
         &[Lit("auto"), Lit("contain"), Lit("none")],
         "",
+    ),
+    sp(
+        "",
+        "scrollBehavior",
+        &[Lit("auto"), Lit("smooth")],
+        r#"`smooth`: script scrolls (`scrollTo`, `scrollIntoView`) ease instead of jumping."#,
+    ),
+    sp(
+        "",
+        "scrollPadding",
+        LENGTH,
+        r#"Insets that `scrollIntoView` keeps elements clear of (a sticky header, a fade); px or `auto` (0)."#,
+    ),
+    sp("", "scrollPaddingTop", LENGTH, ""),
+    sp("", "scrollPaddingRight", LENGTH, ""),
+    sp("", "scrollPaddingBottom", LENGTH, ""),
+    sp("", "scrollPaddingLeft", LENGTH, ""),
+    sp(
+        "",
+        "scrollPaddingBlock",
+        LENGTH,
+        "Top and bottom (one or two values).",
+    ),
+    sp(
+        "",
+        "scrollPaddingInline",
+        LENGTH,
+        "Left and right (one or two values).",
     ),
     sp(
         "",

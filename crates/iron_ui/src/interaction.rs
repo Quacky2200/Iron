@@ -22,6 +22,80 @@ pub const SCROLL_LINE: f32 = 40.0;
 /// Page Up / Page Down scroll this fraction of the visible height.
 pub const SCROLL_PAGE: f32 = 0.875;
 
+/// Where [`Input::ScrollIntoView`] puts an element in a scroll container, per axis (the
+/// DOM's `ScrollLogicalPosition`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollAlign {
+    /// Its start edge at the container's start.
+    Start,
+    /// Centred.
+    Center,
+    /// Its end edge at the container's end.
+    End,
+    /// Only as far as needed to show it (its start edge when it's bigger than the view);
+    /// not at all when it's already visible.
+    #[default]
+    Nearest,
+}
+
+/// How a script's scroll moves (the DOM's `ScrollBehavior`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollBehavior {
+    /// As the scroll container's `scroll-behavior` says.
+    #[default]
+    Auto,
+    Instant,
+    /// Eased over 250 to 500 ms ([`UiTree::smooth_scroll_to`]).
+    Smooth,
+}
+
+impl ScrollBehavior {
+    /// `"auto"`, `"instant"` or `"smooth"`.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "auto" => Self::Auto,
+            "instant" => Self::Instant,
+            "smooth" => Self::Smooth,
+            _ => return None,
+        })
+    }
+
+    fn smooth(self, tree: &UiTree, container: NodeId) -> bool {
+        match self {
+            Self::Auto => tree.smooth_by_default(container),
+            Self::Instant => false,
+            Self::Smooth => true,
+        }
+    }
+}
+
+impl ScrollAlign {
+    /// `"start"`, `"center"`, `"end"` or `"nearest"`.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "start" => Self::Start,
+            "center" => Self::Center,
+            "end" => Self::End,
+            "nearest" => Self::Nearest,
+            _ => return None,
+        })
+    }
+
+    /// How far to scroll so an item at `start` (length `len`) lands here in a view at
+    /// `view_start` (length `view_len`).
+    fn delta(self, start: f32, len: f32, view_start: f32, view_len: f32) -> f32 {
+        let (end, view_end) = (start + len, view_start + view_len);
+        match self {
+            Self::Start => start - view_start,
+            Self::End => end - view_end,
+            Self::Center => (start + len / 2.0) - (view_start + view_len / 2.0),
+            Self::Nearest if start < view_start => start - view_start,
+            Self::Nearest if end > view_end => (end - view_end).min(start - view_start),
+            Self::Nearest => 0.0,
+        }
+    }
+}
+
 /// One input for [`Interaction::handle`]. Positions and deltas are logical pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
@@ -76,20 +150,29 @@ pub enum Input {
     Focus(NodeId),
     /// `ref.blur()` from a script: blurs the element if it has focus.
     Blur(NodeId),
-    /// `ref.scrollTo(x, y)` from a script (also scrolls `overflow: hidden`).
+    /// `ref.scrollTo(x, y)` from a script (also scrolls `overflow: hidden`). A NaN
+    /// coordinate keeps that axis where it is.
     ScrollTo {
         id: NodeId,
         x: f32,
         y: f32,
+        behavior: ScrollBehavior,
     },
     /// `ref.scrollBy(dx, dy)` from a script.
     ScrollBy {
         id: NodeId,
         dx: f32,
         dy: f32,
+        behavior: ScrollBehavior,
     },
-    /// `ref.scrollIntoView()` from a script.
-    ScrollIntoView(NodeId),
+    /// `ref.scrollIntoView(...)` from a script: where the element ends up in each of its
+    /// scroll containers, vertically (`block`) and horizontally (`inline`).
+    ScrollIntoView {
+        id: NodeId,
+        block: ScrollAlign,
+        inline: ScrollAlign,
+        behavior: ScrollBehavior,
+    },
     /// `ref.setPointerCapture()` / `releasePointerCapture()` from a script.
     SetPointerCapture(NodeId),
     ReleasePointerCapture(NodeId),
@@ -361,7 +444,14 @@ impl Interaction {
                     let next = tab_target(tree, self.focused, self.modifiers.shift);
                     if let Some(id) = next {
                         self.set_focus(tree, next, true, dispatch);
-                        self.scroll_into_view(tree, id, dispatch);
+                        self.scroll_into_view(
+                            tree,
+                            id,
+                            ScrollAlign::Nearest,
+                            ScrollAlign::Nearest,
+                            ScrollBehavior::Instant,
+                            dispatch,
+                        );
                     }
                 } else {
                     self.key_scroll(tree, &key, dispatch);
@@ -388,17 +478,40 @@ impl Interaction {
                 if focusable(tree, id) {
                     let visible = self.keyboard;
                     self.set_focus(tree, Some(id), visible, dispatch);
-                    self.scroll_into_view(tree, id, dispatch);
+                    self.scroll_into_view(
+                        tree,
+                        id,
+                        ScrollAlign::Nearest,
+                        ScrollAlign::Nearest,
+                        ScrollBehavior::Instant,
+                        dispatch,
+                    );
                 }
             }
-            Input::ScrollTo { id, x, y } => {
-                self.scroll(tree, id, x, y, false, dispatch);
+            Input::ScrollTo { id, x, y, behavior } => {
+                let (cx, cy) = tree.scroll_offset(id);
+                let (x, y) = (
+                    if x.is_nan() { cx } else { x },
+                    if y.is_nan() { cy } else { y },
+                );
+                self.script_scroll(tree, id, x, y, behavior, dispatch);
             }
-            Input::ScrollBy { id, dx, dy } => {
-                let (x, y) = tree.scroll_offset(id);
-                self.scroll(tree, id, x + dx, y + dy, false, dispatch);
+            Input::ScrollBy {
+                id,
+                dx,
+                dy,
+                behavior,
+            } => {
+                // From where a smooth scroll is heading, so quick steps add up.
+                let (x, y) = tree.scroll_goal(id);
+                self.script_scroll(tree, id, x + dx, y + dy, behavior, dispatch);
             }
-            Input::ScrollIntoView(id) => self.scroll_into_view(tree, id, dispatch),
+            Input::ScrollIntoView {
+                id,
+                block,
+                inline,
+                behavior,
+            } => self.scroll_into_view(tree, id, block, inline, behavior, dispatch),
             Input::SetPointerCapture(id) => send(self.pointer.set_capture(tree, id), dispatch),
             Input::ReleasePointerCapture(id) => {
                 send(self.pointer.release_capture(tree, id), dispatch)
@@ -423,7 +536,14 @@ impl Interaction {
                 if let Some(next) = nearest_in_direction(tree, from, direction) {
                     self.keyboard = true;
                     self.set_focus(tree, Some(next), true, dispatch);
-                    self.scroll_into_view(tree, next, dispatch);
+                    self.scroll_into_view(
+                        tree,
+                        next,
+                        ScrollAlign::Nearest,
+                        ScrollAlign::Nearest,
+                        ScrollBehavior::Instant,
+                        dispatch,
+                    );
                 }
             }
             Input::Activate => {
@@ -449,6 +569,15 @@ impl Interaction {
                 }
             }
             Input::Refresh => {
+                // Smooth scrolls moved in `set_time`.
+                for id in tree.take_smooth_scrolled() {
+                    if tree.contains(id) {
+                        dispatch(&UiEvent {
+                            scroll: Some(ScrollInfo::of(tree, id)),
+                            ..UiEvent::new(EventKind::Scroll, vec![id], self.modifiers)
+                        });
+                    }
+                }
                 send(self.pointer.refresh(tree), dispatch);
                 for e in tree.take_motion_events() {
                     if !tree.contains(e.target) {
@@ -651,16 +780,40 @@ impl Interaction {
         }
     }
 
-    /// Scrolls `id`'s scroll containers (innermost first) just enough to show it,
-    /// keeping its start edge visible when it's bigger than the container.
+    /// A script's scroll of `id` to (x, y): at once, or smoothly (`scroll` events then
+    /// come as it moves, from [`Input::Refresh`]).
+    fn script_scroll(
+        &mut self,
+        tree: &mut UiTree,
+        id: NodeId,
+        x: f32,
+        y: f32,
+        behavior: ScrollBehavior,
+        dispatch: &mut dyn FnMut(&UiEvent) -> bool,
+    ) {
+        if behavior.smooth(tree, id) {
+            tree.smooth_scroll_to(id, x, y, false);
+        } else {
+            self.scroll(tree, id, x, y, false, dispatch);
+        }
+    }
+
+    /// Scrolls `id`'s scroll containers (innermost first) to put it at `block` vertically
+    /// and `inline` horizontally (clamped to what each can scroll), inside each one's
+    /// `scroll-padding`.
     fn scroll_into_view(
         &mut self,
         tree: &mut UiTree,
         id: NodeId,
+        block: ScrollAlign,
+        inline: ScrollAlign,
+        behavior: ScrollBehavior,
         dispatch: &mut dyn FnMut(&UiEvent) -> bool,
     ) {
         tree.layout_if_needed();
         let ancestors: Vec<NodeId> = tree.event_path(id).into_iter().skip(1).collect();
+        // How far smooth scrolls inside will still move the element (they start later).
+        let (mut ax, mut ay) = (0.0, 0.0);
         for container in ancestors {
             if tree.scroll_axes(container, false) == [false; 2] {
                 continue;
@@ -668,21 +821,26 @@ impl Interaction {
             let (Some(target), Some(view)) = (tree.rect(id), tree.padding_box(container)) else {
                 continue;
             };
-            let delta = |start: f32, len: f32, view_start: f32, view_len: f32| {
-                let (end, view_end) = (start + len, view_start + view_len);
-                if start < view_start {
-                    start - view_start
-                } else if end > view_end {
-                    (end - view_end).min(start - view_start)
-                } else {
-                    0.0
-                }
-            };
-            let dx = delta(target.x, target.width, view.x, view.width);
-            let dy = delta(target.y, target.height, view.y, view.height);
+            let [pt, pr, pb, pl] = tree.scroll_padding(container);
+            let view = crate::Rect::new(
+                view.x + pl,
+                view.y + pt,
+                (view.width - pl - pr).max(0.0),
+                (view.height - pt - pb).max(0.0),
+            );
+            let dx = inline.delta(target.x - ax, target.width, view.x, view.width);
+            let dy = block.delta(target.y - ay, target.height, view.y, view.height);
             if dx != 0.0 || dy != 0.0 {
                 let (x, y) = tree.scroll_offset(container);
-                self.scroll(tree, container, x + dx, y + dy, false, dispatch);
+                if behavior.smooth(tree, container) {
+                    if let Some((tx, ty)) = tree.smooth_scroll_to(container, x + dx, y + dy, false)
+                    {
+                        ax += tx - x;
+                        ay += ty - y;
+                    }
+                } else {
+                    self.scroll(tree, container, x + dx, y + dy, false, dispatch);
+                }
             }
         }
     }

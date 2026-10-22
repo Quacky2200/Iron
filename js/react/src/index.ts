@@ -41,7 +41,13 @@ export {
   IronTransitionEvent,
   IronWheelEvent,
 } from "./events.ts";
-export { Instance as IronElement } from "./host.ts";
+export {
+  Instance as IronElement,
+  type ScrollBehavior,
+  type ScrollIntoViewOptions,
+  type ScrollLogicalPosition,
+  type ScrollToOptions,
+} from "./host.ts";
 
 type PointerHandler = (event: IronPointerEvent) => void;
 

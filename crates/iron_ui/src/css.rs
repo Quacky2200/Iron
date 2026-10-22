@@ -720,12 +720,50 @@ impl<'i> DeclarationParser<'i> for DeclParser {
             important = true;
             value = value[..bang].trim();
         }
+        // Custom properties keep their text exactly; everything else gets minifier-joined
+        // functions (`translateY(0)scale(1)`) spaced, as the property parsers split on spaces.
+        let value = if name.starts_with("--") {
+            value.to_owned()
+        } else {
+            space_after_calls(value)
+        };
         Ok(Declaration {
             prop: camel_case(&name),
-            value: value.to_owned(),
+            value,
             important,
         })
     }
+}
+
+/// Puts a space between a `)` and a word or `#` straight after it (`blur(2px)brightness(2)`,
+/// as minifiers write them). In CSS those are separate values either way. Strings are left
+/// alone.
+fn space_after_calls(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 4);
+    let mut quote = None;
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        out.push(c);
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) if c == '\\' => {
+                if let Some(next) = chars.next() {
+                    out.push(next);
+                }
+            }
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == ')'
+                && chars
+                    .peek()
+                    .is_some_and(|n| n.is_ascii_alphabetic() || *n == '#') =>
+            {
+                out.push(' ')
+            }
+            None => {}
+        }
+    }
+    out
 }
 
 impl<'i> AtRuleParser<'i> for DeclParser {
@@ -929,6 +967,30 @@ pub fn parse_stylesheet(css: &str) -> Stylesheet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M3-CSS-13
+    #[test]
+    fn minified_function_lists_get_spaces_between_calls() {
+        let sheet = parse_stylesheet(
+            ".a { transform: translateY(0)scale(1.07); filter: blur(2px)brightness(2); \
+             content: \"a)b\"; background: url(x.png)#fff; --raw: f(1)g(2); }",
+        );
+        let values: Vec<&str> = sheet.rules[0]
+            .declarations
+            .iter()
+            .map(|d| d.value.as_str())
+            .collect();
+        assert_eq!(
+            values,
+            [
+                "translateY(0) scale(1.07)",
+                "blur(2px) brightness(2)",
+                "\"a)b\"",
+                "url(x.png) #fff",
+                "f(1)g(2)",
+            ]
+        );
+    }
 
     #[test]
     fn parses_rules_and_declarations() {
