@@ -211,6 +211,9 @@ pub struct Function {
     /// `#[global]`: a namespace function that is also a global function of the same name
     /// (`UiResources.loadFont` is `loadFont` too).
     pub global: bool,
+    /// `#[constructor]`: the positional constructor of the class (`new Material(color, ..)`); the
+    /// options object (`new Material({ color })`) is made from the class's properties.
+    pub constructor: bool,
 }
 
 /// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
@@ -949,7 +952,7 @@ fn function_json(f: &Function) -> String {
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -991,7 +994,12 @@ fn function_json(f: &Function) -> String {
             json_str(ts)
         )),
         if f.promise { ",\"promise\":true" } else { "" },
-        if f.global { ",\"global\":true" } else { "" }
+        if f.global { ",\"global\":true" } else { "" },
+        if f.constructor {
+            ",\"constructor\":true"
+        } else {
+            ""
+        }
     )
 }
 

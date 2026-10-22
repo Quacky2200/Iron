@@ -30,6 +30,7 @@ impl Handle for Cell {
 
 thread_local! {
     static SUM: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    static LEVEL: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
 
 #[iron_api(
@@ -91,6 +92,29 @@ pub mod lists_api {
         #[property]
         pub fn sum(self) -> f64 {
             SUM.with(std::cell::Cell::get)
+        }
+
+        #[property]
+        pub fn level(self) -> f64 {
+            LEVEL.with(std::cell::Cell::get)
+        }
+
+        pub fn set_level(self, v: f64) {
+            LEVEL.with(|l| l.set(v));
+        }
+
+        /// `cell.level = [a, b]`: another version of the setter.
+        #[setter(level)]
+        pub fn set_level_list(self, v: &[f64]) {
+            LEVEL.with(|l| l.set(v.iter().sum()));
+        }
+
+        /// `new Cell(a, b)`.
+        #[constructor]
+        #[optional(b)]
+        pub fn construct(a: f64, b: f64) -> Cell {
+            LEVEL.with(|l| l.set(a + if b.is_nan() { 0.0 } else { b }));
+            Cell(2)
         }
     }
 }
@@ -185,4 +209,38 @@ fn a_class_function_declared_twice_is_in_the_manifest_twice() {
         .map(|f| f["params"][1]["type"].as_str().unwrap())
         .collect();
     assert_eq!(adds, ["f64", "opt:record:Table"]);
+}
+
+// M9-API-1643
+#[test]
+fn a_setter_can_have_a_second_version_and_a_class_a_positional_constructor() {
+    let json: serde_json::Value = serde_json::from_str(&lists_api::MANIFEST.to_json()).unwrap();
+    let cell = json["classes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "Cell")
+        .unwrap();
+    let fns = cell["functions"].as_array().unwrap();
+    let setters: Vec<&str> = fns
+        .iter()
+        .filter(|f| f["kind"] == "set" && f["name"] == "level")
+        .map(|f| f["params"][1]["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(setters, ["f64", "f64s"]);
+    let ctor = fns.iter().find(|f| f["constructor"] == true).unwrap();
+    assert_eq!(ctor["name"], "construct");
+    // QuickJS: the first version of the setter is the script's.
+    use iron_api::rquickjs;
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        lists_api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(
+                r#"const c = Cell.create(); c.level = 4; JSON.stringify([c.level, Cell.construct(1, 2) !== null, c.level])"#,
+            )
+            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
+        assert_eq!(out, "[4,true,3]");
+    });
 }

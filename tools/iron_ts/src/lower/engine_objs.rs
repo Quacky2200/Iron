@@ -43,15 +43,27 @@ impl<'a> Lowerer<'a> {
         start: u32,
     ) -> R<Expr> {
         let at = self.loc(start);
-        // `new Material(color, emission, smoothness)`: positional arguments are a facade constructor.
+        // `new Material(color, emission, smoothness)`: positional arguments are the class's
+        // `#[constructor]`.
         if !arguments.is_empty()
             && !matches!(arguments.first(), Some(Argument::ObjectExpression(_)))
-            && self.fids.contains_key(&format!("__xn_{class}"))
+            && let Some(ctor) = self.manifest.classes[class].ctor.clone()
         {
-            return self.call_declared(&format!("__xn_{class}"), arguments, None);
+            let mut e =
+                self.call_ext_args(ctor, None, &format!("new {class}"), start, arguments)?;
+            e.ty = Ty::Handle(class.to_string());
+            return Ok(e);
         }
         let k = self.manifest.classes[class].clone();
-        let create = k.statics["create"].clone();
+        let mut create = k.statics["create"].clone();
+        // `create` declared more than once (`new Sprite(texture, rect, pivot)`): the version for
+        // these arguments.
+        if let Some(cands) = k
+            .overloads
+            .get(&("static".to_string(), "create".to_string()))
+        {
+            create = self.pick_ext_overload(cands, 0, arguments);
+        }
         let ty = Ty::Handle(class.to_string());
         // `create(a, b)`: the constructor arguments are its parameters (`new Rng(seed)`).
         if !create.params.is_empty() {
@@ -496,22 +508,25 @@ impl<'a> Lowerer<'a> {
 
     /// How one option key of an engine class is set.
     fn option_setter(&mut self, class: &str, key: &str, array: bool) -> R<Option<OptSet>> {
-        // `startLifetime: [min, max]` is the `$a` variant of the setter.
-        let array_key = format!("{key}$a");
-        let ext = if array {
-            self.ext_setter(class, &array_key)?
-                .or(self.ext_setter(class, key)?)
-        } else {
-            self.ext_setter(class, key)?
-        };
-        if let Some((fid, want)) = ext {
+        if let Some((fid, want)) = self.ext_setter(class, key)? {
             return Ok(Some(OptSet::Facade(fid, want)));
         }
-        let own = self.manifest.classes[class]
+        let mut own = self.manifest.classes[class]
             .setters
             .get(key)
             .cloned()
             .or_else(|| self.set_method(class, key));
+        // A setter of two versions (`startLifetime` takes a number or `[min, max]`): the one for
+        // a list when the value is one.
+        if let Some(versions) = self.manifest.classes[class]
+            .overloads
+            .get(&("set".to_string(), key.to_string()))
+            && let Some(f) = versions
+                .iter()
+                .find(|f| f.params.get(1).is_some_and(|p| p.1.is_list_arg()) == array)
+        {
+            own = Some(f.clone());
+        }
         if let Some(setter) = own {
             let want = self.ext_ir(&setter.params[1].1);
             return Ok(Some(OptSet::Own(setter, want)));

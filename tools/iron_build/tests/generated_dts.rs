@@ -51,7 +51,7 @@ const ALLOWED_D_TS: &[(&str, &str)] = &[(
 
 /// Hand-written TypeScript compiled into games, each with why it is not Rust yet. The facade may
 /// only lose `//# when` chunks.
-const MAX_FACADE_CHUNKS: usize = 9;
+const MAX_FACADE_CHUNKS: usize = 5;
 const ALLOWED_TS: &[(&str, &str)] = &[
     (
         "tools/iron_ts/src/lower/facade.ts",
@@ -190,9 +190,6 @@ fn declared_names(src: &str) -> BTreeSet<String> {
 /// off this list.
 const KNOWN_OVERLAPS: &[&str] = &[
     "Light",
-    "ParticleSystem",
-    "Scene",
-    "Sprite",
     "Window",
     "AudioSource",
     "MeshRenderer",

@@ -454,6 +454,18 @@ pub enum ExtTy {
 }
 
 impl ExtTy {
+    /// Whether a parameter is a list a script passes as an array.
+    pub fn is_list_arg(&self) -> bool {
+        matches!(
+            self,
+            ExtTy::F64Arr
+                | ExtTy::StrArr
+                | ExtTy::ValueArr(_)
+                | ExtTy::HandleArr(_)
+                | ExtTy::RecordsJson(_)
+        )
+    }
+
     /// The IR type scripts see: every number is an `f64`.
     pub fn to_ir(&self) -> Ty {
         match self {

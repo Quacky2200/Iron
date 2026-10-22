@@ -70,7 +70,7 @@ fn load_functions_return_promises_the_host_settles() {
             root.name = 'crate';
             const level = SceneManager.createScene('level');
             SceneManager.moveGameObjectToScene(root, level);
-            level.serialize()
+            level.toJson()
             "#,
         );
         let _: f64 = js(

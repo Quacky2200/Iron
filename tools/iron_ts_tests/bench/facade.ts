@@ -38,8 +38,9 @@ export function constructors(): string {
   const a = new Color(0.1, 0.2, 0.3);
   const m = new Material(Color.white, new Color(4, 3, 2, 1), 0.25, true);
   const t = m.withTexture(Texture.create(1, 1, [Color.white]));
+  const full = new Material(Color.white, Color.black, 0.5, false, null, new Vector2(2, 3), new Vector2(0.5, 0.25), 0.8);
   const p = GameObject.createPrimitive("sphere", { position: new Vector3(1, 2, 3), scale: Vector3.one.scale(2), name: "Ball" });
-  return `${a.a}|${m.smoothness}|${m.unlit}|${m.emission.r}|${t.mainTexture.width}|${p.name}|${p.transform.localScale.x}|${p.transform.position.y}`;
+  return `${a.a}|${m.smoothness}|${m.unlit}|${m.emission.r}|${t.mainTexture.width}|${p.name}|${p.transform.localScale.x}|${p.transform.position.y}|${full.mainTextureScale.y}|${full.mainTextureOffset.x}|${full.metallic}|${full.smoothness}`;
 }
 
 export function structured(): string {
@@ -77,7 +78,9 @@ export function sprites(): string {
   const tex = Texture.create(4, 2, [Color.white, Color.white, Color.white, Color.white, Color.white, Color.white, Color.white, Color.white]);
   const s = Sprite.create(tex, new Rect(0, 0, 2, 2), new Vector2(0.5, 0.5), 40);
   const grid = Sprite.grid(tex, 2, 1, undefined, 10);
-  return `${s.pixelsPerUnit}|${s.hasRect}|${grid.length}|${grid[1]!.pixelsPerUnit}`;
+  const whole = Sprite.create(tex, null, undefined, 25);
+  const plain = Sprite.create(tex, 50);
+  return `${s.pixelsPerUnit}|${s.hasRect}|${grid.length}|${grid[1]!.pixelsPerUnit}|${whole.hasRect}|${whole.pixelsPerUnit}|${plain.pixelsPerUnit}|${plain.hasRect}`;
 }
 
 export function uiResources(): string {
@@ -106,7 +109,11 @@ export function particlesAndPoints(): string {
   const edge = go.addComponent(EdgeCollider2D, { points: [new Vector2(0, 0), new Vector2(1, 1), new Vector2(2, 1)] });
   const line = new GameObject("l").addComponent(LineRenderer, { positions: [Vector3.zero, Vector3.one], width: 0.1 });
   const sprite = new GameObject("s").addComponent(SpriteRenderer, { sprite: null });
-  return `${ps.startLifetime}|${ps.startLifetimeMax}|${ps.startSpeed}|${ps.burstCount}|${ps.shapeType}|${ps.shapeAngle}|${edge.pointCount}|${line.positionCount}|${sprite.sprite === null}`;
+  // A number or a list of two, by assignment too.
+  ps.startSize = [2, 5];
+  ps.angularVelocity = 9;
+  ps.startColor = [new Color(0, 0, 1, 1), new Color(0, 1, 0, 1)];
+  return `${ps.startLifetime}|${ps.startLifetimeMax}|${ps.startSpeed}|${ps.burstCount}|${ps.shapeType}|${ps.shapeAngle}|${edge.pointCount}|${line.positionCount}|${sprite.sprite === null}|${ps.startSize}|${ps.startSizeMax}|${ps.angularVelocity}|${ps.angularVelocityMax}|${ps.startColorMax.g}`;
 }
 
 // ---- round 2: the shapes the remaining examples use (M9-TS-2000..) ----
@@ -539,4 +546,14 @@ export function skinnedMesh(): string {
   };
   const m = Mesh.create(data);
   return `${m.vertexCount}|${m.triangleCount}`;
+}
+
+export function sceneSummary(): string {
+  new GameObject("alpha");
+  new GameObject("beta");
+  const scene = SceneManager.getActiveScene();
+  const d = scene.serialize();
+  let names = "";
+  for (let i = 0; i < d.objects.length; i++) names += d.objects[i]!.name + ",";
+  return `${d.objects.length}|${names}|${scene.toJson().includes("\"alpha\"")}|${d.name === scene.name}`;
 }

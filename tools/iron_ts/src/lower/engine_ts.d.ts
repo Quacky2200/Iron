@@ -88,23 +88,8 @@ declare namespace GameObject {
   function createPrimitive(type: PrimitiveType, options?: GameObjectOptions & { name?: string }): GameObject;
 }
 
-interface SceneObjectData {
-  name: string;
-}
-interface SceneData {
-  name: string;
-  objects: SceneObjectData[];
-}
-interface Scene {
-  serialize(): SceneData;
-}
-
 // ---- Rendering ---------------------------------------------------------------------------------
 
-
-declare namespace Sprite {
-  function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
-}
 
 // ---- Windows -----------------------------------------------------------------------------------
 
@@ -156,8 +141,6 @@ declare namespace input {
 
 // ---- More rendering shapes ---------------------------------------------------------------------
 
-//@ctor Material(color?: Color, emission?: Color, smoothness?: number, unlit?: boolean, mainTexture?: Texture | null, mainTextureScale?: Vector2, mainTextureOffset?: Vector2, metallic?: number)
-//@ctor Material(options?: $OPTIONS)
 //@ctor Color(r: number, g: number, b: number, a?: number)
 interface MeshRenderer {
   /** A mesh, or the name of a primitive. */
@@ -172,16 +155,6 @@ declare namespace Light {
   function illuminanceAt(point: Vector3Like, normal?: Vector3Like): number;
   /** A light meter that counts shadows: each light only if a physics ray from `point` reaches it (walls need colliders). */
   function measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number>;
-}
-interface ParticleSystem {
-  /** A number, or `[min, max]`. */
-  startLifetime: number | number[];
-  startSpeed: number | number[];
-  startSize: number | number[];
-  startRotation: number | number[];
-  angularVelocity: number | number[];
-  /** A colour, or `[a, b]`. */
-  startColor: Color | Color[];
 }
 interface AudioSource {
   playOneShot(clip: Sound | string, volumeScale?: number): void;

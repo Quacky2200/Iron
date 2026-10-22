@@ -787,6 +787,7 @@ declare class ParticleSystem :: addBurst(time: number, count: number, cycles?: n
 declare class ParticleSystem :: addBurst(time: number, count: number, options?: { cycles?: number; interval?: number }): void;
 declare class ParticleSystem :: addColorKey(time: number, color: Color): void;
 declare class ParticleSystem :: addSizeKey(time: number, value: number): void;
+declare class ParticleSystem :: angularVelocity: number | readonly number[];
 declare class ParticleSystem :: clear(): void;
 declare class ParticleSystem :: clearBursts(): void;
 declare class ParticleSystem :: clearColorOverLifetime(): void;
@@ -843,7 +844,12 @@ declare class ParticleSystem :: shape: ParticleShapeSpec | null;
 declare class ParticleSystem :: shapeAngle: number;
 declare class ParticleSystem :: shapeRadius: number;
 declare class ParticleSystem :: shapeSize: Vector3;
+declare class ParticleSystem :: startColor: Color | readonly Color[];
 declare class ParticleSystem :: startDelay: number;
+declare class ParticleSystem :: startLifetime: number | readonly number[];
+declare class ParticleSystem :: startRotation: number | readonly number[];
+declare class ParticleSystem :: startSize: number | readonly number[];
+declare class ParticleSystem :: startSpeed: number | readonly number[];
 declare class ParticleSystem :: static attach(object: GameObject): ParticleSystem;
 declare class ParticleSystem :: static findOn(object: GameObject): ParticleSystem;
 declare class ParticleSystem :: stop(clear: boolean): void;
@@ -1162,6 +1168,8 @@ declare class Scene :: readonly name: string;
 declare class Scene :: readonly path: string;
 declare class Scene :: readonly rootCount: number;
 declare class Scene :: rootAt(index: number): GameObject;
+declare class Scene :: serialize(): SceneData;
+declare class Scene :: toJson(): string;
 declare class SkinnedMeshRenderer
 declare class SkinnedMeshRenderer :: addBone(bone: GameObject): void;
 declare class SkinnedMeshRenderer :: boneAt(index: number): GameObject;
@@ -1271,6 +1279,10 @@ declare class Sprite :: pivot: Vector2;
 declare class Sprite :: pixelsPerUnit: number;
 declare class Sprite :: readonly size: Vector2;
 declare class Sprite :: setRect(x: number, y: number, width: number, height: number): void;
+declare class Sprite :: static create(texture: Texture, options?: { pixelsPerUnit?: number }): Sprite;
+declare class Sprite :: static create(texture: Texture, pixelsPerUnit?: number): Sprite;
+declare class Sprite :: static create(texture: Texture, rect: Rect | null, options?: { pivot?: Vector2; pixelsPerUnit?: number }): Sprite;
+declare class Sprite :: static create(texture: Texture, rect: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
 declare class Sprite :: static empty(): Sprite;
 declare class Sprite :: static grid(texture: Texture, columns: number, rows: number, options?: { pivot?: Vector2; pixelsPerUnit?: number }): Sprite[];
 declare class Sprite :: static grid(texture: Texture, columns: number, rows: number, pivot?: Vector2, pixelsPerUnit?: number): Sprite[];
@@ -1673,6 +1685,11 @@ declare interface Resolution
 declare interface Resolution :: height: number;
 declare interface Resolution :: refreshRate: number;
 declare interface Resolution :: width: number;
+declare interface SceneData
+declare interface SceneData :: name: string;
+declare interface SceneData :: objects: SceneObjectData[];
+declare interface SceneObjectData
+declare interface SceneObjectData :: name: string;
 declare interface SizeKey
 declare interface SizeKey :: time: number;
 declare interface SizeKey :: value: number;
@@ -2461,8 +2478,6 @@ declare namespace SplineAlignment :: function parse(name: string): number;
 declare namespace SplineLoopMode
 declare namespace SplineLoopMode :: function name(index: number): SplineLoopMode;
 declare namespace SplineLoopMode :: function parse(name: string): number;
-declare namespace Sprite
-declare namespace Sprite :: function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
 declare namespace SystemInfo
 declare namespace SystemInfo :: const architecture: string;
 declare namespace SystemInfo :: const deviceName: string;
@@ -3090,24 +3105,10 @@ interface IronWheelEvent extends IronPointerEvent :: readonly deltaX: number;
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaY: number;
 interface MeshRenderer
 interface MeshRenderer :: mesh: Mesh | PrimitiveType;
-interface ParticleSystem
-interface ParticleSystem :: angularVelocity: number | number[];
-interface ParticleSystem :: startColor: Color | Color[];
-interface ParticleSystem :: startLifetime: number | number[];
-interface ParticleSystem :: startRotation: number | number[];
-interface ParticleSystem :: startSize: number | number[];
-interface ParticleSystem :: startSpeed: number | number[];
 interface ReactElementLike
 interface ReactElementLike :: readonly __element: never;
 interface Ref<T>
 interface Ref<T> :: current: T;
-interface Scene
-interface Scene :: serialize(): SceneData;
-interface SceneData
-interface SceneData :: name: string;
-interface SceneData :: objects: SceneObjectData[];
-interface SceneObjectData
-interface SceneObjectData :: name: string;
 interface Window
 interface Window :: answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;
 interface Window :: ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;

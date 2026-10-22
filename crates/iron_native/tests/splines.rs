@@ -165,7 +165,7 @@ fn a_spline_animate_and_its_spline_survive_a_scene_file() {
             const level = SceneManager.createScene('level');
             SceneManager.moveGameObjectToScene(track, level);
             SceneManager.moveGameObjectToScene(car, level);
-            const text = level.serialize();
+            const text = level.toJson();
             const loaded = SceneManager.loadScene(text, 'additive');
             let copy = null;
             for (let i = 0; i < loaded.rootCount; i++) if (loaded.rootAt(i).name === 'car') copy = loaded.rootAt(i);

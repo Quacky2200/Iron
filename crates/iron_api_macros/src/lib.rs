@@ -1222,6 +1222,8 @@ fn is_ours(a: &syn::Attribute) -> bool {
         "promise",
         "ts_param",
         "global",
+        "setter",
+        "constructor",
     ]
     .iter()
     .any(|n| a.path().is_ident(n))
@@ -1333,6 +1335,10 @@ struct Api {
     subscription: Option<(String, Option<String>)>,
     /// `#[global]`: a namespace function that is also a global function of the same name.
     global: bool,
+    /// `#[constructor]`: the positional `new Class(a, b, ..)` of the class.
+    constructor: bool,
+    /// `#[setter(prop)]`: a method that is another version of the setter of `prop`.
+    setter_of: Option<String>,
     /// `#[promise]`: the last two parameters are the resolve and reject callbacks; scripts call it
     /// without them and get a `Promise` (resolved with the first callback's argument).
     promise: bool,
@@ -1426,6 +1432,13 @@ fn api_of(
     // Only trailing parameters can be left out (a promise's resolve and reject callbacks follow).
     let promise = attrs.iter().any(|a| a.path().is_ident("promise"));
     let global = attrs.iter().any(|a| a.path().is_ident("global"));
+    let constructor = attrs.iter().any(|a| a.path().is_ident("constructor"));
+    // `#[setter(start_lifetime)]`: this method is another version of that property's setter.
+    let mut setter_of = None;
+    for at in attrs.iter().filter(|a| a.path().is_ident("setter")) {
+        let id: Ident = at.parse_args()?;
+        setter_of = Some(id.to_string());
+    }
     let user_len = params.len() - if promise { 2.min(params.len()) } else { 0 };
     let first_opt = params
         .iter()
@@ -1646,6 +1659,8 @@ fn api_of(
         subscription,
         promise,
         global,
+        constructor,
+        setter_of,
         ts_params,
         ret,
     })
@@ -2384,6 +2399,17 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             .as_ref()
             .map_or_else(|| args.namespace.clone(), |c| c.0.clone());
         let rust = a.name.to_string();
+        if let Some(prop) = &a.setter_of {
+            if a.tag != Tag::Method || a.params.len() != 1 {
+                return Err(syn::Error::new(
+                    a.name.span(),
+                    "#[setter(..)] marks a method `fn name(self, value)`",
+                ));
+            }
+            a.tag = Tag::Set;
+            a.js_name = camel(prop);
+            continue;
+        }
         // A method of a handle class, or a plain function of the namespace.
         let settable = if a.class.is_some() && a.receiver {
             a.tag == Tag::Method
@@ -2548,6 +2574,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let like = a.like;
         let promise = a.promise;
         let global = a.global;
+        let constructor = a.constructor;
         let subscription = match &a.subscription {
             Some((off, ts)) => {
                 let off = camel(off);
@@ -2591,6 +2618,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 subscription: #subscription,
                 promise: #promise,
                 global: #global,
+                constructor: #constructor,
             }
         };
         match &a.class {
@@ -2671,6 +2699,20 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out: *mut #part ) {
                     let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(#call);
                     #( unsafe { *out.add(#idx) = parts[#idx] as #part; } )*
+                }
+            });
+        } else if let Kind::Record(i) = &a.ret
+            && !record_is_flat(&args, *i)
+        {
+            // A record with lists or optional keys: its JSON text.
+            let to = format_ident!("__to_json_{}", args.records[*i].ts);
+            shims.push(quote! {
+                /// # Safety
+                /// `out_len` is valid for a write.
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out_len: *mut i64 ) -> *const u8 {
+                    let text = #to(&#call).to_string();
+                    unsafe { ::iron_api::return_string(text, out_len) }
                 }
             });
         } else if let Kind::Record(i) = &a.ret {
@@ -3142,8 +3184,12 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 (Tag::Get, true) => {
                     js_cprops.entry((target, js_name.clone())).or_default().0 = Some(closure)
                 }
+                // Another version of a setter (a list for a number): the first one is the script's.
                 (Tag::Set, true) => {
-                    js_cprops.entry((target, js_name.clone())).or_default().1 = Some(closure)
+                    let slot = &mut js_cprops.entry((target, js_name.clone())).or_default().1;
+                    if slot.is_none() {
+                        *slot = Some(closure);
+                    }
                 }
                 (Tag::Method, _) => {
                     let max = a.params.len();

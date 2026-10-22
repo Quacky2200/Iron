@@ -41,6 +41,8 @@ pub struct ClassFns {
     /// type): (table: `static`, `method` or `set`, name) -> every version in declaration
     /// order. The table keeps the first.
     pub overloads: HashMap<(String, String), Vec<ExternFn>>,
+    /// The positional constructor (`#[constructor]`): `new Material(color, emission, ..)`.
+    pub ctor: Option<ExternFn>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -371,6 +373,9 @@ impl Manifest {
                 if f["promise"].as_bool() == Some(true) {
                     self.promises
                         .push((cname.to_string(), name.clone(), true, kind == "method"));
+                }
+                if f["constructor"].as_bool() == Some(true) {
+                    class.ctor = Some(func.clone());
                 }
                 if f["optionsObject"].as_bool() == Some(true) {
                     self.object_args.push((

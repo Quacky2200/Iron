@@ -135,7 +135,7 @@ fn scenes_load_instantiate_and_report_events() {
             child.transform.setParent(root.transform, false);
             const level = SceneManager.createScene('level');
             SceneManager.moveGameObjectToScene(root, level);
-            const text = level.serialize();
+            const text = level.toJson();
             const loaded = SceneManager.loadScene(text, 'additive');
             const copy = GameObject.instantiate ? null : null;
             const prefab = Prefab.fromObject(root);

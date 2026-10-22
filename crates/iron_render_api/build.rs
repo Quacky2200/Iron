@@ -258,6 +258,7 @@ fn value_decl(k: &str) -> Option<&'static str> {
         "color" => "Color = Rgba [r: f64, g: f64, b: f64, a: f64]",
         "v2" => "Vector2 = V2 [x: f64, y: f64]",
         "v3" => "Vector3 = V3 [x: f64, y: f64, z: f64]",
+        "rect" => "Rect = Rect [x: f64, y: f64, width: f64, height: f64]",
         _ => return None,
     })
 }

@@ -29,6 +29,19 @@ pub fn manifests() -> Vec<String> {
     vec![scene_manager_api::MANIFEST.to_json()]
 }
 
+/// An object of a scene.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SceneObjectSummary {
+    pub name: String,
+}
+
+/// A scene's name and root objects.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SceneSummary {
+    pub name: String,
+    pub objects: Vec<SceneObjectSummary>,
+}
+
 /// What loading a scene does to the scenes already loaded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoadMode {
@@ -44,6 +57,12 @@ pub enum LoadMode {
         /// `single` unloads every other scene first and makes the new one active; `additive`
         /// adds it.
         LoadSceneMode = LoadMode [Single, Additive]
+    ),
+    records(
+        /// An object of a scene, as saved.
+        SceneObjectData = SceneObjectSummary [name: string],
+        /// What a scene holds, as saved (`toJson()` has all of it as text).
+        SceneData = SceneSummary [name: string, objects: Vec<SceneObjectData>]
     )
 )]
 pub mod scene_manager_api {
@@ -243,8 +262,26 @@ pub mod scene_manager_api {
             manager::roots(self.0)
         }
 
-        /// Everything in it as scene data (JSON text).
-        pub fn serialize(self) -> String {
+        /// The scene as saved: its name and its root objects.
+        pub fn serialize(self) -> SceneSummary {
+            let data: serde_json::Value = manager::serialize(self.0)
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or_default();
+            SceneSummary {
+                name: data["name"].as_str().unwrap_or_default().to_string(),
+                objects: data["objects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|o| SceneObjectSummary {
+                        name: o["name"].as_str().unwrap_or_default().to_string(),
+                    })
+                    .collect(),
+            }
+        }
+
+        /// Everything in it as scene data (JSON text, what `SceneManager.loadScene` reads).
+        pub fn to_json(self) -> String {
             manager::serialize(self.0).unwrap_or_default()
         }
     }

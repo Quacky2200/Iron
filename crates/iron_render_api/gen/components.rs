@@ -1571,6 +1571,55 @@ pub struct SizeKey {
             });
         }
 
+
+        /// `startLifetime = [min, max]`: a random value between the two per particle.
+        #[setter(start_lifetime)]
+        pub fn set_start_lifetime_list(self, range: &[f64]) {
+            if let [min, max, ..] = range {
+                self.set_start_lifetime_range(*min, *max);
+            }
+        }
+
+        /// `startSpeed = [min, max]`: a random value between the two per particle.
+        #[setter(start_speed)]
+        pub fn set_start_speed_list(self, range: &[f64]) {
+            if let [min, max, ..] = range {
+                self.set_start_speed_range(*min, *max);
+            }
+        }
+
+        /// `startSize = [min, max]`: a random value between the two per particle.
+        #[setter(start_size)]
+        pub fn set_start_size_list(self, range: &[f64]) {
+            if let [min, max, ..] = range {
+                self.set_start_size_range(*min, *max);
+            }
+        }
+
+        /// `startRotation = [min, max]`: a random value between the two per particle.
+        #[setter(start_rotation)]
+        pub fn set_start_rotation_list(self, range: &[f64]) {
+            if let [min, max, ..] = range {
+                self.set_start_rotation_range(*min, *max);
+            }
+        }
+
+        /// `angularVelocity = [min, max]`: a random value between the two per particle.
+        #[setter(angular_velocity)]
+        pub fn set_angular_velocity_list(self, range: &[f64]) {
+            if let [min, max, ..] = range {
+                self.set_angular_velocity_range(*min, *max);
+            }
+        }
+
+        /// `startColor = [a, b]`: a random mix of the two per particle.
+        #[setter(start_color)]
+        pub fn set_start_color_list(self, colors: &[Rgba]) {
+            if let [a, b, ..] = colors {
+                self.set_start_color_range(*a, *b);
+            }
+        }
+
         /// The second colour of a range (the first when there is none).
         #[property]
         pub fn start_color_max(self) -> Rgba {
@@ -2289,6 +2338,40 @@ pub struct ClothBox {
             with_material(self, |d| d.has_specular_color = false);
         }
 
+        /// `new Material(color, emission, smoothness, unlit, mainTexture, mainTextureScale,
+        /// mainTextureOffset, metallic)`: a material made from its common settings, each optional.
+        #[allow(clippy::too_many_arguments)]
+        #[constructor]
+        #[optional(color, emission, smoothness = 0.5, unlit, main_texture, main_texture_scale, main_texture_offset, metallic)]
+        #[ts_param(main_texture = "Texture | null")]
+        pub fn construct(
+            color: Rgba,
+            emission: Rgba,
+            smoothness: f64,
+            unlit: bool,
+            main_texture: TextureRef,
+            main_texture_scale: V2,
+            main_texture_offset: V2,
+            metallic: f64,
+        ) -> MaterialRef {
+            let m = Self::create();
+            let or = |v: Rgba, d: Rgba| if v.r.is_nan() { d } else { v };
+            let or2 = |v: V2, d: V2| if v.x.is_nan() || v.y.is_nan() { d } else { v };
+            with_material(m, |d| {
+                d.color = or(color, Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 });
+                d.emission = or(emission, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 });
+                d.smoothness = smoothness;
+                d.unlit = unlit;
+                if main_texture.0 != 0 {
+                    d.main_texture = main_texture.0;
+                }
+                d.main_texture_scale = or2(main_texture_scale, V2 { x: 1.0, y: 1.0 });
+                d.main_texture_offset = or2(main_texture_offset, V2 { x: 0.0, y: 0.0 });
+                d.metallic = if metallic.is_nan() { 0.0 } else { metallic };
+            });
+            m
+        }
+
         /// A copy with another colour.
         pub fn with_color(self, color: Rgba) -> MaterialRef {
             let copy = self.copy();
@@ -2361,7 +2444,7 @@ pub struct ClothBox {
         ),
         extra_handles: &[],
         extra_records: &[],
-        extra_value_types: &[r#"v2"#],
+        extra_value_types: &[r#"v2"#, r#"rect"#],
         items: None,
         api: Some(
             r#"
@@ -2382,6 +2465,22 @@ pub struct ClothBox {
                 d.texture = texture.0;
                 d.pixels_per_unit = pixels_per_unit;
             });
+            s
+        }
+
+        /// A sprite of a texture cut to `rect` (x, y, width, height in pixels from the texture's
+        /// bottom-left; `null` for all of it), with a pivot (centred by default) and
+        /// `pixelsPerUnit` (100 by default).
+        #[js_name = "create"]
+        #[optional(pivot, pixels_per_unit = 100)]
+        pub fn create_cut(texture: TextureRef, rect: Option<Rect>, pivot: V2, pixels_per_unit: f64) -> SpriteRef {
+            let s = Self::create(texture, pixels_per_unit);
+            if let Some(r) = rect {
+                s.set_rect(r.x, r.y, r.width, r.height);
+            }
+            if !pivot.x.is_nan() && !pivot.y.is_nan() {
+                s.set_pivot(pivot);
+            }
             s
         }
 

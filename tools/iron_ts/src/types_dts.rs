@@ -123,6 +123,8 @@ struct Func {
     object_keys: Option<(String, OptionKeys)>,
     /// `#[global]`: also a global function.
     global: bool,
+    /// `#[constructor]`: the positional constructor of the class.
+    ctor: bool,
     /// Per parameter (with the receiver): its doc, and whether it is a handle.
     param_docs: Vec<String>,
     param_handle: Vec<bool>,
@@ -246,6 +248,7 @@ fn func_of(f: &Value, like: bool) -> Func {
         options_only: f["optionsOnly"].as_bool() == Some(true),
         object_keys: None,
         global: f["global"].as_bool() == Some(true),
+        ctor: f["constructor"].as_bool() == Some(true),
         param_docs: f["params"]
             .as_array()
             .map(|ps| {
@@ -521,6 +524,8 @@ struct Decls {
     globals: BTreeMap<String, (String, String)>,
     /// Class -> the parameters of its static `create` (`new Class(..)` calls it).
     creates: BTreeMap<String, Vec<(String, String, bool)>>,
+    /// Class -> the parameters of its positional constructor (`#[constructor]`).
+    ctor_params: BTreeMap<String, Vec<(String, String, bool)>>,
     /// Class -> the index of the `create` parameter after which an options object may follow
     /// (`#[options(after = p)]`): the constructor is `(positional..., options?)` and nothing else.
     creates_after: BTreeMap<String, usize>,
@@ -640,6 +645,9 @@ impl Decls {
                     named.push(k.clone());
                 }
                 match f.kind.as_str() {
+                    "static" if f.ctor => {
+                        self.ctor_params.insert(name.clone(), f.params.clone());
+                    }
                     "static" => {
                         let options = options_params(f, false);
                         if !(f.options_only && options.is_some()) {
@@ -659,7 +667,10 @@ impl Decls {
                                 named.push((n.clone(), option_keys(f, false)));
                             }
                         }
-                        if f.name == "create" && f.object_keys.is_none() {
+                        if f.name == "create"
+                            && f.object_keys.is_none()
+                            && !self.creates.contains_key(&name)
+                        {
                             self.creates.insert(name.clone(), f.params.clone());
                             if let Some(a) = f.options_after {
                                 self.creates_after.insert(name.clone(), a);
@@ -711,13 +722,41 @@ impl Decls {
                             .iter()
                             .find(|g| g.kind == "set" && g.name == f.name && g.params.len() > 1);
                         let writable = setter.is_some();
+                        // Several setters of one name (a number or a list of two): the value is
+                        // the union of the types they take.
+                        let mut takes: Vec<String> = Vec::new();
+                        for g in fs
+                            .iter()
+                            .filter(|g| g.kind == "set" && g.name == f.name && g.params.len() > 1)
+                        {
+                            if let Some((_, t, _)) = g.params.last()
+                                && !takes.contains(t)
+                            {
+                                takes.push(t.clone());
+                            }
+                        }
+                        // Setters of several types: one property of the union (a pair of accessors
+                        // would make `Partial<T>` read only the getter's type).
+                        if takes.len() > 1 && !members.iter().any(|m| member_name(m) == f.name) {
+                            let mut all = vec![f.ret.clone()];
+                            for t in &takes {
+                                if !all.contains(t) {
+                                    all.push(t.clone());
+                                }
+                            }
+                            let union = all.join(" | ");
+                            props.push((f.name.clone(), union.clone()));
+                            add(members, format!("{}: {union};", f.name), &f.doc);
+                            continue;
+                        }
                         // A property that reads as a narrower type than it takes: an accessor pair.
-                        if let Some(g) = setter
-                            && let Some((_, wide, _)) = g.params.last()
-                            && *wide != f.ret
+                        if setter.is_some()
+                            && !takes.is_empty()
+                            && takes.join(" | ") != f.ret
                             && !f.ret.ends_with("| null")
                             && !members.iter().any(|m| member_name(m) == f.name)
                         {
+                            let wide = takes.join(" | ");
                             props.push((f.name.clone(), wide.clone()));
                             add(members, format!("get {}(): {};", f.name, f.ret), &f.doc);
                             add(members, format!("set {}(v: {wide});", f.name), "");
@@ -867,6 +906,29 @@ impl Decls {
         if let Some(fields) = self.values.get(name) {
             let ctor: Vec<String> = fields.iter().map(|f| format!("{f}: number")).collect();
             return vec![format!("constructor({});", ctor.join(", "))];
+        }
+        // `#[constructor]`: the positional form, then the options object.
+        if let Some(pos) = self.ctor_params.get(name) {
+            let mut seen_optional = false;
+            let params: Vec<String> = pos
+                .iter()
+                .map(|(n, t, o)| {
+                    seen_optional |= *o;
+                    format!(
+                        "{}{}: {t}",
+                        safe_ident(n),
+                        if seen_optional { "?" } else { "" }
+                    )
+                })
+                .collect();
+            let mut out = vec![format!("constructor({});", params.join(", "))];
+            if self.props.get(name).is_some_and(|p| !p.is_empty()) {
+                out.push(format!(
+                    "constructor(options?: {});",
+                    self.options_type(name, sup)
+                ));
+            }
+            return out;
         }
         let Some(create) = self.creates.get(name) else {
             return vec![];

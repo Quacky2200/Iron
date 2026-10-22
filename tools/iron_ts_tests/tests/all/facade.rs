@@ -75,7 +75,10 @@ fn camera_rect_cull_distances_main_camera_and_screen_getters() {
 #[test]
 fn positional_constructors_with_texture_and_create_primitive_options() {
     in_every_gc_mode(|| unsafe {
-        assert_eq!(text(ts_fac_constructors()), "1|0.25|true|4|1|Ball|2|2");
+        assert_eq!(
+            text(ts_fac_constructors()),
+            "1|0.25|true|4|1|Ball|2|2|3|0.5|0.8|0.5"
+        );
     });
 }
 
@@ -102,7 +105,7 @@ fn the_animator_controller_builder_takes_object_options() {
 #[test]
 fn sprite_create_with_a_rect_and_sprite_grid() {
     in_every_gc_mode(|| unsafe {
-        assert_eq!(text(ts_fac_sprites()), "40|true|2|10");
+        assert_eq!(text(ts_fac_sprites()), "40|true|2|10|false|25|50|false");
     });
 }
 
@@ -133,7 +136,7 @@ fn particle_ranges_bursts_shape_keys_and_point_lists_are_options() {
     in_every_gc_mode(|| unsafe {
         assert_eq!(
             text(ts_fac_particlesAndPoints()),
-            "1.2|1.8|3|2|cone|14|3|2|true"
+            "1.2|1.8|3|2|cone|14|3|2|true|2|5|9|9|1"
         );
     });
 }
@@ -466,5 +469,16 @@ fn a_mesh_is_made_from_an_object_with_bones_and_bind_poses() {
         );
         assert_eq!(skinned.bindposes.len(), 32);
         assert_eq!(skinned.bindposes[28..31], [0.0, -1.0, 0.0]);
+    });
+}
+
+// M9-TS-3357
+//
+// `Scene.serialize()` is a record (a name and its root objects, a record with a list of records
+// that comes back as JSON text); `toJson()` is the whole scene as text.
+#[test]
+fn a_scene_serializes_to_a_record_and_to_text() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_sceneSummary()), "2|alpha,beta,|true|true");
     });
 }

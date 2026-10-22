@@ -922,6 +922,29 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// The version of a setter that takes a list, when the setter has one (`startLifetime` has a
+    /// number and a `[min, max]` version).
+    fn list_setter_of(&self, setter: &ExternFn) -> Option<ExternFn> {
+        self.manifest
+            .classes
+            .values()
+            .flat_map(|k| k.overloads.iter())
+            .filter(|((table, _), _)| table == "set")
+            .map(|(_, versions)| versions)
+            .find(|versions| versions.iter().any(|f| f.symbol == setter.symbol))
+            .and_then(|versions| {
+                versions
+                    .iter()
+                    .find(|f| f.params.get(1).is_some_and(|p| p.1.is_list_arg()))
+                    .cloned()
+            })
+    }
+
+    /// Whether a record's numbers can come back flat (no optional key, no list).
+    pub(crate) fn record_is_flat(&self, rn: &str) -> bool {
+        self.manifest.records[rn].iter().all(|(_, f)| f.is_flat())
+    }
+
     /// `iron_api_result(i)`: the `i`-th number of the last list or record result.
     fn flat_result(&mut self, i: Expr) -> Expr {
         let f = ExternFn {
@@ -1245,9 +1268,20 @@ impl<'a> Lowerer<'a> {
                 .and_then(|k| k.statics.get(name))
                 .cloned()
         });
-        let Some(f) = found else {
+        let Some(mut f) = found else {
             bail!("{}: {ns} has no function `{name}`", self.loc(c.span.start))
         };
+        // A class static declared more than once: the version for these arguments.
+        if !self.manifest.namespaces[ns].contains_key(name)
+            && let Some(cands) = self
+                .manifest
+                .classes
+                .get(ns)
+                .and_then(|k| k.overloads.get(&("static".to_string(), name.to_string())))
+                .cloned()
+        {
+            f = self.pick_ext_overload(&cands, 0, &c.arguments);
+        }
         self.call_ext_fn(f, None, &format!("{ns}.{name}"), c)
     }
 
@@ -1333,16 +1367,17 @@ impl<'a> Lowerer<'a> {
         if let Expression::ParenthesizedExpression(p) = e {
             return self.arg_fits(&p.expression, pt);
         }
-        let record = |t: &ExtTy| matches!(t, ExtTy::Record(_));
         let inner = match pt {
             ExtTy::Opt(i) => Some(&**i),
             _ => None,
         };
         match e {
             Expression::ObjectExpression(_) => {
-                return record(pt) || inner.is_some_and(record) || matches!(pt, ExtTy::Value(_));
+                return matches!(inner.unwrap_or(pt), ExtTy::Record(_) | ExtTy::Value(_));
             }
             Expression::NullLiteral(_) => return matches!(pt, ExtTy::Opt(_) | ExtTy::Handle(_)),
+            // `undefined` is "left out" for any parameter.
+            Expression::Identifier(id) if id.name == "undefined" => return true,
             _ => {}
         }
         let Ok(v) = self.lower_expr(e, None) else {
@@ -2228,6 +2263,8 @@ impl<'a> Lowerer<'a> {
                 (ExtTy::Void, Some((fields[0].1.clone(), fields.len())))
             }
             ExtTy::Enum(_) => (ExtTy::I32, None),
+            // A record with lists or optional keys is JSON text.
+            ExtTy::Record(rn) if !self.record_is_flat(rn) => (ExtTy::Str, None),
             ExtTy::Record(_) => (ExtTy::Void, None),
             ExtTy::RecordsJson(_) => (ExtTy::Str, None),
             ExtTy::ValueList(_)
@@ -2492,6 +2529,15 @@ impl<'a> Lowerer<'a> {
                 } else {
                     mk(ExprKind::Seq(pre, Box::new(named)), ty)
                 };
+            }
+            // A record that is not flat: the call returns JSON text.
+            ExtTy::Record(rn) if !self.record_is_flat(rn) => {
+                let ty = Ty::Obj(self.record_struct(rn));
+                let text = mk(ExprKind::CallExtern(idx, args), Ty::Str);
+                let parsed = self
+                    .json_value_with(text, ty.clone(), true)
+                    .expect("a record result has a JSON form");
+                return mk(ExprKind::Seq(pre, Box::new(parsed)), ty);
             }
             // One record: the call leaves its numbers in the buffer; read them into an object.
             ExtTy::Record(_) => {
@@ -4674,7 +4720,17 @@ impl<'a> Lowerer<'a> {
             return self.lower_destructure_assign(a);
         }
         let mut pre = Vec::new();
-        let place = self.assign_target(&a.left, &mut pre)?;
+        let mut place = self.assign_target(&a.left, &mut pre)?;
+        // `ps.startLifetime = [1, 2]`: a setter declared twice (a number, a list) has a version
+        // for the list.
+        if a.operator == A::Assign
+            && matches!(&a.right, Expression::ArrayExpression(_))
+            && let Place::Ext(o, g, setter, _) = &place
+            && let Some(list) = self.list_setter_of(setter)
+        {
+            let ty = self.ext_ir(&list.params[1].1);
+            place = Place::Ext(o.clone(), g.clone(), list, ty);
+        }
         let pty = Self::place_ty(&place).clone();
         // `RenderSettings.heightFog = { .. }`: an object literal for an `Option<Record>` property
         // keeps the keys it writes (see `lower_record_literal`).
@@ -5423,6 +5479,18 @@ impl<'a> Lowerer<'a> {
                             &c.arguments,
                             c.span.start,
                         );
+                    }
+                    // A static declared more than once (`Sprite.create(texture, ppu)` and
+                    // `Sprite.create(texture, rect, pivot, ppu)`): the version for the arguments.
+                    let mut f = f;
+                    if let Some(cands) = self
+                        .manifest
+                        .classes
+                        .get(id.name.as_str())
+                        .and_then(|k| k.overloads.get(&("static".to_string(), method.to_string())))
+                        .cloned()
+                    {
+                        f = self.pick_ext_overload(&cands, 0, &c.arguments);
                     }
                     return self.call_ext_fn(f, None, &format!("{}.{method}", id.name), c);
                 }

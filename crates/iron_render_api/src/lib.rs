@@ -13,7 +13,7 @@
 use iron_api::{Callback, Handle, iron_api};
 use iron_engine_api::color::Rgba;
 use iron_kinds::{AssetKind, Kind, asset_handle, asset_ref, component_ref, object_ref};
-use iron_math::{M4, V2, V3};
+use iron_math::{M4, Rect, V2, V3};
 use iron_scene::ObjectId;
 use serde_json::{Map, Value, json};
 use std::cell::RefCell;
