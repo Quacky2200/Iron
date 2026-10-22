@@ -86,6 +86,25 @@ pub fn convert_gamepad(
     })
 }
 
+/// Drops a `Connected` for a pad that is already announced (`known`), and forgets one
+/// that disconnects, so scripts hear of each connection once.
+pub fn announce_once(
+    known: &mut std::collections::HashSet<usize>,
+    event: InputEvent,
+) -> Option<InputEvent> {
+    if let InputEvent::Gamepad { id, event: e } = &event {
+        let id = *id as usize;
+        match e {
+            GamepadEvent::Connected { .. } if !known.insert(id) => return None,
+            GamepadEvent::Disconnected => {
+                known.remove(&id);
+            }
+            _ => {}
+        }
+    }
+    Some(event)
+}
+
 // M3-PAD-01 (conversion; gilrs events can't be built in tests, so names are checked
 // here and `convert_gamepad` with the events that can)
 #[cfg(test)]
@@ -122,5 +141,21 @@ mod tests {
             })
         );
         assert_eq!(convert_gamepad(0, &EventType::Dropped, String::new), None);
+    }
+
+    // M3-PAD-02
+    #[test]
+    fn each_connection_is_announced_once() {
+        let mut known = std::collections::HashSet::new();
+        let connect = || convert_gamepad(1, &EventType::Connected, || "Pad".into()).unwrap();
+        let gone = || convert_gamepad(1, &EventType::Disconnected, String::new).unwrap();
+        // Announced at startup, then gilrs reports it again: dropped.
+        known.insert(1);
+        assert_eq!(announce_once(&mut known, connect()), None);
+        assert!(announce_once(&mut known, gone()).is_some());
+        assert!(
+            announce_once(&mut known, connect()).is_some(),
+            "plugged back in"
+        );
     }
 }
