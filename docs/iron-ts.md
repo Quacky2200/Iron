@@ -697,6 +697,22 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   `Partial<LineRenderer2D>` (a literal with spreads, or a variable): every field that is there calls its setter (`apply_options_value`).
   The same for script components (`component_fields_from`).
 
+## Conveniences the examples rely on
+
+- **Functions as values** ([lower/fnvalue.rs](../tools/iron_ts/src/lower/fnvalue.rs)): `const hex = Color.hex`, `xs.map(Math.abs)`,
+  `apply(Util.twice, 3)`. A static method of a class of the program is its function; a static of the engine API (`Color.hex`,
+  `Mathf.lerp`; parameters a call may leave out need a default) and a `Math` function become a closure over a small wrapper function
+  (`wrapper_value`, shared per function). `Math.min/max/hypot` as values take two numbers.
+- **Casts of empty literals.** `null as T | null`, `[] as T[]` and `{} as T` give the literal the asserted type (`{} as T` leaves
+  its required fields zero: set them before reading).
+- **Field types** from `new Float32Array(n)`, `new Array<T>(n)`, `new Map<K, V>()`, `new Int8Array(n).fill(-1)`, `NaN`,
+  `-Infinity`, `Math.PI`, `Math.sqrt(..)`, `Date.now()`, `[] as T[]` and `null as T | null` (also inside an object literal).
+- **Assignment targets** may sit under `!` and casts: `x[i]! += d`, `m.get(k)![0]! *= 3`, `(x[i] as number) -= 1`.
+- **Strings iterate by code point**: `[...s]`, `Array.from(s)`, `Array.from(s, f)`, `for (const c of s)` (`ts_rt_str_chars_gc`).
+- **`Math.hypot(...xs)`** with any number of arguments (folded two at a time).
+- **Conditional branches.** `ok ? [a, b] : []` (the empty array takes the other branch's type); an engine object's options can be
+  `cond ? { position, parent } : { position }` (each branch sets its own properties).
+
 ## Symbol, iterators and generators
 
 - **Well-known symbols.** `[Symbol.iterator]()` in a class is a method with the internal name `@@iterator`

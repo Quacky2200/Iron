@@ -358,10 +358,10 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [ ] Tables indexed by a tag/enum-like string (`TINTS[state.tint]`, `typeof TINTS[Tint]`).
 - [x] `Array.prototype.indexOf` on arrays of string literals; `Array.from({ length }, f)` and `Array.from(xs, f)`; `new Array(n).fill(x)`; `.flat(depth)` (2026-10-22, `M9-TS-3020..3034`).
 - [x] Spread arguments: `Math.min(a, ...list)`, `Math.max(...xs)`, `f(...xs)` into rest and fixed parameters (not into function values or `new`).
-- [ ] A static function as a value: `const hex = Color.hex` (workaround: `(s: string) => Color.hex(s)`).
-- [ ] `null as T | null` and `[] as T[]` casts in object literals/consts (workaround: an interface and a typed const).
-- [ ] Class fields without an annotation whose initialiser is a constructor call (`private a = new Float32Array(n)`).
-- [ ] Non-null assertion on an assignment target: `x[i]! += d`; closures over destructured `const [a, b]`.
+- [x] A static function as a value: `const hex = Color.hex`, `xs.map(Math.abs)` (2026-10-22, `M9-TS-3128/3129/3135`).
+- [x] `null as T | null`, `[] as T[]`, `{} as T` casts in object literals/consts (`M9-TS-3130`).
+- [x] Class fields without an annotation whose initialiser is a constructor call (`private a = new Float32Array(n)`), `NaN`, `-Infinity`, `Math.*`, `new Int8Array(n).fill(x)`, `[] as T[]` (`M9-TS-3131/3137`).
+- [x] Non-null assertion on an assignment target: `x[i]! += d`; closures over destructured `const [a, b]` (`M9-TS-3132/3133`; the closures already worked).
 - [ ] Tuples: `.length`, rest patterns, assignment through `t[0]` (tuples are objects with fields `0`, `1`).
 - [ ] Defaulted closure parameters of type `boolean` are not nullable yet.
 - [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner.

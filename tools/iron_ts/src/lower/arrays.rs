@@ -19,12 +19,23 @@ pub(crate) struct Iter {
 }
 
 impl<'a> Lowerer<'a> {
+    /// A string as the array of its code points (each a string); anything else as it is.
+    pub(crate) fn string_chars(&mut self, v: Expr) -> Expr {
+        let v = self.widen_lit(v);
+        if v.ty.strip() == &Ty::Str {
+            return self.rt_str("ts_rt_str_chars_gc", vec![v], Ty::Arr(Box::new(Ty::Str)));
+        }
+        v
+    }
+
     pub(crate) fn begin_iter(&mut self, arr: Expr) -> R<Iter> {
         self.begin_iter_dir(arr, false)
     }
 
     /// Like `begin_iter`; `rev` walks from the last element to the first (`findLast`).
     pub(crate) fn begin_iter_dir(&mut self, arr: Expr, rev: bool) -> R<Iter> {
+        // A string is walked by code point.
+        let arr = self.string_chars(arr);
         let el_ty = match arr.ty.strip() {
             Ty::Arr(e) => (**e).clone(),
             Ty::Typed(_) => Ty::Num,
@@ -364,6 +375,7 @@ impl<'a> Lowerer<'a> {
                 }
                 let v = self.lower_expr(a0, None)?;
                 let v = self.widen_lit(v);
+                let v = self.string_chars(v);
                 // A set, or the keys or values of a map, as an array now.
                 let copy = if let Some(snapshot) = self.collection_snapshot(v.clone()) {
                     snapshot

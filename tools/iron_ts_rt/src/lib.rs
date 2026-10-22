@@ -1279,6 +1279,7 @@ pub fn link_anchor() -> usize {
         ts_rt_str_at_gc as *const () as usize,
         ts_rt_str_concat_n_gc as *const () as usize,
         ts_rt_str_split_gc as *const () as usize,
+        ts_rt_str_chars_gc as *const () as usize,
         ts_rt_str_join_gc as *const () as usize,
         ts_rt_map_new_gc as *const () as usize,
         ts_rt_json_stringify_gc as *const () as usize,

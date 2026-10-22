@@ -318,3 +318,19 @@ fn partial_engine_classes_are_option_bags_that_spread_into_options() {
         );
     });
 }
+
+// M9-TS-3135
+#[test]
+fn static_engine_functions_are_values() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_engineStaticsAsValues()), "1|0|2|1|22|4,4");
+    });
+}
+
+// M9-TS-3138
+#[test]
+fn options_chosen_by_a_conditional_expression() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_conditionalOptions()), "true|true|4|2");
+    });
+}

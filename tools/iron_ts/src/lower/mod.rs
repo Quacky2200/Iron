@@ -20,6 +20,7 @@ mod engine_objs;
 mod enums;
 mod expr;
 mod facade;
+mod fnvalue;
 mod generators;
 mod generics;
 mod intl;

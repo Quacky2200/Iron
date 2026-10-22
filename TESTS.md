@@ -1678,3 +1678,14 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3125 | Integration | `{ ...base, ...look }` with a `Partial` spread: a field that is absent leaves the earlier value (`utility.rs`). |
 | M9-TS-3126 | Integration | `Partial<Record<Union, V>>` tables and arrays of `Partial` objects (`utility.rs`). |
 | M9-TS-3127 | Integration | `Partial<LineRenderer2D>` / `Partial<TextMesh>` option bags spread into `addComponent` options, or passed as a variable (`tools/iron_ts_tests/tests/all/facade.rs`). |
+| M9-TS-3128 | Integration | `const f = Util.twice`, `Util.label`, `Math.abs`, `Math.max`, `Math.pow` as values; static methods and `Math.sqrt` passed as arguments equal bun's (`tools/iron_ts_tests/tests/all/misc.rs`, `bench/misc_cases.ts`). |
+| M9-TS-3129 | Integration | `xs.map(Math.abs)`, `map(Math.floor)`, `map(Math.round)`, `filter(Math.abs)` equal bun's (`misc.rs`). |
+| M9-TS-3130 | Integration | `null as T \| null`, `[] as T[]`, `{} as T` in object literals, consts and locals (`misc.rs`). |
+| M9-TS-3131 | Integration | Class fields with no annotation initialised by `new Float32Array(n)`, `new Map<K, V>()`, `new Array<T>(n)`, `new Set<T>()` (`misc.rs`). |
+| M9-TS-3132 | Integration | `x[i]! += d`, `x[i]!++`, `m.get(k)![0]! *= 3`, `o.p!.n = 7`, `(x[i] as number) -= 1` (`misc.rs`). |
+| M9-TS-3133 | Integration | Closures over `const [a, b] = ..` / `{ a, b } = ..` and `for (const [i, s] of xs.entries())` (`misc.rs`). |
+| M9-TS-3134 | Integration | `[..."héllo"]`, `Array.from("a😀b")` (by code point), `Array.from(s, f)`, `for (const c of s)`, `Math.hypot(...xs)` (`misc.rs`). |
+| M9-TS-3135 | Integration | `const hex = Color.hex`, `["#00ff00"].map(Color.hex)`, `Mathf.lerp` / `Mathf.clamp` as values (`tools/iron_ts_tests/tests/all/facade.rs`). |
+| M9-TS-3136 | Integration | `ok ? [a, b] : []` and `[]` first: the empty array takes the other branch's type (`misc.rs`). |
+| M9-TS-3137 | Integration | Field types found from `NaN`, `-Infinity`, `Math.PI`, `Number.MAX_SAFE_INTEGER`, `Math.sqrt(..)`, `new Int8Array(n).fill(x)`, `new Map<K, V>()`, `[] as T[]` in an object literal (`misc.rs`). |
+| M9-TS-3138 | Integration | `new GameObject(name, cond ? { position, parent } : { position })` (`facade.rs`). |

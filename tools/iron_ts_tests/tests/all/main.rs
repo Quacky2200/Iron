@@ -52,6 +52,7 @@ mod logic;
 mod loops;
 mod mathf;
 mod mathlib;
+mod misc;
 mod monthday;
 mod nullbool;
 mod numfmt;

@@ -18,7 +18,7 @@ pub(crate) enum ClosureNode<'a> {
 impl<'a> Lowerer<'a> {
     /// The environment parameter's type: an array of cells (the cells' own types differ, the
     /// lifted function casts each one it reads).
-    fn env_ty() -> Ty {
+    pub(crate) fn env_ty() -> Ty {
         Ty::Arr(Box::new(Ty::Cell(Box::new(Ty::Void))))
     }
 

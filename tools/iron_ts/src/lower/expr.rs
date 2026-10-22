@@ -139,6 +139,18 @@ impl<'a> Lowerer<'a> {
                     }
                     return Ok(v);
                 }
+                // `null as T | null`, `[] as T[]`, `{} as T`: the asserted type is the literal's.
+                if matches!(
+                    inner,
+                    Expression::NullLiteral(_)
+                        | Expression::ArrayExpression(_)
+                        | Expression::ObjectExpression(_)
+                ) && let Ok(to) = self.ty(&a.type_annotation, "as")
+                    && !matches!(to, Ty::Lit)
+                {
+                    let v = self.lower_expr(inner, Some(&to))?;
+                    return Ok(self.coerce(v.clone(), &to).unwrap_or(v));
+                }
                 let v = self.lower_expr(&a.expression, exp)?;
                 // `x as Sub` for classes: the same pointer, seen as the subclass.
                 if let Ok(Ty::Obj(t)) = self.ty(&a.type_annotation, "as")
@@ -209,8 +221,23 @@ impl<'a> Lowerer<'a> {
             Expression::LogicalExpression(l) => self.lower_logical(l, exp),
             Expression::ConditionalExpression(c) => {
                 let test = self.lower_cond(&c.test)?;
-                let a = self.lower_expr(&c.consequent, exp)?;
-                let b = self.lower_expr(&c.alternate, exp)?;
+                // `ok ? [a, b] : []`: an empty array takes the other branch's type.
+                let is_empty = |e: &Expression<'_>| matches!(e, Expression::ArrayExpression(a) if a.elements.is_empty());
+                let (a, b) = if exp.is_none() && is_empty(&c.consequent) && !is_empty(&c.alternate)
+                {
+                    let b = self.lower_expr(&c.alternate, exp)?;
+                    let a = self.lower_expr(&c.consequent, Some(&b.ty))?;
+                    (a, b)
+                } else {
+                    let a = self.lower_expr(&c.consequent, exp)?;
+                    let hint = if exp.is_none() && is_empty(&c.alternate) {
+                        Some(a.ty.clone())
+                    } else {
+                        None
+                    };
+                    let b = self.lower_expr(&c.alternate, exp.or(hint.as_ref()))?;
+                    (a, b)
+                };
                 // `on ? "pointer" : undefined` with no union expected is a `string | undefined`.
                 let (a, b) = if (a.ty == Ty::Null || b.ty == Ty::Null)
                     && exp.is_none_or(|t| t.strip() != &Ty::Lit)
@@ -346,7 +373,11 @@ impl<'a> Lowerer<'a> {
                 "LOG2E" => Ok(num(std::f64::consts::LOG2_E)),
                 "LOG10E" => Ok(num(std::f64::consts::LOG10_E)),
                 "SQRT1_2" => Ok(num(std::f64::consts::FRAC_1_SQRT_2)),
-                _ => bail!("Math.{prop} is not a value"),
+                // `xs.map(Math.abs)`
+                _ => match self.math_value(prop)? {
+                    Some(e) => Ok(e),
+                    None => bail!("Math.{prop} is not a value"),
+                },
             };
         }
         if let Expression::Identifier(id) = &m.object
@@ -392,12 +423,27 @@ impl<'a> Lowerer<'a> {
             {
                 return self.call_declared(&f, &[], None);
             }
-            return match self.consts.get(&format!("{}.{prop}", id.name)).cloned() {
+            let found = self.consts.get(&format!("{}.{prop}", id.name)).cloned();
+            // `const f = Class.method`
+            if found.is_none()
+                && let Some(e) = self.static_fn_value(id.name.as_str(), prop)?
+            {
+                return Ok(e);
+            }
+            return match found {
                 Some(ConstInfo::Inline(e)) => Ok(e),
                 Some(ConstInfo::Global(g, ty, false)) => Ok(mk(ExprKind::Global(g), ty)),
                 Some(ConstInfo::Global(g, ty, true)) => Ok(mk(ExprKind::GlobalVar(g), ty)),
                 None => bail!("class {} has no static value `{prop}`", id.name),
             };
+        }
+        // `const hex = Color.hex`: a static function of the engine API.
+        if let Expression::Identifier(id) = &m.object
+            && self.lookup(id.name.as_str()).is_none()
+            && !self.consts.contains_key(id.name.as_str())
+            && let Some(e) = self.static_fn_value(id.name.as_str(), prop)?
+        {
+            return Ok(e);
         }
         let mut obj = self.lower_expr(&m.object, None)?;
         if m.optional {
@@ -2228,7 +2274,11 @@ impl<'a> Lowerer<'a> {
                     };
                     let mut v = self.lower_expr(&p.value, want.as_ref())?;
                     // A property of a fresh object is a `string`, not the literal it was written as.
-                    if exp_sid.is_none() && record.is_none() {
+                    // (`"y" as Kind` keeps the union it was asserted to.)
+                    if exp_sid.is_none()
+                        && record.is_none()
+                        && !matches!(&p.value, Expression::TSAsExpression(_))
+                    {
                         v = self.widen_lit(v);
                     }
                     items.push(Item::Prop(name, v));
@@ -2495,6 +2545,8 @@ impl<'a> Lowerer<'a> {
                 let hint = el.clone().map(|e| Ty::Arr(Box::new(e)));
                 let mut v = self.lower_expr(&sp.argument, hint.as_ref())?;
                 v = self.match_view(v);
+                // `[..."text"]`: the code points.
+                v = self.string_chars(v);
                 // `[...set]`: the set's elements now.
                 if let Some(snapshot) = self.collection_snapshot(v.clone()) {
                     v = snapshot;
@@ -2725,86 +2777,119 @@ impl<'a> Lowerer<'a> {
     ) -> R<Place> {
         match t {
             SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
-                match self.lookup(id.name.as_str()) {
-                    Some(Binding::Direct(v)) => {
-                        Ok(Place::Var(v, self.cur.locals[v as usize].clone()))
-                    }
-                    Some(Binding::Boxed(cell, ty)) => Ok(Place::Cell(self.var_expr(cell), ty)),
-                    None => match self.consts.get(id.name.as_str()) {
-                        Some(ConstInfo::Global(g, ty, true)) => Ok(Place::Global(*g, ty.clone())),
-                        Some(_) => bail!("assignment to constant `{}`", id.name),
-                        None => bail!("assignment to unknown name `{}`", id.name),
-                    },
-                }
+                self.place_ident(id.name.as_str())
             }
-            SimpleAssignmentTarget::StaticMemberExpression(m) => {
-                // `Gizmos.color = ...`: the setter of a namespace property.
-                if let Expression::Identifier(id) = &m.object
-                    && self.lookup(id.name.as_str()).is_none()
-                    && let Some(p) = self
-                        .manifest
-                        .ns_props
-                        .get(id.name.as_str())
-                        .and_then(|p| p.get(m.property.name.as_str()))
-                        .cloned()
-                {
-                    let Some(setter) = p.setter else {
-                        bail!("{}.{} is read only", id.name, m.property.name)
-                    };
-                    let ty = self.ext_ir(&setter.params[0].1);
-                    return Ok(Place::NsProp(p.getter, setter, ty));
-                }
-                // `Class.count = ...`: a static field.
-                if let Expression::Identifier(id) = &m.object
-                    && self.lookup(id.name.as_str()).is_none()
-                    && self.classes.contains_key(id.name.as_str())
-                {
-                    let key = format!("{}.{}", id.name, m.property.name);
-                    if self.classes[id.name.as_str()]
-                        .statics
-                        .contains_key(&format!("set {}", m.property.name))
-                    {
-                        bail!("assignment to the static accessor `{key}` is not supported yet");
-                    }
-                    return match self.consts.get(&key) {
-                        Some(ConstInfo::Global(g, ty, true)) => Ok(Place::Global(*g, ty.clone())),
-                        Some(_) => bail!("assignment to the readonly static `{key}`"),
-                        None => bail!("no static value `{key}`"),
-                    };
-                }
-                let obj = self.lower_expr(&m.object, None)?;
-                if m.property.name == "length" && matches!(obj.ty.strip(), Ty::Arr(_)) {
-                    let tmp = self.new_local(obj.ty.clone());
-                    pre.push(Stmt::Assign(tmp, obj));
-                    return Ok(Place::ArrLen(self.var_expr(tmp)));
-                }
-                self.field_place(obj, m.property.name.as_str(), pre)
-            }
-            SimpleAssignmentTarget::PrivateFieldExpression(p) => {
-                let obj = self.lower_expr(&p.object, None)?;
-                self.field_place(obj, &classes::private_name(p.field.name.as_str()), pre)
-            }
-            SimpleAssignmentTarget::ComputedMemberExpression(m) => {
-                let arr = self.lower_expr(&m.object, None)?;
-                let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
-                let idx = self.as_num(idx)?;
-                let ty = match arr.ty.strip() {
-                    Ty::Typed(_) => Ty::Num,
-                    Ty::Arr(e) => (**e).clone(),
-                    t => bail!("cannot index {t}"),
-                };
-                let (ta, ti) = (self.new_local(arr.ty.clone()), self.new_local(Ty::Num));
-                pre.push(Stmt::Assign(ta, arr));
-                pre.push(Stmt::Assign(ti, idx));
-                Ok(Place::Index(self.var_expr(ta), self.var_expr(ti), ty))
-            }
+            SimpleAssignmentTarget::StaticMemberExpression(m) => self.place_static(m, pre),
+            SimpleAssignmentTarget::PrivateFieldExpression(p) => self.place_private(p, pre),
+            SimpleAssignmentTarget::ComputedMemberExpression(m) => self.place_computed(m, pre),
+            // `x[i]! += d`: the assertion only matters to `tsc`.
             SimpleAssignmentTarget::TSNonNullExpression(n) => {
-                // `a.b! = ..` is rare; lower the inner target as a member read.
-                let _ = n;
-                bail!("assignment through `!`")
+                self.place_of_expr(&n.expression, pre)
             }
+            SimpleAssignmentTarget::TSAsExpression(n) => self.place_of_expr(&n.expression, pre),
+            SimpleAssignmentTarget::TSSatisfiesExpression(n) => {
+                self.place_of_expr(&n.expression, pre)
+            }
+            SimpleAssignmentTarget::TSTypeAssertion(n) => self.place_of_expr(&n.expression, pre),
+        }
+    }
+
+    /// An expression that is an assignment target under a `!` or a cast.
+    fn place_of_expr(&mut self, e: &'a Expression<'a>, pre: &mut Vec<Stmt>) -> R<Place> {
+        match e {
+            Expression::ParenthesizedExpression(p) => self.place_of_expr(&p.expression, pre),
+            Expression::TSNonNullExpression(n) => self.place_of_expr(&n.expression, pre),
+            Expression::TSAsExpression(n) => self.place_of_expr(&n.expression, pre),
+            Expression::Identifier(id) => self.place_ident(id.name.as_str()),
+            Expression::StaticMemberExpression(m) => self.place_static(m, pre),
+            Expression::PrivateFieldExpression(p) => self.place_private(p, pre),
+            Expression::ComputedMemberExpression(m) => self.place_computed(m, pre),
             _ => bail!("unsupported assignment target"),
         }
+    }
+
+    fn place_ident(&mut self, name: &str) -> R<Place> {
+        match self.lookup(name) {
+            Some(Binding::Direct(v)) => Ok(Place::Var(v, self.cur.locals[v as usize].clone())),
+            Some(Binding::Boxed(cell, ty)) => Ok(Place::Cell(self.var_expr(cell), ty)),
+            None => match self.consts.get(name) {
+                Some(ConstInfo::Global(g, ty, true)) => Ok(Place::Global(*g, ty.clone())),
+                Some(_) => bail!("assignment to constant `{}`", name),
+                None => bail!("assignment to unknown name `{}`", name),
+            },
+        }
+    }
+
+    fn place_static(&mut self, m: &'a StaticMemberExpression<'a>, pre: &mut Vec<Stmt>) -> R<Place> {
+        // `Gizmos.color = ...`: the setter of a namespace property.
+        if let Expression::Identifier(id) = &m.object
+            && self.lookup(id.name.as_str()).is_none()
+            && let Some(p) = self
+                .manifest
+                .ns_props
+                .get(id.name.as_str())
+                .and_then(|p| p.get(m.property.name.as_str()))
+                .cloned()
+        {
+            let Some(setter) = p.setter else {
+                bail!("{}.{} is read only", id.name, m.property.name)
+            };
+            let ty = self.ext_ir(&setter.params[0].1);
+            return Ok(Place::NsProp(p.getter, setter, ty));
+        }
+        // `Class.count = ...`: a static field.
+        if let Expression::Identifier(id) = &m.object
+            && self.lookup(id.name.as_str()).is_none()
+            && self.classes.contains_key(id.name.as_str())
+        {
+            let key = format!("{}.{}", id.name, m.property.name);
+            if self.classes[id.name.as_str()]
+                .statics
+                .contains_key(&format!("set {}", m.property.name))
+            {
+                bail!("assignment to the static accessor `{key}` is not supported yet");
+            }
+            return match self.consts.get(&key) {
+                Some(ConstInfo::Global(g, ty, true)) => Ok(Place::Global(*g, ty.clone())),
+                Some(_) => bail!("assignment to the readonly static `{key}`"),
+                None => bail!("no static value `{key}`"),
+            };
+        }
+        let obj = self.lower_expr(&m.object, None)?;
+        if m.property.name == "length" && matches!(obj.ty.strip(), Ty::Arr(_)) {
+            let tmp = self.new_local(obj.ty.clone());
+            pre.push(Stmt::Assign(tmp, obj));
+            return Ok(Place::ArrLen(self.var_expr(tmp)));
+        }
+        self.field_place(obj, m.property.name.as_str(), pre)
+    }
+
+    fn place_private(
+        &mut self,
+        p: &'a PrivateFieldExpression<'a>,
+        pre: &mut Vec<Stmt>,
+    ) -> R<Place> {
+        let obj = self.lower_expr(&p.object, None)?;
+        self.field_place(obj, &classes::private_name(p.field.name.as_str()), pre)
+    }
+
+    fn place_computed(
+        &mut self,
+        m: &'a ComputedMemberExpression<'a>,
+        pre: &mut Vec<Stmt>,
+    ) -> R<Place> {
+        let arr = self.lower_expr(&m.object, None)?;
+        let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
+        let idx = self.as_num(idx)?;
+        let ty = match arr.ty.strip() {
+            Ty::Typed(_) => Ty::Num,
+            Ty::Arr(e) => (**e).clone(),
+            t => bail!("cannot index {t}"),
+        };
+        let (ta, ti) = (self.new_local(arr.ty.clone()), self.new_local(Ty::Num));
+        pre.push(Stmt::Assign(ta, arr));
+        pre.push(Stmt::Assign(ti, idx));
+        Ok(Place::Index(self.var_expr(ta), self.var_expr(ti), ty))
     }
 
     /// `obj.prop` as an assignment target: a field, or a property with a setter.
@@ -3646,6 +3731,7 @@ impl<'a> Lowerer<'a> {
         let (op, start) = match f {
             "min" => (BinOp::Min, f64::INFINITY),
             "max" => (BinOp::Max, f64::NEG_INFINITY),
+            "hypot" => (BinOp::Hypot, 0.0),
             _ => bail!(
                 "{}: Math.{f} does not take spread arguments",
                 self.loc(c.span.start)
@@ -3705,11 +3791,23 @@ impl<'a> Lowerer<'a> {
             let v = self.lower_expr(e, Some(&Ty::Num))?;
             args.push(self.as_num(v)?);
         }
+        let n = args.len();
+        match Self::math_op(f, args) {
+            Some(e) => Ok(e),
+            None => bail!(
+                "{}: Math.{f} with {n} arguments is not supported",
+                self.loc(c.span.start)
+            ),
+        }
+    }
+
+    /// `Math.f(args)` over lowered arguments, or `None` for a name or arity it does not know.
+    pub(crate) fn math_op(f: &str, args: Vec<Expr>) -> Option<Expr> {
         let un = |op, a: Expr| mk(ExprKind::Un(op, Box::new(a)), Ty::Num);
         let bin = |op, a: Expr, b: Expr| mk(ExprKind::Bin(op, Box::new(a), Box::new(b)), Ty::Num);
         let n = args.len();
         let mut it = args.into_iter();
-        Ok(match (f, n) {
+        Some(match (f, n) {
             ("sqrt", 1) => un(UnOp::Sqrt, it.next().unwrap()),
             ("abs", 1) => un(UnOp::Abs, it.next().unwrap()),
             ("floor", 1) => un(UnOp::Floor, it.next().unwrap()),
@@ -3751,10 +3849,16 @@ impl<'a> Lowerer<'a> {
                 }
                 acc
             }
-            _ => bail!(
-                "{}: Math.{f} with {n} arguments is not supported",
-                self.loc(c.span.start)
-            ),
+            ("hypot", 0) => mk(ExprKind::Num(0.0), Ty::Num),
+            ("hypot", 1) => un(UnOp::Abs, it.next().unwrap()),
+            ("hypot", _) => {
+                let mut acc = it.next().unwrap();
+                for x in it {
+                    acc = bin(BinOp::Hypot, acc, x);
+                }
+                acc
+            }
+            _ => return None,
         })
     }
 }

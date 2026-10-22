@@ -316,6 +316,36 @@ pub unsafe extern "C" fn ts_rt_str_split_gc(s: *const Str, sep: *const Str) -> *
     arr
 }
 
+/// `[...s]` / `Array.from(s)`: the code points of `s`, each as a string (a lone surrogate stays
+/// alone).
+///
+/// # Safety
+/// `s` must be a live string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_str_chars_gc(s: *const Str) -> *mut super::Array {
+    let units = st(s).to_utf16();
+    let mut pieces: Vec<Vec<u8>> = Vec::new();
+    let mut i = 0;
+    while i < units.len() {
+        let pair = (0xD800..0xDC00).contains(&units[i])
+            && units
+                .get(i + 1)
+                .is_some_and(|l| (0xDC00..0xE000).contains(l));
+        let n = if pair { 2 } else { 1 };
+        pieces.push(wtf8_from_utf16(&units[i..i + n]));
+        i += n;
+    }
+    let arr = ts_rt_arr_new_gc(pieces.len() as i64, 1);
+    for piece in &pieces {
+        // SAFETY: neither call collects, so the unrooted array and strings stay valid.
+        unsafe {
+            let p = ts_rt_str_new(piece.as_ptr(), piece.len() as i64);
+            ts_rt_arr_push(arr, p as u64);
+        }
+    }
+    arr
+}
+
 /// `parts.join(sep)`; a null element is empty.
 ///
 /// # Safety

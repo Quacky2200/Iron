@@ -101,6 +101,10 @@ impl<'a> Lowerer<'a> {
                 Expression::ObjectExpression(o) if i > 0 || arguments.len() == 1 => {
                     self.apply_options(class, tmp, o, &mut stmts, &at)?;
                 }
+                // `new GameObject(name, parent ? { position, parent } : { position })`
+                Expression::ConditionalExpression(_) if i > 0 => {
+                    self.apply_options_expr(class, tmp, e, &mut stmts, &at)?;
+                }
                 _ if i == 0 => {
                     let Some(setter) = k.setters.get("name").cloned() else {
                         bail!("{at}: {class} has no `name` to set from new {class}(name)")
@@ -408,13 +412,7 @@ impl<'a> Lowerer<'a> {
         let made = self.emit_extern(&attach, vec![recv]);
         let mut stmts = vec![Stmt::Assign(tmp, made)];
         if let Some(e) = c.arguments.get(1).and_then(|a| a.as_expression()) {
-            if let Expression::ObjectExpression(o) = e {
-                self.apply_options(&class, tmp, o, &mut stmts, &at)?;
-            } else {
-                // A variable of an object type (`Partial<LineRenderer2D>`): its fields that are there.
-                let v = self.lower_expr(e, None)?;
-                self.apply_options_value(&class, tmp, v, &mut stmts, &at)?;
-            }
+            self.apply_options_expr(&class, tmp, e, &mut stmts, &at)?;
         }
         let result = self.var_expr(tmp);
         Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
@@ -464,6 +462,36 @@ impl<'a> Lowerer<'a> {
             }
         }
         Ok(())
+    }
+
+    /// The options of `Class(.., options)`: an object literal, a `cond ? { .. } : { .. }`, or a
+    /// variable of an object type (a `Partial<LineRenderer2D>`).
+    pub(crate) fn apply_options_expr(
+        &mut self,
+        class: &str,
+        tmp: VarId,
+        e: &'a Expression<'a>,
+        stmts: &mut Vec<Stmt>,
+        at: &str,
+    ) -> R<()> {
+        match e {
+            Expression::ObjectExpression(o) => self.apply_options(class, tmp, o, stmts, at),
+            Expression::ParenthesizedExpression(p) => {
+                self.apply_options_expr(class, tmp, &p.expression, stmts, at)
+            }
+            Expression::ConditionalExpression(c) => {
+                let test = self.lower_cond(&c.test)?;
+                let (mut yes, mut no) = (Vec::new(), Vec::new());
+                self.apply_options_expr(class, tmp, &c.consequent, &mut yes, at)?;
+                self.apply_options_expr(class, tmp, &c.alternate, &mut no, at)?;
+                stmts.push(Stmt::If(test, yes, no));
+                Ok(())
+            }
+            _ => {
+                let v = self.lower_expr(e, None)?;
+                self.apply_options_value(class, tmp, v, stmts, at)
+            }
+        }
     }
 
     /// How one option key of an engine class is set.

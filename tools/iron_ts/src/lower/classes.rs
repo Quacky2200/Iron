@@ -113,6 +113,30 @@ impl<'a> Lowerer<'a> {
                     let e = self.lower_new_collection(&id.name, n, None)?;
                     e.ty.clone()
                 }
+                // `field = new Float32Array(n)`, `new Array<T>(n)`, `new Vector3()`, `new GameObject()`.
+                Some(Expression::NewExpression(n))
+                    if matches!(&n.callee, Expression::Identifier(id)
+                        if crate::ir::TypedKind::from_name(id.name.as_str()).is_some()
+                            || (id.name == "Array" && n.type_arguments.is_some())
+                            || self.manifest.values.contains_key(id.name.as_str())
+                            || (self.is_creatable(id.name.as_str())
+                                && !self.class_decls.contains_key(id.name.as_str()))) =>
+                {
+                    let Expression::Identifier(id) = &n.callee else {
+                        unreachable!("matched above")
+                    };
+                    if let Some(k) = crate::ir::TypedKind::from_name(id.name.as_str()) {
+                        Ty::Typed(k)
+                    } else if id.name == "Array" {
+                        let ta = n.type_arguments.as_ref().expect("checked");
+                        match ta.params.first() {
+                            Some(t) => Ty::Arr(Box::new(self.ty(t, what)?)),
+                            None => bail!("{what}: new Array<T>(..) needs T"),
+                        }
+                    } else {
+                        self.named_type(id.name.as_str())?
+                    }
+                }
                 // `field = new Other()` is an `Other`.
                 Some(Expression::NewExpression(n))
                     if matches!(&n.callee, Expression::Identifier(id)
@@ -187,8 +211,78 @@ impl<'a> Lowerer<'a> {
             },
             Expression::Identifier(id) => match self.const_inits.get(id.name.as_str()).copied() {
                 Some(init) => self.guess_ty(init, depth + 1)?,
+                None if matches!(id.name.as_str(), "NaN" | "Infinity") => Some(Ty::Num),
                 None => None,
             },
+            // `[] as T[]`, `null as T | null`, `x!`
+            Expression::TSAsExpression(a)
+                if !matches!(&a.type_annotation, TSType::TSTypeReference(r)
+                    if matches!(&r.type_name, TSTypeName::IdentifierReference(i) if i.name == "const")) =>
+            {
+                Some(self.ty(&a.type_annotation, "as")?)
+            }
+            Expression::TSNonNullExpression(n) => self
+                .guess_ty(&n.expression, depth + 1)?
+                .map(|t| t.strip().clone()),
+            // `new Map<K, V>()`, `new Set<K>()`, `new Array<T>(n)`
+            Expression::NewExpression(n)
+                if n.type_arguments.is_some()
+                    && matches!(&n.callee, Expression::Identifier(id)
+                        if matches!(id.name.as_str(), "Map" | "Set" | "WeakMap" | "WeakSet" | "Array")
+                            && !self.class_decls.contains_key(id.name.as_str())) =>
+            {
+                let Expression::Identifier(id) = &n.callee else {
+                    unreachable!("matched above")
+                };
+                if id.name == "Array" {
+                    let ta = n.type_arguments.as_ref().expect("checked");
+                    match ta.params.first() {
+                        Some(t) => Some(Ty::Arr(Box::new(self.ty(t, "Array")?))),
+                        None => None,
+                    }
+                } else {
+                    Some(self.lower_new_collection(&id.name, n, None)?.ty)
+                }
+            }
+            // `Number.NaN`, `Math.PI`, `Math.sqrt(2)`, `Date.now()`
+            Expression::StaticMemberExpression(m)
+                if matches!(&m.object, Expression::Identifier(id)
+                    if matches!(id.name.as_str(), "Number" | "Math")
+                        && !self.class_decls.contains_key(id.name.as_str())) =>
+            {
+                Some(Ty::Num)
+            }
+            Expression::CallExpression(c)
+                if matches!(&c.callee, Expression::StaticMemberExpression(m)
+                    if matches!(&m.object, Expression::Identifier(id)
+                        if (id.name == "Math" || (id.name == "Date" && m.property.name == "now"))
+                            && !self.class_decls.contains_key(id.name.as_str()))) =>
+            {
+                Some(Ty::Num)
+            }
+            // `new Int8Array(n).fill(-1)`: the typed array again.
+            Expression::CallExpression(c)
+                if matches!(&c.callee, Expression::StaticMemberExpression(m)
+                    if matches!(m.property.name.as_str(),
+                        "fill" | "slice" | "subarray" | "reverse" | "sort")
+                        && matches!(&m.object, Expression::NewExpression(n)
+                            if matches!(&n.callee, Expression::Identifier(id)
+                                if crate::ir::TypedKind::from_name(id.name.as_str()).is_some()))) =>
+            {
+                let Expression::StaticMemberExpression(m) = &c.callee else {
+                    unreachable!("matched above")
+                };
+                self.guess_ty(&m.object, depth + 1)?
+            }
+            Expression::NewExpression(n)
+                if matches!(&n.callee, Expression::Identifier(id)
+                    if crate::ir::TypedKind::from_name(id.name.as_str()).is_some()) =>
+            {
+                let Expression::Identifier(id) = &n.callee else {
+                    unreachable!("matched above")
+                };
+                crate::ir::TypedKind::from_name(id.name.as_str()).map(Ty::Typed)
+            }
             // `new Tween<number>(..)`: a generic class with its type arguments written.
             Expression::NewExpression(n)
                 if n.type_arguments.is_some()

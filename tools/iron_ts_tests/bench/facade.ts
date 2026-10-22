@@ -350,3 +350,20 @@ export function optionBags(): string {
   const r = (v: number) => Math.round(v * 100) / 100;
   return `${r(plain.width)}|${plain.loop}|${r(wide.width)}|${wide.loop}|${wide.sortingOrder}|${wide.hasFill}|${r(viaVariable.width)}|${viaVariable.sortingOrder}|${r(withDefault.width)}|${withDefault.loop}|${withDefault.sortingOrder}|${big.fontSize}|${big.text}|${dflt.fontSize}`;
 }
+
+export function engineStaticsAsValues(): string {
+  const hex = Color.hex;
+  const red = hex("#ff0000");
+  const greens = ["#00ff00", "#008000"].map(Color.hex);
+  const lerp = Mathf.lerp;
+  const clamp = Mathf.clamp;
+  return `${red.r}|${red.g}|${greens.length}|${greens[0]!.g}|${Math.round(greens[1]!.g * 100)}|${lerp(2, 6, 0.5)},${clamp(9, 0, 4)}`;
+}
+
+export function conditionalOptions(): string {
+  const root = new GameObject("root", { position: new Vector3(10, 0, 0) });
+  const make = (inside: boolean) => new GameObject("c", inside ? { position: new Vector3(1, 2, 3), parent: root } : { position: new Vector3(4, 5, 6) });
+  const a = make(true);
+  const b = make(false);
+  return `${a.parent !== null}|${b.parent === null}|${b.transform.position.x}|${a.transform.localPosition.y}`;
+}
