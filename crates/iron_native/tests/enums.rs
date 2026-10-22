@@ -116,3 +116,43 @@ fn result_records_have_strings_and_lists_of_records_are_arrays() {
         );
     });
 }
+
+// M9-API-1633
+#[test]
+fn render_settings_objects_are_properties_that_take_objects_and_null_and_read_back() {
+    with_world(|ctx| {
+        let out: String = js(
+            ctx,
+            r#"
+            RenderSettings.heightFog = { density: 0.2, baseHeight: 3, falloff: 0.5 };
+            const h = RenderSettings.heightFog;
+            RenderSettings.heightFog = null;
+            RenderSettings.skybox = { zenith: new Color(1, 0, 0, 1), sunDirection: null };
+            const sky = RenderSettings.skybox;
+            RenderSettings.bloom = { threshold: 1.2, intensity: 0.5, scatter: 0.4 };
+            RenderSettings.autoExposure = { minEV: -4, metering: 'spot', curve: [[-2, -1], [6, 0]] };
+            RenderSettings.volumetricFog = { intensity: 2, resolution: 'ultra', albedo: new Color(0, 1, 0, 1) };
+            const ae = RenderSettings.autoExposure;
+            const vf = RenderSettings.volumetricFog;
+            JSON.stringify([
+              h, RenderSettings.heightFog, sky.sunDirection, sky.zenith instanceof Color, sky.zenith.r,
+              RenderSettings.bloom.intensity, ae.minEV, ae.maxEV, ae.curve, ae.metering,
+              vf.intensity, vf.resolution, vf.denoising, vf.albedo.g, RenderSettings.skyHasSun,
+            ])
+            "#,
+        );
+        assert_eq!(
+            out,
+            r#"[{"density":0.2,"baseHeight":3,"falloff":0.5},null,null,true,1,0.5,-4,20,[[-2,-1],[6,0]],"spot",2,"ultra","both",1,false]"#
+        );
+        for bad in [
+            "RenderSettings.heightFog = { density: 1 }",
+            "RenderSettings.volumetricFog = { resolution: 'fuzzy' }",
+        ] {
+            // A bad object is reported and ignored (it sets nothing), not an exception.
+            js::<String>(ctx, &format!("{bad}; 'ok'"));
+        }
+        let kept: bool = js(ctx, "RenderSettings.heightFog === null");
+        assert!(kept);
+    });
+}

@@ -411,3 +411,29 @@ export function resultRecords(): string {
   const third: string = info.name;
   return `${size.width}x${size.height}|${cur.refreshRate}|${all.length}|${all[1]!.width}|${third === ""}|${info.length}`;
 }
+
+export function recordProperties(): string {
+  RenderSettings.heightFog = { density: 0.2, baseHeight: 3, falloff: 0.5 };
+  const h = RenderSettings.heightFog;
+  const a = h === null ? "none" : `${h.density}|${h.baseHeight}`;
+  const own: { density: number; baseHeight: number; falloff: number } = { density: 0.7, baseHeight: 1, falloff: 0.1 };
+  RenderSettings.heightFog = own;
+  const b = RenderSettings.heightFog !== null ? RenderSettings.heightFog.density : -1;
+  RenderSettings.heightFog = null;
+  const c = RenderSettings.heightFog === null;
+  RenderSettings.skybox = { zenith: new Color(1, 0, 0, 1) };
+  const sky = RenderSettings.skybox;
+  const d = sky === null ? "none" : `${sky.sunDirection !== null}|${sky.zenith !== null ? sky.zenith.r : -1}`;
+  RenderSettings.skybox = { sunDirection: null };
+  const sky2 = RenderSettings.skybox;
+  const e = sky2 !== null && sky2.sunDirection === null;
+  const night = true;
+  RenderSettings.skybox = { sunDirection: night ? null : new Vector3(0, 1, 0) };
+  const e2 = RenderSettings.skyHasSun;
+  RenderSettings.autoExposure = night ? { minEV: -4, curve: [[-2, -1], [6, 0]], metering: "spot" } : null;
+  const ae = RenderSettings.autoExposure;
+  const f = ae === null ? "none" : `${ae.minEV}|${ae.curve !== null ? ae.curve.length : -1}|${ae.metering}|${ae.maxEV}`;
+  RenderSettings.skybox = null;
+  RenderSettings.autoExposure = null;
+  return `${a}|${b}|${c}|${d}|${e}|${e2}|${f}|${RenderSettings.skybox === null}`;
+}

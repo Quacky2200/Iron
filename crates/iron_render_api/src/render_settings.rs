@@ -473,6 +473,200 @@ pub enum Detail {
     Ultra,
 }
 
+use render_settings_api::{
+    exposure_metering_name, exposure_metering_parse, volume_denoising_name, volume_denoising_parse,
+    volume_detail_name, volume_detail_parse,
+};
+
+/// How the light-shaft volume's sampling noise is cleaned up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Denoise {
+    None,
+    Reprojection,
+    Gaussian,
+    Both,
+}
+
+/// Which part of the view auto exposure measures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Metering {
+    Average,
+    CenterWeighted,
+    Spot,
+}
+
+/// A procedural sky as a script gives it: every key may be left out.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkyPatch {
+    pub zenith: Option<Rgba>,
+    pub horizon: Option<Rgba>,
+    pub ground: Option<Rgba>,
+    /// `Some(None)`: `null`, no sun disc.
+    pub sun_direction: Option<Option<V3>>,
+    pub sun_color: Option<Rgba>,
+    pub sun_size: Option<f64>,
+}
+
+impl SkyPatch {
+    /// The sky with the keys that are given changed.
+    fn apply(self, mut s: Sky) -> Sky {
+        if let Some(c) = self.zenith {
+            s.zenith = c;
+        }
+        if let Some(c) = self.horizon {
+            s.horizon = c;
+        }
+        if let Some(c) = self.ground {
+            s.ground = c;
+        }
+        if let Some(d) = self.sun_direction {
+            s.sun_direction = d;
+        }
+        if let Some(c) = self.sun_color {
+            s.sun_color = c;
+        }
+        if let Some(n) = self.sun_size {
+            s.sun_size = n;
+        }
+        s
+    }
+
+    fn of(s: &Sky) -> SkyPatch {
+        SkyPatch {
+            zenith: Some(s.zenith),
+            horizon: Some(s.horizon),
+            ground: Some(s.ground),
+            sun_direction: Some(s.sun_direction),
+            sun_color: Some(s.sun_color),
+            sun_size: Some(s.sun_size),
+        }
+    }
+}
+
+/// Light shafts as a script gives them: every key may be left out.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VolumetricPatch {
+    pub intensity: Option<f64>,
+    pub anisotropy: Option<f64>,
+    pub steps: Option<f64>,
+    pub distance: Option<f64>,
+    pub albedo: Option<Rgba>,
+    pub sharp_distance: Option<f64>,
+    pub sharp_samples: Option<f64>,
+    pub resolution: Option<Detail>,
+    pub denoising: Option<Denoise>,
+    pub history_weight: Option<f64>,
+    pub samples: Option<f64>,
+    pub motion_samples: Option<f64>,
+}
+
+impl VolumetricPatch {
+    fn apply(self, mut v: Volumetric) -> Volumetric {
+        macro_rules! set {
+            ($($f:ident),*) => { $( if let Some(x) = self.$f { v.$f = x; } )* };
+        }
+        set!(
+            intensity,
+            anisotropy,
+            steps,
+            distance,
+            albedo,
+            sharp_distance,
+            sharp_samples,
+            history_weight,
+            samples,
+            motion_samples
+        );
+        if let Some(d) = self.resolution {
+            v.resolution = volume_detail_name(d).to_string();
+        }
+        if let Some(d) = self.denoising {
+            v.denoising = volume_denoising_name(d).to_string();
+        }
+        v
+    }
+
+    fn of(v: &Volumetric) -> VolumetricPatch {
+        VolumetricPatch {
+            intensity: Some(v.intensity),
+            anisotropy: Some(v.anisotropy),
+            steps: Some(v.steps),
+            distance: Some(v.distance),
+            albedo: Some(v.albedo),
+            sharp_distance: Some(v.sharp_distance),
+            sharp_samples: Some(v.sharp_samples),
+            resolution: Some(volume_detail_parse(&v.resolution).unwrap_or(Detail::High)),
+            denoising: Some(volume_denoising_parse(&v.denoising).unwrap_or(Denoise::Both)),
+            history_weight: Some(v.history_weight),
+            samples: Some(v.samples),
+            motion_samples: Some(v.motion_samples),
+        }
+    }
+}
+
+/// Auto exposure as a script gives it: every key may be left out.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AutoExposurePatch {
+    pub min_ev: Option<f64>,
+    pub max_ev: Option<f64>,
+    pub compensation: Option<f64>,
+    pub speed_dark_to_light: Option<f64>,
+    pub speed_light_to_dark: Option<f64>,
+    pub metering: Option<Metering>,
+    pub low_percent: Option<f64>,
+    pub high_percent: Option<f64>,
+    pub dark_adaptation: Option<f64>,
+    pub dark_below: Option<f64>,
+    pub curve: Option<Vec<(f64, f64)>>,
+    pub hold: Option<bool>,
+}
+
+impl AutoExposurePatch {
+    fn apply(self, mut a: AutoExposure) -> AutoExposure {
+        macro_rules! set {
+            ($($f:ident),*) => { $( if let Some(x) = self.$f { a.$f = x; } )* };
+        }
+        set!(
+            min_ev,
+            max_ev,
+            compensation,
+            speed_dark_to_light,
+            speed_light_to_dark,
+            low_percent,
+            high_percent,
+            dark_adaptation,
+            dark_below,
+            hold
+        );
+        if let Some(m) = self.metering {
+            a.metering = exposure_metering_name(m).to_string();
+        }
+        if let Some(c) = self.curve {
+            a.curve = c.into_iter().take(8).collect();
+        }
+        a
+    }
+
+    fn of(a: &AutoExposure) -> AutoExposurePatch {
+        AutoExposurePatch {
+            min_ev: Some(a.min_ev),
+            max_ev: Some(a.max_ev),
+            compensation: Some(a.compensation),
+            speed_dark_to_light: Some(a.speed_dark_to_light),
+            speed_light_to_dark: Some(a.speed_light_to_dark),
+            metering: Some(
+                exposure_metering_parse(&a.metering).unwrap_or(Metering::CenterWeighted),
+            ),
+            low_percent: Some(a.low_percent),
+            high_percent: Some(a.high_percent),
+            dark_adaptation: Some(a.dark_adaptation),
+            dark_below: Some(a.dark_below),
+            curve: Some(a.curve.clone()),
+            hold: Some(a.hold),
+        }
+    }
+}
+
 #[iron_api(
     namespace = "RenderSettings", quickjs,
     values(
@@ -483,7 +677,91 @@ pub enum Detail {
         /// How fog thickens with distance (Unity's `FogMode`).
         FogMode = FogKind [Linear, Exponential, ExponentialSquared],
         /// The light-shaft volume's detail levels.
-        VolumeDetail = Detail [Low, Medium, High, Ultra]
+        VolumeDetail = Detail [Low, Medium, High, Ultra],
+        /// How the light-shaft volume's sampling noise is cleaned up.
+        VolumeDenoising = Denoise [None, Reprojection, Gaussian, Both],
+        /// Which part of the view auto exposure measures.
+        ExposureMetering = Metering [Average, CenterWeighted, Spot]
+    ),
+    records(
+        /// A procedural sky. Every key is optional: the sky starts from the default one.
+        ProceduralSky = SkyPatch [
+            zenith: Option<Color>,
+            horizon: Option<Color>,
+            ground: Option<Color>,
+            /// Towards the sun; `null` for no sun disc.
+            sun_direction: Option<Option<Vector3Like>>,
+            sun_color: Option<Color>,
+            /// The disc's size in degrees.
+            sun_size: Option<f64>
+        ],
+        BloomSettings = Bloom [
+            /// Linear brightness where glowing starts (1: only what is brighter than white).
+            threshold: f64,
+            intensity: f64,
+            /// 0..1: how far it spreads.
+            scatter: f64
+        ],
+        /// Fog lying low (Unreal's exponential height fog), in `fogColor`.
+        HeightFogSettings = HeightFog [
+            /// Per metre at `baseHeight`.
+            density: f64,
+            base_height: f64,
+            /// Per metre (larger: a thinner layer).
+            falloff: f64
+        ],
+        /// Light shafts (volumetric fog): lights shining through the fog light it up, cut by their shadows. Every field is optional.
+        VolumetricFogSettings = VolumetricPatch [
+            /// Scales the scattered light (1).
+            intensity: Option<f64>,
+            /// -1 to 1: positive scatters forward (0.4).
+            anisotropy: Option<f64>,
+            /// Samples per depth slice, 1 to 16 (4).
+            steps: Option<f64>,
+            /// How far the volume reaches in metres (50).
+            distance: Option<f64>,
+            /// How much of each colour of light the fog scatters (white).
+            albedo: Option<Color>,
+            /// God rays: within this many metres of the camera the sun's shafts are worked out per pixel (0: off).
+            sharp_distance: Option<f64>,
+            /// Samples per pixel for the sharp part, 4 to 128 (32).
+            sharp_samples: Option<f64>,
+            /// How fine the light-shaft volume is (`high`).
+            resolution: Option<VolumeDetail>,
+            /// How the volume's sampling noise is cleaned up (`both`).
+            denoising: Option<VolumeDenoising>,
+            /// With reprojection, how much of each cell comes from earlier frames (0.9).
+            history_weight: Option<f64>,
+            /// Shadow samples per cell each frame, 1 to 8 (1).
+            samples: Option<f64>,
+            /// Samples for cells whose view moved this frame (2).
+            motion_samples: Option<f64>
+        ],
+        /// Auto exposure (HDRP's Automatic mode). Every field is optional.
+        AutoExposureSettings = AutoExposurePatch [
+            /// The darkest average brightness it adapts to, in EV100 (-10).
+            min_ev: Option<f64> as "minEV",
+            /// The brightest, in EV100 (20).
+            max_ev: Option<f64> as "maxEV",
+            /// Stops added after metering (0; positive is brighter).
+            compensation: Option<f64>,
+            /// How fast it adapts when the view gets brighter (3, per second).
+            speed_dark_to_light: Option<f64>,
+            /// How fast it adapts when the view gets darker (3, per second).
+            speed_light_to_dark: Option<f64>,
+            /// Which part of the view counts (`centerWeighted`).
+            metering: Option<ExposureMetering>,
+            /// The part of the brightness histogram averaged, in percent from the darkest (0 and 100: everything).
+            low_percent: Option<f64>,
+            high_percent: Option<f64>,
+            /// Below `darkBelow` (EV100, 5) the eyes adapt only this much (0..1, 1) of the way.
+            dark_adaptation: Option<f64>,
+            dark_below: Option<f64>,
+            /// More stops by how bright the view is: up to 8 points of [metered EV100, stops].
+            curve: Option<pairs>,
+            /// Stops adapting: the exposure holds where it is.
+            hold: Option<bool>
+        ]
     )
 )]
 pub mod render_settings_api {
@@ -519,6 +797,60 @@ pub mod render_settings_api {
 
     pub fn set_reflection_intensity(i: f64) {
         change(|s| s.reflection_intensity = i);
+    }
+
+    /// The procedural sky as one object (`null`: none): what reflections show, where sky light comes
+    /// from, and what cameras with `clearFlags: "skybox"` show. Setting it replaces the sky: the
+    /// default one with the given keys changed.
+    #[property]
+    pub fn skybox() -> Option<SkyPatch> {
+        read(|s| s.skybox.as_ref().map(SkyPatch::of))
+    }
+
+    pub fn set_skybox(v: Option<SkyPatch>) {
+        change(|s| s.skybox = v.map(|p| p.apply(Sky::default())));
+    }
+
+    /// Bloom over every camera as one object (`null`: off).
+    #[property]
+    pub fn bloom() -> Option<Bloom> {
+        read(|s| s.bloom.clone())
+    }
+
+    pub fn set_bloom(v: Option<Bloom>) {
+        change(|s| s.bloom = v);
+    }
+
+    /// Height fog on top of the distance fog, while `fog` is on, as one object (`null`: none).
+    #[property]
+    pub fn height_fog() -> Option<HeightFog> {
+        read(|s| s.fog.height.clone())
+    }
+
+    pub fn set_height_fog(v: Option<HeightFog>) {
+        change(|s| s.fog.height = v);
+    }
+
+    /// Light shafts in the fog, while `fog` is on, as one object (`null`: none). Setting it
+    /// replaces the shafts: the defaults with the given keys changed.
+    #[property]
+    pub fn volumetric_fog() -> Option<VolumetricPatch> {
+        read(|s| s.fog.volumetric.as_ref().map(VolumetricPatch::of))
+    }
+
+    pub fn set_volumetric_fog(v: Option<VolumetricPatch>) {
+        change(|s| s.fog.volumetric = v.map(|p| p.apply(Volumetric::default())));
+    }
+
+    /// Adapts the exposure to the view, as one object (`null`: off, the default). Setting it
+    /// replaces the settings: the defaults with the given keys changed.
+    #[property]
+    pub fn auto_exposure() -> Option<AutoExposurePatch> {
+        read(|s| s.auto_exposure.as_ref().map(AutoExposurePatch::of))
+    }
+
+    pub fn set_auto_exposure(v: Option<AutoExposurePatch>) {
+        change(|s| s.auto_exposure = v.map(|p| p.apply(AutoExposure::default())));
     }
 
     /// Whether there is a procedural sky: what reflections show, where sky light comes from, and
@@ -919,13 +1251,14 @@ pub mod render_settings_api {
     /// How the volume's sampling noise is cleaned up: `none`, `reprojection`, `gaussian` or
     /// `both` (the default).
     #[property]
-    pub fn volumetric_fog_denoising() -> String {
-        read(|s| volumetric_of(s).denoising)
+    pub fn volumetric_fog_denoising() -> Denoise {
+        read(|s| volume_denoising_parse(&volumetric_of(s).denoising).unwrap_or(Denoise::Both))
     }
 
-    pub fn set_volumetric_fog_denoising(v: &str) {
-        if ["none", "reprojection", "gaussian", "both"].contains(&v) {
-            change(|s| volumetric_mut(s).denoising = v.to_string());
+    /// An unknown name is ignored.
+    pub fn set_volumetric_fog_denoising(v: Option<Denoise>) {
+        if let Some(v) = v {
+            change(|s| volumetric_mut(s).denoising = volume_denoising_name(v).to_string());
         }
     }
 
@@ -1031,13 +1364,14 @@ pub mod render_settings_api {
 
     /// Which part of the view counts: `average`, `centerWeighted` (the default) or `spot`.
     #[property]
-    pub fn auto_exposure_metering() -> String {
-        read(|s| auto_of(s).metering)
+    pub fn auto_exposure_metering() -> Metering {
+        read(|s| exposure_metering_parse(&auto_of(s).metering).unwrap_or(Metering::CenterWeighted))
     }
 
-    pub fn set_auto_exposure_metering(v: &str) {
-        if ["average", "centerWeighted", "spot"].contains(&v) {
-            change(|s| auto_mut(s).metering = v.to_string());
+    /// An unknown name is ignored.
+    pub fn set_auto_exposure_metering(v: Option<Metering>) {
+        if let Some(v) = v {
+            change(|s| auto_mut(s).metering = exposure_metering_name(v).to_string());
         }
     }
 

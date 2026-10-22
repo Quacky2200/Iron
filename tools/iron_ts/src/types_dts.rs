@@ -53,10 +53,13 @@ fn ts_type(t: &str) -> String {
         "f64s" => "number[]".into(),
         "strings" => "string[]".into(),
         "list:string" => "string[]".into(),
+        "list:pair" => "[number, number][]".into(),
         "ptr" => "unknown".into(),
         other => {
             if let Some(inner) = other.strip_prefix("opt:") {
                 format!("{} | null", ts_type(inner))
+            } else if let Some(n) = other.strip_prefix("like:") {
+                format!("{n}Like")
             } else if let Some(n) = other.strip_prefix("list:enum:") {
                 format!("{n}[]")
             } else if let Some(n) = other
@@ -528,11 +531,18 @@ impl Decls {
                 .map(|fs| {
                     fs.iter()
                         .map(|f| {
-                            (
-                                f["name"].as_str().unwrap_or("").to_string(),
-                                ts_type(f["type"].as_str().unwrap_or("void")),
-                                f["doc"].as_str().unwrap_or("").to_string(),
-                            )
+                            let raw = f["type"].as_str().unwrap_or("void");
+                            // `Option<T>` is an optional key; `Option<Option<T>>` also takes `null`.
+                            let (name, ty) = match raw.strip_prefix("opt:") {
+                                Some(inner) => (
+                                    format!("{}?", f["name"].as_str().unwrap_or("")),
+                                    ts_type(inner),
+                                ),
+                                None => {
+                                    (f["name"].as_str().unwrap_or("").to_string(), ts_type(raw))
+                                }
+                            };
+                            (name, ty, f["doc"].as_str().unwrap_or("").to_string())
                         })
                         .collect()
                 })

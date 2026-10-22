@@ -367,3 +367,14 @@ fn result_records_and_lists_of_records_come_back_as_plain_objects_with_strings()
         assert_eq!(text(ts_fac_resultRecords()), "1024x768|144|2|1280|true|0");
     });
 }
+
+// M9-TS-3343
+#[test]
+fn record_properties_take_object_literals_keep_the_keys_they_write_and_read_back() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_recordProperties()),
+            "0.2|3|0.7|true|true|1|true|false|-4|2|spot|20|true"
+        );
+    });
+}

@@ -895,17 +895,26 @@ impl<'a> Lowerer<'a> {
             .into_iter()
             .map(|(n, f)| Field {
                 name: n,
-                ty: match f {
-                    crate::manifest::RecField::Num => Ty::Num,
-                    crate::manifest::RecField::Bool => Ty::Bool,
-                    crate::manifest::RecField::Value(v) => Ty::Obj(self.value_struct(&v)),
-                    crate::manifest::RecField::Enum(_) | crate::manifest::RecField::Str => Ty::Str,
-                },
-                optional: false,
+                optional: matches!(f, crate::manifest::RecField::Opt(_)),
+                ty: self.rec_field_ty(&f),
             })
             .collect();
         self.m.structs[sid].fields = fields;
         sid
+    }
+
+    /// The IR type of a record field.
+    pub(crate) fn rec_field_ty(&mut self, f: &crate::manifest::RecField) -> Ty {
+        use crate::manifest::RecField;
+        match f {
+            RecField::Num => Ty::Num,
+            RecField::Bool => Ty::Bool,
+            RecField::Value(v) => Ty::Obj(self.value_struct(v)),
+            RecField::Enum(_) | RecField::Str => Ty::Str,
+            RecField::Opt(inner) => self.rec_field_ty(inner).nullable(),
+            // `[number, number][]`: a tuple of equal types is an array.
+            RecField::Pairs => Ty::Arr(Box::new(Ty::Arr(Box::new(Ty::Num)))),
+        }
     }
 
     /// `iron_api_result(i)`: the `i`-th number of the last list or record result.
@@ -1011,6 +1020,11 @@ impl<'a> Lowerer<'a> {
                             );
                             off += width;
                             inner
+                        }
+                        crate::manifest::RecField::Opt(_) | crate::manifest::RecField::Pairs => {
+                            unreachable!(
+                                "a record with optional keys or lists is not a flat result"
+                            )
                         }
                         crate::manifest::RecField::Enum(en) => {
                             let idx = self.flat_result(add(base, off));
@@ -1828,6 +1842,14 @@ impl<'a> Lowerer<'a> {
                 });
                 continue;
             };
+            // An object literal for an `Option<Record>`: the keys written are the keys sent.
+            if let ExtTy::Opt(inner) = pt
+                && let ExtTy::Record(rn) = &**inner
+                && let Some(text) = self.lower_record_literal(e, rn)?
+            {
+                args.push(text);
+                continue;
+            }
             if *pt == ExtTy::Ptr {
                 // Any script pointer goes through as it is.
                 let v = self.lower_expr(e, None)?;
@@ -1995,6 +2017,18 @@ impl<'a> Lowerer<'a> {
                 }
                 // `Option<f64>`: NaN for null. `Option<V>`: NaN in every field for null.
                 ExtTy::Opt(inner) => match &**inner {
+                    // `Option<Record>`: the record as JSON text ("null" for none).
+                    ExtTy::Record(_) => {
+                        // Already JSON text (an object literal), or a record's object.
+                        let text = if v.ty.strip() == &Ty::Str {
+                            v
+                        } else {
+                            self.json_text_of(v)
+                                .expect("a record argument has a JSON form")
+                        };
+                        args.push(text);
+                        flat.push(ExtTy::Str);
+                    }
                     ExtTy::Value(vn) => {
                         let sid = self.value_struct(vn);
                         let is_null = mk(ExprKind::IsNull(Box::new(v.clone())), Ty::Bool);
@@ -2043,6 +2077,8 @@ impl<'a> Lowerer<'a> {
                     let fields = &self.manifest.values[vn];
                     (ExtTy::Void, Some((fields[0].1.clone(), fields.len())))
                 }
+                // `Option<Record>`: its JSON text.
+                ExtTy::Record(_) => (ExtTy::Str, None),
                 other => (other.clone(), None),
             },
             other => (other.clone(), None),
@@ -2131,6 +2167,18 @@ impl<'a> Lowerer<'a> {
                     nty.clone(),
                 );
                 return mk(ExprKind::Seq(pre, Box::new(result)), nty);
+            }
+            // `Option<Record>`: the call returns JSON text; parse it into the record's object.
+            ExtTy::Opt(inner) if matches!(**inner, ExtTy::Record(_)) => {
+                let ExtTy::Record(rn) = &**inner else {
+                    unreachable!()
+                };
+                let nty = Ty::Obj(self.record_struct(rn)).nullable();
+                let text = mk(ExprKind::CallExtern(idx, args), Ty::Str);
+                let parsed = self
+                    .json_value_of(text, nty.clone())
+                    .expect("a record result has a JSON form");
+                return mk(ExprKind::Seq(pre, Box::new(parsed)), nty);
             }
             // `Option<String>`: the call leaves a flag that says it was none.
             ExtTy::Opt(inner) if matches!(**inner, ExtTy::Str) => {
@@ -4397,11 +4445,20 @@ impl<'a> Lowerer<'a> {
             return self.lower_destructure_assign(a);
         }
         let mut pre = Vec::new();
-        if let Some(stmts) = self.lower_split_assign(a)? {
-            return Ok((stmts, mk(ExprKind::Null, Ty::Null)));
-        }
         let place = self.assign_target(&a.left, &mut pre)?;
         let pty = Self::place_ty(&place).clone();
+        // `RenderSettings.heightFog = { .. }`: an object literal for an `Option<Record>` property
+        // keeps the keys it writes (see `lower_record_literal`).
+        if a.operator == A::Assign
+            && let Place::NsProp(_, setter, _) = &place
+            && let ExtTy::Opt(inner) = &setter.params[0].1
+            && let ExtTy::Record(rn) = &**inner
+            && let Some(text) = self.lower_record_literal(&a.right, rn)?
+        {
+            let setter = setter.clone();
+            pre.push(Stmt::Eval(self.emit_extern(&setter, vec![text])));
+            return Ok((pre, mk(ExprKind::Null, Ty::Null)));
+        }
         if matches!(a.operator, A::LogicalAnd | A::LogicalOr | A::LogicalNullish) {
             // `p ||= v` is `if (!p) p = v`: the target is evaluated once and v only when needed.
             let old = self.place_read(&place);

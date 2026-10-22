@@ -172,6 +172,123 @@ impl<'a> Lowerer<'a> {
         super::expr::mk(ExprKind::Blob(i), Ty::Handle("blob".into()))
     }
 
+    /// The JSON text of a value of a static type (what `JSON.stringify(v)` makes).
+    pub(crate) fn json_text_of(&mut self, v: Expr) -> R<Expr> {
+        use super::expr::{mk, num};
+        let v = self.widen_lit(v);
+        let blob = self.json_blob(&v.ty.clone())?;
+        // The value goes into a local first: the runtime allocates the text while it walks the
+        // value, and only a local is a GC root.
+        let held = self.new_local(v.ty.clone());
+        let bits = mk(
+            ExprKind::Bits(Box::new(self.var_expr(held))),
+            Ty::Handle("bits".into()),
+        );
+        let text = self.rt_str(
+            "ts_rt_json_stringify_gc",
+            vec![
+                self.blob_expr(blob),
+                bits,
+                num(f64::NAN),
+                mk(ExprKind::Null, Ty::Str),
+            ],
+            Ty::Str,
+        );
+        Ok(mk(
+            ExprKind::Seq(vec![Stmt::Assign(held, v)], Box::new(text)),
+            Ty::Str,
+        ))
+    }
+
+    /// An argument that is an `Option<Record>` of the engine API as JSON text, when it is written as
+    /// an object literal, `null`, or a conditional of those: the keys written are the keys sent
+    /// (each value stringified by its own static type, `null` kept), so `{ sunDirection: null }`
+    /// differs from `{}`, which a struct with one `null` state for both cannot tell. `None` for any
+    /// other expression (a variable, a spread: the record's struct is stringified instead).
+    pub(crate) fn lower_record_literal(
+        &mut self,
+        e: &'a Expression<'a>,
+        rn: &str,
+    ) -> R<Option<Expr>> {
+        use super::expr::mk;
+        match e {
+            Expression::ParenthesizedExpression(p) => self.lower_record_literal(&p.expression, rn),
+            Expression::NullLiteral(_) => Ok(Some(self.str_lit("null"))),
+            Expression::ConditionalExpression(c) => {
+                let test = self.lower_expr(&c.test, None)?;
+                let test = self.bool_of(test);
+                let branch = |this: &mut Self, b: &'a Expression<'a>| -> R<Expr> {
+                    if let Some(t) = this.lower_record_literal(b, rn)? {
+                        return Ok(t);
+                    }
+                    let want = Ty::Obj(this.record_struct(rn)).nullable();
+                    let v = this.lower_expr(b, Some(&want))?;
+                    let v = this.coerce(v, &want)?;
+                    this.json_text_of(v)
+                };
+                let yes = branch(self, &c.consequent)?;
+                let no = branch(self, &c.alternate)?;
+                Ok(Some(mk(
+                    ExprKind::Cond(Box::new(test), Box::new(yes), Box::new(no)),
+                    Ty::Str,
+                )))
+            }
+            Expression::ObjectExpression(o) => {
+                let fields = self.manifest.records[rn].clone();
+                let mut text = self.str_lit("{");
+                let mut first = true;
+                for p in &o.properties {
+                    let ObjectPropertyKind::ObjectProperty(p) = p else {
+                        return Ok(None);
+                    };
+                    let PropertyKey::StaticIdentifier(key) = &p.key else {
+                        return Ok(None);
+                    };
+                    let name = key.name.as_str();
+                    let Some((_, f)) = fields.iter().find(|(n, _)| n == name) else {
+                        bail!(
+                            "{}: `{name}` is not a key of {rn}",
+                            self.loc(key.span.start)
+                        )
+                    };
+                    let want = self.rec_field_ty(f).nullable();
+                    let v = self.lower_expr(&p.value, Some(&want))?;
+                    let v = self.coerce_ext(v, &want)?;
+                    let piece = self.json_text_of(v)?;
+                    let head =
+                        self.str_lit(&format!("{}\"{name}\":", if first { "" } else { "," }));
+                    first = false;
+                    text = self.str_concat(text, head)?;
+                    text = self.str_concat(text, piece)?;
+                }
+                let close = self.str_lit("}");
+                Ok(Some(self.str_concat(text, close)?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The value of type `ty` that JSON text holds (what `JSON.parse(text)` makes there).
+    pub(crate) fn json_value_of(&mut self, text: Expr, ty: Ty) -> R<Expr> {
+        use super::expr::mk;
+        let blob = self.json_blob(&ty)?;
+        // The text goes into a local first: the parser allocates while it reads it.
+        let held = self.new_local(Ty::Str);
+        let raw = mk(
+            ExprKind::Rt(
+                RtFn::Str("ts_rt_json_parse_gc"),
+                vec![self.blob_expr(blob), self.var_expr(held)],
+            ),
+            Ty::Handle("bits".into()),
+        );
+        let value = mk(ExprKind::Unbits(Box::new(raw)), ty.clone());
+        let parsed = self.checked(value, ty.clone());
+        Ok(mk(
+            ExprKind::Seq(vec![Stmt::Assign(held, text)], Box::new(parsed)),
+            ty,
+        ))
+    }
+
     /// `JSON.stringify(value)` and `JSON.stringify(value, null, space)`.
     pub(crate) fn lower_json_stringify(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
         use super::expr::{mk, num};

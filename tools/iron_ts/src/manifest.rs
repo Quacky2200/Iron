@@ -83,16 +83,31 @@ pub enum RecField {
     Enum(String),
     /// A string: it comes through `iron_api_result_str`, not the number buffer.
     Str,
+    /// An optional key (`Option<T>`): a nullable field. Only records that travel as JSON have it.
+    Opt(Box<RecField>),
+    /// A list of number pairs (`[number, number][]`). JSON only.
+    Pairs,
 }
 
 impl RecField {
+    /// Whether the record's numbers can come back flat (no optional field, no list).
+    pub fn is_flat(&self) -> bool {
+        !matches!(self, RecField::Opt(_) | RecField::Pairs)
+    }
+
     fn parse(s: &str) -> Result<RecField, String> {
         Ok(match s {
             "f64" | "f32" | "i32" | "u32" => RecField::Num,
             "bool" => RecField::Bool,
             "string" => RecField::Str,
+            "list:pair" => RecField::Pairs,
             other => {
-                if let Some(n) = other.strip_prefix("value:") {
+                if let Some(inner) = other.strip_prefix("opt:") {
+                    RecField::Opt(Box::new(RecField::parse(inner)?))
+                } else if let Some(n) = other
+                    .strip_prefix("value:")
+                    .or_else(|| other.strip_prefix("like:"))
+                {
                     RecField::Value(n.to_string())
                 } else if let Some(n) = other.strip_prefix("enum:") {
                     RecField::Enum(n.to_string())

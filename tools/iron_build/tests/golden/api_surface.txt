@@ -1551,6 +1551,34 @@ declare interface AnimatorStateInfo
 declare interface AnimatorStateInfo :: length: number;
 declare interface AnimatorStateInfo :: name: string;
 declare interface AnimatorStateInfo :: normalizedTime: number;
+declare interface AutoExposureSettings
+declare interface AutoExposureSettings :: compensation?: number;
+declare interface AutoExposureSettings :: curve?: [number, number][];
+declare interface AutoExposureSettings :: darkAdaptation?: number;
+declare interface AutoExposureSettings :: darkBelow?: number;
+declare interface AutoExposureSettings :: highPercent?: number;
+declare interface AutoExposureSettings :: hold?: boolean;
+declare interface AutoExposureSettings :: lowPercent?: number;
+declare interface AutoExposureSettings :: maxEV?: number;
+declare interface AutoExposureSettings :: metering?: ExposureMetering;
+declare interface AutoExposureSettings :: minEV?: number;
+declare interface AutoExposureSettings :: speedDarkToLight?: number;
+declare interface AutoExposureSettings :: speedLightToDark?: number;
+declare interface BloomSettings
+declare interface BloomSettings :: intensity: number;
+declare interface BloomSettings :: scatter: number;
+declare interface BloomSettings :: threshold: number;
+declare interface HeightFogSettings
+declare interface HeightFogSettings :: baseHeight: number;
+declare interface HeightFogSettings :: density: number;
+declare interface HeightFogSettings :: falloff: number;
+declare interface ProceduralSky
+declare interface ProceduralSky :: ground?: Color;
+declare interface ProceduralSky :: horizon?: Color;
+declare interface ProceduralSky :: sunColor?: Color;
+declare interface ProceduralSky :: sunDirection?: Vector3Like | null;
+declare interface ProceduralSky :: sunSize?: number;
+declare interface ProceduralSky :: zenith?: Color;
 declare interface Resolution
 declare interface Resolution :: height: number;
 declare interface Resolution :: refreshRate: number;
@@ -1576,6 +1604,19 @@ declare interface TextureOptions :: filterMode?: FilterMode;
 declare interface TextureOptions :: linear?: boolean;
 declare interface TextureOptions :: mipmaps?: boolean;
 declare interface TextureOptions :: wrapMode?: TextureWrapMode;
+declare interface VolumetricFogSettings
+declare interface VolumetricFogSettings :: albedo?: Color;
+declare interface VolumetricFogSettings :: anisotropy?: number;
+declare interface VolumetricFogSettings :: denoising?: VolumeDenoising;
+declare interface VolumetricFogSettings :: distance?: number;
+declare interface VolumetricFogSettings :: historyWeight?: number;
+declare interface VolumetricFogSettings :: intensity?: number;
+declare interface VolumetricFogSettings :: motionSamples?: number;
+declare interface VolumetricFogSettings :: resolution?: VolumeDetail;
+declare interface VolumetricFogSettings :: samples?: number;
+declare interface VolumetricFogSettings :: sharpDistance?: number;
+declare interface VolumetricFogSettings :: sharpSamples?: number;
+declare interface VolumetricFogSettings :: steps?: number;
 declare interface WindowOptions
 declare interface WindowOptions :: alwaysOnTop?: boolean;
 declare interface WindowOptions :: closable?: boolean;
@@ -1653,6 +1694,7 @@ declare module "@iron/engine" :: export import DateTime = globalThis.DateTime;
 declare module "@iron/engine" :: export import Debug = globalThis.Debug;
 declare module "@iron/engine" :: export import EdgeCollider2D = globalThis.EdgeCollider2D;
 declare module "@iron/engine" :: export import Emitter = globalThis.Emitter;
+declare module "@iron/engine" :: export import ExposureMetering = globalThis.ExposureMetering;
 declare module "@iron/engine" :: export import FilterMode = globalThis.FilterMode;
 declare module "@iron/engine" :: export import FixedJoint = globalThis.FixedJoint;
 declare module "@iron/engine" :: export import FlatMeshData = globalThis.FlatMeshData;
@@ -1772,6 +1814,7 @@ declare module "@iron/engine" :: export import Vector3 = globalThis.Vector3;
 declare module "@iron/engine" :: export import Vector3Int = globalThis.Vector3Int;
 declare module "@iron/engine" :: export import Vector3Like = globalThis.Vector3Like;
 declare module "@iron/engine" :: export import Vector4 = globalThis.Vector4;
+declare module "@iron/engine" :: export import VolumeDenoising = globalThis.VolumeDenoising;
 declare module "@iron/engine" :: export import VolumeDetail = globalThis.VolumeDetail;
 declare module "@iron/engine" :: export import VolumetricFogSettings = globalThis.VolumetricFogSettings;
 declare module "@iron/engine" :: export import Window = globalThis.Window;
@@ -1910,6 +1953,9 @@ declare namespace Debug :: function log(message: string): void;
 declare namespace Debug :: function logError(message: string): void;
 declare namespace Debug :: function logException(message: string): void;
 declare namespace Debug :: function logWarning(message: string): void;
+declare namespace ExposureMetering
+declare namespace ExposureMetering :: function name(index: number): ExposureMetering;
+declare namespace ExposureMetering :: function parse(name: string): number;
 declare namespace FilterMode
 declare namespace FilterMode :: function name(index: number): FilterMode;
 declare namespace FilterMode :: function parse(name: string): number;
@@ -2153,7 +2199,7 @@ declare namespace RenderSettings :: let autoExposureHighPercent: number;
 declare namespace RenderSettings :: let autoExposureHold: boolean;
 declare namespace RenderSettings :: let autoExposureLowPercent: number;
 declare namespace RenderSettings :: let autoExposureMaxEv: number;
-declare namespace RenderSettings :: let autoExposureMetering: string;
+declare namespace RenderSettings :: let autoExposureMetering: ExposureMetering;
 declare namespace RenderSettings :: let autoExposureMinEv: number;
 declare namespace RenderSettings :: let autoExposureSpeedDarkToLight: number;
 declare namespace RenderSettings :: let autoExposureSpeedLightToDark: number;
@@ -2191,7 +2237,7 @@ declare namespace RenderSettings :: let tonemapping: string;
 declare namespace RenderSettings :: let volumetricFog: VolumetricFogSettings | null;
 declare namespace RenderSettings :: let volumetricFogAlbedo: Color;
 declare namespace RenderSettings :: let volumetricFogAnisotropy: number;
-declare namespace RenderSettings :: let volumetricFogDenoising: string;
+declare namespace RenderSettings :: let volumetricFogDenoising: VolumeDenoising;
 declare namespace RenderSettings :: let volumetricFogDistance: number;
 declare namespace RenderSettings :: let volumetricFogEnabled: boolean;
 declare namespace RenderSettings :: let volumetricFogHistoryWeight: number;
@@ -2423,6 +2469,9 @@ declare namespace Vector4 :: function create(options?: { x?: number; y?: number;
 declare namespace Vector4 :: function create(x?: number, y?: number, z?: number, w?: number): Vector4;
 declare namespace Vector4 :: function fromVector3(v: Vector3, options?: { w?: number }): Vector4;
 declare namespace Vector4 :: function fromVector3(v: Vector3, w?: number): Vector4;
+declare namespace VolumeDenoising
+declare namespace VolumeDenoising :: function name(index: number): VolumeDenoising;
+declare namespace VolumeDenoising :: function parse(name: string): number;
 declare namespace VolumeDetail
 declare namespace VolumeDetail :: function name(index: number): VolumeDetail;
 declare namespace VolumeDetail :: function parse(name: string): number;
@@ -2480,6 +2529,7 @@ declare namespace input :: function onGamepadDisconnected(f: (a0: number) => voi
 declare namespace input :: function onKeyDown(f: (a0: string, a1: boolean) => void): number;
 declare namespace input :: function onKeyUp(f: (a0: string) => void): number;
 declare type AnimatorController = AnimationController;
+declare type ExposureMetering = "average" | "centerWeighted" | "spot";
 declare type FilterMode = "point" | "bilinear" | "trilinear";
 declare type FogMode = "linear" | "exponential" | "exponentialSquared";
 declare type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
@@ -2491,6 +2541,7 @@ declare type SplineAlignment = "none" | "path";
 declare type SplineLoopMode = "loop" | "pingPong" | "once";
 declare type TangentMode = "auto" | "bezier" | "linear";
 declare type TextureWrapMode = "repeat" | "clamp" | "mirror";
+declare type VolumeDenoising = "none" | "reprojection" | "gaussian" | "both";
 declare type VolumeDetail = "low" | "medium" | "high" | "ultra";
 declare type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";
 interface AnimationController
@@ -2499,19 +2550,6 @@ interface AnimationController :: addState(name: string, motion: AnimationClip | 
 interface AnimationController :: addTransition(t: TransitionSpec): AnimationController;
 interface AudioSource
 interface AudioSource :: playOneShot(clip: Sound | string, volumeScale?: number): void;
-interface AutoExposureSettings
-interface AutoExposureSettings :: compensation?: number;
-interface AutoExposureSettings :: curve?: [number, number][];
-interface AutoExposureSettings :: darkAdaptation?: number;
-interface AutoExposureSettings :: darkBelow?: number;
-interface AutoExposureSettings :: highPercent?: number;
-interface AutoExposureSettings :: hold?: boolean;
-interface AutoExposureSettings :: lowPercent?: number;
-interface AutoExposureSettings :: maxEV?: number;
-interface AutoExposureSettings :: metering?: "average" | "centerWeighted" | "spot";
-interface AutoExposureSettings :: minEV?: number;
-interface AutoExposureSettings :: speedDarkToLight?: number;
-interface AutoExposureSettings :: speedLightToDark?: number;
 interface BlendChild
 interface BlendChild :: motion: AnimationClip;
 interface BlendChild :: threshold: number;
@@ -2519,10 +2557,6 @@ interface BlendChild :: timeScale?: number;
 interface BlendSpec
 interface BlendSpec :: blendParameter: string;
 interface BlendSpec :: children: BlendChild[];
-interface BloomSettings
-interface BloomSettings :: intensity: number;
-interface BloomSettings :: scatter: number;
-interface BloomSettings :: threshold: number;
 interface Camera
 interface Camera :: layerCullDistances: number[];
 interface Camera :: readonly horizontalFieldOfView: number;
@@ -2583,10 +2617,6 @@ interface Gamepad :: readonly axes: Record<string, number>;
 interface Gamepad :: readonly buttons: Record<string, number>;
 interface Gamepad :: readonly id: number;
 interface Gamepad :: readonly name: string;
-interface HeightFogSettings
-interface HeightFogSettings :: baseHeight: number;
-interface HeightFogSettings :: density: number;
-interface HeightFogSettings :: falloff: number;
 interface InstantiateObjectOptions
 interface InstantiateObjectOptions :: parent?: GameObject | null;
 interface InstantiateObjectOptions :: position?: Vector3Like;
@@ -3052,13 +3082,6 @@ interface ParticleSystem :: startLifetime: number | number[];
 interface ParticleSystem :: startRotation: number | number[];
 interface ParticleSystem :: startSize: number | number[];
 interface ParticleSystem :: startSpeed: number | number[];
-interface ProceduralSky
-interface ProceduralSky :: ground?: Color;
-interface ProceduralSky :: horizon?: Color;
-interface ProceduralSky :: sunColor?: Color;
-interface ProceduralSky :: sunDirection?: Vector3Like | null;
-interface ProceduralSky :: sunSize?: number;
-interface ProceduralSky :: zenith?: Color;
 interface ReactElementLike
 interface ReactElementLike :: readonly __element: never;
 interface Ref<T>
@@ -3089,19 +3112,6 @@ interface TransitionSpec :: from: string;
 interface TransitionSpec :: hasExitTime?: boolean;
 interface TransitionSpec :: offset?: number;
 interface TransitionSpec :: to: string;
-interface VolumetricFogSettings
-interface VolumetricFogSettings :: albedo?: Color;
-interface VolumetricFogSettings :: anisotropy?: number;
-interface VolumetricFogSettings :: denoising?: "none" | "reprojection" | "gaussian" | "both";
-interface VolumetricFogSettings :: distance?: number;
-interface VolumetricFogSettings :: historyWeight?: number;
-interface VolumetricFogSettings :: intensity?: number;
-interface VolumetricFogSettings :: motionSamples?: number;
-interface VolumetricFogSettings :: resolution?: VolumeDetail;
-interface VolumetricFogSettings :: samples?: number;
-interface VolumetricFogSettings :: sharpDistance?: number;
-interface VolumetricFogSettings :: sharpSamples?: number;
-interface VolumetricFogSettings :: steps?: number;
 interface Window
 interface Window :: answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;
 interface Window :: ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;

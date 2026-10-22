@@ -40,6 +40,7 @@ thread_local! {
     static LEVEL: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
     static TINT: std::cell::Cell<Option<Rgb>> = const { std::cell::Cell::new(None) };
     static MODE: std::cell::Cell<Mode> = const { std::cell::Cell::new(Mode::Soft) };
+    static LOOK: std::cell::RefCell<Option<LookPatch>> = const { std::cell::RefCell::new(None) };
 }
 
 /// The declaring namespace: `Mode` and its converters.
@@ -71,7 +72,17 @@ pub mod kinds_api {
     ),
     records(
         /// A name and a number.
-        Label = Tag [text: string, size: f64]
+        Label = Tag [text: string, size: f64],
+        /// An object argument: optional keys of several kinds.
+        Look = LookPatch [
+            /// The width.
+            width: f64,
+            tint: Option<Rgb>,
+            sun: Option<Option<RgbLike>>,
+            mode: Option<Hardness>,
+            curve: Option<pairs>,
+            name: Option<string> as "label"
+        ]
     ),
     aliases(Stuff = Item, HardnessAlias = Hardness)
 )]
@@ -130,6 +141,16 @@ pub mod things_api {
             + f64::from(u8::from(mode == Some(Mode::Hard)))
     }
 
+    /// Sets the look (`null` for none).
+    pub fn set_look(v: Option<LookPatch>) {
+        LOOK.with(|c| *c.borrow_mut() = v);
+    }
+
+    #[property]
+    pub fn look() -> Option<LookPatch> {
+        LOOK.with(|c| c.borrow().clone())
+    }
+
     /// A record with a string field.
     pub fn label(n: f64) -> Tag {
         Tag {
@@ -177,6 +198,16 @@ impl Item {
     fn max_or_none(self) -> Item {
         if self.0 > 3 { Item(0) } else { self }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LookPatch {
+    pub width: f64,
+    pub tint: Option<Rgb>,
+    pub sun: Option<Option<Rgb>>,
+    pub mode: Option<Mode>,
+    pub curve: Option<Vec<(f64, f64)>>,
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -431,5 +462,128 @@ fn a_named_options_object_has_a_type_with_the_parameter_docs_and_quickjs_reads_i
             )
             .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
         assert_eq!(out, "[3,6,4.5,6.5]");
+    });
+}
+
+/// A script string object as the compiled code makes them.
+fn script_string(text: &str) -> Vec<u8> {
+    let mut v = Vec::new();
+    v.extend_from_slice(&0xA11A_0003u64.to_le_bytes());
+    v.extend_from_slice(&(text.len() as i64).to_le_bytes());
+    v.extend_from_slice(&0i64.to_le_bytes());
+    v.extend_from_slice(&2u64.to_le_bytes());
+    v.extend_from_slice(&[0u8; 16]);
+    v.extend_from_slice(text.as_bytes());
+    v
+}
+
+// M9-API-1632
+#[test]
+fn an_optional_record_travels_as_json_text_both_ways_with_optional_keys_and_nulls() {
+    let set = |text: &str| {
+        let s = script_string(text);
+        unsafe { things_api::iron_Things_setLook(s.as_ptr()) }
+    };
+    let get = || {
+        let mut len = 0i64;
+        let p = unsafe { things_api::iron_Things_look(&mut len) };
+        String::from_utf8(unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()).unwrap()
+    };
+    set(
+        r#"{"width":2,"tint":[0.5,0.25],"sun":null,"mode":"hard","curve":[[1,2],{"0":3,"1":4}],"label":"x"}"#,
+    );
+    let l = LOOK.with(|c| c.borrow().clone()).unwrap();
+    assert_eq!(l.width, 2.0);
+    assert_eq!(l.tint, Some(Rgb { r: 0.5, g: 0.25 }));
+    assert_eq!(l.sun, Some(None), "null is present and none");
+    assert_eq!(l.mode, Some(Mode::Hard));
+    assert_eq!(l.curve, Some(vec![(1.0, 2.0), (3.0, 4.0)]));
+    assert_eq!(l.name.as_deref(), Some("x"));
+    // Left-out keys are none (and a plain object of a value class does too).
+    set(r#"{"width":1,"sun":{"r":1,"g":0}}"#);
+    let l = LOOK.with(|c| c.borrow().clone()).unwrap();
+    assert_eq!((l.tint, l.mode, l.curve, l.name), (None, None, None, None));
+    assert_eq!(l.sun, Some(Some(Rgb { r: 1.0, g: 0.0 })));
+    // A missing required key, a wrong type, `null` and "" are reported or none: the look is none.
+    set(r#"{"tint":[1,2]}"#);
+    assert!(LOOK.with(|c| c.borrow().is_none()));
+    set(r#"{"width":1}"#);
+    set("null");
+    assert!(LOOK.with(|c| c.borrow().is_none()));
+    set(r#"{"width":1,"mode":"fuzzy"}"#);
+    assert!(
+        LOOK.with(|c| c.borrow().is_none()),
+        "an unknown enum name is an error"
+    );
+    // The result is the same record as JSON text; none is `null`.
+    assert_eq!(get(), "null");
+    set(r#"{"width":2,"sun":null,"curve":[[1,2]],"label":"x"}"#);
+    let text = get();
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["width"].as_f64(), Some(2.0));
+    assert!(v["sun"].is_null() && v.get("tint").is_none() && v.get("mode").is_none());
+    assert_eq!(v["curve"][0][0].as_f64(), Some(1.0));
+    assert_eq!(v["label"], "x");
+    // The manifest: a nullable record parameter / result, optional keys, `like` and the script key.
+    let json: serde_json::Value = serde_json::from_str(&things_api::MANIFEST.to_json()).unwrap();
+    let look = json["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "Look")
+        .unwrap();
+    let types: Vec<(String, String)> = look["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["name"].as_str().unwrap().to_string(),
+                f["type"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        types,
+        [
+            ("width", "f64"),
+            ("tint", "opt:value:Rgb"),
+            ("sun", "opt:opt:like:Rgb"),
+            ("mode", "opt:enum:Hardness"),
+            ("curve", "opt:list:pair"),
+            ("label", "opt:string"),
+        ]
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+    );
+    let f = json["functions"].as_array().unwrap();
+    assert_eq!(
+        f.iter()
+            .find(|f| f["name"] == "look" && f["kind"] == "get")
+            .unwrap()["returns"],
+        "opt:record:Look"
+    );
+    // QuickJS: an object (or null) in, an object with value instances out.
+    use iron_api::rquickjs;
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        kinds_api::register_quickjs(&ctx).unwrap();
+        things_api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(
+                r#"
+                Things.look = { width: 3, tint: new Rgb(0.5, 1), mode: 'soft', curve: [[0, 1], [2, 3]], label: 'q' };
+                const a = Things.look;
+                Things.look = null;
+                const b = Things.look;
+                Things.look = { width: 1, sun: null };
+                JSON.stringify([a, a.tint instanceof Rgb, b, Things.look])
+                "#,
+            )
+            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
+        assert_eq!(
+            out,
+            r#"[{"width":3,"tint":[0.5,1],"mode":"soft","curve":[[0,1],[2,3]],"label":"q"},true,null,{"width":1,"sun":null}]"#
+        );
     });
 }

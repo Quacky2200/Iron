@@ -720,9 +720,29 @@ Surface changes (`tests/golden/api_surface.txt`, reviewed): the enum types are `
   are gone with their `engine_ts.d.ts` interfaces.
 - **`#[options(name = "X", only)]`:** `TextureOptions` (`Texture.load` / `create`) and `WindowOptions` (`Window.create`, the docs are
   `/// key: text` lines of the Rust doc) are generated; array parameters are declared `readonly`.
-- **Not done in 2b** (all need records as *parameters* or record-valued properties, which the compiled lowering and the macro do not have
+- **Not done in this part** (section 11 did the `RenderSettings` records; the rest need records as *parameters* or record-valued properties, which the compiled lowering and the macro do not have
   yet; the design that fits is a JSON wire form for `Option<Record>` parameters and results, `JSON.stringify` of the record struct on the
   compiled side, so a game's own structurally matching interface and `cond ? {..} : null` keep working): `RenderSettings.skybox` /
   `bloom` / `heightFog` / `volumetricFog` / `autoExposure` (chunks 35-37, 45, `split_rule`), `LodLevel` / `setLODs`, `ClothBox`,
   `ParticleBurst` / `ParticleShapeSpec` / `ColorKey` / `SizeKey`, `MeshData`, `FontFace`, `GameObjectOptions`, `InstantiateObjectOptions`,
   `SceneData`, the animation builder specs, `Gamepad` (its `buttons` / `axes` are dictionaries), `Collision` / `Collision2D`.
+
+## 11. Progress, P2b second part (2026-10-22): records as parameters
+
+`engine_ts.d.ts` 445 -> 359 lines, `facade.ts` 812 -> 712 lines (chunks 38 -> 34); `split_rule`, `lower_split_assign` and the `__xw_`
+facade kind are gone. The mechanism, which turned out to be small because the compiler already has typed `JSON.stringify` / `JSON.parse`:
+
+- A record may now have optional keys (`Option<T>`, `Option<Option<T>>`), `string`, value-class (`<V>Like` for a plain object), enum
+  and `pairs` fields and a script key (`as "minEV"`); the macro generates `__from_json_R`, `__to_json_R` and the QuickJS builder.
+- `Option<R>` is a parameter or a result of a record: JSON text on the wire (`opt:record:R`; `ExtTy::Opt(Record)`). Compiled code
+  stringifies the record's struct, or writes an object literal key by key (`lower_record_literal`: a key written as `null` stays
+  `null`, a key left out stays out, which a compiled `T | null` field cannot tell).
+- Native: `RenderSettings.skybox` / `bloom` / `heightFog` / `volumetricFog` / `autoExposure` (the declarations `ProceduralSky`,
+  `BloomSettings`, `HeightFogSettings`, `VolumetricFogSettings`, `AutoExposureSettings` are generated, with the new enums
+  `VolumeDenoising` and `ExposureMetering` in place of two inline unions).
+- **Still open in 2b**, with the reason: `LodLevel` / `setLODs` and `Cloth` / `SkinnedMeshRenderer` lists need `&[Handle]` parameters and
+  records that hold handles (a handle stringifies as `{}`); `ParticleBurst` / `ParticleShapeSpec` / `ColorKey` / `SizeKey` need
+  `Vec<Record>` parameters and the generated components (`gen_components.py`) to take records; `MeshData` needs lists of records and
+  flattening in Rust; `FontFace` needs `#[global]`; `GameObjectOptions` / `InstantiateObjectOptions` / `SceneData` and the animation
+  builder specs are read by compiler special cases (`engine_objs.rs`, `apply_options`); `Gamepad.buttons` / `axes` are dictionaries;
+  `Collision` / `Collision2D` belong to the contact hooks (`components.rs`).

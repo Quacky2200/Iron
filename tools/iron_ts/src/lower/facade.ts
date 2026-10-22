@@ -606,90 +606,6 @@ function __xm_Window_answer0<R>(self: Window, name: string, f: () => R): number 
 }
 // `ask<R>(name, payload?, timeoutMs?)` is written per reply type by facade.rs.
 
-//# when RenderSettings.heightFog
-interface HeightFogSettings {
-  density: number;
-  baseHeight: number;
-  falloff: number;
-}
-function __xw_RenderSettings_heightFog(h: HeightFogSettings | null): void {
-  RenderSettings.heightFogEnabled = false;
-  if (h !== null) {
-    RenderSettings.heightFogEnabled = true;
-    RenderSettings.heightFogDensity = h.density;
-    RenderSettings.heightFogBaseHeight = h.baseHeight;
-    RenderSettings.heightFogFalloff = h.falloff;
-  }
-}
-
-//# when RenderSettings.volumetricFog
-interface VolumetricFogSettings {
-  intensity?: number;
-  anisotropy?: number;
-  steps?: number;
-  distance?: number;
-  albedo?: Color;
-  sharpDistance?: number;
-  sharpSamples?: number;
-  resolution?: string;
-  denoising?: string;
-  historyWeight?: number;
-  samples?: number;
-  motionSamples?: number;
-}
-function __xw_RenderSettings_volumetricFog(v: VolumetricFogSettings | null): void {
-  RenderSettings.volumetricFogEnabled = false;
-  if (v === null) return;
-  RenderSettings.volumetricFogEnabled = true;
-  if (v.intensity !== undefined) RenderSettings.volumetricFogIntensity = v.intensity;
-  if (v.anisotropy !== undefined) RenderSettings.volumetricFogAnisotropy = v.anisotropy;
-  if (v.steps !== undefined) RenderSettings.volumetricFogSteps = v.steps;
-  if (v.distance !== undefined) RenderSettings.volumetricFogDistance = v.distance;
-  if (v.albedo !== undefined) RenderSettings.volumetricFogAlbedo = v.albedo;
-  if (v.sharpDistance !== undefined) RenderSettings.volumetricFogSharpDistance = v.sharpDistance;
-  if (v.sharpSamples !== undefined) RenderSettings.volumetricFogSharpSamples = v.sharpSamples;
-  if (v.resolution !== undefined) RenderSettings.volumetricFogResolution = v.resolution;
-  if (v.denoising !== undefined) RenderSettings.volumetricFogDenoising = v.denoising;
-  if (v.historyWeight !== undefined) RenderSettings.volumetricFogHistoryWeight = v.historyWeight;
-  if (v.samples !== undefined) RenderSettings.volumetricFogSamples = v.samples;
-  if (v.motionSamples !== undefined) RenderSettings.volumetricFogMotionSamples = v.motionSamples;
-}
-
-//# when RenderSettings.autoExposure
-interface AutoExposureSettings {
-  minEV?: number;
-  maxEV?: number;
-  compensation?: number;
-  speedDarkToLight?: number;
-  speedLightToDark?: number;
-  metering?: string;
-  lowPercent?: number;
-  highPercent?: number;
-  darkAdaptation?: number;
-  darkBelow?: number;
-  curve?: [number, number][];
-  hold?: boolean;
-}
-function __xw_RenderSettings_autoExposure(a: AutoExposureSettings | null): void {
-  RenderSettings.autoExposureEnabled = false;
-  if (a === null) return;
-  RenderSettings.autoExposureEnabled = true;
-  if (a.minEV !== undefined) RenderSettings.autoExposureMinEv = a.minEV;
-  if (a.maxEV !== undefined) RenderSettings.autoExposureMaxEv = a.maxEV;
-  if (a.compensation !== undefined) RenderSettings.autoExposureCompensation = a.compensation;
-  if (a.speedDarkToLight !== undefined) RenderSettings.autoExposureSpeedDarkToLight = a.speedDarkToLight;
-  if (a.speedLightToDark !== undefined) RenderSettings.autoExposureSpeedLightToDark = a.speedLightToDark;
-  if (a.metering !== undefined) RenderSettings.autoExposureMetering = a.metering;
-  if (a.lowPercent !== undefined) RenderSettings.autoExposureLowPercent = a.lowPercent;
-  if (a.highPercent !== undefined) RenderSettings.autoExposureHighPercent = a.highPercent;
-  if (a.darkAdaptation !== undefined) RenderSettings.autoExposureDarkAdaptation = a.darkAdaptation;
-  if (a.darkBelow !== undefined) RenderSettings.autoExposureDarkBelow = a.darkBelow;
-  if (a.hold !== undefined) RenderSettings.autoExposureHold = a.hold;
-  if (a.curve !== undefined) {
-    for (let i = 0; i < a.curve.length; i++) RenderSettings.addAutoExposureCurvePoint(a.curve[i]![0], a.curve[i]![1]);
-  }
-}
-
 //# when createFlat|setFlat
 function __xt_Mesh_createFlat<D>(data: D): Mesh {
   return Mesh.createFlatArrays(data.positions, data.triangles, "normals" in data ? (data.normals ?? []) : [], "uv" in data ? (data.uv ?? []) : []);
@@ -770,22 +686,6 @@ function __xt_Light_measureIlluminance(point: Vector3, normal?: Vector3): Promis
       resolve(__light_meter(point, normal, true));
     });
   });
-}
-
-//# when BloomSettings
-interface BloomSettings {
-  threshold: number;
-  intensity: number;
-  scatter: number;
-}
-function __xw_RenderSettings_bloom(b: BloomSettings | null): void {
-  RenderSettings.bloomEnabled = false;
-  if (b !== null) {
-    RenderSettings.bloomEnabled = true;
-    RenderSettings.bloomThreshold = b.threshold;
-    RenderSettings.bloomIntensity = b.intensity;
-    RenderSettings.bloomScatter = b.scatter;
-  }
 }
 
 //# when screenToWorldPoint @ Camera Screen

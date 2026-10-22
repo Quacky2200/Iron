@@ -13,6 +13,7 @@
 //! numbers, booleans and engine handles; value classes (`Vector3`), strings and objects come next.
 
 pub use iron_api_macros::iron_api;
+pub use serde_json;
 pub mod callback;
 pub use callback::Callback;
 #[cfg(feature = "quickjs")]
@@ -66,6 +67,9 @@ pub enum Ty {
     /// `| null`. Across the C ABI it is the inner type with a "none" mark: NaN for a number, NaN in
     /// every field for a value, and for a string the flag read by `iron_api_result_none`.
     Opt(&'static str, &'static str),
+    /// A value class in a declaration that takes a plain object too (`Vector3Like`): the manifest
+    /// name of the class and the TypeScript name.
+    Like(&'static str, &'static str),
 }
 
 impl Ty {
@@ -83,7 +87,7 @@ impl Ty {
             Ty::Callback(_, ts) => ts,
             Ty::Enum(name) | Ty::Record(name) => name,
             Ty::List(_, arr) => arr,
-            Ty::Opt(_, ts) => ts,
+            Ty::Opt(_, ts) | Ty::Like(_, ts) => ts,
         }
     }
 
@@ -107,6 +111,7 @@ impl Ty {
             Ty::Record(n) => format!("record:{n}"),
             Ty::List(inner, _) => format!("list:{inner}"),
             Ty::Opt(inner, _) => format!("opt:{inner}"),
+            Ty::Like(n, _) => format!("like:{n}"),
         }
     }
 }
@@ -494,6 +499,76 @@ pub unsafe fn script_str<'a>(p: *const u8) -> std::borrow::Cow<'a, str> {
     // SAFETY: the rest is valid UTF-8.
     out.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[start..]) });
     std::borrow::Cow::Owned(out)
+}
+
+/// The numbers of a value class in JSON: an array of exactly `N` numbers, or an object with the
+/// fields' names.
+pub fn json_value_parts<const N: usize>(
+    v: &serde_json::Value,
+    names: [&str; N],
+) -> Option<[f64; N]> {
+    let mut out = [0.0; N];
+    if let Some(a) = v.as_array() {
+        if a.len() != N {
+            return None;
+        }
+        for (slot, x) in out.iter_mut().zip(a) {
+            *slot = x.as_f64()?;
+        }
+    } else {
+        let o = v.as_object()?;
+        for (slot, name) in out.iter_mut().zip(names) {
+            *slot = o.get(name)?.as_f64()?;
+        }
+    }
+    Some(out)
+}
+
+/// A list of number pairs in JSON: `[[a, b], ..]` (or objects `{ "0": a, "1": b }`, which is what
+/// a compiled tuple stringifies as).
+pub fn json_pairs(v: &serde_json::Value) -> Option<Vec<(f64, f64)>> {
+    v.as_array()?
+        .iter()
+        .map(|p| {
+            if let Some(a) = p.as_array() {
+                (a.len() == 2).then(|| Some((a[0].as_f64()?, a[1].as_f64()?)))?
+            } else {
+                let o = p.as_object()?;
+                Some((o.get("0")?.as_f64()?, o.get("1")?.as_f64()?))
+            }
+        })
+        .collect()
+}
+
+/// The record a JSON text holds (`Option<Record>` parameters travel as JSON text): none for an
+/// empty text or `null`; text that is not a record of this kind is reported and is none too.
+pub fn json_record<T>(text: &str, from: fn(&serde_json::Value) -> Result<T, String>) -> Option<T> {
+    let text = text.trim();
+    if text.is_empty() || text == "null" {
+        return None;
+    }
+    match serde_json::from_str::<serde_json::Value>(text)
+        .map_err(|e| e.to_string())
+        .and_then(|v| from(&v))
+    {
+        Ok(r) => Some(r),
+        Err(e) => {
+            eprintln!("iron_api: an object argument was ignored: {e}");
+            None
+        }
+    }
+}
+
+/// [`json_record`] for a script string.
+///
+/// # Safety
+/// `p` must be null or a live script string.
+pub unsafe fn script_json_record<T>(
+    p: *const u8,
+    from: fn(&serde_json::Value) -> Result<T, String>,
+) -> Option<T> {
+    // SAFETY: by contract.
+    json_record(&unsafe { script_str(p) }, from)
 }
 
 thread_local! {

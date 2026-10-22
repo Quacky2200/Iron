@@ -1,20 +1,9 @@
-//! The TypeScript `@iron/engine` shapes that the native API holds differently, expanded at
-//! compile time over the engine API: object-valued namespace properties
-//! (`RenderSettings.skybox = { .. }`) become per-field setters.
+//! The TypeScript `@iron/engine` shapes that the native API holds differently, written over the
+//! engine API (`facade.ts`, chunks appended to a program that names them) or expanded at compile
+//! time (windows, `createPrimitive`).
 
 use super::expr::mk;
 use super::*;
-
-/// Namespace properties the TypeScript API holds as one object that the native API keeps as
-/// per-field properties: (namespace, property) -> (the on/off property, the prefix of the field
-/// properties, so `zenith` is `skyZenith`).
-fn split_rule(ns: &str, prop: &str) -> Option<(&'static str, &'static str)> {
-    match (ns, prop) {
-        ("RenderSettings", "skybox") => Some(("skyboxEnabled", "sky")),
-        ("RenderSettings", "bloom") => Some(("bloomEnabled", "bloom")),
-        _ => None,
-    }
-}
 
 const FACADE_TS: &str = include_str!("facade.ts");
 
@@ -216,7 +205,6 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
 //   __xs_  property write  `__xs_Camera_rect(self: Camera, v: Rect)`      for `cam.rect = r`, `{ rect: r }`
 //   __xt_  static call     `__xt_Sprite_grid(texture: Texture, ..)`        for `Sprite.grid(..)`
 //   __xp_  static read     `__xp_Screen_windowSize(): Size`               for `Screen.windowSize`
-//   __xw_  static write    `__xw_RenderSettings_heightFog(v: HeightFogSettings | null)`  for `RenderSettings.heightFog = v`
 //
 // A method also has an object-argument variant `__xm_..$o` used when a call passes an object
 // literal. These win over the native member of the same name.
@@ -782,86 +770,6 @@ impl<'a> Lowerer<'a> {
         let tr = self.emit_extern(&get, vec![h]);
         stmts.push(Stmt::Eval(self.emit_extern(&set, vec![tr, v])));
         Ok(true)
-    }
-
-    /// `RenderSettings.skybox = { .. }` / `= null`: off, then on with the defaults, then each key's
-    /// setter (a `null` key turns its `has<Key>` switch off, as `sunDirection: null` does).
-    pub(crate) fn lower_split_assign(
-        &mut self,
-        a: &'a AssignmentExpression<'a>,
-    ) -> R<Option<Vec<Stmt>>> {
-        let Some(SimpleAssignmentTarget::StaticMemberExpression(m)) =
-            a.left.as_simple_assignment_target()
-        else {
-            return Ok(None);
-        };
-        let Expression::Identifier(id) = &m.object else {
-            return Ok(None);
-        };
-        let (ns, prop) = (id.name.as_str(), m.property.name.as_str());
-        if a.operator != AssignmentOperator::Assign || self.lookup(ns).is_some() {
-            return Ok(None);
-        }
-        // `RenderSettings.heightFog = h`: a facade write (`__xw_RenderSettings_heightFog(h)`).
-        let write = Self::x_name("w", ns, prop);
-        if let Some(&fid) = self.fids.get(&write) {
-            self.ensure_lowered(&write)?;
-            let want = self.fsig[fid].0[0].clone();
-            let v = self.lower_expr(&a.right, Some(&want))?;
-            let v = self.coerce_ext(v, &want)?;
-            let call = self.call_helper(&write, vec![v])?;
-            return Ok(Some(vec![Stmt::Eval(call)]));
-        }
-        let Some((enable, prefix)) = split_rule(ns, prop) else {
-            return Ok(None);
-        };
-        let at = self.loc(a.span.start);
-        let props = self.manifest.ns_props.get(ns).cloned().unwrap_or_default();
-        let setter_of = |name: &str| props.get(name).and_then(|p| p.setter.clone());
-        let Some(enable) = setter_of(enable) else {
-            bail!("{at}: {ns}.{prop} has no switch in the engine API")
-        };
-        let mut stmts = Vec::new();
-        let switch = |this: &mut Self, on: bool| {
-            let v = mk(ExprKind::Bool(on), Ty::Bool);
-            Stmt::Eval(this.emit_extern(&enable, vec![v]))
-        };
-        stmts.push(switch(self, false));
-        match &a.right {
-            Expression::NullLiteral(_) => Ok(Some(stmts)),
-            Expression::ObjectExpression(o) => {
-                stmts.push(switch(self, true));
-                for p in &o.properties {
-                    let ObjectPropertyKind::ObjectProperty(p) = p else {
-                        bail!("{at}: spread in {ns}.{prop}")
-                    };
-                    let PropertyKey::StaticIdentifier(key) = &p.key else {
-                        bail!("{at}: {ns}.{prop} keys are plain names")
-                    };
-                    let mut cap = key.name.to_string();
-                    cap[..1].make_ascii_uppercase();
-                    if matches!(&p.value, Expression::NullLiteral(_)) {
-                        // `sunDirection: null` is `skyHasSun = false`.
-                        let base = cap.strip_suffix("Direction").unwrap_or(&cap);
-                        let Some(has) = setter_of(&format!("{prefix}Has{base}")) else {
-                            bail!("{at}: {ns}.{prop}.{} cannot be null", key.name)
-                        };
-                        let off = mk(ExprKind::Bool(false), Ty::Bool);
-                        stmts.push(Stmt::Eval(self.emit_extern(&has, vec![off])));
-                        continue;
-                    }
-                    let Some(setter) = setter_of(&format!("{prefix}{cap}")) else {
-                        bail!("{at}: {ns}.{prop} has no `{}`", key.name)
-                    };
-                    let want = self.ext_ir(&setter.params[0].1);
-                    let v = self.lower_expr(&p.value, Some(&want))?;
-                    let v = self.coerce_ext(v, &want)?;
-                    stmts.push(Stmt::Eval(self.emit_extern(&setter, vec![v])));
-                }
-                Ok(Some(stmts))
-            }
-            _ => bail!("{at}: {ns}.{prop} takes an object literal or null"),
-        }
     }
 }
 

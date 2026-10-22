@@ -686,9 +686,10 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
   `Hold` + `clearAutoExposureCurve()` / `addAutoExposureCurvePoint(ev, stops)`; `fixedExposure` (`number | null`, an `Option<f64>`),
   `exposureTransition`, `freezeExposure()`. Setting a field of the height fog, light shafts or auto exposure turns it on with the
   defaults for the rest, as the sky does.
-- **Object-valued properties** are facade writes (`facade.ts`, `__xw_<Namespace>_<name>`; the compiler calls it for
-  `RenderSettings.heightFog = h`): `heightFog`, `volumetricFog`, `autoExposure` (object or `null`, also `cond ? { .. } : null` and
-  spreads). `fixedExposure` is native (`number | null`). `FogMode` and `VolumeDetail` are enums (`#[iron_api]` `enums(..)`, string unions in the declarations).
+- **Object-valued properties** are native records: `skybox`, `bloom`, `heightFog`, `volumetricFog` and `autoExposure` take an object or
+  `null` and read back as one (`Option<Record>`, JSON on the wire, see "Records as parameters" below); `fixedExposure` is native
+  (`number | null`). `FogMode`, `VolumeDetail`, `VolumeDenoising` and `ExposureMetering` are enums (`#[iron_api]` `enums(..)`, string
+  unions in the declarations). The per-field natives (`heightFogDensity`, `skyZenith`, ...) are still there.
 - **`Camera`**: `fog` (show the fog, on), `exposure` / `sceneBrightness` (EV100, read back from the GPU a frame or two late, NaN
   before: the app calls `camera::set_exposure`), `resetExposure()`, `aperture` / `shutterSpeed` / `iso` and `physicalExposure`.
 - **`Light`**: `volumetricIntensity`, `spotShape` (`cone` | `pyramid`), `aspectRatio`; `Light.illuminanceAt(point, normal?)` and
@@ -786,7 +787,20 @@ names, and a setter ignores a name that is not one. Differences from before: the
 `fillValue` and `Window.openErrorText` are gone (the nullable property replaces each pair), `Camera.main` is a property of the
 native `Camera` class in QuickJS too (it was a function there), and `Window.create({ style: "floating" })` throws a `TypeError` in
 QuickJS (compiled code and the old string API fell back to `normal` with a warning). Tests: `crates/iron_api/tests/enums_nullables.rs`
-(`M9-API-1622`..`1626`, `1630`, `1631`), `crates/iron_native/tests/enums.rs` (`M9-API-1627`..`1629`), `tools/iron_ts_tests` `M9-TS-3340`, `3341`, `tools/iron_ts` `M9-TS-3342`.
+(`M9-API-1622`..`1626`, `1630`..`1632`), `crates/iron_native/tests/enums.rs` (`M9-API-1627`..`1629`, `1633`), `tools/iron_ts_tests` `M9-TS-3340`, `3341`, `3343`, `tools/iron_ts` `M9-TS-3342`.
+
+**Records as parameters (2026-10-22, plan phase 2b, second part).** A record declared in `records(..)` may have optional keys and number
+lists, and `Option<R>` of a record is a parameter or a result (`opt:record:R` in the manifest). On the wire it is **JSON text**: the
+shim parses the text with the record's generated `__from_json_R` (a missing required key, a wrong type or an unknown enum name is
+reported on stderr and the argument is `None`) and a result is `__to_json_R`; QuickJS stringifies the object it is given (and
+builds a real object with value-class instances for a result). The compiled side makes the text from the argument's static type
+(`JSON.stringify` of the record's struct, so a game's own structurally matching `interface`, a variable or a spread work); an object
+**literal** (also `null` and `c ? { .. } : null`) is written key by key instead, so a key that is written as `null`
+(`RenderSettings.skybox = { sunDirection: null }`) differs from one that is left out (a compiled `T | null` field cannot tell
+`undefined` from `null`). Record field types: `f64`, `bool`, `string`, a value class (`<Value>Like` when a plain `{ x, y, z }` does),
+an enum, `pairs` (`[number, number][]`) and `Option<..>` of those (`Option<Option<T>>`: the key may also be `null`);
+`name: T as "minEV"` names a key that is not the camelCase of the field. The declaration is `interface R { key?: T; .. }`. Records that
+only have flat fields can still be plain results (the buffer form above); a record with an optional key or a list is JSON only.
 
 **Records and option bags (2026-10-22, plan phase 2b, first part).** `Screen.windowSize`, `currentResolution` and `resolutions` are native records (`WindowSize`,
 `Resolution`, `DisplayMode` in Rust), `Animator.getCurrentAnimatorStateInfo()` returns the record `AnimatorStateInfo` (a record with a string field),
