@@ -96,6 +96,21 @@ pub trait PlatformApp {
 /// How often a paused app's [`PlatformApp::idle`] runs.
 pub const IDLE_POLL: Duration = Duration::from_millis(250);
 
+/// Logs a pad's name and identity, to tell real pads from phantom HID devices.
+fn log_pad(what: &str, id: usize, pad: &gilrs::Gamepad) {
+    tracing::info!(
+        "gamepad {what}: {id} {:?} (vendor {:?}, product {:?}, uuid {})",
+        pad.name(),
+        pad.vendor_id(),
+        pad.product_id(),
+        uuid_text(pad.uuid()),
+    );
+}
+
+fn uuid_text(uuid: [u8; 16]) -> String {
+    uuid.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Owns gamepad input and, when not headless, runs the window event loop.
 pub struct Platform {
     gamepads: Option<gilrs::Gilrs>,
@@ -147,6 +162,7 @@ impl Platform {
             for (id, pad) in g.gamepads() {
                 let id: usize = id.into();
                 known.insert(id);
+                log_pad("present", id, &pad);
                 events.push(InputEvent::Gamepad {
                     id: id as u32,
                     event: GamepadEvent::Connected {
@@ -158,6 +174,9 @@ impl Platform {
         });
         while let Some(ev) = g.next_event() {
             let id: usize = ev.id.into();
+            if ev.event == gilrs::EventType::Connected {
+                log_pad("connected", id, &g.gamepad(ev.id));
+            }
             let name = || g.gamepad(ev.id).name().to_owned();
             if let Some(event) =
                 convert_gamepad(id, &ev.event, name).and_then(|e| announce_once(announced, e))
