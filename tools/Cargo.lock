@@ -1286,6 +1286,10 @@ dependencies = [
  "iron_scenes",
  "iron_ts",
  "iron_ts_ui",
+ "oxc_allocator",
+ "oxc_ast",
+ "oxc_parser",
+ "oxc_span",
  "serde_json",
 ]
 

@@ -21,3 +21,9 @@ iron_core = { path = "../../crates/iron_core" }
 base64 = "0.23.1"
 editpe = "0.2.4"
 image = { version = "0.25.10", default-features = false, features = ["png", "ico"] }
+
+[dev-dependencies]
+oxc_allocator = "0.154.0"
+oxc_ast = "0.154.0"
+oxc_parser = "0.154.0"
+oxc_span = "0.154.0"
