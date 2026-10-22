@@ -66,6 +66,10 @@ pub struct Manifest {
     /// Functions that settle a promise through their last two callbacks (`SceneManager.loadSceneAsync`):
     /// (owner namespace or class, name, owner is a class, is a method).
     pub promises: Vec<(String, String, bool, bool)>,
+    /// Functions called with one object of all their parameters (`#[options(.., object)]`,
+    /// `Mesh.createFlat({ positions, triangles })`): (owner namespace or class, name, owner is a
+    /// class, is a method).
+    pub object_args: Vec<(String, String, bool, bool)>,
 }
 
 /// An enum of the engine API.
@@ -97,6 +101,8 @@ pub enum RecField {
     Handle(String),
     /// A list of engine handles. JSON only.
     HandleList(String),
+    /// A list of numbers (`number[]`). JSON only.
+    Numbers,
 }
 
 impl RecField {
@@ -104,7 +110,11 @@ impl RecField {
     pub fn is_flat(&self) -> bool {
         !matches!(
             self,
-            RecField::Opt(_) | RecField::Pairs | RecField::Handle(_) | RecField::HandleList(_)
+            RecField::Opt(_)
+                | RecField::Pairs
+                | RecField::Handle(_)
+                | RecField::HandleList(_)
+                | RecField::Numbers
         )
     }
 
@@ -114,6 +124,7 @@ impl RecField {
             "bool" => RecField::Bool,
             "string" => RecField::Str,
             "list:pair" => RecField::Pairs,
+            "list:f64" => RecField::Numbers,
             other => {
                 if let Some(inner) = other.strip_prefix("opt:") {
                     RecField::Opt(Box::new(RecField::parse(inner)?))
@@ -300,6 +311,10 @@ impl Manifest {
             if f["promise"].as_bool() == Some(true) {
                 self.promises.push((ns.clone(), name.clone(), false, false));
             }
+            if f["optionsObject"].as_bool() == Some(true) {
+                self.object_args
+                    .push((ns.clone(), name.clone(), false, false));
+            }
             if let Some(off) = f["subscription"]["off"].as_str() {
                 self.subscriptions
                     .insert((ns.clone(), name.clone()), off.to_string());
@@ -341,6 +356,14 @@ impl Manifest {
                 if f["promise"].as_bool() == Some(true) {
                     self.promises
                         .push((cname.to_string(), name.clone(), true, kind == "method"));
+                }
+                if f["optionsObject"].as_bool() == Some(true) {
+                    self.object_args.push((
+                        cname.to_string(),
+                        name.clone(),
+                        true,
+                        kind == "method",
+                    ));
                 }
                 // A getter or setter without `this` is a static property of the class (`Window.main`);
                 // compiled code reads a static getter like a no-argument static (`ext_static_prop`).

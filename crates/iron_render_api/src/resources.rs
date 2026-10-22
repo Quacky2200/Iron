@@ -600,30 +600,95 @@ pub(crate) fn set_mesh_flat(
     st(|s| s.commands.push(RenderCommand::Mesh(m)));
 }
 
+/// The bones that move a vertex: up to four bone indices and their weights.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BoneInfluence {
+    pub indices: Vec<f64>,
+    pub weights: Vec<f64>,
+}
+
+/// Four bone indices and four weights per vertex (flat), a short list padded with zeros.
+fn bone_arrays(bones: &[BoneInfluence]) -> (Vec<f64>, Vec<f64>) {
+    let mut joints = Vec::with_capacity(bones.len() * 4);
+    let mut weights = Vec::with_capacity(bones.len() * 4);
+    for b in bones {
+        for k in 0..4 {
+            joints.push(b.indices.get(k).copied().unwrap_or(0.0));
+            weights.push(b.weights.get(k).copied().unwrap_or(0.0));
+        }
+    }
+    (joints, weights)
+}
+
 #[iron_api(
     namespace = "Mesh", quickjs,
     handles(Mesh = MeshRef),
-    values(Vector3 = V3 [x: f64, y: f64, z: f64], Vector2 = V2 [x: f64, y: f64])
+    values(
+        Vector3 = V3 [x: f64, y: f64, z: f64],
+        Vector2 = V2 [x: f64, y: f64],
+        Matrix4x4 = M4 [m0: f64, m1: f64, m2: f64, m3: f64, m4: f64, m5: f64, m6: f64, m7: f64,
+                        m8: f64, m9: f64, m10: f64, m11: f64, m12: f64, m13: f64, m14: f64, m15: f64]
+    ),
+    records(
+        /// The bones that move one vertex: up to four bone indices, and a weight for each.
+        BoneWeights = BoneInfluence [indices: Vec<f64>, weights: Vec<f64>]
+    )
 )]
 pub mod mesh_api {
     use super::*;
 
     impl MeshRef {
-        /// A triangle mesh made by a script: vertices, triangles as index triples (counter-
-        /// clockwise seen from the front), and optional normals and texture coordinates (made up
-        /// when left out).
-        #[optional(normals, uv)]
-        pub fn create(vertices: &[V3], triangles: &[f64], normals: &[V3], uv: &[V2]) -> MeshRef {
+        /// A triangle mesh made by a script, from an object of its data (the keys are the
+        /// parameters). Triangles are index triples, counter-clockwise seen from the front.
+        /// vertices: The positions.
+        /// triangles: Three vertex indices for each triangle.
+        /// normals: One per vertex (made up when left out).
+        /// uv: Texture coordinates, one per vertex (made up when left out).
+        /// boneWeights: Skinned meshes: the bones that move each vertex.
+        /// bindposes: Skinned meshes: each bone's inverse bind pose.
+        #[options(name = "MeshData", only, object)]
+        #[optional(normals, uv, bone_weights, bindposes)]
+        pub fn create(
+            vertices: &[V3],
+            triangles: &[f64],
+            normals: &[V3],
+            uv: &[V2],
+            bone_weights: &[BoneInfluence],
+            bindposes: &[M4],
+        ) -> MeshRef {
             let m = super::new_mesh(MeshInfo::default());
             super::set_mesh_data(m, vertices, triangles, normals, uv);
+            if !bone_weights.is_empty() {
+                let (joints, weights) = super::bone_arrays(bone_weights);
+                with_mesh(m, |d| {
+                    d.joints = joints;
+                    d.weights = weights;
+                });
+                st(|s| s.commands.push(RenderCommand::Mesh(m)));
+            }
+            if !bindposes.is_empty() {
+                with_mesh(m, |d| {
+                    d.bindposes = bindposes.iter().flat_map(|p| p.m).collect();
+                });
+            }
             m
         }
 
-        /// A mesh from flat number lists, for meshes made in bulk (terrain chunks): x, y, z per
-        /// vertex, triangles as index triples, and normals and texture coordinates (u, v per
-        /// vertex in Unity's bottom-up space), empty for none. `Mesh.createFlat({ positions,
-        /// triangles, normals, uv })` in a game is this.
-        pub fn create_flat_arrays(
+        /// A mesh from flat number lists, for meshes made in bulk (terrain chunks). A list left
+        /// out is empty.
+        /// positions: x, y, z per vertex.
+        /// triangles: Three vertex indices for each triangle.
+        /// normals: x, y, z per vertex.
+        /// uv: u, v per vertex, in Unity's bottom-up space.
+        #[options(name = "FlatMeshData", only, object)]
+        #[optional(normals, uv)]
+        #[ts_param(
+            positions = "NumberList",
+            triangles = "NumberList",
+            normals = "NumberList",
+            uv = "NumberList"
+        )]
+        pub fn create_flat(
             positions: &[f64],
             triangles: &[f64],
             normals: &[f64],
@@ -634,14 +699,20 @@ pub mod mesh_api {
             m
         }
 
-        /// Replaces the mesh's data from flat lists (see `createFlatArrays`).
-        pub fn set_flat_arrays(
-            self,
-            positions: &[f64],
-            triangles: &[f64],
-            normals: &[f64],
-            uv: &[f64],
-        ) {
+        /// Replaces the mesh's data from flat lists (see `createFlat`).
+        /// positions: x, y, z per vertex.
+        /// triangles: Three vertex indices for each triangle.
+        /// normals: x, y, z per vertex.
+        /// uv: u, v per vertex, in Unity's bottom-up space.
+        #[options(name = "FlatMeshData", only, object)]
+        #[optional(normals, uv)]
+        #[ts_param(
+            positions = "NumberList",
+            triangles = "NumberList",
+            normals = "NumberList",
+            uv = "NumberList"
+        )]
+        pub fn set_flat(self, positions: &[f64], triangles: &[f64], normals: &[f64], uv: &[f64]) {
             super::set_mesh_flat(self, positions, triangles, normals, uv);
         }
 

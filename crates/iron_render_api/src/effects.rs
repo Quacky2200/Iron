@@ -169,7 +169,14 @@ pub(crate) fn line_attached(r: LineRendererRef) {
     let Some((object, material)) = with_line_renderer(r, |d| (d.object, d.material)) else {
         return;
     };
-    let mesh = MeshRef::create(&[V3::ZERO, V3::ZERO, V3::ZERO], &[0.0, 1.0, 2.0], &[], &[]);
+    let mesh = MeshRef::create(
+        &[V3::ZERO, V3::ZERO, V3::ZERO],
+        &[0.0, 1.0, 2.0],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
     let renderer = attach_mesh_renderer(object);
     with_mesh_renderer(renderer, |d| {
         d.mesh = mesh.0;

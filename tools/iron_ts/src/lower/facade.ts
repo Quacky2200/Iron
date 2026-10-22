@@ -143,40 +143,6 @@ function __xs_ParticleSystem_startColor$a(self: ParticleSystem, v: Color[]): voi
 }
 
 
-//# when Mesh.create({
-interface MeshData {
-  vertices: Vector3[];
-  triangles: number[];
-  normals?: Vector3[];
-  uv?: Vector2[];
-  boneWeights?: { indices: number[]; weights: number[] }[];
-  bindposes?: Matrix4x4[];
-}
-function __xt_Mesh_create$o(o: MeshData): Mesh {
-  const m = Mesh.create(o.vertices, o.triangles, o.normals ?? [], o.uv ?? []);
-  if (o.boneWeights) {
-    const joints: number[] = [];
-    const weights: number[] = [];
-    for (let i = 0; i < o.boneWeights.length; i++) {
-      const b = o.boneWeights[i]!;
-      for (let k = 0; k < 4; k++) {
-        joints.push(k < b.indices.length ? b.indices[k]! : 0);
-        weights.push(k < b.weights.length ? b.weights[k]! : 0);
-      }
-    }
-    m.setBoneWeights(joints, weights);
-  }
-  if (o.bindposes) {
-    const flat: number[] = [];
-    for (let i = 0; i < o.bindposes.length; i++) {
-      const p = o.bindposes[i]!;
-      for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) flat.push(p.get(r, c));
-    }
-    m.setBindposes(flat);
-  }
-  return m;
-}
-
 //# when addStyleSheet(|removeStyleSheet(
 function addStyleSheet(css: string): number {
   return UiResources.addStyleSheet(css);
@@ -351,14 +317,6 @@ function __xm_Window_answer0<R>(self: Window, name: string, f: () => R): number 
   });
 }
 // `ask<R>(name, payload?, timeoutMs?)` is written per reply type by facade.rs.
-
-//# when createFlat|setFlat
-function __xt_Mesh_createFlat<D>(data: D): Mesh {
-  return Mesh.createFlatArrays(data.positions, data.triangles, "normals" in data ? (data.normals ?? []) : [], "uv" in data ? (data.uv ?? []) : []);
-}
-function __xm_Mesh_setFlat<D>(self: Mesh, data: D): void {
-  self.setFlatArrays(data.positions, data.triangles, "normals" in data ? (data.normals ?? []) : [], "uv" in data ? (data.uv ?? []) : []);
-}
 
 //# when Random.pick
 function __xt_Random_pick<T>(items: T[]): T | undefined {

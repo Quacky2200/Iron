@@ -119,6 +119,8 @@ struct Func {
     options_name: Option<String>,
     /// `#[options(.., only)]`: the positional form is not declared.
     options_only: bool,
+    /// `#[options(.., object)]`: the declared type of the one object parameter and its keys.
+    object_keys: Option<(String, OptionKeys)>,
     /// Per parameter (with the receiver): its doc, and whether it is a handle.
     param_docs: Vec<String>,
     param_handle: Vec<bool>,
@@ -131,6 +133,31 @@ fn funcs(v: &Value, like: bool) -> Vec<Func> {
     arr.iter()
         .map(|f| {
             let mut func = func_of(f, like);
+            // `#[options(.., object)]`: one object parameter whose keys are the parameters.
+            if f["optionsObject"].as_bool() == Some(true)
+                && let Some(name) = f["optionsName"].as_str()
+            {
+                let skip = usize::from(func.kind == "method");
+                let keys: OptionKeys = func
+                    .params
+                    .iter()
+                    .enumerate()
+                    .skip(skip)
+                    .map(|(at, (n, t, o))| {
+                        (
+                            n.clone(),
+                            t.clone(),
+                            func.param_docs.get(at).cloned().unwrap_or_default(),
+                            !o,
+                        )
+                    })
+                    .collect();
+                func.params.truncate(skip);
+                func.params
+                    .push(("data".to_string(), name.to_string(), false));
+                func.options_name = None;
+                func.object_keys = Some((name.to_string(), keys));
+            }
             // `#[promise]`: the resolve and reject callbacks are the engine's; scripts get a promise.
             if f["promise"].as_bool() == Some(true) && func.params.len() >= 2 {
                 let resolve = f["params"][func.params.len() - 2]["type"]
@@ -215,6 +242,7 @@ fn func_of(f: &Value, like: bool) -> Func {
         options_after: f["optionsAfter"].as_u64().map(|n| n as usize),
         options_name: f["optionsName"].as_str().map(str::to_string),
         options_only: f["optionsOnly"].as_bool() == Some(true),
+        object_keys: None,
         param_docs: f["params"]
             .as_array()
             .map(|ps| {
@@ -302,7 +330,7 @@ fn options_params(f: &Func, skip_this: bool) -> Option<String> {
 }
 
 /// The keys of an options object: (key, type, doc) each.
-type OptionKeys = Vec<(String, String, String)>;
+type OptionKeys = Vec<(String, String, String, bool)>;
 
 /// The keys of a named options object (`#[options(name = "X")]`): the parameters after the leading
 /// required ones, as (key, type, doc). A handle key also takes `null` (no object).
@@ -327,6 +355,7 @@ fn option_keys(f: &Func, skip_this: bool) -> OptionKeys {
                 n.clone(),
                 ty,
                 f.param_docs.get(at).cloned().unwrap_or_default(),
+                false,
             )
         })
         .collect()
@@ -602,6 +631,9 @@ impl Decls {
                 push_unique(members, line);
             };
             for f in &fs {
+                if let Some(k) = &f.object_keys {
+                    named.push(k.clone());
+                }
                 match f.kind.as_str() {
                     "static" => {
                         let options = options_params(f, false);
@@ -622,7 +654,7 @@ impl Decls {
                                 named.push((n.clone(), option_keys(f, false)));
                             }
                         }
-                        if f.name == "create" {
+                        if f.name == "create" && f.object_keys.is_none() {
                             self.creates.insert(name.clone(), f.params.clone());
                             if let Some(a) = f.options_after {
                                 self.creates_after.insert(name.clone(), a);
@@ -736,6 +768,9 @@ impl Decls {
                 // `function in(..)` is not a declaration TypeScript accepts (the class statics keep it).
                 if is_reserved(&f.name) {
                     continue;
+                }
+                if let Some(k) = &f.object_keys {
+                    named.push(k.clone());
                 }
                 match f.kind.as_str() {
                     "get" => {
@@ -897,9 +932,10 @@ impl Decls {
         // The named options objects of calls: an interface with a key per optional parameter.
         for (name, keys) in &self.option_types {
             s += &format!("{indent}{prefix}interface {name} {{\n");
-            for (key, ty, doc) in keys {
+            for (key, ty, doc, required) in keys {
                 s += &jsdoc(doc, &format!("{indent}  "));
-                s += &format!("{indent}  {key}?: {ty};\n");
+                let q = if *required { "" } else { "?" };
+                s += &format!("{indent}  {key}{q}: {ty};\n");
             }
             s += &format!("{indent}}}\n");
         }
@@ -1020,6 +1056,14 @@ fn reexports(module: &str, names: &[String]) -> String {
 /// manifests carry them (docs/research/iron-generated-dts-plan.md, phase 2).
 pub const ENGINE_TS_DTS: &str = include_str!("lower/engine_ts.d.ts");
 
+/// Types that parameters name through `#[ts_param]` and no manifest declares.
+const FIXED_TYPES: &str = "/** Numbers as a plain array or a typed array (for meshes made in bulk). */
+type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;
+";
+
+/// The names `FIXED_TYPES` declares (the engine module re-exports them).
+const FIXED_NAMES: &[&str] = &["NumberList"];
+
 /// `generate` with the shipped supplement.
 pub fn generate_default(manifests: &[String]) -> Result<String, String> {
     generate(manifests, ENGINE_TS_DTS)
@@ -1041,6 +1085,9 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
          // `import { Vector3 } from \"@iron/engine\"` (and `react`, `@iron/react`) work too.\n\n",
     );
     out += &d.text("declare ", "", &sup);
+    out += "
+";
+    out += FIXED_TYPES;
     out += "
 ";
     out += &crate::ui_dts::declarations();
@@ -1065,6 +1112,7 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
             .map(|s| s.to_string()),
     );
     engine.extend(sup.names.iter().cloned());
+    engine.extend(FIXED_NAMES.iter().map(|s| (*s).to_string()));
     out += "\n";
     out += &reexports("@iron/engine", &engine.into_iter().collect::<Vec<_>>());
     out += "\n";

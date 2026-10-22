@@ -713,7 +713,6 @@ declare class Matrix4x4 :: readonly determinant: number;
 declare class Matrix4x4 :: readonly inverse: Matrix4x4;
 declare class Matrix4x4 :: readonly transpose: Matrix4x4;
 declare class Mesh
-declare class Mesh :: constructor(vertices: readonly Vector3[], triangles: readonly number[], normals?: readonly Vector3[], uv?: readonly Vector2[]);
 declare class Mesh :: destroy(): void;
 declare class Mesh :: readonly primitive: string;
 declare class Mesh :: readonly triangleCount: number;
@@ -722,8 +721,9 @@ declare class Mesh :: set(vertices: readonly Vector3[], triangles: readonly numb
 declare class Mesh :: set(vertices: readonly Vector3[], triangles: readonly number[], options?: { normals?: readonly Vector3[]; uv?: readonly Vector2[] }): void;
 declare class Mesh :: setBindposes(matrices: readonly number[]): void;
 declare class Mesh :: setBoneWeights(joints: readonly number[], weights: readonly number[]): void;
-declare class Mesh :: setFlatArrays(positions: readonly number[], triangles: readonly number[], normals: readonly number[], uv: readonly number[]): void;
-declare class Mesh :: static createFlatArrays(positions: readonly number[], triangles: readonly number[], normals: readonly number[], uv: readonly number[]): Mesh;
+declare class Mesh :: setFlat(data: FlatMeshData): void;
+declare class Mesh :: static create(data: MeshData): Mesh;
+declare class Mesh :: static createFlat(data: FlatMeshData): Mesh;
 declare class Mesh :: static fromString(name: string): Mesh;
 declare class MeshCollider
 declare class MeshCollider :: bounciness: number;
@@ -1599,12 +1599,20 @@ declare interface BloomSettings
 declare interface BloomSettings :: intensity: number;
 declare interface BloomSettings :: scatter: number;
 declare interface BloomSettings :: threshold: number;
+declare interface BoneWeights
+declare interface BoneWeights :: indices: number[];
+declare interface BoneWeights :: weights: number[];
 declare interface ClothBox
 declare interface ClothBox :: max: Vector3Like;
 declare interface ClothBox :: min: Vector3Like;
 declare interface ColorKey
 declare interface ColorKey :: color: Color;
 declare interface ColorKey :: time: number;
+declare interface FlatMeshData
+declare interface FlatMeshData :: normals?: NumberList;
+declare interface FlatMeshData :: positions: NumberList;
+declare interface FlatMeshData :: triangles: NumberList;
+declare interface FlatMeshData :: uv?: NumberList;
 declare interface HeightFogSettings
 declare interface HeightFogSettings :: baseHeight: number;
 declare interface HeightFogSettings :: density: number;
@@ -1612,6 +1620,13 @@ declare interface HeightFogSettings :: falloff: number;
 declare interface LodLevel
 declare interface LodLevel :: renderers: MeshRenderer[];
 declare interface LodLevel :: screenRelativeTransitionHeight: number;
+declare interface MeshData
+declare interface MeshData :: bindposes?: readonly Matrix4x4[];
+declare interface MeshData :: boneWeights?: readonly BoneWeights[];
+declare interface MeshData :: normals?: readonly Vector3[];
+declare interface MeshData :: triangles: readonly number[];
+declare interface MeshData :: uv?: readonly Vector2[];
+declare interface MeshData :: vertices: readonly Vector3[];
 declare interface ParticleBurst
 declare interface ParticleBurst :: count: number;
 declare interface ParticleBurst :: cycles?: number;
@@ -1716,6 +1731,7 @@ declare module "@iron/engine" :: export import AutoExposureSettings = globalThis
 declare module "@iron/engine" :: export import BlendChild = globalThis.BlendChild;
 declare module "@iron/engine" :: export import BlendSpec = globalThis.BlendSpec;
 declare module "@iron/engine" :: export import BloomSettings = globalThis.BloomSettings;
+declare module "@iron/engine" :: export import BoneWeights = globalThis.BoneWeights;
 declare module "@iron/engine" :: export import Bounds = globalThis.Bounds;
 declare module "@iron/engine" :: export import BoxCollider = globalThis.BoxCollider;
 declare module "@iron/engine" :: export import BoxCollider2D = globalThis.BoxCollider2D;
@@ -2112,9 +2128,6 @@ declare namespace Matrix4x4 :: function orthographic(left: number, right: number
 declare namespace Matrix4x4 :: function perspective(fovDegrees: number, aspect: number, near: number, far: number): Matrix4x4;
 declare namespace Matrix4x4 :: function trs(position: Vector3, rotation: Quaternion): Matrix4x4;
 declare namespace Matrix4x4 :: function trs(position: Vector3, rotation: Quaternion, scale: Vector3): Matrix4x4;
-declare namespace Mesh
-declare namespace Mesh :: function create(data: MeshData): Mesh;
-declare namespace Mesh :: function createFlat(data: FlatMeshData): Mesh;
 declare namespace Physics
 declare namespace Physics :: function addBall(radius: number): PhysicsCollider;
 declare namespace Physics :: function addBox(half: Vector3): PhysicsCollider;
@@ -2615,11 +2628,6 @@ interface ConditionSpec
 interface ConditionSpec :: mode: string;
 interface ConditionSpec :: parameter: string;
 interface ConditionSpec :: threshold?: number;
-interface FlatMeshData
-interface FlatMeshData :: normals?: NumberList;
-interface FlatMeshData :: positions: NumberList;
-interface FlatMeshData :: triangles: NumberList;
-interface FlatMeshData :: uv?: NumberList;
 interface FontFace
 interface FontFace :: family: string;
 interface FontFace :: src: string;
@@ -3065,15 +3073,6 @@ interface IronTransitionEvent extends IronEvent :: readonly pseudoElement: strin
 interface IronWheelEvent extends IronPointerEvent
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaX: number;
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaY: number;
-interface Mesh
-interface Mesh :: setFlat(data: FlatMeshData): void;
-interface MeshData
-interface MeshData :: bindposes?: Matrix4x4[];
-interface MeshData :: boneWeights?: { indices: number[]; weights: number[] }[];
-interface MeshData :: normals?: Vector3[];
-interface MeshData :: triangles: number[];
-interface MeshData :: uv?: Vector2[];
-interface MeshData :: vertices: Vector3[];
 interface MeshRenderer
 interface MeshRenderer :: mesh: Mesh | PrimitiveType;
 interface ParticleSystem

@@ -191,6 +191,10 @@ pub struct Function {
     pub options_name: Option<&'static str>,
     /// `#[options(.., only)]`: the declaration lists only the options form of the call.
     pub options_only: bool,
+    /// `#[options(.., object)]`: scripts call it with one object whose keys are all the parameters
+    /// (the required ones too); the declaration is `f(data: <options_name>)`, and compiled code
+    /// reads the keys from any object, written over the positional function.
+    pub options_object: bool,
     /// `#[ts_type = ".."]`: the TypeScript type of a property, when it is narrower than the Rust
     /// type (a string-literal union for a `String`).
     pub ts_type: Option<&'static str>,
@@ -942,7 +946,7 @@ fn function_json(f: &Function) -> String {
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -967,6 +971,11 @@ fn function_json(f: &Function) -> String {
         )),
         if f.options_only {
             ",\"optionsOnly\":true"
+        } else {
+            ""
+        },
+        if f.options_object {
+            ",\"optionsObject\":true"
         } else {
             ""
         },

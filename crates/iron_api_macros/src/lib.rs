@@ -1310,6 +1310,8 @@ struct Api {
     options_name: Option<String>,
     /// `#[options(.., only)]`: only the options form is declared.
     options_only: bool,
+    /// `#[options(.., object)]`: one object holds every parameter, the required ones too.
+    options_object: bool,
     /// `/// name: text` lines of the doc: the doc of a parameter (the key of an options object).
     param_docs: Vec<(String, String)>,
     /// `#[rest(p)]`: the last parameter takes every remaining argument.
@@ -1437,12 +1439,14 @@ fn api_of(
     let mut options_after = None;
     let mut options_name = None;
     let mut options_only = false;
+    let mut options_object = false;
     for at in attrs.iter().filter(|a| a.path().is_ident("options")) {
         if let Meta::List(l) = &at.meta {
             let metas = Punctuated::<Meta, Token![,]>::parse_terminated.parse2(l.tokens.clone())?;
             for m in metas {
                 match m {
                     Meta::Path(p) if p.is_ident("only") => options_only = true,
+                    Meta::Path(p) if p.is_ident("object") => options_object = true,
                     Meta::NameValue(nv) if nv.path.is_ident("after") => {
                         let Expr::Path(p) = &nv.value else {
                             return Err(syn::Error::new(nv.value.span(), "a parameter name"));
@@ -1469,7 +1473,7 @@ fn api_of(
                     other => {
                         return Err(syn::Error::new(
                             other.span(),
-                            "expected `after = param`, `name = \"Type\"` or `only`",
+                            "expected `after = param`, `name = \"Type\"`, `only` or `object`",
                         ));
                     }
                 }
@@ -1624,6 +1628,7 @@ fn api_of(
         options_after,
         options_name,
         options_only,
+        options_object,
         param_docs,
         rest,
         nullable: attrs.iter().any(|a| a.path().is_ident("nullable")),
@@ -1841,6 +1846,8 @@ enum RecTy {
     Handle(usize),
     /// `Vec<H>` of a declared handle type.
     Handles(usize),
+    /// `Vec<f64>`: a list of numbers, `number[]`.
+    Numbers,
 }
 
 fn parse_rec_ty(s: &str, args: &Args) -> Result<RecTy, String> {
@@ -1852,6 +1859,7 @@ fn parse_rec_ty(s: &str, args: &Args) -> Result<RecTy, String> {
         "bool" => RecTy::Bool,
         "string" => RecTy::Str,
         "pairs" => RecTy::Pairs,
+        "Vec<f64>" => RecTy::Numbers,
         other if other.starts_with("Vec<") => {
             let inner = other.trim_start_matches("Vec<").trim_end_matches('>');
             match args.handles.iter().position(|(ts, _)| ts == inner) {
@@ -1897,7 +1905,7 @@ fn record_is_flat(args: &Args, i: usize) -> bool {
 fn rec_flat(t: &RecTy) -> bool {
     !matches!(
         t,
-        RecTy::Opt(_) | RecTy::Pairs | RecTy::Handle(_) | RecTy::Handles(_)
+        RecTy::Opt(_) | RecTy::Pairs | RecTy::Handle(_) | RecTy::Handles(_) | RecTy::Numbers
     )
 }
 
@@ -1912,6 +1920,7 @@ fn rec_ty_name(t: &RecTy, args: &Args) -> String {
         RecTy::Enum(i) => format!("enum:{}", args.enums[*i].ts),
         RecTy::Opt(inner) => format!("opt:{}", rec_ty_name(inner, args)),
         RecTy::Pairs => "list:pair".into(),
+        RecTy::Numbers => "list:f64".into(),
         RecTy::Handle(i) => format!("handle:{}", args.handles[*i].0),
         RecTy::Handles(i) => format!("list:handle:{}", args.handles[*i].0),
     }
@@ -1928,6 +1937,7 @@ fn rec_ty_ts(t: &RecTy, args: &Args) -> String {
         RecTy::Enum(i) => args.enums[*i].ts.clone(),
         RecTy::Opt(inner) => format!("{} | null", rec_ty_ts(inner, args)),
         RecTy::Pairs => "[number, number][]".into(),
+        RecTy::Numbers => "number[]".into(),
         RecTy::Handle(i) => args.handles[*i].0.clone(),
         RecTy::Handles(i) => format!("{}[]", args.handles[*i].0),
     }
@@ -1958,6 +1968,7 @@ fn rec_ty_manifest(t: &RecTy, args: &Args) -> TokenStream2 {
             quote!(::iron_api::Ty::Opt(#name, #ts))
         }
         RecTy::Pairs => quote!(::iron_api::Ty::List("pair", "[number, number][]")),
+        RecTy::Numbers => quote!(::iron_api::Ty::List("f64", "number[]")),
         RecTy::Handle(i) => {
             let n = &args.handles[*i].0;
             quote!(::iron_api::Ty::Handle(#n))
@@ -1986,7 +1997,7 @@ fn rec_flat_stmt(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
             let index = enum_fn(&args.enums[*i].ts, "index");
             quote!(out.push(#index(#x) as f64);)
         }
-        RecTy::Opt(_) | RecTy::Pairs | RecTy::Handle(_) | RecTy::Handles(_) => {
+        RecTy::Opt(_) | RecTy::Pairs | RecTy::Handle(_) | RecTy::Handles(_) | RecTy::Numbers => {
             quote!(compile_error!("not a flat record field");)
         }
     }
@@ -2008,6 +2019,7 @@ fn rec_json_value(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
             let name = enum_fn(&args.enums[*i].ts, "name");
             quote!(::iron_api::serde_json::json!(#name(*#x)))
         }
+        RecTy::Numbers => quote!(::iron_api::serde_json::json!(#x.clone())),
         RecTy::Pairs => quote!(::iron_api::serde_json::Value::Array(
             #x.iter()
                 .map(|p| ::iron_api::serde_json::json!([p.0, p.1]))
@@ -2079,6 +2091,15 @@ fn rec_parse_value(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenS
             quote!(#x.as_str().and_then(#parse).ok_or_else(#bad))
         }
         RecTy::Pairs => quote!(::iron_api::json_pairs(#x).ok_or_else(#bad)),
+        RecTy::Numbers => quote! {
+            #x.as_array()
+                .and_then(|a| {
+                    a.iter()
+                        .map(::iron_api::serde_json::Value::as_f64)
+                        .collect::<::std::option::Option<::std::vec::Vec<f64>>>()
+                })
+                .ok_or_else(#bad)
+        },
         RecTy::Handle(i) => {
             let rust = format_ident!("{}", args.handles[*i].1);
             quote!(#x.as_u64().map(<#rust as ::iron_api::Handle>::from_raw).ok_or_else(#bad))
@@ -2170,6 +2191,15 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
                 }
             }
         }
+        RecTy::Numbers => quote! {
+            {
+                let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                for (i, n) in #x.iter().enumerate() {
+                    list.set(i, *n)?;
+                }
+                o.set(#key, list)?;
+            }
+        },
         RecTy::Pairs => quote! {
             {
                 let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
@@ -2445,6 +2475,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let nullable = a.nullable;
         let undefined = a.undefined;
         let options_only = a.options_only;
+        let options_object = a.options_object;
         let options_name = match &a.options_name {
             Some(n) => quote!(::std::option::Option::Some(#n)),
             None => quote!(::std::option::Option::None),
@@ -2488,6 +2519,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 undefined: #undefined,
                 options_name: #options_name,
                 options_only: #options_only,
+                options_object: #options_object,
                 ts_type: #ts_type,
                 like: #like,
                 subscription: #subscription,
@@ -2868,7 +2900,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     .position(|(n, _)| *n == *p)
                     .expect("checked in api_of")
             });
-            let opts_at = after_idx.map_or(first_opt, |i| i + 1);
+            let opts_at = if a.options_object {
+                0
+            } else {
+                after_idx.map_or(first_opt, |i| i + 1)
+            };
             let opts_prelude = if a.options {
                 quote! {
                     let __opts: ::std::option::Option<::iron_api::rquickjs::Object<'js>> =
@@ -2942,8 +2978,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                                 };
                             }
                         } else {
+                            let required_slot = if a.options_object {
+                                slot.clone()
+                            } else {
+                                quote!(rest.0.get(#i).cloned())
+                            };
                             quote! {
-                                let #n: #t = match rest.0.get(#i) {
+                                let #n: #t = match #required_slot {
                                     Some(v) => ::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?,
                                     None => {
                                         return Err(::iron_api::rquickjs::Exception::throw_type(

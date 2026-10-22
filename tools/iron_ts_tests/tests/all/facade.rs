@@ -433,3 +433,29 @@ fn camera_screen_maths_is_native() {
         );
     });
 }
+
+// M9-TS-3354
+//
+// `Mesh.create` takes one object (a variable here) whose keys are the parameters of the native
+// function: bone influences become four indices and weights per vertex (a short list is padded
+// with zeros), bind poses their 16 numbers column by column.
+#[test]
+fn a_mesh_is_made_from_an_object_with_bones_and_bind_poses() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_skinnedMesh()), "3|1");
+        let skinned = (1..16)
+            .filter_map(|i| iron_render_api::mesh_info(iron_render_api::MeshRef(i)))
+            .find(|m| !m.joints.is_empty())
+            .expect("a skinned mesh");
+        assert_eq!(
+            skinned.joints,
+            vec![0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        );
+        assert_eq!(
+            skinned.weights,
+            vec![0.75, 0.25, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        );
+        assert_eq!(skinned.bindposes.len(), 32);
+        assert_eq!(skinned.bindposes[28..31], [0.0, -1.0, 0.0]);
+    });
+}

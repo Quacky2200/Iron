@@ -208,31 +208,6 @@ interface MeshRenderer {
   /** A mesh, or the name of a primitive. */
   mesh: Mesh | PrimitiveType;
 }
-type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;
-/** A mesh as flat number lists (x, y, z per vertex; u, v per vertex in Unity's bottom-up space), for meshes made in bulk. */
-interface FlatMeshData {
-  positions: NumberList;
-  triangles: NumberList;
-  normals?: NumberList;
-  uv?: NumberList;
-}
-interface MeshData {
-  vertices: Vector3[];
-  triangles: number[];
-  normals?: Vector3[];
-  uv?: Vector2[];
-  boneWeights?: { indices: number[]; weights: number[] }[];
-  bindposes?: Matrix4x4[];
-}
-declare namespace Mesh {
-  function create(data: MeshData): Mesh;
-  /** A mesh from flat lists (see `FlatMeshData`); a list left out is empty. */
-  function createFlat(data: FlatMeshData): Mesh;
-}
-interface Mesh {
-  /** Replaces the mesh's data from flat lists. */
-  setFlat(data: FlatMeshData): void;
-}
 declare namespace Random {
   /** A random item from a list (`undefined` when empty). */
   function pick<T>(items: readonly T[]): T | undefined;

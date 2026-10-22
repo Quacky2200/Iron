@@ -518,3 +518,20 @@ export function cameraMaths(): string {
   const r = Math.round;
   return `${r(mid.x * 1000)}|${r(mid.y * 1000)}|${r(mid.z * 1000)}|${r(corner.x * 1000)}|${r(corner.y * 1000)}|${r(h)}|${r(cam.fieldOfView)}|${r(cam.rect.width * 100)}`;
 }
+
+export function skinnedMesh(): string {
+  const boneWeights: { indices: [number, number]; weights: [number, number] }[] = [
+    { indices: [0, 1], weights: [0.75, 0.25] },
+    { indices: [1, 0], weights: [1, 0] },
+    { indices: [0, 0], weights: [1, 0] },
+  ];
+  const bindposes = [Matrix4x4.identity, Matrix4x4.trs(new Vector3(0, -1, 0), Quaternion.identity, Vector3.one)];
+  const data = {
+    vertices: [new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0)],
+    triangles: [0, 1, 2],
+    boneWeights,
+    bindposes,
+  };
+  const m = Mesh.create(data);
+  return `${m.vertexCount}|${m.triangleCount}`;
+}

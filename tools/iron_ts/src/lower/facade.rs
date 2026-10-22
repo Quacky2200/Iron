@@ -292,6 +292,81 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
             ));
         }
     }
+    // `#[options(.., object)]` functions: called with one object (a literal or any value with the
+    // keys), read key by key; a key left out of the object's type is the parameter's default.
+    let mut objects = manifest.object_args.clone();
+    objects.sort();
+    for (owner, name, is_class, is_method) in objects {
+        let used = if is_method {
+            src.contains(&format!(".{name}("))
+        } else {
+            src.contains(&format!("{owner}.{name}"))
+        };
+        if !used {
+            continue;
+        }
+        let f = if !is_class {
+            manifest.namespaces.get(&owner).and_then(|n| n.get(&name))
+        } else if is_method {
+            manifest
+                .classes
+                .get(&owner)
+                .and_then(|c| c.methods.get(&name))
+        } else {
+            manifest
+                .classes
+                .get(&owner)
+                .and_then(|c| c.statics.get(&name))
+        };
+        let Some(f) = f else { continue };
+        let skip = usize::from(is_method);
+        let mut pass: Vec<String> = Vec::new();
+        let mut ok = true;
+        for (i, (p, t)) in f.params[skip..].iter().enumerate() {
+            if skip + i < f.optional_from {
+                pass.push(format!("data.{p}"));
+                continue;
+            }
+            use crate::ir::ExtTy;
+            let default = match t {
+                ExtTy::F64Arr
+                | ExtTy::StrArr
+                | ExtTy::ValueArr(_)
+                | ExtTy::HandleArr(_)
+                | ExtTy::RecordsJson(_)
+                | ExtTy::F64List => "[]",
+                ExtTy::Bool => "false",
+                ExtTy::Str | ExtTy::Enum(_) => "\"\"",
+                ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => "NaN",
+                _ => {
+                    ok = false;
+                    break;
+                }
+            };
+            pass.push(format!(
+                "(\"{p}\" in data ? (data.{p} ?? {default}) : {default})"
+            ));
+        }
+        if !ok {
+            continue;
+        }
+        let ret = match &f.ret {
+            crate::ir::ExtTy::Void => "void".to_string(),
+            other => ext_ts(other),
+        };
+        let args = pass.join(", ");
+        if is_method {
+            extra.push_str(&format!(
+                "\nfunction __xm_{owner}_{name}<D>(self: {owner}, data: D): {ret} {{\n  {}self.{name}$n({args});\n}}\n",
+                if ret == "void" { "" } else { "return " }
+            ));
+        } else {
+            extra.push_str(&format!(
+                "\nfunction __xt_{owner}_{name}<D>(data: D): {ret} {{\n  {}{owner}.{name}$n({args});\n}}\n",
+                if ret == "void" { "" } else { "return " }
+            ));
+        }
+    }
     for r in request_types(src, ".request<") {
         extra.push_str(
             &REQUEST_TEMPLATE
