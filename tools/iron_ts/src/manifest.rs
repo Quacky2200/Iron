@@ -81,6 +81,8 @@ pub enum RecField {
     Value(String),
     /// An enum: the index.
     Enum(String),
+    /// A string: it comes through `iron_api_result_str`, not the number buffer.
+    Str,
 }
 
 impl RecField {
@@ -88,6 +90,7 @@ impl RecField {
         Ok(match s {
             "f64" | "f32" | "i32" | "u32" => RecField::Num,
             "bool" => RecField::Bool,
+            "string" => RecField::Str,
             other => {
                 if let Some(n) = other.strip_prefix("value:") {
                     RecField::Value(n.to_string())

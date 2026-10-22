@@ -27,6 +27,18 @@ fn ts_type_like(t: &str, like: bool) -> String {
     ts_type(t)
 }
 
+/// The TypeScript type of a parameter: an array the engine only reads is `readonly`.
+fn param_ts_type(t: &str, like: bool) -> String {
+    let ty = ts_type_like(t, like);
+    if (t.starts_with("values:") || t.starts_with("handles:") || t == "f64s" || t == "strings")
+        && !ty.starts_with("readonly ")
+    {
+        format!("readonly {ty}")
+    } else {
+        ty
+    }
+}
+
 /// The TypeScript type of a manifest type (for the UI declarations).
 pub(crate) fn manifest_ts_type(t: &str) -> String {
     ts_type(t)
@@ -93,6 +105,13 @@ struct Func {
     rest: Option<String>,
     /// `#[options(after = p)]`: the index of `p` among the parameters without the receiver.
     options_after: Option<usize>,
+    /// `#[options(name = "X")]`: the declared type of the options object.
+    options_name: Option<String>,
+    /// `#[options(.., only)]`: the positional form is not declared.
+    options_only: bool,
+    /// Per parameter (with the receiver): its doc, and whether it is a handle.
+    param_docs: Vec<String>,
+    param_handle: Vec<bool>,
 }
 
 fn funcs(v: &Value, like: bool) -> Vec<Func> {
@@ -140,7 +159,7 @@ fn func_of(f: &Value, like: bool) -> Func {
                     .map(|p| {
                         (
                             p["name"].as_str().unwrap_or("p").to_string(),
-                            ts_type_like(p["type"].as_str().unwrap_or("void"), like),
+                            param_ts_type(p["type"].as_str().unwrap_or("void"), like),
                             p["optional"].as_bool().unwrap_or(false),
                         )
                     })
@@ -155,6 +174,24 @@ fn func_of(f: &Value, like: bool) -> Func {
                 .and_then(|p| p["name"].as_str().map(str::to_string))
         }),
         options_after: f["optionsAfter"].as_u64().map(|n| n as usize),
+        options_name: f["optionsName"].as_str().map(str::to_string),
+        options_only: f["optionsOnly"].as_bool() == Some(true),
+        param_docs: f["params"]
+            .as_array()
+            .map(|ps| {
+                ps.iter()
+                    .map(|p| p["doc"].as_str().unwrap_or("").to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        param_handle: f["params"]
+            .as_array()
+            .map(|ps| {
+                ps.iter()
+                    .map(|p| p["type"].as_str().unwrap_or("").starts_with("handle:"))
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -213,12 +250,47 @@ fn options_params(f: &Func, skip_this: bool) -> Option<String> {
         .iter()
         .map(|(n, t, _)| format!("{}: {t}", safe_ident(n)))
         .collect();
+    if let Some(name) = &f.options_name {
+        parts.push(format!("options?: {name}"));
+        return Some(parts.join(", "));
+    }
     let keys: Vec<String> = ps[k..]
         .iter()
         .map(|(n, t, _)| format!("{n}?: {t}"))
         .collect();
     parts.push(format!("options?: {{ {} }}", keys.join("; ")));
     Some(parts.join(", "))
+}
+
+/// The keys of an options object: (key, type, doc) each.
+type OptionKeys = Vec<(String, String, String)>;
+
+/// The keys of a named options object (`#[options(name = "X")]`): the parameters after the leading
+/// required ones, as (key, type, doc). A handle key also takes `null` (no object).
+fn option_keys(f: &Func, skip_this: bool) -> OptionKeys {
+    let skip = usize::from(skip_this);
+    let ps: Vec<_> = f.params.iter().skip(skip).collect();
+    let k = ps
+        .iter()
+        .take_while(|(_, t, o)| !o && t != "boolean")
+        .count();
+    ps[k..]
+        .iter()
+        .enumerate()
+        .map(|(i, (n, t, _))| {
+            let at = skip + k + i;
+            let ty = if f.param_handle.get(at) == Some(&true) {
+                format!("{t} | null")
+            } else {
+                t.clone()
+            };
+            (
+                n.clone(),
+                ty,
+                f.param_docs.get(at).cloned().unwrap_or_default(),
+            )
+        })
+        .collect()
 }
 
 const RESERVED: &[&str] = &[
@@ -391,6 +463,9 @@ struct Decls {
     records: BTreeMap<String, RecordDecl>,
     /// Alias -> the class or enum it names.
     aliases: BTreeMap<String, String>,
+    /// Named options objects (`#[options(name = "X")]`) -> (key, type, doc) of each key, merged
+    /// over the functions that name them.
+    option_types: BTreeMap<String, OptionKeys>,
 }
 
 fn push_unique(list: &mut Vec<String>, line: String) {
@@ -409,6 +484,8 @@ impl Decls {
     fn add(&mut self, json: &str) -> Result<(), String> {
         let v: Value = serde_json::from_str(json).map_err(|e| format!("manifest json: {e}"))?;
         let like = v["like"].as_bool().unwrap_or(false);
+        // Named options objects found in this manifest: (type name, its keys).
+        let mut named: Vec<(String, OptionKeys)> = Vec::new();
         for h in v["handles"].as_array().into_iter().flatten() {
             if let Some(h) = h.as_str() {
                 self.handles.insert(h.to_string());
@@ -481,17 +558,23 @@ impl Decls {
             for f in &fs {
                 match f.kind.as_str() {
                     "static" => {
-                        add(
-                            members,
-                            format!("static {}({}): {};", f.name, params_text(f, false), f.ret),
-                            &f.doc,
-                        );
-                        if let Some(o) = options_params(f, false) {
+                        let options = options_params(f, false);
+                        if !(f.options_only && options.is_some()) {
+                            add(
+                                members,
+                                format!("static {}({}): {};", f.name, params_text(f, false), f.ret),
+                                &f.doc,
+                            );
+                        }
+                        if let Some(o) = options {
                             add(
                                 members,
                                 format!("static {}({o}): {};", f.name, f.ret),
                                 &f.doc,
                             );
+                            if let Some(n) = &f.options_name {
+                                named.push((n.clone(), option_keys(f, false)));
+                            }
                         }
                         if f.name == "create" {
                             self.creates.insert(name.clone(), f.params.clone());
@@ -501,13 +584,19 @@ impl Decls {
                         }
                     }
                     "method" => {
-                        add(
-                            members,
-                            format!("{}({}): {};", f.name, params_text(f, true), f.ret),
-                            &f.doc,
-                        );
-                        if let Some(o) = options_params(f, true) {
+                        let options = options_params(f, true);
+                        if !(f.options_only && options.is_some()) {
+                            add(
+                                members,
+                                format!("{}({}): {};", f.name, params_text(f, true), f.ret),
+                                &f.doc,
+                            );
+                        }
+                        if let Some(o) = options {
                             add(members, format!("{}({o}): {};", f.name, f.ret), &f.doc);
+                            if let Some(n) = &f.options_name {
+                                named.push((n.clone(), option_keys(f, true)));
+                            }
                         }
                     }
                     "get" if f.params.is_empty() => {
@@ -616,19 +705,38 @@ impl Decls {
                     }
                     "set" => {}
                     _ => {
-                        add(
-                            members,
-                            format!("function {}({}): {};", f.name, params_text(f, false), f.ret),
-                            &f.doc,
-                        );
-                        if let Some(o) = options_params(f, false) {
+                        let options = options_params(f, false);
+                        if !(f.options_only && options.is_some()) {
+                            add(
+                                members,
+                                format!(
+                                    "function {}({}): {};",
+                                    f.name,
+                                    params_text(f, false),
+                                    f.ret
+                                ),
+                                &f.doc,
+                            );
+                        }
+                        if let Some(o) = options {
                             add(
                                 members,
                                 format!("function {}({o}): {};", f.name, f.ret),
                                 &f.doc,
                             );
+                            if let Some(n) = &f.options_name {
+                                named.push((n.clone(), option_keys(f, false)));
+                            }
                         }
                     }
+                }
+            }
+        }
+        for (name, keys) in named {
+            let entry = self.option_types.entry(name).or_default();
+            for k in keys {
+                if !entry.iter().any(|e| e.0 == k.0) {
+                    entry.push(k);
                 }
             }
         }
@@ -739,6 +847,15 @@ impl Decls {
             if self.classes.contains_key(target) {
                 s += &format!("{indent}{prefix}const {alias}: typeof {target};\n");
             }
+        }
+        // The named options objects of calls: an interface with a key per optional parameter.
+        for (name, keys) in &self.option_types {
+            s += &format!("{indent}{prefix}interface {name} {{\n");
+            for (key, ty, doc) in keys {
+                s += &jsdoc(doc, &format!("{indent}  "));
+                s += &format!("{indent}  {key}?: {ty};\n");
+            }
+            s += &format!("{indent}}}\n");
         }
         for (name, (doc, fields)) in &self.records {
             s += &jsdoc(doc, indent);
@@ -894,6 +1011,7 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     engine.extend(d.enums.keys().cloned());
     engine.extend(d.records.keys().cloned());
     engine.extend(d.aliases.keys().cloned());
+    engine.extend(d.option_types.keys().cloned());
     engine.extend(d.namespaces.keys().filter(|n| !n.is_empty()).cloned());
     engine.extend(
         crate::ui_dts::ENGINE_AMBIENT_NAMES
@@ -1109,5 +1227,42 @@ mod tests {
             "{t}"
         );
         assert!(t.contains("  export import Spot = globalThis.Spot;"), "{t}");
+    }
+
+    const OPTIONS: &str = r#"{"namespace":"Opt","handles":["Thing"],"values":[],"classes":[{"name":"Thing","functions":[
+      {"name":"load","symbol":"o1","kind":"static","doc":"Loads one.","optionsName":"LoadOptions","optionsOnly":true,"params":[{"name":"src","type":"string"},{"name":"mode","type":"string","optional":true,"doc":"How."},{"name":"owner","type":"handle:Thing","optional":true},{"name":"names","type":"strings","optional":true}],"returns":"handle:Thing"},
+      {"name":"put","symbol":"o2","kind":"static","params":[{"name":"all","type":"f64s"}],"returns":"void"}]}],"functions":[]}"#;
+
+    // M9-TS-3342
+    #[test]
+    fn a_named_options_object_is_an_interface_with_docs_and_array_parameters_are_readonly() {
+        let t = generate(&[OPTIONS.to_string()], "").unwrap();
+        assert!(
+            t.contains(
+                "declare interface LoadOptions {
+  /**
+   * How.
+   */
+  mode?: string;
+  owner?: Thing | null;
+  names?: readonly string[];
+}"
+            ),
+            "{t}"
+        );
+        assert!(
+            t.contains("  static load(src: string, options?: LoadOptions): Thing;"),
+            "{t}"
+        );
+        // `only`: no positional form.
+        assert!(!t.contains("static load(src: string, mode"), "{t}");
+        assert!(
+            t.contains("static put(all: readonly number[]): void;"),
+            "{t}"
+        );
+        assert!(
+            t.contains("  export import LoadOptions = globalThis.LoadOptions;"),
+            "{t}"
+        );
     }
 }

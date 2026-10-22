@@ -122,6 +122,9 @@ pub struct Param {
     pub default: Option<f64>,
     /// The last parameter takes every remaining argument (`#[rest(points)]`): `...points: V[]`.
     pub rest: bool,
+    /// What the parameter is, from a `/// name: text` line of the function's doc (the JSDoc of
+    /// the key in a named options object).
+    pub doc: &'static str,
 }
 
 /// How a function is called from a script.
@@ -168,6 +171,11 @@ pub struct Function {
     pub nullable: bool,
     /// `#[nullable(undefined)]`: the same, but declared `T | undefined` (what `Camera.main` is).
     pub undefined: bool,
+    /// `#[options(name = "TextureOptions")]`: the options object has a declared type of this name
+    /// (an `interface` with a key per optional parameter, with their docs).
+    pub options_name: Option<&'static str>,
+    /// `#[options(.., only)]`: the declaration lists only the options form of the call.
+    pub options_only: bool,
     /// `#[ts_type = ".."]`: the TypeScript type of a property, when it is narrower than the Rust
     /// type (a string-literal union for a `String`).
     pub ts_type: Option<&'static str>,
@@ -724,18 +732,19 @@ fn function_json(f: &Function) -> String {
         .iter()
         .map(|p| {
             format!(
-                "{{\"name\":{},\"type\":{}{}{}{}}}",
+                "{{\"name\":{},\"type\":{}{}{}{}{}}}",
                 json_str(p.name),
                 json_str(&p.ty.name()),
                 if p.optional { ",\"optional\":true" } else { "" },
                 p.default
                     .map_or(String::new(), |d| format!(",\"default\":{d}")),
-                if p.rest { ",\"rest\":true" } else { "" }
+                if p.rest { ",\"rest\":true" } else { "" },
+                doc_json(p.doc)
             )
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -751,6 +760,15 @@ fn function_json(f: &Function) -> String {
         if f.nullable { ",\"nullable\":true" } else { "" },
         if f.undefined {
             ",\"undefined\":true"
+        } else {
+            ""
+        },
+        f.options_name.map_or(String::new(), |n| format!(
+            ",\"optionsName\":{}",
+            json_str(n)
+        )),
+        if f.options_only {
+            ",\"optionsOnly\":true"
         } else {
             ""
         },

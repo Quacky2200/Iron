@@ -346,3 +346,24 @@ fn enums_take_names_and_unknown_ones_change_nothing_nullables_read_null_and_alia
         );
     });
 }
+
+// M9-TS-3341
+#[test]
+fn result_records_and_lists_of_records_come_back_as_plain_objects_with_strings() {
+    in_every_gc_mode(|| unsafe {
+        use iron_engine_api::screen::{Resolution, set_display};
+        let r = |width, height, refresh_rate| Resolution {
+            width,
+            height,
+            refresh_rate,
+        };
+        set_display(
+            "Windowed",
+            (1024, 768),
+            vec![r(1920, 1080, 144.0), r(1280, 720, 60.0)],
+            r(1920, 1080, 144.0),
+            vec![],
+        );
+        assert_eq!(text(ts_fac_resultRecords()), "1024x768|144|2|1280|true|0");
+    });
+}

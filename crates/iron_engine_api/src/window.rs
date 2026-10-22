@@ -1524,7 +1524,16 @@ pub mod window_api {
         /// Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the
         /// frame. Until then its size and position are the ones asked for. Every option is optional:
         /// `Window.create({ title: "Palette", style: "tool", width: 220, height: 320, key: "palette" })`.
-        #[options]
+        /// title: The title bar text. Default "".
+        /// width: Client area size in UI pixels. Default 400 x 300.
+        /// x: Top-left of the outer frame in desktop UI pixels. Left out: centred on the parent, cascading.
+        /// style: Default "normal".
+        /// parent: The window this one belongs to. Tool, dialog, popup and child windows default to the main window.
+        /// closable: Whether the title bar has a close button.
+        /// focus: Takes keyboard focus when shown; popups never do.
+        /// key: A name that keeps the window across a hot reload and finds it again (`Window.find`).
+        /// run_in_background: Root windows of isolated families only (a "normal" or "borderless" window without a parent): keep the domain's timers running while the family is unfocused. Default true.
+        #[options(name = "WindowOptions", only)]
         #[optional(
             title,
             width,

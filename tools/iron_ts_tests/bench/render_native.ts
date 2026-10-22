@@ -177,7 +177,7 @@ export function screenApi(): string {
   });
   Screen.fullScreenMode = "FullScreenWindow";
   Screen.setResolution(800, 600, { refreshRate: 60 });
-  return `${Screen.width}|${Screen.fullScreen}|${Screen.fullScreenMode}|${Screen.aspect.toFixed(2)}|${Screen.resolutionCount}`;
+  return `${Screen.width}|${Screen.fullScreen}|${Screen.fullScreenMode}|${Screen.aspect.toFixed(2)}|${Screen.resolutions.length}`;
 }
 
 let levelChanges = 0;

@@ -899,7 +899,7 @@ impl<'a> Lowerer<'a> {
                     crate::manifest::RecField::Num => Ty::Num,
                     crate::manifest::RecField::Bool => Ty::Bool,
                     crate::manifest::RecField::Value(v) => Ty::Obj(self.value_struct(&v)),
-                    crate::manifest::RecField::Enum(_) => Ty::Str,
+                    crate::manifest::RecField::Enum(_) | crate::manifest::RecField::Str => Ty::Str,
                 },
                 optional: false,
             })
@@ -946,7 +946,13 @@ impl<'a> Lowerer<'a> {
     /// The object of a value class or record whose numbers start at `base` in the result buffer.
     /// `Record(name)` builds the record's struct (a value inside it, or an enum name); a value
     /// class is the fields in a row.
-    fn read_flat_object(&mut self, rec: &ExtTy, base: &Expr, stmts: &mut Vec<Stmt>) -> Expr {
+    fn read_flat_object(
+        &mut self,
+        rec: &ExtTy,
+        base: &Expr,
+        str_base: &Expr,
+        stmts: &mut Vec<Stmt>,
+    ) -> Expr {
         let add = |a: &Expr, k: usize| -> Expr {
             if k == 0 {
                 a.clone()
@@ -976,8 +982,15 @@ impl<'a> Lowerer<'a> {
                 let obj = self.new_local(ty.clone());
                 stmts.push(Stmt::Assign(obj, mk(ExprKind::NewObj(sid), ty.clone())));
                 let mut off = 0;
+                let mut soff = 0;
                 for (k, (_, f)) in fields.iter().enumerate() {
                     let value = match f {
+                        // A string: the `soff`-th of the result's strings.
+                        crate::manifest::RecField::Str => {
+                            let e = self.str_result(add(str_base, soff));
+                            soff += 1;
+                            e
+                        }
                         crate::manifest::RecField::Num => {
                             let e = self.flat_result(add(base, off));
                             off += 1;
@@ -993,6 +1006,7 @@ impl<'a> Lowerer<'a> {
                             let inner = self.read_flat_object(
                                 &ExtTy::Value(vn.clone()),
                                 &add(base, off),
+                                str_base,
                                 stmts,
                             );
                             off += width;
@@ -1013,6 +1027,30 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `iron_api_result_str(i)`: the `i`-th string of the last result.
+    fn str_result(&mut self, i: Expr) -> Expr {
+        let item = ExternFn {
+            rest: false,
+            optional_from: usize::MAX,
+            defaults: Vec::new(),
+            symbol: "iron_api_result_str".into(),
+            params: vec![("i".into(), ExtTy::U32)],
+            ret: ExtTy::Str,
+        };
+        self.emit_extern(&item, vec![i])
+    }
+
+    /// How many strings one element of a list (or one record) takes in the result's string list.
+    fn str_width(&self, t: &ExtTy) -> usize {
+        match t {
+            ExtTy::RecordList(rn) | ExtTy::Record(rn) => self.manifest.records[rn]
+                .iter()
+                .filter(|(_, f)| matches!(f, crate::manifest::RecField::Str))
+                .count(),
+            _ => 0,
+        }
+    }
+
     /// How many numbers one element of a list (or one record) takes in the result buffer.
     fn flat_width(&self, t: &ExtTy) -> usize {
         match t {
@@ -1021,6 +1059,7 @@ impl<'a> Lowerer<'a> {
                 .iter()
                 .map(|(_, f)| match f {
                     crate::manifest::RecField::Value(vn) => self.manifest.values[vn].len(),
+                    crate::manifest::RecField::Str => 0,
                     _ => 1,
                 })
                 .sum(),
@@ -2181,7 +2220,7 @@ impl<'a> Lowerer<'a> {
             ExtTy::Record(_) => {
                 pre.push(Stmt::Eval(mk(ExprKind::CallExtern(idx, args), Ty::Void)));
                 let zero = num(0.0);
-                let obj = self.read_flat_object(&f.ret, &zero, &mut pre);
+                let obj = self.read_flat_object(&f.ret, &zero, &zero, &mut pre);
                 let ty = obj.ty.clone();
                 return mk(ExprKind::Seq(pre, Box::new(obj)), ty);
             }
@@ -2252,6 +2291,7 @@ impl<'a> Lowerer<'a> {
                 let i = self.new_local(Ty::Num);
                 pre.push(Stmt::Assign(i, num(0.0)));
                 let width = self.flat_width(&f.ret);
+                let str_width = self.str_width(&f.ret);
                 let label = self.new_label();
                 let iv = self.var_expr(i);
                 let base = mk(
@@ -2259,6 +2299,14 @@ impl<'a> Lowerer<'a> {
                         BinOp::Mul,
                         Box::new(iv.clone()),
                         Box::new(num(width as f64)),
+                    ),
+                    Ty::Num,
+                );
+                let str_base = mk(
+                    ExprKind::Bin(
+                        BinOp::Mul,
+                        Box::new(iv.clone()),
+                        Box::new(num(str_width as f64)),
                     ),
                     Ty::Num,
                 );
@@ -2271,7 +2319,7 @@ impl<'a> Lowerer<'a> {
                     Ty::Bool,
                 );
                 let mut body = vec![Stmt::If(done, vec![Stmt::Break(label)], vec![])];
-                let elem = self.read_flat_object(&f.ret, &base, &mut body);
+                let elem = self.read_flat_object(&f.ret, &base, &str_base, &mut body);
                 body.push(Stmt::Eval(mk(
                     ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(arr), elem]),
                     Ty::Void,

@@ -318,6 +318,7 @@ pub mod texture_api {
         /// Loads a PNG or JPEG relative to the game folder (or `"guid:<guid>"`). Settings not
         /// given come from the file's `.meta` importer, then the defaults (`bilinear`, `repeat`,
         /// mipmaps on, anisotropy 1). The size is known once the host reports it (`isLoaded`).
+        #[options(name = "TextureOptions", only)]
         #[optional(filter_mode, wrap_mode, mipmaps = 1, aniso_level, linear)]
         pub fn load(
             src: &str,
@@ -339,6 +340,7 @@ pub mod texture_api {
 
         /// A texture from linear colours, bottom row first like Unity's `SetPixels`
         /// (`width x height` of them).
+        #[options(name = "TextureOptions", only)]
         #[optional(filter_mode, wrap_mode, mipmaps = 1, aniso_level, linear)]
         #[allow(clippy::too_many_arguments)]
         pub fn create(

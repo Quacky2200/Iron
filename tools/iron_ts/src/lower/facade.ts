@@ -42,31 +42,6 @@ function __xm_Scene_getRootGameObjects(self: Scene): GameObject[] {
   return out;
 }
 
-//# when Screen.windowSize
-interface WindowSize {
-  width: number;
-  height: number;
-}
-function __xp_Screen_windowSize(): WindowSize {
-  return { width: Screen.windowWidth, height: Screen.windowHeight };
-}
-
-//# when Screen.currentResolution|Screen.resolutions
-interface Resolution {
-  width: number;
-  height: number;
-  refreshRate: number;
-}
-function __xp_Screen_currentResolution(): Resolution {
-  return { width: Screen.currentResolutionWidth, height: Screen.currentResolutionHeight, refreshRate: Screen.currentResolutionRefreshRate };
-}
-function __xp_Screen_resolutions(): Resolution[] {
-  const out: Resolution[] = [];
-  const n = Screen.resolutionCount;
-  for (let i = 0; i < n; i++) out.push({ width: Screen.resolutionWidth(i), height: Screen.resolutionHeight(i), refreshRate: Screen.resolutionRefreshRate(i) });
-  return out;
-}
-
 //# when QualitySettings.names
 function __xp_QualitySettings_names(): string[] {
   const out: string[] = [];
@@ -159,15 +134,7 @@ function __xt_Sprite_grid(texture: Texture, columns: number, rows: number, pivot
   return out;
 }
 
-//# when AnimatorController|getCurrentAnimatorStateInfo
-interface AnimatorStateInfo {
-  name: string;
-  normalizedTime: number;
-  length: number;
-}
-function __xm_Animator_getCurrentAnimatorStateInfo(self: Animator): AnimatorStateInfo {
-  return { name: self.currentStateName, normalizedTime: self.currentNormalizedTime, length: self.currentLength };
-}
+//# when AnimatorController
 function __xm_AnimationController_addParameter(self: AnimationController, name: string, type: string, defaultValue: number = 0): AnimationController {
   self.addParameter$n(AnimationParameter.create(name, type, defaultValue));
   return self;

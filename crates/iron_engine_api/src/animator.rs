@@ -707,8 +707,20 @@ fn animator<R>(
     })
 }
 
+/// The state an animator is in.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StateSummary {
+    pub name: String,
+    pub normalized_time: f64,
+    pub length: f64,
+}
+
 #[iron_api(namespace = "Animator", quickjs, handles(
-    Animator = AnimatorRef, AnimationController = ControllerRef, GameObject = ObjectId))]
+    Animator = AnimatorRef, AnimationController = ControllerRef, GameObject = ObjectId),
+    records(
+        /// The state an animator is in: its name, how far along it is (past 1 after loops) and its length in seconds.
+        AnimatorStateInfo = StateSummary [name: string, normalized_time: f64, length: f64]
+    ))]
 pub mod animator_api {
     use super::*;
 
@@ -824,6 +836,24 @@ pub mod animator_api {
         #[property]
         pub fn is_in_transition(self) -> bool {
             animator(self, |p, _| p.is_in_transition()).unwrap_or(false)
+        }
+
+        /// The state it is in (`currentStateName`, `currentNormalizedTime` and `currentLength` together).
+        #[js_name = "getCurrentAnimatorStateInfo"]
+        pub fn current_animator_state_info(self) -> StateSummary {
+            animator(self, |p, w| {
+                let i = p.current_info(w);
+                StateSummary {
+                    name: i.name,
+                    normalized_time: i.normalized_time,
+                    length: i.length,
+                }
+            })
+            .unwrap_or(StateSummary {
+                name: String::new(),
+                normalized_time: 0.0,
+                length: 0.0,
+            })
         }
 
         /// The name of the state it is in.

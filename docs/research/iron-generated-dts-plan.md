@@ -709,3 +709,20 @@ Surface changes (`tests/golden/api_surface.txt`, reviewed): the enum types are `
 `PrimitiveType.Cube` is a `PrimitiveType`, `Texture.filterMode` / `wrapMode`, `Window.create`'s `style`, `Screen.fullScreenMode`,
 `Screen.setResolution`'s `mode` and `SceneManager.loadScene` / `loadSceneAsync` / `onSceneLoaded` are typed by their enums (they were
 `string`), `Camera.main` is a static property of the class.
+
+## 10. Progress, P2b first part (2026-10-22)
+
+`engine_ts.d.ts` 504 -> about 450 lines, `facade.ts` 845 -> about 810 lines (chunks 40 -> 38). Done:
+
+- **Result records with strings:** a record field `string` (the strings go through `return_strings` and `iron_api_result_str(i)` next to
+  the numbers); `Screen.windowSize` / `currentResolution` / `resolutions` (`WindowSize`, `Resolution`) and
+  `Animator.getCurrentAnimatorStateInfo()` (`AnimatorStateInfo`) are native; facade chunks 5 and 6 and the `AnimatorStateInfo` part of chunk 15
+  are gone with their `engine_ts.d.ts` interfaces.
+- **`#[options(name = "X", only)]`:** `TextureOptions` (`Texture.load` / `create`) and `WindowOptions` (`Window.create`, the docs are
+  `/// key: text` lines of the Rust doc) are generated; array parameters are declared `readonly`.
+- **Not done in 2b** (all need records as *parameters* or record-valued properties, which the compiled lowering and the macro do not have
+  yet; the design that fits is a JSON wire form for `Option<Record>` parameters and results, `JSON.stringify` of the record struct on the
+  compiled side, so a game's own structurally matching interface and `cond ? {..} : null` keep working): `RenderSettings.skybox` /
+  `bloom` / `heightFog` / `volumetricFog` / `autoExposure` (chunks 35-37, 45, `split_rule`), `LodLevel` / `setLODs`, `ClothBox`,
+  `ParticleBurst` / `ParticleShapeSpec` / `ColorKey` / `SizeKey`, `MeshData`, `FontFace`, `GameObjectOptions`, `InstantiateObjectOptions`,
+  `SceneData`, the animation builder specs, `Gamepad` (its `buttons` / `axes` are dictionaries), `Collision` / `Collision2D`.

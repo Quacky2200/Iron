@@ -76,3 +76,43 @@ fn engine_nullables_are_null_when_none_and_take_null() {
         );
     });
 }
+
+// M9-API-1629
+#[test]
+fn result_records_have_strings_and_lists_of_records_are_arrays() {
+    with_world(|ctx| {
+        iron_engine_api::screen::set_display(
+            "Windowed",
+            (1024, 768),
+            vec![
+                iron_engine_api::screen::Resolution {
+                    width: 1920,
+                    height: 1080,
+                    refresh_rate: 144.0,
+                },
+                iron_engine_api::screen::Resolution {
+                    width: 1280,
+                    height: 720,
+                    refresh_rate: 60.0,
+                },
+            ],
+            iron_engine_api::screen::Resolution {
+                width: 1920,
+                height: 1080,
+                refresh_rate: 144.0,
+            },
+            vec![],
+        );
+        let out: String = js(
+            ctx,
+            r#"
+            const info = Animator.attach(new GameObject('a')).getCurrentAnimatorStateInfo();
+            JSON.stringify([Screen.windowSize, Screen.currentResolution, Screen.resolutions, info]);
+            "#,
+        );
+        assert_eq!(
+            out,
+            r#"[{"width":1024,"height":768},{"width":1920,"height":1080,"refreshRate":144},[{"width":1920,"height":1080,"refreshRate":144},{"width":1280,"height":720,"refreshRate":60}],{"name":"","normalizedTime":0,"length":0}]"#
+        );
+    });
+}

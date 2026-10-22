@@ -69,6 +69,10 @@ pub mod kinds_api {
         /// Names that are not the variant names.
         Shout = Loud [Quiet = "QUIET", Boomy = "Boomy"]
     ),
+    records(
+        /// A name and a number.
+        Label = Tag [text: string, size: f64]
+    ),
     aliases(Stuff = Item, HardnessAlias = Hardness)
 )]
 pub mod things_api {
@@ -115,6 +119,38 @@ pub mod things_api {
         vec![Mode::Hard, Mode::Soft]
     }
 
+    /// Pokes an item.
+    /// level: How hard to poke.
+    /// loud: Whether it makes a sound.
+    #[options(name = "PokeOptions", only)]
+    #[optional(level = 1, loud, mode)]
+    pub fn poke(item: Item, level: f64, loud: bool, mode: Option<Mode>) -> f64 {
+        f64::from(item.0) * level
+            + if loud { 0.5 } else { 0.0 }
+            + f64::from(u8::from(mode == Some(Mode::Hard)))
+    }
+
+    /// A record with a string field.
+    pub fn label(n: f64) -> Tag {
+        Tag {
+            text: format!("n{n}"),
+            size: n,
+        }
+    }
+
+    pub fn labels() -> Vec<Tag> {
+        vec![
+            Tag {
+                text: "a".into(),
+                size: 1.0,
+            },
+            Tag {
+                text: "bb".into(),
+                size: 2.0,
+            },
+        ]
+    }
+
     pub fn loud(l: Loud) -> Loud {
         match l {
             Loud::Quiet => Loud::Boomy,
@@ -141,6 +177,12 @@ impl Item {
     fn max_or_none(self) -> Item {
         if self.0 > 3 { Item(0) } else { self }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tag {
+    pub text: String,
+    pub size: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -319,4 +361,75 @@ fn nullable_undefined_is_in_the_manifest_json() {
         .find(|f| f["name"] == "next")
         .unwrap();
     assert_eq!(next["undefined"], true);
+}
+
+// M9-API-1630
+#[test]
+fn a_record_with_a_string_field_keeps_the_text_in_the_string_list_in_field_order() {
+    let r = |i: u32| iron_api::iron_api_result(i);
+    let str_at = |i: u32| {
+        let mut len = 0i64;
+        let p = unsafe { iron_api::iron_api_result_str(i, &mut len) };
+        String::from_utf8(unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()).unwrap()
+    };
+    things_api::iron_Things_label(7.0);
+    assert_eq!((r(0), str_at(0)), (7.0, "n7".to_string()));
+    // A list: the numbers of every element in a row, the strings in a row.
+    assert_eq!(things_api::iron_Things_labels(), 2);
+    assert_eq!((r(0), r(1)), (1.0, 2.0));
+    assert_eq!((str_at(0), str_at(1)), ("a".to_string(), "bb".to_string()));
+    let json = things_api::MANIFEST.to_json();
+    assert!(json.contains(r#"{"name":"text","type":"string""#), "{json}");
+    use iron_api::rquickjs;
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        kinds_api::register_quickjs(&ctx).unwrap();
+        things_api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(r#"JSON.stringify([Things.label(2), Things.labels()])"#)
+            .unwrap();
+        assert_eq!(
+            out,
+            r#"[{"text":"n2","size":2},[{"text":"a","size":1},{"text":"bb","size":2}]]"#
+        );
+    });
+}
+
+// M9-API-1631
+#[test]
+fn a_named_options_object_has_a_type_with_the_parameter_docs_and_quickjs_reads_it() {
+    let json: serde_json::Value = serde_json::from_str(&things_api::MANIFEST.to_json()).unwrap();
+    let poke = json["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "poke")
+        .unwrap();
+    assert_eq!(poke["optionsName"], "PokeOptions");
+    assert_eq!(poke["optionsOnly"], true);
+    // The `/// name: text` lines are the docs of the keys and leave the function's own doc.
+    assert_eq!(poke["doc"], "Pokes an item.");
+    assert_eq!(poke["params"][1]["doc"], "How hard to poke.");
+    assert_eq!(poke["params"][2]["doc"], "Whether it makes a sound.");
+    assert!(poke["params"][0].get("doc").is_none());
+    use iron_api::rquickjs;
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        kinds_api::register_quickjs(&ctx).unwrap();
+        things_api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(
+                r#"
+                const it = Things.item(3);
+                JSON.stringify([
+                  Things.poke(it), Things.poke(it, { level: 2 }), Things.poke(it, { loud: true, mode: 'hard' }),
+                  Things.poke(it, 2, true),
+                ])
+                "#,
+            )
+            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
+        assert_eq!(out, "[3,6,4.5,6.5]");
+    });
 }

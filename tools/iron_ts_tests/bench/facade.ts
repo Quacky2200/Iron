@@ -401,3 +401,13 @@ export function enumsAndNullables(): string {
   const ctl: AnimatorController = AnimationController.create();
   return `${a}|${b}|${b2}|${c}|${d}|${e}|${f}|${g}|${h}|${i}|${j}|${k}|${ctl !== null}`;
 }
+
+export function resultRecords(): string {
+  const size = Screen.windowSize;
+  const cur = Screen.currentResolution;
+  const all = Screen.resolutions;
+  const animator = new GameObject("a").addComponent(Animator);
+  const info = animator.getCurrentAnimatorStateInfo();
+  const third: string = info.name;
+  return `${size.width}x${size.height}|${cur.refreshRate}|${all.length}|${all[1]!.width}|${third === ""}|${info.length}`;
+}

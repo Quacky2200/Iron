@@ -165,6 +165,7 @@ declare class Animator :: crossFade(stateName: string, duration?: number, normal
 declare class Animator :: crossFade(stateName: string, options?: { duration?: number; normalizedTime?: number }): void;
 declare class Animator :: getBool(name: string): boolean;
 declare class Animator :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class Animator :: getCurrentAnimatorStateInfo(): AnimatorStateInfo;
 declare class Animator :: getFloat(name: string): number;
 declare class Animator :: getInteger(name: string): number;
 declare class Animator :: play(stateName: string, normalizedTime?: number): void;
@@ -484,7 +485,7 @@ declare class EdgeCollider2D :: readonly attachedRigidbody2d: Rigidbody2D;
 declare class EdgeCollider2D :: readonly gameObject: GameObject;
 declare class EdgeCollider2D :: readonly pointCount: number;
 declare class EdgeCollider2D :: readonly transform: Transform;
-declare class EdgeCollider2D :: setPoints(points: Vector2[]): void;
+declare class EdgeCollider2D :: setPoints(points: readonly Vector2[]): void;
 declare class EdgeCollider2D :: static attach(object: GameObject): EdgeCollider2D;
 declare class EdgeCollider2D :: static findOn(object: GameObject): EdgeCollider2D;
 declare class Emitter
@@ -614,7 +615,7 @@ declare class LineRenderer :: readonly gameObject: GameObject;
 declare class LineRenderer :: readonly positionCount: number;
 declare class LineRenderer :: readonly transform: Transform;
 declare class LineRenderer :: redraw(): void;
-declare class LineRenderer :: setPositions(points: Vector3[]): void;
+declare class LineRenderer :: setPositions(points: readonly Vector3[]): void;
 declare class LineRenderer :: sides: number;
 declare class LineRenderer :: smoothing: number;
 declare class LineRenderer :: static attach(object: GameObject): LineRenderer;
@@ -631,7 +632,7 @@ declare class LineRenderer2D :: readonly gameObject: GameObject;
 declare class LineRenderer2D :: readonly pointCount: number;
 declare class LineRenderer2D :: readonly transform: Transform;
 declare class LineRenderer2D :: set fillRule(v: string);
-declare class LineRenderer2D :: setPoints(points: Vector2[]): void;
+declare class LineRenderer2D :: setPoints(points: readonly Vector2[]): void;
 declare class LineRenderer2D :: sortingOrder: number;
 declare class LineRenderer2D :: static attach(object: GameObject): LineRenderer2D;
 declare class LineRenderer2D :: static findOn(object: GameObject): LineRenderer2D;
@@ -697,17 +698,17 @@ declare class Matrix4x4 :: readonly determinant: number;
 declare class Matrix4x4 :: readonly inverse: Matrix4x4;
 declare class Matrix4x4 :: readonly transpose: Matrix4x4;
 declare class Mesh
-declare class Mesh :: constructor(vertices: Vector3[], triangles: number[], normals?: Vector3[], uv?: Vector2[]);
+declare class Mesh :: constructor(vertices: readonly Vector3[], triangles: readonly number[], normals?: readonly Vector3[], uv?: readonly Vector2[]);
 declare class Mesh :: destroy(): void;
 declare class Mesh :: readonly primitive: string;
 declare class Mesh :: readonly triangleCount: number;
 declare class Mesh :: readonly vertexCount: number;
-declare class Mesh :: set(vertices: Vector3[], triangles: number[], normals?: Vector3[], uv?: Vector2[]): void;
-declare class Mesh :: set(vertices: Vector3[], triangles: number[], options?: { normals?: Vector3[]; uv?: Vector2[] }): void;
-declare class Mesh :: setBindposes(matrices: number[]): void;
-declare class Mesh :: setBoneWeights(joints: number[], weights: number[]): void;
-declare class Mesh :: setFlatArrays(positions: number[], triangles: number[], normals: number[], uv: number[]): void;
-declare class Mesh :: static createFlatArrays(positions: number[], triangles: number[], normals: number[], uv: number[]): Mesh;
+declare class Mesh :: set(vertices: readonly Vector3[], triangles: readonly number[], normals?: readonly Vector3[], uv?: readonly Vector2[]): void;
+declare class Mesh :: set(vertices: readonly Vector3[], triangles: readonly number[], options?: { normals?: readonly Vector3[]; uv?: readonly Vector2[] }): void;
+declare class Mesh :: setBindposes(matrices: readonly number[]): void;
+declare class Mesh :: setBoneWeights(joints: readonly number[], weights: readonly number[]): void;
+declare class Mesh :: setFlatArrays(positions: readonly number[], triangles: readonly number[], normals: readonly number[], uv: readonly number[]): void;
+declare class Mesh :: static createFlatArrays(positions: readonly number[], triangles: readonly number[], normals: readonly number[], uv: readonly number[]): Mesh;
 declare class Mesh :: static fromString(name: string): Mesh;
 declare class MeshCollider
 declare class MeshCollider :: bounciness: number;
@@ -721,10 +722,10 @@ declare class MeshCollider :: readonly attachedRigidbody: Rigidbody;
 declare class MeshCollider :: readonly gameObject: GameObject;
 declare class MeshCollider :: readonly pointCount: number;
 declare class MeshCollider :: readonly transform: Transform;
-declare class MeshCollider :: setIndices(indices: number[]): void;
-declare class MeshCollider :: setMesh(points: Vector3[], indices: number[], convex?: boolean): void;
-declare class MeshCollider :: setMesh(points: Vector3[], indices: number[], options?: { convex?: boolean }): void;
-declare class MeshCollider :: setPoints(points: Vector3[]): void;
+declare class MeshCollider :: setIndices(indices: readonly number[]): void;
+declare class MeshCollider :: setMesh(points: readonly Vector3[], indices: readonly number[], convex?: boolean): void;
+declare class MeshCollider :: setMesh(points: readonly Vector3[], indices: readonly number[], options?: { convex?: boolean }): void;
+declare class MeshCollider :: setPoints(points: readonly Vector3[]): void;
 declare class MeshCollider :: static attach(object: GameObject): MeshCollider;
 declare class MeshCollider :: static findOn(object: GameObject): MeshCollider;
 declare class MeshRenderer
@@ -820,7 +821,7 @@ declare class PhysicsBody
 declare class PhysicsBody :: addBall(radius: number): PhysicsCollider;
 declare class PhysicsBody :: addBox(half: Vector3): PhysicsCollider;
 declare class PhysicsBody :: addCapsule(halfHeight: number, radius: number): PhysicsCollider;
-declare class PhysicsBody :: addConvex(points: Vector3[]): PhysicsCollider;
+declare class PhysicsBody :: addConvex(points: readonly Vector3[]): PhysicsCollider;
 declare class PhysicsBody :: addCylinder(halfHeight: number, radius: number): PhysicsCollider;
 declare class PhysicsBody :: addForce(force: Vector3): void;
 declare class PhysicsBody :: addTorque(torque: Vector3): void;
@@ -914,7 +915,7 @@ declare class PolygonCollider2D :: readonly attachedRigidbody2d: Rigidbody2D;
 declare class PolygonCollider2D :: readonly gameObject: GameObject;
 declare class PolygonCollider2D :: readonly pointCount: number;
 declare class PolygonCollider2D :: readonly transform: Transform;
-declare class PolygonCollider2D :: setPoints(points: Vector2[]): void;
+declare class PolygonCollider2D :: setPoints(points: readonly Vector2[]): void;
 declare class PolygonCollider2D :: static attach(object: GameObject): PolygonCollider2D;
 declare class PolygonCollider2D :: static findOn(object: GameObject): PolygonCollider2D;
 declare class Pose
@@ -1265,8 +1266,8 @@ declare class TextMesh :: static findOn(object: GameObject): TextMesh;
 declare class TextMesh :: text: string;
 declare class Texture
 declare class Texture :: anisoLevel: number;
-declare class Texture :: constructor(width: number, height: number, colors: Color[], filterMode?: FilterMode, wrapMode?: TextureWrapMode, mipmaps?: boolean, anisoLevel?: number, linear?: boolean);
-declare class Texture :: constructor(width: number, height: number, colors: Color[], filterMode?: FilterMode, wrapMode?: TextureWrapMode, mipmaps?: boolean, anisoLevel?: number, linear?: boolean, options?: { filterMode?: FilterMode; wrapMode?: TextureWrapMode; anisoLevel?: number });
+declare class Texture :: constructor(width: number, height: number, colors: readonly Color[], filterMode?: FilterMode, wrapMode?: TextureWrapMode, mipmaps?: boolean, anisoLevel?: number, linear?: boolean);
+declare class Texture :: constructor(width: number, height: number, colors: readonly Color[], filterMode?: FilterMode, wrapMode?: TextureWrapMode, mipmaps?: boolean, anisoLevel?: number, linear?: boolean, options?: { filterMode?: FilterMode; wrapMode?: TextureWrapMode; anisoLevel?: number });
 declare class Texture :: destroy(): void;
 declare class Texture :: filterMode: FilterMode;
 declare class Texture :: readonly failed: boolean;
@@ -1277,7 +1278,9 @@ declare class Texture :: readonly linear: boolean;
 declare class Texture :: readonly src: string;
 declare class Texture :: readonly width: number;
 declare class Texture :: setSize(width: number, height: number): void;
+declare class Texture :: static create(width: number, height: number, colors: readonly Color[], options?: TextureOptions): Texture;
 declare class Texture :: static createRenderTexture(width: number, height: number): Texture;
+declare class Texture :: static load(src: string, options?: TextureOptions): Texture;
 declare class Texture :: wrapMode: TextureWrapMode;
 declare class TimeSince
 declare class TimeSince :: at: number;
@@ -1480,6 +1483,7 @@ declare class Window :: setSize(width: number, height: number): void;
 declare class Window :: static at(index: number): Window | undefined;
 declare class Window :: static broadcastJson(text: string): number;
 declare class Window :: static byHandle(handle: number): Window | undefined;
+declare class Window :: static create(options?: WindowOptions): Window;
 declare class Window :: static find(key: string): Window | undefined;
 declare class Window :: static off(token: number): boolean;
 declare class Window :: static onDomainFocusChanged(f: (a0: boolean, a1: boolean) => void): number;
@@ -1543,6 +1547,14 @@ declare function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): [S, (a: 
 declare function useRef<T>(init: T): Ref<T>;
 declare function useRef<T>(init: null): Ref<T | null>;
 declare function useState<T>(init: T | (() => T)): [T, (v: T | ((prev: T) => T)) => void];
+declare interface AnimatorStateInfo
+declare interface AnimatorStateInfo :: length: number;
+declare interface AnimatorStateInfo :: name: string;
+declare interface AnimatorStateInfo :: normalizedTime: number;
+declare interface Resolution
+declare interface Resolution :: height: number;
+declare interface Resolution :: refreshRate: number;
+declare interface Resolution :: width: number;
 declare interface SplineAnimatePose
 declare interface SplineAnimatePose :: direction: Vector3;
 declare interface SplineAnimatePose :: position: Vector3;
@@ -1558,6 +1570,34 @@ declare interface SplineNearest
 declare interface SplineNearest :: distance: number;
 declare interface SplineNearest :: point: Vector3;
 declare interface SplineNearest :: t: number;
+declare interface TextureOptions
+declare interface TextureOptions :: anisoLevel?: number;
+declare interface TextureOptions :: filterMode?: FilterMode;
+declare interface TextureOptions :: linear?: boolean;
+declare interface TextureOptions :: mipmaps?: boolean;
+declare interface TextureOptions :: wrapMode?: TextureWrapMode;
+declare interface WindowOptions
+declare interface WindowOptions :: alwaysOnTop?: boolean;
+declare interface WindowOptions :: closable?: boolean;
+declare interface WindowOptions :: focus?: boolean;
+declare interface WindowOptions :: height?: number;
+declare interface WindowOptions :: key?: string;
+declare interface WindowOptions :: maximizable?: boolean;
+declare interface WindowOptions :: minHeight?: number;
+declare interface WindowOptions :: minWidth?: number;
+declare interface WindowOptions :: minimizable?: boolean;
+declare interface WindowOptions :: parent?: Window | null;
+declare interface WindowOptions :: resizable?: boolean;
+declare interface WindowOptions :: runInBackground?: boolean;
+declare interface WindowOptions :: style?: WindowStyle;
+declare interface WindowOptions :: title?: string;
+declare interface WindowOptions :: visible?: boolean;
+declare interface WindowOptions :: width?: number;
+declare interface WindowOptions :: x?: number;
+declare interface WindowOptions :: y?: number;
+declare interface WindowSize
+declare interface WindowSize :: height: number;
+declare interface WindowSize :: width: number;
 declare module "@iron/engine"
 declare module "@iron/engine" :: export import Animation = globalThis.Animation;
 declare module "@iron/engine" :: export import AnimationBlendTree = globalThis.AnimationBlendTree;
@@ -1736,6 +1776,7 @@ declare module "@iron/engine" :: export import VolumeDetail = globalThis.VolumeD
 declare module "@iron/engine" :: export import VolumetricFogSettings = globalThis.VolumetricFogSettings;
 declare module "@iron/engine" :: export import Window = globalThis.Window;
 declare module "@iron/engine" :: export import WindowOptions = globalThis.WindowOptions;
+declare module "@iron/engine" :: export import WindowSize = globalThis.WindowSize;
 declare module "@iron/engine" :: export import WindowStyle = globalThis.WindowStyle;
 declare module "@iron/engine" :: export import WorldPanel = globalThis.WorldPanel;
 declare module "@iron/engine" :: export import addStyleSheet = globalThis.addStyleSheet;
@@ -1980,10 +2021,10 @@ declare namespace Mesh :: function createFlat(data: FlatMeshData): Mesh;
 declare namespace Physics
 declare namespace Physics :: function addBall(radius: number): PhysicsCollider;
 declare namespace Physics :: function addBox(half: Vector3): PhysicsCollider;
-declare namespace Physics :: function addMesh(points: Vector3[], indices: number[]): PhysicsCollider;
+declare namespace Physics :: function addMesh(points: readonly Vector3[], indices: readonly number[]): PhysicsCollider;
 declare namespace Physics :: function afterNextStep(f: () => void): void;
 declare namespace Physics :: function createBody(kind: string): PhysicsBody;
-declare namespace Physics :: function createJoint(kind: string, a: PhysicsBody, b: PhysicsBody, anchorA: Vector3, anchorB: Vector3, params: number[]): PhysicsJoint;
+declare namespace Physics :: function createJoint(kind: string, a: PhysicsBody, b: PhysicsBody, anchorA: Vector3, anchorB: Vector3, params: readonly number[]): PhysicsJoint;
 declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, maxDistance?: number): RaycastHit;
 declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, options?: { maxDistance?: number }): RaycastHit;
 declare namespace Physics :: function step(): void;
@@ -2233,23 +2274,16 @@ declare namespace SceneManager :: function unloadScene(scene: Scene): boolean;
 declare namespace Screen
 declare namespace Screen :: const aspect: number;
 declare namespace Screen :: const currentResolution: Resolution;
-declare namespace Screen :: const currentResolutionHeight: number;
-declare namespace Screen :: const currentResolutionRefreshRate: number;
-declare namespace Screen :: const currentResolutionWidth: number;
 declare namespace Screen :: const height: number;
-declare namespace Screen :: const resolutionCount: number;
 declare namespace Screen :: const resolutions: Resolution[];
 declare namespace Screen :: const scale: number;
 declare namespace Screen :: const supportedFullScreenModes: FullScreenMode[];
 declare namespace Screen :: const width: number;
 declare namespace Screen :: const windowHeight: number;
-declare namespace Screen :: const windowSize: { width: number; height: number };
+declare namespace Screen :: const windowSize: WindowSize;
 declare namespace Screen :: const windowWidth: number;
 declare namespace Screen :: function offChange(token: number): boolean;
 declare namespace Screen :: function onChange(fn: () => void): () => void;
-declare namespace Screen :: function resolutionHeight(index: number): number;
-declare namespace Screen :: function resolutionRefreshRate(index: number): number;
-declare namespace Screen :: function resolutionWidth(index: number): number;
 declare namespace Screen :: function setResolution(width: number, height: number, mode?: FullScreenMode, refreshRate?: number): void;
 declare namespace Screen :: function setResolution(width: number, height: number, options?: { mode?: FullScreenMode; refreshRate?: number }): void;
 declare namespace Screen :: let fullScreen: boolean;
@@ -2311,9 +2345,6 @@ declare namespace SystemInfo :: const touchSupported: boolean;
 declare namespace TangentMode
 declare namespace TangentMode :: function name(index: number): TangentMode;
 declare namespace TangentMode :: function parse(name: string): number;
-declare namespace Texture
-declare namespace Texture :: function create(width: number, height: number, colors: readonly Color[], options?: TextureOptions): Texture;
-declare namespace Texture :: function load(src: string, options?: TextureOptions): Texture;
 declare namespace TextureWrapMode
 declare namespace TextureWrapMode :: function name(index: number): TextureWrapMode;
 declare namespace TextureWrapMode :: function parse(name: string): number;
@@ -2397,7 +2428,6 @@ declare namespace VolumeDetail :: function name(index: number): VolumeDetail;
 declare namespace VolumeDetail :: function parse(name: string): number;
 declare namespace Window
 declare namespace Window :: function broadcast(data: unknown): number;
-declare namespace Window :: function create(options?: WindowOptions): Window;
 declare namespace Window :: function emitAll(name: string, payload?: unknown): number;
 declare namespace Window :: function onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
 declare namespace Window :: function onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
@@ -2467,12 +2497,6 @@ interface AnimationController
 interface AnimationController :: addParameter(name: string, type: string, defaultValue?: number): AnimationController;
 interface AnimationController :: addState(name: string, motion: AnimationClip | BlendSpec, opts?: StateOpts): AnimationController;
 interface AnimationController :: addTransition(t: TransitionSpec): AnimationController;
-interface Animator
-interface Animator :: getCurrentAnimatorStateInfo(): AnimatorStateInfo;
-interface AnimatorStateInfo
-interface AnimatorStateInfo :: length: number;
-interface AnimatorStateInfo :: name: string;
-interface AnimatorStateInfo :: normalizedTime: number;
 interface AudioSource
 interface AudioSource :: playOneShot(clip: Sound | string, volumeScale?: number): void;
 interface AutoExposureSettings
@@ -3039,10 +3063,6 @@ interface ReactElementLike
 interface ReactElementLike :: readonly __element: never;
 interface Ref<T>
 interface Ref<T> :: current: T;
-interface Resolution
-interface Resolution :: height: number;
-interface Resolution :: refreshRate: number;
-interface Resolution :: width: number;
 interface Scene
 interface Scene :: getRootGameObjects(): GameObject[];
 interface Scene :: serialize(): SceneData;
@@ -3061,12 +3081,6 @@ interface StateOpts :: speed?: number;
 interface StateOpts :: speedParameter?: string;
 interface Texture
 interface Texture :: whenLoaded(): Promise<Texture>;
-interface TextureOptions
-interface TextureOptions :: anisoLevel?: number;
-interface TextureOptions :: filterMode?: FilterMode;
-interface TextureOptions :: linear?: boolean;
-interface TextureOptions :: mipmaps?: boolean;
-interface TextureOptions :: wrapMode?: TextureWrapMode;
 interface TransitionSpec
 interface TransitionSpec :: conditions?: ConditionSpec[];
 interface TransitionSpec :: duration?: number;
@@ -3097,25 +3111,6 @@ interface Window :: onMessage<T = unknown>(f: (from: Window, data: T) => void): 
 interface Window :: onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
 interface Window :: postMessage(data: unknown): boolean;
 interface Window :: request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
-interface WindowOptions
-interface WindowOptions :: alwaysOnTop?: boolean;
-interface WindowOptions :: closable?: boolean;
-interface WindowOptions :: focus?: boolean;
-interface WindowOptions :: height?: number;
-interface WindowOptions :: key?: string;
-interface WindowOptions :: maximizable?: boolean;
-interface WindowOptions :: minHeight?: number;
-interface WindowOptions :: minWidth?: number;
-interface WindowOptions :: minimizable?: boolean;
-interface WindowOptions :: parent?: Window | null;
-interface WindowOptions :: resizable?: boolean;
-interface WindowOptions :: runInBackground?: boolean;
-interface WindowOptions :: style?: WindowStyle;
-interface WindowOptions :: title?: string;
-interface WindowOptions :: visible?: boolean;
-interface WindowOptions :: width?: number;
-interface WindowOptions :: x?: number;
-interface WindowOptions :: y?: number;
 type BlendMode = | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "color-dodge" | "color-burn" | "hard-light" | "soft-light" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 type BorderStyle = | "none" | "hidden" | "solid" | "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset";
 type ClassOf<T> = { prototype: T };

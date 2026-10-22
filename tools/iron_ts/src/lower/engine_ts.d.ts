@@ -205,19 +205,8 @@ interface Camera {
   screenToWorldPoint(p: Vector3Like): Vector3;
 }
 
-interface TextureOptions {
-  filterMode?: FilterMode;
-  wrapMode?: TextureWrapMode;
-  mipmaps?: boolean;
-  anisoLevel?: number;
-  linear?: boolean;
-}
 interface Texture {
   whenLoaded(): Promise<Texture>;
-}
-declare namespace Texture {
-  function load(src: string, options?: TextureOptions): Texture;
-  function create(width: number, height: number, colors: readonly Color[], options?: TextureOptions): Texture;
 }
 interface Material {
   withTexture(texture: Texture): Material;
@@ -245,50 +234,12 @@ declare namespace QualitySettings {
   function onLevelChanged(fn: (level: number) => void): () => void;
 }
 
-interface Resolution {
-  width: number;
-  height: number;
-  refreshRate: number;
-}
 declare namespace Screen {
-  const windowSize: { width: number; height: number };
-  const currentResolution: Resolution;
-  const resolutions: Resolution[];
   function onChange(fn: () => void): () => void;
 }
 
 // ---- Windows -----------------------------------------------------------------------------------
 
-interface WindowOptions {
-  /** The title bar text. Default "". */
-  title?: string;
-  /** Client area size in UI pixels. Default 400 x 300. */
-  width?: number;
-  height?: number;
-  /** Top-left of the outer frame in desktop UI pixels. Left out: centred on the parent, cascading. */
-  x?: number;
-  y?: number;
-  minWidth?: number;
-  minHeight?: number;
-  /** Default "normal". */
-  style?: WindowStyle;
-  /** The window this one belongs to. Tool, dialog, popup and child windows default to the main window. */
-  parent?: Window | null;
-  resizable?: boolean;
-  minimizable?: boolean;
-  maximizable?: boolean;
-  /** Whether the title bar has a close button. */
-  closable?: boolean;
-  alwaysOnTop?: boolean;
-  visible?: boolean;
-  /** Takes keyboard focus when shown; popups never do. */
-  focus?: boolean;
-  /** A name that keeps the window across a hot reload and finds it again (`Window.find`). */
-  key?: string;
-  /** Root windows of isolated families only (a "normal" or "borderless" window without a parent): keep the
-   *  domain's timers running while the family is unfocused. Default true. */
-  runInBackground?: boolean;
-}
 interface Window {
   /** Queues `data` (structured values only: no handles, functions, Map or Set) for this window's domain; delivered at
    *  the start of that domain's next dispatch, in order per sender. False when the data is over 1 MiB as JSON or the
@@ -321,8 +272,6 @@ declare namespace Window {
   function broadcast(data: unknown): number;
   /** `broadcast` of a named event (see `Window.emit`). */
   function emitAll(name: string, payload?: unknown): number;
-  /** Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the frame. */
-  function create(options?: WindowOptions): Window;
 }
 
 // ---- Input, UI resources -----------------------------------------------------------------------
@@ -355,14 +304,6 @@ declare function removeStyleSheet(id: number): void;
 
 // ---- Animation ---------------------------------------------------------------------------------
 
-interface AnimatorStateInfo {
-  name: string;
-  normalizedTime: number;
-  length: number;
-}
-interface Animator {
-  getCurrentAnimatorStateInfo(): AnimatorStateInfo;
-}
 interface BlendChild {
   motion: AnimationClip;
   threshold: number;

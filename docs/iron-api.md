@@ -752,7 +752,7 @@ Part of making every declaration generated from Rust (plan: [iron-generated-dts-
 | Rust | Script | C ABI |
 |---|---|---|
 | `enums(TangentMode = Tangent [Auto, Bezier, Linear])` on the attribute, a Rust enum `Tangent` | the string union `"auto" \| "bezier" \| "linear"` (variant names with a lower-case first letter), plus the global `TangentMode.name(i)` / `TangentMode.parse(s)` | the index, `i32` (-1: not a name; the engine reads it as the first value) |
-| `records(SplineHit = SplineHit [segment: f64, u: f64])`, a Rust struct with those public fields (`f64`, `bool`, a declared value class or enum) | a plain object `{ segment, u }` (an `interface` in the d.ts) | a result only: the numbers go to `iron_api`'s per-thread buffer (`return_flat`), the compiled call reads them with `iron_api_result(i)` and builds the object |
+| `records(SplineHit = SplineHit [segment: f64, u: f64])`, a Rust struct with those public fields (`f64`, `bool`, `string` (a `String`), a declared value class or enum) | a plain object `{ segment, u }` (an `interface` in the d.ts) | a result only: the numbers go to `iron_api`'s per-thread buffer (`return_flat`) and the strings to its string list (`return_strings`, in field order, element after element for a list), the compiled call reads them with `iron_api_result(i)` / `iron_api_result_str(i)` and builds the object |
 | `-> Vec<V>` / `-> Vec<Record>` | `V[]` / `Record[]` | the shim returns the element count; the numbers of every element are in the same buffer |
 | `-> Vec<String>` | `string[]` | the shim returns the count and keeps the strings in `iron_api`'s per-thread list (`return_strings`); the compiled call copies them out with `iron_api_result_str(i)`, one new script string each (manifest `list:string`; QuickJS gets an array of strings; `Assets.list`, `M9-API-1620`) |
 | `#[rest(points)]` on a function whose last parameter is `&[V]` | `...points: V[]` (QuickJS: every remaining argument; compiled: the arguments packed into an array, or one `...array`) | the array pointer, as for `&[V]` |
@@ -765,6 +765,8 @@ Part of making every declaration generated from Rust (plan: [iron-generated-dts-
 | `enums(FullScreenMode = Mode [ExclusiveFullScreen = "ExclusiveFullScreen", ..])` | a variant may name its string when it is not the variant with a lower-case first letter | the index |
 | a parameter `Option<Enum>` | the enum, usually optional; a left-out or unknown name is `None` (compiled calls pass -1; QuickJS throws a `TypeError` for an unknown name and takes a left-out one as `None`): setters use it to ignore a name that is not one (`RenderSettings.fogMode = "nonsense"`), constructors to tell "left out" (the `.meta` importer's value) from the first value (`Texture.load(.., { filterMode })`) | the index (-1: none) |
 | `-> Vec<Enum>` | `Enum[]` (manifest `list:enum:X`) | the count, and the indexes in the result buffer (`Screen.supportedFullScreenModes`) |
+| `#[options(name = "TextureOptions", only)]` with `#[optional(..)]` and `/// key: text` lines in the doc | the options object after the leading required parameters has a declared type: `options?: TextureOptions` and `interface TextureOptions { /** text */ key?: T; .. }` (a handle key also takes `null`; one name over several functions merges their keys); `only` leaves out the positional form of the declaration (the compiler still takes it); QuickJS reads the object by key as for a bare `#[options]` (manifest `optionsName`, `optionsOnly`, parameter `doc`) | the positional shim |
+| `&[V]`, `&[f64]`, `&[String]` parameters | declared `readonly V[]` (the engine only reads them; a `readonly` array of a game passes) | the array pointer |
 | `aliases(AnimatorController = AnimationController)` | `type AnimatorController = AnimationController; declare const AnimatorController: typeof AnimationController;` for a class, only the `type` for an enum (`PrimitiveMesh = PrimitiveType`); the compiler renames the alias to its target in the source, QuickJS sets a second global | - |
 | `#[ts_type = "\"low\" \| \"high\""]` on a `String` getter (and setter) | what the property reads as is that union; a class property is an accessor pair (`get x(): "low" \| "high"; set x(v: string)`: any string may still be written, an unknown name is ignored), a namespace property the union alone | - (manifest JSON `tsType`) |
 | `///` on the module, an `impl` block (the class), a function, and inside `enums(..)` / `records(..)` (also on record fields) | JSDoc in the generated `.d.ts` (manifest JSON `doc`) | - |
@@ -784,7 +786,13 @@ names, and a setter ignores a name that is not one. Differences from before: the
 `fillValue` and `Window.openErrorText` are gone (the nullable property replaces each pair), `Camera.main` is a property of the
 native `Camera` class in QuickJS too (it was a function there), and `Window.create({ style: "floating" })` throws a `TypeError` in
 QuickJS (compiled code and the old string API fell back to `normal` with a warning). Tests: `crates/iron_api/tests/enums_nullables.rs`
-(`M9-API-1622`..`1626`), `crates/iron_native/tests/enums.rs` (`M9-API-1627`, `1628`), `tools/iron_ts_tests` `M9-TS-3340`.
+(`M9-API-1622`..`1626`, `1630`, `1631`), `crates/iron_native/tests/enums.rs` (`M9-API-1627`..`1629`), `tools/iron_ts_tests` `M9-TS-3340`, `3341`, `tools/iron_ts` `M9-TS-3342`.
+
+**Records and option bags (2026-10-22, plan phase 2b, first part).** `Screen.windowSize`, `currentResolution` and `resolutions` are native records (`WindowSize`,
+`Resolution`, `DisplayMode` in Rust), `Animator.getCurrentAnimatorStateInfo()` returns the record `AnimatorStateInfo` (a record with a string field),
+`TextureOptions` and `WindowOptions` are generated from `Texture.load` / `create` and `Window.create` (`#[options(name = ..)]`). Natives that only
+fed the facade are gone: `Screen.resolutionCount` / `resolutionWidth(i)` / `resolutionHeight(i)` / `resolutionRefreshRate(i)` and
+`currentResolutionWidth` / `Height` / `RefreshRate`.
 
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;

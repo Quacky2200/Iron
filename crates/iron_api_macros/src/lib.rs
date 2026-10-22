@@ -1146,6 +1146,12 @@ struct Api {
     /// `#[options(after = p)]`: the object comes right after parameter `p` and fills the ones
     /// after it (`new Spline(points, { closed: true })`).
     options_after: Option<String>,
+    /// `#[options(name = "TextureOptions")]`: the declared type of the options object.
+    options_name: Option<String>,
+    /// `#[options(.., only)]`: only the options form is declared.
+    options_only: bool,
+    /// `/// name: text` lines of the doc: the doc of a parameter (the key of an options object).
+    param_docs: Vec<(String, String)>,
     /// `#[rest(p)]`: the last parameter takes every remaining argument.
     rest: Option<String>,
     /// `#[nullable]`: the TypeScript type of a handle result (or of the setter's value) is `T | null`.
@@ -1254,25 +1260,63 @@ fn api_of(
     }
     let options = attrs.iter().any(|a| a.path().is_ident("options"));
     let mut options_after = None;
+    let mut options_name = None;
+    let mut options_only = false;
     for at in attrs.iter().filter(|a| a.path().is_ident("options")) {
         if let Meta::List(l) = &at.meta {
-            let nv: syn::MetaNameValue = syn::parse2(l.tokens.clone())?;
-            if !nv.path.is_ident("after") {
-                return Err(syn::Error::new(nv.path.span(), "expected `after = param`"));
+            let metas = Punctuated::<Meta, Token![,]>::parse_terminated.parse2(l.tokens.clone())?;
+            for m in metas {
+                match m {
+                    Meta::Path(p) if p.is_ident("only") => options_only = true,
+                    Meta::NameValue(nv) if nv.path.is_ident("after") => {
+                        let Expr::Path(p) = &nv.value else {
+                            return Err(syn::Error::new(nv.value.span(), "a parameter name"));
+                        };
+                        let name = p
+                            .path
+                            .get_ident()
+                            .map(|i| i.to_string())
+                            .unwrap_or_default();
+                        if !params.iter().any(|(p, _)| *p == name) {
+                            return Err(syn::Error::new(nv.value.span(), "no such parameter"));
+                        }
+                        options_after = Some(name);
+                    }
+                    Meta::NameValue(nv) if nv.path.is_ident("name") => {
+                        let Expr::Lit(l) = &nv.value else {
+                            return Err(syn::Error::new(nv.value.span(), "a type name string"));
+                        };
+                        let Lit::Str(s) = &l.lit else {
+                            return Err(syn::Error::new(nv.value.span(), "a type name string"));
+                        };
+                        options_name = Some(s.value());
+                    }
+                    other => {
+                        return Err(syn::Error::new(
+                            other.span(),
+                            "expected `after = param`, `name = \"Type\"` or `only`",
+                        ));
+                    }
+                }
             }
-            let Expr::Path(p) = &nv.value else {
-                return Err(syn::Error::new(nv.value.span(), "a parameter name"));
-            };
-            let name = p
-                .path
-                .get_ident()
-                .map(|i| i.to_string())
-                .unwrap_or_default();
-            if !params.iter().any(|(p, _)| *p == name) {
-                return Err(syn::Error::new(nv.value.span(), "no such parameter"));
-            }
-            options_after = Some(name);
         }
+    }
+    // `/// title: The title bar text.`: the doc of a parameter (an option key), taken out of the
+    // function's own doc.
+    let mut doc = doc_of(attrs);
+    let mut param_docs = Vec::new();
+    if options {
+        let mut kept = Vec::new();
+        for line in doc.lines() {
+            if let Some((name, text)) = line.split_once(": ")
+                && params.iter().any(|(p, _)| p == name.trim())
+            {
+                param_docs.push((name.trim().to_string(), text.trim().to_string()));
+            } else {
+                kept.push(line);
+            }
+        }
+        doc = kept.join("\n");
     }
     let mut rest = None;
     for at in attrs.iter().filter(|a| a.path().is_ident("rest")) {
@@ -1303,7 +1347,7 @@ fn api_of(
     }
     Ok(Api {
         name: sig.ident.clone(),
-        doc: doc_of(attrs),
+        doc,
         js_name: js_name_attr(attrs).unwrap_or_else(|| stem.clone()),
         stem,
         class,
@@ -1315,6 +1359,9 @@ fn api_of(
         defaults,
         options,
         options_after,
+        options_name,
+        options_only,
+        param_docs,
         rest,
         nullable: attrs.iter().any(|a| a.path().is_ident("nullable")),
         undefined: attrs.iter().any(|a| {
@@ -1690,6 +1737,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         }
         let mut popts: Vec<bool> = vec![false; pnames.len()];
         let mut prests: Vec<bool> = vec![false; pnames.len()];
+        let mut pdocs: Vec<String> = vec![String::new(); pnames.len()];
         let mut pdefaults: Vec<TokenStream2> =
             vec![quote!(::std::option::Option::None); pnames.len()];
         for (n, k) in &a.params {
@@ -1697,6 +1745,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             ptys.push(manifest_ty(k, &args));
             popts.push(a.optional.contains(&n.to_string()));
             prests.push(a.rest.as_deref() == Some(n.to_string().as_str()));
+            pdocs.push(
+                a.param_docs
+                    .iter()
+                    .find(|(p, _)| n == p)
+                    .map(|(_, d)| d.clone())
+                    .unwrap_or_default(),
+            );
             pdefaults.push(match a.defaults.iter().find(|d| *n == d.0) {
                 Some((_, v)) => quote!(::std::option::Option::Some(#v)),
                 None => quote!(::std::option::Option::None),
@@ -1706,6 +1761,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let kind = kind_tokens(a.tag);
         let nullable = a.nullable;
         let undefined = a.undefined;
+        let options_only = a.options_only;
+        let options_name = match &a.options_name {
+            Some(n) => quote!(::std::option::Option::Some(#n)),
+            None => quote!(::std::option::Option::None),
+        };
         let ts_type = match &a.ts_type {
             Some(t) => quote!(::std::option::Option::Some(#t)),
             None => quote!(::std::option::Option::None),
@@ -1728,11 +1788,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 rust_name: #rust_name,
                 symbol: #symbol,
                 doc: #doc,
-                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts, default: #pdefaults, rest: #prests } ),* ],
+                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts, default: #pdefaults, rest: #prests, doc: #pdocs } ),* ],
                 ret: #ret_m,
                 options_after: #options_after,
                 nullable: #nullable,
                 undefined: #undefined,
+                options_name: #options_name,
+                options_only: #options_only,
                 ts_type: #ts_type,
             }
         };
@@ -1819,8 +1881,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 pub extern "C" fn #symbol_ident( #( #abi_params ),* ) {
                     let r = #call;
                     let mut out = ::std::vec::Vec::new();
-                    #flat(&r, &mut out);
+                    let mut strs = ::std::vec::Vec::new();
+                    #flat(&r, &mut out, &mut strs);
                     ::iron_api::return_flat(out);
+                    ::iron_api::return_strings(strs);
                 }
             });
         } else if let Kind::List(inner) = &a.ret
@@ -1861,7 +1925,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 }
                 Kind::Record(i) => {
                     let flat = format_ident!("__flat_{}", args.records[*i].ts);
-                    quote!(#flat(item, &mut out);)
+                    quote!(#flat(item, &mut out, &mut strs);)
                 }
                 Kind::Enum(i) => {
                     let index = enum_fn(&args.enums[*i].ts, "index");
@@ -1886,10 +1950,12 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 pub #unsafe_kw extern "C" fn #symbol_ident( #( #abi_params ),* ) -> u32 {
                     let items = #call;
                     let mut out = ::std::vec::Vec::new();
+                    let mut strs: ::std::vec::Vec<::std::string::String> = ::std::vec::Vec::new();
                     for item in &items {
                         #push
                     }
                     ::iron_api::return_flat(out);
+                    ::iron_api::return_strings(strs);
                     items.len() as u32
                 }
             });
@@ -2606,6 +2672,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 fields.push(quote!(::iron_api::RecordField { name: #camel_name, ty: ::iron_api::Ty::F64, doc: #doc }));
                 flat_stmts.push(quote!(out.push(r.#fname);));
                 js_stmts.push(quote!(o.set(#camel_name, r.#fname)?;));
+            } else if fty == "string" {
+                fields.push(quote!(::iron_api::RecordField { name: #camel_name, ty: ::iron_api::Ty::Str, doc: #doc }));
+                flat_stmts.push(quote!(strs.push(r.#fname.clone());));
+                js_stmts.push(quote!(o.set(#camel_name, r.#fname.as_str())?;));
             } else if fty == "bool" {
                 fields.push(quote!(::iron_api::RecordField { name: #camel_name, ty: ::iron_api::Ty::Bool, doc: #doc }));
                 flat_stmts.push(quote!(out.push(if r.#fname { 1.0 } else { 0.0 });));
@@ -2629,7 +2699,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 return Err(syn::Error::new(
                     fname.span(),
                     format!(
-                        "record field type `{fty}` is f64, bool, a declared value class or enum"
+                        "record field type `{fty}` is f64, bool, string, a declared value class or enum"
                     ),
                 ));
             }
@@ -2639,7 +2709,12 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         );
         record_items.push(quote! {
             #[allow(dead_code)]
-            fn #flat(r: &#rust, out: &mut ::std::vec::Vec<f64>) {
+            fn #flat(
+                r: &#rust,
+                out: &mut ::std::vec::Vec<f64>,
+                strs: &mut ::std::vec::Vec<::std::string::String>,
+            ) {
+                let _ = (&out, &strs);
                 #( #flat_stmts )*
             }
         });

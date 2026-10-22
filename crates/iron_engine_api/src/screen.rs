@@ -392,8 +392,40 @@ pub enum FullScreenKind {
     Windowed,
 }
 
+/// A size in pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScreenSize {
+    pub width: f64,
+    pub height: f64,
+}
+
+/// One display mode of the monitor.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DisplayMode {
+    pub width: f64,
+    pub height: f64,
+    /// Hertz.
+    pub refresh_rate: f64,
+}
+
+impl From<&Resolution> for DisplayMode {
+    fn from(r: &Resolution) -> Self {
+        DisplayMode {
+            width: f64::from(r.width),
+            height: f64::from(r.height),
+            refresh_rate: r.refresh_rate,
+        }
+    }
+}
+
 #[iron_api(
     namespace = "Screen", quickjs,
+    records(
+        /// A size in pixels.
+        WindowSize = ScreenSize [width: f64, height: f64],
+        /// One display mode of the monitor (its size and refresh rate).
+        Resolution = DisplayMode [width: f64, height: f64, refresh_rate: f64]
+    ),
     enums(
         /// How the window covers the screen (Unity's `FullScreenMode`).
         FullScreenMode = FullScreenKind [
@@ -490,54 +522,25 @@ pub mod screen_api {
         st(|s| s.screen.window_height)
     }
 
-    /// How many display modes the monitor has, largest and fastest first.
+    /// The window's size when windowed, in physical pixels (`windowWidth` and `windowHeight`).
     #[property]
-    pub fn resolution_count() -> u32 {
-        st(|s| s.screen.resolutions.len() as u32)
-    }
-
-    /// The i-th display mode's width (0 past the end).
-    pub fn resolution_width(index: f64) -> u32 {
-        st(|s| {
-            s.screen
-                .resolutions
-                .get(index as usize)
-                .map_or(0, |r| r.width)
+    pub fn window_size() -> ScreenSize {
+        st(|s| ScreenSize {
+            width: f64::from(s.screen.window_width),
+            height: f64::from(s.screen.window_height),
         })
     }
 
-    pub fn resolution_height(index: f64) -> u32 {
-        st(|s| {
-            s.screen
-                .resolutions
-                .get(index as usize)
-                .map_or(0, |r| r.height)
-        })
-    }
-
-    pub fn resolution_refresh_rate(index: f64) -> f64 {
-        st(|s| {
-            s.screen
-                .resolutions
-                .get(index as usize)
-                .map_or(0.0, |r| r.refresh_rate)
-        })
+    /// The monitor's display modes, largest and fastest first.
+    #[property]
+    pub fn resolutions() -> Vec<DisplayMode> {
+        st(|s| s.screen.resolutions.iter().map(DisplayMode::from).collect())
     }
 
     /// What the monitor runs at now.
     #[property]
-    pub fn current_resolution_width() -> u32 {
-        st(|s| s.screen.current_resolution.width)
-    }
-
-    #[property]
-    pub fn current_resolution_height() -> u32 {
-        st(|s| s.screen.current_resolution.height)
-    }
-
-    #[property]
-    pub fn current_resolution_refresh_rate() -> f64 {
-        st(|s| s.screen.current_resolution.refresh_rate)
+    pub fn current_resolution() -> DisplayMode {
+        st(|s| DisplayMode::from(&s.screen.current_resolution))
     }
 
     /// The modes this platform offers, most fullscreen first.

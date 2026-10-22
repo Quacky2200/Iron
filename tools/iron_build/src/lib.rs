@@ -824,20 +824,20 @@ mod tests {
         let a = types_dts().unwrap();
         for want in [
             "\ndeclare class Window {",
-            "\ninterface WindowOptions {",
+            "\ndeclare interface WindowOptions {",
             "\ndeclare type WindowStyle =",
             "  static readonly main: Window;",
             "  static readonly current: Window;",
             "  static readonly count: number;",
             "  static readonly focused: Window | undefined;",
-            "  function create(options?: WindowOptions): Window;",
+            "  static create(options?: WindowOptions): Window;",
             "  style: WindowStyle;",
             "  readonly parent: Window | undefined;",
             "declare function createRoot(target?: WorldPanel | Window | number)",
         ] {
             assert!(a.contains(want), "missing {want:?}");
         }
-        // The manifest's untyped `create` and `focused` are replaced by the supplement's.
+        // The positional `create` (18 optional parameters) is not declared: `#[options(.., only)]`.
         assert!(!a.contains("static create(title?: string"));
         assert!(!a.contains("static readonly focused: Window;"));
     }
