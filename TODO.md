@@ -1861,3 +1861,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 - [ ] Model colliders (`colliders: "mesh"`) need the physics hook; cloth over a model mesh needs the mesh data under the host's id.
 - [ ] Panel events are untested without a window (a unit test of the routing would need an `App`).
 - Differences seen in the screenshots: the timer of the world example is ahead of the QuickJS one (real time, not a render difference); the rope of `world` waits for the physics wiring.
+
+## UI follow-ups (events and attributes, 2026-10-22)
+
+Left over after the UI events and attributes work (`b116ac6`, `docs/ui-native.md`, `docs/input-and-events.md`):
+- [ ] **`title` tooltip:** the attribute is stored and selectable (`[title]`), but nothing shows a tooltip: there is no tooltip UI. Add a hover tooltip (delay, placement near the pointer, clipping to the window, styling hook such as `::tooltip` or a `.tooltip` class, no tooltip while dragging or when `title` is empty).
+- [ ] **`<input type>` behaviour:** `type` is stored lower-cased and matches `input[type=password]` selectors, but changes no behaviour and every input is a text field. Implement per type: `password` (masked text, no copy), `number` (digit filtering, step/min/max, spin keys), `checkbox` / `radio` (look, checked state, `onChange`), `range`, `color`, `date`/`time` if wanted, `search`, `email`/`tel`/`url` keyboard hints, `hidden`, `button`/`submit`. Keep React's controlled and uncontrolled semantics.
+- [ ] **`pseudoElement` on transition and animation events** is always `""`: generated `::before` / `::after` boxes are not event targets, so events for them are reported on the owning element. Make generated boxes report their pseudo-element name (`"::before"`, `"::after"`) as in the DOM.
