@@ -4,22 +4,34 @@
 //! object it reads may not exist yet). A name that has a getter somewhere in the program gets a
 //! hidden companion field `_p_get_<name>` (a nullable closure) in every plain struct that has a
 //! field of that name; the literal stores its getter there, and a read of the field calls the
-//! closure when there is one (`member_of`).
+//! closure when there is one (`member_of`). A setter (`set v(n) { .. }`) is the same with
+//! `_p_set_<name>`: a write of the field calls the closure when there is one (`Place::Thunked`).
+//! Neither can use `this` (an object literal's methods have no `this` here).
 
 use super::expr::mk;
 use super::*;
 use oxc_ast_visit::{Visit, walk};
 
 #[derive(Default)]
-struct Names(HashSet<String>);
+struct Names {
+    getters: HashSet<String>,
+    setters: HashSet<String>,
+}
 
 impl<'a> Visit<'a> for Names {
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
-        if it.kind == PropertyKind::Get
-            && !it.computed
+        if !it.computed
             && let PropertyKey::StaticIdentifier(id) = &it.key
         {
-            self.0.insert(id.name.to_string());
+            match it.kind {
+                PropertyKind::Get => {
+                    self.getters.insert(id.name.to_string());
+                }
+                PropertyKind::Set => {
+                    self.setters.insert(id.name.to_string());
+                }
+                PropertyKind::Init => {}
+            }
         }
         walk::walk_object_property(self, it);
     }
@@ -30,24 +42,30 @@ pub(crate) fn thunk_name(name: &str) -> String {
     format!("_p_get_{name}")
 }
 
+/// The hidden field that holds the setter of `name`.
+pub(crate) fn setter_name(name: &str) -> String {
+    format!("_p_set_{name}")
+}
+
 impl<'a> Lowerer<'a> {
     /// The names that have a getter in an object literal of the program.
     pub(crate) fn scan_accessors(&mut self, program: &Program<'a>) {
         let mut v = Names::default();
         v.visit_program(program);
-        self.accessor_names.extend(v.0);
+        self.accessor_names.extend(v.getters);
+        self.setter_names.extend(v.setters);
     }
 
     /// `fields` with a hidden getter field after each field that some literal gives a getter.
     pub(crate) fn with_thunks(&self, fields: Vec<Field>) -> Vec<Field> {
-        if self.accessor_names.is_empty() {
+        if self.accessor_names.is_empty() && self.setter_names.is_empty() {
             return fields;
         }
         let mut out = Vec::with_capacity(fields.len());
         for f in fields {
-            let hidden = self.accessor_names.contains(&f.name)
-                && !f.name.starts_with("_p_")
-                && !matches!(f.ty, Ty::Fn(_));
+            let plain = !f.name.starts_with("_p_") && !matches!(f.ty, Ty::Fn(_));
+            let hidden = self.accessor_names.contains(&f.name) && plain;
+            let hidden_set = self.setter_names.contains(&f.name) && plain;
             let (name, ty) = (f.name.clone(), f.ty.clone());
             out.push(f);
             if hidden {
@@ -55,7 +73,18 @@ impl<'a> Lowerer<'a> {
                     name: thunk_name(&name),
                     ty: Ty::Fn(Box::new(FnTy {
                         params: vec![],
-                        ret: ty,
+                        ret: ty.clone(),
+                    }))
+                    .nullable(),
+                    optional: false,
+                });
+            }
+            if hidden_set {
+                out.push(Field {
+                    name: setter_name(&name),
+                    ty: Ty::Fn(Box::new(FnTy {
+                        params: vec![ty],
+                        ret: Ty::Void,
                     }))
                     .nullable(),
                     optional: false,

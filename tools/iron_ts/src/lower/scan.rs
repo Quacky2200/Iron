@@ -30,6 +30,9 @@ pub(crate) struct Scan {
     pub captured: HashSet<String>,
     /// Free names of each closure, by the start offset of its source.
     pub free: HashMap<u32, Vec<String>>,
+    /// Names written after their declaration (`x = ..`, `x += ..`, `x++`, a destructuring target):
+    /// a narrowing of such a variable does not hold inside a closure.
+    pub assigned: HashSet<String>,
     frames: Vec<Frame>,
     inline: HashSet<u32>,
 }
@@ -90,6 +93,21 @@ impl<'a> Visit<'a> for Scan {
     }
 
     /// `this` inside an arrow function is captured like a variable.
+    fn visit_simple_assignment_target(&mut self, it: &SimpleAssignmentTarget<'a>) {
+        if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = it {
+            self.assigned.insert(id.name.to_string());
+        }
+        walk::walk_simple_assignment_target(self, it);
+    }
+
+    fn visit_assignment_target_property_identifier(
+        &mut self,
+        it: &AssignmentTargetPropertyIdentifier<'a>,
+    ) {
+        self.assigned.insert(it.binding.name.to_string());
+        walk::walk_assignment_target_property_identifier(self, it);
+    }
+
     fn visit_this_expression(&mut self, _it: &ThisExpression) {
         self.frames
             .last_mut()

@@ -113,7 +113,7 @@ impl<'a> Lowerer<'a> {
         if let Some(rt) = self.cur.rets.last().cloned() {
             match (rt.kind, val) {
                 (RetKind::Pred, Some(v)) => {
-                    let b = self.to_bool(v);
+                    let b = self.bool_of(v);
                     out.push(Stmt::Assign(rt.var.unwrap(), b));
                 }
                 (RetKind::Val, Some(v)) => {
@@ -1036,14 +1036,48 @@ impl<'a> Lowerer<'a> {
                         n.value as usize
                     }
                     Some(Expression::Identifier(i)) if i.name == "Infinity" => usize::MAX,
-                    // A depth known only at run time: the arrays are flattened as deep as their
-                    // declared type goes (the deepest type TypeScript gives `flat(depth)`).
+                    // A depth known only at run time: the result has the type of the full
+                    // flattening, so a depth that is too small to reach it cannot be honoured
+                    // (the result would hold arrays typed as their elements): it throws.
                     Some(e) => {
                         let v = self.lower_expr(e, Some(&Ty::Num))?;
                         match v.kind {
                             ExprKind::Num(n) if n >= 0.0 && n.fract() == 0.0 => n as usize,
                             _ => {
-                                depth_pre.push(Stmt::Eval(v));
+                                let mut levels = 0usize;
+                                let mut t = recv.ty.strip().clone();
+                                while let Ty::Arr(inner) = t.strip().clone() {
+                                    if !matches!(inner.strip(), Ty::Arr(_)) {
+                                        break;
+                                    }
+                                    levels += 1;
+                                    t = inner.strip().clone();
+                                }
+                                let d = self.new_local(Ty::Num);
+                                depth_pre.push(Stmt::Assign(d, v));
+                                if let Some(&fid) = self.fids.get("__rtThrow") {
+                                    let enough = mk(
+                                        ExprKind::Cmp(
+                                            CmpOp::Ge,
+                                            Box::new(self.var_expr(d)),
+                                            Box::new(num(levels as f64)),
+                                        ),
+                                        Ty::Bool,
+                                    );
+                                    let too_small =
+                                        mk(ExprKind::Un(UnOp::Not, Box::new(enough)), Ty::Bool);
+                                    let msg = self.str_lit(&format!(
+                                        "flat(depth): the depth is smaller than the {levels} level(s) the result type flattens (the result would hold arrays typed as their elements); use a constant depth"
+                                    ));
+                                    depth_pre.push(Stmt::If(
+                                        too_small,
+                                        vec![Stmt::Eval(mk(
+                                            ExprKind::Call(fid, vec![num(1.0), msg]),
+                                            Ty::Void,
+                                        ))],
+                                        vec![],
+                                    ));
+                                }
                                 usize::MAX
                             }
                         }

@@ -1,0 +1,12 @@
+{
+ "for_in_over_arrays": "0=10;1=20;2=30;0|120string011121",
+ "object_assign_into_dictionaries_and_objects": "a,b,c/100,2,3/a,b,c,z/1020true/1,2,3,0",
+ "setters_in_object_literals": "22,48,24,5",
+ "narrowing_across_closures": "10305HELLOn4sAB",
+ "narrowing_across_closures_stops_at_a_reassignment": "6numberstring",
+ "in_narrowing_of_a_union": "12,12circle2,rect3",
+ "instanceof_narrowing_of_a_union": "meow9,woofrexfalse,true",
+ "truthiness_narrowing_of_a_union": "falsy,n6,falsy,s3,a2,falsy;none,num3,none,strq,none;empty0,sab,p7;zero1,n5,a3",
+ "flat_with_a_run_time_depth": "1234 1234 1234",
+ "flat_with_a_run_time_depth_one_level_short": "3"
+}

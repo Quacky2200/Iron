@@ -202,6 +202,94 @@ impl<'a> Lowerer<'a> {
         )
     }
 
+    /// The truthiness of a union value: null is false, otherwise the member it holds is tested
+    /// (a number is false at 0 and NaN, a string when empty, an object or array never).
+    pub(crate) fn union_truthy(&mut self, u: Expr) -> Expr {
+        let members = self.union_members(&u.ty).unwrap_or_default();
+        let Ty::Obj(sid) = u.ty.strip().clone() else {
+            return u;
+        };
+        let nullable = u.ty.is_nullable();
+        let tmp = self.new_local(u.ty.clone());
+        let t = self.var_expr(tmp);
+        let plain = mk(ExprKind::Cast(Box::new(t.clone())), Ty::Obj(sid));
+        let tag_of = mk(ExprKind::Field(Box::new(plain.clone()), sid, 0), Ty::Num);
+        let member_truthy = |this: &mut Self, i: usize| {
+            let m = members[i].clone();
+            let read = mk(ExprKind::Field(Box::new(plain.clone()), sid, 1 + i), m);
+            this.bool_of(read)
+        };
+        let mut chain = member_truthy(self, members.len() - 1);
+        for i in (0..members.len() - 1).rev() {
+            let test = mk(
+                ExprKind::Cmp(CmpOp::Eq, Box::new(tag_of.clone()), Box::new(num(i as f64))),
+                Ty::Bool,
+            );
+            let this_member = member_truthy(self, i);
+            chain = mk(
+                ExprKind::Cond(Box::new(test), Box::new(this_member), Box::new(chain)),
+                Ty::Bool,
+            );
+        }
+        if nullable {
+            let not_null = mk(
+                ExprKind::Un(
+                    UnOp::Not,
+                    Box::new(mk(ExprKind::IsNull(Box::new(t)), Ty::Bool)),
+                ),
+                Ty::Bool,
+            );
+            chain = mk(ExprKind::And(Box::new(not_null), Box::new(chain)), Ty::Bool);
+        }
+        mk(
+            ExprKind::Seq(vec![Stmt::Assign(tmp, u)], Box::new(chain)),
+            Ty::Bool,
+        )
+    }
+
+    /// Is the union value one of the members `keep` accepts? (False for null.)
+    pub(crate) fn union_is_member(&mut self, u: Expr, keep: impl Fn(&Ty) -> bool) -> Expr {
+        let members = self.union_members(&u.ty).unwrap_or_default();
+        let Ty::Obj(sid) = u.ty.strip().clone() else {
+            return u;
+        };
+        let tmp = self.new_local(u.ty.clone());
+        let t = self.var_expr(tmp);
+        let plain = mk(ExprKind::Cast(Box::new(t.clone())), Ty::Obj(sid));
+        let tag_of = mk(ExprKind::Field(Box::new(plain), sid, 0), Ty::Num);
+        let mut any: Option<Expr> = None;
+        for (i, m) in members.iter().enumerate() {
+            if keep(m) {
+                let is = mk(
+                    ExprKind::Cmp(CmpOp::Eq, Box::new(tag_of.clone()), Box::new(num(i as f64))),
+                    Ty::Bool,
+                );
+                any = Some(match any {
+                    None => is,
+                    Some(a) => mk(ExprKind::Or(Box::new(a), Box::new(is)), Ty::Bool),
+                });
+            }
+        }
+        let mut result = any.unwrap_or_else(|| mk(ExprKind::Bool(false), Ty::Bool));
+        if u.ty.is_nullable() {
+            let not_null = mk(
+                ExprKind::Un(
+                    UnOp::Not,
+                    Box::new(mk(ExprKind::IsNull(Box::new(t)), Ty::Bool)),
+                ),
+                Ty::Bool,
+            );
+            result = mk(
+                ExprKind::And(Box::new(not_null), Box::new(result)),
+                Ty::Bool,
+            );
+        }
+        mk(
+            ExprKind::Seq(vec![Stmt::Assign(tmp, u)], Box::new(result)),
+            Ty::Bool,
+        )
+    }
+
     /// `Array.isArray(u)` for a union value.
     pub(crate) fn union_is_array(&mut self, u: Expr) -> Expr {
         let members = self.union_members(&u.ty).unwrap_or_default();
@@ -363,6 +451,65 @@ impl<'a> Lowerer<'a> {
                     Self::kind_matches(t, &lit_side)
                 })
             }
+            // `"name" in P`: the members that have the property (true), the others (false).
+            Expression::BinaryExpression(b) if b.operator == BinaryOperator::In => {
+                let Expression::StringLiteral(k) = &b.left else {
+                    return vec![];
+                };
+                let name = k.value.to_string();
+                // A member narrows on the property being there; an optional one may be missing.
+                let mut has: Vec<StructId> = Vec::new();
+                let mut must: Vec<StructId> = Vec::new();
+                for (sid, st) in self.m.structs.iter().enumerate() {
+                    if let Some(i) = st.field(&name) {
+                        has.push(sid);
+                        if !st.fields[i].optional {
+                            must.push(sid);
+                        }
+                    }
+                }
+                let owners = if positive { has } else { must };
+                self.narrow_by(&b.right, true, move |t| {
+                    let is_owner = matches!(t.strip(), Ty::Obj(s) if owners.contains(s));
+                    is_owner == positive
+                })
+            }
+            // `P instanceof C`: the members that are `C` or a subclass (true), the others (false).
+            Expression::BinaryExpression(b) if b.operator == BinaryOperator::Instanceof => {
+                let Expression::Identifier(id) = &b.right else {
+                    return vec![];
+                };
+                if !self.classes.contains_key(id.name.as_str()) {
+                    return vec![];
+                }
+                let sid = self.classes_sid(id.name.as_str());
+                let family: Vec<StructId> = self
+                    .class_of_sid
+                    .keys()
+                    .copied()
+                    .filter(|s| self.is_subclass(*s, sid))
+                    .collect();
+                self.narrow_by(
+                    &b.left,
+                    positive,
+                    move |t| matches!(t.strip(), Ty::Obj(s) if family.contains(s)),
+                )
+            }
+            // `P` as a test: when it is false the value is one of the members that can be falsy
+            // (an object, an array or a function never is).
+            Expression::Identifier(_)
+            | Expression::StaticMemberExpression(_)
+            | Expression::TSNonNullExpression(_) => {
+                if positive {
+                    return vec![];
+                }
+                self.narrow_by(test, true, |t| {
+                    matches!(
+                        t.strip(),
+                        Ty::Num | Ty::Str | Ty::Lit | Ty::Bool | Ty::BigInt
+                    )
+                })
+            }
             // `Array.isArray(P)`
             Expression::CallExpression(c)
                 if matches!(&c.callee, Expression::StaticMemberExpression(m)
@@ -439,7 +586,40 @@ impl<'a> Lowerer<'a> {
         };
         match e {
             Expression::ArrayExpression(_) => pick(&|m| matches!(m.strip(), Ty::Arr(_))),
-            Expression::ObjectExpression(_) => pick(&|m| matches!(m.strip(), Ty::Obj(_))),
+            Expression::ObjectExpression(o) => {
+                let objects = members
+                    .iter()
+                    .filter(|m| matches!(m.strip(), Ty::Obj(_)))
+                    .count();
+                if objects <= 1 {
+                    return pick(&|m| matches!(m.strip(), Ty::Obj(_)));
+                }
+                // Several object types: the one whose properties are the literal's (every key
+                // is a field, every field that is not optional is given).
+                let mut keys: Vec<String> = Vec::new();
+                for p in &o.properties {
+                    let ObjectPropertyKind::ObjectProperty(p) = p else {
+                        return None;
+                    };
+                    match &p.key {
+                        PropertyKey::StaticIdentifier(k) if !p.computed => {
+                            keys.push(k.name.to_string())
+                        }
+                        PropertyKey::StringLiteral(k) => keys.push(k.value.to_string()),
+                        _ => return None,
+                    }
+                }
+                pick(&|m| {
+                    let Ty::Obj(sid) = m.strip() else {
+                        return false;
+                    };
+                    let st = &self.m.structs[*sid];
+                    keys.iter().all(|k| st.field(k).is_some())
+                        && st.fields.iter().all(|f| {
+                            f.optional || f.name.starts_with("_p_") || keys.contains(&f.name)
+                        })
+                })
+            }
             _ => None,
         }
     }

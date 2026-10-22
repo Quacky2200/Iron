@@ -294,6 +294,9 @@ pub struct Lowerer<'a> {
     pub(crate) cur: FnCtx,
     /// Names that closures in the function being lowered capture (`scan.rs`).
     pub(crate) captured: HashSet<String>,
+    /// The names the function being lowered (or the whole program, for top-level code) assigns
+    /// after declaring them (`scan.rs`).
+    pub(crate) assigned: HashSet<String>,
     pub(crate) closure_free: HashMap<u32, Vec<String>>,
     pub(crate) lambdas: usize,
     /// Wrapper functions that let a top-level function be used as a value.
@@ -330,6 +333,7 @@ pub struct Lowerer<'a> {
     /// `ReturnType<typeof f>` in a type met earlier).
     pub(crate) top_fn_decls: HashMap<String, &'a Function<'a>>,
     /// Names given a getter in an object literal (`accessors.rs`).
+    pub(crate) setter_names: HashSet<String>,
     pub(crate) accessor_names: HashSet<String>,
     /// Unions of different types (`tagged.rs`): the struct and its member types.
     pub(crate) unions: HashMap<StructId, Vec<Ty>>,
@@ -547,6 +551,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         enums: HashMap::new(),
         cur: FnCtx::default(),
         captured: HashSet::new(),
+        assigned: HashSet::new(),
         closure_free: HashMap::new(),
         lambdas: 0,
         wrappers: HashMap::new(),
@@ -567,6 +572,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         classes_ready: false,
         top_fn_decls: HashMap::new(),
         accessor_names: HashSet::new(),
+        setter_names: HashSet::new(),
         unions: HashMap::new(),
         eager_classes: false,
         laid_out: HashSet::new(),
@@ -618,6 +624,8 @@ impl<'a> Lowerer<'a> {
 
     fn lower_program(&mut self, program: &'a Program<'a>) -> R<()> {
         self.scan_accessors(program);
+        // Top-level code: a variable assigned anywhere in the program may change under a closure.
+        self.assigned = scan::Scan::of_statements(&program.body).assigned;
         self.register_top_functions(program);
         // Top-level constants whose type comes from their initialiser.
         for stmt in &program.body {
@@ -1072,12 +1080,14 @@ impl<'a> Lowerer<'a> {
             }
         }
         let saved_captured = std::mem::replace(&mut self.captured, scan.captured);
+        let saved_assigned = std::mem::replace(&mut self.assigned, scan.assigned);
         self.closure_free.extend(scan.free);
         let env = self.fsrc[name].tenv.clone().unwrap_or_default();
         let saved_env = std::mem::replace(&mut self.tenv, env);
         let r = self.lower_fn(name, id);
         self.tenv = saved_env;
         self.captured = saved_captured;
+        self.assigned = saved_assigned;
         self.cur = saved;
         r.map_err(|e| {
             if std::env::var_os("IRON_TS_TRACE_FN").is_some() {

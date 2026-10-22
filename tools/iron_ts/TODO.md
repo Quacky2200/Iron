@@ -438,6 +438,7 @@ callbacks in `tools/iron_ts/src/lower/facade.ts`.
 
 Behaviours checked 2026-10-22 (all with GC stress where it applies):
 
+- Language leftovers (2026-10-22, `M9-TS-3216..3225`, `bench/lang2_cases.ts`): `for...in` over arrays (indices as strings), `Object.assign` into dictionaries (and `{ [k: string]: V }` as a dictionary type), setters in object literals (hidden `_p_set_` closure field, `Place::Thunked`), narrowing kept inside closures over a never-assigned variable, `in` / `instanceof` / truthiness narrowing of unions (tag tests and member truthiness), `flat(depth)` with a run-time depth (throws when smaller than the nesting: documented). Not done: `this` inside object-literal accessors and methods.
 - Top-level `await` (2026-10-22): the module's code is an implicit async function started by `ts_init` (`docs/iron-ts.md` "Tuples, destructuring assignment and top-level `await`", `M9-TS-3157..3161`). Per-module ECMAScript ordering and gating, the startup state for the host, and `register()` as a run-time call: `M9-TS-3202..3215`, `M9-API-1615..1618`. `Promise.all([a, b])` over different value types, awaited on the spot, gives a tuple (`M9-TS-3155/3156`).
 - `async onStart()` / `onUpdate` etc.: work (the component hooks return a promise that is dropped; a rejection is reported as unhandled). `M9-API-1513`.
 - Async JSX handlers (`onClick={async () => ..}`): work; a callback typed to return nothing may return a value (it is evaluated and dropped). `M9-API-1515`.

@@ -272,18 +272,37 @@ impl<'a> Lowerer<'a> {
         };
         let pat = &d.declarations[0].id;
         let obj = self.lower_expr(&f.right, None)?;
-        if !matches!(obj.ty.strip(), Ty::Obj(_) | Ty::Map(..)) {
+        if !matches!(
+            obj.ty.strip(),
+            Ty::Obj(_) | Ty::Map(..) | Ty::Arr(_) | Ty::Typed(_)
+        ) {
             bail!(
-                "{}: `for ... in` over {}: only objects and dictionaries (use `for ... of` for arrays)",
+                "{}: `for ... in` over {}: only objects, dictionaries and arrays",
                 self.loc(f.span.start),
                 obj.ty
             )
         }
-        let (keys, _vals, pre) = self.object_parts(obj, "for-in", false)?;
-        let it = self.begin_iter(keys)?;
+        // An array gives its indices, as strings (as JavaScript does).
+        let over_array = matches!(obj.ty.strip(), Ty::Arr(_) | Ty::Typed(_));
+        let (it, pre) = if over_array {
+            (self.begin_iter(obj)?, Vec::new())
+        } else {
+            let (keys, _vals, pre) = self.object_parts(obj, "for-in", false)?;
+            (self.begin_iter(keys)?, pre)
+        };
+        let mut index_key = Vec::new();
+        let key_var = if over_array {
+            let k = self.new_local(Ty::Str);
+            let at = self.var_expr(it.idx);
+            let text = self.rt_str("ts_rt_num_to_str_gc", vec![at], Ty::Str);
+            index_key.push(Stmt::Assign(k, text));
+            k
+        } else {
+            it.elem
+        };
         self.cur.scopes.push(HashMap::new());
         let mut bind = Vec::new();
-        let r = self.bind_param(pat, it.elem, &mut bind);
+        let r = self.bind_param(pat, key_var, &mut bind);
         if let Err(e) = r {
             self.cur.scopes.pop();
             return Err(e);
@@ -296,6 +315,7 @@ impl<'a> Lowerer<'a> {
         out.extend(pre);
         out.extend(it.pre);
         let mut b = it.head;
+        b.extend(index_key);
         b.extend(bind);
         b.extend(body?);
         out.push(Stmt::Loop(it.label, b));

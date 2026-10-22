@@ -679,7 +679,7 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 [iron-ts-classes.md](research/iron-ts-classes.md) section 14.
 
 Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes other than `Component`,
-throwing anything but an `Error` object, unsupported string methods (see above), `for...in`, object rest of unknown shapes, destructuring assignment to existing variables, `for await`, async generators, `any`/`JsValue` and anything
+throwing anything but an `Error` object, unsupported string methods (see above), object rest of unknown shapes, destructuring assignment to existing variables, `for await`, async generators, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
@@ -803,15 +803,20 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   `Record<string, V>`; `Object.fromEntries(pairs)` is a dictionary; `key in o` with a literal key (decided by the type) or a key
   known only at run time; `delete o.k` / `delete o[k]` (a dictionary loses the entry; a struct can lose an *optional* property,
   which becomes undefined). An optional property (`Partial<Record<Tag, V>>`, `x?: T`) is there only while it is not null, for
-  `keys`, `values`, `entries`, `in` and `for ... in` (as for `JSON.stringify`). Not built: `for ... in` over an array,
-  `Object.assign` into a dictionary, `Object.hasOwn(dictionary, k)`.
+  `keys`, `values`, `entries`, `in` and `for ... in` (as for `JSON.stringify`). `for (const i in xs)` over an array gives the
+  indices as strings (`"0"`, `"1"`, ..); `Object.assign(dict, a, b)` sets the properties of objects and the entries of other
+  dictionaries into a `Record<string, V>` (`{ [key: string]: V }` is the same type; `M9-TS-3216/3217`); `Object.assign(obj, ..)`
+  into an object needs sources whose properties the target has. Not built: `Object.hasOwn(dictionary, k)`, copying a dictionary
+  into an object.
 - **`as const` arrays.** `["a", "b"] as const` of string literals is an array of union members (`Lit[]`), so its elements go
   where the union is expected (`(typeof NAMES)[number]`); the engine's own enums are strings, and a string reaches a union member
   through the tag table (`StrTag`), so the two meet either way: a generic parameter bound to both a union and a string is the
   string, and an array of members goes where an array of strings is expected as a converted copy (`next(MODES, engineString)`,
   `M9-TS-3196`). Other `as const` arrays are arrays or tuples as before.
-- **`flat(depth)`.** A literal depth, `Infinity`, or a constant is exact; a depth known only at run time flattens as deep as the
-  declared type goes (the deepest type TypeScript gives it) after evaluating the depth expression.
+- **`flat(depth)`.** A literal depth, `Infinity`, or a constant is exact. A depth known only at run time is checked when the
+  call runs: a depth that reaches the full flattening gives it (as JavaScript), a smaller one throws a `RangeError`, because the
+  result would be arrays typed as their elements (TypeScript types it as a union of every level; a program cannot hold that
+  here). Documented in `differences.md`; `M9-TS-3224/3225`.
 - **A tuple as a rest parameter.** `function f(...args: [string, number?])`: the arguments from there on make the tuple (a missing
   optional element is undefined); `f(...pair)` with a tuple of that type passes it as it is. Not for function values.
 - **Facade chunks need the thing they are written for.** A `//# when a|b&c` header triggers on `a`, or on `b` and `c` both; the
@@ -841,8 +846,16 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
   expected (it is projected), `typeof u` and `Array.isArray(u)` read the tag. Narrowing is by path: a test of the form
   `typeof P === "number"`, `Array.isArray(P)`, `!`, `&&`, `||`, written in an `if`, a `?:` or the left of `&&` / `||`, narrows the
   path `P` (`o.scale`) to the members that pass in the branch it guards (and, after an `if` that always leaves, in the rest of the
-  block); reading a path that is narrowed to one member gives that member (`narrowed`). Not narrowed: `in`, `instanceof`, a
-  truthiness test of a number member.
+  block); reading a path that is narrowed to one member gives that member (`narrowed`). Also narrowing: `"name" in P` (the
+  members that have the property; an optional one may be missing), `P instanceof C` (the members that are `C` or a subclass), and a
+  truthiness test of `P`: when it is false the value is one of the members that can be falsy (number, string, boolean, bigint),
+  never an object, array or function. `"name" in u` and `u instanceof C` on a union read its tag; `if (u)` and `!u` look at the
+  member it holds (0, `NaN`, `""` and null are false). A literal that goes where a union of several object types is expected is
+  the member whose properties it has. **Narrowing inside a closure** (`lower_closure`): the narrowing of a plain variable that
+  the closure names carries over when nothing assigns that variable anywhere in the enclosing function (`Scan::assigned`):
+  a `const`, a parameter or a `let` that is never reassigned, as in TypeScript; a path through a property (`o.scale`) does not
+  survive (TypeScript drops those too). Callbacks of `map` / `filter` / `forEach` / `some` / `every` / `find` are inlined and keep
+  every narrowing. `M9-TS-3219..3223`.
 - **Strings and literal unions.** A text from outside (an engine property, a map's keys) goes where a union member is expected through
   the tag table (`StrTag`, `ts_rt_str_tag`; text with no tag gives "no tag"). A value of a union type keeps it in an object or array
   literal (`{ mode: MODES[0]! }`); only a string written there widens to `string` (`is_fresh_literal`).

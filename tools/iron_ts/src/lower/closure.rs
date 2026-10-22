@@ -167,6 +167,16 @@ impl<'a> Lowerer<'a> {
 
         let saved = std::mem::take(&mut self.cur);
         self.cur.local_generics = saved.local_generics.clone();
+        // TypeScript keeps the narrowing of a `const`, and of a parameter or `let` that is never
+        // assigned, inside a closure: the closure's free names that are plain variables of the
+        // code around it (a path through a property does not survive).
+        let free = self.closure_free.get(&start).cloned().unwrap_or_default();
+        self.cur.narrowed = saved
+            .narrowed
+            .iter()
+            .filter(|(p, _)| free.contains(p) && !self.assigned.contains(p))
+            .cloned()
+            .collect();
         self.cur.ret = ret_exp;
         self.cur.widen_ret = infer;
         self.cur.scopes.push(HashMap::new());

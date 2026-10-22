@@ -142,6 +142,16 @@ impl<'a> Lowerer<'a> {
             }
             TSType::TSUnionType(u) => self.union(&u.types, hint)?,
             TSType::TSTypeLiteral(l) => {
+                // `{ [key: string]: V }` is a dictionary, like `Record<string, V>`.
+                if let [TSSignature::TSIndexSignature(ix)] = l.members.as_slice()
+                    && matches!(
+                        ix.parameter.type_annotation.type_annotation,
+                        TSType::TSStringKeyword(_)
+                    )
+                {
+                    let v = self.ty(&ix.type_annotation.type_annotation, hint)?;
+                    return Ok(Ty::Map(Box::new(Ty::Str), Box::new(v)));
+                }
                 let fields = self.members(&l.members, hint)?;
                 Ty::Obj(self.anon_struct(hint, fields))
             }
@@ -1105,11 +1115,15 @@ impl<'a> Lowerer<'a> {
     }
 
     /// Truthiness as a `Bool`.
-    pub(crate) fn to_bool(&self, e: Expr) -> Expr {
+    pub(crate) fn bool_of(&mut self, e: Expr) -> Expr {
         let ex = |k| Expr {
             kind: k,
             ty: Ty::Bool,
         };
+        // A union of different types: the member it holds decides (0, "" and null are false).
+        if self.union_members(&e.ty).is_some() {
+            return self.union_truthy(e);
+        }
         match &e.ty {
             Ty::Bool => e,
             Ty::Nullable(inner) if matches!(**inner, Ty::Num) => {
@@ -1131,7 +1145,7 @@ impl<'a> Lowerer<'a> {
                 };
                 ex(ExprKind::And(
                     Box::new(ex(ExprKind::Un(UnOp::Not, Box::new(null)))),
-                    Box::new(self.to_bool(plain)),
+                    Box::new(self.bool_of(plain)),
                 ))
             }
             Ty::Num => ex(ExprKind::Truthy(Box::new(e))),
@@ -1150,7 +1164,7 @@ impl<'a> Lowerer<'a> {
             // A union member is true unless its text is empty.
             Ty::Lit => match e.kind {
                 ExprKind::Tag(t) => ex(ExprKind::Bool(!self.m.tags[t as usize].is_empty())),
-                _ => self.to_bool(Expr {
+                _ => self.bool_of(Expr {
                     kind: ExprKind::TagStr(Box::new(e)),
                     ty: Ty::Str,
                 }),

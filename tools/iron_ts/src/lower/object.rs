@@ -191,6 +191,11 @@ impl<'a> Lowerer<'a> {
             }
             "assign" => {
                 let target = self.object_arg(c, 0, "Object.assign")?;
+                // Into a dictionary: the properties of an object and the entries of another
+                // dictionary are set one by one, later sources winning.
+                if let Ty::Map(_, vty) = target.ty.strip().clone() {
+                    return self.assign_into_map(c, target, &vty, &at);
+                }
                 let Ty::Obj(tsid) = target.ty.strip().clone() else {
                     unreachable!("checked")
                 };
@@ -199,7 +204,9 @@ impl<'a> Lowerer<'a> {
                 for i in 1..c.arguments.len() {
                     let src = self.object_arg(c, i, "Object.assign")?;
                     let Ty::Obj(ssid) = src.ty.strip().clone() else {
-                        unreachable!("checked")
+                        bail!(
+                            "{at}: Object.assign into an object cannot copy the entries of a dictionary (its keys are known only at run time): assign the properties you need"
+                        )
                     };
                     let s = self.new_local(src.ty.clone());
                     stmts.push(Stmt::Assign(s, src));
@@ -223,6 +230,79 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `Object.assign(dict, a, b, ..)` where `dict` is a `Record<string, V>`.
+    fn assign_into_map(
+        &mut self,
+        c: &'a CallExpression<'a>,
+        target: Expr,
+        vty: &Ty,
+        at: &str,
+    ) -> R<Expr> {
+        let t = self.new_local(target.ty.clone());
+        let mut stmts = vec![Stmt::Assign(t, target.clone())];
+        for i in 1..c.arguments.len() {
+            let src = self.object_arg(c, i, "Object.assign")?;
+            match src.ty.strip().clone() {
+                Ty::Obj(ssid) => {
+                    let s = self.new_local(src.ty.clone());
+                    stmts.push(Stmt::Assign(s, src));
+                    for (name, ty, fi) in self.own_fields(ssid) {
+                        let read = mk(
+                            ExprKind::Field(Box::new(self.var_expr(s)), ssid, fi),
+                            ty.clone(),
+                        );
+                        let v = self.coerce(read.clone(), vty)?;
+                        let key = self.str_lit(&name);
+                        let set = self.map_set_value(self.var_expr(t), key, Some(v))?;
+                        // An optional property that is not there is not copied.
+                        if self.absent_able(ssid, fi) {
+                            let absent = mk(ExprKind::IsNull(Box::new(read)), Ty::Bool);
+                            stmts.push(Stmt::If(absent, vec![], vec![Stmt::Eval(set)]));
+                        } else {
+                            stmts.push(Stmt::Eval(set));
+                        }
+                    }
+                }
+                Ty::Map(..) => {
+                    let (keys, vals, pre) = self.object_parts(src, "Object.assign", true)?;
+                    if !matches!(vals.ty.strip(), Ty::Arr(e) if e.strip() == vty.strip()) {
+                        bail!("{at}: Object.assign: the dictionaries hold different value types")
+                    }
+                    stmts.extend(pre);
+                    let values = self.new_local(vals.ty.clone());
+                    stmts.push(Stmt::Assign(values, vals));
+                    let it = self.begin_iter(keys)?;
+                    stmts.extend(it.pre);
+                    let raw_ty = if vty.is_ptr() || *vty == Ty::Num {
+                        vty.clone().nullable()
+                    } else {
+                        vty.clone()
+                    };
+                    let raw = mk(
+                        ExprKind::Index(
+                            Box::new(self.var_expr(values)),
+                            Box::new(self.var_expr(it.idx)),
+                        ),
+                        raw_ty.clone(),
+                    );
+                    let entry = if raw_ty == *vty {
+                        raw
+                    } else {
+                        mk(ExprKind::Cast(Box::new(raw)), vty.clone())
+                    };
+                    let set =
+                        self.map_set_value(self.var_expr(t), self.var_expr(it.elem), Some(entry))?;
+                    let mut body = it.head;
+                    body.push(Stmt::Eval(set));
+                    stmts.push(Stmt::Loop(it.label, body));
+                }
+                other => bail!("{at}: Object.assign needs objects, found {other}"),
+            }
+        }
+        let ty = target.ty.clone();
+        Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(t))), ty))
+    }
+
     /// `"key" in obj` for a string literal key: decided by the object's type.
     pub(crate) fn lower_in(&mut self, key: &'a Expression<'a>, obj: Expr, at: u32) -> R<Expr> {
         let Expression::StringLiteral(k) = key else {
@@ -235,6 +315,21 @@ impl<'a> Lowerer<'a> {
             bail!("{}: `in` needs an object, found {}", self.loc(at), obj.ty)
         };
         let name = k.value.as_str();
+        // A union of object types: the tag says whether the member has the property.
+        if self.union_members(&obj.ty).is_some() {
+            let owners: Vec<StructId> = self
+                .m
+                .structs
+                .iter()
+                .enumerate()
+                .filter(|(_, st)| st.field(name).is_some())
+                .map(|(i, _)| i)
+                .collect();
+            return Ok(self.union_is_member(
+                obj,
+                |m| matches!(m.strip(), Ty::Obj(s) if owners.contains(s)),
+            ));
+        }
         // An optional property is there while it is set.
         if let Some(i) = self.m.structs[sid].field(name)
             && self.absent_able(sid, i)

@@ -58,6 +58,10 @@ pub(crate) enum Place {
     /// A property with a getter and/or setter: the receiver, the two functions and the value type.
     Accessor(Expr, Option<classes::Target>, classes::Target, Ty),
     Field(Expr, StructId, usize, Ty),
+    /// A field of a plain object that a literal gave a setter closure (`set v(n) { .. }`): the
+    /// object, its struct, the field, the hidden field with the setter, the value type. A read
+    /// goes through the getter closure when there is one.
+    Thunked(Expr, StructId, usize, usize, Ty),
     Index(Expr, Expr, Ty),
     /// `obj[key]` where `key` is a string or a union member naming one of the fields (`state[key]`
     /// with `key: keyof typeof state`): the object, its struct, the key, the one type of the fields.
@@ -2083,6 +2087,18 @@ impl<'a> Lowerer<'a> {
         if !matches!(l.ty.strip(), Ty::Obj(_)) {
             bail!("{}: `instanceof` on {}", self.loc(b.span.start), l.ty)
         }
+        // A union of classes: the tag says which member it is.
+        if self.union_members(&l.ty).is_some() {
+            let family: Vec<StructId> = self
+                .class_of_sid
+                .keys()
+                .copied()
+                .filter(|s| self.is_subclass(*s, sid))
+                .collect();
+            return Ok(
+                self.union_is_member(l, |m| matches!(m.strip(), Ty::Obj(s) if family.contains(s)))
+            );
+        }
         let mut members: Vec<StructId> = self
             .class_of_sid
             .keys()
@@ -2295,7 +2311,7 @@ impl<'a> Lowerer<'a> {
             }
             _ => {
                 let v = self.lower_expr(e, None)?;
-                Ok(self.to_bool(v))
+                Ok(self.bool_of(v))
             }
         }
     }
@@ -2370,7 +2386,7 @@ impl<'a> Lowerer<'a> {
                     }
                     let tmp = self.new_local(a.ty.clone());
                     let t = self.var_expr(tmp);
-                    let test = self.to_bool(t.clone());
+                    let test = self.bool_of(t.clone());
                     let kept = if a.ty.is_nullable() && !ty.is_nullable() {
                         mk(ExprKind::Cast(Box::new(t)), ty.clone())
                     } else {
@@ -2395,7 +2411,7 @@ impl<'a> Lowerer<'a> {
                 {
                     let nty = b.ty.strip().clone().nullable();
                     let tmp = self.new_local(a.ty.clone());
-                    let test = self.to_bool(self.var_expr(tmp));
+                    let test = self.bool_of(self.var_expr(tmp));
                     let yes = mk(ExprKind::Cast(Box::new(b)), nty.clone());
                     let no = mk(ExprKind::Null, nty.clone());
                     return Ok(mk(
@@ -2409,7 +2425,7 @@ impl<'a> Lowerer<'a> {
                         nty,
                     ));
                 }
-                let (a, b) = (self.to_bool(a), self.to_bool(b));
+                let (a, b) = (self.bool_of(a), self.bool_of(b));
                 let k = if op == LogicalOperator::And {
                     ExprKind::And(Box::new(a), Box::new(b))
                 } else {
@@ -2501,6 +2517,32 @@ impl<'a> Lowerer<'a> {
                             unreachable!("a closure")
                         };
                         let placeholder = self.default_value(&sig.ret);
+                        items.push(Item::Prop(name, placeholder));
+                        items.push(Item::Prop(hidden, c));
+                        continue;
+                    }
+                    // `set v(n) { .. }`: the closure goes in the hidden field; the real one holds
+                    // a placeholder (a write calls the closure).
+                    if p.kind == PropertyKind::Set
+                        && !p.computed
+                        && let Expression::FunctionExpression(f) = &p.value
+                    {
+                        let name = self.key_name(&p.key)?;
+                        let hidden = accessors::setter_name(&name);
+                        let want = match want_sid {
+                            Some(s) => self.m.structs[s]
+                                .field(&hidden)
+                                .map(|i| self.m.structs[s].fields[i].ty.strip().clone()),
+                            None => None,
+                        };
+                        let c = self.lower_closure(closure::ClosureNode::Func(f), want.as_ref())?;
+                        let Ty::Fn(sig) = c.ty.strip().clone() else {
+                            unreachable!("a closure")
+                        };
+                        let Some(value_ty) = sig.params.first() else {
+                            bail!("{}: a setter takes one parameter", self.loc(p.span.start))
+                        };
+                        let placeholder = self.default_value(value_ty);
                         items.push(Item::Prop(name, placeholder));
                         items.push(Item::Prop(hidden, c));
                         continue;
@@ -3433,6 +3475,16 @@ impl<'a> Lowerer<'a> {
                 return self.field_place(Self::downcast(obj, sub), prop, pre);
             }
         }
+        // A plain object whose literal gave this property a setter closure.
+        if let Ty::Obj(sid) = obj.ty.strip().clone()
+            && let Some(si) = self.m.structs[sid].field(&accessors::setter_name(prop))
+            && let Some(i) = self.m.structs[sid].field(prop)
+        {
+            let ty = self.m.structs[sid].fields[i].ty.clone();
+            let tmp = self.new_local(obj.ty.clone());
+            pre.push(Stmt::Assign(tmp, obj));
+            return Ok(Place::Thunked(self.var_expr(tmp), sid, i, si, ty));
+        }
         let f = self.member_of(obj, prop)?;
         let ExprKind::Field(obj, sid, idx) = f.kind else {
             bail!("`{prop}` is not a field")
@@ -3451,6 +3503,7 @@ impl<'a> Lowerer<'a> {
             | Place::Cell(_, t)
             | Place::Global(_, t)
             | Place::Field(_, _, _, t)
+            | Place::Thunked(_, _, _, _, t)
             | Place::Keyed(_, _, _, t, _)
             | Place::MapEntry(_, _, t)
             | Place::Index(_, _, t) => t,
@@ -3476,6 +3529,10 @@ impl<'a> Lowerer<'a> {
                 None => mk(ExprKind::Null, t.clone()),
             },
             Place::Field(o, s, i, t) => mk(ExprKind::Field(Box::new(o.clone()), *s, *i), t.clone()),
+            Place::Thunked(o, s, i, _, _) => {
+                let name = self.m.structs[*s].fields[*i].name.clone();
+                self.thunked_read(o.clone(), *s, *i, &name)
+            }
             Place::Index(a, i, t) => mk(
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
                 t.clone(),
@@ -3561,6 +3618,31 @@ impl<'a> Lowerer<'a> {
                 Ty::Void,
             )),
             Place::Field(o, s, i, _) => Stmt::StoreField(o.clone(), *s, *i, v),
+            Place::Thunked(o, s, i, si, ty) => {
+                // The setter closure when the object has one, the plain field otherwise.
+                let tmp = self.new_local(ty.clone());
+                let tv = self.var_expr(tmp);
+                let sty = self.m.structs[*s].fields[*si].ty.clone();
+                let thunk = mk(ExprKind::Field(Box::new(o.clone()), *s, *si), sty.clone());
+                let none = mk(ExprKind::IsNull(Box::new(thunk.clone())), Ty::Bool);
+                let callee = mk(ExprKind::Cast(Box::new(thunk)), sty.strip().clone());
+                let call = mk(
+                    ExprKind::CallClosure(Box::new(callee), vec![tv.clone()]),
+                    Ty::Void,
+                );
+                let label = self.new_label();
+                Stmt::Block(
+                    label,
+                    vec![
+                        Stmt::Assign(tmp, v),
+                        Stmt::If(
+                            none,
+                            vec![Stmt::StoreField(o.clone(), *s, *i, tv)],
+                            vec![Stmt::Eval(call)],
+                        ),
+                    ],
+                )
+            }
             Place::MapEntry(m, k, _) => {
                 // The caller coerced the value to the entry type, so this cannot fail.
                 let set = self
@@ -3855,9 +3937,9 @@ impl<'a> Lowerer<'a> {
             // `p ||= v` is `if (!p) p = v`: the target is evaluated once and v only when needed.
             let old = self.place_read(&place);
             let cond = match a.operator {
-                A::LogicalAnd => self.to_bool(old),
+                A::LogicalAnd => self.bool_of(old),
                 A::LogicalOr => {
-                    let t = self.to_bool(old);
+                    let t = self.bool_of(old);
                     mk(ExprKind::Un(UnOp::Not, Box::new(t)), Ty::Bool)
                 }
                 _ if old.ty.is_nullable() => mk(ExprKind::IsNull(Box::new(old)), Ty::Bool),
@@ -3871,7 +3953,7 @@ impl<'a> Lowerer<'a> {
         }
         let is_accessor = matches!(
             place,
-            Place::Accessor(..) | Place::Ext(..) | Place::NsProp(..)
+            Place::Accessor(..) | Place::Ext(..) | Place::NsProp(..) | Place::Thunked(..)
         );
         let new = if a.operator == A::Assign {
             let v = self.lower_expr(&a.right, Some(&pty))?;

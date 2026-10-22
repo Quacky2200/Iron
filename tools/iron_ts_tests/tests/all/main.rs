@@ -48,6 +48,7 @@ mod intl4;
 mod iterators;
 mod jit;
 mod json;
+mod lang2;
 mod layers;
 mod leftovers;
 mod locale;

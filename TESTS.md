@@ -1789,3 +1789,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3213 | Integration | `register({ A, B }, { spawn: false })` and `{ spawn }` with a run-time value are recorded per class (`startup.rs`). |
 | M9-TS-3214 | Integration | `register` of an unknown name, of a variable and of an expression are compile errors that say so; a program's own `register` function is left alone (`startup.rs`). |
 | M9-TS-3215 | Integration | Each run of the top level starts with no registrations (`startup.rs`). |
+| M9-TS-3216 | Integration | `for (const i in xs)` over an array gives the indices as strings (`"0"`, `"1"`), with `continue`, an empty array and `i + 1` string concatenation, equal to bun (`tools/iron_ts_tests/tests/all/lang2.rs`, cases in `bench/lang2_cases.ts`). |
+| M9-TS-3217 | Integration | `Object.assign` into a `Record<string, V>` and a `{ [k: string]: V }` from objects and dictionaries, and into an object from several sources, equals bun (`lang2.rs`). |
+| M9-TS-3218 | Integration | An object literal with `get v()` and `set v(n)`: writes call the setter, `+=` reads the getter and calls the setter, plain properties stay plain, equal to bun (`lang2.rs`). |
+| M9-TS-3219 | Integration | A narrowing (`typeof u === "number"`) holds inside closures over a `const` or a never-assigned parameter, including non-inlined callbacks (`reduce`) and function expressions, equal to bun (`lang2.rs`). |
+| M9-TS-3220 | Integration | A `let` that is reassigned does not keep a narrowing inside a closure (the closure reads the tag), equal to bun (`lang2.rs`). |
+| M9-TS-3221 | Integration | `"radius" in s` narrows a union of object interfaces, object literals pick their member by their keys, equal to bun (`lang2.rs`). |
+| M9-TS-3222 | Integration | `p instanceof Cat` narrows and tests a union of classes, also in an arrow function, equal to bun (`lang2.rs`). |
+| M9-TS-3223 | Integration | `!v` / `if (v)` on unions (`number \| string \| number[] \| null`, `string \| Pt`, `number \| number[]`) test the member held (0, "" and null are false) and the falsy branch narrows to the members that can be falsy, equal to bun (`lang2.rs`). |
+| M9-TS-3224 | Integration | `flat(depth)` with a depth variable that reaches the full flattening (2, 10, `Infinity`) equals bun (`lang2.rs`). |
+| M9-TS-3225 | Integration | `flat(depth)` with a run-time depth smaller than the nesting throws a `RangeError` that names `flat` (documented difference; `lang2.rs`). |
