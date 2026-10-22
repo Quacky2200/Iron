@@ -305,6 +305,7 @@ declare class Camera :: setRect(x: number, y: number, width: number, height: num
 declare class Camera :: shutterSpeed: number;
 declare class Camera :: static attach(object: GameObject): Camera;
 declare class Camera :: static findOn(object: GameObject): Camera;
+declare class Camera :: static readonly main: Camera | undefined;
 declare class Camera :: targetTexture: Texture;
 declare class CameraFollow
 declare class CameraFollow :: getComponent<T>(cls: { prototype: T }): T | undefined;
@@ -621,10 +622,9 @@ declare class LineRenderer :: static findOn(object: GameObject): LineRenderer;
 declare class LineRenderer :: width: number;
 declare class LineRenderer2D
 declare class LineRenderer2D :: color: Color;
-declare class LineRenderer2D :: fillValue: Color;
+declare class LineRenderer2D :: fillColor: Color | null;
 declare class LineRenderer2D :: get fillRule(): "evenodd" | "nonzero";
 declare class LineRenderer2D :: getComponent<T>(cls: { prototype: T }): T | undefined;
-declare class LineRenderer2D :: hasFill: boolean;
 declare class LineRenderer2D :: loop: boolean;
 declare class LineRenderer2D :: pointAt(index: number): Vector2;
 declare class LineRenderer2D :: readonly gameObject: GameObject;
@@ -1265,10 +1265,10 @@ declare class TextMesh :: static findOn(object: GameObject): TextMesh;
 declare class TextMesh :: text: string;
 declare class Texture
 declare class Texture :: anisoLevel: number;
-declare class Texture :: constructor(width: number, height: number, colors: Color[], filterMode?: string, wrapMode?: string, mipmaps?: boolean, anisoLevel?: number, linear?: boolean);
-declare class Texture :: constructor(width: number, height: number, colors: Color[], filterMode?: string, wrapMode?: string, mipmaps?: boolean, anisoLevel?: number, linear?: boolean, options?: { filterMode?: string; wrapMode?: string; anisoLevel?: number });
+declare class Texture :: constructor(width: number, height: number, colors: Color[], filterMode?: FilterMode, wrapMode?: TextureWrapMode, mipmaps?: boolean, anisoLevel?: number, linear?: boolean);
+declare class Texture :: constructor(width: number, height: number, colors: Color[], filterMode?: FilterMode, wrapMode?: TextureWrapMode, mipmaps?: boolean, anisoLevel?: number, linear?: boolean, options?: { filterMode?: FilterMode; wrapMode?: TextureWrapMode; anisoLevel?: number });
 declare class Texture :: destroy(): void;
-declare class Texture :: filterMode: string;
+declare class Texture :: filterMode: FilterMode;
 declare class Texture :: readonly failed: boolean;
 declare class Texture :: readonly height: number;
 declare class Texture :: readonly isLoaded: boolean;
@@ -1278,7 +1278,7 @@ declare class Texture :: readonly src: string;
 declare class Texture :: readonly width: number;
 declare class Texture :: setSize(width: number, height: number): void;
 declare class Texture :: static createRenderTexture(width: number, height: number): Texture;
-declare class Texture :: wrapMode: string;
+declare class Texture :: wrapMode: TextureWrapMode;
 declare class TimeSince
 declare class TimeSince :: at: number;
 declare class TimeSince :: constructor(at: number);
@@ -1434,8 +1434,8 @@ declare class Window :: center(): void;
 declare class Window :: childAt(index: number): Window;
 declare class Window :: closable: boolean;
 declare class Window :: close(): void;
-declare class Window :: constructor(title?: string, width?: number, height?: number, x?: number, y?: number, minWidth?: number, minHeight?: number, style?: string, parent?: Window, resizable?: boolean, minimizable?: boolean, maximizable?: boolean, closable?: boolean, alwaysOnTop?: boolean, visible?: boolean, focus?: boolean, key?: string, runInBackground?: boolean);
-declare class Window :: constructor(title?: string, width?: number, height?: number, x?: number, y?: number, minWidth?: number, minHeight?: number, style?: string, parent?: Window, resizable?: boolean, minimizable?: boolean, maximizable?: boolean, closable?: boolean, alwaysOnTop?: boolean, visible?: boolean, focus?: boolean, key?: string, runInBackground?: boolean, options?: { title?: string; resizable?: boolean; minimizable?: boolean; maximizable?: boolean; closable?: boolean; alwaysOnTop?: boolean; visible?: boolean; x?: number; y?: number; width?: number; height?: number; minimized?: boolean; maximized?: boolean });
+declare class Window :: constructor(title?: string, width?: number, height?: number, x?: number, y?: number, minWidth?: number, minHeight?: number, style?: WindowStyle, parent?: Window, resizable?: boolean, minimizable?: boolean, maximizable?: boolean, closable?: boolean, alwaysOnTop?: boolean, visible?: boolean, focus?: boolean, key?: string, runInBackground?: boolean);
+declare class Window :: constructor(title?: string, width?: number, height?: number, x?: number, y?: number, minWidth?: number, minHeight?: number, style?: WindowStyle, parent?: Window, resizable?: boolean, minimizable?: boolean, maximizable?: boolean, closable?: boolean, alwaysOnTop?: boolean, visible?: boolean, focus?: boolean, key?: string, runInBackground?: boolean, options?: { title?: string; style?: WindowStyle; resizable?: boolean; minimizable?: boolean; maximizable?: boolean; closable?: boolean; alwaysOnTop?: boolean; visible?: boolean; x?: number; y?: number; width?: number; height?: number; minimized?: boolean; maximized?: boolean });
 declare class Window :: focus(): void;
 declare class Window :: height: number;
 declare class Window :: maximizable: boolean;
@@ -1468,7 +1468,8 @@ declare class Window :: readonly isMain: boolean;
 declare class Window :: readonly isOpen: boolean;
 declare class Window :: readonly key: string;
 declare class Window :: readonly nativeHandle: number;
-declare class Window :: readonly openErrorText: string;
+declare class Window :: readonly openError: string | null;
+declare class Window :: readonly parent: Window | undefined;
 declare class Window :: readonly platform: string;
 declare class Window :: readonly root: Window;
 declare class Window :: readonly scale: number;
@@ -1476,7 +1477,10 @@ declare class Window :: resizable: boolean;
 declare class Window :: run(f: () => void): boolean;
 declare class Window :: setPosition(x: number, y: number): void;
 declare class Window :: setSize(width: number, height: number): void;
+declare class Window :: static at(index: number): Window | undefined;
 declare class Window :: static broadcastJson(text: string): number;
+declare class Window :: static byHandle(handle: number): Window | undefined;
+declare class Window :: static find(key: string): Window | undefined;
 declare class Window :: static off(token: number): boolean;
 declare class Window :: static onDomainFocusChanged(f: (a0: boolean, a1: boolean) => void): number;
 declare class Window :: static onMessageJson(f: (a0: Window, a1: string) => void): number;
@@ -1485,10 +1489,12 @@ declare class Window :: static onRequestJson(f: (a0: Window, a1: string, a2: num
 declare class Window :: static readonly count: number;
 declare class Window :: static readonly current: Window;
 declare class Window :: static readonly domainFocused: boolean;
+declare class Window :: static readonly focused: Window | undefined;
 declare class Window :: static readonly isSupported: boolean;
 declare class Window :: static readonly main: Window;
 declare class Window :: static replyError(request: number, error: string): boolean;
 declare class Window :: static replyJson(request: number, text: string): boolean;
+declare class Window :: style: WindowStyle;
 declare class Window :: title: string;
 declare class Window :: visible: boolean;
 declare class Window :: width: number;
@@ -1630,6 +1636,7 @@ declare module "@iron/engine" :: export import LayerMask = globalThis.LayerMask;
 declare module "@iron/engine" :: export import Light = globalThis.Light;
 declare module "@iron/engine" :: export import LineRenderer = globalThis.LineRenderer;
 declare module "@iron/engine" :: export import LineRenderer2D = globalThis.LineRenderer2D;
+declare module "@iron/engine" :: export import LoadSceneMode = globalThis.LoadSceneMode;
 declare module "@iron/engine" :: export import LodLevel = globalThis.LodLevel;
 declare module "@iron/engine" :: export import Log = globalThis.Log;
 declare module "@iron/engine" :: export import Material = globalThis.Material;
@@ -1816,8 +1823,6 @@ declare namespace Assets :: function takeChanges(): string;
 declare namespace Bounds
 declare namespace Bounds :: function create(center: Vector3, size: Vector3): Bounds;
 declare namespace Bounds :: function minMax(min: Vector3, max: Vector3): Bounds;
-declare namespace Camera
-declare namespace Camera :: const main: Camera | undefined;
 declare namespace Cameras
 declare namespace Cameras :: function count(): number;
 declare namespace Color
@@ -1864,11 +1869,20 @@ declare namespace Debug :: function log(message: string): void;
 declare namespace Debug :: function logError(message: string): void;
 declare namespace Debug :: function logException(message: string): void;
 declare namespace Debug :: function logWarning(message: string): void;
+declare namespace FilterMode
+declare namespace FilterMode :: function name(index: number): FilterMode;
+declare namespace FilterMode :: function parse(name: string): number;
+declare namespace FogMode
+declare namespace FogMode :: function name(index: number): FogMode;
+declare namespace FogMode :: function parse(name: string): number;
 declare namespace ForceMode
 declare namespace ForceMode :: const Acceleration: number;
 declare namespace ForceMode :: const Force: number;
 declare namespace ForceMode :: const Impulse: number;
 declare namespace ForceMode :: const VelocityChange: number;
+declare namespace FullScreenMode
+declare namespace FullScreenMode :: function name(index: number): FullScreenMode;
+declare namespace FullScreenMode :: function parse(name: string): number;
 declare namespace GameObject
 declare namespace GameObject :: const roots: readonly GameObject[];
 declare namespace GameObject :: function createPrimitive(type: PrimitiveType, options?: GameObjectOptions & { name?: string }): GameObject;
@@ -1918,6 +1932,9 @@ declare namespace LayerMask :: function nameToLayer(name: string): number;
 declare namespace Light
 declare namespace Light :: function illuminanceAt(point: Vector3Like, normal?: Vector3Like): number;
 declare namespace Light :: function measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number>;
+declare namespace LoadSceneMode
+declare namespace LoadSceneMode :: function name(index: number): LoadSceneMode;
+declare namespace LoadSceneMode :: function parse(name: string): number;
 declare namespace Log
 declare namespace Log :: function error(message: string): void;
 declare namespace Log :: function info(message: string): void;
@@ -2007,15 +2024,17 @@ declare namespace Pose :: function create(position: Vector3, rotation: Quaternio
 declare namespace Prefab
 declare namespace Prefab :: function load(path: string): Promise<Prefab>;
 declare namespace PrimitiveType
-declare namespace PrimitiveType :: const Capsule: string;
-declare namespace PrimitiveType :: const Cube: string;
-declare namespace PrimitiveType :: const Cylinder: string;
-declare namespace PrimitiveType :: const Plane: string;
-declare namespace PrimitiveType :: const Quad: string;
-declare namespace PrimitiveType :: const Sphere: string;
+declare namespace PrimitiveType :: const Capsule: PrimitiveType;
+declare namespace PrimitiveType :: const Cube: PrimitiveType;
+declare namespace PrimitiveType :: const Cylinder: PrimitiveType;
+declare namespace PrimitiveType :: const Plane: PrimitiveType;
+declare namespace PrimitiveType :: const Quad: PrimitiveType;
+declare namespace PrimitiveType :: const Sphere: PrimitiveType;
+declare namespace PrimitiveType :: function name(index: number): PrimitiveType;
+declare namespace PrimitiveType :: function parse(name: string): number;
 declare namespace Primitives
-declare namespace Primitives :: function create(kind: string, name?: string): GameObject;
-declare namespace Primitives :: function create(kind: string, options?: { name?: string }): GameObject;
+declare namespace Primitives :: function create(kind: PrimitiveType, name?: string): GameObject;
+declare namespace Primitives :: function create(kind: PrimitiveType, options?: { name?: string }): GameObject;
 declare namespace QualitySettings
 declare namespace QualitySettings :: const levelCount: number;
 declare namespace QualitySettings :: const names: string[];
@@ -2104,8 +2123,6 @@ declare namespace RenderSettings :: let bloomScatter: number;
 declare namespace RenderSettings :: let bloomThreshold: number;
 declare namespace RenderSettings :: let exposureTransition: number;
 declare namespace RenderSettings :: let fixedExposure: number | null;
-declare namespace RenderSettings :: let fixedExposureEnabled: boolean;
-declare namespace RenderSettings :: let fixedExposureValue: number;
 declare namespace RenderSettings :: let fog: boolean;
 declare namespace RenderSettings :: let fogColor: Color;
 declare namespace RenderSettings :: let fogCulling: boolean;
@@ -2139,7 +2156,7 @@ declare namespace RenderSettings :: let volumetricFogEnabled: boolean;
 declare namespace RenderSettings :: let volumetricFogHistoryWeight: number;
 declare namespace RenderSettings :: let volumetricFogIntensity: number;
 declare namespace RenderSettings :: let volumetricFogMotionSamples: number;
-declare namespace RenderSettings :: let volumetricFogResolution: string;
+declare namespace RenderSettings :: let volumetricFogResolution: VolumeDetail;
 declare namespace RenderSettings :: let volumetricFogSamples: number;
 declare namespace RenderSettings :: let volumetricFogSharpDistance: number;
 declare namespace RenderSettings :: let volumetricFogSharpSamples: number;
@@ -2199,16 +2216,16 @@ declare namespace SceneManager :: function getSceneByName(name: string): Scene;
 declare namespace SceneManager :: function instantiate(original: GameObject, options?: { px?: number; py?: number; pz?: number; qx?: number; qy?: number; qz?: number; qw?: number; parent?: GameObject }): GameObject;
 declare namespace SceneManager :: function instantiate(original: GameObject, px?: number, py?: number, pz?: number, qx?: number, qy?: number, qz?: number, qw?: number, parent?: GameObject): GameObject;
 declare namespace SceneManager :: function loadPrefabAsync(path: string): number;
-declare namespace SceneManager :: function loadScene(data: string, mode?: string): Scene;
-declare namespace SceneManager :: function loadScene(data: string, options?: { mode?: string }): Scene;
-declare namespace SceneManager :: function loadSceneAsync(path: string, mode?: string): Promise<Scene>;
+declare namespace SceneManager :: function loadScene(data: string, mode?: LoadSceneMode): Scene;
+declare namespace SceneManager :: function loadScene(data: string, options?: { mode?: LoadSceneMode }): Scene;
+declare namespace SceneManager :: function loadSceneAsync(path: string, mode?: LoadSceneMode): Promise<Scene>;
 declare namespace SceneManager :: function mergeScenes(source: Scene, destination: Scene): void;
 declare namespace SceneManager :: function moveGameObjectToScene(object: GameObject, scene: Scene): void;
 declare namespace SceneManager :: function offSceneEvent(token: number): boolean;
 declare namespace SceneManager :: function onActiveSceneChanged(fn: (from: Scene, to: Scene) => void): () => void;
 declare namespace SceneManager :: function onPrefabLoaded(f: (a0: string, a1: Prefab) => void): number;
 declare namespace SceneManager :: function onSceneLoadFailed(f: (a0: string, a1: string) => void): number;
-declare namespace SceneManager :: function onSceneLoaded(fn: (scene: Scene, mode: string) => void): () => void;
+declare namespace SceneManager :: function onSceneLoaded(fn: (scene: Scene, mode: LoadSceneMode) => void): () => void;
 declare namespace SceneManager :: function onSceneUnloaded(fn: (scene: Scene) => void): () => void;
 declare namespace SceneManager :: function sceneOf(object: GameObject): Scene;
 declare namespace SceneManager :: function setActiveScene(scene: Scene): boolean;
@@ -2223,7 +2240,6 @@ declare namespace Screen :: const height: number;
 declare namespace Screen :: const resolutionCount: number;
 declare namespace Screen :: const resolutions: Resolution[];
 declare namespace Screen :: const scale: number;
-declare namespace Screen :: const supportedFullScreenModeCount: number;
 declare namespace Screen :: const supportedFullScreenModes: FullScreenMode[];
 declare namespace Screen :: const width: number;
 declare namespace Screen :: const windowHeight: number;
@@ -2234,11 +2250,13 @@ declare namespace Screen :: function onChange(fn: () => void): () => void;
 declare namespace Screen :: function resolutionHeight(index: number): number;
 declare namespace Screen :: function resolutionRefreshRate(index: number): number;
 declare namespace Screen :: function resolutionWidth(index: number): number;
-declare namespace Screen :: function setResolution(width: number, height: number, mode?: string, refreshRate?: number): void;
-declare namespace Screen :: function setResolution(width: number, height: number, options?: { mode?: string; refreshRate?: number }): void;
-declare namespace Screen :: function supportedFullScreenModeAt(index: number): string;
+declare namespace Screen :: function setResolution(width: number, height: number, mode?: FullScreenMode, refreshRate?: number): void;
+declare namespace Screen :: function setResolution(width: number, height: number, options?: { mode?: FullScreenMode; refreshRate?: number }): void;
 declare namespace Screen :: let fullScreen: boolean;
-declare namespace Screen :: let fullScreenMode: string;
+declare namespace Screen :: let fullScreenMode: FullScreenMode;
+declare namespace ShadowQualityMode
+declare namespace ShadowQualityMode :: function name(index: number): ShadowQualityMode;
+declare namespace ShadowQualityMode :: function parse(name: string): number;
 declare namespace Shapes
 declare namespace Shapes :: function arc(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, options?: { segments?: number }): Vector2[];
 declare namespace Shapes :: function arc(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
@@ -2296,6 +2314,9 @@ declare namespace TangentMode :: function parse(name: string): number;
 declare namespace Texture
 declare namespace Texture :: function create(width: number, height: number, colors: readonly Color[], options?: TextureOptions): Texture;
 declare namespace Texture :: function load(src: string, options?: TextureOptions): Texture;
+declare namespace TextureWrapMode
+declare namespace TextureWrapMode :: function name(index: number): TextureWrapMode;
+declare namespace TextureWrapMode :: function parse(name: string): number;
 declare namespace Time
 declare namespace Time :: const deltaTime: number;
 declare namespace Time :: const fixedDeltaTime: number;
@@ -2371,16 +2392,18 @@ declare namespace Vector4 :: function create(options?: { x?: number; y?: number;
 declare namespace Vector4 :: function create(x?: number, y?: number, z?: number, w?: number): Vector4;
 declare namespace Vector4 :: function fromVector3(v: Vector3, options?: { w?: number }): Vector4;
 declare namespace Vector4 :: function fromVector3(v: Vector3, w?: number): Vector4;
+declare namespace VolumeDetail
+declare namespace VolumeDetail :: function name(index: number): VolumeDetail;
+declare namespace VolumeDetail :: function parse(name: string): number;
 declare namespace Window
-declare namespace Window :: const focused: Window | undefined;
-declare namespace Window :: function at(index: number): Window | undefined;
 declare namespace Window :: function broadcast(data: unknown): number;
-declare namespace Window :: function byHandle(handle: number): Window | undefined;
 declare namespace Window :: function create(options?: WindowOptions): Window;
 declare namespace Window :: function emitAll(name: string, payload?: unknown): number;
-declare namespace Window :: function find(key: string): Window | undefined;
 declare namespace Window :: function onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
 declare namespace Window :: function onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
+declare namespace WindowStyle
+declare namespace WindowStyle :: function name(index: number): WindowStyle;
+declare namespace WindowStyle :: function parse(name: string): number;
 declare namespace audio
 declare namespace audio :: const masterVolume: number;
 declare namespace audio :: const soundCount: number;
@@ -2426,9 +2449,20 @@ declare namespace input :: function onGamepadConnected(f: (a0: number) => void):
 declare namespace input :: function onGamepadDisconnected(f: (a0: number) => void): number;
 declare namespace input :: function onKeyDown(f: (a0: string, a1: boolean) => void): number;
 declare namespace input :: function onKeyUp(f: (a0: string) => void): number;
+declare type AnimatorController = AnimationController;
+declare type FilterMode = "point" | "bilinear" | "trilinear";
+declare type FogMode = "linear" | "exponential" | "exponentialSquared";
+declare type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
+declare type LoadSceneMode = "single" | "additive";
+declare type PrimitiveMesh = PrimitiveType;
+declare type PrimitiveType = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
+declare type ShadowQualityMode = "disable" | "hardOnly" | "all";
 declare type SplineAlignment = "none" | "path";
 declare type SplineLoopMode = "loop" | "pingPong" | "once";
 declare type TangentMode = "auto" | "bezier" | "linear";
+declare type TextureWrapMode = "repeat" | "clamp" | "mirror";
+declare type VolumeDetail = "low" | "medium" | "high" | "ultra";
+declare type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";
 interface AnimationController
 interface AnimationController :: addParameter(name: string, type: string, defaultValue?: number): AnimationController;
 interface AnimationController :: addState(name: string, motion: AnimationClip | BlendSpec, opts?: StateOpts): AnimationController;
@@ -2954,7 +2988,6 @@ interface LODGroup :: setLODs(levels: LodLevel[]): LODGroup;
 interface LineRenderer
 interface LineRenderer :: positions: Vector3Like[];
 interface LineRenderer2D
-interface LineRenderer2D :: fillColor: Color | null;
 interface LineRenderer2D :: points: Vector2Like[];
 interface LodLevel
 interface LodLevel :: renderers: MeshRenderer[];
@@ -3063,10 +3096,7 @@ interface Window :: on<T = unknown>(name: string, f: (payload: T, from: Window) 
 interface Window :: onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
 interface Window :: onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
 interface Window :: postMessage(data: unknown): boolean;
-interface Window :: readonly openError: string | null;
-interface Window :: readonly parent: Window | undefined;
 interface Window :: request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
-interface Window :: style: WindowStyle;
 interface WindowOptions
 interface WindowOptions :: alwaysOnTop?: boolean;
 interface WindowOptions :: closable?: boolean;
@@ -3086,26 +3116,16 @@ interface WindowOptions :: visible?: boolean;
 interface WindowOptions :: width?: number;
 interface WindowOptions :: x?: number;
 interface WindowOptions :: y?: number;
-type AnimatorController = AnimationController;
 type BlendMode = | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "color-dodge" | "color-burn" | "hard-light" | "soft-light" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 type BorderStyle = | "none" | "hidden" | "solid" | "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset";
 type ClassOf<T> = { prototype: T };
 type Collision2D = Collision;
 type ComponentClass<T = Component> = new () => T;
 type Cursor = | "auto" | "default" | "none" | "context-menu" | "help" | "pointer" | "progress" | "wait" | "cell" | "crosshair" | "text" | "vertical-text" | "alias" | "copy" | "move" | "no-drop" | "not-allowed" | "grab" | "grabbing" | "all-scroll" | "col-resize" | "row-resize" | "n-resize" | "e-resize" | "s-resize" | "w-resize" | "ne-resize" | "nw-resize" | "se-resize" | "sw-resize" | "ew-resize" | "ns-resize" | "nesw-resize" | "nwse-resize" | "zoom-in" | "zoom-out";
-type FilterMode = "point" | "bilinear" | "trilinear";
-type FogMode = "linear" | "exponential" | "exponentialSquared";
-type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
 type Length = number | string;
 type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;
 type Overflow = "visible" | "hidden" | "clip" | "scroll" | "auto";
-type PrimitiveMesh = PrimitiveType;
-type PrimitiveType = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
 type QuaternionLike = { x: number; y: number; z: number; w: number };
 type ReactNode = ReactElementLike | string | number | boolean | null | undefined | ReactNode[];
-type ShadowQualityMode = "disable" | "hardOnly" | "all";
-type TextureWrapMode = "repeat" | "clamp" | "mirror";
 type Vector2Like = { x: number; y: number };
 type Vector3Like = { x: number; y: number; z: number };
-type VolumeDetail = "low" | "medium" | "high" | "ultra";
-type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";

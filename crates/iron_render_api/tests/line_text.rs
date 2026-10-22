@@ -17,26 +17,34 @@ fn object(n: u64) -> ObjectId {
 fn a_line_renderer_starts_unfilled_and_a_fill_colour_turns_the_fill_on() {
     iron_render_api::reset();
     let line = LineRenderer2DRef::attach(object(1));
-    assert!(!line.has_fill());
+    assert!(line.fill_color().is_none());
     assert_eq!(line.fill_rule(), "evenodd");
     assert_eq!(line.sorting_order(), 0.0);
-    line.set_fill_value(Rgba {
+    line.set_fill_color(Some(Rgba {
         r: 0.5,
         g: 0.25,
         b: 1.0,
         a: 0.5,
-    });
-    assert!(line.has_fill(), "writing the colour fills the shape");
+    }));
+    assert!(
+        line.fill_color().is_some(),
+        "writing the colour fills the shape"
+    );
     line.set_fill_rule("nonzero");
     line.set_fill_rule("sideways");
     assert_eq!(line.fill_rule(), "nonzero", "an unknown rule is ignored");
     line.set_sorting_order(-4.0);
     let (_, d) = iron_render_api::line_renderer2ds().remove(0);
-    assert!(d.has_fill && d.fill_value.b == 1.0 && d.sorting_order == -4);
-    // The facade's `fillColor = null`.
-    line.set_has_fill(false);
-    assert!(iron_render_api::line_renderer2ds()[0].1.fill_value.b == 1.0);
-    assert!(!line.has_fill());
+    assert!(d.fill_color.is_some_and(|c| c.b == 1.0) && d.sorting_order == -4);
+    // `fillColor = null`.
+    line.set_fill_color(None);
+    assert!(
+        iron_render_api::line_renderer2ds()[0]
+            .1
+            .fill_color
+            .is_none()
+    );
+    assert!(line.fill_color().is_none());
 }
 
 // M9-API-1508
@@ -47,24 +55,23 @@ fn a_fill_saves_as_fill_color_and_no_fill_as_null() {
     let saved = save_line_renderer2d(a);
     assert!(saved["fillColor"].is_null(), "unfilled saves null");
     assert_eq!(saved["fillRule"], "evenodd");
-    assert!(!saved.contains_key("hasFill") && !saved.contains_key("fillValue"));
-    a.set_fill_value(Rgba {
+    a.set_fill_color(Some(Rgba {
         r: 1.0,
         g: 0.0,
         b: 0.0,
         a: 1.0,
-    });
+    }));
     a.set_sorting_order(7.0);
     let saved = save_line_renderer2d(a);
     assert_eq!(saved["fillColor"]["value"][0], 1.0);
     assert_eq!(saved["sortingOrder"], 7);
     let b = LineRenderer2DRef::attach(object(2));
     assert!(load_line_renderer2d(b, &saved).is_empty());
-    assert!(b.has_fill() && b.fill_value().r == 1.0 && b.sorting_order() == 7.0);
+    assert!(b.fill_color().is_some_and(|c| c.r == 1.0) && b.sorting_order() == 7.0);
     let mut cleared = saved.clone();
     cleared.insert("fillColor".into(), serde_json::Value::Null);
     load_line_renderer2d(b, &cleared);
-    assert!(!b.has_fill());
+    assert!(b.fill_color().is_none());
 }
 
 // M9-API-1509

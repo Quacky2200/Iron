@@ -1909,8 +1909,7 @@ pub struct StrokeData {
     pub width: f64,
     pub color: Rgba,
     pub r#loop: bool,
-    pub has_fill: bool,
-    pub fill_value: Rgba,
+    pub fill_color: Option<Rgba>,
     pub fill_rule: String,
     pub sorting_order: i32,
     pub points: Vec<V2>,
@@ -1928,13 +1927,7 @@ impl StrokeData {
                 a: 1.0,
             },
             r#loop: false,
-            has_fill: false,
-            fill_value: Rgba {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            },
+            fill_color: None,
             fill_rule: "evenodd".to_string(),
             sorting_order: 0,
             points: Vec::new(),
@@ -2015,6 +2008,13 @@ pub fn save_line_renderer2d(r: LineRenderer2DRef) -> Map<String, Value> {
             json!({ "$type": "Color", "value": [d.color.r, d.color.g, d.color.b, d.color.a] }),
         );
         m.insert("loop".into(), json!(d.r#loop));
+        m.insert(
+            "fillColor".into(),
+            d.fill_color.map_or(
+                Value::Null,
+                |c| json!({ "$type": "Color", "value": [c.r, c.g, c.b, c.a] }),
+            ),
+        );
         m.insert("fillRule".into(), json!(d.fill_rule));
         m.insert("sortingOrder".into(), json!(d.sorting_order));
         m.insert(
@@ -2026,7 +2026,6 @@ pub fn save_line_renderer2d(r: LineRenderer2DRef) -> Map<String, Value> {
                     .collect(),
             ),
         );
-        m.insert("fillColor".into(), if d.has_fill { json!({ "$type": "Color", "value": [d.fill_value.r, d.fill_value.g, d.fill_value.b, d.fill_value.a] }) } else { Value::Null });
     });
     m
 }
@@ -2040,6 +2039,12 @@ pub fn load_line_renderer2d(r: LineRenderer2DRef, props: &Map<String, Value>) ->
                 "width" => v.as_f64().map(|x| d.width = x),
                 "color" => color_of(v).map(|x| d.color = x),
                 "loop" => v.as_bool().map(|x| d.r#loop = x),
+                "fillColor" => if v.is_null() {
+                    Some(None)
+                } else {
+                    color_of(v).map(Some)
+                }
+                .map(|x| d.fill_color = x),
                 "fillRule" => v
                     .as_str()
                     .filter(|s| ["evenodd", "nonzero"].contains(s))
@@ -2049,17 +2054,6 @@ pub fn load_line_renderer2d(r: LineRenderer2DRef, props: &Map<String, Value>) ->
                     .as_array()
                     .and_then(|a| a.iter().map(v2_of).collect::<Option<Vec<V2>>>())
                     .map(|p| d.points = p),
-                "fillColor" => {
-                    if v.is_null() {
-                        d.has_fill = false;
-                        Some(())
-                    } else {
-                        color_of(v).map(|c| {
-                            d.has_fill = true;
-                            d.fill_value = c;
-                        })
-                    }
-                }
                 other => {
                     warnings.push(format!("no property `{other}`; dropped"));
                     continue;
@@ -2136,33 +2130,15 @@ pub mod line_renderer2d_api {
             });
         }
 
-        /// Whether the shape is filled (`fillColor` is set); a filled shape always closes.
+        /// Fills the shape in this colour (null: no fill); a filled shape always closes.
         #[property]
-        pub fn has_fill(self) -> bool {
-            with_line_renderer2d(self, |d| d.has_fill).unwrap_or_else(|| false)
+        pub fn fill_color(self) -> Option<Rgba> {
+            with_line_renderer2d(self, |d| d.fill_color).unwrap_or_else(|| None)
         }
 
-        pub fn set_has_fill(self, v: bool) {
+        pub fn set_fill_color(self, v: Option<Rgba>) {
             with_line_renderer2d(self, |d| {
-                d.has_fill = v;
-            });
-        }
-
-        /// The fill's colour while `hasFill` (a program writes `fillColor`, null for none).
-        #[property]
-        pub fn fill_value(self) -> Rgba {
-            with_line_renderer2d(self, |d| d.fill_value).unwrap_or_else(|| Rgba {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            })
-        }
-
-        pub fn set_fill_value(self, v: Rgba) {
-            with_line_renderer2d(self, |d| {
-                d.fill_value = v;
-                d.has_fill = true;
+                d.fill_color = v;
             });
         }
 

@@ -82,14 +82,21 @@ impl Parse for ValueDecl {
 }
 
 /// `TangentMode = Tangent [Auto, Bezier, Linear]`: scripts see the variants as strings
-/// (`"auto"`), the C ABI the index.
+/// (`"auto"`), the C ABI the index. A variant may name its string (`Windowed = "Windowed"`).
+/// `extern TangentMode = ..` uses an enum another namespace declares: no helper functions or
+/// symbols are made here (the module imports the declaring one's helpers).
 struct EnumDecl {
     ts: String,
     rust: Type,
     /// The Rust variant names.
     variants: Vec<Ident>,
+    /// The script string of a variant, when it is not the variant name with a lower-case first
+    /// letter.
+    explicit: Vec<Option<String>>,
     /// The `///` comment in front of the declaration.
     doc: String,
+    /// Declared by another namespace's `enums(..)`.
+    external: bool,
 }
 
 impl EnumDecl {
@@ -97,7 +104,11 @@ impl EnumDecl {
     fn names(&self) -> Vec<String> {
         self.variants
             .iter()
-            .map(|v| {
+            .zip(&self.explicit)
+            .map(|(v, e)| {
+                if let Some(e) = e {
+                    return e.clone();
+                }
                 let v = v.to_string();
                 let mut c = v.chars();
                 c.next()
@@ -111,20 +122,39 @@ impl EnumDecl {
 impl Parse for EnumDecl {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let doc = doc_of(&input.call(syn::Attribute::parse_outer)?);
+        let external = input.peek(Token![extern]);
+        if external {
+            input.parse::<Token![extern]>()?;
+        }
         let ts: Ident = input.parse()?;
         input.parse::<Token![=]>()?;
         let rust: Type = input.parse()?;
         let content;
         bracketed!(content in input);
-        let variants = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
+        let mut variants = Vec::new();
+        let mut explicit = Vec::new();
+        while !content.is_empty() {
+            variants.push(content.parse::<Ident>()?);
+            if content.peek(Token![=]) {
+                content.parse::<Token![=]>()?;
+                explicit.push(Some(content.parse::<syn::LitStr>()?.value()));
+            } else {
+                explicit.push(None);
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            }
+        }
         if variants.is_empty() {
             return Err(syn::Error::new(ts.span(), "an enum needs variants"));
         }
         Ok(EnumDecl {
             ts: ts.to_string(),
             rust,
-            variants: variants.into_iter().collect(),
+            variants,
+            explicit,
             doc,
+            external,
         })
     }
 }
@@ -181,6 +211,8 @@ struct Args {
     values: Vec<ValueDecl>,
     enums: Vec<EnumDecl>,
     records: Vec<RecordDecl>,
+    /// `aliases(AnimatorController = AnimationController)`: (alias, target).
+    aliases: Vec<(String, String)>,
 }
 
 fn rust_name_of(ty: &Type) -> Option<String> {
@@ -200,6 +232,7 @@ fn parse_args(attr: TokenStream2) -> syn::Result<Args> {
         values: Vec::new(),
         enums: Vec::new(),
         records: Vec::new(),
+        aliases: Vec::new(),
     };
     for m in metas {
         match m {
@@ -221,6 +254,26 @@ fn parse_args(attr: TokenStream2) -> syn::Result<Args> {
                 let decls = Punctuated::<RecordDecl, Token![,]>::parse_terminated
                     .parse2(l.tokens.clone())?;
                 args.records.extend(decls);
+            }
+            Meta::List(l) if l.path.is_ident("aliases") => {
+                let pairs = Punctuated::<syn::MetaNameValue, Token![,]>::parse_terminated
+                    .parse2(l.tokens.clone())?;
+                for nv in pairs {
+                    let alias = nv
+                        .path
+                        .get_ident()
+                        .ok_or_else(|| syn::Error::new(nv.path.span(), "an alias name"))?
+                        .to_string();
+                    let Expr::Path(p) = &nv.value else {
+                        return Err(syn::Error::new(nv.value.span(), "the aliased name"));
+                    };
+                    let target = p
+                        .path
+                        .get_ident()
+                        .ok_or_else(|| syn::Error::new(p.span(), "the aliased name"))?
+                        .to_string();
+                    args.aliases.push((alias, target));
+                }
             }
             Meta::List(l) if l.path.is_ident("handles") => {
                 let pairs = Punctuated::<syn::MetaNameValue, Token![,]>::parse_terminated
@@ -252,7 +305,7 @@ fn parse_args(attr: TokenStream2) -> syn::Result<Args> {
             other => {
                 return Err(syn::Error::new(
                     other.span(),
-                    "expected `namespace = \"..\"`, `quickjs`, `like`, `handles(..)`, `values(..)`, `enums(..)` or `records(..)`",
+                    "expected `namespace = \"..\"`, `quickjs`, `like`, `handles(..)`, `values(..)`, `enums(..)`, `records(..)` or `aliases(..)`",
                 ));
             }
         }
@@ -294,8 +347,12 @@ enum Kind {
     Enum(usize),
     /// A declared record (index into `Args::records`), a result.
     Record(usize),
-    /// `Vec<V>` of a value type or a record, or `Vec<String>`: a result.
+    /// `Vec<V>` of a value type, an enum or a record, or `Vec<String>`: a result.
     List(Box<Kind>),
+    /// `Option<Enum>`: a name, or `None` for a left-out or unknown one (a parameter).
+    OptEnum(usize),
+    /// `Option<f64>`, `Option<String>` or `Option<V>` of a value class: `null` for `None`.
+    Opt(Box<Kind>),
 }
 
 fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
@@ -335,15 +392,33 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
     }
     if let Type::Path(p) = ty
         && let Some(seg) = p.path.segments.last()
+        && seg.ident == "Option"
+        && let syn::PathArguments::AngleBracketed(ab) = &seg.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = ab.args.first()
+    {
+        return match classify(inner, args)? {
+            Kind::Enum(i) => Ok(Kind::OptEnum(i)),
+            k @ (Kind::F64 | Kind::Str(true) | Kind::Value(_)) => Ok(Kind::Opt(Box::new(k))),
+            _ => Err(syn::Error::new(
+                inner.span(),
+                "an `Option` holds an enum, `f64`, `String` or a type declared in `values(..)`",
+            )),
+        };
+    }
+    if let Type::Path(p) = ty
+        && let Some(seg) = p.path.segments.last()
         && seg.ident == "Vec"
         && let syn::PathArguments::AngleBracketed(ab) = &seg.arguments
         && let Some(syn::GenericArgument::Type(inner)) = ab.args.first()
     {
         let k = classify(inner, args)?;
-        if !matches!(k, Kind::Value(_) | Kind::Record(_) | Kind::Str(true)) {
+        if !matches!(
+            k,
+            Kind::Value(_) | Kind::Record(_) | Kind::Str(true) | Kind::Enum(_)
+        ) {
             return Err(syn::Error::new(
                 inner.span(),
-                "a `Vec` result holds a `String` or a type declared in `values(..)` or `records(..)`",
+                "a `Vec` result holds a `String` or a type declared in `values(..)`, `enums(..)` or `records(..)`",
             ));
         }
         return Ok(Kind::List(Box::new(k)));
@@ -499,9 +574,21 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
             let arr = format!("{ts}[]");
             quote!(::iron_api::Ty::Values(#ts, #arr))
         }
-        Kind::Enum(i) => {
+        Kind::Enum(i) | Kind::OptEnum(i) => {
             let ts = &args.enums[*i].ts;
             quote!(::iron_api::Ty::Enum(#ts))
+        }
+        Kind::Opt(inner) => {
+            let (name, ts) = match &**inner {
+                Kind::F64 => ("f64".to_string(), "number | null".to_string()),
+                Kind::Str(_) => ("string".to_string(), "string | null".to_string()),
+                Kind::Value(i) => (
+                    format!("value:{}", args.values[*i].ts),
+                    format!("{} | null", args.values[*i].ts),
+                ),
+                _ => unreachable!("classify only builds Opt of f64, strings and values"),
+            };
+            quote!(::iron_api::Ty::Opt(#name, #ts))
         }
         Kind::Record(i) => {
             let ts = &args.records[*i].ts;
@@ -518,7 +605,13 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
                     args.records[*i].ts.clone(),
                 ),
                 Kind::Str(_) => ("string".to_string(), "string".to_string()),
-                _ => unreachable!("classify only builds lists of strings, values and records"),
+                Kind::Enum(i) => (
+                    format!("enum:{}", args.enums[*i].ts),
+                    args.enums[*i].ts.clone(),
+                ),
+                _ => {
+                    unreachable!("classify only builds lists of strings, values, enums and records")
+                }
             };
             let arr = format!("{ts}[]");
             quote!(::iron_api::Ty::List(#name, #arr))
@@ -531,8 +624,13 @@ fn abi_ty(k: &Kind) -> TokenStream2 {
     match k {
         Kind::Unit | Kind::Value(_) | Kind::Record(_) => quote!(()),
         Kind::Callback(_) => quote!(*const u8),
-        Kind::Enum(_) => quote!(i32),
+        Kind::Enum(_) | Kind::OptEnum(_) => quote!(i32),
         Kind::List(_) => quote!(u32),
+        Kind::Opt(inner) => match &**inner {
+            Kind::F64 => quote!(f64),
+            Kind::Str(_) => quote!(*const u8),
+            _ => quote!(()),
+        },
         Kind::Bool => quote!(bool),
         Kind::F64 => quote!(f64),
         Kind::F32 => quote!(f32),
@@ -562,8 +660,12 @@ fn from_abi(k: &Kind, x: TokenStream2) -> TokenStream2 {
 /// The type a QuickJS function takes for a parameter.
 fn js_param_ty(k: &Kind) -> TokenStream2 {
     match k {
-        Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String),
+        Kind::Str(_) | Kind::Enum(_) | Kind::OptEnum(_) => quote!(::std::string::String),
         Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
+        Kind::Opt(inner) => {
+            let t = js_param_ty(inner);
+            quote!(::std::option::Option<#t>)
+        }
         Kind::F64s => quote!(::std::vec::Vec<f64>),
         Kind::Strs(_) => quote!(::std::vec::Vec<::std::string::String>),
         Kind::Callback(_) => quote!(::iron_api::rquickjs::Function<'js>),
@@ -634,7 +736,7 @@ fn js_default(k: &Kind) -> TokenStream2 {
         Kind::I32 | Kind::U32 => quote!(0),
         Kind::Handle(..) => quote!(::iron_api::rquickjs::Value::new_null(ctx.clone())),
         Kind::F64s | Kind::Strs(_) | Kind::Values(_) => quote!(::std::vec::Vec::new()),
-        Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String::new()),
+        Kind::Str(_) | Kind::Enum(_) | Kind::OptEnum(_) => quote!(::std::string::String::new()),
         _ => quote!(compile_error!("this parameter type cannot be optional")),
     }
 }
@@ -645,6 +747,10 @@ fn js_ret_ty(k: &Kind) -> TokenStream2 {
         Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String),
         Kind::Value(_) | Kind::Record(_) => quote!(::iron_api::rquickjs::Object<'js>),
         Kind::List(_) => quote!(::iron_api::rquickjs::Array<'js>),
+        Kind::Opt(inner) => {
+            let t = js_ret_ty(inner);
+            quote!(::std::option::Option<#t>)
+        }
         other => js_ty(other),
     }
 }
@@ -667,6 +773,47 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
         }
         Kind::Str(false) => quote!(&#x),
         Kind::Str(true) => x,
+        // A name; an empty one (a left-out parameter) is `None`.
+        Kind::OptEnum(i) => {
+            let e = &args.enums[*i];
+            let parse = enum_fn(&e.ts, "parse");
+            let ts = &e.ts;
+            quote! {
+                {
+                    let s: ::std::string::String = #x;
+                    if s.is_empty() {
+                        ::std::option::Option::None
+                    } else {
+                        match #parse(&s) {
+                            ::std::option::Option::Some(v) => ::std::option::Option::Some(v),
+                            ::std::option::Option::None => {
+                                return Err(::iron_api::rquickjs::Exception::throw_type(
+                                    &ctx,
+                                    &::std::format!("`{}` is not a {}", s, #ts),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Kind::Opt(inner) => match &**inner {
+            Kind::Value(i) => {
+                let v = &args.values[*i];
+                let n = v.fields.len();
+                let rust = &v.rust;
+                let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
+                quote! {
+                    match &#x {
+                        Some(o) => Some(<#rust as ::iron_api::ValueType<#n>>::from_parts(
+                            ::iron_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?
+                        )),
+                        None => None,
+                    }
+                }
+            }
+            _ => x,
+        },
         // A name; an empty one (a left-out parameter) is the first value.
         Kind::Enum(i) => {
             let e = &args.enums[*i];
@@ -799,6 +946,18 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
             let name = enum_fn(&args.enums[*i].ts, "name");
             quote!(Ok(#name(#call).to_string()))
         }
+        Kind::Opt(inner) => match &**inner {
+            Kind::Value(i) => {
+                let build = format_ident!("__js_value_{}", args.values[*i].ts);
+                quote! {
+                    match #call {
+                        Some(v) => Ok(Some(#build(&ctx, v)?)),
+                        None => Ok(None),
+                    }
+                }
+            }
+            _ => quote!(Ok(#call)),
+        },
         Kind::Record(i) => {
             let build = format_ident!("__js_rec_{}", args.records[*i].ts);
             quote! {
@@ -817,7 +976,13 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
                     quote!(#build(&ctx, item)?)
                 }
                 Kind::Str(_) => quote!(item.as_str()),
-                _ => unreachable!("classify only builds lists of strings, values and records"),
+                Kind::Enum(i) => {
+                    let name = enum_fn(&args.enums[*i].ts, "name");
+                    quote!(#name(*item))
+                }
+                _ => {
+                    unreachable!("classify only builds lists of strings, values, enums and records")
+                }
             };
             quote! {
                 let items = #call;
@@ -868,6 +1033,7 @@ fn to_abi(k: &Kind, x: TokenStream2, args: &Args) -> TokenStream2 {
             let index = enum_fn(&args.enums[*i].ts, "index");
             quote!(#index(#x))
         }
+        Kind::Opt(inner) if matches!(**inner, Kind::F64) => quote!(#x.unwrap_or(f64::NAN)),
         _ => x,
     }
 }
@@ -984,6 +1150,8 @@ struct Api {
     rest: Option<String>,
     /// `#[nullable]`: the TypeScript type of a handle result (or of the setter's value) is `T | null`.
     nullable: bool,
+    /// `#[nullable(undefined)]`: declared `T | undefined` instead of `T | null`.
+    undefined: bool,
     /// `#[ts_type = ".."]`: the declared TypeScript type of a property (a string-literal union).
     ts_type: Option<String>,
     ret: Kind,
@@ -1024,6 +1192,12 @@ fn api_of(
                 let k = match classify(&pt.ty, args)? {
                     // `Vec<String>` as a parameter is a `string[]` the function owns.
                     Kind::List(inner) if matches!(*inner, Kind::Str(true)) => Kind::Strs(true),
+                    Kind::Opt(inner) if matches!(*inner, Kind::Str(_)) => {
+                        return Err(syn::Error::new(
+                            pt.ty.span(),
+                            "`Option<String>` is only a result (a parameter that may be left out is `#[optional(..)]`)",
+                        ));
+                    }
                     k => k,
                 };
                 params.push((id.ident.clone(), k));
@@ -1143,6 +1317,10 @@ fn api_of(
         options_after,
         rest,
         nullable: attrs.iter().any(|a| a.path().is_ident("nullable")),
+        undefined: attrs.iter().any(|a| {
+            a.path().is_ident("nullable")
+                && matches!(&a.meta, Meta::List(l) if l.tokens.to_string() == "undefined")
+        }),
         ts_type: ts_type_attr(attrs),
         ret,
     })
@@ -1215,6 +1393,42 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
                 quote!(#from(#name).unwrap_or(#first)),
             )
         }
+        Kind::OptEnum(i) => {
+            let e = &args.enums[*i];
+            let from = enum_fn(&e.ts, "from_index");
+            (vec![quote!(#name: i32)], quote!(#from(#name)))
+        }
+        Kind::Opt(inner) => match &**inner {
+            Kind::Value(i) => {
+                let v = &args.values[*i];
+                let part = scalar_ty(&v.fields[0].1);
+                let n = v.fields.len();
+                let names: Vec<Ident> = (0..n).map(|j| format_ident!("{}_{}", name, j)).collect();
+                let params = names.iter().map(|p| quote!(#p: #part)).collect();
+                let rust = &v.rust;
+                let conv = quote! {
+                    {
+                        let parts = [ #( #names as f64 ),* ];
+                        if parts[0].is_nan() {
+                            ::std::option::Option::None
+                        } else {
+                            ::std::option::Option::Some(
+                                <#rust as ::iron_api::ValueType<#n>>::from_parts(parts)
+                            )
+                        }
+                    }
+                };
+                (params, conv)
+            }
+            _ => (
+                vec![quote!(#name: f64)],
+                quote!(if #name.is_nan() {
+                    ::std::option::Option::None
+                } else {
+                    ::std::option::Option::Some(#name)
+                }),
+            ),
+        },
         Kind::Str(owned) => {
             // The script string's object; `script_str` reads it (no copy unless it has a lone
             // surrogate).
@@ -1491,6 +1705,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let ret_m = manifest_ty(&a.ret, &args);
         let kind = kind_tokens(a.tag);
         let nullable = a.nullable;
+        let undefined = a.undefined;
         let ts_type = match &a.ts_type {
             Some(t) => quote!(::std::option::Option::Some(#t)),
             None => quote!(::std::option::Option::None),
@@ -1517,6 +1732,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 ret: #ret_m,
                 options_after: #options_after,
                 nullable: #nullable,
+                undefined: #undefined,
                 ts_type: #ts_type,
             }
         };
@@ -1556,7 +1772,30 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             (None, Some((_, rust))) => quote!(<#rust>::#name( #( #call_args ),* )),
             (None, None) => quote!(#name( #( #call_args ),* )),
         };
-        if let Kind::Value(i) = &a.ret {
+        if let Kind::Opt(inner) = &a.ret
+            && let Kind::Value(i) = &**inner
+        {
+            // An optional value: NaN in every field is `None`.
+            let v = &args.values[*i];
+            let part = scalar_ty(&v.fields[0].1);
+            let n = v.fields.len();
+            let rust = &v.rust;
+            let idx: Vec<usize> = (0..n).collect();
+            shims.push(quote! {
+                /// # Safety
+                /// `out` points to room for the value's fields.
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out: *mut #part ) {
+                    let parts = match #call {
+                        ::std::option::Option::Some(v) => {
+                            <#rust as ::iron_api::ValueType<#n>>::to_parts(v)
+                        }
+                        ::std::option::Option::None => [f64::NAN; #n],
+                    };
+                    #( unsafe { *out.add(#idx) = parts[#idx] as #part; } )*
+                }
+            });
+        } else if let Kind::Value(i) = &a.ret {
             // A value result is written through a trailing pointer, one scalar per field.
             let v = &args.values[*i];
             let part = scalar_ty(&v.fields[0].1);
@@ -1624,7 +1863,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     let flat = format_ident!("__flat_{}", args.records[*i].ts);
                     quote!(#flat(item, &mut out);)
                 }
-                _ => unreachable!("classify only builds lists of values and records"),
+                Kind::Enum(i) => {
+                    let index = enum_fn(&args.enums[*i].ts, "index");
+                    quote!(out.push(#index(*item) as f64);)
+                }
+                _ => unreachable!("classify only builds lists of values, enums and records"),
             };
             let unsafe_kw = if a.params.iter().any(|(_, k)| {
                 matches!(
@@ -1648,6 +1891,18 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     }
                     ::iron_api::return_flat(out);
                     items.len() as u32
+                }
+            });
+        } else if let Kind::Opt(inner) = &a.ret
+            && matches!(**inner, Kind::Str(_))
+        {
+            // An optional string: `None` is an empty text and a flag the caller reads.
+            shims.push(quote! {
+                /// # Safety
+                /// `out_len` is valid for a write.
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out_len: *mut i64 ) -> *const u8 {
+                    unsafe { ::iron_api::return_string_opt(#call, out_len) }
                 }
             });
         } else if let Kind::Str(_) = &a.ret {
@@ -2194,7 +2449,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     // ---- enums: manifest entries, helper functions, `iron_<Enum>_name` / `_parse` shims ----
     let mut enum_defs: Vec<TokenStream2> = Vec::new();
     let mut enum_items: Vec<TokenStream2> = Vec::new();
-    for e in &args.enums {
+    for e in args.enums.iter().filter(|e| !e.external) {
         let ts = &e.ts;
         let names = e.names();
         let rust = &e.rust;
@@ -2282,7 +2537,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         if args.quickjs {
             js_sets.push(quote! {
                 {
-                    let object = ::iron_api::rquickjs::Object::new(ctx.clone())?;
+                    let object = match ctx.globals().get::<_, ::iron_api::rquickjs::Value>(#ts)? {
+                        v if v.is_object() && !v.is_function() => v.into_object().expect("checked"),
+                        _ => ::iron_api::rquickjs::Object::new(ctx.clone())?,
+                    };
                     object.set("name", ::iron_api::rquickjs::Function::new(
                         ctx.clone(),
                         |i: i32| -> ::std::option::Option<::std::string::String> {
@@ -2427,6 +2685,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     }
     let module_doc = doc_of(&module.attrs);
     let like = args.like;
+    let alias_names: Vec<&String> = args.aliases.iter().map(|(a, _)| a).collect();
+    let alias_targets: Vec<&String> = args.aliases.iter().map(|(_, t)| t).collect();
 
     let quickjs = if args.quickjs {
         quote! {
@@ -2443,6 +2703,12 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 #( #js_hidden )*
                 #( #js_sets )*
                 ::iron_api::qjs::install_namespace(ctx, #ns, ns)?;
+                #(
+                    ctx.globals().set(
+                        #alias_names,
+                        ctx.globals().get::<_, ::iron_api::rquickjs::Value>(#alias_targets)?,
+                    )?;
+                )*
                 Ok(())
             }
         }
@@ -2476,6 +2742,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 handles: &[ #( #handle_names ),* ],
                 enums: &[ #( #enum_defs ),* ],
                 records: &[ #( #record_defs ),* ],
+                aliases: &[ #( (#alias_names, #alias_targets) ),* ],
                 values: &[ #( #value_defs ),* ],
                 classes: &[ #( #class_defs ),* ],
                 functions: &[ #( #ns_entries ),* ],

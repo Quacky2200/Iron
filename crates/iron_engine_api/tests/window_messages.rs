@@ -3,7 +3,7 @@
 use iron_api::Callback;
 use iron_api::callback::HandleArg;
 use iron_engine_api::log::{self, Level};
-use iron_engine_api::window::{self, DomainId, MAIN, MAX_MESSAGE_BYTES, WindowRef};
+use iron_engine_api::window::{self, DomainId, MAIN, MAX_MESSAGE_BYTES, Style, WindowRef};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -22,7 +22,7 @@ fn make(style: &str, parent: WindowRef) -> WindowRef {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        style,
+        Style::parse(style),
         parent,
         true,
         true,

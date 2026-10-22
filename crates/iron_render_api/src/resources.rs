@@ -284,10 +284,32 @@ pub fn load_texture(
     })
 }
 
+/// How a texture is sampled between texels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterKind {
+    Point,
+    Bilinear,
+    Trilinear,
+}
+
+/// What a texture does outside 0 to 1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WrapKind {
+    Repeat,
+    Clamp,
+    Mirror,
+}
+
 #[iron_api(
     namespace = "Texture", quickjs,
     handles(Texture = TextureRef),
-    values(Color = Rgba [r: f64, g: f64, b: f64, a: f64])
+    values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]),
+    enums(
+        /// How a texture is sampled between texels.
+        FilterMode = FilterKind [Point, Bilinear, Trilinear],
+        /// What a texture does outside 0 to 1.
+        TextureWrapMode = WrapKind [Repeat, Clamp, Mirror]
+    )
 )]
 pub mod texture_api {
     use super::*;
@@ -299,13 +321,20 @@ pub mod texture_api {
         #[optional(filter_mode, wrap_mode, mipmaps = 1, aniso_level, linear)]
         pub fn load(
             src: &str,
-            filter_mode: &str,
-            wrap_mode: &str,
+            filter_mode: Option<FilterKind>,
+            wrap_mode: Option<WrapKind>,
             mipmaps: bool,
             aniso_level: f64,
             linear: bool,
         ) -> TextureRef {
-            super::load_texture(src, filter_mode, wrap_mode, mipmaps, aniso_level, linear)
+            super::load_texture(
+                src,
+                filter_mode.map_or("", filter_mode_name),
+                wrap_mode.map_or("", texture_wrap_mode_name),
+                mipmaps,
+                aniso_level,
+                linear,
+            )
         }
 
         /// A texture from linear colours, bottom row first like Unity's `SetPixels`
@@ -316,8 +345,8 @@ pub mod texture_api {
             width: f64,
             height: f64,
             colors: &[Rgba],
-            filter_mode: &str,
-            wrap_mode: &str,
+            filter_mode: Option<FilterKind>,
+            wrap_mode: Option<WrapKind>,
             mipmaps: bool,
             aniso_level: f64,
             linear: bool,
@@ -342,16 +371,8 @@ pub mod texture_api {
             }
             new_texture(TextureInfo {
                 src: None,
-                filter_mode: if filter_mode.is_empty() {
-                    "bilinear".into()
-                } else {
-                    filter_mode.into()
-                },
-                wrap_mode: if wrap_mode.is_empty() {
-                    "repeat".into()
-                } else {
-                    wrap_mode.into()
-                },
+                filter_mode: filter_mode_name(filter_mode.unwrap_or(FilterKind::Bilinear)).into(),
+                wrap_mode: texture_wrap_mode_name(wrap_mode.unwrap_or(WrapKind::Repeat)).into(),
                 mipmaps,
                 aniso_level: if aniso_level.is_nan() {
                     1
@@ -440,29 +461,34 @@ pub mod texture_api {
 
         /// `point`, `bilinear` or `trilinear`.
         #[property]
-        pub fn filter_mode(self) -> String {
+        pub fn filter_mode(self) -> FilterKind {
             texture_info(self)
-                .map(|i| i.filter_mode)
-                .unwrap_or_default()
+                .and_then(|i| filter_mode_parse(&i.filter_mode))
+                .unwrap_or(FilterKind::Bilinear)
         }
 
         /// Changing it uploads the texture again. Another name is ignored.
-        pub fn set_filter_mode(self, mode: &str) {
-            if ["point", "bilinear", "trilinear"].contains(&mode) {
-                with_texture(self, |d| d.filter_mode = mode.to_string());
+        pub fn set_filter_mode(self, mode: Option<FilterKind>) {
+            if let Some(mode) = mode {
+                with_texture(self, |d| d.filter_mode = filter_mode_name(mode).to_string());
                 changed_texture(self);
             }
         }
 
         /// `repeat`, `clamp` or `mirror`.
         #[property]
-        pub fn wrap_mode(self) -> String {
-            texture_info(self).map(|i| i.wrap_mode).unwrap_or_default()
+        pub fn wrap_mode(self) -> WrapKind {
+            texture_info(self)
+                .and_then(|i| texture_wrap_mode_parse(&i.wrap_mode))
+                .unwrap_or(WrapKind::Repeat)
         }
 
-        pub fn set_wrap_mode(self, mode: &str) {
-            if ["repeat", "clamp", "mirror"].contains(&mode) {
-                with_texture(self, |d| d.wrap_mode = mode.to_string());
+        /// Another name is ignored.
+        pub fn set_wrap_mode(self, mode: Option<WrapKind>) {
+            if let Some(mode) = mode {
+                with_texture(self, |d| {
+                    d.wrap_mode = texture_wrap_mode_name(mode).to_string()
+                });
                 changed_texture(self);
             }
         }

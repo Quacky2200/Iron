@@ -474,7 +474,7 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   (`iron_kinds::ObjectExtra`: the model's own nodes are left out and built again on load). Not built: glTF animations.
 - **Screen, QualitySettings, Gizmos** (`iron_engine_api`): `Screen` has `scale`, `aspect`, `fullScreenMode`, `setResolution(w, h, { mode,
   refreshRate })`, `windowWidth` / `windowHeight`, `resolutionCount` + `resolutionWidth(i)` ..., `currentResolution...`,
-  `supportedFullScreenModeCount` / `...At(i)` and `onChange(f)` (token, `offChange`). The host feeds it with `screen::update(w, h,
+  `supportedFullScreenModes` (a `FullScreenMode[]`, an enum list) and `onChange(f)` (token, `offChange`). The host feeds it with `screen::update(w, h,
   scale)` (runs the listeners) and `set_display(..)` and takes the window changes scripts asked for with `take_requests()`.
   `QualitySettings` has the named levels (`levelCount`, `levelName(i)`, `levelJson(i)`, `getQualityLevel()`, `setQualityLevel(i)` /
   `setQualityLevelByName(name)`, `onLevelChanged(f)`) and every setting with the TypeScript's validation (unknown names ignored,
@@ -683,12 +683,12 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
   `volumetricFogEnabled` + `volumetricFogIntensity` / `Anisotropy` / `Steps` / `Distance` / `Albedo` / `SharpDistance` / `SharpSamples` /
   `Resolution` / `Denoising` / `HistoryWeight` / `Samples` / `MotionSamples`; `autoExposureEnabled` + `autoExposureMinEv` / `MaxEv` /
   `Compensation` / `SpeedDarkToLight` / `SpeedLightToDark` / `Metering` / `LowPercent` / `HighPercent` / `DarkAdaptation` / `DarkBelow` /
-  `Hold` + `clearAutoExposureCurve()` / `addAutoExposureCurvePoint(ev, stops)`; `fixedExposureEnabled` + `fixedExposureValue`,
+  `Hold` + `clearAutoExposureCurve()` / `addAutoExposureCurvePoint(ev, stops)`; `fixedExposure` (`number | null`, an `Option<f64>`),
   `exposureTransition`, `freezeExposure()`. Setting a field of the height fog, light shafts or auto exposure turns it on with the
   defaults for the rest, as the sky does.
 - **Object-valued properties** are facade writes (`facade.ts`, `__xw_<Namespace>_<name>`; the compiler calls it for
   `RenderSettings.heightFog = h`): `heightFog`, `volumetricFog`, `autoExposure` (object or `null`, also `cond ? { .. } : null` and
-  spreads) and `fixedExposure` (number or `null`, readable through `__xp_`). `FogMode` and `VolumeDetail` are string unions.
+  spreads). `fixedExposure` is native (`number | null`). `FogMode` and `VolumeDetail` are enums (`#[iron_api]` `enums(..)`, string unions in the declarations).
 - **`Camera`**: `fog` (show the fog, on), `exposure` / `sceneBrightness` (EV100, read back from the GPU a frame or two late, NaN
   before: the app calls `camera::set_exposure`), `resetExposure()`, `aperture` / `shutterSpeed` / `iso` and `physicalExposure`.
 - **`Light`**: `volumetricIntensity`, `spotShape` (`cone` | `pyramid`), `aspectRatio`; `Light.illuminanceAt(point, normal?)` and
@@ -714,8 +714,7 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
 games too. The renderer-side parts send the same ops as the QuickJS classes (`render.stroke`, `render.text`), so the pictures match.
 
 - **`LineRenderer2D`** (generated, `gen_components.py`): besides `points`, `width`, `color`, `loop` it has `fillRule`
-  (`evenodd` | `nonzero`), `sortingOrder` and `fillColor`. `fillColor` is a facade property over two native fields (`hasFill`,
-  `fillValue`): a `Color` fills the (closed) shape, `null` takes the fill away (`__xg_` / `__xs_LineRenderer2D_fillColor`). Scene files
+  (`evenodd` | `nonzero`), `sortingOrder` and `fillColor`. `fillColor` is a native `Option<Rgba>` (`Color | null`; the generator's `color?` field type): a `Color` fills the (closed) shape, `null` takes the fill away. Scene files
   save `fillColor` as a colour or `null`. `render_sync.rs` sends `stroke id object width color loop points fill rule order`; the
   renderer keeps a shape's triangles while its points and rule are unchanged (a native game sends every shape every frame).
 - **`TextMesh`** (generated): `text`, `fontSize`, `color`, `font` (`""`: Inter), `fontWeight`, `alignment`, `maxWidth`,
@@ -760,6 +759,13 @@ Part of making every declaration generated from Rust (plan: [iron-generated-dts-
 | `#[options(after = points)]` with `#[optional(points, closed = false, ..)]` | `new Spline(points?, { closed?, tension? })`: the object after `points` gives the parameters after it | the positional shim |
 | `like` on the attribute | value *parameters* are declared `Vector3Like` (a plain `{ x, y, z }` does) | - |
 | `#[nullable]` on a handle getter and its setter | `T \| null` in the declaration | a zero handle is `null` as before |
+| `#[nullable(undefined)]` (on a handle result, a static property such as `Camera.main`) | `T \| undefined` | the same zero handle (manifest `undefined`) |
+| `Option<f64>`, `Option<String>` (a result only), `Option<V>` for a value class | `number \| null`, `string \| null`, `Color \| null` (manifest `opt:f64`, `opt:string`, `opt:value:Color`) | the inner type with a none mark: NaN for a number, NaN in every field for a value (also as a parameter, so a setter takes `null`), and for a string an empty text plus the flag `iron_api_result_none()` the compiled call reads right after (`Window.openError`, `RenderSettings.fixedExposure`, `LineRenderer2D.fillColor`); QuickJS gets `null` |
+| `enums(extern PrimitiveType = Primitive [..])` | an enum another namespace declares (no second set of converters, no second declaration); the module imports the declaring namespace's `primitive_type_*` helpers | the same index |
+| `enums(FullScreenMode = Mode [ExclusiveFullScreen = "ExclusiveFullScreen", ..])` | a variant may name its string when it is not the variant with a lower-case first letter | the index |
+| a parameter `Option<Enum>` | the enum, usually optional; a left-out or unknown name is `None` (compiled calls pass -1; QuickJS throws a `TypeError` for an unknown name and takes a left-out one as `None`): setters use it to ignore a name that is not one (`RenderSettings.fogMode = "nonsense"`), constructors to tell "left out" (the `.meta` importer's value) from the first value (`Texture.load(.., { filterMode })`) | the index (-1: none) |
+| `-> Vec<Enum>` | `Enum[]` (manifest `list:enum:X`) | the count, and the indexes in the result buffer (`Screen.supportedFullScreenModes`) |
+| `aliases(AnimatorController = AnimationController)` | `type AnimatorController = AnimationController; declare const AnimatorController: typeof AnimationController;` for a class, only the `type` for an enum (`PrimitiveMesh = PrimitiveType`); the compiler renames the alias to its target in the source, QuickJS sets a second global | - |
 | `#[ts_type = "\"low\" \| \"high\""]` on a `String` getter (and setter) | what the property reads as is that union; a class property is an accessor pair (`get x(): "low" \| "high"; set x(v: string)`: any string may still be written, an unknown name is ignored), a namespace property the union alone | - (manifest JSON `tsType`) |
 | `///` on the module, an `impl` block (the class), a function, and inside `enums(..)` / `records(..)` (also on record fields) | JSDoc in the generated `.d.ts` (manifest JSON `doc`) | - |
 
@@ -768,6 +774,17 @@ Part of making every declaration generated from Rust (plan: [iron-generated-dts-
 `let m: TangentMode = "auto"` works (the compiler sees a `string`; `tsc` sees the union). The native helpers for Rust code are
 generated next to the shims (`tangent_mode_name`, `_parse`, `_index`, `_from_index`, `TANGENT_MODE_NAMES`). QuickJS passes and
 returns the strings and throws a `TypeError` for an unknown name (a left-out optional enum is the first value in both).
+
+**Enums of the engine API (2026-10-22, plan phase 2a).** `FogMode`, `VolumeDetail` (`RenderSettings`), `PrimitiveType` (with the
+alias `PrimitiveMesh`; `PrimitiveType.Cube` is the enum value `"cube"`), `FilterMode`, `TextureWrapMode` (`Texture`), `FullScreenMode`
+(`Screen`), `ShadowQualityMode` (`QualitySettings`), `WindowStyle` (`Window`) and `LoadSceneMode` (`SceneManager`) are
+`#[iron_api]` enums: the string unions in the declarations are generated, `tsc` and the compiler's `Record<FogMode, V>` see the same
+names, and a setter ignores a name that is not one. Differences from before: the natives
+`Screen.supportedFullScreenModeCount` / `...At(i)`, `RenderSettings.fixedExposureEnabled` / `...Value`, `LineRenderer2D.hasFill` /
+`fillValue` and `Window.openErrorText` are gone (the nullable property replaces each pair), `Camera.main` is a property of the
+native `Camera` class in QuickJS too (it was a function there), and `Window.create({ style: "floating" })` throws a `TypeError` in
+QuickJS (compiled code and the old string API fell back to `normal` with a warning). Tests: `crates/iron_api/tests/enums_nullables.rs`
+(`M9-API-1622`..`1626`), `crates/iron_native/tests/enums.rs` (`M9-API-1627`, `1628`), `tools/iron_ts_tests` `M9-TS-3340`.
 
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;

@@ -426,7 +426,8 @@ fn controller<R>(c: ControllerRef, f: impl FnOnce(&mut Controller) -> R) -> Opti
 
 #[iron_api(namespace = "AnimationController", quickjs, handles(
     AnimationController = ControllerRef, AnimationParameter = ParameterRef,
-    AnimationNode = NodeRef, AnimationTransition = TransitionRef, AnimationBuilder = BuilderRef))]
+    AnimationNode = NodeRef, AnimationTransition = TransitionRef, AnimationBuilder = BuilderRef),
+    aliases(AnimatorController = AnimationController))]
 pub mod animation_controller_api {
     use super::*;
 

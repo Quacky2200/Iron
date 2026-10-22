@@ -204,6 +204,8 @@ pub mod camera_api {
 
         /// The main camera (`Camera.main`): the first active one that draws to the screen; none
         /// without one.
+        #[property]
+        #[nullable(undefined)]
         pub fn main() -> CameraRef {
             super::cameras()
                 .into_iter()

@@ -383,7 +383,27 @@ fn request_mode(mode: &str, width: u32, height: u32, refresh_rate: f64) {
     });
 }
 
-#[iron_api(namespace = "Screen", quickjs)]
+/// How the window covers the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FullScreenKind {
+    ExclusiveFullScreen,
+    FullScreenWindow,
+    MaximizedWindow,
+    Windowed,
+}
+
+#[iron_api(
+    namespace = "Screen", quickjs,
+    enums(
+        /// How the window covers the screen (Unity's `FullScreenMode`).
+        FullScreenMode = FullScreenKind [
+            ExclusiveFullScreen = "ExclusiveFullScreen",
+            FullScreenWindow = "FullScreenWindow",
+            MaximizedWindow = "MaximizedWindow",
+            Windowed = "Windowed"
+        ]
+    )
+)]
 pub mod screen_api {
     use super::*;
 
@@ -413,20 +433,14 @@ pub mod screen_api {
     /// `MaximizedWindow` or `Windowed`. Setting it asks the host (a mode the platform lacks falls
     /// back to the nearest).
     #[property]
-    pub fn full_screen_mode() -> String {
-        st(|s| s.screen.mode.clone())
+    pub fn full_screen_mode() -> FullScreenKind {
+        st(|s| full_screen_mode_parse(&s.screen.mode).unwrap_or(FullScreenKind::Windowed))
     }
 
-    pub fn set_full_screen_mode(mode: &str) {
-        if [
-            "ExclusiveFullScreen",
-            "FullScreenWindow",
-            "MaximizedWindow",
-            "Windowed",
-        ]
-        .contains(&mode)
-        {
-            request_mode(mode, 0, 0, 0.0);
+    /// Another name is ignored.
+    pub fn set_full_screen_mode(mode: Option<FullScreenKind>) {
+        if let Some(mode) = mode {
+            request_mode(full_screen_mode_name(mode), 0, 0, 0.0);
         }
     }
 
@@ -447,11 +461,15 @@ pub mod screen_api {
     /// fullscreen: the closest the monitor has), optionally with a mode and a refresh rate.
     /// Borderless and maximized windows ignore the size.
     #[optional(mode, refresh_rate = 0)]
-    pub fn set_resolution(width: f64, height: f64, mode: &str, refresh_rate: f64) {
-        let mode = if mode.is_empty() {
-            st(|s| s.screen.mode.clone())
-        } else {
-            mode.to_string()
+    pub fn set_resolution(
+        width: f64,
+        height: f64,
+        mode: Option<FullScreenKind>,
+        refresh_rate: f64,
+    ) {
+        let mode = match mode {
+            Some(m) => full_screen_mode_name(m).to_string(),
+            None => st(|s| s.screen.mode.clone()),
         };
         request_mode(
             &mode,
@@ -522,19 +540,15 @@ pub mod screen_api {
         st(|s| s.screen.current_resolution.refresh_rate)
     }
 
-    /// How many modes this platform offers, most fullscreen first.
+    /// The modes this platform offers, most fullscreen first.
     #[property]
-    pub fn supported_full_screen_mode_count() -> u32 {
-        st(|s| s.screen.supported_modes.len() as u32)
-    }
-
-    pub fn supported_full_screen_mode_at(index: f64) -> String {
+    pub fn supported_full_screen_modes() -> Vec<FullScreenKind> {
         st(|s| {
             s.screen
                 .supported_modes
-                .get(index as usize)
-                .cloned()
-                .unwrap_or_default()
+                .iter()
+                .filter_map(|m| full_screen_mode_parse(m))
+                .collect()
         })
     }
 
@@ -624,7 +638,21 @@ fn change(f: impl FnOnce(&mut QualityState)) {
     });
 }
 
-#[iron_api(namespace = "QualitySettings", quickjs)]
+/// Which shadows are drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShadowKind {
+    Disable,
+    HardOnly,
+    All,
+}
+
+#[iron_api(
+    namespace = "QualitySettings", quickjs,
+    enums(
+        /// Which shadows are drawn: none, only hard ones, or soft ones too.
+        ShadowQualityMode = ShadowKind [Disable, HardOnly, All]
+    )
+)]
 pub mod quality_api {
     use super::*;
 
@@ -726,15 +754,14 @@ pub mod quality_api {
 
     /// Which shadows are drawn: `disable`, `hardOnly` or `all`.
     #[property]
-    #[ts_type = "\"disable\" | \"hardOnly\" | \"all\""]
-    pub fn shadows() -> String {
-        st(|s| s.quality.current.shadows.clone())
+    pub fn shadows() -> ShadowKind {
+        st(|s| shadow_quality_mode_parse(&s.quality.current.shadows).unwrap_or(ShadowKind::All))
     }
 
-    #[ts_type = "\"disable\" | \"hardOnly\" | \"all\""]
-    pub fn set_shadows(mode: &str) {
-        if ["disable", "hardOnly", "all"].contains(&mode) {
-            change(|q| q.shadows = mode.to_string());
+    /// Another name is ignored.
+    pub fn set_shadows(mode: Option<ShadowKind>) {
+        if let Some(mode) = mode {
+            change(|q| q.shadows = shadow_quality_mode_name(mode).to_string());
         }
     }
 

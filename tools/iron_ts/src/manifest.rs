@@ -57,6 +57,9 @@ pub struct Manifest {
     pub enums: HashMap<String, EnumInfo>,
     /// Result records (`SplineHit`) by name.
     pub records: HashMap<String, Vec<(String, RecField)>>,
+    /// Other script names for a class or an enum: alias -> target (`AnimatorController` ->
+    /// `AnimationController`).
+    pub aliases: HashMap<String, String>,
 }
 
 /// An enum of the engine API.
@@ -144,6 +147,10 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
                 ExtTy::Record(name.to_string())
             } else if other == "list:string" {
                 ExtTy::StrList
+            } else if let Some(inner) = other.strip_prefix("opt:") {
+                ExtTy::Opt(Box::new(ext_ty(inner)?))
+            } else if let Some(name) = other.strip_prefix("list:enum:") {
+                ExtTy::EnumList(name.to_string())
             } else if let Some(name) = other.strip_prefix("list:value:") {
                 ExtTy::ValueList(name.to_string())
             } else if let Some(name) = other.strip_prefix("list:record:") {
@@ -222,6 +229,11 @@ impl Manifest {
             );
             self.enums.insert(ename.to_string(), info);
         }
+        for a in v["aliases"].as_array().into_iter().flatten() {
+            if let (Some(alias), Some(of)) = (a["name"].as_str(), a["of"].as_str()) {
+                self.aliases.insert(alias.to_string(), of.to_string());
+            }
+        }
         for r in v["records"].as_array().into_iter().flatten() {
             let rname = r["name"]
                 .as_str()
@@ -294,7 +306,8 @@ impl Manifest {
             }
             self.classes.insert(cname.to_string(), class);
         }
-        self.namespaces.insert(ns, fns);
+        // An enum named like the namespace (`PrimitiveType`) already put `name` / `parse` there.
+        self.namespaces.entry(ns).or_default().extend(fns);
         Ok(())
     }
 

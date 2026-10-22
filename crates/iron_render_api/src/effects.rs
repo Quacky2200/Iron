@@ -430,50 +430,79 @@ pub fn create_primitive(kind: &str, name: &str) -> ObjectId {
     object
 }
 
-#[iron_api(namespace = "Primitives", quickjs, handles(GameObject = ObjectId))]
+/// The built-in meshes (Unity's `PrimitiveType`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Primitive {
+    Cube,
+    Sphere,
+    Capsule,
+    Cylinder,
+    Plane,
+    Quad,
+}
+
+#[iron_api(
+    namespace = "Primitives", quickjs,
+    handles(GameObject = ObjectId),
+    enums(extern PrimitiveType = Primitive [Cube, Sphere, Capsule, Cylinder, Plane, Quad])
+)]
 pub mod primitives_api {
+    use super::primitive_type_api::{
+        primitive_type_from_index, primitive_type_name, primitive_type_parse,
+    };
     use super::*;
 
     /// A GameObject with a built-in mesh (`cube`, `sphere`, `capsule`, `cylinder`, `plane`,
     /// `quad`) and its collider, once the physics side has registered a hook. Unity's
     /// `GameObject.CreatePrimitive`.
     #[optional(name)]
-    pub fn create(kind: &str, name: &str) -> ObjectId {
-        super::create_primitive(kind, name)
+    pub fn create(kind: Primitive, name: &str) -> ObjectId {
+        super::create_primitive(primitive_type_name(kind), name)
     }
 }
 
-#[iron_api(namespace = "PrimitiveType", quickjs)]
+/// The names of the built-in meshes: `PrimitiveType.Cube` is `"cube"`, and `PrimitiveType.name(i)`
+/// / `.parse(s)` convert the index.
+#[iron_api(
+    namespace = "PrimitiveType", quickjs,
+    enums(
+        /// A built-in mesh (Unity's `PrimitiveType`).
+        PrimitiveType = Primitive [Cube, Sphere, Capsule, Cylinder, Plane, Quad]
+    ),
+    aliases(PrimitiveMesh = PrimitiveType)
+)]
 pub mod primitive_type_api {
+    use super::*;
+
     #[property]
     #[js_name = "Cube"]
-    pub fn cube() -> String {
-        "cube".into()
+    pub fn cube() -> Primitive {
+        Primitive::Cube
     }
     #[property]
     #[js_name = "Sphere"]
-    pub fn sphere() -> String {
-        "sphere".into()
+    pub fn sphere() -> Primitive {
+        Primitive::Sphere
     }
     #[property]
     #[js_name = "Capsule"]
-    pub fn capsule() -> String {
-        "capsule".into()
+    pub fn capsule() -> Primitive {
+        Primitive::Capsule
     }
     #[property]
     #[js_name = "Cylinder"]
-    pub fn cylinder() -> String {
-        "cylinder".into()
+    pub fn cylinder() -> Primitive {
+        Primitive::Cylinder
     }
     #[property]
     #[js_name = "Plane"]
-    pub fn plane() -> String {
-        "plane".into()
+    pub fn plane() -> Primitive {
+        Primitive::Plane
     }
     #[property]
     #[js_name = "Quad"]
-    pub fn quad() -> String {
-        "quad".into()
+    pub fn quad() -> Primitive {
+        Primitive::Quad
     }
 }
 

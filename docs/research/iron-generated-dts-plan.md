@@ -683,3 +683,29 @@ differential test, bit for bit, in every GC mode), instead of captured JSON. Wha
 **P4a done:** `crates/iron_ui_tables` (since moved into `iron_ui::tables`, `crates/iron_ui/src/tables`) holds the UI tables: `STYLE_PROPS` (name, parts of the TypeScript type, doc, group), `NAMED_TYPES`, `SHORTHANDS`, `LENGTH_UNITS`, `ATTRS` (scope Core / Html / Svg / Compat, elements), `ELEMENTS` and `SVG_KINDS`, `EVENT_FIELDS` (slot or flag of each field), `EVENT_INTERFACES`, `EVENT_PROPS` (prop, event type, interface), and the React `HOOKS` / `CREATE_ROOT` signatures. `iron_ui` takes `CURSORS` and `SVG_KINDS` from it; `crates/iron_ui/tests/ui_tables.rs` (`M9-TS-3301..3308`) checks the tables against the implementation in both directions. `tools/iron_ts/src/ui_dts.rs` writes the UI `.d.ts` and the compiled prelude; `gen_ambient.py`, `ambient.d.ts` and `ambient.ts` are gone. The API surface is unchanged except the deliberate additions listed in `tools/iron_ts/TODO.md`.
 
 **Not done (P4b):** moving the hook helpers of `ui.ts` into Rust. They are generic TypeScript compiled per use (a `useState<T>` over a `number`, a `string`, an object), calling the type-specific `Ui.load` / `Ui.store` natives; a native Rust function cannot be generic over the compiled program's types, so this needs the compiler to lower the hooks as IR (`jsx.rs`) rather than as TypeScript text. It is listed in the `ALLOWED_TS` ratchet with that reason.
+
+## 9. Progress, P2a (2026-10-22)
+
+**P2a done** (enums and nullables, one commit). `engine_ts.d.ts` 542 -> 504 lines, `facade.ts` 893 -> 845 lines (chunks 47 -> 40; the
+ratchet `MAX_FACADE_CHUNKS` is 40). What the extensions turned out to be:
+
+- **F-ENUM** (more): `enums(extern X = Rust [..])` for an enum another namespace declares (the module imports the declaring one's
+  `x_parse` / `x_name` / `x_index` / `x_from_index`), explicit strings (`Windowed = "Windowed"`), `Option<Enum>` parameters (a left-out
+  or unknown name is none: a setter ignores it, `Texture.load` takes the `.meta` importer's value), `Vec<Enum>` results
+  (manifest `list:enum:X`). Native: `FogMode`, `VolumeDetail`, `PrimitiveType`, `FilterMode`, `TextureWrapMode`, `FullScreenMode`,
+  `ShadowQualityMode`, `WindowStyle`, `LoadSceneMode`. A manifest enum is also a literal union for the compiler's `Record<X, V>`
+  (`lit_members`).
+- **F-NULL**: `Option<f64>` (NaN), `Option<V>` of a value class (NaN fields) as results and parameters, `Option<String>` as a result
+  (empty text plus `iron_api_result_none()`), manifest `opt:..`, compiled `ExtTy::Opt`; `#[nullable(undefined)]` for the handle
+  properties declared `T | undefined`. Native: `Camera.main`, `Window.parent` / `focused` / `at` / `find` / `byHandle`,
+  `Window.openError`, `RenderSettings.fixedExposure`, `LineRenderer2D.fillColor` (`gen_components.py`'s new `color?` field type).
+- **F-ALIAS**: `aliases(A = B)` (manifest `aliases`; the compiler renames in the source, QuickJS sets a second global, the d.ts prints
+  `type A = B` and `declare const A: typeof B` for a class): `AnimatorController`, `PrimitiveMesh`. `Collision2D` waits for `Collision`
+  (a record, 2b).
+- Removed natives (the nullable property replaces each pair): `Screen.supportedFullScreenModeCount` / `...At`,
+  `RenderSettings.fixedExposureEnabled` / `...Value`, `LineRenderer2D.hasFill` / `fillValue`, `Window.openErrorText`.
+
+Surface changes (`tests/golden/api_surface.txt`, reviewed): the enum types are `declare type` + `namespace X { name, parse }`,
+`PrimitiveType.Cube` is a `PrimitiveType`, `Texture.filterMode` / `wrapMode`, `Window.create`'s `style`, `Screen.fullScreenMode`,
+`Screen.setResolution`'s `mode` and `SceneManager.loadScene` / `loadSceneAsync` / `onSceneLoaded` are typed by their enums (they were
+`string`), `Camera.main` is a static property of the class.

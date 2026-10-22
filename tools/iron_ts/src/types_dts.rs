@@ -20,6 +20,9 @@ fn ts_type_like(t: &str, like: bool) -> String {
         if let Some(n) = t.strip_prefix("values:") {
             return format!("readonly {n}Like[]");
         }
+        if let Some(n) = t.strip_prefix("opt:value:") {
+            return format!("{n}Like | null");
+        }
     }
     ts_type(t)
 }
@@ -40,7 +43,11 @@ fn ts_type(t: &str) -> String {
         "list:string" => "string[]".into(),
         "ptr" => "unknown".into(),
         other => {
-            if let Some(n) = other
+            if let Some(inner) = other.strip_prefix("opt:") {
+                format!("{} | null", ts_type(inner))
+            } else if let Some(n) = other.strip_prefix("list:enum:") {
+                format!("{n}[]")
+            } else if let Some(n) = other
                 .strip_prefix("handle:")
                 .or_else(|| other.strip_prefix("value:"))
                 .or_else(|| other.strip_prefix("enum:"))
@@ -102,11 +109,19 @@ fn funcs(v: &Value, like: bool) -> Vec<Func> {
             {
                 func.ret = t.to_string();
             }
-            // `#[nullable]`: a handle result, or the value a setter takes, may be `null`.
+            // `#[nullable]`: a handle result, or the value a setter takes, may be `null`
+            // (`#[nullable(undefined)]`: `undefined`).
             if f["nullable"].as_bool() == Some(true) {
-                func.ret = format!("{} | null", func.ret);
-                if let Some(last) = func.params.last_mut() {
-                    last.1 = format!("{} | null", last.1);
+                let none = if f["undefined"].as_bool() == Some(true) {
+                    "undefined"
+                } else {
+                    "null"
+                };
+                func.ret = format!("{} | {none}", func.ret);
+                if func.kind == "set"
+                    && let Some(last) = func.params.last_mut()
+                {
+                    last.1 = format!("{} | {none}", last.1);
                 }
             }
             func
@@ -374,6 +389,8 @@ struct Decls {
     enums: BTreeMap<String, (String, Vec<String>)>,
     /// Record -> (doc, [(field, type, doc)]).
     records: BTreeMap<String, RecordDecl>,
+    /// Alias -> the class or enum it names.
+    aliases: BTreeMap<String, String>,
 }
 
 fn push_unique(list: &mut Vec<String>, line: String) {
@@ -421,6 +438,11 @@ impl Decls {
                 .unwrap_or_default();
             let doc = e["doc"].as_str().unwrap_or("").to_string();
             self.enums.insert(name, (doc, values));
+        }
+        for a in v["aliases"].as_array().into_iter().flatten() {
+            if let (Some(alias), Some(of)) = (a["name"].as_str(), a["of"].as_str()) {
+                self.aliases.insert(alias.to_string(), of.to_string());
+            }
         }
         for r in v["records"].as_array().into_iter().flatten() {
             let name = r["name"].as_str().unwrap_or("").to_string();
@@ -711,6 +733,13 @@ impl Decls {
             );
             s += &format!("{indent}}}\n");
         }
+        // Other names for a class (a type and a value) or an enum (a type).
+        for (alias, target) in &self.aliases {
+            s += &format!("{indent}{prefix}type {alias} = {target};\n");
+            if self.classes.contains_key(target) {
+                s += &format!("{indent}{prefix}const {alias}: typeof {target};\n");
+            }
+        }
         for (name, (doc, fields)) in &self.records {
             s += &jsdoc(doc, indent);
             s += &format!("{indent}{prefix}interface {name} {{\n");
@@ -864,6 +893,7 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     engine.extend(d.values.keys().cloned());
     engine.extend(d.enums.keys().cloned());
     engine.extend(d.records.keys().cloned());
+    engine.extend(d.aliases.keys().cloned());
     engine.extend(d.namespaces.keys().filter(|n| !n.is_empty()).cloned());
     engine.extend(
         crate::ui_dts::ENGINE_AMBIENT_NAMES

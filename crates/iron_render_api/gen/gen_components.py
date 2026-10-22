@@ -35,6 +35,8 @@ TYPES = {
     "sprite": ("u32", "SpriteRef", "SpriteRef(d.F)", "SpriteRef", "d.F = v.0", 'asset_ref("Sprite", u64::from(d.F))', 'asset_handle(v, "Sprite").map(|h| h as u32)', "SpriteRef(0)"),
     "object": ("Option<ObjectId>", "ObjectId", "d.F.unwrap_or_else(none_object)", "ObjectId", "d.F = (v.to_raw() != 0).then_some(v)", "d.F.map_or(Value::Null, |o| object_ref(o.to_raw()))", "object_of(v)", "none_object()"),
 }
+# A colour that may be none (`Color | null`): `Option<Rgba>`, null in scene files.
+TYPES["color?"] = ("Option<Rgba>", "Option<Rgba>", "d.F", "Option<Rgba>", "d.F = v", 'd.F.map_or(Value::Null, |c| json!({ "$type": "Color", "value": [c.r, c.g, c.b, c.a] }))', "if v.is_null() { Some(None) } else { color_of(v).map(Some) }", "None")
 TYPES["enum"] = TYPES["string"]
 # Handle-valued properties may be none (`null`): the declared type says so (`Texture | null`).
 NULLABLE_HANDLES = ("texture", "mesh", "material", "sprite", "object")
@@ -55,6 +57,8 @@ HANDLES = {
 def default_lit(t, d):
     if isinstance(d, str) and d.startswith("="):
         return d[1:]
+    if t == "color?":
+        return "None"
     if t == "color":
         return "Rgba { r: %r, g: %r, b: %r, a: %r }" % tuple(float(x) for x in d)
     if t == "v2":
@@ -232,17 +236,14 @@ COMPONENTS = [
             ("width", "width", "f64", 0.05, "Full width, in world units."),
             ("color", "color", "color", ONE, ""),
             ("loop", "r#loop", "bool", False, "Joins the last point back to the first (a closed shape)."),
-            ("hasFill", "has_fill", "bool", False, "Whether the shape is filled (`fillColor` is set); a filled shape always closes."),
-            ("fillValue", "fill_value", "color", ONE, "The fill's colour while `hasFill` (a program writes `fillColor`, null for none)."),
+            ("fillColor", "fill_color", "color?", None, "Fills the shape in this colour (null: no fill); a filled shape always closes."),
             ("fillRule", "fill_rule", "enum:evenodd|nonzero", "evenodd", "Where a self-crossing outline is inside: `evenodd` leaves a star's middle empty (GDI's `Alternate`), `nonzero` fills it (`Winding`)."),
             ("sortingOrder", "sorting_order", "i32", 0, "Draw order among 2D shapes: higher draws over lower, equal ones in the order they were made."),
         ],
-        skip_save=["hasFill", "fillValue"],
-        set_hook={"fillValue": "d.has_fill = true;"},
         extra_fields=["pub points: Vec<V2>,"],
         extra_defaults=["points: Vec::new(),"],
-        extra_save='m.insert("points".into(), Value::Array(d.points.iter().map(|p| json!({ "$type": "Vector2", "value": [p.x, p.y] })).collect())); m.insert("fillColor".into(), if d.has_fill { json!({ "$type": "Color", "value": [d.fill_value.r, d.fill_value.g, d.fill_value.b, d.fill_value.a] }) } else { Value::Null });',
-        extra_load='"points" => v.as_array().and_then(|a| a.iter().map(v2_of).collect::<Option<Vec<V2>>>()).map(|p| d.points = p), "fillColor" => { if v.is_null() { d.has_fill = false; Some(()) } else { color_of(v).map(|c| { d.has_fill = true; d.fill_value = c; }) } }',
+        extra_save='m.insert("points".into(), Value::Array(d.points.iter().map(|p| json!({ "$type": "Vector2", "value": [p.x, p.y] })).collect()));',
+        extra_load='"points" => v.as_array().and_then(|a| a.iter().map(v2_of).collect::<Option<Vec<V2>>>()).map(|p| d.points = p)',
         extra_value_types=["v2"],
         api="""
         /// The points (on the object's XY plane): a copy, so write a new array to change them.
@@ -919,7 +920,7 @@ def gen(c):
     w = o.append
     kinds = set()
     for ts, rs, t, d, doc in fields:
-        kinds.add("enum" if t.startswith("enum:") else t)
+        kinds.add("enum" if t.startswith("enum:") else t.rstrip("?"))
     kinds |= set(c.get("extra_value_types", []))
     obj = "" if asset else "object: ObjectId"
     objarg = "" if asset else "object"

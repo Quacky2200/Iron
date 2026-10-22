@@ -456,11 +456,34 @@ pub fn settings_changed() -> bool {
     read(|s| *s != RenderSettingsData::default())
 }
 
+/// How fog thickens with distance (Unity's `FogMode`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FogKind {
+    Linear,
+    Exponential,
+    ExponentialSquared,
+}
+
+/// The light-shaft volume's detail levels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Detail {
+    Low,
+    Medium,
+    High,
+    Ultra,
+}
+
 #[iron_api(
     namespace = "RenderSettings", quickjs,
     values(
         Color = Rgba [r: f64, g: f64, b: f64, a: f64],
         Vector3 = V3 [x: f64, y: f64, z: f64]
+    ),
+    enums(
+        /// How fog thickens with distance (Unity's `FogMode`).
+        FogMode = FogKind [Linear, Exponential, ExponentialSquared],
+        /// The light-shaft volume's detail levels.
+        VolumeDetail = Detail [Low, Medium, High, Ultra]
     )
 )]
 pub mod render_settings_api {
@@ -680,13 +703,14 @@ pub mod render_settings_api {
     /// `linear` (from `fogStartDistance` to `fogEndDistance`), `exponential` (by `fogDensity` per
     /// metre) or `exponentialSquared` (clear nearby, then closing in).
     #[property]
-    pub fn fog_mode() -> String {
-        read(|s| s.fog.mode.clone())
+    pub fn fog_mode() -> FogKind {
+        read(|s| fog_mode_parse(&s.fog.mode).unwrap_or(FogKind::ExponentialSquared))
     }
 
-    pub fn set_fog_mode(mode: &str) {
-        if ["linear", "exponential", "exponentialSquared"].contains(&mode) {
-            change(|s| s.fog.mode = mode.to_string());
+    /// An unknown name is ignored.
+    pub fn set_fog_mode(mode: Option<FogKind>) {
+        if let Some(mode) = mode {
+            change(|s| s.fog.mode = fog_mode_name(mode).to_string());
         }
     }
 
@@ -881,13 +905,14 @@ pub mod render_settings_api {
 
     /// How fine the light-shaft volume is: `low`, `medium`, `high` (the default) or `ultra`.
     #[property]
-    pub fn volumetric_fog_resolution() -> String {
-        read(|s| volumetric_of(s).resolution)
+    pub fn volumetric_fog_resolution() -> Detail {
+        read(|s| volume_detail_parse(&volumetric_of(s).resolution).unwrap_or(Detail::High))
     }
 
-    pub fn set_volumetric_fog_resolution(v: &str) {
-        if ["low", "medium", "high", "ultra"].contains(&v) {
-            change(|s| volumetric_mut(s).resolution = v.to_string());
+    /// An unknown name is ignored.
+    pub fn set_volumetric_fog_resolution(v: Option<Detail>) {
+        if let Some(v) = v {
+            change(|s| volumetric_mut(s).resolution = volume_detail_name(v).to_string());
         }
     }
 
@@ -1081,25 +1106,15 @@ pub mod render_settings_api {
         });
     }
 
-    /// Whether a manual exposure is set (`fixedExposure` is not null).
-    #[property]
-    pub fn fixed_exposure_enabled() -> bool {
-        read(|s| s.fixed_exposure.is_some())
-    }
-
-    pub fn set_fixed_exposure_enabled(on: bool) {
-        change(|s| s.fixed_exposure = on.then(|| s.fixed_exposure.unwrap_or(0.0)));
-    }
-
     /// The manual exposure, in EV100 (higher is darker), used without auto exposure and blended
-    /// with it while it fades in or out. Setting it turns the manual exposure on.
+    /// with it while it fades in or out (`null`: light as it is, the default).
     #[property]
-    pub fn fixed_exposure_value() -> f64 {
-        read(|s| s.fixed_exposure.unwrap_or(0.0))
+    pub fn fixed_exposure() -> Option<f64> {
+        read(|s| s.fixed_exposure)
     }
 
-    pub fn set_fixed_exposure_value(ev: f64) {
-        change(|s| s.fixed_exposure = Some(ev));
+    pub fn set_fixed_exposure(ev: Option<f64>) {
+        change(|s| s.fixed_exposure = ev);
     }
 
     /// Seconds auto exposure takes to blend in when it is turned on and out (to the manual

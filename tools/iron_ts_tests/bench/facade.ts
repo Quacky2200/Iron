@@ -234,7 +234,7 @@ export function fogAndExposureObjects(): string {
   RenderSettings.fixedExposure = 9;
   const d = `${RenderSettings.fixedExposure}`;
   RenderSettings.fixedExposure = null;
-  const e = `${RenderSettings.fixedExposure}|${RenderSettings.fixedExposureEnabled}`;
+  const e = `${RenderSettings.fixedExposure}|${RenderSettings.fixedExposure !== null}`;
   RenderSettings.autoExposure = null;
   RenderSettings.volumetricFog = null;
   return `${a}|${b}|${c}|${d}|${e}|${RenderSettings.autoExposureEnabled}|${RenderSettings.volumetricFogEnabled}|${RenderSettings.heightFogEnabled}`;
@@ -314,11 +314,11 @@ export function splineMath(): string {
 
 export function fillColorAndTextMesh(): string {
   const line = new GameObject("l").addComponent(LineRenderer2D, { fillColor: new Color(1, 0, 0, 1), sortingOrder: 3 });
-  const filled = line.fillColor !== null && line.hasFill;
+  const filled = line.fillColor !== null;
   const red = line.fillColor !== null ? line.fillColor.r : -1;
   line.fillColor = null;
   const t = new GameObject("t").addComponent(TextMesh, { text: "x", fontSize: 20, alignment: "left" });
-  return `${filled}|${red}|${line.fillColor === null}|${line.hasFill}|${line.sortingOrder}|${t.text}|${t.fontSize}|${t.alignment}`;
+  return `${filled}|${red}|${line.fillColor === null}|${line.fillColor !== null}|${line.sortingOrder}|${t.text}|${t.fontSize}|${t.alignment}`;
 }
 
 export function screenToWorld(): string {
@@ -348,7 +348,7 @@ export function optionBags(): string {
   const big = labelWith({ fontSize: 40 });
   const dflt = labelWith();
   const r = (v: number) => Math.round(v * 100) / 100;
-  return `${r(plain.width)}|${plain.loop}|${r(wide.width)}|${wide.loop}|${wide.sortingOrder}|${wide.hasFill}|${r(viaVariable.width)}|${viaVariable.sortingOrder}|${r(withDefault.width)}|${withDefault.loop}|${withDefault.sortingOrder}|${big.fontSize}|${big.text}|${dflt.fontSize}`;
+  return `${r(plain.width)}|${plain.loop}|${r(wide.width)}|${wide.loop}|${wide.sortingOrder}|${wide.fillColor !== null}|${r(viaVariable.width)}|${viaVariable.sortingOrder}|${r(withDefault.width)}|${withDefault.loop}|${withDefault.sortingOrder}|${big.fontSize}|${big.text}|${dflt.fontSize}`;
 }
 
 export function engineStaticsAsValues(): string {
@@ -366,4 +366,38 @@ export function conditionalOptions(): string {
   const a = make(true);
   const b = make(false);
   return `${a.parent !== null}|${b.parent === null}|${b.transform.position.x}|${a.transform.localPosition.y}`;
+}
+
+export function enumsAndNullables(): string {
+  RenderSettings.fogMode = "linear";
+  const a: FogMode = RenderSettings.fogMode;
+  const dynamicMode: string = "exponential";
+  RenderSettings.fogMode = dynamicMode;
+  const b = RenderSettings.fogMode;
+  RenderSettings.fogMode = "nonsense";
+  const b2 = RenderSettings.fogMode;
+  RenderSettings.volumetricFogResolution = "ultra";
+  const c: VolumeDetail = RenderSettings.volumetricFogResolution;
+  const tex = Texture.create(1, 1, [Color.white], { filterMode: "point", wrapMode: "mirror" });
+  const d = `${tex.filterMode}|${tex.wrapMode}`;
+  tex.filterMode = "trilinear";
+  const plain = Texture.create(1, 1, [Color.white]);
+  const e = `${tex.filterMode}|${plain.filterMode}|${plain.wrapMode}`;
+  const modes = Screen.supportedFullScreenModes;
+  const numbers: Record<FullScreenMode, number> = { ExclusiveFullScreen: 1, FullScreenWindow: 2, MaximizedWindow: 3, Windowed: 4 };
+  const f = `${modes.length}|${numbers[modes[0]!]}|${Screen.fullScreenMode}`;
+  const cube = GameObject.createPrimitive(PrimitiveType.Cube);
+  const mesh: PrimitiveMesh = "capsule";
+  const capsule = GameObject.createPrimitive(mesh);
+  const g = `${Camera.main === undefined}|${cube.name}|${capsule.name}`;
+  RenderSettings.fixedExposure = 4.5;
+  const h = RenderSettings.fixedExposure;
+  RenderSettings.fixedExposure = null;
+  const i = RenderSettings.fixedExposure;
+  const line = new GameObject("l").addComponent(LineRenderer2D);
+  const j = line.fillColor === null;
+  line.fillColor = new Color(0, 1, 0, 1);
+  const k = line.fillColor !== null ? line.fillColor.g : -1;
+  const ctl: AnimatorController = AnimationController.create();
+  return `${a}|${b}|${b2}|${c}|${d}|${e}|${f}|${g}|${h}|${i}|${j}|${k}|${ctl !== null}`;
 }

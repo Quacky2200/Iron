@@ -67,7 +67,6 @@ interface InstantiateObjectOptions {
   position?: Vector3Like;
   rotation?: QuaternionLike;
 }
-type PrimitiveType = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
 
 //@ctor GameObject(name?: string, options?: GameObjectOptions)
 interface GameObject {
@@ -101,8 +100,8 @@ interface Scene {
   serialize(): SceneData;
 }
 declare namespace SceneManager {
-  function loadSceneAsync(path: string, mode?: string): Promise<Scene>;
-  function onSceneLoaded(fn: (scene: Scene, mode: string) => void): () => void;
+  function loadSceneAsync(path: string, mode?: LoadSceneMode): Promise<Scene>;
+  function onSceneLoaded(fn: (scene: Scene, mode: LoadSceneMode) => void): () => void;
   function onSceneUnloaded(fn: (scene: Scene) => void): () => void;
   function onActiveSceneChanged(fn: (from: Scene, to: Scene) => void): () => void;
 }
@@ -128,10 +127,6 @@ interface BloomSettings {
   intensity: number;
   scatter: number;
 }
-/** How fog thickens with distance (Unity's `FogMode`). */
-type FogMode = "linear" | "exponential" | "exponentialSquared";
-/** The light-shaft volume's detail levels. */
-type VolumeDetail = "low" | "medium" | "high" | "ultra";
 /** Fog lying low (Unreal's exponential height fog), in `fogColor`. */
 interface HeightFogSettings {
   /** Per metre at `baseHeight`. */
@@ -195,15 +190,12 @@ interface AutoExposureSettings {
 declare namespace RenderSettings {
   let skybox: ProceduralSky | null;
   let bloom: BloomSettings | null;
-  let fogMode: FogMode;
   /** Height fog on top of the distance fog, while `fog` is on (`null`: none). */
   let heightFog: HeightFogSettings | null;
   /** Light shafts in the fog, while `fog` is on (`null`: none). */
   let volumetricFog: VolumetricFogSettings | null;
   /** Adapts the exposure to the view (`null`: off, the default). */
   let autoExposure: AutoExposureSettings | null;
-  /** The manual exposure, in EV100 (higher is darker), used without auto exposure (`null`: light as it is). */
-  let fixedExposure: number | null;
 }
 
 interface Camera {
@@ -212,12 +204,7 @@ interface Camera {
   /** The world point at a screen point (UI pixels from the top-left), `z` units in front of the camera. */
   screenToWorldPoint(p: Vector3Like): Vector3;
 }
-declare namespace Camera {
-  const main: Camera | undefined;
-}
 
-type FilterMode = "point" | "bilinear" | "trilinear";
-type TextureWrapMode = "repeat" | "clamp" | "mirror";
 interface TextureOptions {
   filterMode?: FilterMode;
   wrapMode?: TextureWrapMode;
@@ -251,12 +238,9 @@ interface LODGroup {
 }
 interface LineRenderer2D {
   points: Vector2Like[];
-  /** Fills the shape in this colour (null: no fill). */
-  fillColor: Color | null;
 }
 
 declare namespace QualitySettings {
-  let shadows: ShadowQualityMode;
   const names: string[];
   function onLevelChanged(fn: (level: number) => void): () => void;
 }
@@ -270,13 +254,11 @@ declare namespace Screen {
   const windowSize: { width: number; height: number };
   const currentResolution: Resolution;
   const resolutions: Resolution[];
-  const supportedFullScreenModes: FullScreenMode[];
   function onChange(fn: () => void): () => void;
 }
 
 // ---- Windows -----------------------------------------------------------------------------------
 
-type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";
 interface WindowOptions {
   /** The title bar text. Default "". */
   title?: string;
@@ -308,13 +290,6 @@ interface WindowOptions {
   runInBackground?: boolean;
 }
 interface Window {
-  /** Changing it re-applies decorations, taskbar and z-order rules; "child" cannot be set or unset. */
-  style: WindowStyle;
-  /** The owner or embedding parent; undefined for the main window and unowned windows. */
-  readonly parent: Window | undefined;
-  /** Why the window could not be opened ("Cannot open Window due to platform restrictions (platform: android)"),
-   *  null when it could. `isOpen` is false then, and `onOpenFailed` has run. */
-  readonly openError: string | null;
   /** Queues `data` (structured values only: no handles, functions, Map or Set) for this window's domain; delivered at
    *  the start of that domain's next dispatch, in order per sender. False when the data is over 1 MiB as JSON or the
    *  window is closed. */
@@ -346,16 +321,8 @@ declare namespace Window {
   function broadcast(data: unknown): number;
   /** `broadcast` of a named event (see `Window.emit`). */
   function emitAll(name: string, payload?: unknown): number;
-  /** The window with keyboard focus, if one of the game's has it. */
-  const focused: Window | undefined;
   /** Opens a window. It exists (and has a handle) at once; the OS window appears at the end of the frame. */
   function create(options?: WindowOptions): Window;
-  /** The `index`-th open window, the main one first, then in creation order. */
-  function at(index: number): Window | undefined;
-  /** The open window made with this `key`. */
-  function find(key: string): Window | undefined;
-  /** The open window with this `handle` (for handles received in messages). */
-  function byHandle(handle: number): Window | undefined;
 }
 
 // ---- Input, UI resources -----------------------------------------------------------------------
@@ -387,9 +354,6 @@ declare function addStyleSheet(css: string): number;
 declare function removeStyleSheet(id: number): void;
 
 // ---- Animation ---------------------------------------------------------------------------------
-
-type AnimatorController = AnimationController;
-declare const AnimatorController: typeof AnimationController;
 
 interface AnimatorStateInfo {
   name: string;
@@ -469,7 +433,6 @@ interface Mesh {
   /** Replaces the mesh's data from flat lists. */
   setFlat(data: FlatMeshData): void;
 }
-type PrimitiveMesh = PrimitiveType;
 declare namespace Random {
   /** A random item from a list (`undefined` when empty). */
   function pick<T>(items: readonly T[]): T | undefined;
@@ -539,4 +502,3 @@ interface LineRenderer {
 interface AudioSource {
   playOneShot(clip: Sound | string, volumeScale?: number): void;
 }
-type ShadowQualityMode = "disable" | "hardOnly" | "all";

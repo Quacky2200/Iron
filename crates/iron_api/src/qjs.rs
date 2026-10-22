@@ -131,6 +131,14 @@ pub fn install_namespace<'js>(ctx: &Ctx<'js>, name: &str, ns: Object<'js>) -> Re
         merge.call::<_, ()>((existing, ns))?;
         return Ok(());
     }
+    // A plain object already there (an enum's `name` / `parse` of the same name): its members
+    // the namespace lacks are added to the namespace.
+    if existing.is_object() && existing.as_object() != Some(&ns) {
+        let merge: rquickjs::Function = ctx.eval(
+            "(function(old, ns) { for (const k of Object.getOwnPropertyNames(old)) { if (!Object.prototype.hasOwnProperty.call(ns, k)) Object.defineProperty(ns, k, Object.getOwnPropertyDescriptor(old, k)); } })",
+        )?;
+        merge.call::<_, ()>((existing, ns.clone()))?;
+    }
     globals.set(name, ns)
 }
 

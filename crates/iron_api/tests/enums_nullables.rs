@@ -1,0 +1,322 @@
+//! Enums shared between namespaces, optional enum parameters, explicit names, enum lists, nullable
+//! numbers / strings / values, `#[nullable(undefined)]` and aliases in `#[iron_api]`
+//! (docs/iron-api.md, "Enums and nullables"). IDs are in TESTS.md (M9-API-162x).
+use iron_api::{Handle, Ty, ValueType, iron_api};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Soft,
+    Hard,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rgb {
+    pub r: f64,
+    pub g: f64,
+}
+
+impl ValueType<2> for Rgb {
+    fn from_parts(p: [f64; 2]) -> Self {
+        Rgb { r: p[0], g: p[1] }
+    }
+    fn to_parts(self) -> [f64; 2] {
+        [self.r, self.g]
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Item(pub u32);
+
+impl Handle for Item {
+    fn to_raw(self) -> u64 {
+        u64::from(self.0)
+    }
+    fn from_raw(raw: u64) -> Self {
+        Item(raw as u32)
+    }
+}
+
+thread_local! {
+    static LEVEL: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
+    static TINT: std::cell::Cell<Option<Rgb>> = const { std::cell::Cell::new(None) };
+    static MODE: std::cell::Cell<Mode> = const { std::cell::Cell::new(Mode::Soft) };
+}
+
+/// The declaring namespace: `Mode` and its converters.
+#[iron_api(
+    namespace = "Kinds", quickjs,
+    enums(
+        /// How hard.
+        Hardness = Mode [Soft, Hard]
+    )
+)]
+pub mod kinds_api {
+    use super::*;
+
+    #[property]
+    pub fn default_mode() -> Mode {
+        Mode::Hard
+    }
+}
+
+/// Uses `Hardness` without declaring it again.
+#[iron_api(
+    namespace = "Things", quickjs,
+    handles(Item = Item),
+    values(Rgb = Rgb [r: f64, g: f64]),
+    enums(
+        extern Hardness = Mode [Soft, Hard],
+        /// Names that are not the variant names.
+        Shout = Loud [Quiet = "QUIET", Boomy = "Boomy"]
+    ),
+    aliases(Stuff = Item, HardnessAlias = Hardness)
+)]
+pub mod things_api {
+    use super::kinds_api::{hardness_from_index, hardness_index, hardness_name, hardness_parse};
+    use super::*;
+
+    /// An unknown name leaves the mode as it was.
+    pub fn set_mode(m: Option<Mode>) {
+        if let Some(m) = m {
+            MODE.with(|c| c.set(m));
+        }
+    }
+
+    #[property]
+    pub fn mode() -> Mode {
+        MODE.with(|c| c.get())
+    }
+
+    /// `null` for none.
+    #[property]
+    pub fn level() -> Option<f64> {
+        LEVEL.with(|c| c.get())
+    }
+
+    pub fn set_level(v: Option<f64>) {
+        LEVEL.with(|c| c.set(v));
+    }
+
+    #[property]
+    pub fn tint() -> Option<Rgb> {
+        TINT.with(|c| c.get())
+    }
+
+    pub fn set_tint(v: Option<Rgb>) {
+        TINT.with(|c| c.set(v));
+    }
+
+    /// The text of a mode, or none for the soft one.
+    pub fn note(m: Mode) -> Option<String> {
+        (m == Mode::Hard).then(|| String::from("hard"))
+    }
+
+    pub fn modes() -> Vec<Mode> {
+        vec![Mode::Hard, Mode::Soft]
+    }
+
+    pub fn loud(l: Loud) -> Loud {
+        match l {
+            Loud::Quiet => Loud::Boomy,
+            Loud::Boomy => Loud::Quiet,
+        }
+    }
+
+    /// The item, or none when the id is 0.
+    #[nullable(undefined)]
+    pub fn item(id: f64) -> Item {
+        Item(id as u32)
+    }
+
+    impl Item {
+        #[property]
+        #[nullable(undefined)]
+        pub fn next(self) -> Item {
+            Item(self.0 + 1).max_or_none()
+        }
+    }
+}
+
+impl Item {
+    fn max_or_none(self) -> Item {
+        if self.0 > 3 { Item(0) } else { self }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Loud {
+    Quiet,
+    Boomy,
+}
+
+// M9-API-1622
+#[test]
+fn an_extern_enum_adds_no_second_set_of_symbols_and_the_manifest_lists_it_once() {
+    let kinds = kinds_api::MANIFEST;
+    let things = things_api::MANIFEST;
+    // Reading a manifest registers its symbols.
+    kinds.to_json();
+    assert_eq!(kinds.enums.len(), 1);
+    assert_eq!(kinds.enums[0].name, "Hardness");
+    assert_eq!(kinds.enums[0].doc, "How hard.");
+    // Only `Shout` is declared by `Things`; `Hardness` is borrowed.
+    let names: Vec<_> = things.enums.iter().map(|e| e.name).collect();
+    assert_eq!(names, ["Shout"]);
+    // An explicit name wins over the variant's.
+    assert_eq!(things.enums[0].values, ["QUIET", "Boomy"]);
+    // The functions still say `enum:Hardness`.
+    let f = |n: &str| things.functions.iter().find(|f| f.name == n).unwrap();
+    assert_eq!(f("note").params[0].ty, Ty::Enum("Hardness"));
+    assert_eq!(f("modes").ret, Ty::List("enum:Hardness", "Hardness[]"));
+    assert!(
+        things
+            .functions
+            .iter()
+            .any(|f| f.rust_name == "set_mode" && f.params[0].ty == Ty::Enum("Hardness"))
+    );
+    let json: serde_json::Value = serde_json::from_str(&things.to_json()).unwrap();
+    assert_eq!(json["aliases"][0]["name"], "Stuff");
+    assert_eq!(json["aliases"][1]["of"], "Hardness");
+    let names: Vec<_> = json["enums"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["Shout"]);
+    assert!(iron_api::symbol("iron_Hardness_name").is_some());
+    assert!(iron_api::symbol("iron_Shout_parse").is_some());
+}
+
+// M9-API-1623
+#[test]
+fn nullable_numbers_values_and_strings_use_nan_and_the_none_flag_on_the_abi() {
+    // Option<f64>: NaN is none, both ways.
+    things_api::iron_Things_setLevel(f64::NAN);
+    assert!(LEVEL.with(|c| c.get()).is_none());
+    things_api::iron_Things_setLevel(2.5);
+    assert_eq!(LEVEL.with(|c| c.get()), Some(2.5));
+    assert_eq!(things_api::iron_Things_level(), 2.5);
+    things_api::iron_Things_setLevel(f64::NAN);
+    assert!(things_api::iron_Things_level().is_nan());
+    // Option<V>: NaN in the fields is none, both ways.
+    things_api::iron_Things_setTint(0.25, 0.5);
+    assert_eq!(TINT.with(|c| c.get()), Some(Rgb { r: 0.25, g: 0.5 }));
+    let mut out = [0.0f64; 2];
+    unsafe { things_api::iron_Things_tint(out.as_mut_ptr()) };
+    assert_eq!(out, [0.25, 0.5]);
+    things_api::iron_Things_setTint(f64::NAN, f64::NAN);
+    assert!(TINT.with(|c| c.get()).is_none());
+    unsafe { things_api::iron_Things_tint(out.as_mut_ptr()) };
+    assert!(out[0].is_nan() && out[1].is_nan());
+    // Option<String>: an empty text and the flag.
+    let mut len = 0i64;
+    let p = unsafe { things_api::iron_Things_note(1, &mut len) };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(p, len as usize) },
+        b"hard"
+    );
+    assert!(!iron_api::iron_api_result_none());
+    let p = unsafe { things_api::iron_Things_note(0, &mut len) };
+    assert_eq!(
+        (unsafe { std::slice::from_raw_parts(p, len as usize) }, len),
+        (&b""[..], 0)
+    );
+    assert!(iron_api::iron_api_result_none());
+    assert!(iron_api::symbol("iron_api_result_none").is_some());
+    // The manifest and the declarations.
+    let json = things_api::MANIFEST.to_json();
+    assert!(json.contains(r#""returns":"opt:f64""#), "{json}");
+    assert!(json.contains(r#""returns":"opt:value:Rgb""#), "{json}");
+    assert!(json.contains(r#""returns":"opt:string""#), "{json}");
+}
+
+// M9-API-1624
+#[test]
+fn an_optional_enum_parameter_is_none_for_a_left_out_or_unknown_name_and_a_list_of_enums_is_indexes()
+ {
+    // The shim reads -1 (an unknown or left-out name) as none: nothing changes.
+    things_api::iron_Things_setMode(0);
+    assert_eq!(MODE.with(|c| c.get()), Mode::Soft);
+    things_api::iron_Things_setMode(1);
+    assert_eq!(MODE.with(|c| c.get()), Mode::Hard);
+    things_api::iron_Things_setMode(-1);
+    assert_eq!(MODE.with(|c| c.get()), Mode::Hard, "-1 changes nothing");
+    things_api::iron_Things_setMode(99);
+    assert_eq!(MODE.with(|c| c.get()), Mode::Hard);
+    // A list of enums: the count, and the indexes in the result buffer.
+    let n = things_api::iron_Things_modes();
+    assert_eq!(n, 2);
+    assert_eq!(
+        (iron_api::iron_api_result(0), iron_api::iron_api_result(1)),
+        (1.0, 0.0)
+    );
+    // The converters of the declaring namespace and the explicit names.
+    assert_eq!(kinds_api::hardness_name(Mode::Hard), "hard");
+    assert_eq!(things_api::shout_name(Loud::Quiet), "QUIET");
+    assert_eq!(things_api::shout_parse("Boomy"), Some(Loud::Boomy));
+    assert_eq!(things_api::shout_parse("boomy"), None);
+    assert_eq!(things_api::iron_Things_loud(0), 1);
+}
+
+// M9-API-1625
+#[test]
+fn quickjs_takes_names_for_enums_null_for_none_and_an_alias_is_the_same_global() {
+    use iron_api::rquickjs;
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        kinds_api::register_quickjs(&ctx).unwrap();
+        things_api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(
+                r#"
+                Things.mode = 'hard';
+                let bad = '';
+                try { Things.mode = 'nope'; } catch (e) { bad = e.name; }
+                const first = Things.mode;
+                Things.mode = 'soft';
+                Things.level = 3;
+                const lv = Things.level;
+                Things.level = null;
+                Things.tint = { r: 0.5, g: 0.25 };
+                const t = Things.tint;
+                Things.tint = null;
+                JSON.stringify([
+                  first, bad, Things.mode, lv, Things.level, t.r, Things.tint,
+                  Things.note('hard'), Things.note('soft'),
+                  Things.modes(), Things.loud('QUIET'),
+                  Hardness.name(1), Hardness.parse('hard'), Shout.parse('Boomy'),
+                  Stuff === Item, HardnessAlias === Hardness,
+                  Things.item(2) === null, Things.item(0) === null,
+                ])
+                "#,
+            )
+            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
+        assert_eq!(
+            out,
+            r#"["hard","TypeError","soft",3,null,0.5,null,"hard",null,["hard","soft"],"Boomy","hard",1,1,true,true,false,true]"#
+        );
+    });
+}
+
+// M9-API-1626
+#[test]
+fn nullable_undefined_is_in_the_manifest_json() {
+    let json: serde_json::Value = serde_json::from_str(&things_api::MANIFEST.to_json()).unwrap();
+    let item = json["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "item")
+        .unwrap();
+    assert_eq!(item["nullable"], true);
+    assert_eq!(item["undefined"], true);
+    let next = json["classes"][0]["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "next")
+        .unwrap();
+    assert_eq!(next["undefined"], true);
+}

@@ -878,6 +878,7 @@ impl<'a> Lowerer<'a> {
             ExtTy::ValueList(n) => Ty::Arr(Box::new(Ty::Obj(self.value_struct(n)))),
             ExtTy::Record(n) => Ty::Obj(self.record_struct(n)),
             ExtTy::RecordList(n) => Ty::Arr(Box::new(Ty::Obj(self.record_struct(n)))),
+            ExtTy::Opt(inner) => self.ext_ir(inner).nullable(),
             other => other.to_ir(),
         }
     }
@@ -1924,7 +1925,10 @@ impl<'a> Lowerer<'a> {
     /// value class argument is passed as its fields; a value class result is written into a
     /// new object.
     pub(crate) fn emit_extern(&mut self, f: &ExternFn, args_in: Vec<Expr>) -> Expr {
-        let any_value = f.params.iter().any(|(_, t)| matches!(t, ExtTy::Value(_)));
+        let any_value = f
+            .params
+            .iter()
+            .any(|(_, t)| matches!(t, ExtTy::Value(_) | ExtTy::Opt(_)));
         let mut pre: Vec<Stmt> = Vec::new();
         let mut args: Vec<Expr> = Vec::new();
         let mut flat: Vec<ExtTy> = Vec::new();
@@ -1950,6 +1954,35 @@ impl<'a> Lowerer<'a> {
                     args.push(self.enum_index(en, v));
                     flat.push(ExtTy::I32);
                 }
+                // `Option<f64>`: NaN for null. `Option<V>`: NaN in every field for null.
+                ExtTy::Opt(inner) => match &**inner {
+                    ExtTy::Value(vn) => {
+                        let sid = self.value_struct(vn);
+                        let is_null = mk(ExprKind::IsNull(Box::new(v.clone())), Ty::Bool);
+                        let obj = mk(ExprKind::Cast(Box::new(v.clone())), Ty::Obj(sid));
+                        for (i, (_, ft)) in self.manifest.values[vn].clone().iter().enumerate() {
+                            let field = mk(ExprKind::Field(Box::new(obj.clone()), sid, i), Ty::Num);
+                            args.push(mk(
+                                ExprKind::Cond(
+                                    Box::new(is_null.clone()),
+                                    Box::new(num(f64::NAN)),
+                                    Box::new(field),
+                                ),
+                                Ty::Num,
+                            ));
+                            flat.push(ft.clone());
+                        }
+                    }
+                    _ => {
+                        let is_null = mk(ExprKind::IsNull(Box::new(v.clone())), Ty::Bool);
+                        let n = mk(ExprKind::Cast(Box::new(v)), Ty::Num);
+                        args.push(mk(
+                            ExprKind::Cond(Box::new(is_null), Box::new(num(f64::NAN)), Box::new(n)),
+                            Ty::Num,
+                        ));
+                        flat.push(ExtTy::F64);
+                    }
+                },
                 other => {
                     args.push(v);
                     flat.push(other.clone());
@@ -1963,7 +1996,16 @@ impl<'a> Lowerer<'a> {
             }
             ExtTy::Enum(_) => (ExtTy::I32, None),
             ExtTy::Record(_) => (ExtTy::Void, None),
-            ExtTy::ValueList(_) | ExtTy::RecordList(_) | ExtTy::StrList => (ExtTy::U32, None),
+            ExtTy::ValueList(_) | ExtTy::RecordList(_) | ExtTy::StrList | ExtTy::EnumList(_) => {
+                (ExtTy::U32, None)
+            }
+            ExtTy::Opt(inner) => match &**inner {
+                ExtTy::Value(vn) => {
+                    let fields = &self.manifest.values[vn];
+                    (ExtTy::Void, Some((fields[0].1.clone(), fields.len())))
+                }
+                other => (other.clone(), None),
+            },
             other => (other.clone(), None),
         };
         let decl = ExternDecl {
@@ -1990,7 +2032,139 @@ impl<'a> Lowerer<'a> {
             )));
             return mk(ExprKind::Seq(pre, Box::new(self.var_expr(dest))), ty);
         }
+        // `Option<V>`: the value, or null when its first field is NaN.
+        if let ExtTy::Opt(inner) = &f.ret
+            && let ExtTy::Value(vn) = &**inner
+        {
+            let sid = self.value_struct(vn);
+            let ty = Ty::Obj(sid);
+            let dest = self.new_local(ty.clone());
+            pre.push(Stmt::Assign(dest, mk(ExprKind::NewObj(sid), ty.clone())));
+            pre.push(Stmt::Eval(mk(
+                ExprKind::CallExternInto(idx, args, Box::new(self.var_expr(dest))),
+                Ty::Void,
+            )));
+            let first = mk(
+                ExprKind::Field(Box::new(self.var_expr(dest)), sid, 0),
+                Ty::Num,
+            );
+            let nan = mk(
+                ExprKind::Cmp(CmpOp::Ne, Box::new(first.clone()), Box::new(first)),
+                Ty::Bool,
+            );
+            let nty = ty.clone().nullable();
+            let result = mk(
+                ExprKind::Cond(
+                    Box::new(nan),
+                    Box::new(mk(ExprKind::Null, nty.clone())),
+                    Box::new(mk(
+                        ExprKind::Cast(Box::new(self.var_expr(dest))),
+                        nty.clone(),
+                    )),
+                ),
+                nty.clone(),
+            );
+            return mk(ExprKind::Seq(pre, Box::new(result)), nty);
+        }
         match &f.ret {
+            // `Option<f64>`: NaN is null.
+            ExtTy::Opt(inner) if matches!(**inner, ExtTy::F64) => {
+                let t = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(
+                    t,
+                    mk(ExprKind::CallExtern(idx, args), Ty::Num),
+                ));
+                let nty = Ty::Num.nullable();
+                let nan = mk(
+                    ExprKind::Cmp(
+                        CmpOp::Ne,
+                        Box::new(self.var_expr(t)),
+                        Box::new(self.var_expr(t)),
+                    ),
+                    Ty::Bool,
+                );
+                let result = mk(
+                    ExprKind::Cond(
+                        Box::new(nan),
+                        Box::new(mk(ExprKind::Null, nty.clone())),
+                        Box::new(mk(ExprKind::Cast(Box::new(self.var_expr(t))), nty.clone())),
+                    ),
+                    nty.clone(),
+                );
+                return mk(ExprKind::Seq(pre, Box::new(result)), nty);
+            }
+            // `Option<String>`: the call leaves a flag that says it was none.
+            ExtTy::Opt(inner) if matches!(**inner, ExtTy::Str) => {
+                let t = self.new_local(Ty::Str);
+                pre.push(Stmt::Assign(
+                    t,
+                    mk(ExprKind::CallExtern(idx, args), Ty::Str),
+                ));
+                let none_fn = ExternFn {
+                    rest: false,
+                    optional_from: usize::MAX,
+                    defaults: Vec::new(),
+                    symbol: "iron_api_result_none".into(),
+                    params: Vec::new(),
+                    ret: ExtTy::Bool,
+                };
+                let none = self.emit_extern(&none_fn, vec![]);
+                let nty = Ty::Str.nullable();
+                let result = mk(
+                    ExprKind::Cond(
+                        Box::new(none),
+                        Box::new(mk(ExprKind::Null, nty.clone())),
+                        Box::new(mk(ExprKind::Cast(Box::new(self.var_expr(t))), nty.clone())),
+                    ),
+                    nty.clone(),
+                );
+                return mk(ExprKind::Seq(pre, Box::new(result)), nty);
+            }
+            // A list of enums: the call returns the count and the indexes are in the buffer; each
+            // becomes its name.
+            ExtTy::EnumList(en) => {
+                let arr_ty = Ty::Arr(Box::new(Ty::Str));
+                let count = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(
+                    count,
+                    mk(ExprKind::CallExtern(idx, args), Ty::Num),
+                ));
+                let arr = self.new_local(arr_ty.clone());
+                pre.push(Stmt::Assign(
+                    arr,
+                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), arr_ty.clone()),
+                ));
+                let i = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(i, num(0.0)));
+                let label = self.new_label();
+                let iv = self.var_expr(i);
+                let done = mk(
+                    ExprKind::Cmp(
+                        CmpOp::Ge,
+                        Box::new(iv.clone()),
+                        Box::new(self.var_expr(count)),
+                    ),
+                    Ty::Bool,
+                );
+                let mut body = vec![Stmt::If(done, vec![Stmt::Break(label)], vec![])];
+                let index = self.flat_result(iv.clone());
+                let name_fn = self.manifest.namespaces[en.as_str()]["name"].clone();
+                let text = self.emit_extern(&name_fn, vec![index]);
+                body.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(arr), text]),
+                    Ty::Void,
+                )));
+                body.push(Stmt::Assign(
+                    i,
+                    mk(
+                        ExprKind::Bin(BinOp::Add, Box::new(iv), Box::new(num(1.0))),
+                        Ty::Num,
+                    ),
+                ));
+                pre.push(Stmt::Loop(label, body));
+                let result = self.var_expr(arr);
+                return mk(ExprKind::Seq(pre, Box::new(result)), arr_ty);
+            }
             // The name of the index the call returns.
             ExtTy::Enum(en) => {
                 let call = mk(ExprKind::CallExtern(idx, args), Ty::Num);

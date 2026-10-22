@@ -616,6 +616,12 @@ impl<'a> Lowerer<'a> {
                 let TSTypeName::IdentifierReference(id) = &r.type_name else {
                     return None;
                 };
+                // An enum of the engine API (`FogMode`) is the union of its names.
+                if !self.aliases.contains_key(id.name.as_str())
+                    && let Some(e) = self.manifest.enums.get(id.name.as_str())
+                {
+                    return Some(e.values.clone());
+                }
                 let a = self.aliases.get(id.name.as_str())?;
                 self.lit_members(&a.type_annotation)
             }

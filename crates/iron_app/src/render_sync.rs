@@ -357,11 +357,7 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
             rgba(d.color),
             Value::Bool(d.r#loop),
             arr(&flat),
-            if d.has_fill {
-                rgba(d.fill_value)
-            } else {
-                Value::Null
-            },
+            d.fill_color.map_or(Value::Null, rgba),
             Value::String(d.fill_rule.clone()),
             n(f64::from(d.sorting_order)),
         ];
@@ -1208,7 +1204,7 @@ mod tests {
         assert_eq!(lines.len(), 2);
         let filled = lines
             .iter()
-            .find(|(_, d)| d.has_fill)
+            .find(|(_, d)| d.fill_color.is_some())
             .expect("a filled shape");
         assert_eq!(filled.1.fill_rule, "nonzero");
         assert_eq!(filled.1.sorting_order, 5);
@@ -1216,7 +1212,7 @@ mod tests {
         assert!(
             !lines
                 .iter()
-                .any(|(_, d)| !d.has_fill && d.sorting_order != 0)
+                .any(|(_, d)| d.fill_color.is_none() && d.sorting_order != 0)
         );
         let v = views.views(&scene, (200, 100), &[]);
         assert_eq!(v.len(), 1);

@@ -1,6 +1,6 @@
 //! Hot reload and windows: keyed windows stay, the rest close. IDs are in TESTS.md (M9-API-148x).
 use iron_api::Callback;
-use iron_engine_api::window::{self, MAIN, Opened, WindowRef, WindowRequest};
+use iron_engine_api::window::{self, MAIN, Opened, Style, WindowRef, WindowRequest};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -13,7 +13,7 @@ fn create(title: &str, style: &str, key: &str) -> WindowRef {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        style,
+        Style::parse(style),
         WindowRef::NONE,
         true,
         true,

@@ -163,8 +163,7 @@ fn jsx_namespace() -> String {
 
 /// Names the engine used to declare in `ambient.d.ts` but are not UI: they wait for `#[iron_enum]` /
 /// `#[iron_record]` on their Rust types (plan phase 2, `FullScreenMode` / `Gamepad` / `Collision`).
-const ENGINE_AMBIENT: &str = "type FullScreenMode = \"ExclusiveFullScreen\" | \"FullScreenWindow\" | \"MaximizedWindow\" | \"Windowed\";
-interface Gamepad {
+const ENGINE_AMBIENT: &str = "interface Gamepad {
   readonly id: number;
   readonly name: string;
   connected: boolean;
@@ -182,8 +181,7 @@ type Collision2D = Collision;
 ";
 
 /// The names of [`ENGINE_AMBIENT`], re-exported from `@iron/engine`.
-pub const ENGINE_AMBIENT_NAMES: &[&str] =
-    &["FullScreenMode", "Gamepad", "Collision", "Collision2D"];
+pub const ENGINE_AMBIENT_NAMES: &[&str] = &["Gamepad", "Collision", "Collision2D"];
 
 /// React's own types and the compiler's console, as TypeScript text.
 const REACT_TYPES_TS: &str = "type ReactNode = ReactElementLike | string | number | boolean | null | undefined | ReactNode[];

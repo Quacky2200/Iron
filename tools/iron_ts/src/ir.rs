@@ -439,6 +439,12 @@ pub enum ExtTy {
     /// A result `Vec<String>`: the call returns the count and keeps the strings; the lowering
     /// reads them with `iron_api_result_str`.
     StrList,
+    /// A result `Vec` of an enum: the count, and the indexes in the buffer.
+    EnumList(String),
+    /// A value that may be `null`: `Option<f64>` (NaN is none), `Option<String>` (a result; the
+    /// call leaves a flag read with `iron_api_result_none`) or `Option<V>` of a value class (NaN
+    /// in every field is none).
+    Opt(Box<ExtTy>),
 }
 
 impl ExtTy {
@@ -464,7 +470,8 @@ impl ExtTy {
             // The structs are made by the lowering (it knows the struct ids).
             ExtTy::Value(_) | ExtTy::Record(_) => Ty::Void,
             ExtTy::ValueList(_) | ExtTy::RecordList(_) => Ty::JsValue,
-            ExtTy::StrList => Ty::Arr(Box::new(Ty::Str)),
+            ExtTy::StrList | ExtTy::EnumList(_) => Ty::Arr(Box::new(Ty::Str)),
+            ExtTy::Opt(inner) => inner.to_ir().nullable(),
         }
     }
 }

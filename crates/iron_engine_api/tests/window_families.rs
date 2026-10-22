@@ -2,7 +2,7 @@
 //! the setup exception. IDs are in TESTS.md (M9-API-14xx).
 use iron_api::Callback;
 use iron_engine_api::log::{self, Level};
-use iron_engine_api::window::{self, DomainId, MAIN, WindowRef};
+use iron_engine_api::window::{self, DomainId, MAIN, Style, WindowRef};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -22,7 +22,7 @@ fn make(style: &str, parent: WindowRef) -> WindowRef {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        style,
+        Style::parse(style),
         parent,
         true,
         true,
@@ -248,7 +248,7 @@ fn run_in_background_is_kept_on_the_root_and_current_defaults_to_the_domain_root
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        "normal",
+        Style::parse("normal"),
         WindowRef::NONE,
         true,
         true,

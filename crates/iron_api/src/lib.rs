@@ -61,6 +61,11 @@ pub enum Ty {
     /// A `Vec` result of values or records: the manifest name of the element (`value:Vector2`)
     /// and the TypeScript type (`Vector2[]`). It comes back through [`return_flat`].
     List(&'static str, &'static str),
+    /// A value that may be `null` (`Option<f64>`, `Option<String>`, `Option<Value>`): the manifest
+    /// name of the inner type (`f64`, `string`, `value:Color`) and the TypeScript type with
+    /// `| null`. Across the C ABI it is the inner type with a "none" mark: NaN for a number, NaN in
+    /// every field for a value, and for a string the flag read by `iron_api_result_none`.
+    Opt(&'static str, &'static str),
 }
 
 impl Ty {
@@ -78,6 +83,7 @@ impl Ty {
             Ty::Callback(_, ts) => ts,
             Ty::Enum(name) | Ty::Record(name) => name,
             Ty::List(_, arr) => arr,
+            Ty::Opt(_, ts) => ts,
         }
     }
 
@@ -100,6 +106,7 @@ impl Ty {
             Ty::Enum(n) => format!("enum:{n}"),
             Ty::Record(n) => format!("record:{n}"),
             Ty::List(inner, _) => format!("list:{inner}"),
+            Ty::Opt(inner, _) => format!("opt:{inner}"),
         }
     }
 }
@@ -159,6 +166,8 @@ pub struct Function {
     pub options_after: Option<usize>,
     /// `#[nullable]`: a handle result (or the value a setter takes) may be `null`.
     pub nullable: bool,
+    /// `#[nullable(undefined)]`: the same, but declared `T | undefined` (what `Camera.main` is).
+    pub undefined: bool,
     /// `#[ts_type = ".."]`: the TypeScript type of a property, when it is narrower than the Rust
     /// type (a string-literal union for a `String`).
     pub ts_type: Option<&'static str>,
@@ -256,6 +265,9 @@ pub fn symbol(name: &str) -> Option<usize> {
     if name == "iron_api_result_str" {
         return Some(iron_api_result_str as *const () as usize);
     }
+    if name == "iron_api_result_none" {
+        return Some(iron_api_result_none as *const () as usize);
+    }
     let r = symbol_registry().lock().unwrap_or_else(|e| e.into_inner());
     r.get(name).copied()
 }
@@ -281,6 +293,9 @@ pub struct Namespace {
     pub handles: &'static [&'static str],
     pub enums: &'static [EnumDef],
     pub records: &'static [RecordDef],
+    /// Other script names for a class or an enum: `(alias, target)` (`aliases(AnimatorController =
+    /// AnimationController)`).
+    pub aliases: &'static [(&'static str, &'static str)],
     /// The value classes its functions take and return.
     pub values: &'static [ValueDef],
     /// The handle classes with methods, properties or statics.
@@ -494,6 +509,28 @@ pub unsafe fn return_string(s: impl Into<String>, out_len: *mut i64) -> *const u
 }
 
 thread_local! {
+    static RETURNED_NONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// [`return_string`] for an `Option<String>` result: `None` is an empty text and the flag
+/// [`iron_api_result_none`] reads, so the compiled call can tell it from `Some("")`.
+///
+/// # Safety
+/// `out_len` must be valid for a write.
+pub unsafe fn return_string_opt(s: Option<String>, out_len: *mut i64) -> *const u8 {
+    RETURNED_NONE.with(|n| n.set(s.is_none()));
+    // SAFETY: by contract.
+    unsafe { return_string(s.unwrap_or_default(), out_len) }
+}
+
+/// Whether the last [`return_string_opt`] was `None` (read straight after the call, like the
+/// text).
+#[unsafe(no_mangle)]
+pub extern "C" fn iron_api_result_none() -> bool {
+    RETURNED_NONE.with(|n| n.get())
+}
+
+thread_local! {
     static FLAT: std::cell::RefCell<Vec<f64>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -698,7 +735,7 @@ fn function_json(f: &Function) -> String {
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -712,6 +749,11 @@ fn function_json(f: &Function) -> String {
         f.options_after
             .map_or(String::new(), |a| format!(",\"optionsAfter\":{a}")),
         if f.nullable { ",\"nullable\":true" } else { "" },
+        if f.undefined {
+            ",\"undefined\":true"
+        } else {
+            ""
+        },
         f.ts_type
             .map_or(String::new(), |t| format!(",\"tsType\":{}", json_str(t)))
     )
@@ -906,8 +948,13 @@ impl Namespace {
                 )
             })
             .collect();
+        let aliases: Vec<String> = self
+            .aliases
+            .iter()
+            .map(|(a, t)| format!("{{\"name\":{},\"of\":{}}}", json_str(a), json_str(t)))
+            .collect();
         let mut s = format!(
-            "{{\"namespace\":{}{}{},\"handles\":[{}],\"values\":[{}],\"enums\":[{}],\"records\":[{}],\"classes\":[{}],\"functions\":[{}",
+            "{{\"namespace\":{}{}{},\"handles\":[{}],\"values\":[{}],\"enums\":[{}],\"records\":[{}],\"aliases\":[{}],\"classes\":[{}],\"functions\":[{}",
             json_str(self.name),
             doc_json(self.doc),
             if self.like { ",\"like\":true" } else { "" },
@@ -915,6 +962,7 @@ impl Namespace {
             values.join(","),
             enums.join(","),
             records.join(","),
+            aliases.join(","),
             classes.join(","),
             functions.join(",")
         );

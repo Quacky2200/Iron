@@ -29,10 +29,22 @@ pub fn manifests() -> Vec<String> {
     vec![scene_manager_api::MANIFEST.to_json()]
 }
 
+/// What loading a scene does to the scenes already loaded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoadMode {
+    Single,
+    Additive,
+}
+
 #[iron_api(
     namespace = "SceneManager",
     quickjs,
-    handles(Scene = SceneRef, Prefab = PrefabRef, GameObject = ObjectId)
+    handles(Scene = SceneRef, Prefab = PrefabRef, GameObject = ObjectId),
+    enums(
+        /// `single` unloads every other scene first and makes the new one active; `additive`
+        /// adds it.
+        LoadSceneMode = LoadMode [Single, Additive]
+    )
 )]
 pub mod scene_manager_api {
     use super::*;
@@ -76,8 +88,8 @@ pub mod scene_manager_api {
     /// Loads saved scene data (JSON text). `"single"` (the default) unloads every other scene
     /// first and makes it active; `"additive"` adds it. A bad file gives no scene and a warning.
     #[optional(mode)]
-    pub fn load_scene(data: &str, mode: &str) -> SceneRef {
-        match manager::load_scene(data, mode == "additive") {
+    pub fn load_scene(data: &str, mode: Option<LoadMode>) -> SceneRef {
+        match manager::load_scene(data, mode == Some(LoadMode::Additive)) {
             Ok(h) => SceneRef(h),
             Err(e) => {
                 crate::warn(e);
@@ -89,8 +101,8 @@ pub mod scene_manager_api {
     /// Asks the host to read a scene file from the game folder and load it; the number says which
     /// request finished.
     #[optional(mode)]
-    pub fn load_scene_async(path: &str, mode: &str) -> f64 {
-        manager::request_load(path, mode == "additive") as f64
+    pub fn load_scene_async(path: &str, mode: Option<LoadMode>) -> f64 {
+        manager::request_load(path, mode == Some(LoadMode::Additive)) as f64
     }
 
     /// Destroys a scene's objects and drops it. The last scene cannot be unloaded.

@@ -1167,22 +1167,13 @@ fn create_window(
     y: f64,
     min_width: f64,
     min_height: f64,
-    style: &str,
+    style: Option<Style>,
     parent: WindowRef,
     flags: Flags,
     key: &str,
     run_in_background: bool,
 ) -> WindowRef {
-    let style_v = if style.is_empty() {
-        Style::Normal
-    } else {
-        Style::parse(style).unwrap_or_else(|| {
-            warn(&format!(
-                "Window.create: unknown style \"{style}\"; using \"normal\""
-            ));
-            Style::Normal
-        })
-    };
+    let style_v = style.unwrap_or(Style::Normal);
     // After a hot reload, the key of a window that stayed open gives that window back.
     if !key.is_empty()
         && let Some(w) = with(|s| {
@@ -1199,7 +1190,7 @@ fn create_window(
             parent,
             &flags,
             run_in_background,
-            style.is_empty(),
+            style.is_none(),
         );
     }
     with(|s| {
@@ -1401,10 +1392,6 @@ pub const QUICKJS_PRELUDE: &str = r#"
     }
   };
 
-  Object.defineProperty(W.prototype, 'openError', {
-    get() { const t = this.openErrorText; return t === '' ? null : t; },
-    configurable: true,
-  });
   def(W.prototype, 'postMessage', function (data) { return this.postMessageJson(toJson(data)); });
   def(W.prototype, 'onMessage', function (f) {
     return this.onMessageJson((from, text) => f(from, JSON.parse(text)));
@@ -1522,7 +1509,14 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
 }
 
 /// The game's windows. `Window.main` is the original one; `Window.create({ .. })` makes more.
-#[iron_api(namespace = "Window", quickjs, handles(Window = WindowRef))]
+#[iron_api(
+    namespace = "Window", quickjs,
+    handles(Window = WindowRef),
+    enums(
+        /// How a window looks and behaves.
+        WindowStyle = Style [Normal, Tool, Dialog, Popup, Borderless, Child]
+    )
+)]
 pub mod window_api {
     use super::*;
 
@@ -1560,7 +1554,7 @@ pub mod window_api {
             y: f64,
             min_width: f64,
             min_height: f64,
-            style: &str,
+            style: Option<Style>,
             parent: WindowRef,
             resizable: bool,
             minimizable: bool,
@@ -1605,6 +1599,7 @@ pub mod window_api {
 
         /// The window with keyboard focus, if one of the game's has it.
         #[property]
+        #[nullable(undefined)]
         pub fn focused() -> WindowRef {
             with(|s| {
                 s.open_in_order()
@@ -1628,6 +1623,7 @@ pub mod window_api {
         }
 
         /// The `index`-th open window, the main one first, then in creation order.
+        #[nullable(undefined)]
         pub fn at(index: f64) -> WindowRef {
             with(|s| {
                 let v = s.open_in_order();
@@ -1639,6 +1635,7 @@ pub mod window_api {
         }
 
         /// The open window made with this `key`.
+        #[nullable(undefined)]
         pub fn find(key: &str) -> WindowRef {
             if key.is_empty() {
                 return WindowRef::NONE;
@@ -1652,6 +1649,7 @@ pub mod window_api {
         }
 
         /// The open window with this `handle` (for handles received in messages).
+        #[nullable(undefined)]
         pub fn by_handle(handle: f64) -> WindowRef {
             with(|s| {
                 if handle.is_nan() || handle < 1.0 || handle > f64::from(u32::MAX) {
@@ -1706,8 +1704,9 @@ pub mod window_api {
 
         // ---- Family ----
 
-        /// The owner or embedding parent; none for the main window and unowned windows.
+        /// The owner or embedding parent; undefined for the main window and unowned windows.
         #[property]
+        #[nullable(undefined)]
         pub fn parent(self) -> WindowRef {
             read(self, |s| s.parent)
                 .flatten()
@@ -1935,13 +1934,13 @@ pub mod window_api {
         /// Changing it re-applies decorations, taskbar and z-order rules; "child" cannot be set or unset
         /// after creation.
         #[property]
-        pub fn style(self) -> String {
-            read(self, |s| s.style.name().to_string()).unwrap_or_default()
+        pub fn style(self) -> Style {
+            read(self, |s| s.style).unwrap_or_default()
         }
 
-        pub fn set_style(self, v: &str) {
-            let Some(style) = Style::parse(v) else {
-                warn(&format!("Window.style: unknown style \"{v}\"; ignored"));
+        /// An unknown name is ignored.
+        pub fn set_style(self, v: Option<Style>) {
+            let Some(style) = v else {
                 return;
             };
             write(self, |s, w| {
@@ -2197,11 +2196,12 @@ pub mod window_api {
             add_listener(self, f, |l| &mut l.open_failed)
         }
 
-        /// Why the window could not be opened, "" when it could (compiled and QuickJS code read it as
-        /// `openError`: a string, or null when fine).
+        /// Why the window could not be opened ("Cannot open Window due to platform restrictions
+        /// (platform: android)"), null when it could. `isOpen` is false then, and `onOpenFailed`
+        /// has run.
         #[property]
-        pub fn open_error_text(self) -> String {
-            read(self, |s| s.open_error.clone().unwrap_or_default()).unwrap_or_default()
+        pub fn open_error(self) -> Option<String> {
+            read(self, |s| s.open_error.clone()).flatten()
         }
 
         /// Whether the platform can open secondary windows at all (false on iOS, Android and the

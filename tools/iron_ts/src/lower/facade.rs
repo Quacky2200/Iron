@@ -160,8 +160,10 @@ function __xm_Window_ask0_@K@<U>(self: Window, name: string, timeoutMs?: number)
 /// `AnimationController`) renamed, and the facade chunks it needs appended.
 pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<String> {
     let mut out = src.to_string();
-    if manifest.classes.contains_key("AnimationController") && src.contains("AnimatorController") {
-        out = replace_word(&out, "AnimatorController", "AnimationController");
+    for (alias, target) in &manifest.aliases {
+        if src.contains(alias.as_str()) {
+            out = replace_word(&out, alias, target);
+        }
     }
     // The chunks the program names: only when the engine API has the classes they are written over.
     let mut extra = String::new();

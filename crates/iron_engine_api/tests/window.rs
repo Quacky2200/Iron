@@ -21,7 +21,7 @@ fn create_tool() -> WindowRef {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        "tool",
+        Style::parse("tool"),
         WindowRef::NONE,
         true,
         true,
@@ -44,7 +44,7 @@ fn create_plain(style: &str) -> WindowRef {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        style,
+        Style::parse(style),
         WindowRef::NONE,
         true,
         true,
@@ -145,7 +145,7 @@ fn create_fills_defaults_per_style() {
         20.0,
         100.0,
         f64::NAN,
-        "dialog",
+        Style::parse("dialog"),
         tool,
         false,
         true,
@@ -187,15 +187,19 @@ fn create_fills_defaults_per_style() {
 fn unknown_styles_fall_back_to_normal() {
     fresh();
     let w = create_plain("fancy");
-    assert_eq!(w.style(), "normal");
+    assert_eq!(w.style().name(), "normal");
     assert_eq!(window::state(w).unwrap().parent, None);
-    MAIN.set_style("fancy");
-    assert_eq!(MAIN.style(), "normal");
+    MAIN.set_style(Style::parse("fancy"));
+    assert_eq!(MAIN.style().name(), "normal");
     let t = create_plain("tool");
-    t.set_style("dialog");
-    assert_eq!(t.style(), "dialog");
-    t.set_style("child");
-    assert_eq!(t.style(), "dialog", "child cannot be set after creation");
+    t.set_style(Style::parse("dialog"));
+    assert_eq!(t.style().name(), "dialog");
+    t.set_style(Style::parse("child"));
+    assert_eq!(
+        t.style().name(),
+        "dialog",
+        "child cannot be set after creation"
+    );
     assert_eq!(Style::parse("Tool"), None);
     assert_eq!(Style::parse("borderless").unwrap().name(), "borderless");
 }
@@ -425,7 +429,7 @@ fn count_and_at_list_open_windows_main_first() {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        "",
+        None,
         WindowRef::NONE,
         true,
         true,
@@ -445,7 +449,7 @@ fn count_and_at_list_open_windows_main_first() {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        "",
+        None,
         WindowRef::NONE,
         true,
         true,
@@ -475,7 +479,7 @@ fn parent_children_and_is_child() {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        "dialog",
+        Style::parse("dialog"),
         tool,
         true,
         true,
@@ -507,7 +511,7 @@ fn parent_children_and_is_child() {
         f64::NAN,
         f64::NAN,
         f64::NAN,
-        "normal",
+        Style::parse("normal"),
         dlg,
         true,
         true,
@@ -570,7 +574,7 @@ fn a_failed_open_sets_open_error_runs_on_open_failed_once_and_leaves_the_main_wi
     window::set_supported(false);
     assert!(!WindowRef::is_supported());
     let w = create_tool();
-    assert_eq!(w.open_error_text(), "");
+    assert_eq!(w.open_error(), None);
     let seen = Rc::new(RefCell::new(Vec::<String>::new()));
     let s = seen.clone();
     assert_ne!(
@@ -584,9 +588,9 @@ fn a_failed_open_sets_open_error_runs_on_open_failed_once_and_leaves_the_main_wi
     // A second report (the window is gone) does nothing.
     window::open_failed(w, error);
     assert_eq!(*seen.borrow(), vec![error.to_string()]);
-    assert_eq!(w.open_error_text(), error);
+    assert_eq!(w.open_error().as_deref(), Some(error));
     assert!(!w.is_open());
-    assert!(MAIN.is_open() && MAIN.open_error_text().is_empty());
+    assert!(MAIN.is_open() && MAIN.open_error().is_none());
     window::reset();
     assert!(WindowRef::is_supported());
 }

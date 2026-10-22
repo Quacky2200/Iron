@@ -67,21 +67,6 @@ function __xp_Screen_resolutions(): Resolution[] {
   return out;
 }
 
-//# when Screen.supportedFullScreenModes
-type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
-function __full_screen_mode(s: string): FullScreenMode {
-  if (s === "ExclusiveFullScreen") return "ExclusiveFullScreen";
-  if (s === "FullScreenWindow") return "FullScreenWindow";
-  if (s === "MaximizedWindow") return "MaximizedWindow";
-  return "Windowed";
-}
-function __xp_Screen_supportedFullScreenModes(): FullScreenMode[] {
-  const out: FullScreenMode[] = [];
-  const n = Screen.supportedFullScreenModeCount;
-  for (let i = 0; i < n; i++) out.push(__full_screen_mode(Screen.supportedFullScreenModeAt(i)));
-  return out;
-}
-
 //# when QualitySettings.names
 function __xp_QualitySettings_names(): string[] {
   const out: string[] = [];
@@ -528,12 +513,6 @@ function __xt_SceneManager_onActiveSceneChanged(fn: (from: Scene, to: Scene) => 
   return () => { SceneManager.offSceneEvent(token); };
 }
 
-//# when openError
-function __xg_Window_openError(self: Window): string | null {
-  const text = self.openErrorText;
-  return text === "" ? null : text;
-}
-
 //# when postMessage&Window|onMessage&Window|onRequest&Window|.request<&Window|.request(&Window|broadcast&Window
 // Messages between windows travel as JSON of the static type (the compiler refuses handles in it).
 function __xm_Window_postMessage<T>(self: Window, data: T): boolean {
@@ -744,15 +723,6 @@ function __xw_RenderSettings_autoExposure(a: AutoExposureSettings | null): void 
   }
 }
 
-//# when RenderSettings.fixedExposure
-function __xw_RenderSettings_fixedExposure(v: number | null): void {
-  if (v === null) RenderSettings.fixedExposureEnabled = false;
-  else RenderSettings.fixedExposureValue = v;
-}
-function __xp_RenderSettings_fixedExposure(): number | null {
-  return RenderSettings.fixedExposureEnabled ? RenderSettings.fixedExposureValue : null;
-}
-
 //# when createFlat|setFlat
 function __xt_Mesh_createFlat<D>(data: D): Mesh {
   return Mesh.createFlatArrays(data.positions, data.triangles, "normals" in data ? (data.normals ?? []) : [], "uv" in data ? (data.uv ?? []) : []);
@@ -835,15 +805,6 @@ function __xt_Light_measureIlluminance(point: Vector3, normal?: Vector3): Promis
   });
 }
 
-//# when FogMode
-type FogMode = "linear" | "exponential" | "exponentialSquared";
-
-//# when VolumeDetail
-type VolumeDetail = "low" | "medium" | "high" | "ultra";
-
-//# when PrimitiveMesh
-type PrimitiveMesh = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
-
 //# when BloomSettings
 interface BloomSettings {
   threshold: number;
@@ -858,15 +819,6 @@ function __xw_RenderSettings_bloom(b: BloomSettings | null): void {
     RenderSettings.bloomIntensity = b.intensity;
     RenderSettings.bloomScatter = b.scatter;
   }
-}
-
-//# when LineRenderer2D @ LineRenderer2D
-function __xg_LineRenderer2D_fillColor(self: LineRenderer2D): Color | null {
-  return self.hasFill ? self.fillValue : null;
-}
-function __xs_LineRenderer2D_fillColor(self: LineRenderer2D, c: Color | null): void {
-  if (c === null) self.hasFill = false;
-  else self.fillValue = c;
 }
 
 //# when screenToWorldPoint @ Camera Screen

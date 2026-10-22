@@ -334,3 +334,15 @@ fn options_chosen_by_a_conditional_expression() {
         assert_eq!(text(ts_fac_conditionalOptions()), "true|true|4|2");
     });
 }
+
+// M9-TS-3340
+#[test]
+fn enums_take_names_and_unknown_ones_change_nothing_nullables_read_null_and_aliases_name_the_class()
+{
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_enumsAndNullables()),
+            "linear|exponential|exponential|ultra|point|mirror|trilinear|bilinear|repeat|4|1|Windowed|true|Cube|Capsule|4.5|null|true|1|true"
+        );
+    });
+}

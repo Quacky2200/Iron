@@ -12,8 +12,9 @@ fn fog_starts_off_and_its_extras_turn_on_with_defaults() {
     assert!(s.fog.height.is_none() && s.fog.volumetric.is_none());
     assert_eq!(s.fog.mode, "exponentialSquared");
     rs::set_fog(true);
-    rs::set_fog_mode("linear");
-    rs::set_fog_mode("nonsense");
+    rs::set_fog_mode(Some(iron_render_api::FogKind::Linear));
+    // A name that is not one (a compiled call passes -1) changes nothing.
+    rs::set_fog_mode(rs::fog_mode_parse("nonsense"));
     rs::set_fog_end_distance(70.0);
     // A property turns its feature on with the defaults for the rest.
     rs::set_volumetric_fog_steps(8.0);
