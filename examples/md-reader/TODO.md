@@ -28,9 +28,8 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
 
 ## Next
 
-- [ ] Jumps land a little off when the page has only just mounted: the first layout of new
-  content and the next one disagree, so the heading's position moves after the jump (seen at
-  "6.2 fetch" in `docs/research/networking-and-files.md`). Fix the layout so one pass is final
+- [x] A jump in the first frame (as `--goto` will do) landed off: `iron_app` laid out the first
+  frame's UI at 1x1 before sizing it to the window. Fixed in `iron_app`, no workaround here
 - [ ] More languages for highlighting: Python, C / C++, C#, GLSL / HLSL, HTML / XML, YAML,
   Markdown, diff, PowerShell (its own rules rather than shell's), SQL
 - [ ] Fuzzy search for files in the current folder (and below), keyboard-first (Ctrl+P)

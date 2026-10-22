@@ -510,6 +510,27 @@ struct App {
 }
 
 impl App {
+    /// Sizes the UI to the window (in UI pixels: the window size divided by its DPI and UI
+    /// scale) and tells scripts' `Screen` when that changes. Nothing before the window
+    /// exists.
+    fn sync_screen(&mut self) {
+        let Some(gfx) = &self.gfx else {
+            return;
+        };
+        let scale = ui_factor(&gfx.window, self.ui_scale);
+        let size = gfx.window.inner_size();
+        self.ui
+            .set_size(size.width as f32 / scale, size.height as f32 / scale);
+        // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
+        let screen = (size.width as f32 / scale, size.height as f32 / scale, scale);
+        if self.screen != screen {
+            self.screen = screen;
+            let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
+            // Games without @iron/engine's Screen don't have the hook.
+            let _ = self.scripts.call_global("__iron_screen", &args);
+        }
+    }
+
     /// Hot reload (DESIGN.md §6.1): loads the rebuilt bundle into a new runtime and
     /// swaps it in, or keeps the old one running if it fails. For now the world is
     /// wiped too: UI, script stylesheets, physics and audio start over, and components
@@ -1972,6 +1993,10 @@ impl PlatformApp for App {
     }
 
     fn frame(&mut self) {
+        // Size the UI before scripts run and their output applies: on the first frame the
+        // tree is still 1x1, and their layout and scrolling (`scrollIntoView` on mount)
+        // would happen at that size.
+        self.sync_screen();
         self.tick();
         // New log lines and file results for the editor.
         self.editor.pump(&mut self.scripts);
@@ -1987,23 +2012,12 @@ impl PlatformApp for App {
         self.ui.set_time(self.now_ms());
         // The caret may have moved with layout.
         self.update_ime();
+        // Again, for a UI scale the scripts changed this frame.
+        self.sync_screen();
         let Some(gfx) = &mut self.gfx else {
             return;
         };
-
-        // The UI lays out in UI pixels: the window size divided by its DPI and UI scale.
         let scale = ui_factor(&gfx.window, self.ui_scale);
-        let size = gfx.window.inner_size();
-        self.ui
-            .set_size(size.width as f32 / scale, size.height as f32 / scale);
-        // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
-        let screen = (size.width as f32 / scale, size.height as f32 / scale, scale);
-        if self.screen != screen {
-            self.screen = screen;
-            let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
-            // Games without @iron/engine's Screen don't have the hook.
-            let _ = self.scripts.call_global("__iron_screen", &args);
-        }
         // Scripts' `RenderStats`: what the last frame drew and culled, when it changes.
         let stats = gfx.world.stats();
         if self.render_stats != stats {

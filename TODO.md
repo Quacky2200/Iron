@@ -1685,8 +1685,9 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   needs:
   - [x] Spans hit-tested inside text (`M3-EVT-07`); an exact layout size cache (`M2-LAY-07`);
     drawing culled to scroll clips (`M2-DRW-09`); unchanged line breaking skipped
-  - [ ] The first layout of freshly mounted content disagrees with the next one, so a jump made
-    right after mounting lands off (the reader works around it by jumping again a frame later)
+  - [x] A jump made in the first frame landed off: `iron_app` applied scripts' output (layout,
+    `scrollIntoView`) before sizing the UI to the window, so the first frame laid out at 1x1.
+    It now sizes the UI at the start of each frame too
   - [ ] Scrolling lays out again on every wheel tick: move the scrolled subtree's rects instead
   - [ ] Extra command-line arguments passed to scripts (`iron <game> -- --root x --goto y`)
 - [ ] GIF images in `iron_ui`: `image` elements and `background-image` only decode PNG, JPEG and
