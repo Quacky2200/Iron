@@ -1,0 +1,411 @@
+/* The launcher's look: a dark console-style front end. Bundled by Bun into dist/game.css. */
+
+:root {
+  --bg: #07090d;
+  --text: #e8ecf2;
+  --muted: #8a94a6;
+  --accent: #7cc4ff;
+  --accent-deep: #2f7fd0;
+  --panel: #12161e;
+  --line: rgba(255, 255, 255, 0.1);
+  --ease: cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.grow {
+  flex-grow: 1;
+}
+
+/* --- Backdrop ------------------------------------------------------------------------ */
+
+.backdrop {
+  flex-direction: column;
+  position: absolute;
+  inset: 0;
+  opacity: 0.32;
+  transform: scale(1.08);
+  transition: opacity 600ms ease, transform 1200ms var(--ease);
+}
+@starting-style {
+  .backdrop {
+    opacity: 0;
+    transform: scale(1.14);
+  }
+}
+.backdrop-shot {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(18px);
+}
+.shade {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse, rgba(7, 9, 13, 0.25), rgba(7, 9, 13, 0.92) 75%);
+}
+
+/* --- Top bar ------------------------------------------------------------------------- */
+
+.top {
+  flex-direction: row;
+  align-items: flex-end;
+  padding: 26px 40px 0;
+  gap: 10px;
+}
+.logo {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 6px;
+}
+.logo-sub {
+  font-size: 15px;
+  color: var(--muted);
+  padding-bottom: 4px;
+}
+.count {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+/* --- Carousel ------------------------------------------------------------------------ */
+
+.stage {
+  flex-direction: column;
+  flex-grow: 1;
+  justify-content: center;
+}
+.track {
+  width: 100%;
+  height: 300px;
+  perspective: 1100px;
+}
+.card {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 480px;
+  height: 300px;
+  margin-left: -240px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #1a1f29;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition:
+    transform 520ms var(--ease),
+    opacity 400ms ease,
+    border-color 300ms ease,
+    box-shadow 300ms ease;
+}
+.card.selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 4px rgba(124, 196, 255, 0.25),
+    0 24px 60px rgba(0, 0, 0, 0.7);
+}
+.card:hover:not(.selected) {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.card-shot,
+.details-shot {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.placeholder {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.placeholder-title {
+  font-size: 30px;
+  font-weight: 700;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.arrow {
+  position: absolute;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  margin-top: -28px;
+  border-radius: 28px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  z-index: 200;
+  font-size: 34px;
+  transition: background-color 150ms ease, transform 150ms ease, opacity 200ms ease;
+}
+.arrow.left {
+  left: 32px;
+}
+.arrow.right {
+  right: 32px;
+}
+.arrow:hover {
+  background: rgba(124, 196, 255, 0.25);
+  transform: scale(1.08);
+}
+.arrow:active {
+  transform: scale(0.94);
+}
+.arrow[disabled] {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* --- Caption and hints --------------------------------------------------------------- */
+
+.caption {
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 18px;
+  transition: opacity 350ms ease, transform 450ms var(--ease);
+}
+@starting-style {
+  .caption {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.title {
+  font-size: 34px;
+  font-weight: 700;
+}
+.folder {
+  font-size: 14px;
+  color: var(--muted);
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+
+.hints {
+  flex-direction: row;
+  justify-content: center;
+  gap: 28px;
+  padding: 12px 0 26px;
+}
+.hint {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.key {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+}
+.hint-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* --- Details ------------------------------------------------------------------------- */
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 5, 8, 0.72);
+  transition: opacity 250ms ease;
+}
+@starting-style {
+  .scrim {
+    opacity: 0;
+  }
+}
+.details {
+  flex-direction: row;
+  width: 980px;
+  height: 420px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+  transition: transform 450ms var(--ease), opacity 300ms ease;
+}
+@starting-style {
+  .details {
+    opacity: 0;
+    transform: translateY(40px) scale(0.96);
+  }
+}
+.details-shot {
+  width: 560px;
+  height: 100%;
+  flex-shrink: 0;
+}
+.details-info {
+  flex-direction: column;
+  flex-grow: 1;
+  padding: 32px 30px 28px;
+  gap: 10px;
+}
+.details-title {
+  font-size: 30px;
+  font-weight: 700;
+}
+.description {
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #c3cad6;
+}
+.description.none {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.buttons {
+  flex-direction: row;
+  gap: 12px;
+}
+.buttons.end {
+  justify-content: flex-end;
+}
+.button {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 120ms ease;
+}
+.button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.button:active {
+  transform: scale(0.96);
+}
+.button.play {
+  padding: 11px 30px;
+  color: #04111f;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.button.play:hover {
+  background: #a3d6ff;
+}
+
+/* --- Loading and alert ----------------------------------------------------------------- */
+
+.loading {
+  flex-direction: column;
+  position: absolute;
+  inset: 0;
+  z-index: 400;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(3, 5, 8, 0.86);
+  transition: opacity 200ms ease;
+}
+@starting-style {
+  .loading {
+    opacity: 0;
+  }
+}
+.spinner {
+  width: 64px;
+  height: 64px;
+  animation: spin 800ms linear infinite;
+}
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.loading-text {
+  font-size: 18px;
+}
+.bar {
+  width: 260px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: fill 1100ms ease-in-out forwards;
+}
+@keyframes fill {
+  to {
+    width: 100%;
+  }
+}
+
+.alert-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 5, 8, 0.55);
+}
+.alert {
+  flex-direction: column;
+  width: 440px;
+  padding: 26px 28px 22px;
+  gap: 12px;
+  border-radius: 14px;
+  background: #1a1f29;
+  border: 1px solid rgba(255, 120, 100, 0.35);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.75);
+  transition: transform 350ms cubic-bezier(0.3, 1.5, 0.5, 1), opacity 200ms ease;
+}
+@starting-style {
+  .alert {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+.alert-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ff9a8a;
+}
+.alert-body {
+  font-size: 15px;
+  line-height: 1.5;
+  color: #c3cad6;
+}
+.alert-code {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  color: var(--accent);
+  margin-bottom: 6px;
+}

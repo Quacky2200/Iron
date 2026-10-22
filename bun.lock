@@ -117,6 +117,30 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/dark-room": {
+      "name": "dark-room",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
+    "examples/emoji": {
+      "name": "emoji",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/fishtank": {
       "name": "fishtank",
       "version": "0.1.0",
@@ -213,8 +237,44 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/godrays-cell": {
+      "name": "godrays-cell",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
+    "examples/godrays-clouds": {
+      "name": "godrays-clouds",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/godrays-forest": {
       "name": "godrays-forest",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
+    "examples/godrays-lift": {
+      "name": "godrays-lift",
       "version": "0.1.0",
       "dependencies": {
         "@iron/engine": "workspace:*",
@@ -237,6 +297,30 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/godrays-shed": {
+      "name": "godrays-shed",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
+    "examples/godrays-sunset": {
+      "name": "godrays-sunset",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/hello": {
       "name": "hello",
       "version": "0.1.0",
@@ -244,8 +328,32 @@
         "@iron/engine": "workspace:*",
       },
     },
+    "examples/launcher": {
+      "name": "launcher",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/layers": {
       "name": "layers",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
+    "examples/light-units": {
+      "name": "light-units",
       "version": "0.1.0",
       "dependencies": {
         "@iron/engine": "workspace:*",
@@ -378,6 +486,18 @@
         "@types/react": "19.3.0",
       },
     },
+    "examples/tunnel": {
+      "name": "tunnel",
+      "version": "0.1.0",
+      "dependencies": {
+        "@iron/engine": "workspace:*",
+        "@iron/react": "workspace:*",
+        "react": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "19.3.0",
+      },
+    },
     "examples/world": {
       "name": "world",
       "version": "0.1.0",
@@ -462,6 +582,10 @@
 
     "csstype": ["csstype@3.2.3", "", {}, "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="],
 
+    "dark-room": ["dark-room@workspace:examples/dark-room"],
+
+    "emoji": ["emoji@workspace:examples/emoji"],
+
     "fishtank": ["fishtank@workspace:examples/fishtank"],
 
     "fog": ["fog@workspace:examples/fog"],
@@ -478,9 +602,19 @@
 
     "form": ["form@workspace:examples/form"],
 
+    "godrays-cell": ["godrays-cell@workspace:examples/godrays-cell"],
+
+    "godrays-clouds": ["godrays-clouds@workspace:examples/godrays-clouds"],
+
     "godrays-forest": ["godrays-forest@workspace:examples/godrays-forest"],
 
+    "godrays-lift": ["godrays-lift@workspace:examples/godrays-lift"],
+
     "godrays-room": ["godrays-room@workspace:examples/godrays-room"],
+
+    "godrays-shed": ["godrays-shed@workspace:examples/godrays-shed"],
+
+    "godrays-sunset": ["godrays-sunset@workspace:examples/godrays-sunset"],
 
     "hello": ["hello@workspace:examples/hello"],
 
@@ -488,11 +622,16 @@
 
     "iron-fixtures": ["iron-fixtures@workspace:tests/fixtures"],
 
+    "launcher": ["launcher@workspace:examples/launcher"],
+
     "layers": ["layers@workspace:examples/layers"],
+
+    "light-units": ["light-units@workspace:examples/light-units"],
 
     "materials": ["materials@workspace:examples/materials"],
 
     "md-reader": ["md-reader@workspace:examples/md-reader"],
+
     "physics": ["physics@workspace:examples/physics"],
 
     "platformer": ["platformer@workspace:examples/platformer"],
@@ -518,6 +657,8 @@
     "splines": ["splines@workspace:examples/splines"],
 
     "text": ["text@workspace:examples/text"],
+
+    "tunnel": ["tunnel@workspace:examples/tunnel"],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 

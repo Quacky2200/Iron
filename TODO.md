@@ -1680,6 +1680,14 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
 
 ## Later
 
+- [x] `examples/launcher`: a game launcher mock-up, to see whether a store / launcher front end
+  works in Iron's UI. A cover-flow carousel of the examples' screenshots (`gen-games.ts` copies
+  `bun run screenshots`' renders at build time) with CSS 3D transforms and transitions, browsed
+  with the mouse (arrows, clicks, wheel), keys or a gamepad (d-pad, bumpers, left stick); a
+  details panel (title, folder, `package.json` description) with Play, a loading spinner, then
+  an alert that launching isn't implemented.
+  - [ ] Actually launch a game (start `iron <folder>` as a child process, or switch games in
+    place) and return to the launcher when it quits
 - [~] `examples/md-reader`: a Markdown reader for Iron's own docs, drawn by Iron's UI. Its own
   plan and progress: [examples/md-reader/TODO.md](examples/md-reader/TODO.md). Engine work it
   needs:
