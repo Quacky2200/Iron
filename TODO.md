@@ -1831,6 +1831,72 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 - [ ] Ray tracing tier
 - [ ] Video: a `VideoClip` asset and `VideoPlayer` component (to a texture, UI or a plane)
 
+## Platform plan: app shell and web APIs (from docs/difference-to-electron.md)
+
+Planned, not started. Order may change.
+
+- [ ] **App shell:** a window, menus, dialogs and the UI tree without a game world; React app
+  entry point and the `@iron/api` TypeScript surface (no IPC bridge)
+- [ ] **Measure:** disk and RAM of a small app shell against a comparable Electron app, before
+  making any public claim about size or speed
+- [ ] **Files and fetch** (M6 Script IO), **WebSocket** (M6, also for M8)
+- [ ] **Canvas API:** a 2D drawing API close to the browser's canvas, on `LineRenderer2D`,
+  `Shapes` and `TextMesh`
+- [ ] **Web Audio-like graph** on kira: gain, filters, analysers
+- [ ] **WebAssembly** modules loaded from scripts (see M9.b)
+- [ ] **Storage:** key-value stores for app data
+- [ ] **Security design doc** for the app shell (isolation without Chromium's sandbox)
+- [ ] **Licence:** choose and write `LICENSE` before the first release (see difference-to-unity.md)
+- [ ] **API stability policy:** exported names, script ops and the scene format are public;
+  deprecation period and migration notes before any breaking change
+
+## Watch list: pitfalls from mature engines
+
+Not tasks yet. Known areas where mature Rust/wgpu engines (Bevy in particular) have had trouble,
+so we can check Iron for them early. Each item says what to verify. Confirm each against Iron's
+code and the upstream issue before acting on it. See [docs/difference-to-bevy.md](docs/difference-to-bevy.md).
+
+- [ ] **Renderer:** shadow acne, peter-panning and cascade seams in sun shadows (M5-RND-*); check
+  bias on slopes and at cascade edges.
+- [ ] **Renderer:** transparency sorting and see-through overdraw; check that layers and sorting
+  stay stable when objects move.
+- [ ] **Renderer:** sRGB vs linear mistakes in textures and UI blending; check colours in a
+  golden for each texture format.
+- [ ] **Renderer:** HDR, bloom and tonemapping shifts; check exposure does not change when the
+  window is resized.
+- [ ] **Renderer:** shader compile stutter on first use of a material; measure the first frame of a
+  new material and consider a warm-up step.
+- [ ] **GPU / drivers:** resize and frame-pacing jitter on DX12 and Vulkan (`IRON_FRAME_LATENCY`),
+  and crashes that depend on the adapter. Keep the NVIDIA hard-reset note in `CLAUDE.md` in mind.
+- [ ] **Assets:** async load races and stale handles after asset hot reload; check that a reload
+  replaces every user of an asset.
+- [ ] **Assets:** scene and prefab file format changes between versions; add a version field and a
+  migration path before the format is public.
+- [ ] **Text:** glyph atlas eviction under many fonts or sizes; fallback fonts, bidi and IME
+  composition on each platform.
+- [ ] **Input:** gamepad mapping differs per controller (gilrs); check button and axis names on at
+  least one Xbox-style and one generic pad.
+- [ ] **Input:** key repeat and focus loss leaving keys or buttons stuck down; check on
+  focus/background.
+- [ ] **Physics:** the fixed-step "spiral of death" when a frame takes too long; cap the catch-up
+  steps.
+- [ ] **Physics:** fast bodies tunnelling through thin colliders; check CCD on bullets and falling
+  objects.
+- [ ] **Physics:** results differing between platforms or runs; don't rely on bit-exact physics
+  until M8 needs it.
+- [ ] **Audio:** device switches, sample-rate changes and latency; check the mixer after the
+  default output device changes.
+- [ ] **Audio:** many simultaneous sounds causing clicks or dropped voices; test with a stress
+  scene.
+- [ ] **Memory:** growth over long sessions from script allocations, texture caches and the SVG
+  cache; check with the arcade running for an hour.
+- [ ] **Scripts:** React state or effects leaking across hot reloads; test Fast Refresh and the
+  state-keeping reload together.
+- [ ] **Build times:** Rust compile time growing as crates grow; track `cargo build` times in CI
+  once it exists.
+- [ ] **API churn:** our own public API changing often; keep a changelog once the Unity-style API
+  has users outside this repo.
+
 ## Later
 
 - [ ] A canvas UI element that embeds the 3D engine (a `<canvas>` / 3D view element for React UI):

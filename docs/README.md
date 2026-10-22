@@ -39,6 +39,10 @@ Where the code differs from DESIGN.md the pages say so ("Difference from DESIGN.
 | [animation-native.md](animation-native.md) | `iron_animation`: curves, clips, pose blending, the `Animation` and `Animator` components and their script API |
 | [iron-api.md](iron-api.md) | `iron_api` and `iron_api_macros`: `#[iron_api]` on a Rust module generates the manifest, the TypeScript `.d.ts` and JSON, `extern "C"` shims and typed QuickJS bindings; supported types, naming, status (not yet used by engine crates), measured call cost |
 | [testing.md](testing.md) | Test layout per crate, fixtures, goldens, mapping to TESTS.md |
+| [difference-to-bevy.md](difference-to-bevy.md) | How Iron relates to Bevy: what each project is for, where the overlap comes from (shared libraries, references), where Iron differs, and what Bevy has that Iron doesn't yet |
+| [difference-to-unity.md](difference-to-unity.md) | Iron vs Unity: TypeScript instead of C# with the same component model, portability and popularity, licensing (per-install fees and why we avoid them), API stability |
+| [difference-to-sbox.md](difference-to-sbox.md) | Iron vs s&box: what we took (Unity-style APIs, Razor-like panels with CSS, editor-first), the stack and language changes, publishing approval, stability |
+| [difference-to-electron.md](difference-to-electron.md) | Iron vs Electron: bundled Chromium and V8 cost, the Rust and React app-shell plan, and the web platform APIs we plan (files, fetch, WebSocket, canvas, audio, wasm, storage) |
 | [differences.md](differences.md) | **Where Iron knowingly differs from browsers** (filter order, mask modes, linear-light fades, defaults, gaps). Read before changing those areas |
 
 ## Crate map
