@@ -10,6 +10,20 @@
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The TypeScript type of a manifest type. With `like`, a value class (and an array of them) in a
+/// parameter is the structural `<Value>Like` (`Vector2Like`: a plain `{ x, y }` object does).
+fn ts_type_like(t: &str, like: bool) -> String {
+    if like {
+        if let Some(n) = t.strip_prefix("value:") {
+            return format!("{n}Like");
+        }
+        if let Some(n) = t.strip_prefix("values:") {
+            return format!("readonly {n}Like[]");
+        }
+    }
+    ts_type(t)
+}
+
 fn ts_type(t: &str) -> String {
     match t {
         "void" => "void".into(),
@@ -22,8 +36,15 @@ fn ts_type(t: &str) -> String {
             if let Some(n) = other
                 .strip_prefix("handle:")
                 .or_else(|| other.strip_prefix("value:"))
+                .or_else(|| other.strip_prefix("enum:"))
+                .or_else(|| other.strip_prefix("record:"))
             {
                 n.to_string()
+            } else if let Some(n) = other
+                .strip_prefix("list:value:")
+                .or_else(|| other.strip_prefix("list:record:"))
+            {
+                format!("{n}[]")
             } else if let Some(n) = other
                 .strip_prefix("values:")
                 .or_else(|| other.strip_prefix("handles:"))
@@ -53,33 +74,59 @@ struct Func {
     name: String,
     params: Vec<(String, String, bool)>,
     ret: String,
+    doc: String,
+    /// The name of the rest parameter (the last one), if any.
+    rest: Option<String>,
+    /// `#[options(after = p)]`: the index of `p` among the parameters without the receiver.
+    options_after: Option<usize>,
 }
 
-fn funcs(v: &Value) -> Vec<Func> {
+fn funcs(v: &Value, like: bool) -> Vec<Func> {
     let Some(arr) = v.as_array() else {
         return vec![];
     };
     arr.iter()
-        .map(|f| Func {
-            kind: f["kind"].as_str().unwrap_or("static").to_string(),
-            name: f["name"].as_str().unwrap_or("").to_string(),
-            params: f["params"]
-                .as_array()
-                .map(|ps| {
-                    ps.iter()
-                        .map(|p| {
-                            (
-                                p["name"].as_str().unwrap_or("p").to_string(),
-                                ts_type(p["type"].as_str().unwrap_or("void")),
-                                p["optional"].as_bool().unwrap_or(false),
-                            )
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            ret: ts_type(f["returns"].as_str().unwrap_or("void")),
+        .map(|f| {
+            let mut func = func_of(f, like);
+            // `#[nullable]`: a handle result, or the value a setter takes, may be `null`.
+            if f["nullable"].as_bool() == Some(true) {
+                func.ret = format!("{} | null", func.ret);
+                if let Some(last) = func.params.last_mut() {
+                    last.1 = format!("{} | null", last.1);
+                }
+            }
+            func
         })
         .collect()
+}
+
+fn func_of(f: &Value, like: bool) -> Func {
+    Func {
+        kind: f["kind"].as_str().unwrap_or("static").to_string(),
+        name: f["name"].as_str().unwrap_or("").to_string(),
+        params: f["params"]
+            .as_array()
+            .map(|ps| {
+                ps.iter()
+                    .map(|p| {
+                        (
+                            p["name"].as_str().unwrap_or("p").to_string(),
+                            ts_type_like(p["type"].as_str().unwrap_or("void"), like),
+                            p["optional"].as_bool().unwrap_or(false),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        ret: ts_type(f["returns"].as_str().unwrap_or("void")),
+        doc: f["doc"].as_str().unwrap_or("").to_string(),
+        rest: f["params"].as_array().and_then(|ps| {
+            ps.iter()
+                .find(|p| p["rest"].as_bool() == Some(true))
+                .and_then(|p| p["name"].as_str().map(str::to_string))
+        }),
+        options_after: f["optionsAfter"].as_u64().map(|n| n as usize),
+    }
 }
 
 fn params_text(f: &Func, skip_this: bool) -> String {
@@ -90,6 +137,11 @@ fn params_text(f: &Func, skip_this: bool) -> String {
         .skip(usize::from(skip_this))
         .map(|(n, t, o)| {
             seen_optional |= *o;
+            if f.rest.as_deref() == Some(n.as_str()) {
+                // `...points: Vector2Like[]` (the array type without `readonly`).
+                let t = t.strip_prefix("readonly ").unwrap_or(t);
+                return format!("...{}: {t}", safe_ident(n));
+            }
             format!(
                 "{}{}: {t}",
                 safe_ident(n),
@@ -99,6 +151,22 @@ fn params_text(f: &Func, skip_this: bool) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
+
+/// The JSDoc comment of a declaration at an indent (nothing for an empty doc).
+fn jsdoc(doc: &str, indent: &str) -> String {
+    if doc.is_empty() {
+        return String::new();
+    }
+    let mut s = format!("{indent}/**{}", NL);
+    for line in doc.lines() {
+        // A comment cannot contain its own end.
+        s += &format!("{indent} * {}{}", line.trim().replace("*/", "* /"), NL);
+    }
+    s += &format!("{indent} */{}", NL);
+    s
+}
+
+const NL: &str = "\n";
 
 /// The "options object" form of a call: the compiler fills the parameters after the leading
 /// required ones (numbers, strings, objects; flags may be left out) from a trailing `{ key: value }`
@@ -265,6 +333,9 @@ fn parse_supplement(text: &str) -> Supplement {
     sup
 }
 
+/// A record: its doc and its fields (name, type, doc).
+type RecordDecl = (String, Vec<(String, String, String)>);
+
 #[derive(Default)]
 struct Decls {
     handles: BTreeSet<String>,
@@ -276,8 +347,19 @@ struct Decls {
     namespaces: BTreeMap<String, Vec<String>>,
     /// Class -> the parameters of its static `create` (`new Class(..)` calls it).
     creates: BTreeMap<String, Vec<(String, String, bool)>>,
+    /// Class -> the index of the `create` parameter after which an options object may follow
+    /// (`#[options(after = p)]`): the constructor is `(positional..., options?)` and nothing else.
+    creates_after: BTreeMap<String, usize>,
     /// Class -> its writable properties (the keys of `new Class({ .. })`).
     props: BTreeMap<String, Vec<(String, String)>>,
+    /// (class or namespace, member line) -> its doc comment.
+    docs: BTreeMap<(String, String), String>,
+    /// Doc comments of classes and namespaces.
+    owner_docs: BTreeMap<String, String>,
+    /// Enum -> (doc, names).
+    enums: BTreeMap<String, (String, Vec<String>)>,
+    /// Record -> (doc, [(field, type, doc)]).
+    records: BTreeMap<String, RecordDecl>,
 }
 
 fn push_unique(list: &mut Vec<String>, line: String) {
@@ -286,9 +368,16 @@ fn push_unique(list: &mut Vec<String>, line: String) {
     }
 }
 
+/// The declaration line of a member (the lines of the supplement and of `members` are single
+/// lines; kept as a function so a member could carry more later).
+fn decl_line(m: &str) -> &str {
+    m
+}
+
 impl Decls {
     fn add(&mut self, json: &str) -> Result<(), String> {
         let v: Value = serde_json::from_str(json).map_err(|e| format!("manifest json: {e}"))?;
+        let like = v["like"].as_bool().unwrap_or(false);
         for h in v["handles"].as_array().into_iter().flatten() {
             if let Some(h) = h.as_str() {
                 self.handles.insert(h.to_string());
@@ -306,32 +395,83 @@ impl Decls {
                 .unwrap_or_default();
             self.values.insert(name, fields);
         }
+        for e in v["enums"].as_array().into_iter().flatten() {
+            let name = e["name"].as_str().unwrap_or("").to_string();
+            let values = e["values"]
+                .as_array()
+                .map(|vs| {
+                    vs.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let doc = e["doc"].as_str().unwrap_or("").to_string();
+            self.enums.insert(name, (doc, values));
+        }
+        for r in v["records"].as_array().into_iter().flatten() {
+            let name = r["name"].as_str().unwrap_or("").to_string();
+            let fields = r["fields"]
+                .as_array()
+                .map(|fs| {
+                    fs.iter()
+                        .map(|f| {
+                            (
+                                f["name"].as_str().unwrap_or("").to_string(),
+                                ts_type(f["type"].as_str().unwrap_or("void")),
+                                f["doc"].as_str().unwrap_or("").to_string(),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let doc = r["doc"].as_str().unwrap_or("").to_string();
+            self.records.insert(name, (doc, fields));
+        }
         for c in v["classes"].as_array().into_iter().flatten() {
             let name = c["name"].as_str().unwrap_or("").to_string();
-            let fs = funcs(&c["functions"]);
+            if let Some(d) = c["doc"].as_str().filter(|d| !d.is_empty()) {
+                self.owner_docs.insert(name.clone(), d.to_string());
+            }
+            let fs = funcs(&c["functions"], like);
             let members = self.classes.entry(name.clone()).or_default();
             let props = self.props.entry(name.clone()).or_default();
+            let docs = &mut self.docs;
+            let mut add = |members: &mut Vec<String>, line: String, doc: &str| {
+                if !doc.is_empty() && !members.contains(&line) {
+                    docs.insert((name.clone(), line.clone()), doc.to_string());
+                }
+                push_unique(members, line);
+            };
             for f in &fs {
                 match f.kind.as_str() {
                     "static" => {
-                        push_unique(
+                        add(
                             members,
                             format!("static {}({}): {};", f.name, params_text(f, false), f.ret),
+                            &f.doc,
                         );
                         if let Some(o) = options_params(f, false) {
-                            push_unique(members, format!("static {}({o}): {};", f.name, f.ret));
+                            add(
+                                members,
+                                format!("static {}({o}): {};", f.name, f.ret),
+                                &f.doc,
+                            );
                         }
                         if f.name == "create" {
                             self.creates.insert(name.clone(), f.params.clone());
+                            if let Some(a) = f.options_after {
+                                self.creates_after.insert(name.clone(), a);
+                            }
                         }
                     }
                     "method" => {
-                        push_unique(
+                        add(
                             members,
                             format!("{}({}): {};", f.name, params_text(f, true), f.ret),
+                            &f.doc,
                         );
                         if let Some(o) = options_params(f, true) {
-                            push_unique(members, format!("{}({o}): {};", f.name, f.ret));
+                            add(members, format!("{}({o}): {};", f.name, f.ret), &f.doc);
                         }
                     }
                     "get" if f.params.is_empty() => {
@@ -344,14 +484,18 @@ impl Decls {
                         } else {
                             format!("static readonly {}: {};", f.name, f.ret)
                         };
-                        push_unique(members, line);
+                        add(members, line, &f.doc);
                     }
                     "set" if f.params.len() == 1 => {
                         let has_getter = fs
                             .iter()
                             .any(|g| g.kind == "get" && g.name == f.name && g.params.is_empty());
                         if !has_getter {
-                            push_unique(members, format!("static {}: {};", f.name, f.params[0].1));
+                            add(
+                                members,
+                                format!("static {}: {};", f.name, f.params[0].1),
+                                &f.doc,
+                            );
                         }
                     }
                     "get" => {
@@ -369,7 +513,7 @@ impl Decls {
                             m.trim_start_matches("readonly ")
                                 .starts_with(&format!("{}:", f.name))
                         }) {
-                            members.push(line);
+                            add(members, line, &f.doc);
                         }
                     }
                     "set" => {
@@ -383,7 +527,7 @@ impl Decls {
                                 .map(|p| p.1.clone())
                                 .unwrap_or_else(|| "unknown".into());
                             props.push((f.name.clone(), ty.clone()));
-                            push_unique(members, format!("{}: {ty};", f.name));
+                            add(members, format!("{}: {ty};", f.name), &f.doc);
                         }
                     }
                     _ => {}
@@ -391,9 +535,19 @@ impl Decls {
             }
         }
         let ns_name = v["namespace"].as_str().unwrap_or("").to_string();
-        let fs = funcs(&v["functions"]);
+        let fs = funcs(&v["functions"], like);
         if !fs.is_empty() {
-            let members = self.namespaces.entry(ns_name).or_default();
+            if let Some(d) = v["doc"].as_str().filter(|d| !d.is_empty()) {
+                self.owner_docs.insert(ns_name.clone(), d.to_string());
+            }
+            let members = self.namespaces.entry(ns_name.clone()).or_default();
+            let docs = &mut self.docs;
+            let mut add = |members: &mut Vec<String>, line: String, doc: &str| {
+                if !doc.is_empty() && !members.contains(&line) {
+                    docs.insert((ns_name.clone(), line.clone()), doc.to_string());
+                }
+                push_unique(members, line);
+            };
             for f in &fs {
                 // `function in(..)` is not a declaration TypeScript accepts (the class statics keep it).
                 if is_reserved(&f.name) {
@@ -408,17 +562,22 @@ impl Decls {
                             m.starts_with(&format!("let {}:", f.name))
                                 || m.starts_with(&format!("const {}:", f.name))
                         }) {
-                            members.push(line);
+                            add(members, line, &f.doc);
                         }
                     }
                     "set" => {}
                     _ => {
-                        push_unique(
+                        add(
                             members,
                             format!("function {}({}): {};", f.name, params_text(f, false), f.ret),
+                            &f.doc,
                         );
                         if let Some(o) = options_params(f, false) {
-                            push_unique(members, format!("function {}({o}): {};", f.name, f.ret));
+                            add(
+                                members,
+                                format!("function {}({o}): {};", f.name, f.ret),
+                                &f.doc,
+                            );
                         }
                     }
                 }
@@ -455,6 +614,25 @@ impl Decls {
         let Some(create) = self.creates.get(name) else {
             return vec![];
         };
+        // `#[options(after = p)]`: the parameters up to `p`, then the rest as the keys of an object.
+        if let Some(&after) = self.creates_after.get(name) {
+            let mut seen_optional = false;
+            let mut parts: Vec<String> = Vec::new();
+            for (n, t, o) in &create[..=after.min(create.len() - 1)] {
+                seen_optional |= *o;
+                parts.push(format!(
+                    "{}{}: {t}",
+                    safe_ident(n),
+                    if seen_optional { "?" } else { "" }
+                ));
+            }
+            let keys: Vec<String> = create[after + 1..]
+                .iter()
+                .map(|(n, t, _)| format!("{n}?: {t}"))
+                .collect();
+            parts.push(format!("options?: {{ {} }}", keys.join("; ")));
+            return vec![format!("constructor({});", parts.join(", "))];
+        }
         let opts = self.options_type(name, sup);
         let mut seen_optional = false;
         let pos: Vec<String> = create
@@ -492,9 +670,35 @@ impl Decls {
             s +=
                 &format!("{indent}{prefix}type {h} = number & {{ readonly __handle: \"{h}\" }};\n");
         }
+        // Enums are string unions, with `Enum.name(i)` and `Enum.parse(s)` to convert the index.
+        for (name, (doc, values)) in &self.enums {
+            s += &jsdoc(doc, indent);
+            let union: Vec<String> = values.iter().map(|v| format!("\"{v}\"")).collect();
+            s += &format!("{indent}{prefix}type {name} = {};\n", union.join(" | "));
+            s += &format!("{indent}{prefix}namespace {name} {{\n");
+            s += &format!(
+                "{indent}  /** The name at an index (the order of the union). */\n{indent}  function name(index: number): {name};\n"
+            );
+            s += &format!(
+                "{indent}  /** The index of a name, or -1. */\n{indent}  function parse(name: string): number;\n"
+            );
+            s += &format!("{indent}}}\n");
+        }
+        for (name, (doc, fields)) in &self.records {
+            s += &jsdoc(doc, indent);
+            s += &format!("{indent}{prefix}interface {name} {{\n");
+            for (f, t, d) in fields {
+                s += &jsdoc(d, &format!("{indent}  "));
+                s += &format!("{indent}  {f}: {t};\n");
+            }
+            s += &format!("{indent}}}\n");
+        }
         let mut names: BTreeSet<&String> = self.classes.keys().collect();
         names.extend(self.values.keys());
         for name in names {
+            if let Some(d) = self.owner_docs.get(name) {
+                s += &jsdoc(d, indent);
+            }
             s += &format!("{indent}{prefix}class {name} {{\n");
             for c in self.ctor_lines(name, sup) {
                 s += &format!("{indent}  {c}\n");
@@ -520,8 +724,11 @@ impl Decls {
                 } else {
                     sup.hide_inst.get(name)
                 };
-                if hidden.is_some_and(|h| h.contains(member_name(m))) {
+                if hidden.is_some_and(|h| h.contains(member_name(decl_line(m)))) {
                     continue;
+                }
+                if let Some(d) = self.docs.get(&(name.clone(), m.clone())) {
+                    s += &jsdoc(d, &format!("{indent}  "));
                 }
                 s += &format!("{indent}  {m}\n");
             }
@@ -558,6 +765,9 @@ impl Decls {
             s += &format!("{indent}}}\n");
         }
         for (name, members) in &self.namespaces {
+            if let Some(d) = self.owner_docs.get(name) {
+                s += &jsdoc(d, indent);
+            }
             s += &format!("{indent}{prefix}namespace {name} {{\n");
             for m in members {
                 if sup
@@ -566,6 +776,9 @@ impl Decls {
                     .is_some_and(|h| h.contains(member_name(m)))
                 {
                     continue;
+                }
+                if let Some(d) = self.docs.get(&(name.clone(), m.clone())) {
+                    s += &jsdoc(d, &format!("{indent}  "));
                 }
                 s += &format!("{indent}  {m}\n");
             }
@@ -664,6 +877,8 @@ pub fn generate(manifests: &[String], ambient: &str, supplement: &str) -> Result
     let mut engine: BTreeSet<String> = d.handles.iter().cloned().collect();
     engine.extend(d.classes.keys().cloned());
     engine.extend(d.values.keys().cloned());
+    engine.extend(d.enums.keys().cloned());
+    engine.extend(d.records.keys().cloned());
     engine.extend(d.namespaces.keys().filter(|n| !n.is_empty()).cloned());
     engine.extend(ENGINE_AMBIENT_NAMES.iter().map(|s| s.to_string()));
     engine.extend(sup.names.iter().cloned());
@@ -800,5 +1015,79 @@ mod tests {
             t.contains("  export import Extra = globalThis.Extra;"),
             "{t}"
         );
+    }
+
+    const RECORDS: &str = r#"{"namespace":"Rec","doc":"Things that exist.","like":true,"handles":["Thing"],
+      "values":[{"name":"Point","fields":[{"name":"x","type":"f64"},{"name":"y","type":"f64"}]}],
+      "enums":[{"name":"FillMode","doc":"How to fill.","values":["solid","pingPong"],"nameSymbol":"iron_FillMode_name","parseSymbol":"iron_FillMode_parse"}],
+      "records":[{"name":"Spot","doc":"A spot.","fields":[{"name":"at","type":"value:Point"},{"name":"weight","type":"f64","doc":"How heavy."},{"name":"hard","type":"bool"},{"name":"fill","type":"enum:FillMode"}]}],
+      "classes":[{"name":"Thing","doc":"A thing.","functions":[
+        {"name":"create","symbol":"c1","kind":"static","doc":"Makes one.","optionsAfter":0,"params":[{"name":"points","type":"values:Point","optional":true},{"name":"weight","type":"f64","optional":true},{"name":"fill","type":"enum:FillMode","optional":true}],"returns":"handle:Thing"},
+        {"name":"spots","symbol":"c2","kind":"get","params":[{"name":"this","type":"handle:Thing"}],"returns":"list:record:Spot","doc":"Its spots."},
+        {"name":"fill","symbol":"c3","kind":"get","params":[{"name":"this","type":"handle:Thing"}],"returns":"enum:FillMode"},
+        {"name":"near","symbol":"c4","kind":"method","params":[{"name":"this","type":"handle:Thing"},{"name":"p","type":"value:Point"}],"returns":"record:Spot"}]}],
+      "functions":[
+        {"name":"many","symbol":"f1","kind":"static","doc":"The points as given.","params":[{"name":"points","type":"values:Point","rest":true}],"returns":"list:value:Point"},
+        {"name":"mix","symbol":"f2","kind":"static","params":[{"name":"a","type":"value:Point"},{"name":"b","type":"values:Point"}],"returns":"void"}]}"#;
+
+    // M9-TS-3103
+    #[test]
+    fn enums_records_lists_rest_docs_and_like_become_declarations() {
+        let t = generate(&[RECORDS.to_string()], "", "").unwrap();
+        // Enums: a string union and the converters.
+        assert!(
+            t.contains(
+                "/**\n * How to fill.\n */\ndeclare type FillMode = \"solid\" | \"pingPong\";"
+            ),
+            "{t}"
+        );
+        assert!(t.contains("declare namespace FillMode {"), "{t}");
+        assert!(t.contains("function name(index: number): FillMode;"), "{t}");
+        assert!(t.contains("function parse(name: string): number;"), "{t}");
+        // Records: an interface with the field docs.
+        assert!(t.contains("declare interface Spot {"), "{t}");
+        assert!(t.contains("  at: Point;"), "{t}");
+        assert!(t.contains("   * How heavy.\n"), "{t}");
+        assert!(t.contains("  fill: FillMode;"), "{t}");
+        // Lists, records and enums as results; `like` for value parameters only.
+        assert!(t.contains("readonly spots: Spot[];"), "{t}");
+        assert!(t.contains("readonly fill: FillMode;"), "{t}");
+        assert!(t.contains("near(p: PointLike): Spot;"), "{t}");
+        assert!(
+            t.contains("function many(...points: PointLike[]): Point[];"),
+            "{t}"
+        );
+        assert!(
+            t.contains("function mix(a: PointLike, b: readonly PointLike[]): void;"),
+            "{t}"
+        );
+        // Docs on the namespace, a class and their members.
+        assert!(
+            t.contains("/**\n * Things that exist.\n */\ndeclare namespace Rec {"),
+            "{t}"
+        );
+        assert!(
+            t.contains("/**\n * A thing.\n */\ndeclare class Thing {"),
+            "{t}"
+        );
+        assert!(t.contains("   * Its spots.\n"), "{t}");
+        assert!(t.contains("   * The points as given.\n"), "{t}");
+        // `#[options(after = points)]`: the positional parameters, then one options object.
+        assert!(
+            t.contains(
+                "  constructor(points?: readonly PointLike[], options?: { weight?: number; fill?: FillMode });"
+            ),
+            "{t}"
+        );
+        assert!(
+            !t.contains("constructor(points?: readonly PointLike[], weight"),
+            "{t}"
+        );
+        // The module re-exports the enum and the record.
+        assert!(
+            t.contains("  export import FillMode = globalThis.FillMode;"),
+            "{t}"
+        );
+        assert!(t.contains("  export import Spot = globalThis.Spot;"), "{t}");
     }
 }

@@ -97,7 +97,7 @@ fn a_static_property_of_a_handle_class_is_an_accessor_in_quickjs() {
     assert!(d.contains("get level(): number;"), "{d}");
     let j = demo::MANIFEST.to_json();
     assert!(
-        j.contains("{\"name\":\"current\",\"symbol\":\"iron_Demo_current\",\"kind\":\"get\",\"params\":[],\"returns\":\"handle:Demo\"}"),
+        j.contains("{\"name\":\"current\",\"symbol\":\"iron_Demo_current\",\"kind\":\"get\",\"params\":[],\"returns\":\"handle:Demo\",\"doc\":\"The current one, read through the getter each time.\"}"),
         "{j}"
     );
     // The shim has no receiver either.

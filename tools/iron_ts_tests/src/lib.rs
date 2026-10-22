@@ -1338,3 +1338,15 @@ pub mod physics_comp_t {
 pub mod facade_t {
     include!(concat!(env!("OUT_DIR"), "/facade_bindings.rs"));
 }
+
+/// `bench/outlines.ts` (the facade's `Shapes` and `Spline` next to the native ones), prefix `otl_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod outlines_t {
+    include!(concat!(env!("OUT_DIR"), "/outlines_bindings.rs"));
+}

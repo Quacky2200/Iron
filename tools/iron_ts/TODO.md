@@ -424,3 +424,12 @@ Behaviours checked 2026-10-22 (all with GC stress where it applies):
 
 - [ ] **Asset packs default (decided 2026-10-22, `docs/research/iron-virtual-fs-plan.md` section 6):** `iron-build package` stays loose (`data/`) until packs are tried and tested on real games; then flip it to write `assets.dat` + scene packs by default with `--loose` for debugging/modding. Also revisit storing cooked-only textures (currently both forms) to reduce bloat; DirectStorage / `CODEC-1` later.
 - [ ] **Enums as indexes (decided 2026-10-22, `docs/research/iron-generated-dts-plan.md` section 6):** native name/index converters per enum, constant literals converted at compile time.
+
+## Every declaration generated from Rust (plan: `docs/research/iron-generated-dts-plan.md`, decisions in its section 6)
+
+- [x] P0: ratchet over the hand-written `.d.ts`, `facade.ts` chunks and Python (`M9-TS-3100`), no name declared twice (`M9-TS-3101`), API surface snapshot with `IRON_BLESS=1` (`M9-TS-3102`).
+- [x] P1a: native `Shapes` (`iron_math::outlines`); `#[iron_api]` enums, records, list results, `#[rest]`, `#[options(after = ..)]`, `like`, `#[nullable]` and doc comments (manifest JSON and `types_dts.rs`); `Shapes` facade chunk and its `engine_ts.d.ts` lines deleted; `iron_native::install` in the app's QuickJS runtime (`M9-API-1600..1602`, `1610..1614`, `M9-TS-3103`, `3110`, `3111`).
+- [ ] P1b: native `Spline`.
+- [ ] P1c: native `SplineAnimate` component (kind, scene files, host update).
+- [ ] P2 enums and nullables, records and option bags, lists, subscriptions and promises, remaining logic; P3 built-ins; P4 UI tables; P5 delete `engine_ts.d.ts` and `ambient.d.ts` and make the ratchet strict.
+- Found while porting: the old compiled `Shapes.bezier(.., 0)` answered (0, 0) where JavaScript (and the native one) gives NaN, and a NaN spline index read 0 from a `Float64Array` where JavaScript reads `undefined`; both are edge cases outside any example.

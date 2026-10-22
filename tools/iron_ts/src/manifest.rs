@@ -23,6 +23,8 @@ pub struct ExternFn {
     pub optional_from: usize,
     /// Per parameter: the value a left-out one takes (a flag is 0 or 1), if the API says.
     pub defaults: Vec<Option<f64>>,
+    /// The last parameter takes every remaining argument (`...points: Vector2[]`).
+    pub rest: bool,
 }
 
 /// The functions of a handle class, by how scripts call them. Methods, getters and setters take
@@ -51,6 +53,49 @@ pub struct Manifest {
     pub overloads: HashMap<(String, String), Vec<ExternFn>>,
     /// Properties of a namespace (`Time.deltaTime`, `Gizmos.color = c`): namespace -> name -> accessors.
     pub ns_props: HashMap<String, HashMap<String, NsProp>>,
+    /// Enums (`TangentMode`) by name: scripts see strings, the wire is the index.
+    pub enums: HashMap<String, EnumInfo>,
+    /// Result records (`SplineHit`) by name.
+    pub records: HashMap<String, Vec<(String, RecField)>>,
+}
+
+/// An enum of the engine API.
+#[derive(Clone, Debug, Default)]
+pub struct EnumInfo {
+    /// The names, in index order.
+    pub values: Vec<String>,
+    /// `iron_<Enum>_name(i, out_len)` and `iron_<Enum>_parse(s)`.
+    pub name_symbol: String,
+    pub parse_symbol: String,
+}
+
+/// The type of a field of a record.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecField {
+    Num,
+    Bool,
+    /// A value class (`Vector3`): its fields in a row.
+    Value(String),
+    /// An enum: the index.
+    Enum(String),
+}
+
+impl RecField {
+    fn parse(s: &str) -> Result<RecField, String> {
+        Ok(match s {
+            "f64" | "f32" | "i32" | "u32" => RecField::Num,
+            "bool" => RecField::Bool,
+            other => {
+                if let Some(n) = other.strip_prefix("value:") {
+                    RecField::Value(n.to_string())
+                } else if let Some(n) = other.strip_prefix("enum:") {
+                    RecField::Enum(n.to_string())
+                } else {
+                    return Err(format!("manifest: unknown record field type `{other}`"));
+                }
+            }
+        })
+    }
 }
 
 /// A namespace property: its getter and setter (neither takes a receiver).
@@ -91,6 +136,14 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
                     .map(ext_ty)
                     .collect::<Result<Vec<_>, _>>()?;
                 ExtTy::Fn(ps, Box::new(ext_ty(ret)?))
+            } else if let Some(name) = other.strip_prefix("enum:") {
+                ExtTy::Enum(name.to_string())
+            } else if let Some(name) = other.strip_prefix("record:") {
+                ExtTy::Record(name.to_string())
+            } else if let Some(name) = other.strip_prefix("list:value:") {
+                ExtTy::ValueList(name.to_string())
+            } else if let Some(name) = other.strip_prefix("list:record:") {
+                ExtTy::RecordList(name.to_string())
             } else if let Some(name) = other.strip_prefix("handle:") {
                 ExtTy::Handle(name.to_string())
             } else if let Some(name) = other.strip_prefix("value:") {
@@ -125,6 +178,61 @@ impl Manifest {
                 fields.push((fname.to_string(), fty));
             }
             self.values.insert(vname.to_string(), fields);
+        }
+        for e in v["enums"].as_array().into_iter().flatten() {
+            let ename = e["name"].as_str().ok_or("manifest: an enum needs a name")?;
+            let values: Vec<String> = e["values"]
+                .as_array()
+                .ok_or("manifest: an enum needs values")?
+                .iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect();
+            let info = EnumInfo {
+                values,
+                name_symbol: e["nameSymbol"].as_str().unwrap_or("").to_string(),
+                parse_symbol: e["parseSymbol"].as_str().unwrap_or("").to_string(),
+            };
+            // `TangentMode.name(i)` and `TangentMode.parse(s)`, callable from scripts.
+            let funcs = self.namespaces.entry(ename.to_string()).or_default();
+            funcs.insert(
+                "name".into(),
+                ExternFn {
+                    symbol: info.name_symbol.clone(),
+                    params: vec![("index".into(), ExtTy::I32)],
+                    ret: ExtTy::Str,
+                    optional_from: 1,
+                    defaults: vec![None],
+                    rest: false,
+                },
+            );
+            funcs.insert(
+                "parse".into(),
+                ExternFn {
+                    symbol: info.parse_symbol.clone(),
+                    params: vec![("name".into(), ExtTy::Str)],
+                    ret: ExtTy::I32,
+                    optional_from: 1,
+                    defaults: vec![None],
+                    rest: false,
+                },
+            );
+            self.enums.insert(ename.to_string(), info);
+        }
+        for r in v["records"].as_array().into_iter().flatten() {
+            let rname = r["name"]
+                .as_str()
+                .ok_or("manifest: a record needs a name")?;
+            let mut fields = Vec::new();
+            for f in r["fields"]
+                .as_array()
+                .ok_or("manifest: a record needs fields")?
+            {
+                let fname = f["name"].as_str().ok_or("manifest: a field needs a name")?;
+                let fty =
+                    RecField::parse(f["type"].as_str().ok_or("manifest: a field needs a type")?)?;
+                fields.push((fname.to_string(), fty));
+            }
+            self.records.insert(rname.to_string(), fields);
         }
         let mut fns = HashMap::new();
         for f in v["functions"]
@@ -199,7 +307,9 @@ impl Manifest {
         let mut params = Vec::new();
         let mut optional_from = usize::MAX;
         let mut defaults: Vec<Option<f64>> = Vec::new();
+        let mut rest = false;
         for p in f["params"].as_array().ok_or("manifest: missing `params`")? {
+            rest |= p["rest"].as_bool() == Some(true);
             let pn = p["name"].as_str().unwrap_or("arg").to_string();
             let pt = ext_ty(
                 p["type"]
@@ -228,6 +338,7 @@ impl Manifest {
                 defaults,
                 params,
                 ret,
+                rest,
             },
         ))
     }

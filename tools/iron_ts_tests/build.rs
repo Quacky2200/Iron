@@ -114,6 +114,7 @@ fn main() {
         ("render_native", "rdn_", 7200),
         ("facade", "fac_", 7300),
         ("windows", "win_", 7400),
+        ("outlines", "otl_", 7800),
         ("toplevel", "tl_", 7600),
     ] {
         let path = manifest.join(format!("bench/{name}.ts"));
@@ -128,7 +129,7 @@ fn main() {
             | "rotations" | "shapes" | "anim_clips" | "anim_player" | "anim_animator"
             | "scene_objects" | "comp_query" | "comp_life" | "scenes" | "physics" | "contacts"
             | "comp_api" | "physics_comp" | "callbacks" | "audio_native" | "render_native"
-            | "facade" | "windows" => engine_manifests(),
+            | "facade" | "windows" | "outlines" => engine_manifests(),
             "scene" | "components" | "components2" | "sine_demo" => {
                 let mut v = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
                 v.extend(iron_engine_api::iron_math::manifests());

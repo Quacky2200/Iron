@@ -1114,19 +1114,6 @@ declare class Scene :: readonly name: string;
 declare class Scene :: readonly path: string;
 declare class Scene :: readonly rootCount: number;
 declare class Scene :: rootAt(index: number): GameObject;
-declare class Shapes
-declare class Shapes :: static arc(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
-declare class Shapes :: static bezier(p0: Vector2Like, p1: Vector2Like, p2: Vector2Like, p3: Vector2Like, segments?: number): Vector2[];
-declare class Shapes :: static circle(center: Vector2Like, radius: number, segments?: number): Vector2[];
-declare class Shapes :: static closedCurve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
-declare class Shapes :: static curve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
-declare class Shapes :: static ellipse(center: Vector2Like, rx: number, ry: number, segments?: number): Vector2[];
-declare class Shapes :: static pie(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
-declare class Shapes :: static polygon(...points: Vector2Like[]): Vector2[];
-declare class Shapes :: static rectangle(x: number, y: number, width: number, height: number): Vector2[];
-declare class Shapes :: static regularPolygon(center: Vector2Like, radius: number, sides: number, rotation?: number): Vector2[];
-declare class Shapes :: static roundedRectangle(x: number, y: number, width: number, height: number, radius: number, segments?: number): Vector2[];
-declare class Shapes :: static triangle(a: Vector2Like, b: Vector2Like, c: Vector2Like): Vector2[];
 declare class SkinnedMeshRenderer
 declare class SkinnedMeshRenderer :: addBone(bone: GameObject): void;
 declare class SkinnedMeshRenderer :: boneAt(index: number): GameObject;
@@ -2195,6 +2182,28 @@ declare namespace Screen :: function setResolution(width: number, height: number
 declare namespace Screen :: function supportedFullScreenModeAt(index: number): string;
 declare namespace Screen :: let fullScreen: boolean;
 declare namespace Screen :: let fullScreenMode: string;
+declare namespace Shapes
+declare namespace Shapes :: function arc(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, options?: { segments?: number }): Vector2[];
+declare namespace Shapes :: function arc(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
+declare namespace Shapes :: function bezier(p0: Vector2Like, p1: Vector2Like, p2: Vector2Like, p3: Vector2Like, options?: { segments?: number }): Vector2[];
+declare namespace Shapes :: function bezier(p0: Vector2Like, p1: Vector2Like, p2: Vector2Like, p3: Vector2Like, segments?: number): Vector2[];
+declare namespace Shapes :: function circle(center: Vector2Like, radius: number, options?: { segments?: number }): Vector2[];
+declare namespace Shapes :: function circle(center: Vector2Like, radius: number, segments?: number): Vector2[];
+declare namespace Shapes :: function closedCurve(points: readonly Vector2Like[], options?: { tension?: number; segments?: number }): Vector2[];
+declare namespace Shapes :: function closedCurve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
+declare namespace Shapes :: function curve(points: readonly Vector2Like[], options?: { tension?: number; segments?: number }): Vector2[];
+declare namespace Shapes :: function curve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
+declare namespace Shapes :: function ellipse(center: Vector2Like, rx: number, ry: number, options?: { segments?: number }): Vector2[];
+declare namespace Shapes :: function ellipse(center: Vector2Like, rx: number, ry: number, segments?: number): Vector2[];
+declare namespace Shapes :: function pie(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, options?: { segments?: number }): Vector2[];
+declare namespace Shapes :: function pie(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
+declare namespace Shapes :: function polygon(...points: Vector2Like[]): Vector2[];
+declare namespace Shapes :: function rectangle(x: number, y: number, width: number, height: number): Vector2[];
+declare namespace Shapes :: function regularPolygon(center: Vector2Like, radius: number, sides: number, options?: { rotation?: number }): Vector2[];
+declare namespace Shapes :: function regularPolygon(center: Vector2Like, radius: number, sides: number, rotation?: number): Vector2[];
+declare namespace Shapes :: function roundedRectangle(x: number, y: number, width: number, height: number, radius: number, options?: { segments?: number }): Vector2[];
+declare namespace Shapes :: function roundedRectangle(x: number, y: number, width: number, height: number, radius: number, segments?: number): Vector2[];
+declare namespace Shapes :: function triangle(a: Vector2Like, b: Vector2Like, c: Vector2Like): Vector2[];
 declare namespace Sprite
 declare namespace Sprite :: function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
 declare namespace Sprite :: function grid(texture: Texture, columns: number, rows: number, pivot?: Vector2, pixelsPerUnit?: number): Sprite[];

@@ -713,12 +713,13 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
   `pixelsPerUnit`, `resolution`. The host gives each one a panel (`panels.rs::apply_text`, ids from `render_sync::TEXT_BASE`) that
   goes with its component (`native_render::sync_texts`).
 - **`Shapes`** (`rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
-  `bezier`, `curve`, `closedCurve`), **`Spline`** (knots, tangent modes, `evaluate` / `tangent` by distance, `segmentPoint`,
-  `sample`, `nearest`, `version`) and **`SplineAnimate`** are TypeScript, ported from `js/engine/src/shapes.ts` / `spline.ts` into
-  `facade.ts` and compiled into every game that names them (so QuickJS and compiled code run the same maths). Differences:
+  `bezier`, `curve`, `closedCurve`) is native Rust now (`iron_math::outlines`, see "Enums, records, lists, rest parameters and
+  docs"). **`Spline`** (knots, tangent modes, `evaluate` / `tangent` by distance, `segmentPoint`,
+  `sample`, `nearest`, `version`) and **`SplineAnimate`** are TypeScript, ported from `js/engine/src/spline.ts` into
+  `facade.ts` and compiled into every game that names them. Differences:
   `Spline.knots` is an array of `{ position, tangentIn, tangentOut, mode }` and `mode` a plain `string` inside (the d.ts says
   `"auto" | "bezier" | "linear"`); points are `Vector2` / `Vector3` (not `...Like` objects); `SplineAnimate` fields are plain
-  fields, not `@property`s (no scene-file saving, not kept across a hot reload); `shapes.polygon(...)` takes `Vector2`s.
+  fields, not `@property`s (no scene-file saving, not kept across a hot reload).
 - **`Camera.screenToWorldPoint(p)`** is a facade method (frustum maths over `rect`, `Screen.width` / `height`, `fieldOfView` or
   `orthographicSize` and the transform). The other `viewportTo...` / `screenPointToRay` members are not there yet.
 - **Facade chunk requirements.** A chunk header may end with `@ Name ..`: `//# when Spline @ Vector3`. The chunk is added only
@@ -735,3 +736,49 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
   `.flatMap`, `.flat()`, `Record<string, V>` as a dictionary (use `Map`), `Map.get` over engine handles (box them), object
   accessors (`get x() {}`) in object literals, destructuring assignment, spread call arguments, classes assigned to interfaces
   that have function properties (use an abstract base class), `String(n)[i]` indexing (use `charAt`).
+
+## Enums, records, lists, rest parameters and docs (2026-10-22, generated declarations P0/P1)
+
+Part of making every declaration generated from Rust (plan: [iron-generated-dts-plan.md](research/iron-generated-dts-plan.md)):
+`#[iron_api]` and the manifest got what `Shapes`, `Spline` and `SplineAnimate` needed, so their TypeScript copies
+(`facade.ts`, `engine_ts.d.ts`) could go. Tests: [records_enums.rs](../crates/iron_api/tests/records_enums.rs)
+(`M9-API-1610`..`1614`).
+
+| Rust | Script | C ABI |
+|---|---|---|
+| `enums(TangentMode = Tangent [Auto, Bezier, Linear])` on the attribute, a Rust enum `Tangent` | the string union `"auto" \| "bezier" \| "linear"` (variant names with a lower-case first letter), plus the global `TangentMode.name(i)` / `TangentMode.parse(s)` | the index, `i32` (-1: not a name; the engine reads it as the first value) |
+| `records(SplineHit = SplineHit [segment: f64, u: f64])`, a Rust struct with those public fields (`f64`, `bool`, a declared value class or enum) | a plain object `{ segment, u }` (an `interface` in the d.ts) | a result only: the numbers go to `iron_api`'s per-thread buffer (`return_flat`), the compiled call reads them with `iron_api_result(i)` and builds the object |
+| `-> Vec<V>` / `-> Vec<Record>` | `V[]` / `Record[]` | the shim returns the element count; the numbers of every element are in the same buffer |
+| `#[rest(points)]` on a function whose last parameter is `&[V]` | `...points: V[]` (QuickJS: every remaining argument; compiled: the arguments packed into an array, or one `...array`) | the array pointer, as for `&[V]` |
+| `#[options(after = points)]` with `#[optional(points, closed = false, ..)]` | `new Spline(points?, { closed?, tension? })`: the object after `points` gives the parameters after it | the positional shim |
+| `like` on the attribute | value *parameters* are declared `Vector3Like` (a plain `{ x, y, z }` does) | - |
+| `#[nullable]` on a handle getter and its setter | `T \| null` in the declaration | a zero handle is `null` as before |
+| `///` on the module, an `impl` block (the class), a function, and inside `enums(..)` / `records(..)` (also on record fields) | JSDoc in the generated `.d.ts` (manifest JSON `doc`) | - |
+
+**Enums on the wire.** A compiled call converts a string constant to its index at compile time and anything else with
+`Enum.parse(s)`; a result goes through `Enum.name(i)`. The type name of an enum or record is known to the compiler, so
+`let m: TangentMode = "auto"` works (the compiler sees a `string`; `tsc` sees the union). The native helpers for Rust code are
+generated next to the shims (`tangent_mode_name`, `_parse`, `_index`, `_from_index`, `TANGENT_MODE_NAMES`). QuickJS passes and
+returns the strings and throws a `TypeError` for an unknown name (a left-out optional enum is the first value in both).
+
+**Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
+`records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`;
+parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`. `tools/iron_ts/src/types_dts.rs` reads them
+(`enum` becomes `type X = ..` and `namespace X { name, parse }`, `record` an `interface`).
+
+**Guard tests** (`tools/iron_build/tests/generated_dts.rs`): `M9-TS-3100` a ratchet over the hand-written `.d.ts` files and
+`facade.ts` chunks (they may only shrink), `M9-TS-3101` no name is declared by both the manifests and a hand-written file beyond a
+listed set, `M9-TS-3102` the generated `types/iron.d.ts` equals a blessed API snapshot
+(`tools/iron_build/tests/golden/api_surface.txt`; `IRON_BLESS=1 cargo test -p iron_build --test generated_dts` rewrites it, and the
+diff shows exactly which declarations changed).
+
+**Shapes** is native: `iron_math::outlines` (`crates/iron_math/src/outlines.rs`, declared as the namespace `Shapes`), ported
+from the TypeScript in the same order of operations. Compiled code and QuickJS call the same functions. The compiled facade copy
+is gone; `tools/iron_ts_tests/bench/outlines.ts` keeps it, renamed `RefShapes`, as a differential oracle (`M9-TS-3110`: every
+point of every shape on edge cases equals the native one bit for bit, in every GC mode). `js/engine/src/shapes.ts` is a typed
+alias of the global `Shapes`.
+
+**QuickJS installs the native API.** `iron_app` now calls `iron_native::install` for bundled (JavaScript) games, where it only
+called `Window`'s `register_quickjs`, including after a hot reload. The globals it adds (`Shapes`, `Spline`, `TangentMode`, ...)
+are the ones compiled games call. `js/engine`'s own classes are still module values; they do not read these globals except the
+ones a thin wrapper names (`Shapes`).

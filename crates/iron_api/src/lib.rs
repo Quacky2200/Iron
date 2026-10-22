@@ -49,6 +49,15 @@ pub enum Ty {
     /// A closure the engine keeps and calls later: the manifest signature (`fn(f64,string):void`)
     /// and the TypeScript type (`(a: number, b: string) => void`).
     Callback(&'static str, &'static str),
+    /// An enum declared in `enums(..)`: scripts see one of its names (a string); across the C ABI
+    /// it is the index of the name (`i32`, -1 for a name that is not one of them).
+    Enum(&'static str),
+    /// A record declared in `records(..)`: a plain object of its fields. Only results so far; it
+    /// comes back through [`return_flat`].
+    Record(&'static str),
+    /// A `Vec` result of values or records: the manifest name of the element (`value:Vector2`)
+    /// and the TypeScript type (`Vector2[]`). It comes back through [`return_flat`].
+    List(&'static str, &'static str),
 }
 
 impl Ty {
@@ -63,6 +72,8 @@ impl Ty {
             Ty::F64s => "number[]",
             Ty::Values(_, arr) => arr,
             Ty::Callback(_, ts) => ts,
+            Ty::Enum(name) | Ty::Record(name) => name,
+            Ty::List(_, arr) => arr,
         }
     }
 
@@ -81,6 +92,9 @@ impl Ty {
             Ty::F64s => "f64s".into(),
             Ty::Values(n, _) => format!("values:{n}"),
             Ty::Callback(sig, _) => (*sig).into(),
+            Ty::Enum(n) => format!("enum:{n}"),
+            Ty::Record(n) => format!("record:{n}"),
+            Ty::List(inner, _) => format!("list:{inner}"),
         }
     }
 }
@@ -94,6 +108,8 @@ pub struct Param {
     pub optional: bool,
     /// What a left-out parameter is when `#[optional(name = value)]` says (a flag is 0 or 1).
     pub default: Option<f64>,
+    /// The last parameter takes every remaining argument (`#[rest(points)]`): `...points: V[]`.
+    pub rest: bool,
 }
 
 /// How a function is called from a script.
@@ -133,6 +149,11 @@ pub struct Function {
     pub doc: &'static str,
     pub params: &'static [Param],
     pub ret: Ty,
+    /// `#[options(after = p)]`: scripts may pass the optional parameters after parameter `p` (the
+    /// index) as one trailing object (`new Spline(points, { closed: true })`).
+    pub options_after: Option<usize>,
+    /// `#[nullable]`: a handle result (or the value a setter takes) may be `null`.
+    pub nullable: bool,
 }
 
 /// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
@@ -157,7 +178,35 @@ pub struct ValueDef {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClassDef {
     pub name: &'static str,
+    pub doc: &'static str,
     pub functions: &'static [Function],
+}
+
+/// An enum scripts see as a string union (`"auto" | "bezier" | "linear"`) and that travels as the
+/// index of the name. The namespace that declares it also exports `name(i)` and `parse(s)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnumDef {
+    pub name: &'static str,
+    pub doc: &'static str,
+    /// The names, in index order.
+    pub values: &'static [&'static str],
+}
+
+/// One field of a record.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RecordField {
+    pub name: &'static str,
+    /// `F64`, `Bool`, a value class or an enum.
+    pub ty: Ty,
+    pub doc: &'static str,
+}
+
+/// A plain object scripts get as a result (`SplineHit { segment, u }`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RecordDef {
+    pub name: &'static str,
+    pub doc: &'static str,
+    pub fields: &'static [RecordField],
 }
 
 /// The addresses of a namespace's `extern "C"` shims by symbol name (what `#[iron_api]` emits as
@@ -193,6 +242,9 @@ pub fn register_symbols(symbols: impl IntoIterator<Item = (&'static str, usize)>
 /// The address of an engine shim or runtime function, if its namespace was registered. Reading a
 /// namespace's manifest (`Namespace::to_json`, so every crate's `manifests()`) registers it.
 pub fn symbol(name: &str) -> Option<usize> {
+    if name == "iron_api_result" {
+        return Some(iron_api_result as *const () as usize);
+    }
     let r = symbol_registry().lock().unwrap_or_else(|e| e.into_inner());
     r.get(name).copied()
 }
@@ -210,8 +262,14 @@ pub struct Namespace {
     /// The shims' addresses.
     pub symbols: SymbolTable,
     pub name: &'static str,
+    /// The doc comment of the module.
+    pub doc: &'static str,
+    /// Value parameters are declared as `VectorNLike` (a plain `{ x, y }` object does): `like`.
+    pub like: bool,
     /// The handle types it mentions: `(TypeScript name)`.
     pub handles: &'static [&'static str],
+    pub enums: &'static [EnumDef],
+    pub records: &'static [RecordDef],
     /// The value classes its functions take and return.
     pub values: &'static [ValueDef],
     /// The handle classes with methods, properties or statics.
@@ -402,6 +460,24 @@ pub unsafe fn return_string(s: impl Into<String>, out_len: *mut i64) -> *const u
     })
 }
 
+thread_local! {
+    static FLAT: std::cell::RefCell<Vec<f64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Hands a list or record result to compiled code: the numbers (a value is its fields, a boolean
+/// 0 or 1, an enum its index, element after element) are kept here, per thread, and the compiled
+/// call reads them one by one with `iron_api_result(i)` straight after the call, before it makes
+/// another engine call.
+pub fn return_flat(flat: Vec<f64>) {
+    FLAT.with(|f| *f.borrow_mut() = flat);
+}
+
+/// The `i`-th number of the last [`return_flat`] (0 past the end).
+#[unsafe(no_mangle)]
+pub extern "C" fn iron_api_result(i: u32) -> f64 {
+    FLAT.with(|f| f.borrow().get(i as usize).copied().unwrap_or(0.0))
+}
+
 pub trait Handle: Copy {
     fn to_raw(self) -> u64;
     fn from_raw(raw: u64) -> Self;
@@ -551,23 +627,41 @@ fn function_json(f: &Function) -> String {
         .iter()
         .map(|p| {
             format!(
-                "{{\"name\":{},\"type\":{}{}{}}}",
+                "{{\"name\":{},\"type\":{}{}{}{}}}",
                 json_str(p.name),
                 json_str(&p.ty.name()),
                 if p.optional { ",\"optional\":true" } else { "" },
                 p.default
-                    .map_or(String::new(), |d| format!(",\"default\":{d}"))
+                    .map_or(String::new(), |d| format!(",\"default\":{d}")),
+                if p.rest { ",\"rest\":true" } else { "" }
             )
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
         params.join(","),
-        json_str(&f.ret.name())
+        json_str(&f.ret.name()),
+        if f.doc.is_empty() {
+            String::new()
+        } else {
+            format!(",\"doc\":{}", json_str(f.doc))
+        },
+        f.options_after
+            .map_or(String::new(), |a| format!(",\"optionsAfter\":{a}")),
+        if f.nullable { ",\"nullable\":true" } else { "" }
     )
+}
+
+/// `,"doc":"..."` for a non-empty doc comment, else nothing.
+fn doc_json(doc: &str) -> String {
+    if doc.is_empty() {
+        String::new()
+    } else {
+        format!(",\"doc\":{}", json_str(doc))
+    }
 }
 
 fn json_str(s: &str) -> String {
@@ -704,17 +798,61 @@ impl Namespace {
             .map(|c| {
                 let fs: Vec<String> = c.functions.iter().map(function_json).collect();
                 format!(
-                    "{{\"name\":{},\"functions\":[{}]}}",
+                    "{{\"name\":{}{},\"functions\":[{}]}}",
                     json_str(c.name),
+                    doc_json(c.doc),
                     fs.join(",")
                 )
             })
             .collect();
+        let enums: Vec<String> = self
+            .enums
+            .iter()
+            .map(|e| {
+                let values: Vec<String> = e.values.iter().map(|v| json_str(v)).collect();
+                format!(
+                    "{{\"name\":{}{},\"values\":[{}],\"nameSymbol\":{},\"parseSymbol\":{}}}",
+                    json_str(e.name),
+                    doc_json(e.doc),
+                    values.join(","),
+                    json_str(&format!("iron_{}_name", e.name)),
+                    json_str(&format!("iron_{}_parse", e.name))
+                )
+            })
+            .collect();
+        let records: Vec<String> = self
+            .records
+            .iter()
+            .map(|r| {
+                let fields: Vec<String> = r
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{{\"name\":{},\"type\":{}{}}}",
+                            json_str(f.name),
+                            json_str(&f.ty.name()),
+                            doc_json(f.doc)
+                        )
+                    })
+                    .collect();
+                format!(
+                    "{{\"name\":{}{},\"fields\":[{}]}}",
+                    json_str(r.name),
+                    doc_json(r.doc),
+                    fields.join(",")
+                )
+            })
+            .collect();
         let mut s = format!(
-            "{{\"namespace\":{},\"handles\":[{}],\"values\":[{}],\"classes\":[{}],\"functions\":[{}",
+            "{{\"namespace\":{}{}{},\"handles\":[{}],\"values\":[{}],\"enums\":[{}],\"records\":[{}],\"classes\":[{}],\"functions\":[{}",
             json_str(self.name),
+            doc_json(self.doc),
+            if self.like { ",\"like\":true" } else { "" },
             handles.join(","),
             values.join(","),
+            enums.join(","),
+            records.join(","),
             classes.join(","),
             functions.join(",")
         );

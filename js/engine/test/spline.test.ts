@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { GameObject, Shapes, Spline, SplineAnimate, Vector2, Vector3 } from "../src/index.ts";
+import { GameObject, Spline, SplineAnimate, Vector3 } from "../src/index.ts";
 import { _resetSceneForTests } from "../src/scene.ts";
 
 const v = (x: number, y: number, z = 0) => new Vector3(x, y, z);
@@ -21,18 +21,11 @@ afterEach(() => {
 
 // M5-SPL-01
 describe("Spline", () => {
-  test("passes through its knots; auto tangents match GDI's cardinal curve", () => {
+  test("passes through its knots", () => {
     const pts = [v(0, 0), v(1, 2), v(3, 1), v(4, 3)];
     const s = new Spline(pts);
     expect(s.segmentCount).toBe(3);
     pts.forEach((p, i) => close(s.segmentPoint(Math.min(i, 2), i === 3 ? 1 : 0), p));
-    const curve = Shapes.curve(pts.map((p) => new Vector2(p.x, p.y)), 0.5, 4);
-    for (let i = 0; i < 3; i++) {
-      for (let k = 0; k < 4; k++) {
-        const c = curve[i * 4 + k]!;
-        close(s.segmentPoint(i, k / 4), v(c.x, c.y));
-      }
-    }
   });
 
   test("linear knots make straight segments; bezier knots use their handles", () => {

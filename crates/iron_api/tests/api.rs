@@ -131,7 +131,7 @@ fn the_json_manifest_names_the_symbols_and_types_the_compiler_needs() {
     let j = demo::MANIFEST.to_json();
     assert!(j.starts_with("{\"namespace\":\"Demo\""), "{j}");
     assert!(
-        j.contains("{\"name\":\"add\",\"symbol\":\"iron_Demo_add\",\"kind\":\"static\",\"params\":[{\"name\":\"a\",\"type\":\"f64\"},{\"name\":\"b\",\"type\":\"f64\"}],\"returns\":\"f64\"}"),
+        j.contains("{\"name\":\"add\",\"symbol\":\"iron_Demo_add\",\"kind\":\"static\",\"params\":[{\"name\":\"a\",\"type\":\"f64\"},{\"name\":\"b\",\"type\":\"f64\"}],\"returns\":\"f64\",\"doc\":\"Adds two numbers.\\n\\nThe doc comment becomes the declaration's JSDoc.\"}"),
         "{j}"
     );
     assert!(j.contains("\"returns\":\"handle:GameObject\""), "{j}");

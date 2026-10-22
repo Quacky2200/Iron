@@ -692,7 +692,155 @@ impl<'a> Lowerer<'a> {
         match t {
             ExtTy::Value(n) => Ty::Obj(self.value_struct(n)),
             ExtTy::ValueArr(n) => Ty::Arr(Box::new(Ty::Obj(self.value_struct(n)))),
+            ExtTy::ValueList(n) => Ty::Arr(Box::new(Ty::Obj(self.value_struct(n)))),
+            ExtTy::Record(n) => Ty::Obj(self.record_struct(n)),
+            ExtTy::RecordList(n) => Ty::Arr(Box::new(Ty::Obj(self.record_struct(n)))),
             other => other.to_ir(),
+        }
+    }
+
+    /// The struct of a result record (`SplineHit`): a plain object with the manifest's fields.
+    pub(crate) fn record_struct(&mut self, name: &str) -> StructId {
+        if let Some(Ty::Obj(s)) = self.named.get(name) {
+            return *s;
+        }
+        let fields: Vec<(String, crate::manifest::RecField)> = self.manifest.records[name].clone();
+        let sid = self.new_struct(name, vec![]);
+        self.named.insert(name.to_string(), Ty::Obj(sid));
+        let fields = fields
+            .into_iter()
+            .map(|(n, f)| Field {
+                name: n,
+                ty: match f {
+                    crate::manifest::RecField::Num => Ty::Num,
+                    crate::manifest::RecField::Bool => Ty::Bool,
+                    crate::manifest::RecField::Value(v) => Ty::Obj(self.value_struct(&v)),
+                    crate::manifest::RecField::Enum(_) => Ty::Str,
+                },
+                optional: false,
+            })
+            .collect();
+        self.m.structs[sid].fields = fields;
+        sid
+    }
+
+    /// `iron_api_result(i)`: the `i`-th number of the last list or record result.
+    fn flat_result(&mut self, i: Expr) -> Expr {
+        let f = ExternFn {
+            rest: false,
+            optional_from: usize::MAX,
+            defaults: Vec::new(),
+            symbol: "iron_api_result".into(),
+            params: vec![("i".into(), ExtTy::U32)],
+            ret: ExtTy::F64,
+        };
+        self.emit_extern(&f, vec![i])
+    }
+
+    /// The index of an enum name, for the wire: folded at compile time for a string literal, else
+    /// `Enum.parse(s)`. A name that is not one of them is -1, which the engine reads as the first.
+    fn enum_index(&mut self, en: &str, v: Expr) -> Expr {
+        let text: Option<Vec<u8>> = match &v.kind {
+            ExprKind::Str(i) => Some(self.m.strs[*i as usize].clone()),
+            ExprKind::TagStr(t) => match &t.kind {
+                ExprKind::Tag(k) => Some(self.m.tags[*k as usize].clone().into_bytes()),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(text) = text {
+            let at = self.manifest.enums[en]
+                .values
+                .iter()
+                .position(|n| n.as_bytes() == text.as_slice());
+            return num(at.map_or(-1.0, |i| i as f64));
+        }
+        let parse = self.manifest.namespaces[en]["parse"].clone();
+        self.emit_extern(&parse, vec![v])
+    }
+
+    /// The object of a value class or record whose numbers start at `base` in the result buffer.
+    /// `Record(name)` builds the record's struct (a value inside it, or an enum name); a value
+    /// class is the fields in a row.
+    fn read_flat_object(&mut self, rec: &ExtTy, base: &Expr, stmts: &mut Vec<Stmt>) -> Expr {
+        let add = |a: &Expr, k: usize| -> Expr {
+            if k == 0 {
+                a.clone()
+            } else {
+                mk(
+                    ExprKind::Bin(BinOp::Add, Box::new(a.clone()), Box::new(num(k as f64))),
+                    Ty::Num,
+                )
+            }
+        };
+        match rec {
+            ExtTy::ValueList(vn) | ExtTy::Value(vn) => {
+                let sid = self.value_struct(vn);
+                let ty = Ty::Obj(sid);
+                let obj = self.new_local(ty.clone());
+                stmts.push(Stmt::Assign(obj, mk(ExprKind::NewObj(sid), ty.clone())));
+                for k in 0..self.m.structs[sid].fields.len() {
+                    let e = self.flat_result(add(base, k));
+                    stmts.push(Stmt::StoreField(self.var_expr(obj), sid, k, e));
+                }
+                self.var_expr(obj)
+            }
+            ExtTy::RecordList(rn) | ExtTy::Record(rn) => {
+                let fields = self.manifest.records[rn].clone();
+                let sid = self.record_struct(rn);
+                let ty = Ty::Obj(sid);
+                let obj = self.new_local(ty.clone());
+                stmts.push(Stmt::Assign(obj, mk(ExprKind::NewObj(sid), ty.clone())));
+                let mut off = 0;
+                for (k, (_, f)) in fields.iter().enumerate() {
+                    let value = match f {
+                        crate::manifest::RecField::Num => {
+                            let e = self.flat_result(add(base, off));
+                            off += 1;
+                            e
+                        }
+                        crate::manifest::RecField::Bool => {
+                            let e = self.flat_result(add(base, off));
+                            off += 1;
+                            mk(ExprKind::Truthy(Box::new(e)), Ty::Bool)
+                        }
+                        crate::manifest::RecField::Value(vn) => {
+                            let width = self.manifest.values[vn].len();
+                            let inner = self.read_flat_object(
+                                &ExtTy::Value(vn.clone()),
+                                &add(base, off),
+                                stmts,
+                            );
+                            off += width;
+                            inner
+                        }
+                        crate::manifest::RecField::Enum(en) => {
+                            let idx = self.flat_result(add(base, off));
+                            off += 1;
+                            let name = self.manifest.namespaces[en.as_str()]["name"].clone();
+                            self.emit_extern(&name, vec![idx])
+                        }
+                    };
+                    stmts.push(Stmt::StoreField(self.var_expr(obj), sid, k, value));
+                }
+                self.var_expr(obj)
+            }
+            other => unreachable!("read_flat_object({other:?})"),
+        }
+    }
+
+    /// How many numbers one element of a list (or one record) takes in the result buffer.
+    fn flat_width(&self, t: &ExtTy) -> usize {
+        match t {
+            ExtTy::ValueList(vn) | ExtTy::Value(vn) => self.manifest.values[vn].len(),
+            ExtTy::RecordList(rn) | ExtTy::Record(rn) => self.manifest.records[rn]
+                .iter()
+                .map(|(_, f)| match f {
+                    crate::manifest::RecField::Value(vn) => self.manifest.values[vn].len(),
+                    _ => 1,
+                })
+                .sum(),
+            _ => 0,
         }
     }
 
@@ -930,6 +1078,7 @@ impl<'a> Lowerer<'a> {
             other => bail!("{at}: Ui.load<{other}> is not supported"),
         };
         let f = ExternFn {
+            rest: false,
             optional_from: usize::MAX,
             defaults: Vec::new(),
             symbol: symbol.into(),
@@ -1008,6 +1157,7 @@ impl<'a> Lowerer<'a> {
     ) -> R<Vec<Stmt>> {
         let element = || ExtTy::Handle("UiElement".into());
         let ext = |symbol: &str, vt: ExtTy| ExternFn {
+            rest: false,
             optional_from: usize::MAX,
             defaults: Vec::new(),
             symbol: symbol.into(),
@@ -1202,6 +1352,7 @@ impl<'a> Lowerer<'a> {
                 let r = self.new_local(sig.ret.clone());
                 stmts.push(Stmt::Assign(r, call));
                 let set = ExternFn {
+                    rest: false,
                     optional_from: usize::MAX,
                     defaults: Vec::new(),
                     symbol: "ts_ui_set_cleanup".into(),
@@ -1242,16 +1393,29 @@ impl<'a> Lowerer<'a> {
         let at = self.loc(span_start);
         let params: Vec<(String, ExtTy)> = f.params[skip..].to_vec();
         let mut given: Vec<&'a Expression<'a>> = Vec::new();
-        for a in arguments {
+        // `...points` of a rest parameter: its argument is an array that goes in whole.
+        let mut spread_rest: Option<&'a Expression<'a>> = None;
+        for (n, a) in arguments.iter().enumerate() {
+            if f.rest
+                && let Argument::SpreadElement(sp) = a
+                && n + 1 == params.len()
+                && n + 1 == arguments.len()
+            {
+                spread_rest = Some(&sp.argument);
+                continue;
+            }
             let Some(e) = a.as_expression() else {
                 bail!("{at}: {what}: spread argument")
             };
             given.push(e);
         }
+        // A rest parameter takes any number of arguments (none: an empty array).
+        let rest_at = if f.rest { Some(params.len() - 1) } else { None };
         // A trailing `{ key: value }` fills the parameters after the positional ones by name
         // (`audio.load(path, { stream: true })`); a parameter left out is false, 0 or "".
         let mut options: Option<&'a ObjectExpression<'a>> = None;
         if let Some(Expression::ObjectExpression(o)) = given.last().copied()
+            && rest_at.is_none()
             && given.len() <= params.len()
             // An object where a value class goes is the value (`{ x, y }`) unless its keys are
             // parameter names and not the value's fields.
@@ -1273,8 +1437,11 @@ impl<'a> Lowerer<'a> {
             options = Some(o);
             given.pop();
         }
-        let opt_from = f.optional_from.saturating_sub(skip);
-        if given.len() > params.len()
+        let mut opt_from = f.optional_from.saturating_sub(skip);
+        if let Some(r) = rest_at {
+            opt_from = opt_from.min(r);
+        }
+        if (given.len() > params.len() && rest_at.is_none())
             || (options.is_none() && given.len() < params.len() && given.len() < opt_from && {
                 // A flag may be left out (false); a missing number or string is an error.
                 !params[given.len()..]
@@ -1290,6 +1457,36 @@ impl<'a> Lowerer<'a> {
         }
         let mut args: Vec<Expr> = recv.into_iter().collect();
         for (i, (pname, pt)) in params.iter().enumerate() {
+            if rest_at == Some(i) {
+                let want = self.ext_ir(pt);
+                let arr = if let Some(sp) = spread_rest {
+                    let v = self.lower_expr(sp, Some(&want))?;
+                    self.coerce_ext(v, &want)?
+                } else {
+                    let Ty::Arr(elem) = want.clone() else {
+                        bail!("{at}: {what}: a rest parameter is an array")
+                    };
+                    let out = self.new_local(want.clone());
+                    let mut stmts = vec![Stmt::Assign(
+                        out,
+                        mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), want.clone()),
+                    )];
+                    for e in given.iter().skip(i) {
+                        let v = self.lower_expr(e, Some(&elem))?;
+                        let v = self.coerce_ext(v, &elem)?;
+                        stmts.push(Stmt::Eval(mk(
+                            ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(out), v]),
+                            Ty::Void,
+                        )));
+                    }
+                    mk(
+                        ExprKind::Seq(stmts, Box::new(self.var_expr(out))),
+                        want.clone(),
+                    )
+                };
+                args.push(arr);
+                continue;
+            }
             let expr: Option<&'a Expression<'a>> = if i < given.len() {
                 Some(given[i])
             } else {
@@ -1321,7 +1518,8 @@ impl<'a> Lowerer<'a> {
                 }
                 args.push(match pt {
                     ExtTy::Bool => mk(ExprKind::Bool(false), Ty::Bool),
-                    ExtTy::Str => self.str_lit(""),
+                    // Left out, or an unknown name: the engine reads the first value.
+                    ExtTy::Str | ExtTy::Enum(_) => self.str_lit(""),
                     // An optional number is NaN: the function tells "left out" from 0.
                     ExtTy::F64 | ExtTy::F32 if i >= opt_from => num(f64::NAN),
                     ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => num(0.0),
@@ -1496,6 +1694,10 @@ impl<'a> Lowerer<'a> {
                         flat.push(ft.clone());
                     }
                 }
+                ExtTy::Enum(en) => {
+                    args.push(self.enum_index(en, v));
+                    flat.push(ExtTy::I32);
+                }
                 other => {
                     args.push(v);
                     flat.push(other.clone());
@@ -1507,6 +1709,9 @@ impl<'a> Lowerer<'a> {
                 let fields = &self.manifest.values[vn];
                 (ExtTy::Void, Some((fields[0].1.clone(), fields.len())))
             }
+            ExtTy::Enum(_) => (ExtTy::I32, None),
+            ExtTy::Record(_) => (ExtTy::Void, None),
+            ExtTy::ValueList(_) | ExtTy::RecordList(_) => (ExtTy::U32, None),
             other => (other.clone(), None),
         };
         let decl = ExternDecl {
@@ -1532,6 +1737,80 @@ impl<'a> Lowerer<'a> {
                 Ty::Void,
             )));
             return mk(ExprKind::Seq(pre, Box::new(self.var_expr(dest))), ty);
+        }
+        match &f.ret {
+            // The name of the index the call returns.
+            ExtTy::Enum(en) => {
+                let call = mk(ExprKind::CallExtern(idx, args), Ty::Num);
+                let name = self.manifest.namespaces[en.as_str()]["name"].clone();
+                let named = self.emit_extern(&name, vec![call]);
+                let ty = named.ty.clone();
+                return if pre.is_empty() {
+                    named
+                } else {
+                    mk(ExprKind::Seq(pre, Box::new(named)), ty)
+                };
+            }
+            // One record: the call leaves its numbers in the buffer; read them into an object.
+            ExtTy::Record(_) => {
+                pre.push(Stmt::Eval(mk(ExprKind::CallExtern(idx, args), Ty::Void)));
+                let zero = num(0.0);
+                let obj = self.read_flat_object(&f.ret, &zero, &mut pre);
+                let ty = obj.ty.clone();
+                return mk(ExprKind::Seq(pre, Box::new(obj)), ty);
+            }
+            // A list: the call returns the count; read element after element into an array.
+            ExtTy::ValueList(_) | ExtTy::RecordList(_) => {
+                let arr_ty = self.ext_ir(&f.ret);
+                let count = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(
+                    count,
+                    mk(ExprKind::CallExtern(idx, args), Ty::Num),
+                ));
+                let arr = self.new_local(arr_ty.clone());
+                pre.push(Stmt::Assign(
+                    arr,
+                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), arr_ty.clone()),
+                ));
+                let i = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(i, num(0.0)));
+                let width = self.flat_width(&f.ret);
+                let label = self.new_label();
+                let iv = self.var_expr(i);
+                let base = mk(
+                    ExprKind::Bin(
+                        BinOp::Mul,
+                        Box::new(iv.clone()),
+                        Box::new(num(width as f64)),
+                    ),
+                    Ty::Num,
+                );
+                let done = mk(
+                    ExprKind::Cmp(
+                        CmpOp::Ge,
+                        Box::new(iv.clone()),
+                        Box::new(self.var_expr(count)),
+                    ),
+                    Ty::Bool,
+                );
+                let mut body = vec![Stmt::If(done, vec![Stmt::Break(label)], vec![])];
+                let elem = self.read_flat_object(&f.ret, &base, &mut body);
+                body.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(arr), elem]),
+                    Ty::Void,
+                )));
+                body.push(Stmt::Assign(
+                    i,
+                    mk(
+                        ExprKind::Bin(BinOp::Add, Box::new(iv), Box::new(num(1.0))),
+                        Ty::Num,
+                    ),
+                ));
+                pre.push(Stmt::Loop(label, body));
+                let result = self.var_expr(arr);
+                return mk(ExprKind::Seq(pre, Box::new(result)), arr_ty);
+            }
+            _ => {}
         }
         let ret_ty = self.ext_ir(&f.ret);
         let call = mk(ExprKind::CallExtern(idx, args), ret_ty.clone());

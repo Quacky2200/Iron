@@ -81,12 +81,106 @@ impl Parse for ValueDecl {
     }
 }
 
+/// `TangentMode = Tangent [Auto, Bezier, Linear]`: scripts see the variants as strings
+/// (`"auto"`), the C ABI the index.
+struct EnumDecl {
+    ts: String,
+    rust: Type,
+    /// The Rust variant names.
+    variants: Vec<Ident>,
+    /// The `///` comment in front of the declaration.
+    doc: String,
+}
+
+impl EnumDecl {
+    /// The strings scripts see: the variant names with a lower-case first letter.
+    fn names(&self) -> Vec<String> {
+        self.variants
+            .iter()
+            .map(|v| {
+                let v = v.to_string();
+                let mut c = v.chars();
+                c.next()
+                    .map(|f| f.to_lowercase().collect::<String>() + c.as_str())
+                    .unwrap_or_default()
+            })
+            .collect()
+    }
+}
+
+impl Parse for EnumDecl {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let doc = doc_of(&input.call(syn::Attribute::parse_outer)?);
+        let ts: Ident = input.parse()?;
+        input.parse::<Token![=]>()?;
+        let rust: Type = input.parse()?;
+        let content;
+        bracketed!(content in input);
+        let variants = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
+        if variants.is_empty() {
+            return Err(syn::Error::new(ts.span(), "an enum needs variants"));
+        }
+        Ok(EnumDecl {
+            ts: ts.to_string(),
+            rust,
+            variants: variants.into_iter().collect(),
+            doc,
+        })
+    }
+}
+
+/// `SplineHit = SplineHit [segment: f64, u: f64]`: a Rust struct with those public fields that
+/// scripts get as a plain object. A field is `f64`, `bool`, a declared value class or enum.
+struct RecordDecl {
+    ts: String,
+    rust: Type,
+    /// (Rust field name, type name, doc).
+    fields: Vec<(Ident, String, String)>,
+    /// The `///` comment in front of the declaration.
+    doc: String,
+}
+
+impl Parse for RecordDecl {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let doc = doc_of(&input.call(syn::Attribute::parse_outer)?);
+        let ts: Ident = input.parse()?;
+        input.parse::<Token![=]>()?;
+        let rust: Type = input.parse()?;
+        let content;
+        bracketed!(content in input);
+        let mut fields = Vec::new();
+        while !content.is_empty() {
+            let fdoc = doc_of(&content.call(syn::Attribute::parse_outer)?);
+            let name: Ident = content.parse()?;
+            content.parse::<Token![:]>()?;
+            let ty: Ident = content.parse()?;
+            fields.push((name, ty.to_string(), fdoc));
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            }
+        }
+        if fields.is_empty() {
+            return Err(syn::Error::new(ts.span(), "a record needs fields"));
+        }
+        Ok(RecordDecl {
+            ts: ts.to_string(),
+            rust,
+            fields,
+            doc,
+        })
+    }
+}
+
 struct Args {
     namespace: String,
     quickjs: bool,
+    /// Value parameters are declared as `<Value>Like` in the TypeScript.
+    like: bool,
     /// (TypeScript name, Rust type name).
     handles: Vec<(String, String)>,
     values: Vec<ValueDecl>,
+    enums: Vec<EnumDecl>,
+    records: Vec<RecordDecl>,
 }
 
 fn rust_name_of(ty: &Type) -> Option<String> {
@@ -101,8 +195,11 @@ fn parse_args(attr: TokenStream2) -> syn::Result<Args> {
     let mut args = Args {
         namespace: String::new(),
         quickjs: false,
+        like: false,
         handles: Vec::new(),
         values: Vec::new(),
+        enums: Vec::new(),
+        records: Vec::new(),
     };
     for m in metas {
         match m {
@@ -114,6 +211,17 @@ fn parse_args(attr: TokenStream2) -> syn::Result<Args> {
                 _ => return Err(syn::Error::new(nv.value.span(), "a string is expected")),
             },
             Meta::Path(p) if p.is_ident("quickjs") => args.quickjs = true,
+            Meta::Path(p) if p.is_ident("like") => args.like = true,
+            Meta::List(l) if l.path.is_ident("enums") => {
+                let decls =
+                    Punctuated::<EnumDecl, Token![,]>::parse_terminated.parse2(l.tokens.clone())?;
+                args.enums.extend(decls);
+            }
+            Meta::List(l) if l.path.is_ident("records") => {
+                let decls = Punctuated::<RecordDecl, Token![,]>::parse_terminated
+                    .parse2(l.tokens.clone())?;
+                args.records.extend(decls);
+            }
             Meta::List(l) if l.path.is_ident("handles") => {
                 let pairs = Punctuated::<syn::MetaNameValue, Token![,]>::parse_terminated
                     .parse2(l.tokens.clone())?;
@@ -144,7 +252,7 @@ fn parse_args(attr: TokenStream2) -> syn::Result<Args> {
             other => {
                 return Err(syn::Error::new(
                     other.span(),
-                    "expected `namespace = \"..\"`, `quickjs`, `handles(..)` or `values(..)`",
+                    "expected `namespace = \"..\"`, `quickjs`, `like`, `handles(..)`, `values(..)`, `enums(..)` or `records(..)`",
                 ));
             }
         }
@@ -180,6 +288,12 @@ enum Kind {
     /// `Callback<(A, B)>`: a script closure the engine keeps. The elements are scalar kinds,
     /// strings, or `HandleArg<T>` for a declared handle `T`.
     Callback(Vec<Kind>),
+    /// A declared enum (index into `Args::enums`): a script string, the index on the C ABI.
+    Enum(usize),
+    /// A declared record (index into `Args::records`), a result.
+    Record(usize),
+    /// `Vec<V>` of a value type or a record, a result.
+    List(Box<Kind>),
 }
 
 fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
@@ -213,6 +327,21 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
             ty.span(),
             "a slice parameter is `&[f64]` or `&[V]` for a type declared in `values(..)`",
         ));
+    }
+    if let Type::Path(p) = ty
+        && let Some(seg) = p.path.segments.last()
+        && seg.ident == "Vec"
+        && let syn::PathArguments::AngleBracketed(ab) = &seg.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = ab.args.first()
+    {
+        let k = classify(inner, args)?;
+        if !matches!(k, Kind::Value(_) | Kind::Record(_)) {
+            return Err(syn::Error::new(
+                inner.span(),
+                "a `Vec` result holds a type declared in `values(..)` or `records(..)`",
+            ));
+        }
+        return Ok(Kind::List(Box::new(k)));
     }
     if let Type::Path(p) = ty
         && let Some(seg) = p.path.segments.last()
@@ -273,6 +402,18 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
                 .position(|v| rust_name_of(&v.rust).as_deref() == Some(other))
             {
                 Kind::Value(i)
+            } else if let Some(i) = args
+                .enums
+                .iter()
+                .position(|v| rust_name_of(&v.rust).as_deref() == Some(other))
+            {
+                Kind::Enum(i)
+            } else if let Some(i) = args
+                .records
+                .iter()
+                .position(|v| rust_name_of(&v.rust).as_deref() == Some(other))
+            {
+                Kind::Record(i)
             } else {
                 return Err(syn::Error::new(
                     ty.span(),
@@ -352,14 +493,39 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
             let arr = format!("{ts}[]");
             quote!(::iron_api::Ty::Values(#ts, #arr))
         }
+        Kind::Enum(i) => {
+            let ts = &args.enums[*i].ts;
+            quote!(::iron_api::Ty::Enum(#ts))
+        }
+        Kind::Record(i) => {
+            let ts = &args.records[*i].ts;
+            quote!(::iron_api::Ty::Record(#ts))
+        }
+        Kind::List(inner) => {
+            let (name, ts) = match &**inner {
+                Kind::Value(i) => (
+                    format!("value:{}", args.values[*i].ts),
+                    args.values[*i].ts.clone(),
+                ),
+                Kind::Record(i) => (
+                    format!("record:{}", args.records[*i].ts),
+                    args.records[*i].ts.clone(),
+                ),
+                _ => unreachable!("classify only builds lists of values and records"),
+            };
+            let arr = format!("{ts}[]");
+            quote!(::iron_api::Ty::List(#name, #arr))
+        }
     }
 }
 
 /// The C ABI type of a value (a value type is passed as its fields, see `shim_param`).
 fn abi_ty(k: &Kind) -> TokenStream2 {
     match k {
-        Kind::Unit | Kind::Value(_) => quote!(()),
+        Kind::Unit | Kind::Value(_) | Kind::Record(_) => quote!(()),
         Kind::Callback(_) => quote!(*const u8),
+        Kind::Enum(_) => quote!(i32),
+        Kind::List(_) => quote!(u32),
         Kind::Bool => quote!(bool),
         Kind::F64 => quote!(f64),
         Kind::F32 => quote!(f32),
@@ -389,7 +555,7 @@ fn from_abi(k: &Kind, x: TokenStream2) -> TokenStream2 {
 /// The type a QuickJS function takes for a parameter.
 fn js_param_ty(k: &Kind) -> TokenStream2 {
     match k {
-        Kind::Str(_) => quote!(::std::string::String),
+        Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String),
         Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
         Kind::F64s => quote!(::std::vec::Vec<f64>),
         Kind::Callback(_) => quote!(::iron_api::rquickjs::Function<'js>),
@@ -460,7 +626,7 @@ fn js_default(k: &Kind) -> TokenStream2 {
         Kind::I32 | Kind::U32 => quote!(0),
         Kind::Handle(..) => quote!(::iron_api::rquickjs::Value::new_null(ctx.clone())),
         Kind::F64s | Kind::Values(_) => quote!(::std::vec::Vec::new()),
-        Kind::Str(_) => quote!(::std::string::String::new()),
+        Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String::new()),
         _ => quote!(compile_error!("this parameter type cannot be optional")),
     }
 }
@@ -468,8 +634,9 @@ fn js_default(k: &Kind) -> TokenStream2 {
 /// The type a QuickJS function returns for a result.
 fn js_ret_ty(k: &Kind) -> TokenStream2 {
     match k {
-        Kind::Str(_) => quote!(::std::string::String),
-        Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
+        Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String),
+        Kind::Value(_) | Kind::Record(_) => quote!(::iron_api::rquickjs::Object<'js>),
+        Kind::List(_) => quote!(::iron_api::rquickjs::Array<'js>),
         other => js_ty(other),
     }
 }
@@ -492,6 +659,31 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
         }
         Kind::Str(false) => quote!(&#x),
         Kind::Str(true) => x,
+        // A name; an empty one (a left-out parameter) is the first value.
+        Kind::Enum(i) => {
+            let e = &args.enums[*i];
+            let parse = enum_fn(&e.ts, "parse");
+            let first = enum_first(e);
+            let ts = &e.ts;
+            quote! {
+                {
+                    let s: ::std::string::String = #x;
+                    if s.is_empty() {
+                        #first
+                    } else {
+                        match #parse(&s) {
+                            ::std::option::Option::Some(v) => v,
+                            ::std::option::Option::None => {
+                                return Err(::iron_api::rquickjs::Exception::throw_type(
+                                    &ctx,
+                                    &::std::format!("`{}` is not a {}", s, #ts),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Kind::Value(i) => {
             let v = &args.values[*i];
             let n = v.fields.len();
@@ -593,13 +785,78 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
         Kind::Handle(ts, _) => {
             quote!(::iron_api::qjs::handle_new(&ctx, #ts, ::iron_api::Handle::to_raw(#call)))
         }
+        Kind::Enum(i) => {
+            let name = enum_fn(&args.enums[*i].ts, "name");
+            quote!(Ok(#name(#call).to_string()))
+        }
+        Kind::Record(i) => {
+            let build = format_ident!("__js_rec_{}", args.records[*i].ts);
+            quote! {
+                let r = #call;
+                #build(&ctx, &r)
+            }
+        }
+        Kind::List(inner) => {
+            let elem = match &**inner {
+                Kind::Value(i) => {
+                    let build = format_ident!("__js_value_{}", args.values[*i].ts);
+                    quote!(#build(&ctx, *item)?)
+                }
+                Kind::Record(i) => {
+                    let build = format_ident!("__js_rec_{}", args.records[*i].ts);
+                    quote!(#build(&ctx, item)?)
+                }
+                _ => unreachable!("classify only builds lists of values and records"),
+            };
+            quote! {
+                let items = #call;
+                let arr = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                for (n, item) in items.iter().enumerate() {
+                    arr.set(n, #elem)?;
+                }
+                Ok(arr)
+            }
+        }
         _ => quote!(Ok(#call)),
     }
 }
 
-fn to_abi(k: &Kind, x: TokenStream2) -> TokenStream2 {
+/// `tangent_mode` for `TangentMode`.
+fn snake(s: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The helper function `<snake>_<what>` generated for an enum (`parse`, `name`, `index`,
+/// `from_index`).
+fn enum_fn(ts: &str, what: &str) -> Ident {
+    format_ident!("{}_{}", snake(ts), what)
+}
+
+/// The first variant of an enum: what a left-out or unknown value is.
+fn enum_first(e: &EnumDecl) -> TokenStream2 {
+    let rust = &e.rust;
+    let v = &e.variants[0];
+    quote!(#rust::#v)
+}
+
+fn to_abi(k: &Kind, x: TokenStream2, args: &Args) -> TokenStream2 {
     match k {
         Kind::Handle(..) => quote!(::iron_api::Handle::to_raw(#x)),
+        Kind::Enum(i) => {
+            let index = enum_fn(&args.enums[*i].ts, "index");
+            quote!(#index(#x))
+        }
         _ => x,
     }
 }
@@ -624,7 +881,7 @@ fn camel(s: &str) -> String {
 /// The attributes this macro reads from a function (they are removed from the output).
 fn is_ours(a: &syn::Attribute) -> bool {
     [
-        "property", "optional", "method", "getter", "js_name", "options",
+        "property", "optional", "method", "getter", "js_name", "options", "rest", "nullable",
     ]
     .iter()
     .any(|n| a.path().is_ident(n))
@@ -692,6 +949,13 @@ struct Api {
     defaults: Vec<(String, f64)>,
     /// `#[options]`: QuickJS may pass the optional parameters as one object, by camelCase name.
     options: bool,
+    /// `#[options(after = p)]`: the object comes right after parameter `p` and fills the ones
+    /// after it (`new Spline(points, { closed: true })`).
+    options_after: Option<String>,
+    /// `#[rest(p)]`: the last parameter takes every remaining argument.
+    rest: Option<String>,
+    /// `#[nullable]`: the TypeScript type of a handle result (or of the setter's value) is `T | null`.
+    nullable: bool,
     ret: Kind,
 }
 
@@ -780,6 +1044,38 @@ fn api_of(
         ));
     }
     let options = attrs.iter().any(|a| a.path().is_ident("options"));
+    let mut options_after = None;
+    for at in attrs.iter().filter(|a| a.path().is_ident("options")) {
+        if let Meta::List(l) = &at.meta {
+            let nv: syn::MetaNameValue = syn::parse2(l.tokens.clone())?;
+            if !nv.path.is_ident("after") {
+                return Err(syn::Error::new(nv.path.span(), "expected `after = param`"));
+            }
+            let Expr::Path(p) = &nv.value else {
+                return Err(syn::Error::new(nv.value.span(), "a parameter name"));
+            };
+            let name = p
+                .path
+                .get_ident()
+                .map(|i| i.to_string())
+                .unwrap_or_default();
+            if !params.iter().any(|(p, _)| *p == name) {
+                return Err(syn::Error::new(nv.value.span(), "no such parameter"));
+            }
+            options_after = Some(name);
+        }
+    }
+    let mut rest = None;
+    for at in attrs.iter().filter(|a| a.path().is_ident("rest")) {
+        let id: Ident = at.parse_args()?;
+        if params.last().is_none_or(|(p, _)| *p != id) {
+            return Err(syn::Error::new(
+                id.span(),
+                "#[rest(..)] names the last parameter",
+            ));
+        }
+        rest = Some(id.to_string());
+    }
     if options && optional.is_empty() {
         return Err(syn::Error::new(
             sig.span(),
@@ -809,6 +1105,9 @@ fn api_of(
         optional,
         defaults,
         options,
+        options_after,
+        rest,
+        nullable: attrs.iter().any(|a| a.path().is_ident("nullable")),
         ret,
     })
 }
@@ -870,6 +1169,15 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
                 <#rust as ::iron_api::ValueType<#n>>::from_parts([ #( #names as f64 ),* ])
             };
             (params, conv)
+        }
+        Kind::Enum(i) => {
+            let e = &args.enums[*i];
+            let from = enum_fn(&e.ts, "from_index");
+            let first = enum_first(e);
+            (
+                vec![quote!(#name: i32)],
+                quote!(#from(#name).unwrap_or(#first)),
+            )
         }
         Kind::Str(owned) => {
             // The script string's object; `script_str` reads it (no copy unless it has a lone
@@ -942,6 +1250,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     // The module's items as they will be emitted: `#[property]` markers are ours, not Rust's.
     let mut out_items: Vec<Item> = items.clone();
     let mut apis: Vec<Api> = Vec::new();
+    // The doc comment of each handle class: the one on its first `impl` block.
+    let mut class_docs: std::collections::BTreeMap<String, String> = Default::default();
     for it in out_items.iter_mut() {
         match it {
             Item::Fn(f) if matches!(f.vis, Visibility::Public(_)) => {
@@ -964,6 +1274,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     continue;
                 };
                 let class = Some((ts.clone(), (*imp.self_ty).clone()));
+                let d = doc_of(&imp.attrs);
+                if !d.is_empty() {
+                    class_docs.entry(ts.clone()).or_insert(d);
+                }
                 for ii in imp.items.iter_mut() {
                     if let syn::ImplItem::Fn(f) = ii
                         && matches!(f.vis, Visibility::Public(_))
@@ -1118,12 +1432,14 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             ptys.push(manifest_ty(k, &args));
         }
         let mut popts: Vec<bool> = vec![false; pnames.len()];
+        let mut prests: Vec<bool> = vec![false; pnames.len()];
         let mut pdefaults: Vec<TokenStream2> =
             vec![quote!(::std::option::Option::None); pnames.len()];
         for (n, k) in &a.params {
             pnames.push(camel(&n.to_string()));
             ptys.push(manifest_ty(k, &args));
             popts.push(a.optional.contains(&n.to_string()));
+            prests.push(a.rest.as_deref() == Some(n.to_string().as_str()));
             pdefaults.push(match a.defaults.iter().find(|d| *n == d.0) {
                 Some((_, v)) => quote!(::std::option::Option::Some(#v)),
                 None => quote!(::std::option::Option::None),
@@ -1131,6 +1447,18 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         }
         let ret_m = manifest_ty(&a.ret, &args);
         let kind = kind_tokens(a.tag);
+        let nullable = a.nullable;
+        let options_after = match &a.options_after {
+            Some(p) => {
+                let i = a
+                    .params
+                    .iter()
+                    .position(|(n, _)| *n == *p)
+                    .expect("checked in api_of");
+                quote!(::std::option::Option::Some(#i))
+            }
+            None => quote!(::std::option::Option::None),
+        };
         let entry = quote! {
             ::iron_api::Function {
                 kind: #kind,
@@ -1138,8 +1466,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 rust_name: #rust_name,
                 symbol: #symbol,
                 doc: #doc,
-                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts, default: #pdefaults } ),* ],
+                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts, default: #pdefaults, rest: #prests } ),* ],
                 ret: #ret_m,
+                options_after: #options_after,
+                nullable: #nullable,
             }
         };
         match &a.class {
@@ -1194,6 +1524,58 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     #( unsafe { *out.add(#idx) = parts[#idx] as #part; } )*
                 }
             });
+        } else if let Kind::Record(i) = &a.ret {
+            // A record result: its numbers stay in `iron_api`'s per-thread buffer.
+            let flat = format_ident!("__flat_{}", args.records[*i].ts);
+            shims.push(quote! {
+                #[unsafe(no_mangle)]
+                pub extern "C" fn #symbol_ident( #( #abi_params ),* ) {
+                    let r = #call;
+                    let mut out = ::std::vec::Vec::new();
+                    #flat(&r, &mut out);
+                    ::iron_api::return_flat(out);
+                }
+            });
+        } else if let Kind::List(inner) = &a.ret {
+            // A list result: the numbers of every element, one after the other, stay in the
+            // buffer; the shim returns how many elements there are.
+            let push = match &**inner {
+                Kind::Value(i) => {
+                    let v = &args.values[*i];
+                    let n = v.fields.len();
+                    let rust = &v.rust;
+                    quote!(out.extend_from_slice(&<#rust as ::iron_api::ValueType<#n>>::to_parts(*item));)
+                }
+                Kind::Record(i) => {
+                    let flat = format_ident!("__flat_{}", args.records[*i].ts);
+                    quote!(#flat(item, &mut out);)
+                }
+                _ => unreachable!("classify only builds lists of values and records"),
+            };
+            let unsafe_kw = if a.params.iter().any(|(_, k)| {
+                matches!(
+                    k,
+                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Values(_)
+                )
+            }) {
+                quote!(unsafe)
+            } else {
+                quote!()
+            };
+            shims.push(quote! {
+                /// # Safety
+                /// Array and string arguments are live script objects (or null).
+                #[unsafe(no_mangle)]
+                pub #unsafe_kw extern "C" fn #symbol_ident( #( #abi_params ),* ) -> u32 {
+                    let items = #call;
+                    let mut out = ::std::vec::Vec::new();
+                    for item in &items {
+                        #push
+                    }
+                    ::iron_api::return_flat(out);
+                    items.len() as u32
+                }
+            });
         } else if let Kind::Str(_) = &a.ret {
             // A string result: the text stays in `iron_api`'s per-thread buffer and the caller
             // copies it into a script string at once.
@@ -1207,7 +1589,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             });
         } else {
             let abi_ret = abi_ty(&a.ret);
-            let body = to_abi(&a.ret, call);
+            let body = to_abi(&a.ret, call, &args);
             // A string parameter is a pointer to a script string: the shim is unsafe to call.
             if a.params.iter().any(|(_, k)| {
                 matches!(
@@ -1300,11 +1682,20 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .unwrap_or(all_params.len());
             // `#[options]`: a call with exactly one argument past the required ones, a plain object,
             // gives the optional parameters by name. Positional calls keep working.
+            // With `after = p` the object comes right after `p`, and `p` and the ones before it
+            // are always positional.
+            let after_idx: Option<usize> = a.options_after.as_ref().map(|p| {
+                all_params
+                    .iter()
+                    .position(|(n, _)| *n == *p)
+                    .expect("checked in api_of")
+            });
+            let opts_at = after_idx.map_or(first_opt, |i| i + 1);
             let opts_prelude = if a.options {
                 quote! {
                     let __opts: ::std::option::Option<::iron_api::rquickjs::Object<'js>> =
-                        if rest.0.len() == #first_opt + 1 {
-                            ::iron_api::qjs::options_object(&ctx, &rest.0[#first_opt])
+                        if rest.0.len() == #opts_at + 1 {
+                            ::iron_api::qjs::options_object(&ctx, &rest.0[#opts_at])
                         } else {
                             None
                         };
@@ -1312,7 +1703,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             } else {
                 quote!()
             };
-            let closure = if all_params.len() + usize::from(has_receiver) > 4 || a.options {
+            let closure = if all_params.len() + usize::from(has_receiver) > 4
+                || a.options
+                || a.rest.is_some()
+            {
                 let binds: Vec<TokenStream2> = all_params
                     .iter()
                     .enumerate()
@@ -1320,7 +1714,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                         let t = js_param_ty(k);
                         // The argument at this position, or (an options call) the property of the
                         // object; undefined and null mean "left out".
-                        let slot = if a.options {
+                        let slot = if a.options && !after_idx.is_some_and(|ai| i <= ai) {
                             let key = camel(&n.to_string());
                             quote! {
                                 match &__opts {
@@ -1336,7 +1730,18 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                                 rest.0.get(#i).filter(|v| !v.is_undefined() && !v.is_null()).cloned()
                             }
                         };
-                        if is_opt(n) && matches!(k, Kind::Value(_)) {
+                        if a.rest.as_deref() == Some(n.to_string().as_str()) {
+                            // Every remaining argument.
+                            quote! {
+                                let #n: #t = {
+                                    let mut items = ::std::vec::Vec::new();
+                                    for v in rest.0.iter().skip(#i) {
+                                        items.push(::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?);
+                                    }
+                                    items
+                                };
+                            }
+                        } else if is_opt(n) && matches!(k, Kind::Value(_)) {
                             quote! {
                                 let #n: ::std::option::Option<#t> = match #slot {
                                     Some(v) => {
@@ -1712,6 +2117,243 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             });
         }
     }
+    // ---- enums: manifest entries, helper functions, `iron_<Enum>_name` / `_parse` shims ----
+    let mut enum_defs: Vec<TokenStream2> = Vec::new();
+    let mut enum_items: Vec<TokenStream2> = Vec::new();
+    for e in &args.enums {
+        let ts = &e.ts;
+        let names = e.names();
+        let rust = &e.rust;
+        let variants = &e.variants;
+        let idx: Vec<i32> = (0..variants.len() as i32).collect();
+        let doc = if e.doc.is_empty() {
+            items
+                .iter()
+                .find_map(|it| match it {
+                    Item::Enum(en) if Some(en.ident.to_string()) == rust_name_of(&e.rust) => {
+                        Some(doc_of(&en.attrs))
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default()
+        } else {
+            e.doc.clone()
+        };
+        enum_defs
+            .push(quote!(::iron_api::EnumDef { name: #ts, doc: #doc, values: &[ #( #names ),* ] }));
+        let parse = enum_fn(ts, "parse");
+        let name = enum_fn(ts, "name");
+        let index = enum_fn(ts, "index");
+        let from_index = enum_fn(ts, "from_index");
+        let names_const = format_ident!("{}_NAMES", snake(ts).to_uppercase());
+        let name_sym = format_ident!("iron_{}_name", ts);
+        let parse_sym = format_ident!("iron_{}_parse", ts);
+        symbol_entries
+            .push(quote!((concat!("iron_", #ts, "_name"), #name_sym as *const () as usize)));
+        symbol_entries
+            .push(quote!((concat!("iron_", #ts, "_parse"), #parse_sym as *const () as usize)));
+        enum_items.push(quote! {
+            /// The names scripts see, in index order.
+            pub const #names_const: &[&str] = &[ #( #names ),* ];
+
+            /// The value with this script name.
+            pub fn #parse(s: &str) -> ::std::option::Option<#rust> {
+                match s {
+                    #( #names => ::std::option::Option::Some(#rust::#variants), )*
+                    _ => ::std::option::Option::None,
+                }
+            }
+
+            /// The script name of a value.
+            pub fn #name(v: #rust) -> &'static str {
+                match v {
+                    #( #rust::#variants => #names, )*
+                }
+            }
+
+            /// The index of a value: what travels across the C ABI.
+            pub fn #index(v: #rust) -> i32 {
+                match v {
+                    #( #rust::#variants => #idx, )*
+                }
+            }
+
+            /// The value at an index, or none.
+            pub fn #from_index(i: i32) -> ::std::option::Option<#rust> {
+                match i {
+                    #( #idx => ::std::option::Option::Some(#rust::#variants), )*
+                    _ => ::std::option::Option::None,
+                }
+            }
+
+            /// `TypeName.name(i)` for compiled code: the script name of an index, or "".
+            ///
+            /// # Safety
+            /// `out_len` is valid for a write.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn #name_sym(i: i32, out_len: *mut i64) -> *const u8 {
+                let text = #from_index(i).map_or("", #name);
+                unsafe { ::iron_api::return_string(text, out_len) }
+            }
+
+            /// `TypeName.parse(s)` for compiled code: the index of a script name, or -1.
+            ///
+            /// # Safety
+            /// `s` is a live script string (or null).
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn #parse_sym(s: *const u8) -> i32 {
+                #parse(&unsafe { ::iron_api::script_str(s) }).map_or(-1, #index)
+            }
+        });
+        if args.quickjs {
+            js_sets.push(quote! {
+                {
+                    let object = ::iron_api::rquickjs::Object::new(ctx.clone())?;
+                    object.set("name", ::iron_api::rquickjs::Function::new(
+                        ctx.clone(),
+                        |i: i32| -> ::std::option::Option<::std::string::String> {
+                            #from_index(i).map(|v| #name(v).to_string())
+                        },
+                    ))?;
+                    object.set("parse", ::iron_api::rquickjs::Function::new(
+                        ctx.clone(),
+                        |s: ::std::string::String| -> i32 { #parse(&s).map_or(-1, #index) },
+                    ))?;
+                    ctx.globals().set(#ts, object)?;
+                }
+            });
+        }
+    }
+
+    // ---- records: manifest entries, `__flat_<R>` (the numbers) and `__js_rec_<R>` (the object) ----
+    let mut record_defs: Vec<TokenStream2> = Vec::new();
+    let mut record_items: Vec<TokenStream2> = Vec::new();
+    for r in &args.records {
+        let ts = &r.ts;
+        let rust = &r.rust;
+        let (item_doc, item_field_docs) = items
+            .iter()
+            .find_map(|it| match it {
+                Item::Struct(st) if Some(st.ident.to_string()) == rust_name_of(&r.rust) => {
+                    let docs: Vec<(String, String)> = st
+                        .fields
+                        .iter()
+                        .filter_map(|f| f.ident.as_ref().map(|i| (i.to_string(), doc_of(&f.attrs))))
+                        .collect();
+                    Some((doc_of(&st.attrs), docs))
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+        let rec_doc = if r.doc.is_empty() {
+            item_doc
+        } else {
+            r.doc.clone()
+        };
+        // The declaration's docs win over the struct's.
+        let mut field_docs = item_field_docs;
+        for (n, _, d) in &r.fields {
+            if !d.is_empty() {
+                field_docs.retain(|(k, _)| *n != *k);
+                field_docs.push((n.to_string(), d.clone()));
+            }
+        }
+        let flat = format_ident!("__flat_{}", ts);
+        let build = format_ident!("__js_rec_{}", ts);
+        let mut fields = Vec::new();
+        let mut flat_stmts = Vec::new();
+        let mut js_stmts = Vec::new();
+        for (fname, fty, _) in &r.fields {
+            let camel_name = camel(&fname.to_string());
+            let doc = field_docs
+                .iter()
+                .find(|(n, _)| *fname == *n)
+                .map(|(_, d)| d.clone())
+                .unwrap_or_default();
+            if fty == "f64" {
+                fields.push(quote!(::iron_api::RecordField { name: #camel_name, ty: ::iron_api::Ty::F64, doc: #doc }));
+                flat_stmts.push(quote!(out.push(r.#fname);));
+                js_stmts.push(quote!(o.set(#camel_name, r.#fname)?;));
+            } else if fty == "bool" {
+                fields.push(quote!(::iron_api::RecordField { name: #camel_name, ty: ::iron_api::Ty::Bool, doc: #doc }));
+                flat_stmts.push(quote!(out.push(if r.#fname { 1.0 } else { 0.0 });));
+                js_stmts.push(quote!(o.set(#camel_name, r.#fname)?;));
+            } else if let Some(v) = args.values.iter().find(|v| v.ts == *fty) {
+                let vts = &v.ts;
+                let vrust = &v.rust;
+                let n = v.fields.len();
+                let vbuild = format_ident!("__js_value_{}", vts);
+                fields.push(quote!(::iron_api::RecordField { name: #camel_name, ty: ::iron_api::Ty::Value(#vts), doc: #doc }));
+                flat_stmts.push(quote!(out.extend_from_slice(&<#vrust as ::iron_api::ValueType<#n>>::to_parts(r.#fname));));
+                js_stmts.push(quote!(o.set(#camel_name, #vbuild(ctx, r.#fname)?)?;));
+            } else if let Some(e) = args.enums.iter().find(|e| e.ts == *fty) {
+                let ets = &e.ts;
+                let index = enum_fn(ets, "index");
+                let name = enum_fn(ets, "name");
+                fields.push(quote!(::iron_api::RecordField { name: #camel_name, ty: ::iron_api::Ty::Enum(#ets), doc: #doc }));
+                flat_stmts.push(quote!(out.push(#index(r.#fname) as f64);));
+                js_stmts.push(quote!(o.set(#camel_name, #name(r.#fname))?;));
+            } else {
+                return Err(syn::Error::new(
+                    fname.span(),
+                    format!(
+                        "record field type `{fty}` is f64, bool, a declared value class or enum"
+                    ),
+                ));
+            }
+        }
+        record_defs.push(
+            quote!(::iron_api::RecordDef { name: #ts, doc: #rec_doc, fields: &[ #( #fields ),* ] }),
+        );
+        record_items.push(quote! {
+            #[allow(dead_code)]
+            fn #flat(r: &#rust, out: &mut ::std::vec::Vec<f64>) {
+                #( #flat_stmts )*
+            }
+        });
+        if args.quickjs {
+            record_items.push(quote! {
+                #[allow(dead_code)]
+                fn #build<'js>(
+                    ctx: &::iron_api::rquickjs::Ctx<'js>,
+                    r: &#rust,
+                ) -> ::iron_api::rquickjs::Result<::iron_api::rquickjs::Object<'js>> {
+                    let o = ::iron_api::rquickjs::Object::new(ctx.clone())?;
+                    #( #js_stmts )*
+                    Ok(o)
+                }
+            });
+        }
+    }
+    // A JS value-class instance from the Rust value, for results that hold values.
+    if args.quickjs {
+        for v in &args.values {
+            let ts = &v.ts;
+            let rust = &v.rust;
+            let n = v.fields.len();
+            let idx: Vec<usize> = (0..n).collect();
+            let build = format_ident!("__js_value_{}", ts);
+            record_items.push(quote! {
+                #[allow(dead_code)]
+                fn #build<'js>(
+                    ctx: &::iron_api::rquickjs::Ctx<'js>,
+                    v: #rust,
+                ) -> ::iron_api::rquickjs::Result<::iron_api::rquickjs::Object<'js>> {
+                    let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(v);
+                    let class: ::iron_api::rquickjs::function::Constructor =
+                        ctx.globals().get(#ts)?;
+                    let raw: ::iron_api::rquickjs::Value = ctx.globals().get("__iron_raw")?;
+                    let mut args = ::iron_api::rquickjs::function::Args::new(ctx.clone(), 1 + #n);
+                    args.push_arg(raw)?;
+                    #( args.push_arg(parts[#idx])?; )*
+                    class.construct_args(args)
+                }
+            });
+        }
+    }
+    let module_doc = doc_of(&module.attrs);
+    let like = args.like;
+
     let quickjs = if args.quickjs {
         quote! {
             /// Installs the namespace as a QuickJS global, with typed arguments (no `Value` array,
@@ -1737,7 +2379,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let class_defs: Vec<TokenStream2> = class_order
         .iter()
         .zip(&class_entries)
-        .map(|(c, fs)| quote!(::iron_api::ClassDef { name: #c, functions: &[ #( #fs ),* ] }))
+        .map(|(c, fs)| {
+            let doc = class_docs.get(c).cloned().unwrap_or_default();
+            quote!(::iron_api::ClassDef { name: #c, doc: #doc, functions: &[ #( #fs ),* ] })
+        })
         .collect();
 
     let attrs = &module.attrs;
@@ -1752,13 +2397,20 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             pub const MANIFEST: ::iron_api::Namespace = ::iron_api::Namespace {
                 symbols: ::iron_api::SymbolTable(iron_symbols),
                 name: #ns,
+                doc: #module_doc,
+                like: #like,
                 handles: &[ #( #handle_names ),* ],
+                enums: &[ #( #enum_defs ),* ],
+                records: &[ #( #record_defs ),* ],
                 values: &[ #( #value_defs ),* ],
                 classes: &[ #( #class_defs ),* ],
                 functions: &[ #( #ns_entries ),* ],
             };
 
             #( #shims )*
+
+            #( #enum_items )*
+            #( #record_items )*
 
             /// The shims' names and addresses, for a JIT.
             pub fn iron_symbols() -> Vec<(&'static str, usize)> {

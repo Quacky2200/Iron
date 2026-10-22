@@ -8,10 +8,12 @@
 
 pub mod jsnum;
 pub mod math;
+pub mod outlines;
 pub mod quat;
 pub mod shapes;
 
 pub use math::*;
+pub use outlines::*;
 pub use quat::*;
 pub use shapes::*;
 
@@ -32,6 +34,7 @@ pub fn manifests() -> Vec<String> {
         shapes::plane_api::MANIFEST.to_json(),
         shapes::bounds_api::MANIFEST.to_json(),
         shapes::pose_api::MANIFEST.to_json(),
+        outlines::shapes_api::MANIFEST.to_json(),
     ]
 }
 
@@ -51,5 +54,6 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     shapes::plane_api::register_quickjs(ctx)?;
     shapes::bounds_api::register_quickjs(ctx)?;
     shapes::pose_api::register_quickjs(ctx)?;
+    outlines::shapes_api::register_quickjs(ctx)?;
     Ok(())
 }

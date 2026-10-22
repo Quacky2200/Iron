@@ -571,6 +571,13 @@ impl<'a> Lowerer<'a> {
         if !own && self.manifest.handles.contains(name) {
             return Ok(Ty::Handle(name.to_string()));
         }
+        // An enum of the engine API is a string (the type `tsc` sees is the union of its names).
+        if !own && self.manifest.enums.contains_key(name) {
+            return Ok(Ty::Str);
+        }
+        if !own && self.manifest.records.contains_key(name) {
+            return Ok(Ty::Obj(self.record_struct(name)));
+        }
         if let Some(i) = self.ifaces.get(name).copied() {
             if !i.extends.is_empty() {
                 bail!("interface {name}: extends is not supported");

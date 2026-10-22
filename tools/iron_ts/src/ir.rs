@@ -419,6 +419,18 @@ pub enum ExtTy {
     F64Arr,
     /// An array of a value class (`Vector3[]`): the engine reads each element's fields.
     ValueArr(String),
+    /// An enum (`TangentMode`): a string to scripts, the index of the name (`i32`, -1 for none) on
+    /// the wire. The lowering converts (`iron_<Enum>_parse` / `_name`, or at compile time for a
+    /// constant).
+    Enum(String),
+    /// A result record (`SplineHit`): a plain object of the manifest's fields. The call leaves its
+    /// numbers in `iron_api`'s buffer and the lowering reads them with `iron_api_result`.
+    Record(String),
+    /// A result `Vec` of a value class: the call returns the count and leaves the numbers in the
+    /// buffer.
+    ValueList(String),
+    /// A result `Vec` of records.
+    RecordList(String),
 }
 
 impl ExtTy {
@@ -439,8 +451,10 @@ impl ExtTy {
                 params: ps.iter().map(|p| p.to_ir()).collect(),
                 ret: r.to_ir(),
             })),
-            // The struct is made by the lowering (it knows the struct ids).
-            ExtTy::Value(_) => Ty::Void,
+            ExtTy::Enum(_) => Ty::Str,
+            // The structs are made by the lowering (it knows the struct ids).
+            ExtTy::Value(_) | ExtTy::Record(_) => Ty::Void,
+            ExtTy::ValueList(_) | ExtTy::RecordList(_) => Ty::JsValue,
         }
     }
 }

@@ -39,10 +39,13 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
     match t {
         ExtTy::F64 => types::F64,
         ExtTy::F32 => types::F32,
-        ExtTy::I32 | ExtTy::U32 => types::I32,
+        ExtTy::I32 | ExtTy::U32 | ExtTy::Enum(_) => types::I32,
         ExtTy::Bool => types::I8,
         ExtTy::Handle(_)
         | ExtTy::Value(_)
+        | ExtTy::Record(_)
+        | ExtTy::ValueList(_)
+        | ExtTy::RecordList(_)
         | ExtTy::Void
         | ExtTy::Str
         | ExtTy::Fn(..)

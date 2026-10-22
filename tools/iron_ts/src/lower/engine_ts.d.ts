@@ -255,22 +255,6 @@ interface LineRenderer2D {
   fillColor: Color | null;
 }
 
-/** GDI-style shape outlines for `LineRenderer2D.points`: y up, angles in degrees counter-clockwise from +x. Closed shapes do not repeat their first point (set `loop`, or a `fillColor`). */
-declare class Shapes {
-  static rectangle(x: number, y: number, width: number, height: number): Vector2[];
-  static roundedRectangle(x: number, y: number, width: number, height: number, radius: number, segments?: number): Vector2[];
-  static ellipse(center: Vector2Like, rx: number, ry: number, segments?: number): Vector2[];
-  static circle(center: Vector2Like, radius: number, segments?: number): Vector2[];
-  static arc(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
-  static pie(center: Vector2Like, rx: number, ry: number, startAngle: number, sweepAngle: number, segments?: number): Vector2[];
-  static regularPolygon(center: Vector2Like, radius: number, sides: number, rotation?: number): Vector2[];
-  static polygon(...points: Vector2Like[]): Vector2[];
-  static triangle(a: Vector2Like, b: Vector2Like, c: Vector2Like): Vector2[];
-  static bezier(p0: Vector2Like, p1: Vector2Like, p2: Vector2Like, p3: Vector2Like, segments?: number): Vector2[];
-  static curve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
-  static closedCurve(points: readonly Vector2Like[], tension?: number, segments?: number): Vector2[];
-}
-
 /** `auto`: smooth through the neighbours; `bezier`: the knot's own handles; `linear`: none. */
 type TangentMode = "auto" | "bezier" | "linear";
 interface SplineKnot {
