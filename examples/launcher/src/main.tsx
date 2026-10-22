@@ -341,6 +341,7 @@ function App() {
   const setView = (v: View) => {
     setViewState(v);
     PlayerPrefs.setString("view", v);
+    PlayerPrefs.save();
   };
   const clamp = (i: number) => Math.max(0, Math.min(list.length - 1, i));
   const setCategory = (c: Category) => {
@@ -349,6 +350,7 @@ function App() {
     setIndex(Math.max(0, next.findIndex((g) => g.name === game?.name)));
     setCategoryState(c);
     PlayerPrefs.setString("category", c);
+    PlayerPrefs.save();
   };
   const move = (by: number) => setIndex((i) => clamp(i + by));
   const show = (m: Mode) => {
@@ -370,6 +372,8 @@ function App() {
     if (!next.delete(game.name)) next.add(game.name);
     setFavourites(next);
     PlayerPrefs.setString("favourites", [...next].join(","));
+    // Written now, not only on exit: a crash would lose it otherwise.
+    PlayerPrefs.save();
   };
 
   const sidebarItems: MenuItem[] = [
