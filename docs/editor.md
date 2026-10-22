@@ -4,6 +4,9 @@ The editor is `iron_editor` (`iron_editor.exe` on Windows): the same program as 
 an editor UI written with Iron's own React UI, like a game. Its components live in a shared
 library, `@iron/editor-ui`, so games and tools can use them too.
 
+The editor's UI (`editor/`) is a QuickJS bundle, a deprecated backend: `iron_editor` passes `--force` implicitly (it logs the deprecation
+note once and runs). Porting the editor to iron_ts is part of the removal plan in TODO.md.
+
 | Path | Role |
 |---|---|
 | [bin/iron_editor.rs](../crates/iron_app/src/bin/iron_editor.rs) | The second binary: includes main.rs as a module and calls its `main` |

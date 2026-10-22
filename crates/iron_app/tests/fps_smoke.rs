@@ -15,7 +15,7 @@ fn run(name: &str, flag: &str) -> (PathBuf, String) {
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)
-        .args(["--frames", "3", flag])
+        .args(["--frames", "3", flag, "--force"]) // hello.js is a QuickJS bundle
         .env("IRON_LOG_FILE", &log)
         .status()
         .unwrap();

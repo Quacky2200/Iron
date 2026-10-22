@@ -1428,6 +1428,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-913 | Unit | `Quality::default()` has vsync off and the `render.quality` op turns it on only with a vSyncCount of 1 or more. |
 | M9-API-914 | Integration | Quality levels start with `vSyncCount` 0, and a saved `iron.quality` with `vSyncCount: 1` is applied without it. |
 | M9-API-915 | JS | `QualitySettings.vSyncCount` is 0 by default and a saved vsync is ignored when the saved choice is applied. |
+| M9-APP-01 | Unit | `--force` parses and is off by default (`iron_app`). |
+| M9-APP-02 | Unit | The QuickJS gate: native bundles run, QuickJS ones are refused unless forced, and the editor counts as forced. |
+| M9-APP-03 | Integration | `iron_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `iron-build build` (`crates/iron_app/tests/quickjs_deprecated.rs`). |
+| M9-APP-04 | Integration | The same with `--force` runs, saves the screenshot and logs the deprecation note exactly once. |
+| M9-APP-05 | Integration | A native game (a bare `.ts` source) runs without `--force` and logs no deprecation note. |
 | M9-API-1100 | Unit | Asset pack hashes are fixed functions of the bytes (SipHash-1-3 128 content hash, FNV-1a path hash, CRC-32 vectors) and game paths normalize like `resolve_asset` (`crates/iron_pack/src/hash.rs`). |
 | M9-API-1101 | Unit | The LZ4 block codec round-trips (runs, text, noise, matches across the 64 KiB window), reads a reference block, and damaged input is an error, never a panic (`lz4.rs`). |
 | M9-API-1102 | Unit | Pack header (64 bytes), entry (64) and chunk (24) records round-trip, the header checksum catches a flipped bit, GUIDs parse from `.meta` hex (`format.rs`). |

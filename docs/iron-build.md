@@ -18,6 +18,15 @@ cargo run -p iron_build -- build ../examples/hello
 | `init [<dir>] [flags]` | Writes a default `project.json` (see "`project.json`"). |
 | `package <game> [flags]` | One executable for the game: `dist/<exe>.exe` (see "Packaging a single executable"). |
 
+## QuickJS is deprecated (`--force`)
+
+`iron_app` runs games compiled by `iron-build build` (`dist/game.irbundle`, native). A folder (or bundle file) that has only the
+QuickJS form (`dist/game.js`, from bun) is **deprecated**: `iron_app` logs the deprecation note (stderr and `Player.log`) and exits
+with a non-zero status without running, unless `--force` is given, which logs the note once and runs it as before. This holds for
+`--screenshot` runs too. A folder with both runs the native bundle, with no note. `iron_editor` is itself a QuickJS program (`editor/`)
+and counts as forced: it logs the note once and runs. Nothing is removed: the QuickJS crates, `js/` packages and the Rust tests that use
+them as libraries keep working (removal plan: TODO.md, "QuickJS deprecated").
+
 ## `project.json`: the project file
 
 A game's product metadata lives in `project.json` in the game folder (`iron_core::project`, shared by `iron-build` and `iron_app`).

@@ -4,8 +4,8 @@
 //! `iron [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
 //! game's script bundle and runs it.
 //!
-//! `[game]` is either a game folder (loads `<game>/dist/game.js`, built with
-//! `iron-build build`) or a `.js` bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
+//! `[game]` is either a game folder (loads `<game>/dist/game.irbundle`, built with
+//! `iron-build build`; a QuickJS `dist/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 pub(crate) mod asset_db;
@@ -78,6 +78,30 @@ struct Args {
     data: Option<PathBuf>,
     /// The folder assets are read from when it is not the game folder (a packaged game).
     asset_root: Option<PathBuf>,
+    /// `--force`: run a deprecated QuickJS game anyway.
+    force: bool,
+}
+
+/// The deprecation note for the QuickJS backend (logged once per run).
+const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `iron-build build` (iron_ts, native, writes dist/game.irbundle); pass --force to run this QuickJS bundle anyway";
+
+/// What to do with a bundle: native ones always run; QuickJS ones only with `--force` (the
+/// editor, itself QuickJS-based, counts as forced).
+#[derive(Debug, PartialEq, Eq)]
+enum QuickJsGate {
+    Native,
+    Forced,
+    Refused,
+}
+
+fn quickjs_gate(native: bool, force: bool, editor: bool) -> QuickJsGate {
+    if native {
+        QuickJsGate::Native
+    } else if force || editor {
+        QuickJsGate::Forced
+    } else {
+        QuickJsGate::Refused
+    }
 }
 
 fn parse_args() -> Result<Args> {
@@ -108,7 +132,8 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder]";
+    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder] [--force]
+--force runs a QuickJS (deprecated) bundle; games built with `iron-build build` are native";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
@@ -119,12 +144,14 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         fps: None,
         data: None,
         asset_root: None,
+        force: false,
     };
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--data") => parsed.data = Some(args.next().context(usage)?.into()),
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
             Some("--cook") => parsed.cook = true,
+            Some("--force") => parsed.force = true,
             Some("--fps") => parsed.fps = Some(true),
             Some("--no-fps") => parsed.fps = Some(false),
             Some("--frames") => {
@@ -201,6 +228,17 @@ fn run() -> Result<()> {
     // The code folder (bundle, `package.json`, icon) and the assets' folder: the same for a game
     // folder, apart for a packaged exe (`--data` also sets it for a folder).
     let (bundle_path, code_root) = resolve_bundle(&args.game)?;
+    match quickjs_gate(native::is_native(&bundle_path), args.force, editor::ENABLED) {
+        QuickJsGate::Native => {}
+        QuickJsGate::Forced => tracing::warn!("{QUICKJS_DEPRECATED}"),
+        QuickJsGate::Refused => {
+            tracing::warn!("{QUICKJS_DEPRECATED}");
+            bail!(
+                "{} is a QuickJS bundle (deprecated); rebuild with `iron-build build` or pass --force",
+                bundle_path.display()
+            );
+        }
+    }
     let asset_root = asset_root::AssetRoot::new(
         args.asset_root
             .clone()
@@ -3029,6 +3067,22 @@ mod tests {
         assert_eq!(args.game, PathBuf::from("."));
         assert_eq!(args.screenshot, Some(PathBuf::from("out.png")));
         assert_eq!(args.frames, 5);
+    }
+
+    // M9-APP-01
+    #[test]
+    fn force_flag_parses_and_defaults_off() {
+        assert!(!parse(&[]).unwrap().force);
+        assert!(parse(&["g", "--force"]).unwrap().force);
+    }
+
+    // M9-APP-02
+    #[test]
+    fn only_native_or_forced_or_editor_runs() {
+        assert_eq!(quickjs_gate(true, false, false), QuickJsGate::Native);
+        assert_eq!(quickjs_gate(false, false, false), QuickJsGate::Refused);
+        assert_eq!(quickjs_gate(false, true, false), QuickJsGate::Forced);
+        assert_eq!(quickjs_gate(false, false, true), QuickJsGate::Forced);
     }
 
     // M9-API-909

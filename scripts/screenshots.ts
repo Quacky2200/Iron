@@ -23,6 +23,7 @@ function run(cmd: string[]): boolean {
   return result.exitCode === 0;
 }
 
+// QuickJS bundles (deprecated) need `iron_app --force`; iron_editor forces itself. Examples are native.
 // The app binaries aren't rebuilt by `cargo test`, so build them once up front.
 if (!run(["cargo", "build", "-p", "iron_app"])) process.exit(1);
 const bin = (name: string) => join(root, "target", "debug", process.platform === "win32" ? `${name}.exe` : name);

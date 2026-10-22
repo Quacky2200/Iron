@@ -1868,3 +1868,13 @@ Left over after the UI events and attributes work (`b116ac6`, `docs/ui-native.md
 - [ ] **`title` tooltip:** the attribute is stored and selectable (`[title]`), but nothing shows a tooltip: there is no tooltip UI. Add a hover tooltip (delay, placement near the pointer, clipping to the window, styling hook such as `::tooltip` or a `.tooltip` class, no tooltip while dragging or when `title` is empty).
 - [ ] **`<input type>` behaviour:** `type` is stored lower-cased and matches `input[type=password]` selectors, but changes no behaviour and every input is a text field. Implement per type: `password` (masked text, no copy), `number` (digit filtering, step/min/max, spin keys), `checkbox` / `radio` (look, checked state, `onChange`), `range`, `color`, `date`/`time` if wanted, `search`, `email`/`tel`/`url` keyboard hints, `hidden`, `button`/`submit`. Keep React's controlled and uncontrolled semantics.
 - [ ] **`pseudoElement` on transition and animation events** is always `""`: generated `::before` / `::after` boxes are not event targets, so events for them are reported on the owning element. Make generated boxes report their pseudo-element name (`"::before"`, `"::after"`) as in the DOM.
+
+## QuickJS deprecated; removal plan (2026-10-22)
+
+`iron_app` refuses a QuickJS bundle (`dist/game.js` without `game.irbundle`) unless `--force` (`M9-APP-01..05`); `iron_editor` forces
+implicitly (its UI is QuickJS) and logs the note once. Nothing is deleted yet. What would go later, in this order:
+- [ ] Port `editor/` and `js/editor-ui` to iron_ts (the editor is the last QuickJS app), then drop the implicit force.
+- [ ] Delete `crates/iron_script`'s QuickJS backend (`QuickJsRuntime`, `ComponentHost`) and the QuickJS paths of `iron_app` (`load_bundles`, `dev_vendor`, bundle reload, `__iron_*` pumps).
+- [ ] Delete `iron_native::register_quickjs` (keep the native `#[iron_api]` registries compiled code uses).
+- [ ] Delete `js/engine`, `js/react`, `js/editor-ui`, `tests/fixtures` (the QuickJS fixtures) and the `bun run build*` / `scripts/dev.ts` / `scripts/screenshots.ts` bun paths.
+- [ ] Rust integration tests that use ScriptRuntime/QuickJS as a library: port to compiled games or delete with their crates.

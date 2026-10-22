@@ -4,6 +4,11 @@ Where Iron's CSS and rendering knowingly behave differently from a browser (or f
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
+## QuickJS backend (deprecated)
+
+QuickJS games run only with `iron_app --force` (see `docs/iron-build.md`). Parity with the native backend is no longer pursued: the QuickJS
+rows below describe how it behaved when it was maintained, and are not updated.
+
 ## Script API vs Unity, s&box and C# (M5.a)
 
 The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler degrees,
