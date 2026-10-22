@@ -1027,6 +1027,7 @@ impl<'a> Lowerer<'a> {
                 if !matches!(el.strip(), Ty::Arr(_)) {
                     bail!("flat: the elements are {el}, not arrays")
                 }
+                let mut depth_pre: Vec<Stmt> = Vec::new();
                 let depth = match c.arguments.first().and_then(|a| a.as_expression()) {
                     None => 1,
                     Some(Expression::NumericLiteral(n))
@@ -1035,7 +1036,18 @@ impl<'a> Lowerer<'a> {
                         n.value as usize
                     }
                     Some(Expression::Identifier(i)) if i.name == "Infinity" => usize::MAX,
-                    Some(_) => bail!("flat: the depth must be a number literal or Infinity"),
+                    // A depth known only at run time: the arrays are flattened as deep as their
+                    // declared type goes (the deepest type TypeScript gives `flat(depth)`).
+                    Some(e) => {
+                        let v = self.lower_expr(e, Some(&Ty::Num))?;
+                        match v.kind {
+                            ExprKind::Num(n) if n >= 0.0 && n.fract() == 0.0 => n as usize,
+                            _ => {
+                                depth_pre.push(Stmt::Eval(v));
+                                usize::MAX
+                            }
+                        }
+                    }
                 };
                 let mut cur = recv;
                 let mut left = depth;
@@ -1052,7 +1064,11 @@ impl<'a> Lowerer<'a> {
                     cur = self.flat_once(cur)?;
                     left -= 1;
                 }
-                Ok(cur)
+                if depth_pre.is_empty() {
+                    return Ok(cur);
+                }
+                let ty = cur.ty.clone();
+                Ok(mk(ExprKind::Seq(depth_pre, Box::new(cur)), ty))
             }
             // `xs.flatMap(f)`: `f` returns an array for each element.
             (Ty::Arr(_), "flatMap") => {

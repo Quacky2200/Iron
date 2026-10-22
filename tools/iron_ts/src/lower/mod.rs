@@ -17,6 +17,7 @@ mod clone;
 mod closure;
 pub(crate) mod components;
 mod date;
+mod dicts;
 mod engine_objs;
 mod enums;
 mod expr;
@@ -953,7 +954,8 @@ impl<'a> Lowerer<'a> {
                 bail!("{name}: rest parameter without a type")
             };
             let ty = self.ty(&ann.type_annotation, name)?;
-            if !matches!(ty, Ty::Arr(_)) {
+            // An array, or a tuple (`...args: [string, number]`: the arguments make the tuple).
+            if !matches!(ty, Ty::Arr(_)) && !matches!(&ty, Ty::Obj(s) if self.is_tuple(*s)) {
                 bail!("{name}: a rest parameter must be an array type")
             }
             ptys.push(ty);

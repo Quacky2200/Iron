@@ -362,9 +362,9 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [x] `null as T | null`, `[] as T[]`, `{} as T` casts in object literals/consts (`M9-TS-3130`).
 - [x] Class fields without an annotation whose initialiser is a constructor call (`private a = new Float32Array(n)`), `NaN`, `-Infinity`, `Math.*`, `new Int8Array(n).fill(x)`, `[] as T[]` (`M9-TS-3131/3137`).
 - [x] Non-null assertion on an assignment target: `x[i]! += d`; closures over destructured `const [a, b]` (`M9-TS-3132/3133`; the closures already worked).
-- [x] Tuples: `.length`, rest patterns, spread of tuples (into arrays and fixed parameters), assignment through `t[0]`, tuple parameters (2026-10-22, `M9-TS-3149..3151`). Not built: a tuple type as a rest parameter.
+- [x] Tuples: `.length`, rest patterns, spread of tuples (into arrays and fixed parameters), assignment through `t[0]`, tuple parameters (2026-10-22, `M9-TS-3149..3151`). A tuple type as a rest parameter (`...args: [string, number?]`, `M9-TS-3195`).
 - [x] Defaulted closure parameters of type `boolean` may be left out (`M9-TS-3154`).
-- [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner.
+- [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner. Kept as a clear compile error (decided 2026-10-22): the host starts registered classes before any code runs, so a registration that depends on a run-time condition cannot be made lazily without changing that contract.
 - [x] Arrays: an indexed write at `arr.length` (`arr[arr.length] = x`) has no bounds check and crashed a game with a segfault. Fixed 2026-10-22: it appends like JavaScript; a write further out (or negative / NaN) throws a `RangeError`.
 - [ ] A skipped (unreachable) function is only checked by `tsc`, never by our compiler: add an optional `--check-unused` that lowers everything.
 - [x] `Texture | null` vs `Texture | undefined` and `string | undefined` from indexing: handle properties are `T | null`, name-valued properties read as the union (`#[nullable]`, `#[ts_type]`, `M9-TS-3164`).
@@ -381,7 +381,7 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [x] A local typed as a string-literal union assigned from an optional field of the same type (`let mode: M = "auto"; if (o.mode !== undefined) mode = o.mode;`) panicked Cranelift (`declared type of variable .. doesn't match`); also with `as M` and with a `const` copy. Fixed 2026-10-22: `Nullable(Lit)` is an `i32` like `Lit` with tag 0 reserved as "no tag" (`M9-TS-3000..3012`); `as M` lowers literals as members; `Map.get` and `join` over members; `keyof typeof X` / `keyof Iface` are the key union; a non-member literal in a typed declaration is a compile error; `Spline.mode` is `TangentMode` again.
 - [x] `Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Readonly<T>` over interfaces, aliases, records, classes and engine classes, as option bags too (2026-10-22, `M9-TS-3120..3127`). [x] `ReturnType<typeof f>` / `typeof f<string>`, `Parameters`, `Awaited`, `NonNullable`, `Exclude`, `Extract` (`M9-TS-3177`).
 - [x] Classes assigned to an interface (`class C implements I`, `I[]` holding different classes, `extends` between interfaces): dispatch by the object's struct id through per-interface tables (2026-10-22, `M9-TS-3140..3147`, `docs/iron-ts.md` "Interfaces implemented by classes").
-- [ ] Object-literal accessors (`get scene() { .. }`), computed keys in object literals, spread call arguments for function values (`rnd(...range)` works for declared functions with fixed or rest parameters and for tuples). [x] Destructuring assignment (`[a, b] = [b, a]`, `M9-TS-3152/3153`).
+- [x] Object-literal getters (`get scene() { .. }`, `M9-TS-3180`). [ ] Setters in object literals, computed keys in object literals (other than a `Record<string, V>` literal). [x] Spread call arguments for function values (`rnd(...range)` works for declared functions with fixed or rest parameters and for tuples). [x] Destructuring assignment (`[a, b] = [b, a]`, `M9-TS-3152/3153`).
 - [x] `Map.get` / `Set` over engine handles as values; `.pop()` / `.shift()` / `.at()` over handle arrays (`M9-TS-3184`, `3189`). [ ] `indexOf` over object arrays.
 - [ ] Line numbers in errors from facade chunks and from code appended after the user's source point past the file.
 - [x] Facade chunk classes (`Spline`, `SplineAnimate`) were not `@property` aware (no scene saving): both are native now and `SplineAnimate` saves its fields and spline (2026-10-22).
@@ -398,6 +398,13 @@ as dictionaries, strings to union members (`StrTag`), values of union type keep 
 `LineRenderer2D.points`, `playback.onEnded = f`, `new Color(...rgba)`, handle `Map` values and `pop`, partial `Mesh.createFlat`.
 Not done: narrowing for `in` / `instanceof` / number truthiness on tagged unions; getters only read (no setters in literals); a `Record<Union, V>`
 with up to 48 keys is still a struct.
+
+## Dictionaries and leftovers (2026-10-22, `M9-TS-3190..3195`)
+
+`Object.keys` / `values` / `entries` / `fromEntries`, `for ... in`, `in` with a run-time key and `delete` over `Record<Union, V>` structs
+(optional properties are there while set) and `Record<string, V>` dictionaries; `["a", "b"] as const` as an array of union members;
+`flat(depth)` with a depth known at run time; a tuple as a rest parameter. Left: `for ... in` over arrays, `Object.assign` into a
+dictionary, setters in object literals, `register(Class)` in a top-level `if` (a clear error; see its item above).
 
 ## Promises audit (2026-10-22)
 

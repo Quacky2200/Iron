@@ -214,6 +214,15 @@ impl<'a> Lowerer<'a> {
                             out.insert(n.to_string(), t);
                         }
                         Some(old) if *old == t => {}
+                        // A union member and a string: the string (a union is a string).
+                        Some(old)
+                            if matches!(
+                                (old.strip(), t.strip()),
+                                (Ty::Lit, Ty::Str) | (Ty::Str, Ty::Lit)
+                            ) =>
+                        {
+                            out.insert(n.to_string(), Ty::Str);
+                        }
                         // `null` seen first, or a nullable and a plain value: the nullable wins.
                         Some(old) if old.strip() == t.strip() => {
                             out.insert(n.to_string(), t.nullable());

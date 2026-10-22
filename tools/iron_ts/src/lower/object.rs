@@ -24,7 +24,7 @@ impl<'a> Lowerer<'a> {
             bail!("{at}: {what}: missing argument")
         };
         let v = self.lower_expr(e, None)?;
-        if !matches!(v.ty.strip(), Ty::Obj(_)) {
+        if !matches!(v.ty.strip(), Ty::Obj(_) | Ty::Map(..)) {
             bail!("{at}: {what} needs an object, found {}", v.ty)
         }
         Ok(v)
@@ -38,12 +38,76 @@ impl<'a> Lowerer<'a> {
         what: &str,
         need_values: bool,
     ) -> R<(Expr, Expr, Vec<Stmt>)> {
+        // A dictionary: its keys and values now.
+        if let Ty::Map(k, v) = obj.ty.strip().clone() {
+            let tmp = self.new_local(obj.ty.clone());
+            let pre = vec![Stmt::Assign(tmp, obj)];
+            let keys = self.rt_map("ts_rt_map_keys_gc", vec![self.var_expr(tmp)], Ty::Arr(k));
+            let vals = self.rt_map("ts_rt_map_values_gc", vec![self.var_expr(tmp)], Ty::Arr(v));
+            return Ok((keys, vals, pre));
+        }
         let Ty::Obj(sid) = obj.ty.strip().clone() else {
             bail!("{what} needs an object, found {}", obj.ty)
         };
         let tmp = self.new_local(obj.ty.clone());
-        let pre = vec![Stmt::Assign(tmp, obj)];
+        let mut pre = vec![Stmt::Assign(tmp, obj)];
         let fields = self.own_fields(sid);
+        // An optional property is there only while it is set: the arrays are filled at run time.
+        if fields.iter().any(|(_, _, i)| self.absent_able(sid, *i)) {
+            let common = fields
+                .first()
+                .map(|f| f.1.strip().clone())
+                .filter(|vt| fields.iter().all(|(_, t, _)| t.strip() == vt));
+            if common.is_none() && need_values && !fields.is_empty() {
+                bail!("{what}: the values have different types; read the fields you need")
+            }
+            let keys_ty = Ty::Arr(Box::new(Ty::Str));
+            let vals_ty = Ty::Arr(Box::new(common.clone().unwrap_or(Ty::Num)));
+            let (keys_v, vals_v) = (
+                self.new_local(keys_ty.clone()),
+                self.new_local(vals_ty.clone()),
+            );
+            pre.push(Stmt::Assign(
+                keys_v,
+                mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), keys_ty.clone()),
+            ));
+            pre.push(Stmt::Assign(
+                vals_v,
+                mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), vals_ty.clone()),
+            ));
+            for (name, ty, i) in &fields {
+                let read = mk(
+                    ExprKind::Field(Box::new(self.var_expr(tmp)), sid, *i),
+                    ty.clone(),
+                );
+                let mut push = vec![Stmt::Eval(mk(
+                    ExprKind::Rt(
+                        RtFn::ArrPush,
+                        vec![self.var_expr(keys_v), self.str_lit(name)],
+                    ),
+                    Ty::Void,
+                ))];
+                if let Some(vt) = &common {
+                    let v = if ty.is_nullable() && !vt.is_nullable() {
+                        mk(ExprKind::Cast(Box::new(read.clone())), vt.clone())
+                    } else {
+                        read.clone()
+                    };
+                    push.push(Stmt::Eval(mk(
+                        ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(vals_v), v]),
+                        Ty::Void,
+                    )));
+                }
+                if self.absent_able(sid, *i) {
+                    let absent = mk(ExprKind::IsNull(Box::new(read)), Ty::Bool);
+                    let present = mk(ExprKind::Un(UnOp::Not, Box::new(absent)), Ty::Bool);
+                    pre.push(Stmt::If(present, push, vec![]));
+                } else {
+                    pre.extend(push);
+                }
+            }
+            return Ok((self.var_expr(keys_v), self.var_expr(vals_v), pre));
+        }
         let mut keys = Vec::new();
         for (name, _, _) in &fields {
             keys.push(Elem::One(self.str_lit(name)));
@@ -91,9 +155,11 @@ impl<'a> Lowerer<'a> {
                     ty,
                 ))
             }
-            "entries" => bail!(
-                "{at}: Object.entries is supported as `for (const [k, v] of Object.entries(o))`"
-            ),
+            "entries" => {
+                let o = self.object_arg(c, 0, "Object.entries")?;
+                self.entries_array(o, "Object.entries")
+            }
+            "fromEntries" => self.lower_from_entries(c),
             "freeze" => {
                 // Nothing rejects a write to a frozen object (see docs/differences.md).
                 let o = self.object_arg(c, 0, "Object.freeze")?;
@@ -160,15 +226,34 @@ impl<'a> Lowerer<'a> {
     /// `"key" in obj` for a string literal key: decided by the object's type.
     pub(crate) fn lower_in(&mut self, key: &'a Expression<'a>, obj: Expr, at: u32) -> R<Expr> {
         let Expression::StringLiteral(k) = key else {
-            bail!(
-                "{}: `in` needs a string literal key (the keys are fixed at compile time)",
-                self.loc(at)
-            )
+            return self.lower_in_dynamic(key, obj, at);
         };
+        if let Ty::Map(..) = obj.ty.strip() {
+            return self.lower_in_dynamic(key, obj, at);
+        }
         let Ty::Obj(sid) = obj.ty.strip().clone() else {
             bail!("{}: `in` needs an object, found {}", self.loc(at), obj.ty)
         };
         let name = k.value.as_str();
+        // An optional property is there while it is set.
+        if let Some(i) = self.m.structs[sid].field(name)
+            && self.absent_able(sid, i)
+        {
+            let fty = self.m.structs[sid].fields[i].ty.clone();
+            let tmp = self.new_local(obj.ty.clone());
+            let read = mk(ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i), fty);
+            let present = mk(
+                ExprKind::Un(
+                    UnOp::Not,
+                    Box::new(mk(ExprKind::IsNull(Box::new(read)), Ty::Bool)),
+                ),
+                Ty::Bool,
+            );
+            return Ok(mk(
+                ExprKind::Seq(vec![Stmt::Assign(tmp, obj)], Box::new(present)),
+                Ty::Bool,
+            ));
+        }
         let found = self.own_fields(sid).iter().any(|(n, _, _)| n == name)
             || self.resolve_in(sid, classes::Which::Method, name).is_some()
             || self.resolve_in(sid, classes::Which::Getter, name).is_some()

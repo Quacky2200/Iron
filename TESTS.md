@@ -1739,3 +1739,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3187 | Integration | `Mesh.createFlat` and `setFlat` with only some of the lists (`originals_engine.rs`). |
 | M9-TS-3188 | Integration | An engine enum string meets a program's literal union: `RenderSettings.fogMode` read into a `FogMode` variable, a table over `FogMode \| "off"`, `MODES.indexOf(state.mode)` (`originals_engine.rs`). |
 | M9-TS-3189 | Integration | Handles as `Map` values, `Map` keys and `Set` members (`originals_engine.rs`). |
+| M9-TS-3190 | Integration | `Object.keys` / `values` / `entries` as values, `for (const k in o)`, `Object.fromEntries` and `"b" in R` over a `Record<Union, V>` equal bun's (`tools/iron_ts_tests/tests/all/leftovers.rs`, `bench/leftovers_cases.ts`). |
+| M9-TS-3191 | Integration | A `Partial<Record<Tag, V>>`: assignment of a missing property, `in`, `delete o.k`, `keys`, `values`, `entries` and `o.k === undefined` equal bun's (`leftovers.rs`). |
+| M9-TS-3192 | Integration | A `Record<string, V>` dictionary: `delete`, `key in d` with a run-time key, `keys`, `values`, `entries`, `Object.fromEntries`, `for ... in` equal bun's (`leftovers.rs`). |
+| M9-TS-3193 | Integration | `["a", "b"] as const` arrays are literal unions: `for ... of` into a union parameter, `map(f)`, `indexOf`, `includes`, `NAMES[0]`, mixed `as const` tuples equal bun's (`leftovers.rs`). |
+| M9-TS-3194 | Integration | `xs.flat(depth)` with a depth that is a variable or a constant equals bun's (`leftovers.rs`). |
+| M9-TS-3195 | Integration | `function f(...args: [string, number])` and `[number, string?]`: calls with arguments and with a spread tuple equal bun's (`leftovers.rs`). |
+| M9-TS-3196 | Integration | A generic function given `["a", "b"] as const` and a `string` (`next(MODES, current)`): `T` is `string`, the array is converted, a union-typed result is a member (`leftovers.rs`). |

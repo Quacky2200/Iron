@@ -172,6 +172,7 @@ impl<'a> Lowerer<'a> {
                 b.extend(body?);
                 out.push(Stmt::Loop(it.label, b));
             }
+            Statement::ForInStatement(f) => self.lower_for_in(f, out)?,
             Statement::ReturnStatement(r) => {
                 let v = match &r.argument {
                     Some(e) => {

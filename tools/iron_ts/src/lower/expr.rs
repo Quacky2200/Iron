@@ -136,6 +136,18 @@ impl<'a> Lowerer<'a> {
                 while let Expression::ParenthesizedExpression(p) = inner {
                     inner = &p.expression;
                 }
+                // `["a", "b"] as const`: the string literals stay union members.
+                if matches!(&a.type_annotation, TSType::TSTypeReference(r)
+                    if matches!(&r.type_name, TSTypeName::IdentifierReference(id) if id.name == "const"))
+                    && let Expression::ArrayExpression(arr) = inner
+                    && !arr.elements.is_empty()
+                    && arr
+                        .elements
+                        .iter()
+                        .all(|e| matches!(e, ArrayExpressionElement::StringLiteral(_)))
+                {
+                    return self.lower_array_lit(arr, Some(&Ty::Arr(Box::new(Ty::Lit))));
+                }
                 if let Expression::CallExpression(c) = inner
                     && Self::is_json_parse(c)
                 {
@@ -776,6 +788,9 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_unary(&mut self, u: &'a UnaryExpression<'a>) -> R<Expr> {
+        if u.operator == UnaryOperator::Delete {
+            return self.lower_delete(&u.argument, u.span.start);
+        }
         if u.operator == UnaryOperator::Typeof {
             return self.lower_typeof(&u.argument);
         }
@@ -2990,7 +3005,7 @@ impl<'a> Lowerer<'a> {
             .collect()
     }
 
-    fn build_tuple(&mut self, sid: StructId, vals: Vec<Expr>) -> R<Expr> {
+    pub(crate) fn build_tuple(&mut self, sid: StructId, vals: Vec<Expr>) -> R<Expr> {
         let ty = Ty::Obj(sid);
         let tmp = self.new_local(ty.clone());
         let mut stmts = vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), ty.clone()))];
@@ -4132,6 +4147,46 @@ impl<'a> Lowerer<'a> {
                     names.insert(b.name.to_string(), Binding::Direct(tmp));
                 }
             }
+        }
+        if let Some(rt) = rest_ty.clone()
+            && let Ty::Obj(tsid) = rt.strip().clone()
+            && self.is_tuple(tsid)
+        {
+            // `...args: [A, B?]`: the arguments from here on make the tuple (or one spread tuple
+            // of the same type is it).
+            let rest_args = &args[given..];
+            if rest_args.len() == 1
+                && let Argument::SpreadElement(sp) = &rest_args[0]
+            {
+                let v = self.lower_expr(&sp.argument, Some(&rt))?;
+                vals.push(self.coerce(v, &rt)?);
+                return Ok((pre, vals));
+            }
+            let n = self.m.structs[tsid].fields.len();
+            if rest_args.len() > n {
+                bail!(
+                    "{name}: {} arguments, at most {} expected",
+                    args.len(),
+                    given + n
+                )
+            }
+            let mut elems = Vec::new();
+            for i in 0..n {
+                let fty = self.m.structs[tsid].fields[i].ty.clone();
+                match rest_args.get(i) {
+                    Some(a) => {
+                        let Some(e) = a.as_expression() else {
+                            bail!("{name}: a spread argument inside a tuple rest parameter")
+                        };
+                        let v = self.lower_expr(e, Some(&fty))?;
+                        elems.push(self.coerce(v, &fty)?);
+                    }
+                    None if fty.is_nullable() => elems.push(mk(ExprKind::Null, fty)),
+                    None => bail!("{name}: {} arguments, {} expected", args.len(), given + n),
+                }
+            }
+            vals.push(self.build_tuple(tsid, elems)?);
+            return Ok((pre, vals));
         }
         if let Some(rt) = rest_ty {
             let Ty::Arr(el) = &rt else {

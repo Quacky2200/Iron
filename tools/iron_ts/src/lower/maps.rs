@@ -44,7 +44,7 @@ impl<'a> Lowerer<'a> {
         mk(ExprKind::Unbits(Box::new(e)), ty)
     }
 
-    fn rt_map(&self, sym: &'static str, args: Vec<Expr>, ty: Ty) -> Expr {
+    pub(crate) fn rt_map(&self, sym: &'static str, args: Vec<Expr>, ty: Ty) -> Expr {
         mk(ExprKind::Rt(RtFn::Str(sym), args), ty)
     }
 
@@ -418,6 +418,36 @@ impl<'a> Lowerer<'a> {
         Ok(mk(
             ExprKind::Seq(stmts, Box::new(self.var_expr(m))),
             ty.clone(),
+        ))
+    }
+
+    /// `map.has(key)` over a lowered key.
+    pub(crate) fn map_has(&mut self, recv: Expr, key: Expr) -> R<Expr> {
+        let (k, _, _) = Self::parts(&recv.ty).expect("a map");
+        let t = self.new_local(recv.ty.strip().clone());
+        let kw = self.key_word(key, &k)?;
+        let found = self.rt_map("ts_rt_map_find", vec![self.var_expr(t), kw], Ty::Num);
+        let has = mk(
+            ExprKind::Cmp(CmpOp::Ge, Box::new(found), Box::new(num(0.0))),
+            Ty::Bool,
+        );
+        Ok(mk(
+            ExprKind::Seq(vec![Stmt::Assign(t, recv)], Box::new(has)),
+            Ty::Bool,
+        ))
+    }
+
+    /// `map.delete(key)` over a lowered key: whether it was there.
+    pub(crate) fn map_delete(&mut self, recv: Expr, key: Expr) -> R<Expr> {
+        let (k, _, _) = Self::parts(&recv.ty).expect("a map");
+        let t = self.new_local(recv.ty.strip().clone());
+        let kw = self.key_word(key, &k)?;
+        Ok(mk(
+            ExprKind::Seq(
+                vec![Stmt::Assign(t, recv)],
+                Box::new(self.rt_map("ts_rt_map_delete", vec![self.var_expr(t), kw], Ty::Bool)),
+            ),
+            Ty::Bool,
         ))
     }
 

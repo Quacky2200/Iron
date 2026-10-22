@@ -787,8 +787,24 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   (`[number, number, "c"?]`) are nullable fields, left out in a literal that is shorter. `s[i]` on a string is the character or
   `undefined`. An array of nothing but `null` (`Array.from({ length }, () => null)`) goes where `(T | null)[]` is expected.
 - A `Pick`/`Partial` of an interface that is still being laid out (reached again through its own members) is filled in at the end.
-- **Not built:** `["a", "b"] as const` is still a `string[]` (the engine's enums are strings too, so the two meet as strings);
-  a tuple type as a rest parameter; `flat(depth)` with a depth that is not a literal.
+- **Entries of objects and dictionaries** ([lower/dicts.rs](../tools/iron_ts/src/lower/dicts.rs), `object.rs`): `Object.keys` /
+  `values` / `entries` (as values, arrays of `[key, value]` pairs) and `for (const k in o)` over a struct (its fields) or a
+  `Record<string, V>`; `Object.fromEntries(pairs)` is a dictionary; `key in o` with a literal key (decided by the type) or a key
+  known only at run time; `delete o.k` / `delete o[k]` (a dictionary loses the entry; a struct can lose an *optional* property,
+  which becomes undefined). An optional property (`Partial<Record<Tag, V>>`, `x?: T`) is there only while it is not null, for
+  `keys`, `values`, `entries`, `in` and `for ... in` (as for `JSON.stringify`). Not built: `for ... in` over an array,
+  `Object.assign` into a dictionary, `Object.hasOwn(dictionary, k)`.
+- **`as const` arrays.** `["a", "b"] as const` of string literals is an array of union members (`Lit[]`), so its elements go
+  where the union is expected (`(typeof NAMES)[number]`); the engine's own enums are strings, and a string reaches a union member
+  through the tag table (`StrTag`), so the two meet either way: a generic parameter bound to both a union and a string is the
+  string, and an array of members goes where an array of strings is expected as a converted copy (`next(MODES, engineString)`,
+  `M9-TS-3196`). Other `as const` arrays are arrays or tuples as before.
+- **`flat(depth)`.** A literal depth, `Infinity`, or a constant is exact; a depth known only at run time flattens as deep as the
+  declared type goes (the deepest type TypeScript gives it) after evaluating the depth expression.
+- **A tuple as a rest parameter.** `function f(...args: [string, number?])`: the arguments from there on make the tuple (a missing
+  optional element is undefined); `f(...pair)` with a tuple of that type passes it as it is. Not for function values.
+- **`register(Class)`** stays a statement at the top level of a module: the host starts the registered classes before any code
+  runs, so a registration that depends on a condition cannot be made lazily (the error says so).
 
 ## The original example sources ([lower/tagged.rs](../tools/iron_ts/src/lower/tagged.rs), [lower/accessors.rs](../tools/iron_ts/src/lower/accessors.rs))
 

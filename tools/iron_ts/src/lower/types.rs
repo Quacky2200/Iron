@@ -943,6 +943,52 @@ impl<'a> Lowerer<'a> {
             let (sid, to) = (*sid, to.strip().clone());
             return self.struct_to_map(e, sid, &to);
         }
+        // An array of union members where an array of strings goes (and the other way): a copy
+        // with each element converted (`next(["a", "b"] as const, engineEnumString)`).
+        if let (Ty::Arr(a), Ty::Arr(b)) = (e.ty.strip(), to.strip())
+            && ((**a == Ty::Lit && **b == Ty::Str) || (**a == Ty::Str && **b == Ty::Lit))
+        {
+            let (from_el, to_el) = ((**a).clone(), (**b).clone());
+            let out_ty = to.strip().clone();
+            let src = self.new_local(e.ty.clone());
+            let out = self.new_local(out_ty.clone());
+            let mut stmts = vec![
+                Stmt::Assign(src, e),
+                Stmt::Assign(
+                    out,
+                    Expr {
+                        kind: ExprKind::Rt(
+                            RtFn::ArrNew,
+                            vec![Expr {
+                                kind: ExprKind::Num(0.0),
+                                ty: Ty::Num,
+                            }],
+                        ),
+                        ty: out_ty.clone(),
+                    },
+                ),
+            ];
+            let it = self.begin_iter(self.var_expr(src))?;
+            stmts.extend(it.pre.clone());
+            let x = self.var_expr(it.elem);
+            let converted = self.coerce(x, &to_el)?;
+            let _ = from_el;
+            let mut body = it.head.clone();
+            body.push(Stmt::Eval(Expr {
+                kind: ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(out), converted]),
+                ty: Ty::Void,
+            }));
+            stmts.push(Stmt::Loop(it.label, body));
+            let result = Expr {
+                kind: ExprKind::Seq(stmts, Box::new(self.var_expr(out))),
+                ty: out_ty,
+            };
+            return Ok(if to.is_nullable() {
+                mk_expr_cast(result, to.clone())
+            } else {
+                result
+            });
+        }
         // An array of nothing but nulls (`Array.from({ length }, () => null)`) where an array of
         // nullable objects goes: the slots are all zero already.
         if let (Ty::Arr(a), Ty::Arr(b)) = (e.ty.strip(), to.strip())
