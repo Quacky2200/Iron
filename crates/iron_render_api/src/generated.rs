@@ -2176,6 +2176,7 @@ pub mod line_renderer2d_api {
         }
 
         /// Replaces the points (on the object's XY plane); a new array redraws it.
+        #[like]
         pub fn set_points(self, points: &[V2]) {
             with_line_renderer2d(self, |d| d.points = points.to_vec());
         }
@@ -2990,6 +2991,16 @@ pub mod skinned_mesh_renderer_api {
 
         pub fn clear_bones(self) {
             with_skinned_mesh_renderer(self, |d| d.bones.clear());
+        }
+
+        /// The bones, in the order the mesh's bone weights and bind poses use.
+        #[property]
+        pub fn bones(self) -> Vec<ObjectId> {
+            with_skinned_mesh_renderer(self, |d| d.bones.clone()).unwrap_or_default()
+        }
+
+        pub fn set_bones(self, bones: &[ObjectId]) {
+            with_skinned_mesh_renderer(self, |d| d.bones = bones.to_vec());
         }
 
         #[property]
@@ -4995,6 +5006,7 @@ pub mod line_renderer_api {
         }
 
         /// Replaces the points (world space); a new array redraws the tube.
+        #[like]
         pub fn set_positions(self, points: &[V3]) {
             with_line_renderer(self, |d| d.positions = points.to_vec());
         }
@@ -5166,6 +5178,13 @@ pub fn reset_cloths() {
     CLOTHS_STORE.with(|v| v.borrow_mut().clear());
 }
 
+/// A cloth's pin box: vertices inside it stay put.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClothBox {
+    pub min: V3,
+    pub max: V3,
+}
+
 /// The saved properties of a `Cloth`.
 pub fn save_cloth(r: ClothRef) -> Map<String, Value> {
     let mut m = Map::new();
@@ -5269,7 +5288,7 @@ pub fn load_cloth(r: ClothRef, props: &Map<String, Value>) -> Vec<String> {
     warnings
 }
 
-#[iron_api(namespace = "Cloth", quickjs, handles(Cloth = ClothRef, GameObject = ObjectId, Mesh = MeshRef), values(Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "Cloth", quickjs, handles(Cloth = ClothRef, GameObject = ObjectId, Mesh = MeshRef), values(Vector3 = V3 [x: f64, y: f64, z: f64]), records(ClothBox = ClothBox [min: Vector3Like, max: Vector3Like]))]
 pub mod cloth_api {
     use super::*;
 
@@ -5455,13 +5474,47 @@ pub mod cloth_api {
             with_cloth(self, |d| d.pins.clear());
         }
 
-        /// Vertices in this object-space box stay put (a flag's edge on its pole).
-        pub fn set_pin_box(self, min: V3, max: V3) {
-            with_cloth(self, |d| d.pin_box = Some((min, max)));
+        /// Vertices in this object-space box stay put (a flag's edge on its pole); `null` for
+        /// none.
+        #[property]
+        pub fn pin_box(self) -> Option<ClothBox> {
+            with_cloth(self, |d| d.pin_box)
+                .flatten()
+                .map(|(min, max)| ClothBox { min, max })
         }
 
-        pub fn clear_pin_box(self) {
-            with_cloth(self, |d| d.pin_box = None);
+        pub fn set_pin_box(self, b: Option<ClothBox>) {
+            with_cloth(self, |d| d.pin_box = b.map(|b| (b.min, b.max)));
+        }
+
+        /// The points (object space) near which vertices stay put.
+        #[property]
+        pub fn pins(self) -> Vec<V3> {
+            with_cloth(self, |d| d.pins.clone()).unwrap_or_default()
+        }
+
+        pub fn set_pins(self, pins: &[V3]) {
+            with_cloth(self, |d| d.pins = pins.to_vec());
+        }
+
+        /// Objects with a `SphereCollider` the cloth cannot pass through.
+        #[property]
+        pub fn sphere_colliders(self) -> Vec<ObjectId> {
+            with_cloth(self, |d| d.sphere_colliders.clone()).unwrap_or_default()
+        }
+
+        pub fn set_sphere_colliders(self, objects: &[ObjectId]) {
+            with_cloth(self, |d| d.sphere_colliders = objects.to_vec());
+        }
+
+        /// Objects with a `CapsuleCollider` the cloth cannot pass through.
+        #[property]
+        pub fn capsule_colliders(self) -> Vec<ObjectId> {
+            with_cloth(self, |d| d.capsule_colliders.clone()).unwrap_or_default()
+        }
+
+        pub fn set_capsule_colliders(self, objects: &[ObjectId]) {
+            with_cloth(self, |d| d.capsule_colliders = objects.to_vec());
         }
 
         /// An object with a `SphereCollider` the cloth cannot pass through.
@@ -6379,6 +6432,34 @@ pub mod sprite_api {
                 d.rect = [c * cw, h - (r + 1.0) * ch, cw, ch];
             });
             s
+        }
+
+        /// Every cell of a sprite sheet cut into `columns` x `rows` cells, row by row from the
+        /// top, each with this pivot and `pixelsPerUnit` when given.
+        #[optional(pivot, pixels_per_unit)]
+        pub fn grid(
+            texture: TextureRef,
+            columns: f64,
+            rows: f64,
+            pivot: V2,
+            pixels_per_unit: f64,
+        ) -> Vec<SpriteRef> {
+            let mut cells = Vec::new();
+            for r in 0..rows.max(0.0) as usize {
+                for c in 0..columns.max(0.0) as usize {
+                    let s = Self::grid_cell(texture, columns, rows, r as f64 * columns + c as f64);
+                    with_sprite(s, |d| {
+                        if !pivot.x.is_nan() {
+                            d.pivot = pivot;
+                        }
+                        if !pixels_per_unit.is_nan() {
+                            d.pixels_per_unit = pixels_per_unit;
+                        }
+                    });
+                    cells.push(s);
+                }
+            }
+            cells
         }
 
         /// Its size in world units (zero until the texture has loaded, for a whole-texture sprite).

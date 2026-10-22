@@ -31,7 +31,7 @@ export function cameraAndScreen(): string {
   const hfov = cam.horizontalFieldOfView;
   cam.horizontalFieldOfView = hfov;
   const size = Screen.windowSize;
-  return `${cam.rect.x}|${cam.rect.height}|${cam.layerCullDistances[3]}|${cam.layerCullDistances[4]}|${main === cam}|${Math.round(cam.fieldOfView)}|${size.width >= 0}|${QualitySettings.names.length === QualitySettings.levelCount}`;
+  return `${cam.rect.x}|${cam.rect.height}|${cam.layerCullDistances[3]}|${cam.layerCullDistances[4]}|${main === cam}|${Math.round(cam.fieldOfView)}|${size.width >= 0}|${QualitySettings.names.length > 0}`;
 }
 
 export function constructors(): string {
@@ -122,7 +122,7 @@ export function unsubscribers(): string {
   QualitySettings.setQualityLevel(0);
   const first = calls;
   off();
-  QualitySettings.setQualityLevel(QualitySettings.levelCount - 1);
+  QualitySettings.setQualityLevel(QualitySettings.names.length - 1);
   QualitySettings.setQualityLevel(0);
   const modes = Screen.supportedFullScreenModes;
   const names: Record<FullScreenMode, string> = { ExclusiveFullScreen: "x", FullScreenWindow: "b", MaximizedWindow: "m", Windowed: "w" };
@@ -436,4 +436,52 @@ export function recordProperties(): string {
   RenderSettings.skybox = null;
   RenderSettings.autoExposure = null;
   return `${a}|${b}|${c}|${d}|${e}|${e2}|${f}|${RenderSettings.skybox === null}`;
+}
+
+export function nativeLists(): string {
+  const root = new GameObject("root");
+  const b1 = new GameObject("b1", { parent: root });
+  const b2 = new GameObject("b2");
+  const skin = root.addComponent(SkinnedMeshRenderer);
+  skin.bones = [b1, b2];
+  const bones = skin.bones;
+  skin.bones = [b2];
+  const cloth = root.addComponent(Cloth);
+  cloth.sphereColliders = [b1];
+  cloth.sphereColliders = [b2, b1];
+  cloth.pins = [new Vector3(1, 2, 3)];
+  cloth.pinBox = { min: new Vector3(0, 0, 0), max: new Vector3(1, 2, 3) };
+  const box = cloth.pinBox;
+  const had = box !== null;
+  cloth.pinBox = null;
+  const cam = root.addComponent(Camera);
+  cam.layerCullDistances = [1, 2, -3];
+  const d = cam.layerCullDistances;
+  const roots = SceneManager.getActiveScene().getRootGameObjects();
+  const names = QualitySettings.names;
+  const line = root.addComponent(LineRenderer2D);
+  line.points = [new Vector2(1, 2), new Vector3(3, 4, 5)];
+  return `${bones.length}|${bones[1] === b2}|${skin.bones.length}|${cloth.sphereColliders.length}|${cloth.sphereColliders[0] === b2}|${cloth.pins[0]!.z}|${had}|${box!.max.z}|${cloth.pinBox === null}|${d.length}|${d[1]}|${d[2]}|${roots.length > 0}|${names.length > 0}|${line.points[1]!.x}`;
+}
+
+export function unsubscribes(): string {
+  let screens = 0;
+  let levels = 0;
+  let loads = 0;
+  const offScreen = Screen.onChange(() => {
+    screens += 1;
+  });
+  const offLevel = QualitySettings.onLevelChanged((level: number) => {
+    levels += level + 1;
+  });
+  const offLoad = SceneManager.onSceneLoaded((scene: Scene, mode: LoadSceneMode) => {
+    loads += mode === "additive" ? 10 : 1;
+  });
+  QualitySettings.setQualityLevel(1);
+  offLevel();
+  offLevel();
+  QualitySettings.setQualityLevel(2);
+  offScreen();
+  offLoad();
+  return `${screens}|${levels}|${loads}`;
 }

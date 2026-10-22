@@ -283,9 +283,9 @@ declare class Camera :: depth: number;
 declare class Camera :: farClipPlane: number;
 declare class Camera :: fieldOfView: number;
 declare class Camera :: fog: boolean;
+declare class Camera :: get layerCullDistances(): number[];
 declare class Camera :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class Camera :: iso: number;
-declare class Camera :: layerCullDistance(layer: number): number;
 declare class Camera :: layerCullSpherical: boolean;
 declare class Camera :: nearClipPlane: number;
 declare class Camera :: orthographic: boolean;
@@ -301,7 +301,7 @@ declare class Camera :: readonly sceneBrightness: number;
 declare class Camera :: readonly transform: Transform;
 declare class Camera :: resetExposure(): void;
 declare class Camera :: sceneGrid: boolean;
-declare class Camera :: setLayerCullDistance(layer: number, distance: number): void;
+declare class Camera :: set layerCullDistances(v: readonly number[]);
 declare class Camera :: setRect(x: number, y: number, width: number, height: number): void;
 declare class Camera :: shutterSpeed: number;
 declare class Camera :: static attach(object: GameObject): Camera;
@@ -411,19 +411,24 @@ declare class Cloth :: addPin(point: Vector3): void;
 declare class Cloth :: addSphereCollider(object: GameObject): void;
 declare class Cloth :: bendingStiffness: number;
 declare class Cloth :: clearColliders(): void;
-declare class Cloth :: clearPinBox(): void;
 declare class Cloth :: clearPins(): void;
 declare class Cloth :: damping: number;
 declare class Cloth :: externalAcceleration: Vector3;
 declare class Cloth :: friction: number;
+declare class Cloth :: get capsuleColliders(): GameObject[];
+declare class Cloth :: get pins(): Vector3[];
+declare class Cloth :: get sphereColliders(): GameObject[];
 declare class Cloth :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class Cloth :: pinBox: ClothBox | null;
 declare class Cloth :: pinRadius: number;
 declare class Cloth :: randomAcceleration: Vector3;
 declare class Cloth :: readonly gameObject: GameObject;
 declare class Cloth :: readonly transform: Transform;
 declare class Cloth :: rebuild(): void;
 declare class Cloth :: rebuildRequests: number;
-declare class Cloth :: setPinBox(min: Vector3, max: Vector3): void;
+declare class Cloth :: set capsuleColliders(v: readonly GameObject[]);
+declare class Cloth :: set pins(v: readonly Vector3[]);
+declare class Cloth :: set sphereColliders(v: readonly GameObject[]);
 declare class Cloth :: simulatedMesh: Mesh | null;
 declare class Cloth :: solverIterations: number;
 declare class Cloth :: sourceMesh: Mesh | null;
@@ -477,6 +482,7 @@ declare class EdgeCollider2D
 declare class EdgeCollider2D :: bounciness: number;
 declare class EdgeCollider2D :: destroy(): void;
 declare class EdgeCollider2D :: dynamicFriction: number;
+declare class EdgeCollider2D :: get points(): Vector2[];
 declare class EdgeCollider2D :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class EdgeCollider2D :: isTrigger: boolean;
 declare class EdgeCollider2D :: offset: Vector2;
@@ -485,7 +491,7 @@ declare class EdgeCollider2D :: readonly attachedRigidbody2d: Rigidbody2D;
 declare class EdgeCollider2D :: readonly gameObject: GameObject;
 declare class EdgeCollider2D :: readonly pointCount: number;
 declare class EdgeCollider2D :: readonly transform: Transform;
-declare class EdgeCollider2D :: setPoints(points: readonly Vector2[]): void;
+declare class EdgeCollider2D :: set points(v: readonly Vector2Like[]);
 declare class EdgeCollider2D :: static attach(object: GameObject): EdgeCollider2D;
 declare class EdgeCollider2D :: static findOn(object: GameObject): EdgeCollider2D;
 declare class Emitter
@@ -608,6 +614,7 @@ declare class Light :: static count(): number;
 declare class Light :: static findOn(object: GameObject): Light;
 declare class Light :: volumetricIntensity: number;
 declare class LineRenderer
+declare class LineRenderer :: get positions(): Vector3[];
 declare class LineRenderer :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class LineRenderer :: material: Material | null;
 declare class LineRenderer :: positionAt(index: number): Vector3;
@@ -615,7 +622,7 @@ declare class LineRenderer :: readonly gameObject: GameObject;
 declare class LineRenderer :: readonly positionCount: number;
 declare class LineRenderer :: readonly transform: Transform;
 declare class LineRenderer :: redraw(): void;
-declare class LineRenderer :: setPositions(points: readonly Vector3[]): void;
+declare class LineRenderer :: set positions(v: readonly Vector3Like[]);
 declare class LineRenderer :: sides: number;
 declare class LineRenderer :: smoothing: number;
 declare class LineRenderer :: static attach(object: GameObject): LineRenderer;
@@ -625,6 +632,7 @@ declare class LineRenderer2D
 declare class LineRenderer2D :: color: Color;
 declare class LineRenderer2D :: fillColor: Color | null;
 declare class LineRenderer2D :: get fillRule(): "evenodd" | "nonzero";
+declare class LineRenderer2D :: get points(): Vector2[];
 declare class LineRenderer2D :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class LineRenderer2D :: loop: boolean;
 declare class LineRenderer2D :: pointAt(index: number): Vector2;
@@ -632,7 +640,7 @@ declare class LineRenderer2D :: readonly gameObject: GameObject;
 declare class LineRenderer2D :: readonly pointCount: number;
 declare class LineRenderer2D :: readonly transform: Transform;
 declare class LineRenderer2D :: set fillRule(v: string);
-declare class LineRenderer2D :: setPoints(points: readonly Vector2[]): void;
+declare class LineRenderer2D :: set points(v: readonly Vector2Like[]);
 declare class LineRenderer2D :: sortingOrder: number;
 declare class LineRenderer2D :: static attach(object: GameObject): LineRenderer2D;
 declare class LineRenderer2D :: static findOn(object: GameObject): LineRenderer2D;
@@ -907,6 +915,7 @@ declare class PolygonCollider2D
 declare class PolygonCollider2D :: bounciness: number;
 declare class PolygonCollider2D :: destroy(): void;
 declare class PolygonCollider2D :: dynamicFriction: number;
+declare class PolygonCollider2D :: get points(): Vector2[];
 declare class PolygonCollider2D :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class PolygonCollider2D :: isTrigger: boolean;
 declare class PolygonCollider2D :: offset: Vector2;
@@ -915,7 +924,7 @@ declare class PolygonCollider2D :: readonly attachedRigidbody2d: Rigidbody2D;
 declare class PolygonCollider2D :: readonly gameObject: GameObject;
 declare class PolygonCollider2D :: readonly pointCount: number;
 declare class PolygonCollider2D :: readonly transform: Transform;
-declare class PolygonCollider2D :: setPoints(points: readonly Vector2[]): void;
+declare class PolygonCollider2D :: set points(v: readonly Vector2Like[]);
 declare class PolygonCollider2D :: static attach(object: GameObject): PolygonCollider2D;
 declare class PolygonCollider2D :: static findOn(object: GameObject): PolygonCollider2D;
 declare class Pose
@@ -1121,6 +1130,7 @@ declare class RopeJoint :: readonly transform: Transform;
 declare class RopeJoint :: static attach(object: GameObject): RopeJoint;
 declare class RopeJoint :: static findOn(object: GameObject): RopeJoint;
 declare class Scene
+declare class Scene :: getRootGameObjects(): GameObject[];
 declare class Scene :: readonly handle: number;
 declare class Scene :: readonly isLoaded: boolean;
 declare class Scene :: readonly name: string;
@@ -1131,6 +1141,7 @@ declare class SkinnedMeshRenderer
 declare class SkinnedMeshRenderer :: addBone(bone: GameObject): void;
 declare class SkinnedMeshRenderer :: boneAt(index: number): GameObject;
 declare class SkinnedMeshRenderer :: clearBones(): void;
+declare class SkinnedMeshRenderer :: get bones(): GameObject[];
 declare class SkinnedMeshRenderer :: get shadowCastingMode(): "on" | "off";
 declare class SkinnedMeshRenderer :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class SkinnedMeshRenderer :: material: Material | null;
@@ -1139,6 +1150,7 @@ declare class SkinnedMeshRenderer :: readonly boneCount: number;
 declare class SkinnedMeshRenderer :: readonly gameObject: GameObject;
 declare class SkinnedMeshRenderer :: readonly transform: Transform;
 declare class SkinnedMeshRenderer :: rootBone: GameObject | null;
+declare class SkinnedMeshRenderer :: set bones(v: readonly GameObject[]);
 declare class SkinnedMeshRenderer :: set shadowCastingMode(v: string);
 declare class SkinnedMeshRenderer :: static attach(object: GameObject): SkinnedMeshRenderer;
 declare class SkinnedMeshRenderer :: static findOn(object: GameObject): SkinnedMeshRenderer;
@@ -1235,6 +1247,8 @@ declare class Sprite :: pixelsPerUnit: number;
 declare class Sprite :: readonly size: Vector2;
 declare class Sprite :: setRect(x: number, y: number, width: number, height: number): void;
 declare class Sprite :: static empty(): Sprite;
+declare class Sprite :: static grid(texture: Texture, columns: number, rows: number, options?: { pivot?: Vector2; pixelsPerUnit?: number }): Sprite[];
+declare class Sprite :: static grid(texture: Texture, columns: number, rows: number, pivot?: Vector2, pixelsPerUnit?: number): Sprite[];
 declare class Sprite :: static gridCell(texture: Texture, columns: number, rows: number, index: number): Sprite;
 declare class Sprite :: texture: Texture | null;
 declare class SpriteRenderer
@@ -1568,6 +1582,9 @@ declare interface BloomSettings
 declare interface BloomSettings :: intensity: number;
 declare interface BloomSettings :: scatter: number;
 declare interface BloomSettings :: threshold: number;
+declare interface ClothBox
+declare interface ClothBox :: max: Vector3Like;
+declare interface ClothBox :: min: Vector3Like;
 declare interface HeightFogSettings
 declare interface HeightFogSettings :: baseHeight: number;
 declare interface HeightFogSettings :: density: number;
@@ -1886,7 +1903,7 @@ declare namespace Application :: const productName: string;
 declare namespace Application :: const systemLanguage: string;
 declare namespace Application :: const version: string;
 declare namespace Application :: function offFocusChanged(token: number): boolean;
-declare namespace Application :: function onFocusChanged(fn: (focused: boolean) => void): () => void;
+declare namespace Application :: function onFocusChanged(f: (a0: boolean) => void): () => void;
 declare namespace Application :: function quit(): void;
 declare namespace Application :: let runInBackground: boolean;
 declare namespace Application :: let targetFrameRate: number;
@@ -1898,7 +1915,7 @@ declare namespace Assets :: function guidToPath(guid: string): string;
 declare namespace Assets :: function importer(path: string): string;
 declare namespace Assets :: function list(glob: string): string[];
 declare namespace Assets :: function offChanged(token: number): boolean;
-declare namespace Assets :: function onChanged(fn: (path: string) => void): () => void;
+declare namespace Assets :: function onChanged(f: (a0: string) => void): () => void;
 declare namespace Assets :: function packOf(path: string): string;
 declare namespace Assets :: function pathAt(index: number): string;
 declare namespace Assets :: function pathToGuid(path: string): string;
@@ -2123,13 +2140,11 @@ declare namespace Primitives
 declare namespace Primitives :: function create(kind: PrimitiveType, name?: string): GameObject;
 declare namespace Primitives :: function create(kind: PrimitiveType, options?: { name?: string }): GameObject;
 declare namespace QualitySettings
-declare namespace QualitySettings :: const levelCount: number;
 declare namespace QualitySettings :: const names: string[];
 declare namespace QualitySettings :: function getQualityLevel(): number;
 declare namespace QualitySettings :: function levelJson(index: number): string;
-declare namespace QualitySettings :: function levelName(index: number): string;
 declare namespace QualitySettings :: function offLevelChanged(token: number): boolean;
-declare namespace QualitySettings :: function onLevelChanged(fn: (level: number) => void): () => void;
+declare namespace QualitySettings :: function onLevelChanged(f: (a0: number) => void): () => void;
 declare namespace QualitySettings :: function setQualityLevel(index: number): void;
 declare namespace QualitySettings :: function setQualityLevelByName(name: string): void;
 declare namespace QualitySettings :: let additionalLightShadows: boolean;
@@ -2309,11 +2324,11 @@ declare namespace SceneManager :: function loadSceneAsync(path: string, mode?: L
 declare namespace SceneManager :: function mergeScenes(source: Scene, destination: Scene): void;
 declare namespace SceneManager :: function moveGameObjectToScene(object: GameObject, scene: Scene): void;
 declare namespace SceneManager :: function offSceneEvent(token: number): boolean;
-declare namespace SceneManager :: function onActiveSceneChanged(fn: (from: Scene, to: Scene) => void): () => void;
+declare namespace SceneManager :: function onActiveSceneChanged(f: (a0: Scene, a1: Scene) => void): () => void;
 declare namespace SceneManager :: function onPrefabLoaded(f: (a0: string, a1: Prefab) => void): number;
 declare namespace SceneManager :: function onSceneLoadFailed(f: (a0: string, a1: string) => void): number;
-declare namespace SceneManager :: function onSceneLoaded(fn: (scene: Scene, mode: LoadSceneMode) => void): () => void;
-declare namespace SceneManager :: function onSceneUnloaded(fn: (scene: Scene) => void): () => void;
+declare namespace SceneManager :: function onSceneLoaded(f: (scene: Scene, mode: LoadSceneMode) => void): () => void;
+declare namespace SceneManager :: function onSceneUnloaded(f: (a0: Scene) => void): () => void;
 declare namespace SceneManager :: function sceneOf(object: GameObject): Scene;
 declare namespace SceneManager :: function setActiveScene(scene: Scene): boolean;
 declare namespace SceneManager :: function unloadScene(scene: Scene): boolean;
@@ -2329,7 +2344,7 @@ declare namespace Screen :: const windowHeight: number;
 declare namespace Screen :: const windowSize: WindowSize;
 declare namespace Screen :: const windowWidth: number;
 declare namespace Screen :: function offChange(token: number): boolean;
-declare namespace Screen :: function onChange(fn: () => void): () => void;
+declare namespace Screen :: function onChange(f: () => void): () => void;
 declare namespace Screen :: function setResolution(width: number, height: number, mode?: FullScreenMode, refreshRate?: number): void;
 declare namespace Screen :: function setResolution(width: number, height: number, options?: { mode?: FullScreenMode; refreshRate?: number }): void;
 declare namespace Screen :: let fullScreen: boolean;
@@ -2367,7 +2382,6 @@ declare namespace SplineLoopMode :: function name(index: number): SplineLoopMode
 declare namespace SplineLoopMode :: function parse(name: string): number;
 declare namespace Sprite
 declare namespace Sprite :: function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
-declare namespace Sprite :: function grid(texture: Texture, columns: number, rows: number, pivot?: Vector2, pixelsPerUnit?: number): Sprite[];
 declare namespace SystemInfo
 declare namespace SystemInfo :: const architecture: string;
 declare namespace SystemInfo :: const deviceName: string;
@@ -2558,18 +2572,9 @@ interface BlendSpec
 interface BlendSpec :: blendParameter: string;
 interface BlendSpec :: children: BlendChild[];
 interface Camera
-interface Camera :: layerCullDistances: number[];
 interface Camera :: readonly horizontalFieldOfView: number;
 interface Camera :: rect: Rect;
 interface Camera :: screenToWorldPoint(p: Vector3Like): Vector3;
-interface Cloth
-interface Cloth :: capsuleColliders: GameObject[];
-interface Cloth :: pinBox: ClothBox;
-interface Cloth :: pins: Vector3[];
-interface Cloth :: sphereColliders: GameObject[];
-interface ClothBox
-interface ClothBox :: max: Vector3;
-interface ClothBox :: min: Vector3;
 interface Collider
 interface Collider :: readonly gameObject: GameObject;
 interface Collision
@@ -2585,8 +2590,6 @@ interface ConditionSpec
 interface ConditionSpec :: mode: string;
 interface ConditionSpec :: parameter: string;
 interface ConditionSpec :: threshold?: number;
-interface EdgeCollider2D
-interface EdgeCollider2D :: points: Vector2Like[];
 interface FlatMeshData
 interface FlatMeshData :: normals?: NumberList;
 interface FlatMeshData :: positions: NumberList;
@@ -3039,10 +3042,6 @@ interface IronWheelEvent extends IronPointerEvent :: readonly deltaX: number;
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaY: number;
 interface LODGroup
 interface LODGroup :: setLODs(levels: LodLevel[]): LODGroup;
-interface LineRenderer
-interface LineRenderer :: positions: Vector3Like[];
-interface LineRenderer2D
-interface LineRenderer2D :: points: Vector2Like[];
 interface LodLevel
 interface LodLevel :: renderers: MeshRenderer[];
 interface LodLevel :: screenRelativeTransitionHeight: number;
@@ -3087,7 +3086,6 @@ interface ReactElementLike :: readonly __element: never;
 interface Ref<T>
 interface Ref<T> :: current: T;
 interface Scene
-interface Scene :: getRootGameObjects(): GameObject[];
 interface Scene :: serialize(): SceneData;
 interface SceneData
 interface SceneData :: name: string;
@@ -3097,8 +3095,6 @@ interface SceneObjectData :: name: string;
 interface SizeKey
 interface SizeKey :: time: number;
 interface SizeKey :: value: number;
-interface SkinnedMeshRenderer
-interface SkinnedMeshRenderer :: bones: GameObject[];
 interface StateOpts
 interface StateOpts :: speed?: number;
 interface StateOpts :: speedParameter?: string;

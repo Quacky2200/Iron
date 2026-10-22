@@ -103,7 +103,7 @@ fn render_settings_primitives_lines_and_cloth() {
             RenderSettings.skySunDirection = new Vector3(0, -1, 0);
             const cube = Primitives.create(PrimitiveType.Cube);
             const line = LineRenderer.attach(GameObject.create());
-            line.setPositions([new Vector3(0, 0, 0), new Vector3(1, 1, 1), new Vector3(2, 0, 0)]);
+            line.positions = [new Vector3(0, 0, 0), new Vector3(1, 1, 1), new Vector3(2, 0, 0)];
             line.width = 0.2;
             const cloth = Cloth.attach(GameObject.create());
             cloth.addPin(new Vector3(0, 0, 0));
@@ -127,7 +127,7 @@ fn render_settings_primitives_lines_and_cloth() {
             "[true,0.7,0.3,-1,true,3,1,0.2,0.3,30,\"sphere\",1,2,true]"
         );
         assert!(iron_render_api::settings().bloom.is_some());
-        assert!(throws(ctx, "line.setPositions(3)").starts_with("TypeError"));
+        assert!(throws(ctx, "line.positions = 3").starts_with("TypeError"));
         assert!(throws(ctx, "RenderSettings.ambientLight = 5").starts_with("TypeError"));
     });
 }

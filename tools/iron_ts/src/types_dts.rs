@@ -53,6 +53,7 @@ fn ts_type(t: &str) -> String {
         "f64s" => "number[]".into(),
         "strings" => "string[]".into(),
         "list:string" => "string[]".into(),
+        "list:f64" => "number[]".into(),
         "list:pair" => "[number, number][]".into(),
         "ptr" => "unknown".into(),
         other => {
@@ -72,6 +73,7 @@ fn ts_type(t: &str) -> String {
             } else if let Some(n) = other
                 .strip_prefix("list:value:")
                 .or_else(|| other.strip_prefix("list:record:"))
+                .or_else(|| other.strip_prefix("list:handle:"))
             {
                 format!("{n}[]")
             } else if let Some(n) = other
@@ -124,6 +126,18 @@ fn funcs(v: &Value, like: bool) -> Vec<Func> {
     arr.iter()
         .map(|f| {
             let mut func = func_of(f, like);
+            // `#[subscription(off = ..)]`: scripts get a function that stops the listener.
+            if let Some(sub) = f["subscription"].as_object() {
+                func.ret = "() => void".to_string();
+                if let Some(ts) = sub
+                    .get("ts")
+                    .and_then(|t| t.as_str())
+                    .filter(|t| !t.is_empty())
+                    && let Some(p) = func.params.first_mut()
+                {
+                    p.1 = ts.to_string();
+                }
+            }
             // `#[ts_type = ".."]`: what a property reads as, a string-literal union where the Rust
             // type is a `String`. Writing it still takes a `string` (an unknown name is ignored).
             if let Some(t) = f["tsType"].as_str()
@@ -152,6 +166,7 @@ fn funcs(v: &Value, like: bool) -> Vec<Func> {
 }
 
 fn func_of(f: &Value, like: bool) -> Func {
+    let like = like || f["like"].as_bool() == Some(true);
     Func {
         kind: f["kind"].as_str().unwrap_or("static").to_string(),
         name: f["name"].as_str().unwrap_or("").to_string(),

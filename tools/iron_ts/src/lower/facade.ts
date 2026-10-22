@@ -14,16 +14,6 @@ function __xs_Camera_rect(self: Camera, r: Rect): void {
   self.setRect(r.x, r.y, r.width, r.height);
 }
 
-//# when layerCullDistances
-function __xg_Camera_layerCullDistances(self: Camera): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < 32; i++) out.push(self.layerCullDistance(i));
-  return out;
-}
-function __xs_Camera_layerCullDistances(self: Camera, v: number[]): void {
-  for (let i = 0; i < 32; i++) self.setLayerCullDistance(i, i < v.length ? v[i]! : 0);
-}
-
 //# when horizontalFieldOfView
 function __xg_Camera_horizontalFieldOfView(self: Camera): number {
   const aspect = Screen.aspect * (self.rectWidth / self.rectHeight);
@@ -32,22 +22,6 @@ function __xg_Camera_horizontalFieldOfView(self: Camera): number {
 function __xs_Camera_horizontalFieldOfView(self: Camera, v: number): void {
   const aspect = Screen.aspect * (self.rectWidth / self.rectHeight);
   self.fieldOfView = (Math.atan(Math.tan((v * Math.PI) / 360) / aspect) * 360) / Math.PI;
-}
-
-//# when getRootGameObjects
-function __xm_Scene_getRootGameObjects(self: Scene): GameObject[] {
-  const out: GameObject[] = [];
-  const n = self.rootCount;
-  for (let i = 0; i < n; i++) out.push(self.rootAt(i));
-  return out;
-}
-
-//# when QualitySettings.names
-function __xp_QualitySettings_names(): string[] {
-  const out: string[] = [];
-  const n = QualitySettings.levelCount;
-  for (let i = 0; i < n; i++) out.push(QualitySettings.levelName(i));
-  return out;
 }
 
 //# when setLODs
@@ -63,31 +37,6 @@ function __xm_LODGroup_setLODs(self: LODGroup, levels: LodLevel[]): LODGroup {
     for (let j = 0; j < rs.length; j++) self.addLodRenderer(i, rs[j]!);
   }
   return self;
-}
-
-//# when pinBox|pins:|sphereColliders|capsuleColliders
-interface ClothBox {
-  min: Vector3;
-  max: Vector3;
-}
-function __xs_Cloth_pinBox(self: Cloth, b: ClothBox): void {
-  self.setPinBox(b.min, b.max);
-}
-function __xs_Cloth_pins(self: Cloth, v: Vector3[]): void {
-  self.clearPins();
-  for (let i = 0; i < v.length; i++) self.addPin(v[i]!);
-}
-function __xs_Cloth_sphereColliders(self: Cloth, v: GameObject[]): void {
-  for (let i = 0; i < v.length; i++) self.addSphereCollider(v[i]!);
-}
-function __xs_Cloth_capsuleColliders(self: Cloth, v: GameObject[]): void {
-  for (let i = 0; i < v.length; i++) self.addCapsuleCollider(v[i]!);
-}
-
-//# when bones:
-function __xs_SkinnedMeshRenderer_bones(self: SkinnedMeshRenderer, v: GameObject[]): void {
-  self.clearBones();
-  for (let i = 0; i < v.length; i++) self.addBone(v[i]!);
 }
 
 //# when new Material(
@@ -118,20 +67,6 @@ function __xm_Material_withTexture(self: Material, texture: Texture): Material {
   const m = self.copy();
   m.mainTexture = texture;
   return m;
-}
-
-//# when Sprite.grid
-function __xt_Sprite_grid(texture: Texture, columns: number, rows: number, pivot?: Vector2, pixelsPerUnit?: number): Sprite[] {
-  const out: Sprite[] = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < columns; c++) {
-      const s = Sprite.gridCell(texture, columns, rows, r * columns + c);
-      if (pivot !== null) s.pivot = pivot;
-      if (pixelsPerUnit !== null) s.pixelsPerUnit = pixelsPerUnit;
-      out.push(s);
-    }
-  }
-  return out;
 }
 
 //# when AnimatorController
@@ -440,44 +375,6 @@ function __xt_AnimationCurve_fromPoints(points: number[][], mode?: string): Anim
   const v: Vector2[] = [];
   for (let i = 0; i < points.length; i++) v.push(new Vector2(points[i]![0]!, points[i]![1]!));
   return AnimationCurve.fromPoints$n(v, mode ?? "linear");
-}
-
-//# when QualitySettings.onLevelChanged
-function __xt_QualitySettings_onLevelChanged(fn: (level: number) => void): () => void {
-  const token = QualitySettings.onLevelChanged$n(fn);
-  return () => { QualitySettings.offLevelChanged(token); };
-}
-
-//# when Screen.onChange
-function __xt_Screen_onChange(fn: () => void): () => void {
-  const token = Screen.onChange$n(fn);
-  return () => { Screen.offChange(token); };
-}
-
-//# when Assets.onChanged
-function __xt_Assets_onChanged(fn: (path: string) => void): () => void {
-  const token = Assets.onChanged$n(fn);
-  return () => { Assets.offChanged(token); };
-}
-
-//# when Application.onFocusChanged
-function __xt_Application_onFocusChanged(fn: (focused: boolean) => void): () => void {
-  const token = Application.onFocusChanged$n(fn);
-  return () => { Application.offFocusChanged(token); };
-}
-
-//# when SceneManager.onSceneLoaded|SceneManager.onSceneUnloaded|SceneManager.onActiveSceneChanged
-function __xt_SceneManager_onSceneLoaded(fn: (scene: Scene, mode: string) => void): () => void {
-  const token = SceneManager.onSceneLoaded$n(fn);
-  return () => { SceneManager.offSceneEvent(token); };
-}
-function __xt_SceneManager_onSceneUnloaded(fn: (scene: Scene) => void): () => void {
-  const token = SceneManager.onSceneUnloaded$n(fn);
-  return () => { SceneManager.offSceneEvent(token); };
-}
-function __xt_SceneManager_onActiveSceneChanged(fn: (from: Scene, to: Scene) => void): () => void {
-  const token = SceneManager.onActiveSceneChanged$n(fn);
-  return () => { SceneManager.offSceneEvent(token); };
 }
 
 //# when postMessage&Window|onMessage&Window|onRequest&Window|.request<&Window|.request(&Window|broadcast&Window

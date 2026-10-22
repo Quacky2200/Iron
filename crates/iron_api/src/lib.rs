@@ -50,6 +50,9 @@ pub enum Ty {
     Strs,
     /// An array of a value class (its TypeScript name, and that name with `[]`).
     Values(&'static str, &'static str),
+    /// An array of handles (the TypeScript name, and that name with `[]`): the engine reads the
+    /// 64-bit ids (`script_handles`).
+    Handles(&'static str, &'static str),
     /// A closure the engine keeps and calls later: the manifest signature (`fn(f64,string):void`)
     /// and the TypeScript type (`(a: number, b: string) => void`).
     Callback(&'static str, &'static str),
@@ -83,7 +86,7 @@ impl Ty {
             Ty::Str => "string",
             Ty::F64s => "number[]",
             Ty::Strs => "string[]",
-            Ty::Values(_, arr) => arr,
+            Ty::Values(_, arr) | Ty::Handles(_, arr) => arr,
             Ty::Callback(_, ts) => ts,
             Ty::Enum(name) | Ty::Record(name) => name,
             Ty::List(_, arr) => arr,
@@ -106,6 +109,7 @@ impl Ty {
             Ty::F64s => "f64s".into(),
             Ty::Strs => "strings".into(),
             Ty::Values(n, _) => format!("values:{n}"),
+            Ty::Handles(n, _) => format!("handles:{n}"),
             Ty::Callback(sig, _) => (*sig).into(),
             Ty::Enum(n) => format!("enum:{n}"),
             Ty::Record(n) => format!("record:{n}"),
@@ -184,6 +188,13 @@ pub struct Function {
     /// `#[ts_type = ".."]`: the TypeScript type of a property, when it is narrower than the Rust
     /// type (a string-literal union for a `String`).
     pub ts_type: Option<&'static str>,
+    /// `#[like]`: the value parameters of this function are declared `<Value>Like` (a plain
+    /// object does), whatever the namespace says.
+    pub like: bool,
+    /// `#[subscription(off = ..)]`: the call returns a function that stops the listener (the
+    /// script name of the stopping function; the declared type of the callback, or `""`). The C
+    /// function returns a token and the stopping function takes it.
+    pub subscription: Option<(&'static str, &'static str)>,
 }
 
 /// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
@@ -277,6 +288,9 @@ pub fn symbol(name: &str) -> Option<usize> {
     }
     if name == "iron_api_result_str" {
         return Some(iron_api_result_str as *const () as usize);
+    }
+    if name == "iron_api_result_id" {
+        return Some(iron_api_result_id as *const () as usize);
     }
     if name == "iron_api_result_none" {
         return Some(iron_api_result_none as *const () as usize);
@@ -416,6 +430,25 @@ pub unsafe fn script_strs(p: *const u8) -> Vec<String> {
         (0..a.len as usize)
             .map(|i| script_str(*(a.data as *const *const u8).add(i)).into_owned())
             .collect()
+    }
+}
+
+/// The 64-bit ids of a script array of handles (`GameObject[]`). A null array is empty.
+///
+/// # Safety
+/// `p` must be null or a live script array of handles that stays alive and unchanged while this
+/// runs.
+pub unsafe fn script_handles(p: *const u8) -> Vec<u64> {
+    if p.is_null() {
+        return Vec::new();
+    }
+    // SAFETY: by contract: header, length, capacity, then the data pointer of 8-byte slots.
+    unsafe {
+        let a = &*(p as *const ScriptArray);
+        if a.len <= 0 || a.data.is_null() {
+            return Vec::new();
+        }
+        std::slice::from_raw_parts(a.data as *const u64, a.len as usize).to_vec()
     }
 }
 
@@ -652,6 +685,22 @@ pub unsafe extern "C" fn iron_api_result_str(i: u32, out_len: *mut i64) -> *cons
     })
 }
 
+thread_local! {
+    static IDS: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Hands a `Vec` of handles to compiled code: the 64-bit ids are kept here, per thread, and the
+/// compiled call reads them with `iron_api_result_id(i)` straight after the call.
+pub fn return_ids(ids: Vec<u64>) {
+    IDS.with(|f| *f.borrow_mut() = ids);
+}
+
+/// The `i`-th id of the last [`return_ids`] (0, the null handle, past the end).
+#[unsafe(no_mangle)]
+pub extern "C" fn iron_api_result_id(i: u32) -> u64 {
+    IDS.with(|f| f.borrow().get(i as usize).copied().unwrap_or(0))
+}
+
 /// The `i`-th number of the last [`return_flat`] (0 past the end).
 #[unsafe(no_mangle)]
 pub extern "C" fn iron_api_result(i: u32) -> f64 {
@@ -819,7 +868,7 @@ fn function_json(f: &Function) -> String {
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -848,7 +897,13 @@ fn function_json(f: &Function) -> String {
             ""
         },
         f.ts_type
-            .map_or(String::new(), |t| format!(",\"tsType\":{}", json_str(t)))
+            .map_or(String::new(), |t| format!(",\"tsType\":{}", json_str(t))),
+        if f.like { ",\"like\":true" } else { "" },
+        f.subscription.map_or(String::new(), |(off, ts)| format!(
+            ",\"subscription\":{{\"off\":{},\"ts\":{}}}",
+            json_str(off),
+            json_str(ts)
+        ))
     )
 }
 

@@ -1794,6 +1794,23 @@ impl<'a> Lowerer<'a> {
                     })
                 })
             };
+            // `undefined` for an optional parameter is the same as leaving it out (`grid(t, 2, 1,
+            // undefined, 10)`).
+            let expr = expr.filter(|e| {
+                !(i >= opt_from
+                    && matches!(e, Expression::Identifier(id) if id.name == "undefined")
+                    && matches!(
+                        pt,
+                        ExtTy::Value(_)
+                            | ExtTy::F64
+                            | ExtTy::F32
+                            | ExtTy::Handle(_)
+                            | ExtTy::F64Arr
+                            | ExtTy::StrArr
+                            | ExtTy::ValueArr(_)
+                            | ExtTy::HandleArr(_)
+                    ))
+            });
             let Some(e) = expr else {
                 // Left out: the default the API names, else false, 0 or an empty string.
                 if let Some(Some(d)) = f.defaults.get(skip + i) {
@@ -2069,9 +2086,12 @@ impl<'a> Lowerer<'a> {
             }
             ExtTy::Enum(_) => (ExtTy::I32, None),
             ExtTy::Record(_) => (ExtTy::Void, None),
-            ExtTy::ValueList(_) | ExtTy::RecordList(_) | ExtTy::StrList | ExtTy::EnumList(_) => {
-                (ExtTy::U32, None)
-            }
+            ExtTy::ValueList(_)
+            | ExtTy::RecordList(_)
+            | ExtTy::StrList
+            | ExtTy::EnumList(_)
+            | ExtTy::F64List
+            | ExtTy::HandleList(_) => (ExtTy::U32, None),
             ExtTy::Opt(inner) => match &**inner {
                 ExtTy::Value(vn) => {
                     let fields = &self.manifest.values[vn];
@@ -2239,6 +2259,62 @@ impl<'a> Lowerer<'a> {
                 let text = self.emit_extern(&name_fn, vec![index]);
                 body.push(Stmt::Eval(mk(
                     ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(arr), text]),
+                    Ty::Void,
+                )));
+                body.push(Stmt::Assign(
+                    i,
+                    mk(
+                        ExprKind::Bin(BinOp::Add, Box::new(iv), Box::new(num(1.0))),
+                        Ty::Num,
+                    ),
+                ));
+                pre.push(Stmt::Loop(label, body));
+                let result = self.var_expr(arr);
+                return mk(ExprKind::Seq(pre, Box::new(result)), arr_ty);
+            }
+            // A list of numbers or handles: the call returns the count; the numbers are in the
+            // buffer and the ids behind `iron_api_result_id`.
+            ExtTy::F64List | ExtTy::HandleList(_) => {
+                let arr_ty = self.ext_ir(&f.ret);
+                let count = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(
+                    count,
+                    mk(ExprKind::CallExtern(idx, args), Ty::Num),
+                ));
+                let arr = self.new_local(arr_ty.clone());
+                pre.push(Stmt::Assign(
+                    arr,
+                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), arr_ty.clone()),
+                ));
+                let i = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(i, num(0.0)));
+                let label = self.new_label();
+                let iv = self.var_expr(i);
+                let done = mk(
+                    ExprKind::Cmp(
+                        CmpOp::Ge,
+                        Box::new(iv.clone()),
+                        Box::new(self.var_expr(count)),
+                    ),
+                    Ty::Bool,
+                );
+                let mut body = vec![Stmt::If(done, vec![Stmt::Break(label)], vec![])];
+                let item = match &f.ret {
+                    ExtTy::HandleList(hn) => {
+                        let id = ExternFn {
+                            rest: false,
+                            optional_from: usize::MAX,
+                            defaults: Vec::new(),
+                            symbol: "iron_api_result_id".into(),
+                            params: vec![("i".into(), ExtTy::U32)],
+                            ret: ExtTy::Handle(hn.clone()),
+                        };
+                        self.emit_extern(&id, vec![iv.clone()])
+                    }
+                    _ => self.flat_result(iv.clone()),
+                };
+                body.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(arr), item]),
                     Ty::Void,
                 )));
                 body.push(Stmt::Assign(

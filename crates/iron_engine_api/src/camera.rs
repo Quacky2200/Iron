@@ -349,19 +349,17 @@ pub mod camera_api {
             with(self, |d| d.culling_mask = mask as i64 as u32);
         }
 
-        /// How far away things on a layer are still drawn (0: out to `farClipPlane`).
-        pub fn layer_cull_distance(self, layer: f64) -> f64 {
-            with(self, |d| {
-                d.layer_cull_distances.get(layer as usize).copied()
-            })
-            .flatten()
-            .unwrap_or(0.0)
+        /// How far away things on each of the 32 layers are still drawn (0: out to
+        /// `farClipPlane`). A list shorter than 32 sets the rest to 0.
+        #[property]
+        pub fn layer_cull_distances(self) -> Vec<f64> {
+            with(self, |d| d.layer_cull_distances.to_vec()).unwrap_or_else(|| vec![0.0; 32])
         }
 
-        pub fn set_layer_cull_distance(self, layer: f64, distance: f64) {
+        pub fn set_layer_cull_distances(self, distances: &[f64]) {
             with(self, |d| {
-                if let Some(x) = d.layer_cull_distances.get_mut(layer as usize) {
-                    *x = distance.max(0.0);
+                for (i, x) in d.layer_cull_distances.iter_mut().enumerate() {
+                    *x = distances.get(i).copied().unwrap_or(0.0).max(0.0);
                 }
             });
         }

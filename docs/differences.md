@@ -38,6 +38,17 @@ They were TypeScript (`js/engine`, and a compiled copy in `facade.ts`); they are
 | `Shapes` | The namespace `Shapes`; `polygon(...points)` takes any number of points or one `...array` | A class of statics | Plan decision 5 |
 | `NaN` arguments | `Shapes.bezier(.., 0)` and a `NaN` `t` give NaN points, as in JavaScript | The compiled copy answered 0 for these (a typed-array read out of range is 0) | Edge cases outside every example |
 
+## Lists in the engine API (2026-10-22)
+
+List properties (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` / `capsuleColliders`, `Camera.layerCullDistances`, `LineRenderer.positions`, `LineRenderer2D.points`, `EdgeCollider2D.points`) are native getters and setters.
+
+| Area | Iron | Before | Why |
+|---|---|---|---|
+| Assigning a list | Replaces the list; reading gives a copy, so `cam.layerCullDistances[3] = 5` changes the copy only (assign the array back) | The same for the numbers; `Cloth.sphereColliders = [..]` and `capsuleColliders = [..]` appended to the old ones | A property set is a replace, as in TypeScript |
+| `Cloth.pinBox` | `ClothBox | null` (`{ min, max }` or `null` to clear), plain objects work | `ClothBox` with `Vector3` fields, `clearPinBox()` | One record property |
+| `Sprite.grid(.., pivot?, pixelsPerUnit?)` | A left-out (or `undefined`) pivot or pixels-per-unit keeps the sprite's own | The facade compared them with `null`, so a left-out value overwrote them with `undefined` | Fixed in the native version |
+| `QualitySettings.names`, `Scene.getRootGameObjects()` | Native lists; `levelCount`, `levelName(i)` are gone (`names.length`, `names[i]`) | Facade loops over those | |
+
 ## Intl backends (compiled TypeScript)
 
 | Area | Browser / bun | Iron today | Notes |

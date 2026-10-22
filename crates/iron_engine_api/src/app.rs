@@ -300,6 +300,7 @@ pub mod application_api {
 
     /// Calls `f(focused)` when the window gains or loses focus; returns a token for
     /// `offFocusChanged` (the TypeScript returned an unsubscribe function).
+    #[subscription(off = "off_focus_changed")]
     pub fn on_focus_changed(f: iron_api::Callback<(bool,)>) -> u32 {
         STATE.with(|s| s.borrow_mut().focus_listeners.add(f))
     }

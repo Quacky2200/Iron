@@ -378,3 +378,30 @@ fn record_properties_take_object_literals_keep_the_keys_they_write_and_read_back
         );
     });
 }
+
+// M9-TS-3350
+//
+// Lists of handles, numbers and values as properties of the engine API: `bones`, the cloth's
+// colliders and pins, `layerCullDistances`, `getRootGameObjects()`, `QualitySettings.names` and a
+// `Vector2Like[]` setter. A setter replaces the list.
+#[test]
+fn handle_and_number_lists_are_native_properties() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_nativeLists()),
+            "2|true|1|2|true|3|true|3|true|32|2|0|true|true|3"
+        );
+    });
+}
+
+// M9-TS-3351
+//
+// A listener function returns the function that stops it (`Screen.onChange`,
+// `QualitySettings.onLevelChanged`, `SceneManager.onSceneLoaded`, ...): written by the compiler over
+// the token-returning native and its stopping function; stopping twice is harmless.
+#[test]
+fn listeners_return_an_unsubscribe_function() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_unsubscribes()), "0|2|0");
+    });
+}

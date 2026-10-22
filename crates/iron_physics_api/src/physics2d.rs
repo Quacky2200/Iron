@@ -818,6 +818,12 @@ pub mod physics2d_api {
         }
 
         /// The outline in the object's space. Concave outlines are filled in to their convex hull.
+        #[property]
+        pub fn points(self) -> Vec<V2> {
+            polygon_points(self.0)
+        }
+
+        #[like]
         pub fn set_points(self, points: &[V2]) {
             set_polygon_points(self.0, points);
         }
@@ -911,6 +917,12 @@ pub mod physics2d_api {
 
         /// A line through the points (ground, walls, slopes): for static scenery and
         /// kinematic platforms, not falling bodies.
+        #[property]
+        pub fn points(self) -> Vec<V2> {
+            polygon_points(self.0)
+        }
+
+        #[like]
         pub fn set_points(self, points: &[V2]) {
             set_polygon_points(self.0, points);
         }

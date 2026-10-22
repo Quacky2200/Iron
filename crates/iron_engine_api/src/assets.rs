@@ -106,6 +106,7 @@ pub mod assets_api {
 
     /// Calls `f(paths)` when asset files change on disk (the paths, one per line); returns a token
     /// for `offChanged`.
+    #[subscription(off = "off_changed")]
     pub fn on_changed(f: Callback<(String,)>) -> u32 {
         STATE.with(|s| s.borrow_mut().listeners.add(f))
     }

@@ -439,7 +439,7 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   kind each): `Light`, `PlaneRenderer`, `MeshRenderer`, `SkinnedMeshRenderer`, `Mirror`, `ReflectionProbe`, `LODGroup`, `WorldPanel`,
   `SpriteRenderer`, `LineRenderer2D`. The host reads them with `iron_render_api::lights()`, `mesh_renderers()`, ... (`Vec<(Ref, Data)>`)
   and removes the components of destroyed objects with `iron_render_api::destroyed(&objects)`. `Camera` gains `clearFlags`, `rect`,
-  `cullingMask`, `layerCullDistance(i)`, `layerCullSpherical`, `antialiasing`, `targetTexture`, `sceneGrid`.
+  `cullingMask`, `layerCullDistances`, `layerCullSpherical`, `antialiasing`, `targetTexture`, `sceneGrid`.
 - **Assets** (handles with asset kinds): `Texture` (`Texture.load(src, { filterMode, wrapMode, mipmaps, anisoLevel, linear })`,
   `Texture.create(w, h, colors)`, `Texture.createRenderTexture(w, h)`), `Mesh` (`Mesh.create({ vertices, triangles, normals?, uv? })`,
   built-in meshes by name), `Material` (`new Material({ color, metallic, ... })` or `Material.create({ .. })`, `copy()`, `withColor(c)`),
@@ -807,6 +807,24 @@ only have flat fields can still be plain results (the buffer form above); a reco
 `TextureOptions` and `WindowOptions` are generated from `Texture.load` / `create` and `Window.create` (`#[options(name = ..)]`). Natives that only
 fed the facade are gone: `Screen.resolutionCount` / `resolutionWidth(i)` / `resolutionHeight(i)` / `resolutionRefreshRate(i)` and
 `currentResolutionWidth` / `Height` / `RefreshRate`.
+
+**Lists (2026-10-22, plan phase 2c, first part).** `Vec<f64>` and `Vec<Handle>` are results (`list:f64`, `list:handle:X`: the count, then the numbers in the
+result buffer or the 64-bit ids behind `iron_api_result_id(i)`), `&[Handle]` is a parameter (`handles:X`, read with `script_handles`: the
+script array of ids). A getter that returns a list pairs with the setter that takes the array (`pair_ty` in the macro), so it is one
+property (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` / `capsuleColliders`, `Camera.layerCullDistances`,
+`LineRenderer.positions`, `LineRenderer2D.points`, `EdgeCollider2D.points`, `PolygonCollider2D.points`, `QualitySettings.names`);
+`Scene.getRootGameObjects()` and `Sprite.grid(..)` return handle lists. `#[like]` on a function declares its value parameters
+`<Value>Like` (a plain `{ x, y }` object does) without making the whole namespace `like`. A compiled call that passes `undefined` for
+an optional number, value, handle or array parameter leaves it out. Tests: `M9-API-1634`, `M9-API-1635`, `M9-TS-3350`.
+
+**Subscriptions (2026-10-22, plan phase 2d, first part).** A function that takes one `Callback` and returns its `u32` token can say
+`#[subscription(off = "off_change")]` (optionally `ts = "(scene: Scene, mode: LoadSceneMode) => void"` for a callback type the
+wire types cannot spell). The C symbol and the manifest keep the token (`"subscription": { "off": "offChange", "ts": ".." }`); scripts
+get a function that calls `off_change(token)`: QuickJS builds it in the binding, compiled code gets a small function written from the
+manifest by `facade::extend_source` (`__xt_Screen_onChange` over `Screen.onChange$n` and `Screen.offChange`), and the declaration
+returns `() => void`. `Screen.onChange`, `QualitySettings.onLevelChanged`, `Assets.onChanged`, `Application.onFocusChanged` and
+`SceneManager.onSceneLoaded` / `onSceneUnloaded` / `onActiveSceneChanged` use it; the token forms (`input.onKeyDown`, window
+listeners) are unchanged. Tests: `M9-API-1636`, `M9-TS-3351`.
 
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;

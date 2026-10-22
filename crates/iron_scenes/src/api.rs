@@ -122,16 +122,22 @@ pub mod scene_manager_api {
 
     /// Calls `f(scene, mode)` after a scene loads (`mode` is `"single"` or `"additive"`). Returns
     /// a token for `offSceneEvent` (the TypeScript returned an unsubscribe function).
+    #[subscription(
+        off = "off_scene_event",
+        ts = "(scene: Scene, mode: LoadSceneMode) => void"
+    )]
     pub fn on_scene_loaded(f: Callback<(HandleArg<SceneRef>, String)>) -> u32 {
         manager::on_loaded(f)
     }
 
     /// Calls `f(scene)` after a scene is unloaded.
+    #[subscription(off = "off_scene_event")]
     pub fn on_scene_unloaded(f: Callback<(HandleArg<SceneRef>,)>) -> u32 {
         manager::on_unloaded(f)
     }
 
     /// Calls `f(previous, next)` when the active scene changes.
+    #[subscription(off = "off_scene_event")]
     pub fn on_active_scene_changed(f: Callback<(HandleArg<SceneRef>, HandleArg<SceneRef>)>) -> u32 {
         manager::on_active_changed(f)
     }
@@ -229,6 +235,11 @@ pub mod scene_manager_api {
                 .get(index as usize)
                 .copied()
                 .unwrap_or_else(none)
+        }
+
+        /// The objects at the top of the scene's hierarchy, in order.
+        pub fn get_root_game_objects(self) -> Vec<ObjectId> {
+            manager::roots(self.0)
         }
 
         /// Everything in it as scene data (JSON text).

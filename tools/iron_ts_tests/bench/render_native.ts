@@ -38,9 +38,9 @@ export function textures(): string {
   const rt = Texture.createRenderTexture(64, 32);
   const cam = new GameObject("Cam").addComponent(Camera, { targetTexture: rt, clearFlags: "skybox", cullingMask: 3 });
   cam.setRect(0.5, 0, 0.5, 1);
-  cam.setLayerCullDistance(4, 30);
+  cam.layerCullDistances = [0, 0, 0, 0, 30];
   const mat = Material.create({ mainTexture: a });
-  return `${a.filterMode}|${a.anisoLevel}|${a.isLoaded}|${b.width}x${b.height}|${rt.isRenderTexture}|${rt.width}|${cam.targetTexture.width}|${cam.clearFlags}|${cam.cullingMask}|${cam.rectX}|${cam.layerCullDistance(4)}|${mat.mainTexture.src}`;
+  return `${a.filterMode}|${a.anisoLevel}|${a.isLoaded}|${b.width}x${b.height}|${rt.isRenderTexture}|${rt.width}|${cam.targetTexture.width}|${cam.clearFlags}|${cam.cullingMask}|${cam.rectX}|${cam.layerCullDistances[4]}|${mat.mainTexture.src}`;
 }
 
 export function sprites(): string {
@@ -133,7 +133,7 @@ export function particles(): string {
 export function lines(): string {
   const go = new GameObject("Rope");
   const lr = go.addComponent(LineRenderer, { width: 0.2, sides: 6, smoothing: 1 });
-  lr.setPositions([new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(1, 1, 0)]);
+  lr.positions = [new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(1, 1, 0)];
   lr.redraw();
   return `${lr.positionCount}|${lr.positionAt(1).x}`;
 }
@@ -143,7 +143,7 @@ export function cloth(): string {
   go.addComponent(MeshRenderer, { mesh: "plane" });
   const c = go.addComponent(Cloth, { bendingStiffness: 0.9, useGravity: false });
   c.addPin(new Vector3(0, 0, 0));
-  c.setPinBox(new Vector3(-1, 0, -1), new Vector3(1, 0.1, -0.9));
+  c.pinBox = { min: new Vector3(-1, 0, -1), max: new Vector3(1, 0.1, -0.9) };
   c.rebuild();
   return `${c.bendingStiffness}|${c.useGravity}`;
 }
@@ -195,7 +195,7 @@ export function quality(): string {
   QualitySettings.antiAliasing = 3;
   QualitySettings.shadows = "bogus";
   QualitySettings.setQualityLevel(3);
-  return `${low}|${QualitySettings.antiAliasing}|${QualitySettings.getQualityLevel()}|${QualitySettings.levelName(1)}|${QualitySettings.levelCount}|${QualitySettings.shadows}`;
+  return `${low}|${QualitySettings.antiAliasing}|${QualitySettings.getQualityLevel()}|${QualitySettings.names[1]}|${QualitySettings.names.length}|${QualitySettings.shadows}`;
 }
 
 export function model(): string {
@@ -215,6 +215,6 @@ export function others(): string {
   const plane = go.addComponent(PlaneRenderer, { size: new Vector2(4, 2) });
   const panel = go.addComponent(WorldPanel, { width: 400 });
   const stroke = go.addComponent(LineRenderer2D, { width: 0.2 });
-  stroke.setPoints([new Vector2(0, 0), new Vector2(1, 1)]);
+  stroke.points = [new Vector2(0, 0), new Vector2(1, 1)];
   return `${mirror.cullingMask}|${probe.resolution}|${probe.refreshMode}|${plane.size.x}|${panel.worldWidth.toFixed(1)}|${stroke.pointCount}|${stroke.pointAt(1).y}`;
 }

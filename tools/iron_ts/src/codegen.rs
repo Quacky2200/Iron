@@ -48,6 +48,8 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
         | ExtTy::RecordList(_)
         | ExtTy::StrList
         | ExtTy::EnumList(_)
+        | ExtTy::F64List
+        | ExtTy::HandleList(_)
         | ExtTy::Opt(_)
         | ExtTy::Void
         | ExtTy::Str

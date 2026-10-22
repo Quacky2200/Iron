@@ -145,6 +145,17 @@ function __xm_Window_ask0_@K@<U>(self: Window, name: string, timeoutMs?: number)
 }
 "#;
 
+/// The TypeScript type of a callback parameter at the engine boundary.
+fn ext_ts(t: &crate::ir::ExtTy) -> String {
+    use crate::ir::ExtTy;
+    match t {
+        ExtTy::Bool => "boolean".into(),
+        ExtTy::Str | ExtTy::Enum(_) => "string".into(),
+        ExtTy::Handle(n) => n.clone(),
+        _ => "number".into(),
+    }
+}
+
 /// The program with the TypeScript names that are another name natively (`AnimatorController` is
 /// `AnimationController`) renamed, and the facade chunks it needs appended.
 pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<String> {
@@ -174,6 +185,30 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
         {
             extra.push_str(body);
         }
+    }
+    // `#[subscription(off = ..)]` functions: the call returns a function that stops the listener,
+    // written over the token-returning native (`Screen.onChange$n`) and the stopping function.
+    let mut subs: Vec<(&(String, String), &String)> = manifest.subscriptions.iter().collect();
+    subs.sort();
+    for ((ns, name), off) in subs {
+        if !src.contains(&format!("{ns}.{name}")) {
+            continue;
+        }
+        let Some(f) = manifest.namespaces.get(ns).and_then(|n| n.get(name)) else {
+            continue;
+        };
+        let Some((_, crate::ir::ExtTy::Fn(ps, _))) = f.params.first() else {
+            continue;
+        };
+        let params: Vec<String> = ps
+            .iter()
+            .enumerate()
+            .map(|(i, p)| format!("a{i}: {}", ext_ts(p)))
+            .collect();
+        extra.push_str(&format!(
+            "\nfunction __xt_{ns}_{name}(fn: ({}) => void): () => void {{\n  const token = {ns}.{name}$n(fn);\n  return () => {{ {ns}.{off}(token); }};\n}}\n",
+            params.join(", ")
+        ));
     }
     for r in request_types(src, ".request<") {
         extra.push_str(

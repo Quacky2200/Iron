@@ -556,6 +556,7 @@ pub mod screen_api {
     }
 
     /// Calls `f()` after the size or scale changes; returns a token for `offChange`.
+    #[subscription(off = "off_change")]
     pub fn on_change(f: Callback<()>) -> u32 {
         st(|s| s.on_change.add(f))
     }
@@ -659,20 +660,10 @@ pub enum ShadowKind {
 pub mod quality_api {
     use super::*;
 
-    /// How many levels there are, lowest first.
+    /// The names of the levels, lowest first.
     #[property]
-    pub fn level_count() -> u32 {
-        st(|s| s.quality.levels.len() as u32)
-    }
-
-    pub fn level_name(index: f64) -> String {
-        st(|s| {
-            s.quality
-                .levels
-                .get(index as usize)
-                .map(|l| l.name.clone())
-                .unwrap_or_default()
-        })
+    pub fn names() -> Vec<String> {
+        st(|s| s.quality.levels.iter().map(|l| l.name.clone()).collect())
     }
 
     /// A level's settings as JSON text (`{ name, antiAliasing, renderScale, ... }`).
@@ -718,6 +709,7 @@ pub mod quality_api {
     }
 
     /// Calls `f(level)` after `setQualityLevel`; returns a token for `offLevelChanged`.
+    #[subscription(off = "off_level_changed")]
     pub fn on_level_changed(f: Callback<(f64,)>) -> u32 {
         st(|s| s.quality.on_level.add(f))
     }

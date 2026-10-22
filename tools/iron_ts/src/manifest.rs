@@ -60,6 +60,9 @@ pub struct Manifest {
     /// Other script names for a class or an enum: alias -> target (`AnimatorController` ->
     /// `AnimationController`).
     pub aliases: HashMap<String, String>,
+    /// Functions that take a callback and return a token (`Screen.onChange`): (namespace, name) ->
+    /// the name of the function that stops the listener. Scripts get a function that does it.
+    pub subscriptions: HashMap<(String, String), String>,
 }
 
 /// An enum of the engine API.
@@ -167,6 +170,10 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
                 ExtTy::StrList
             } else if let Some(inner) = other.strip_prefix("opt:") {
                 ExtTy::Opt(Box::new(ext_ty(inner)?))
+            } else if other == "list:f64" {
+                ExtTy::F64List
+            } else if let Some(name) = other.strip_prefix("list:handle:") {
+                ExtTy::HandleList(name.to_string())
             } else if let Some(name) = other.strip_prefix("list:enum:") {
                 ExtTy::EnumList(name.to_string())
             } else if let Some(name) = other.strip_prefix("list:value:") {
@@ -274,6 +281,10 @@ impl Manifest {
             .ok_or("manifest: missing `functions`")?
         {
             let (name, kind, func) = self.parse_fn(f)?;
+            if let Some(off) = f["subscription"]["off"].as_str() {
+                self.subscriptions
+                    .insert((ns.clone(), name.clone()), off.to_string());
+            }
             if kind == "get" || kind == "set" {
                 let p = self
                     .ns_props

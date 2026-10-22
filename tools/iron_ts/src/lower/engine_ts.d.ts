@@ -96,14 +96,10 @@ interface SceneData {
   objects: SceneObjectData[];
 }
 interface Scene {
-  getRootGameObjects(): GameObject[];
   serialize(): SceneData;
 }
 declare namespace SceneManager {
   function loadSceneAsync(path: string, mode?: LoadSceneMode): Promise<Scene>;
-  function onSceneLoaded(fn: (scene: Scene, mode: LoadSceneMode) => void): () => void;
-  function onSceneUnloaded(fn: (scene: Scene) => void): () => void;
-  function onActiveSceneChanged(fn: (from: Scene, to: Scene) => void): () => void;
 }
 declare namespace Prefab {
   /** Reads a prefab file (JSON) from the game folder; rejects when it is missing or not a prefab. */
@@ -113,7 +109,6 @@ declare namespace Prefab {
 // ---- Rendering ---------------------------------------------------------------------------------
 
 interface Camera {
-  layerCullDistances: number[];
   readonly horizontalFieldOfView: number;
   /** The world point at a screen point (UI pixels from the top-left), `z` units in front of the camera. */
   screenToWorldPoint(p: Vector3Like): Vector3;
@@ -129,7 +124,6 @@ interface Model {
   whenLoaded(): Promise<Model>;
 }
 declare namespace Sprite {
-  function grid(texture: Texture, columns: number, rows: number, pivot?: Vector2, pixelsPerUnit?: number): Sprite[];
   function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
 }
 interface LodLevel {
@@ -138,18 +132,6 @@ interface LodLevel {
 }
 interface LODGroup {
   setLODs(levels: LodLevel[]): LODGroup;
-}
-interface LineRenderer2D {
-  points: Vector2Like[];
-}
-
-declare namespace QualitySettings {
-  const names: string[];
-  function onLevelChanged(fn: (level: number) => void): () => void;
-}
-
-declare namespace Screen {
-  function onChange(fn: () => void): () => void;
 }
 
 // ---- Windows -----------------------------------------------------------------------------------
@@ -198,12 +180,6 @@ declare namespace Window {
 declare namespace input {
   function gamepads(): Gamepad[];
   function on(type: "gamepadconnected" | "gamepaddisconnected", fn: (e: { gamepad: Gamepad }) => void): () => void;
-}
-declare namespace Assets {
-  function onChanged(fn: (path: string) => void): () => void;
-}
-declare namespace Application {
-  function onFocusChanged(fn: (focused: boolean) => void): () => void;
 }
 
 interface FontFace {
@@ -298,19 +274,6 @@ declare namespace Light {
   /** A light meter that counts shadows: each light only if a physics ray from `point` reaches it (walls need colliders). */
   function measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number>;
 }
-interface SkinnedMeshRenderer {
-  bones: GameObject[];
-}
-interface ClothBox {
-  min: Vector3;
-  max: Vector3;
-}
-interface Cloth {
-  pinBox: ClothBox;
-  pins: Vector3[];
-  sphereColliders: GameObject[];
-  capsuleColliders: GameObject[];
-}
 interface Camera {
   rect: Rect;
 }
@@ -347,12 +310,6 @@ interface ParticleSystem {
   shape: ParticleShapeSpec;
   colorOverLifetime: ColorKey[];
   sizeOverLifetime: SizeKey[];
-}
-interface EdgeCollider2D {
-  points: Vector2Like[];
-}
-interface LineRenderer {
-  positions: Vector3Like[];
 }
 interface AudioSource {
   playOneShot(clip: Sound | string, volumeScale?: number): void;
