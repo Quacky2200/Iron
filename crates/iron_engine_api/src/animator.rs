@@ -420,14 +420,91 @@ pub mod animation_node_api {
     }
 }
 
+/// The speed options of a state made from a description.
+fn apply_state_options(n: NodeRef, opts: Option<StateOptionsData>) {
+    if let Some(o) = opts {
+        node(n, |n| {
+            if let Some(v) = o.speed {
+                n.speed = Some(v);
+            }
+            if let Some(p) = o.speed_parameter {
+                n.speed_parameter = non_empty(&p);
+            }
+        });
+    }
+}
+
 fn controller<R>(c: ControllerRef, f: impl FnOnce(&mut Controller) -> R) -> Option<R> {
     with_world(|w| w.graphs.controller_mut(ControllerId(c.0 as u32)).map(f))
 }
 
+/// A clip placed in a blend tree.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlendChildSpec {
+    pub motion: ClipRef,
+    pub threshold: f64,
+    pub time_scale: Option<f64>,
+}
+
+/// A state that blends clips along a float parameter.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlendSpecData {
+    pub blend_parameter: String,
+    pub children: Vec<BlendChildSpec>,
+}
+
+/// The options of a state.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StateOptionsData {
+    pub speed: Option<f64>,
+    pub speed_parameter: Option<String>,
+}
+
+/// A test of a parameter.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConditionData {
+    pub parameter: String,
+    pub mode: String,
+    pub threshold: Option<f64>,
+}
+
+/// A move from a state to another.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TransitionData {
+    pub from: String,
+    pub to: String,
+    pub conditions: Option<Vec<ConditionData>>,
+    pub has_exit_time: Option<bool>,
+    pub exit_time: Option<f64>,
+    pub duration: Option<f64>,
+    pub offset: Option<f64>,
+}
+
 #[iron_api(namespace = "AnimationController", quickjs, handles(
     AnimationController = ControllerRef, AnimationParameter = ParameterRef,
-    AnimationNode = NodeRef, AnimationTransition = TransitionRef, AnimationBuilder = BuilderRef),
-    aliases(AnimatorController = AnimationController))]
+    AnimationNode = NodeRef, AnimationTransition = TransitionRef, AnimationBuilder = BuilderRef,
+    AnimationClip = ClipRef),
+    aliases(AnimatorController = AnimationController),
+    records(
+        /// A clip in a blend tree, placed at a parameter value (`timeScale` is 1 by default).
+        BlendChild = BlendChildSpec [motion: AnimationClip, threshold: f64, time_scale: Option<f64>],
+        /// A state that blends clips along a float parameter.
+        BlendSpec = BlendSpecData [blend_parameter: string, children: Vec<BlendChild>],
+        /// The speed of a state, and a float parameter that multiplies it.
+        StateOpts = StateOptionsData [speed: Option<f64>, speed_parameter: Option<string>],
+        /// When a parameter passes a test (`mode`: `if`, `ifNot`, `greater`, `less`, `equals` or `notEqual`).
+        ConditionSpec = ConditionData [parameter: string, mode: string, threshold: Option<f64>],
+        /// A move from a state (or `Any`) to another: all its conditions must hold.
+        TransitionSpec = TransitionData [
+            from: string,
+            to: string,
+            conditions: Option<Vec<ConditionSpec>>,
+            has_exit_time: Option<bool>,
+            exit_time: Option<f64>,
+            duration: Option<f64>,
+            offset: Option<f64>
+        ]
+    ))]
 pub mod animation_controller_api {
     use super::*;
 
@@ -459,6 +536,85 @@ pub mod animation_controller_api {
                 c.parameters
                     .push(iron_animation::ParameterId(parameter.0 as u32))
             });
+        }
+
+        /// Adds a parameter (`type`: `float`, `int`, `bool` or `trigger`; the default is a
+        /// number, a flag is 0 or 1) and returns the controller, so calls chain.
+        #[js_name = "addParameter"]
+        #[optional(default_value)]
+        pub fn add_parameter_named(
+            self,
+            name: &str,
+            type_name: &str,
+            default_value: f64,
+        ) -> ControllerRef {
+            self.add_parameter(ParameterRef::create(name, type_name, default_value));
+            self
+        }
+
+        /// Adds a state that plays a clip and returns the controller.
+        #[js_name = "addState"]
+        #[optional(opts)]
+        #[ts_param(opts = "StateOpts")]
+        pub fn add_state_clip(
+            self,
+            name: &str,
+            motion: ClipRef,
+            opts: Option<StateOptionsData>,
+        ) -> ControllerRef {
+            let n = NodeRef::create(name, motion);
+            super::apply_state_options(n, opts);
+            self.add_node(n);
+            self
+        }
+
+        /// Adds a state that blends clips along a float parameter and returns the controller.
+        #[js_name = "addState"]
+        #[optional(opts)]
+        #[ts_param(motion = "BlendSpec", opts = "StateOpts")]
+        pub fn add_state_blend(
+            self,
+            name: &str,
+            motion: Option<BlendSpecData>,
+            opts: Option<StateOptionsData>,
+        ) -> ControllerRef {
+            let Some(spec) = motion else { return self };
+            let tree = BlendRef::create(&spec.blend_parameter);
+            for c in &spec.children {
+                tree.add_child(c.motion, c.threshold, c.time_scale.unwrap_or(f64::NAN));
+            }
+            let n = NodeRef::blend(name, tree);
+            super::apply_state_options(n, opts);
+            self.add_node(n);
+            self
+        }
+
+        /// Adds a transition made from a description and returns the controller.
+        #[js_name = "addTransition"]
+        #[ts_param(t = "TransitionSpec")]
+        pub fn add_transition_spec(self, t: Option<TransitionData>) -> ControllerRef {
+            let Some(t) = t else { return self };
+            let tr = TransitionRef::create(&t.from, &t.to);
+            transition(tr, |x| {
+                if let Some(v) = t.has_exit_time {
+                    x.has_exit_time = v;
+                }
+                if let Some(v) = t.exit_time {
+                    x.exit_time = Some(v);
+                }
+                if let Some(v) = t.duration {
+                    x.duration = Some(v);
+                }
+                if let Some(v) = t.offset {
+                    x.offset = Some(v);
+                }
+            });
+            for c in t.conditions.iter().flatten() {
+                let threshold = c.threshold.unwrap_or(f64::NAN);
+                tr.add_condition(ConditionRef::create(&c.parameter, &c.mode, threshold));
+            }
+            self.add_transition(tr);
+            self
         }
 
         /// Adds a state (an `AnimationNode`).

@@ -66,8 +66,11 @@ export function animatorController(): string {
     .addState("Jump", clip)
     .addTransition({ from: "Locomotion", to: "Jump", conditions: [{ parameter: "jump", mode: "if" }], duration: 0.1 })
     .addTransition({ from: "Jump", to: "Locomotion", hasExitTime: true, exitTime: 0.95, duration: 0.15 });
+  // The handle forms of the same names still work next to the descriptions.
+  controller.addParameter(AnimationParameter.create("grounded", "bool", 1));
   const animator = new GameObject("a").addComponent(Animator, { controller });
-  return `${controller.parameterCount}|${controller.nodeCount}|${controller.transitionCount}|${animator.getCurrentAnimatorStateInfo().name}`;
+  const blend = controller.nodeAt(0);
+  return `${controller.parameterCount}|${controller.nodeCount}|${controller.transitionCount}|${animator.getCurrentAnimatorStateInfo().name}|${blend.speed}|${blend.blendTree.childCount}|${controller.transitionAt(0).conditionCount}|${controller.transitionAt(1).exitTime}|${controller.parameterAt(2).defaultValue}`;
 }
 
 export function sprites(): string {

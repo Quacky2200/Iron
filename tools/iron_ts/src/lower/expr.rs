@@ -918,6 +918,7 @@ impl<'a> Lowerer<'a> {
             RecField::Handle(h) => Ty::Handle(h.clone()),
             RecField::HandleList(h) => Ty::Arr(Box::new(Ty::Handle(h.clone()))),
             RecField::Numbers => Ty::Arr(Box::new(Ty::Num)),
+            RecField::Records(r) => Ty::Arr(Box::new(Ty::Obj(self.record_struct(r)))),
         }
     }
 
@@ -1029,7 +1030,8 @@ impl<'a> Lowerer<'a> {
                         | crate::manifest::RecField::Pairs
                         | crate::manifest::RecField::Handle(_)
                         | crate::manifest::RecField::HandleList(_)
-                        | crate::manifest::RecField::Numbers => {
+                        | crate::manifest::RecField::Numbers
+                        | crate::manifest::RecField::Records(_) => {
                             unreachable!(
                                 "a record with optional keys or lists is not a flat result"
                             )
@@ -1292,6 +1294,74 @@ impl<'a> Lowerer<'a> {
             other if other.is_ptr() => ExtTy::Ptr,
             _ => return None,
         })
+    }
+
+    /// The version of a class function declared more than once (`addState(name, clip)` and
+    /// `addState(name, { blendParameter, children })`) that takes this call's arguments: the
+    /// first whose parameters (after `skip` leading ones, the receiver) fit the arguments by
+    /// count and type. The first version when none does, so its error is the one reported.
+    pub(crate) fn pick_ext_overload(
+        &mut self,
+        cands: &[ExternFn],
+        skip: usize,
+        args: &'a [Argument<'a>],
+    ) -> ExternFn {
+        let exprs: Vec<&'a Expression<'a>> =
+            args.iter().filter_map(|a| a.as_expression()).collect();
+        if exprs.len() == args.len() {
+            for f in cands {
+                let params = &f.params[skip.min(f.params.len())..];
+                let required = f.optional_from.saturating_sub(skip).min(params.len());
+                if exprs.len() > params.len() || exprs.len() < required {
+                    continue;
+                }
+                let fits = exprs
+                    .iter()
+                    .zip(params)
+                    .all(|(e, (_, pt))| self.arg_fits(e, pt));
+                if fits {
+                    return f.clone();
+                }
+            }
+        }
+        cands[0].clone()
+    }
+
+    /// Whether the argument `e` can go where the boundary type `pt` is expected, by its static type
+    /// (an object literal fits a record).
+    fn arg_fits(&mut self, e: &'a Expression<'a>, pt: &ExtTy) -> bool {
+        if let Expression::ParenthesizedExpression(p) = e {
+            return self.arg_fits(&p.expression, pt);
+        }
+        let record = |t: &ExtTy| matches!(t, ExtTy::Record(_));
+        let inner = match pt {
+            ExtTy::Opt(i) => Some(&**i),
+            _ => None,
+        };
+        match e {
+            Expression::ObjectExpression(_) => {
+                return record(pt) || inner.is_some_and(record) || matches!(pt, ExtTy::Value(_));
+            }
+            Expression::NullLiteral(_) => return matches!(pt, ExtTy::Opt(_) | ExtTy::Handle(_)),
+            _ => {}
+        }
+        let Ok(v) = self.lower_expr(e, None) else {
+            return false;
+        };
+        let ty = match v.ty.strip().clone() {
+            Ty::Nullable(i) => i.strip().clone(),
+            t => t,
+        };
+        let target = inner.unwrap_or(pt);
+        match target {
+            ExtTy::Str | ExtTy::Enum(_) => matches!(ty, Ty::Str | Ty::Lit),
+            ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => ty == Ty::Num,
+            ExtTy::Bool => ty == Ty::Bool,
+            ExtTy::Handle(_) => matches!(ty, Ty::Handle(_)),
+            ExtTy::Record(_) => matches!(&ty, Ty::Obj(sid)
+                if !self.manifest.values.contains_key(&self.m.structs[*sid].name)),
+            other => self.ext_class(&ty).as_ref() == Some(other),
+        }
     }
 
     /// A boundary function with several versions: the one whose parameters take the argument types.
@@ -1842,6 +1912,10 @@ impl<'a> Lowerer<'a> {
                     ExtTy::F64 | ExtTy::F32 if i >= opt_from => num(f64::NAN),
                     ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => num(0.0),
                     ExtTy::Handle(_) if i >= opt_from => mk(ExprKind::Null, self.ext_ir(pt)),
+                    // A left-out optional record is JSON `null`: none.
+                    ExtTy::Opt(inner) if matches!(**inner, ExtTy::Record(_)) => {
+                        self.str_lit("null")
+                    }
                     // An optional value class has NaN in every field: the function tells "left
                     // out" from a value.
                     ExtTy::Value(vn) if i >= opt_from => {

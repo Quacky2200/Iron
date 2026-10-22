@@ -164,41 +164,6 @@ declare function loadFont(face: FontFace): void;
 declare function addStyleSheet(css: string): number;
 declare function removeStyleSheet(id: number): void;
 
-// ---- Animation ---------------------------------------------------------------------------------
-
-interface BlendChild {
-  motion: AnimationClip;
-  threshold: number;
-  timeScale?: number;
-}
-interface BlendSpec {
-  blendParameter: string;
-  children: BlendChild[];
-}
-interface StateOpts {
-  speed?: number;
-  speedParameter?: string;
-}
-interface ConditionSpec {
-  parameter: string;
-  mode: string;
-  threshold?: number;
-}
-interface TransitionSpec {
-  from: string;
-  to: string;
-  conditions?: ConditionSpec[];
-  hasExitTime?: boolean;
-  exitTime?: number;
-  duration?: number;
-  offset?: number;
-}
-interface AnimationController {
-  addParameter(name: string, type: string, defaultValue?: number): AnimationController;
-  addState(name: string, motion: AnimationClip | BlendSpec, opts?: StateOpts): AnimationController;
-  addTransition(t: TransitionSpec): AnimationController;
-}
-
 // ---- More rendering shapes ---------------------------------------------------------------------
 
 //@ctor Material(color?: Color, emission?: Color, smoothness?: number, unlit?: boolean, mainTexture?: Texture | null, mainTextureScale?: Vector2, mainTextureOffset?: Vector2, metallic?: number)

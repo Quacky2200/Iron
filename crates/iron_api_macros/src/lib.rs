@@ -831,6 +831,7 @@ fn js_default(k: &Kind) -> TokenStream2 {
             quote!(::std::vec::Vec::new())
         }
         Kind::Records(_) => quote!(::iron_api::rquickjs::Value::new_undefined(ctx.clone())),
+        Kind::OptRecord(_) => quote!(::std::option::Option::None),
         Kind::Str(_) | Kind::Enum(_) | Kind::OptEnum(_) => quote!(::std::string::String::new()),
         _ => quote!(compile_error!("this parameter type cannot be optional")),
     }
@@ -1848,6 +1849,8 @@ enum RecTy {
     Handles(usize),
     /// `Vec<f64>`: a list of numbers, `number[]`.
     Numbers,
+    /// `Vec<R>` of a declared record (index into `Args::records`).
+    Records(usize),
 }
 
 fn parse_rec_ty(s: &str, args: &Args) -> Result<RecTy, String> {
@@ -1860,6 +1863,16 @@ fn parse_rec_ty(s: &str, args: &Args) -> Result<RecTy, String> {
         "string" => RecTy::Str,
         "pairs" => RecTy::Pairs,
         "Vec<f64>" => RecTy::Numbers,
+        other
+            if other.starts_with("Vec<")
+                && args
+                    .records
+                    .iter()
+                    .any(|r| r.ts == other.trim_start_matches("Vec<").trim_end_matches('>')) =>
+        {
+            let inner = other.trim_start_matches("Vec<").trim_end_matches('>');
+            RecTy::Records(args.records.iter().position(|r| r.ts == inner).unwrap())
+        }
         other if other.starts_with("Vec<") => {
             let inner = other.trim_start_matches("Vec<").trim_end_matches('>');
             match args.handles.iter().position(|(ts, _)| ts == inner) {
@@ -1905,7 +1918,12 @@ fn record_is_flat(args: &Args, i: usize) -> bool {
 fn rec_flat(t: &RecTy) -> bool {
     !matches!(
         t,
-        RecTy::Opt(_) | RecTy::Pairs | RecTy::Handle(_) | RecTy::Handles(_) | RecTy::Numbers
+        RecTy::Opt(_)
+            | RecTy::Pairs
+            | RecTy::Handle(_)
+            | RecTy::Handles(_)
+            | RecTy::Numbers
+            | RecTy::Records(_)
     )
 }
 
@@ -1921,6 +1939,7 @@ fn rec_ty_name(t: &RecTy, args: &Args) -> String {
         RecTy::Opt(inner) => format!("opt:{}", rec_ty_name(inner, args)),
         RecTy::Pairs => "list:pair".into(),
         RecTy::Numbers => "list:f64".into(),
+        RecTy::Records(i) => format!("records:{}", args.records[*i].ts),
         RecTy::Handle(i) => format!("handle:{}", args.handles[*i].0),
         RecTy::Handles(i) => format!("list:handle:{}", args.handles[*i].0),
     }
@@ -1938,6 +1957,7 @@ fn rec_ty_ts(t: &RecTy, args: &Args) -> String {
         RecTy::Opt(inner) => format!("{} | null", rec_ty_ts(inner, args)),
         RecTy::Pairs => "[number, number][]".into(),
         RecTy::Numbers => "number[]".into(),
+        RecTy::Records(i) => format!("{}[]", args.records[*i].ts),
         RecTy::Handle(i) => args.handles[*i].0.clone(),
         RecTy::Handles(i) => format!("{}[]", args.handles[*i].0),
     }
@@ -1969,6 +1989,11 @@ fn rec_ty_manifest(t: &RecTy, args: &Args) -> TokenStream2 {
         }
         RecTy::Pairs => quote!(::iron_api::Ty::List("pair", "[number, number][]")),
         RecTy::Numbers => quote!(::iron_api::Ty::List("f64", "number[]")),
+        RecTy::Records(i) => {
+            let n = &args.records[*i].ts;
+            let arr = format!("{n}[]");
+            quote!(::iron_api::Ty::Records(#n, #arr))
+        }
         RecTy::Handle(i) => {
             let n = &args.handles[*i].0;
             quote!(::iron_api::Ty::Handle(#n))
@@ -1997,7 +2022,12 @@ fn rec_flat_stmt(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
             let index = enum_fn(&args.enums[*i].ts, "index");
             quote!(out.push(#index(#x) as f64);)
         }
-        RecTy::Opt(_) | RecTy::Pairs | RecTy::Handle(_) | RecTy::Handles(_) | RecTy::Numbers => {
+        RecTy::Opt(_)
+        | RecTy::Pairs
+        | RecTy::Handle(_)
+        | RecTy::Handles(_)
+        | RecTy::Numbers
+        | RecTy::Records(_) => {
             quote!(compile_error!("not a flat record field");)
         }
     }
@@ -2020,6 +2050,10 @@ fn rec_json_value(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
             quote!(::iron_api::serde_json::json!(#name(*#x)))
         }
         RecTy::Numbers => quote!(::iron_api::serde_json::json!(#x.clone())),
+        RecTy::Records(i) => {
+            let to = format_ident!("__to_json_{}", args.records[*i].ts);
+            quote!(::iron_api::serde_json::Value::Array(#x.iter().map(#to).collect()))
+        }
         RecTy::Pairs => quote!(::iron_api::serde_json::Value::Array(
             #x.iter()
                 .map(|p| ::iron_api::serde_json::json!([p.0, p.1]))
@@ -2091,6 +2125,18 @@ fn rec_parse_value(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenS
             quote!(#x.as_str().and_then(#parse).ok_or_else(#bad))
         }
         RecTy::Pairs => quote!(::iron_api::json_pairs(#x).ok_or_else(#bad)),
+        RecTy::Records(i) => {
+            let from = format_ident!("__from_json_{}", args.records[*i].ts);
+            quote! {
+                #x.as_array()
+                    .ok_or_else(#bad)
+                    .and_then(|a| {
+                        a.iter()
+                            .map(#from)
+                            .collect::<::std::result::Result<::std::vec::Vec<_>, ::std::string::String>>()
+                    })
+            }
+        }
         RecTy::Numbers => quote! {
             #x.as_array()
                 .and_then(|a| {
@@ -2186,6 +2232,18 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
                     let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
                     for (i, h) in #x.iter().enumerate() {
                         list.set(i, ::iron_api::qjs::handle_new(ctx, #ts, ::iron_api::Handle::to_raw(*h))?)?;
+                    }
+                    o.set(#key, list)?;
+                }
+            }
+        }
+        RecTy::Records(i) => {
+            let build = format_ident!("__js_rec_{}", args.records[*i].ts);
+            quote! {
+                {
+                    let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                    for (i, y) in #x.iter().enumerate() {
+                        list.set(i, #build(ctx, y)?)?;
                     }
                     o.set(#key, list)?;
                 }

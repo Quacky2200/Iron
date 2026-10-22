@@ -830,9 +830,19 @@ impl<'a> Lowerer<'a> {
                 .get(class)
                 .and_then(|k| k.methods.get(m))
                 .cloned();
-            let Some(f) = f else {
+            let Some(mut f) = f else {
                 bail!("{class} has no method `{m}`")
             };
+            // A method declared more than once: the version that takes these arguments.
+            if let Some(cands) = self
+                .manifest
+                .classes
+                .get(class)
+                .and_then(|k| k.overloads.get(&("method".to_string(), m.to_string())))
+                .cloned()
+            {
+                f = self.pick_ext_overload(&cands, 1, &c.arguments);
+            }
             return self.call_ext_fn(f, Some(recv), &format!("{class}.{m}"), c);
         }
         let void = |stmts| {

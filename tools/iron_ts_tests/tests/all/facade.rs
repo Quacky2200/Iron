@@ -87,11 +87,14 @@ fn lod_levels_cloth_options_and_root_objects_go_through_the_element_wise_api() {
     });
 }
 
-// M9-TS-1705
+// M9-TS-1705, M9-TS-3355
 #[test]
 fn the_animator_controller_builder_takes_object_options() {
     in_every_gc_mode(|| unsafe {
-        assert_eq!(text(ts_fac_animatorController()), "2|2|2|Locomotion");
+        assert_eq!(
+            text(ts_fac_animatorController()),
+            "3|2|2|Locomotion|2|2|1|0.95|1"
+        );
     });
 }
 

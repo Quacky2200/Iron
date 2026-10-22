@@ -37,6 +37,10 @@ pub struct ClassFns {
     pub setters: HashMap<String, ExternFn>,
     /// Setters of static properties (no receiver: the value is the only parameter).
     pub static_setters: HashMap<String, ExternFn>,
+    /// Functions of one name declared more than once (a method taking a handle or a name and a
+    /// type): (table: `static`, `method` or `set`, name) -> every version in declaration
+    /// order. The table keeps the first.
+    pub overloads: HashMap<(String, String), Vec<ExternFn>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -103,6 +107,8 @@ pub enum RecField {
     HandleList(String),
     /// A list of numbers (`number[]`). JSON only.
     Numbers,
+    /// A list of records (`BlendChild[]`). JSON only.
+    Records(String),
 }
 
 impl RecField {
@@ -115,6 +121,7 @@ impl RecField {
                 | RecField::Handle(_)
                 | RecField::HandleList(_)
                 | RecField::Numbers
+                | RecField::Records(_)
         )
     }
 
@@ -126,6 +133,9 @@ impl RecField {
             "list:pair" => RecField::Pairs,
             "list:f64" => RecField::Numbers,
             other => {
+                if let Some(n) = other.strip_prefix("records:") {
+                    return Ok(RecField::Records(n.to_string()));
+                }
                 if let Some(inner) = other.strip_prefix("opt:") {
                     RecField::Opt(Box::new(RecField::parse(inner)?))
                 } else if let Some(n) = other
@@ -368,16 +378,28 @@ impl Manifest {
                 // A getter or setter without `this` is a static property of the class (`Window.main`);
                 // compiled code reads a static getter like a no-argument static (`ext_static_prop`).
                 let has_this = func.params.first().is_some_and(|p| p.0 == "this");
-                let table = match kind.as_str() {
-                    "static" => &mut class.statics,
-                    "method" => &mut class.methods,
-                    "get" if !has_this => &mut class.statics,
-                    "set" if !has_this => &mut class.static_setters,
-                    "get" => &mut class.getters,
-                    "set" => &mut class.setters,
+                let (table, table_name) = match kind.as_str() {
+                    "static" => (&mut class.statics, "static"),
+                    "method" => (&mut class.methods, "method"),
+                    "get" if !has_this => (&mut class.statics, "static"),
+                    "set" if !has_this => (&mut class.static_setters, "static_set"),
+                    "get" => (&mut class.getters, "get"),
+                    "set" => (&mut class.setters, "set"),
                     other => return Err(format!("manifest: unknown function kind `{other}`")),
                 };
-                table.insert(name, func);
+                // A second function of the same name is another version of it.
+                if let Some(first) = table.get(&name).cloned() {
+                    let list = class
+                        .overloads
+                        .entry((table_name.to_string(), name))
+                        .or_default();
+                    if list.is_empty() {
+                        list.push(first);
+                    }
+                    list.push(func);
+                } else {
+                    table.insert(name, func);
+                }
             }
             self.classes.insert(cname.to_string(), class);
         }
