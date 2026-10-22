@@ -72,3 +72,35 @@ fn handle_list_results_and_the_scene_roots() {
         assert_eq!(out, r#"[["a","b"],4,10,0,2,100,0.5]"#);
     });
 }
+
+// M9-API-1639
+#[test]
+fn record_lists_with_handles_and_optional_keys_cross_as_json_from_quickjs() {
+    with_world(|ctx| {
+        let out: String = js(
+            ctx,
+            r#"
+            const go = GameObject.create();
+            const r1 = MeshRenderer.attach(go), r2 = MeshRenderer.attach(go);
+            const lod = LODGroup.attach(go);
+            const same = lod.setLODs([
+              { screenRelativeTransitionHeight: 0.6, renderers: [r1, r2] },
+              { screenRelativeTransitionHeight: 0.2, renderers: [r2] },
+              { screenRelativeTransitionHeight: 0.9, renderers: [r1] },
+            ]);
+            const ps = ParticleSystem.attach(go);
+            ps.bursts = [{ time: 0, count: 5 }, { time: 1, count: 2, cycles: 3, interval: 0.5 }];
+            ps.colorOverLifetime = [{ time: 0, color: new Color(1, 0, 0, 1) }, { time: 1, color: Color.white }];
+            ps.sizeOverLifetime = [{ time: 0, value: 1 }, { time: 1, value: 0.5 }];
+            ps.shape = { type: 'box', size: new Vector3(1, 2, 3) };
+            const b = ps.bursts, c = ps.colorOverLifetime, s = ps.shape;
+            JSON.stringify([lod.lodCount, lod.lodRendererCount(0), lod.lodRendererCount(1), same.lodCount,
+              b.length, b[0].cycles, b[1].interval, c[0].color instanceof Color, c[0].color.r, ps.sizeOverLifetime[1].value,
+              s.type, s.size.y, s.angle]);
+            "#,
+        );
+        assert_eq!(out, r#"[2,2,1,2,2,1,0.5,true,1,0.5,"box",2,25]"#);
+        assert!(throws(ctx, "lod.setLODs(3)").starts_with("TypeError"));
+        assert!(throws(ctx, "lod.setLODs([{ renderers: [1] }])").starts_with("TypeError"));
+    });
+}

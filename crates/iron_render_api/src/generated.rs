@@ -3131,6 +3131,13 @@ pub fn reset_lod_groups() {
     LOD_GROUPS.with(|v| v.borrow_mut().clear());
 }
 
+/// One level of a LOD group: shown down to a screen height, with its renderers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LodLevel {
+    pub screen_relative_transition_height: f64,
+    pub renderers: Vec<MeshRendererRef>,
+}
+
 /// The saved properties of a `LODGroup`.
 pub fn save_lod_group(r: LODGroupRef) -> Map<String, Value> {
     let mut m = Map::new();
@@ -3180,7 +3187,7 @@ pub fn load_lod_group(r: LODGroupRef, props: &Map<String, Value>) -> Vec<String>
     warnings
 }
 
-#[iron_api(namespace = "LODGroup", quickjs, handles(LODGroup = LODGroupRef, GameObject = ObjectId, MeshRenderer = MeshRendererRef))]
+#[iron_api(namespace = "LODGroup", quickjs, handles(LODGroup = LODGroupRef, GameObject = ObjectId, MeshRenderer = MeshRendererRef), records(LodLevel = LodLevel [screen_relative_transition_height: f64, renderers: Vec<MeshRenderer>]))]
 pub mod lod_group_api {
     use super::*;
 
@@ -3225,6 +3232,27 @@ pub mod lod_group_api {
             with_lod_group(self, |d| {
                 d.forced = v as i32;
             });
+        }
+
+        /// Replaces the levels, nearest first (a level whose height is above the one before is
+        /// ignored). Returns the group.
+        #[js_name = "setLODs"]
+        pub fn replace_lods(self, levels: &[LodLevel]) -> LODGroupRef {
+            with_lod_group(self, |d| {
+                d.lods.clear();
+                for l in levels {
+                    if d.lods
+                        .last()
+                        .is_none_or(|p| l.screen_relative_transition_height <= p.0)
+                    {
+                        d.lods.push((
+                            l.screen_relative_transition_height,
+                            l.renderers.iter().map(|r| r.0).collect(),
+                        ));
+                    }
+                }
+            });
+            self
         }
 
         /// Removes every level.
@@ -4086,6 +4114,38 @@ pub fn reset_particle_systems() {
     PARTICLES.with(|v| v.borrow_mut().clear());
 }
 
+/// A particle burst as a plain object: `cycles` defaults to 1, `interval` to 0.01.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParticleBurst {
+    pub time: f64,
+    pub count: f64,
+    pub cycles: Option<f64>,
+    pub interval: Option<f64>,
+}
+
+/// Where particles start, as a plain object: the keys present are applied.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeSpec {
+    pub shape_type: String,
+    pub angle: Option<f64>,
+    pub radius: Option<f64>,
+    pub size: Option<V3>,
+}
+
+/// A key of the colour over a particle's life.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorKey {
+    pub time: f64,
+    pub color: Rgba,
+}
+
+/// A key of the size over a particle's life.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SizeKey {
+    pub time: f64,
+    pub value: f64,
+}
+
 /// The saved properties of a `ParticleSystem`.
 pub fn save_particle_system(r: ParticleSystemRef) -> Map<String, Value> {
     let mut m = Map::new();
@@ -4278,7 +4338,7 @@ pub fn load_particle_system(r: ParticleSystemRef, props: &Map<String, Value>) ->
     warnings
 }
 
-#[iron_api(namespace = "ParticleSystem", quickjs, handles(ParticleSystem = ParticleSystemRef, GameObject = ObjectId, Texture = TextureRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector3 = V3 [x: f64, y: f64, z: f64]))]
+#[iron_api(namespace = "ParticleSystem", quickjs, handles(ParticleSystem = ParticleSystemRef, GameObject = ObjectId, Texture = TextureRef), values(Color = Rgba [r: f64, g: f64, b: f64, a: f64], Vector3 = V3 [x: f64, y: f64, z: f64]), records(ParticleBurst = ParticleBurst [time: f64, count: f64, cycles: Option<f64>, interval: Option<f64>], ParticleShapeSpec = ShapeSpec [shape_type: string as "type", angle: Option<f64>, radius: Option<f64>, size: Option<Vector3Like>], ColorKey = ColorKey [time: f64, color: Color], SizeKey = SizeKey [time: f64, value: f64]))]
 pub mod particle_system_api {
     use super::*;
 
@@ -4668,6 +4728,124 @@ pub mod particle_system_api {
 
         pub fn clear_bursts(self) {
             with_particle_system(self, |d| d.bursts.clear());
+        }
+
+        /// The bursts.
+        #[property]
+        pub fn bursts(self) -> Vec<ParticleBurst> {
+            with_particle_system(self, |d| {
+                d.bursts
+                    .iter()
+                    .map(|b| ParticleBurst {
+                        time: b[0],
+                        count: b[1],
+                        cycles: Some(b[2]),
+                        interval: Some(b[3]),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+        }
+
+        /// Replaces the bursts.
+        pub fn set_bursts(self, bursts: &[ParticleBurst]) {
+            with_particle_system(self, |d| {
+                d.bursts = bursts
+                    .iter()
+                    .map(|b| {
+                        [
+                            b.time,
+                            b.count,
+                            b.cycles.unwrap_or(1.0),
+                            b.interval.unwrap_or(0.01),
+                        ]
+                    })
+                    .collect();
+            });
+        }
+
+        /// Where particles start.
+        #[property]
+        pub fn shape(self) -> Option<ShapeSpec> {
+            with_particle_system(self, |d| ShapeSpec {
+                shape_type: d.shape_type.clone(),
+                angle: Some(d.shape_angle),
+                radius: Some(d.shape_radius),
+                size: Some(d.shape_size),
+            })
+        }
+
+        /// Sets the shape and the keys given; the others keep their values.
+        pub fn set_shape(self, spec: Option<ShapeSpec>) {
+            let Some(spec) = spec else { return };
+            with_particle_system(self, |d| {
+                if ["point", "sphere", "hemisphere", "cone", "box"]
+                    .contains(&spec.shape_type.as_str())
+                {
+                    d.shape_type = spec.shape_type.clone();
+                }
+                if let Some(a) = spec.angle {
+                    d.shape_angle = a;
+                }
+                if let Some(r) = spec.radius {
+                    d.shape_radius = r;
+                }
+                if let Some(s) = spec.size {
+                    d.shape_size = s;
+                }
+            });
+        }
+
+        /// The colour over life (empty for none).
+        #[property]
+        pub fn color_over_lifetime(self) -> Vec<ColorKey> {
+            with_particle_system(self, |d| {
+                d.color_over_lifetime
+                    .as_ref()
+                    .map(|k| {
+                        k.iter()
+                            .map(|(time, color)| ColorKey {
+                                time: *time,
+                                color: *color,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+        }
+
+        pub fn set_color_over_lifetime(self, keys: &[ColorKey]) {
+            with_particle_system(self, |d| {
+                d.color_over_lifetime =
+                    (!keys.is_empty()).then(|| keys.iter().map(|k| (k.time, k.color)).collect());
+            });
+        }
+
+        /// The size over life (empty for none).
+        #[property]
+        pub fn size_over_lifetime(self) -> Vec<SizeKey> {
+            with_particle_system(self, |d| {
+                d.size_over_lifetime
+                    .as_ref()
+                    .map(|k| {
+                        k.iter()
+                            .map(|k| SizeKey {
+                                time: k[0],
+                                value: k[1],
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+        }
+
+        pub fn set_size_over_lifetime(self, keys: &[SizeKey]) {
+            with_particle_system(self, |d| {
+                d.size_over_lifetime =
+                    (!keys.is_empty()).then(|| keys.iter().map(|k| [k.time, k.value]).collect());
+            });
         }
 
         #[property]

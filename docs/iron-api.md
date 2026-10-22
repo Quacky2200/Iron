@@ -836,6 +836,15 @@ parameters the generated function passes on become `""` / `NaN` / `false` when l
 (a waiter list settled by `texture_loaded` / `model_loaded`, so no polling timer). Tests: `M9-API-1637`, `M9-API-1638`, and the
 existing `M9-API-1512`..`1517` and `M9-TS` promise tests.
 
+**Lists of records and handles in records (2026-10-22, plan phase 2b/2c).** A record field may be a handle (`MeshRenderer`) or `Vec<Handle>`;
+in JSON a handle is its id (a descriptor tag `9` in the compiled JSON blobs, set only when a call of the engine API stringifies or
+parses a record: a game's own `JSON.stringify(handle)` is still `{}`; QuickJS walks the object with `qjs::value_to_json`, where a
+handle object is its id). `&[R]` parameters and `Vec<R>` results of records that cannot travel flat travel as JSON text
+(`records:R`, `ExtTy::RecordsJson`); a getter that returns such a list pairs with the setter that takes it. `#[ts_param(points = "..")]`
+sets the declared TypeScript type of a parameter that is wider than the Rust one (`AnimationCurve.fromPoints` takes `Vector2` values
+or `[time, value]` pairs: QuickJS reads both, compiled code converts `number[][]` rows). Native now: `LODGroup.setLODs`,
+`ParticleSystem.bursts` / `colorOverLifetime` / `sizeOverLifetime` / `shape`. Tests: `M9-API-1639`, `M9-TS-3352`.
+
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;
 parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string` (a result) and `strings` (a parameter). `tools/iron_ts/src/types_dts.rs` reads them

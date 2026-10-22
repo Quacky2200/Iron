@@ -405,3 +405,15 @@ fn listeners_return_an_unsubscribe_function() {
         assert_eq!(text(ts_fac_unsubscribes()), "0|2|0");
     });
 }
+
+// M9-TS-3352
+//
+// Lists of records (some holding handles) as parameters and properties: `LODGroup.setLODs`,
+// `ParticleSystem.bursts` / `colorOverLifetime` / `sizeOverLifetime` / `shape`. They travel as JSON
+// text (an engine handle is its id); keys left out stay out (`cycles` defaults to 1).
+#[test]
+fn record_lists_with_handles_and_optional_keys_cross_as_json() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_recordLists()), "2|2|1|2|2|1|0.5|1|0.5|box|2|25");
+    });
+}

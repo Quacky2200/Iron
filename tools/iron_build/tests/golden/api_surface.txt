@@ -118,6 +118,8 @@ declare class AnimationCurve :: static constant(t0: number, t1: number, value: n
 declare class AnimationCurve :: static create(): AnimationCurve;
 declare class AnimationCurve :: static create(options: { preWrapMode?: string; postWrapMode?: string }): AnimationCurve;
 declare class AnimationCurve :: static easeInOut(t0: number, v0: number, t1: number, v1: number): AnimationCurve;
+declare class AnimationCurve :: static fromPoints(points: readonly (Vector2Like | readonly [number, number])[], mode?: string): AnimationCurve;
+declare class AnimationCurve :: static fromPoints(points: readonly (Vector2Like | readonly [number, number])[], options?: { mode?: string }): AnimationCurve;
 declare class AnimationCurve :: static linear(t0: number, v0: number, t1: number, v1: number): AnimationCurve;
 declare class AnimationNode
 declare class AnimationNode :: constructor(name: string, clip: AnimationClip);
@@ -585,6 +587,7 @@ declare class LODGroup :: lodRendererCount(lod: number): number;
 declare class LODGroup :: readonly gameObject: GameObject;
 declare class LODGroup :: readonly lodCount: number;
 declare class LODGroup :: readonly transform: Transform;
+declare class LODGroup :: setLODs(levels: readonly LodLevel[]): LODGroup;
 declare class LODGroup :: size: number;
 declare class LODGroup :: static attach(object: GameObject): LODGroup;
 declare class LODGroup :: static findOn(object: GameObject): LODGroup;
@@ -780,8 +783,11 @@ declare class ParticleSystem :: drag: number;
 declare class ParticleSystem :: duration: number;
 declare class ParticleSystem :: emit(count: number): void;
 declare class ParticleSystem :: get blendMode(): "alpha" | "additive";
+declare class ParticleSystem :: get bursts(): ParticleBurst[];
+declare class ParticleSystem :: get colorOverLifetime(): ColorKey[];
 declare class ParticleSystem :: get shapeType(): "point" | "sphere" | "hemisphere" | "cone" | "box";
 declare class ParticleSystem :: get simulationSpace(): "local" | "world";
+declare class ParticleSystem :: get sizeOverLifetime(): SizeKey[];
 declare class ParticleSystem :: get stopAction(): "none" | "destroy";
 declare class ParticleSystem :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class ParticleSystem :: gravityModifier: number;
@@ -806,8 +812,11 @@ declare class ParticleSystem :: readonly startSizeMax: number;
 declare class ParticleSystem :: readonly startSpeedMax: number;
 declare class ParticleSystem :: readonly transform: Transform;
 declare class ParticleSystem :: set blendMode(v: string);
+declare class ParticleSystem :: set bursts(v: readonly ParticleBurst[]);
+declare class ParticleSystem :: set colorOverLifetime(v: readonly ColorKey[]);
 declare class ParticleSystem :: set shapeType(v: string);
 declare class ParticleSystem :: set simulationSpace(v: string);
+declare class ParticleSystem :: set sizeOverLifetime(v: readonly SizeKey[]);
 declare class ParticleSystem :: set stopAction(v: string);
 declare class ParticleSystem :: setAngularVelocityRange(min: number, max: number): void;
 declare class ParticleSystem :: setStartColorRange(a: Color, b: Color): void;
@@ -817,6 +826,7 @@ declare class ParticleSystem :: setStartSizeRange(min: number, max: number): voi
 declare class ParticleSystem :: setStartSpeedRange(min: number, max: number): void;
 declare class ParticleSystem :: setTextureSheet(tilesX: number, tilesY: number, cycles?: number): void;
 declare class ParticleSystem :: setTextureSheet(tilesX: number, tilesY: number, options?: { cycles?: number }): void;
+declare class ParticleSystem :: shape: ParticleShapeSpec | null;
 declare class ParticleSystem :: shapeAngle: number;
 declare class ParticleSystem :: shapeRadius: number;
 declare class ParticleSystem :: shapeSize: Vector3;
@@ -1588,10 +1598,26 @@ declare interface BloomSettings :: threshold: number;
 declare interface ClothBox
 declare interface ClothBox :: max: Vector3Like;
 declare interface ClothBox :: min: Vector3Like;
+declare interface ColorKey
+declare interface ColorKey :: color: Color;
+declare interface ColorKey :: time: number;
 declare interface HeightFogSettings
 declare interface HeightFogSettings :: baseHeight: number;
 declare interface HeightFogSettings :: density: number;
 declare interface HeightFogSettings :: falloff: number;
+declare interface LodLevel
+declare interface LodLevel :: renderers: MeshRenderer[];
+declare interface LodLevel :: screenRelativeTransitionHeight: number;
+declare interface ParticleBurst
+declare interface ParticleBurst :: count: number;
+declare interface ParticleBurst :: cycles?: number;
+declare interface ParticleBurst :: interval?: number;
+declare interface ParticleBurst :: time: number;
+declare interface ParticleShapeSpec
+declare interface ParticleShapeSpec :: angle?: number;
+declare interface ParticleShapeSpec :: radius?: number;
+declare interface ParticleShapeSpec :: size?: Vector3Like;
+declare interface ParticleShapeSpec :: type: string;
 declare interface ProceduralSky
 declare interface ProceduralSky :: ground?: Color;
 declare interface ProceduralSky :: horizon?: Color;
@@ -1603,6 +1629,9 @@ declare interface Resolution
 declare interface Resolution :: height: number;
 declare interface Resolution :: refreshRate: number;
 declare interface Resolution :: width: number;
+declare interface SizeKey
+declare interface SizeKey :: time: number;
+declare interface SizeKey :: value: number;
 declare interface SplineAnimatePose
 declare interface SplineAnimatePose :: direction: Vector3;
 declare interface SplineAnimatePose :: position: Vector3;
@@ -1887,8 +1916,6 @@ declare module "react" :: export import useMemo = globalThis.useMemo;
 declare module "react" :: export import useReducer = globalThis.useReducer;
 declare module "react" :: export import useRef = globalThis.useRef;
 declare module "react" :: export import useState = globalThis.useState;
-declare namespace AnimationCurve
-declare namespace AnimationCurve :: function fromPoints(points: number[][], mode?: string): AnimationCurve;
 declare namespace Animations
 declare namespace Animations :: function takeEvents(): string;
 declare namespace Animations :: function updateAll(dt: number): void;
@@ -2584,9 +2611,6 @@ interface Collision :: readonly gameObject: GameObject;
 interface Collision :: readonly relativeSpeed: number;
 interface Collision :: readonly sensor: boolean;
 interface Collision :: readonly speed: number;
-interface ColorKey
-interface ColorKey :: color: Color;
-interface ColorKey :: time: number;
 interface ConditionSpec
 interface ConditionSpec :: mode: string;
 interface ConditionSpec :: parameter: string;
@@ -3041,11 +3065,6 @@ interface IronTransitionEvent extends IronEvent :: readonly pseudoElement: strin
 interface IronWheelEvent extends IronPointerEvent
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaX: number;
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaY: number;
-interface LODGroup
-interface LODGroup :: setLODs(levels: LodLevel[]): LODGroup;
-interface LodLevel
-interface LodLevel :: renderers: MeshRenderer[];
-interface LodLevel :: screenRelativeTransitionHeight: number;
 interface Material
 interface Material :: withTexture(texture: Texture): Material;
 interface Mesh
@@ -3059,22 +3078,8 @@ interface MeshData :: uv?: Vector2[];
 interface MeshData :: vertices: Vector3[];
 interface MeshRenderer
 interface MeshRenderer :: mesh: Mesh | PrimitiveType;
-interface ParticleBurst
-interface ParticleBurst :: count: number;
-interface ParticleBurst :: cycles?: number;
-interface ParticleBurst :: interval?: number;
-interface ParticleBurst :: time: number;
-interface ParticleShapeSpec
-interface ParticleShapeSpec :: angle?: number;
-interface ParticleShapeSpec :: radius?: number;
-interface ParticleShapeSpec :: size?: Vector3Like;
-interface ParticleShapeSpec :: type: string;
 interface ParticleSystem
 interface ParticleSystem :: angularVelocity: number | number[];
-interface ParticleSystem :: bursts: ParticleBurst[];
-interface ParticleSystem :: colorOverLifetime: ColorKey[];
-interface ParticleSystem :: shape: ParticleShapeSpec;
-interface ParticleSystem :: sizeOverLifetime: SizeKey[];
 interface ParticleSystem :: startColor: Color | Color[];
 interface ParticleSystem :: startLifetime: number | number[];
 interface ParticleSystem :: startRotation: number | number[];
@@ -3091,9 +3096,6 @@ interface SceneData :: name: string;
 interface SceneData :: objects: SceneObjectData[];
 interface SceneObjectData
 interface SceneObjectData :: name: string;
-interface SizeKey
-interface SizeKey :: time: number;
-interface SizeKey :: value: number;
 interface StateOpts
 interface StateOpts :: speed?: number;
 interface StateOpts :: speedParameter?: string;

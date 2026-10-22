@@ -350,9 +350,34 @@ COMPONENTS = [
         extra_fields=["/// Per level: the screen height below which the next level takes over, and its renderers.", "pub lods: Vec<(f64, Vec<u32>)>,"],
         extra_defaults=["lods: Vec::new(),"],
         extra_handles=["MeshRenderer = MeshRendererRef"],
+        extra_records=["LodLevel = LodLevel [screen_relative_transition_height: f64, renderers: Vec<MeshRenderer>]"],
+        items="""/// One level of a LOD group: shown down to a screen height, with its renderers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LodLevel {
+    pub screen_relative_transition_height: f64,
+    pub renderers: Vec<MeshRendererRef>,
+}""",
         extra_save='m.insert("lods".into(), Value::Array(d.lods.iter().map(|(h, rs)| json!({ "screenRelativeTransitionHeight": h, "renderers": rs.iter().map(|r| component_ref("MeshRenderer", u64::from(*r))).collect::<Vec<_>>() })).collect()));',
         extra_load='"lods" => v.as_array().and_then(|a| a.iter().map(|l| { let h = l.get("screenRelativeTransitionHeight")?.as_f64()?; let rs = l.get("renderers")?.as_array()?.iter().map(|r| r.get("handle").and_then(Value::as_u64).map(|h| h as u32)).collect::<Option<Vec<u32>>>()?; Some((h, rs)) }).collect::<Option<Vec<_>>>()).map(|l| d.lods = l)',
         api="""
+        /// Replaces the levels, nearest first (a level whose height is above the one before is
+        /// ignored). Returns the group.
+        #[js_name = "setLODs"]
+        pub fn replace_lods(self, levels: &[LodLevel]) -> LODGroupRef {
+            with_lod_group(self, |d| {
+                d.lods.clear();
+                for l in levels {
+                    if d.lods.last().is_none_or(|p| l.screen_relative_transition_height <= p.0) {
+                        d.lods.push((
+                            l.screen_relative_transition_height,
+                            l.renderers.iter().map(|r| r.0).collect(),
+                        ));
+                    }
+                }
+            });
+            self
+        }
+
         /// Removes every level.
         pub fn clear_lods(self) {
             with_lod_group(self, |d| d.lods.clear());
@@ -559,7 +584,44 @@ pub fn late_update_camera_orbits(dt: f64) {
                 "sizeOverLifetime" => if v.is_null() { d.size_over_lifetime = None; Some(()) } else { v.as_array().and_then(|a| a.iter().map(|k| Some([k.get("time")?.as_f64()?, k.get("value")?.as_f64()?])).collect::<Option<Vec<_>>>()).map(|k| d.size_over_lifetime = Some(k)) },
                 "colorOverLifetime" => if v.is_null() { d.color_over_lifetime = None; Some(()) } else { v.as_array().and_then(|a| a.iter().map(|k| Some((k.get("time")?.as_f64()?, color_of(k.get("color")?)?))).collect::<Option<Vec<_>>>()).map(|k| d.color_over_lifetime = Some(k)) },
                 "textureSheet" => if v.is_null() { d.texture_sheet = None; Some(()) } else { (|| Some([v.get("tilesX")?.as_f64()?, v.get("tilesY")?.as_f64()?, v.get("cycles").and_then(Value::as_f64).unwrap_or(1.0)]))().map(|s| d.texture_sheet = Some(s)) }""",
-        extra_value_types=["color"],
+        extra_records=[
+            "ParticleBurst = ParticleBurst [time: f64, count: f64, cycles: Option<f64>, interval: Option<f64>]",
+            "ParticleShapeSpec = ShapeSpec [shape_type: string as \"type\", angle: Option<f64>, radius: Option<f64>, size: Option<Vector3Like>]",
+            "ColorKey = ColorKey [time: f64, color: Color]",
+            "SizeKey = SizeKey [time: f64, value: f64]",
+        ],
+        items="""/// A particle burst as a plain object: `cycles` defaults to 1, `interval` to 0.01.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParticleBurst {
+    pub time: f64,
+    pub count: f64,
+    pub cycles: Option<f64>,
+    pub interval: Option<f64>,
+}
+
+/// Where particles start, as a plain object: the keys present are applied.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeSpec {
+    pub shape_type: String,
+    pub angle: Option<f64>,
+    pub radius: Option<f64>,
+    pub size: Option<V3>,
+}
+
+/// A key of the colour over a particle's life.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorKey {
+    pub time: f64,
+    pub color: Rgba,
+}
+
+/// A key of the size over a particle's life.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SizeKey {
+    pub time: f64,
+    pub value: f64,
+}""",
+        extra_value_types=["color", "v3"],
         api="".join(minmax_api("particle_system", r, t, doc) for t, r, _, doc in PS_MINMAX) + """
         /// A colour, or `setStartColorRange` for a random mix of two per particle.
         #[property]
@@ -596,6 +658,94 @@ pub fn late_update_camera_orbits(dt: f64) {
 
         pub fn clear_bursts(self) {
             with_particle_system(self, |d| d.bursts.clear());
+        }
+
+        /// The bursts.
+        #[property]
+        pub fn bursts(self) -> Vec<ParticleBurst> {
+            with_particle_system(self, |d| {
+                d.bursts
+                    .iter()
+                    .map(|b| ParticleBurst { time: b[0], count: b[1], cycles: Some(b[2]), interval: Some(b[3]) })
+                    .collect()
+            })
+            .unwrap_or_default()
+        }
+
+        /// Replaces the bursts.
+        pub fn set_bursts(self, bursts: &[ParticleBurst]) {
+            with_particle_system(self, |d| {
+                d.bursts = bursts
+                    .iter()
+                    .map(|b| [b.time, b.count, b.cycles.unwrap_or(1.0), b.interval.unwrap_or(0.01)])
+                    .collect();
+            });
+        }
+
+        /// Where particles start.
+        #[property]
+        pub fn shape(self) -> Option<ShapeSpec> {
+            with_particle_system(self, |d| ShapeSpec {
+                shape_type: d.shape_type.clone(),
+                angle: Some(d.shape_angle),
+                radius: Some(d.shape_radius),
+                size: Some(d.shape_size),
+            })
+        }
+
+        /// Sets the shape and the keys given; the others keep their values.
+        pub fn set_shape(self, spec: Option<ShapeSpec>) {
+            let Some(spec) = spec else { return };
+            with_particle_system(self, |d| {
+                if ["point", "sphere", "hemisphere", "cone", "box"].contains(&spec.shape_type.as_str()) {
+                    d.shape_type = spec.shape_type.clone();
+                }
+                if let Some(a) = spec.angle {
+                    d.shape_angle = a;
+                }
+                if let Some(r) = spec.radius {
+                    d.shape_radius = r;
+                }
+                if let Some(s) = spec.size {
+                    d.shape_size = s;
+                }
+            });
+        }
+
+        /// The colour over life (empty for none).
+        #[property]
+        pub fn color_over_lifetime(self) -> Vec<ColorKey> {
+            with_particle_system(self, |d| {
+                d.color_over_lifetime
+                    .as_ref()
+                    .map(|k| k.iter().map(|(time, color)| ColorKey { time: *time, color: *color }).collect())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+        }
+
+        pub fn set_color_over_lifetime(self, keys: &[ColorKey]) {
+            with_particle_system(self, |d| {
+                d.color_over_lifetime = (!keys.is_empty()).then(|| keys.iter().map(|k| (k.time, k.color)).collect());
+            });
+        }
+
+        /// The size over life (empty for none).
+        #[property]
+        pub fn size_over_lifetime(self) -> Vec<SizeKey> {
+            with_particle_system(self, |d| {
+                d.size_over_lifetime
+                    .as_ref()
+                    .map(|k| k.iter().map(|k| SizeKey { time: k[0], value: k[1] }).collect())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+        }
+
+        pub fn set_size_over_lifetime(self, keys: &[SizeKey]) {
+            with_particle_system(self, |d| {
+                d.size_over_lifetime = (!keys.is_empty()).then(|| keys.iter().map(|k| [k.time, k.value]).collect());
+            });
         }
 
         #[property]

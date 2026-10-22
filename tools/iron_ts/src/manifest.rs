@@ -93,12 +93,19 @@ pub enum RecField {
     Opt(Box<RecField>),
     /// A list of number pairs (`[number, number][]`). JSON only.
     Pairs,
+    /// An engine handle (`MeshRenderer`): its id in JSON. JSON only.
+    Handle(String),
+    /// A list of engine handles. JSON only.
+    HandleList(String),
 }
 
 impl RecField {
     /// Whether the record's numbers can come back flat (no optional field, no list).
     pub fn is_flat(&self) -> bool {
-        !matches!(self, RecField::Opt(_) | RecField::Pairs)
+        !matches!(
+            self,
+            RecField::Opt(_) | RecField::Pairs | RecField::Handle(_) | RecField::HandleList(_)
+        )
     }
 
     fn parse(s: &str) -> Result<RecField, String> {
@@ -117,6 +124,10 @@ impl RecField {
                     RecField::Value(n.to_string())
                 } else if let Some(n) = other.strip_prefix("enum:") {
                     RecField::Enum(n.to_string())
+                } else if let Some(n) = other.strip_prefix("list:handle:") {
+                    RecField::HandleList(n.to_string())
+                } else if let Some(n) = other.strip_prefix("handle:") {
+                    RecField::Handle(n.to_string())
                 } else {
                     return Err(format!("manifest: unknown record field type `{other}`"));
                 }
@@ -173,6 +184,8 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
                 ExtTy::StrList
             } else if let Some(inner) = other.strip_prefix("opt:") {
                 ExtTy::Opt(Box::new(ext_ty(inner)?))
+            } else if let Some(name) = other.strip_prefix("records:") {
+                ExtTy::RecordsJson(name.to_string())
             } else if other == "list:f64" {
                 ExtTy::F64List
             } else if let Some(name) = other.strip_prefix("list:handle:") {

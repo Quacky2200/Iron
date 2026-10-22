@@ -7,8 +7,9 @@
 //! prototype. Id 0 is "no object" and travels as `null`.
 
 use rquickjs::{
-    Class, Ctx, Exception, Function, JsLifetime, Object, Result, Value, class::Trace,
-    function::Args,
+    Class, Ctx, Exception, Function, JsLifetime, Object, Result, Value,
+    class::Trace,
+    function::{Args, This},
 };
 
 /// What a handle object holds: the id and the class it was made as (`Transform` and `GameObject`
@@ -188,4 +189,68 @@ pub fn error_rejecter<'js>(ctx: &Ctx<'js>, reject: Function<'js>) -> Result<Func
             reject.call::<_, ()>((error,))
         },
     )
+}
+
+/// A script value as JSON, for the records the engine API takes: like `JSON.stringify` (`toJSON`
+/// is called, `undefined` and functions are left out) except that an engine handle is its id.
+#[allow(clippy::only_used_in_recursion)]
+pub fn value_to_json<'js>(ctx: &Ctx<'js>, v: &Value<'js>) -> Result<serde_json::Value> {
+    use serde_json::Value as J;
+    if v.is_null() || v.is_undefined() {
+        return Ok(J::Null);
+    }
+    if let Some(b) = v.as_bool() {
+        return Ok(J::Bool(b));
+    }
+    if let Some(n) = v.as_number() {
+        return Ok(serde_json::Number::from_f64(n).map_or(J::Null, J::Number));
+    }
+    if let Some(s) = v.as_string() {
+        return Ok(J::String(s.to_string()?));
+    }
+    if let Ok(c) = Class::<HandleBox>::from_value(v) {
+        return Ok(J::from(c.borrow().raw));
+    }
+    let Some(o) = v.as_object() else {
+        return Ok(J::Null);
+    };
+    if o.is_function() {
+        return Ok(J::Null);
+    }
+    if let Ok(to_json) = o.get::<_, Function>("toJSON") {
+        let r: Value = to_json.call((This(o.clone()),))?;
+        return value_to_json(ctx, &r);
+    }
+    if let Some(a) = o.as_array() {
+        let mut out = Vec::with_capacity(a.len());
+        for item in a.iter::<Value>() {
+            out.push(value_to_json(ctx, &item?)?);
+        }
+        return Ok(J::Array(out));
+    }
+    let mut map = serde_json::Map::new();
+    for prop in o.props::<String, Value>() {
+        let (k, item) = prop?;
+        if item.is_undefined() || item.is_function() {
+            continue;
+        }
+        map.insert(k, value_to_json(ctx, &item)?);
+    }
+    Ok(J::Object(map))
+}
+
+/// The records a script array holds, read through their JSON form (see [`value_to_json`]).
+pub fn json_records<'js, T>(
+    ctx: &Ctx<'js>,
+    v: &Value<'js>,
+    from: fn(&serde_json::Value) -> std::result::Result<T, String>,
+) -> Result<Vec<T>> {
+    if v.is_null() || v.is_undefined() {
+        return Ok(Vec::new());
+    }
+    if v.as_array().is_none() {
+        return Err(Exception::throw_type(ctx, "expected an array of objects"));
+    }
+    crate::json_records_value(&value_to_json(ctx, v)?, from)
+        .map_err(|e| Exception::throw_type(ctx, &e))
 }

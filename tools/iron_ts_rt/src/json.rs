@@ -11,6 +11,7 @@
 //!        | 5 nullable: desc
 //!        | 6 object: n u32, (struct header u64, body offset u32)*   (the class and its subclasses)
 //!        | 7 map or set                                      (stringifies as {}; cannot be parsed)
+//!        | 9 engine handle: the 64-bit id as a number (only in the records the engine API takes and gives)
 //!        | 8 value class: count u8, struct header u64, (len u8, name)*   (stringifies as [x,y,z];
 //!          parses that or {"x":..,"y":..,"z":..}, left-out fields are 0, alpha 1)
 //! body  := n u32, field*                                     (offset is from the blob start)
@@ -35,6 +36,7 @@ const D_ARR: u8 = 4;
 const D_NULLABLE: u8 = 5;
 const D_OBJ: u8 = 6;
 const D_VALUE: u8 = 8;
+const D_ID: u8 = 9;
 
 /// The whole blob behind a pointer to it (its first word is its length).
 ///
@@ -179,6 +181,7 @@ impl<'a> Out<'a> {
             D_BOOL => self
                 .s
                 .extend_from_slice(if bits != 0 { b"true" } else { b"false" }),
+            D_ID => self.s.extend_from_slice(bits.to_string().as_bytes()),
             D_STR => {
                 // SAFETY: a string slot holds a live string.
                 let st = unsafe { &*(bits as *const Str) };
@@ -674,6 +677,14 @@ impl Parser<'_, '_> {
                 }
                 self.value(d + 1)
             }
+            D_ID => match self.peek() {
+                Some(b'0'..=b'9') => Ok(self.number()? as u64),
+                Some(b'"' | b'{' | b'[' | b't' | b'f' | b'n' | b'-') => {
+                    self.skip()?;
+                    self.soft(type_err("expected a handle id"))
+                }
+                _ => Err(self.bad_start()),
+            },
             D_NUM => match self.peek() {
                 Some(b'-' | b'0'..=b'9') => Ok(self.number()?.to_bits()),
                 Some(b'"' | b'{' | b'[' | b't' | b'f' | b'n') => {

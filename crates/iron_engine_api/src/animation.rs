@@ -104,10 +104,10 @@ pub mod animation_curve_api {
             new_curve(Curve::constant(t0, t1, value))
         }
 
-        /// Keys through points (x is the time, y the value) with tangents made to match: `"linear"`
-        /// (the default), `"smooth"` or `"step"`. A difference to the TypeScript class, which takes
-        /// `[time, value]` pairs.
+        /// Keys through points (x is the time, y the value; `[time, value]` pairs work too) with
+        /// tangents made to match: `"linear"` (the default), `"smooth"` or `"step"`.
         #[optional(mode)]
+        #[ts_param(points = "readonly (Vector2Like | readonly [number, number])[]")]
         pub fn from_points(points: &[V2], mode: &str) -> CurveRef {
             let pts: Vec<(f64, f64)> = points.iter().map(|p| (p.x, p.y)).collect();
             let mode = if mode.is_empty() {

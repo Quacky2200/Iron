@@ -24,21 +24,6 @@ function __xs_Camera_horizontalFieldOfView(self: Camera, v: number): void {
   self.fieldOfView = (Math.atan(Math.tan((v * Math.PI) / 360) / aspect) * 360) / Math.PI;
 }
 
-//# when setLODs
-interface LodLevel {
-  screenRelativeTransitionHeight: number;
-  renderers: MeshRenderer[];
-}
-function __xm_LODGroup_setLODs(self: LODGroup, levels: LodLevel[]): LODGroup {
-  self.clearLods();
-  for (let i = 0; i < levels.length; i++) {
-    self.addLod(levels[i]!.screenRelativeTransitionHeight);
-    const rs = levels[i]!.renderers;
-    for (let j = 0; j < rs.length; j++) self.addLodRenderer(i, rs[j]!);
-  }
-  return self;
-}
-
 //# when new Material(
 function __xn_Material(
   color: Color = Color.white,
@@ -181,47 +166,7 @@ function __xs_ParticleSystem_angularVelocity$a(self: ParticleSystem, v: number[]
 function __xs_ParticleSystem_startColor$a(self: ParticleSystem, v: Color[]): void {
   self.setStartColorRange(v[0]!, v[1]!);
 }
-interface ParticleBurst {
-  time: number;
-  count: number;
-  cycles?: number;
-  interval?: number;
-}
-function __xs_ParticleSystem_bursts(self: ParticleSystem, v: ParticleBurst[]): void {
-  self.clearBursts();
-  for (let i = 0; i < v.length; i++) {
-    const b = v[i]!;
-    self.addBurst(b.time, b.count, b.cycles ?? 1, b.interval ?? 0.01);
-  }
-}
-interface ParticleShapeSpec {
-  type: string;
-  angle?: number;
-  radius?: number;
-  size?: Vector3;
-}
-function __xs_ParticleSystem_shape(self: ParticleSystem, s: ParticleShapeSpec): void {
-  self.shapeType = s.type;
-  if (s.angle !== undefined) self.shapeAngle = s.angle;
-  if (s.radius !== undefined) self.shapeRadius = s.radius;
-  if (s.size !== undefined) self.shapeSize = s.size;
-}
-interface ColorKey {
-  time: number;
-  color: Color;
-}
-function __xs_ParticleSystem_colorOverLifetime(self: ParticleSystem, v: ColorKey[]): void {
-  self.clearColorOverLifetime();
-  for (let i = 0; i < v.length; i++) self.addColorKey(v[i]!.time, v[i]!.color);
-}
-interface SizeKey {
-  time: number;
-  value: number;
-}
-function __xs_ParticleSystem_sizeOverLifetime(self: ParticleSystem, v: SizeKey[]): void {
-  self.clearSizeOverLifetime();
-  for (let i = 0; i < v.length; i++) self.addSizeKey(v[i]!.time, v[i]!.value);
-}
+
 
 //# when Mesh.create({
 interface MeshData {
@@ -304,13 +249,6 @@ function __xt_input_gamepads(): Gamepad[] {
 function __xt_input_on(type: string, fn: (e: GamepadEvent) => void): () => void {
   const token = type === "gamepaddisconnected" ? input.onGamepadDisconnected((id: number) => { fn({ gamepad: __pad(id) }); }) : input.onGamepadConnected((id: number) => { fn({ gamepad: __pad(id) }); });
   return () => { input.off(token); };
-}
-
-//# when AnimationCurve.fromPoints
-function __xt_AnimationCurve_fromPoints(points: number[][], mode?: string): AnimationCurve {
-  const v: Vector2[] = [];
-  for (let i = 0; i < points.length; i++) v.push(new Vector2(points[i]![0]!, points[i]![1]!));
-  return AnimationCurve.fromPoints$n(v, mode ?? "linear");
 }
 
 //# when postMessage&Window|onMessage&Window|onRequest&Window|.request<&Window|.request(&Window|broadcast&Window

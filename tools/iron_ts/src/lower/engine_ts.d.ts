@@ -113,13 +113,6 @@ interface Material {
 declare namespace Sprite {
   function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
 }
-interface LodLevel {
-  screenRelativeTransitionHeight: number;
-  renderers: MeshRenderer[];
-}
-interface LODGroup {
-  setLODs(levels: LodLevel[]): LODGroup;
-}
 
 // ---- Windows -----------------------------------------------------------------------------------
 
@@ -213,9 +206,6 @@ interface AnimationController {
   addState(name: string, motion: AnimationClip | BlendSpec, opts?: StateOpts): AnimationController;
   addTransition(t: TransitionSpec): AnimationController;
 }
-declare namespace AnimationCurve {
-  function fromPoints(points: number[][], mode?: string): AnimationCurve;
-}
 
 // ---- More rendering shapes ---------------------------------------------------------------------
 
@@ -264,26 +254,6 @@ declare namespace Light {
 interface Camera {
   rect: Rect;
 }
-interface ParticleBurst {
-  time: number;
-  count: number;
-  cycles?: number;
-  interval?: number;
-}
-interface ParticleShapeSpec {
-  type: string;
-  angle?: number;
-  radius?: number;
-  size?: Vector3Like;
-}
-interface ColorKey {
-  time: number;
-  color: Color;
-}
-interface SizeKey {
-  time: number;
-  value: number;
-}
 interface ParticleSystem {
   /** A number, or `[min, max]`. */
   startLifetime: number | number[];
@@ -293,10 +263,6 @@ interface ParticleSystem {
   angularVelocity: number | number[];
   /** A colour, or `[a, b]`. */
   startColor: Color | Color[];
-  bursts: ParticleBurst[];
-  shape: ParticleShapeSpec;
-  colorOverLifetime: ColorKey[];
-  sizeOverLifetime: SizeKey[];
 }
 interface AudioSource {
   playOneShot(clip: Sound | string, volumeScale?: number): void;

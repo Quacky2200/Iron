@@ -30,7 +30,11 @@ fn ts_type_like(t: &str, like: bool) -> String {
 /// The TypeScript type of a parameter: an array the engine only reads is `readonly`.
 fn param_ts_type(t: &str, like: bool) -> String {
     let ty = ts_type_like(t, like);
-    if (t.starts_with("values:") || t.starts_with("handles:") || t == "f64s" || t == "strings")
+    if (t.starts_with("values:")
+        || t.starts_with("handles:")
+        || t.starts_with("records:")
+        || t == "f64s"
+        || t == "strings")
         && !ty.starts_with("readonly ")
     {
         format!("readonly {ty}")
@@ -74,6 +78,7 @@ fn ts_type(t: &str) -> String {
                 .strip_prefix("list:value:")
                 .or_else(|| other.strip_prefix("list:record:"))
                 .or_else(|| other.strip_prefix("list:handle:"))
+                .or_else(|| other.strip_prefix("records:"))
             {
                 format!("{n}[]")
             } else if let Some(n) = other
@@ -190,7 +195,10 @@ fn func_of(f: &Value, like: bool) -> Func {
                     .map(|p| {
                         (
                             p["name"].as_str().unwrap_or("p").to_string(),
-                            param_ts_type(p["type"].as_str().unwrap_or("void"), like),
+                            p["ts"].as_str().filter(|t| !t.is_empty()).map_or_else(
+                                || param_ts_type(p["type"].as_str().unwrap_or("void"), like),
+                                str::to_string,
+                            ),
                             p["optional"].as_bool().unwrap_or(false),
                         )
                     })

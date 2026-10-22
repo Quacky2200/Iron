@@ -878,6 +878,7 @@ impl<'a> Lowerer<'a> {
             ExtTy::ValueList(n) => Ty::Arr(Box::new(Ty::Obj(self.value_struct(n)))),
             ExtTy::Record(n) => Ty::Obj(self.record_struct(n)),
             ExtTy::RecordList(n) => Ty::Arr(Box::new(Ty::Obj(self.record_struct(n)))),
+            ExtTy::RecordsJson(n) => Ty::Arr(Box::new(Ty::Obj(self.record_struct(n)))),
             ExtTy::Opt(inner) => self.ext_ir(inner).nullable(),
             other => other.to_ir(),
         }
@@ -914,6 +915,8 @@ impl<'a> Lowerer<'a> {
             RecField::Opt(inner) => self.rec_field_ty(inner).nullable(),
             // `[number, number][]`: a tuple of equal types is an array.
             RecField::Pairs => Ty::Arr(Box::new(Ty::Arr(Box::new(Ty::Num)))),
+            RecField::Handle(h) => Ty::Handle(h.clone()),
+            RecField::HandleList(h) => Ty::Arr(Box::new(Ty::Handle(h.clone()))),
         }
     }
 
@@ -1021,7 +1024,10 @@ impl<'a> Lowerer<'a> {
                             off += width;
                             inner
                         }
-                        crate::manifest::RecField::Opt(_) | crate::manifest::RecField::Pairs => {
+                        crate::manifest::RecField::Opt(_)
+                        | crate::manifest::RecField::Pairs
+                        | crate::manifest::RecField::Handle(_)
+                        | crate::manifest::RecField::HandleList(_) => {
                             unreachable!(
                                 "a record with optional keys or lists is not a flat result"
                             )
@@ -1849,7 +1855,11 @@ impl<'a> Lowerer<'a> {
                         mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty)
                     }
                     // An optional array is empty.
-                    ExtTy::F64Arr | ExtTy::StrArr | ExtTy::ValueArr(_) | ExtTy::HandleArr(_)
+                    ExtTy::F64Arr
+                    | ExtTy::StrArr
+                    | ExtTy::ValueArr(_)
+                    | ExtTy::HandleArr(_)
+                    | ExtTy::RecordsJson(_)
                         if i >= opt_from =>
                     {
                         let ty = self.ext_ir(pt);
@@ -1877,7 +1887,11 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             let want = self.ext_ir(pt);
-            let mut v = self.lower_expr(e, Some(&want))?;
+            // `[[x, y], ..]` for a list of value classes: lowered as numbers, then converted.
+            let rows = matches!(pt, ExtTy::ValueArr(_))
+                && matches!(e, Expression::ArrayExpression(a)
+                    if a.elements.iter().any(|x| matches!(x.as_expression(), Some(Expression::ArrayExpression(_)))));
+            let mut v = self.lower_expr(e, if rows { None } else { Some(&want) })?;
             // A value class argument may be another class with the same fields (a `Vector2Int`
             // where a `Vector2` goes): the fields are read by position.
             if let (Ty::Obj(a), Ty::Obj(b)) = (v.ty.strip(), &want)
@@ -1921,6 +1935,51 @@ impl<'a> Lowerer<'a> {
             (Ty::Typed(k), Ty::Arr(e)) if *e == Ty::Num => {
                 let arr = want.strip().clone();
                 return Ok(self.rt_str("ts_rt_typed_to_array_gc", vec![Self::kind_num(k), v], arr));
+            }
+            // `[[x, y], ..]` where a list of value classes is expected (`Vector2`): each row's
+            // numbers are the fields in order.
+            (Ty::Arr(ea), Ty::Arr(eb))
+                if matches!(ea.strip(), Ty::Arr(n) if **n == Ty::Num)
+                    && matches!(eb.strip(), Ty::Obj(b)
+                        if self.manifest.values.contains_key(&self.m.structs[*b].name)) =>
+            {
+                let Ty::Obj(b) = eb.strip().clone() else {
+                    unreachable!()
+                };
+                let width = self.m.structs[b].fields.len();
+                let src = self.new_local(v.ty.clone());
+                let out_ty = want.strip().clone();
+                let out = self.new_local(out_ty.clone());
+                let mut stmts = vec![
+                    Stmt::Assign(src, v),
+                    Stmt::Assign(
+                        out,
+                        mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), out_ty.clone()),
+                    ),
+                ];
+                let it = self.begin_iter(self.var_expr(src))?;
+                stmts.extend(it.pre);
+                let row = self.var_expr(it.elem);
+                let value_ty = Ty::Obj(b);
+                let obj = self.new_local(value_ty.clone());
+                let mut body = it.head;
+                body.push(Stmt::Assign(obj, mk(ExprKind::NewObj(b), value_ty.clone())));
+                for k in 0..width {
+                    let n = mk(
+                        ExprKind::Index(Box::new(row.clone()), Box::new(num(k as f64))),
+                        Ty::Num,
+                    );
+                    body.push(Stmt::StoreField(self.var_expr(obj), b, k, n));
+                }
+                body.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(out), self.var_expr(obj)]),
+                    Ty::Void,
+                )));
+                stmts.push(Stmt::Loop(it.label, body));
+                return Ok(mk(
+                    ExprKind::Seq(stmts, Box::new(self.var_expr(out))),
+                    out_ty,
+                ));
             }
             (Ty::Arr(ea), Ty::Arr(eb)) => {
                 if let (Ty::Obj(a), Ty::Obj(b)) = (ea.strip().clone(), eb.strip().clone())
@@ -2032,6 +2091,14 @@ impl<'a> Lowerer<'a> {
                     args.push(self.enum_index(en, v));
                     flat.push(ExtTy::I32);
                 }
+                // A list of records: JSON text.
+                ExtTy::RecordsJson(_) => {
+                    let text = self
+                        .json_text_of(v)
+                        .expect("a record list argument has a JSON form");
+                    args.push(text);
+                    flat.push(ExtTy::Str);
+                }
                 // `Option<f64>`: NaN for null. `Option<V>`: NaN in every field for null.
                 ExtTy::Opt(inner) => match &**inner {
                     // `Option<Record>`: the record as JSON text ("null" for none).
@@ -2086,6 +2153,7 @@ impl<'a> Lowerer<'a> {
             }
             ExtTy::Enum(_) => (ExtTy::I32, None),
             ExtTy::Record(_) => (ExtTy::Void, None),
+            ExtTy::RecordsJson(_) => (ExtTy::Str, None),
             ExtTy::ValueList(_)
             | ExtTy::RecordList(_)
             | ExtTy::StrList
@@ -2188,6 +2256,15 @@ impl<'a> Lowerer<'a> {
                 );
                 return mk(ExprKind::Seq(pre, Box::new(result)), nty);
             }
+            // A list of records: the call returns JSON text.
+            ExtTy::RecordsJson(rn) => {
+                let ty = Ty::Arr(Box::new(Ty::Obj(self.record_struct(rn))));
+                let text = mk(ExprKind::CallExtern(idx, args), Ty::Str);
+                let parsed = self
+                    .json_value_with(text, ty.clone(), true)
+                    .expect("a record list result has a JSON form");
+                return mk(ExprKind::Seq(pre, Box::new(parsed)), ty);
+            }
             // `Option<Record>`: the call returns JSON text; parse it into the record's object.
             ExtTy::Opt(inner) if matches!(**inner, ExtTy::Record(_)) => {
                 let ExtTy::Record(rn) = &**inner else {
@@ -2196,7 +2273,7 @@ impl<'a> Lowerer<'a> {
                 let nty = Ty::Obj(self.record_struct(rn)).nullable();
                 let text = mk(ExprKind::CallExtern(idx, args), Ty::Str);
                 let parsed = self
-                    .json_value_of(text, nty.clone())
+                    .json_value_with(text, nty.clone(), true)
                     .expect("a record result has a JSON form");
                 return mk(ExprKind::Seq(pre, Box::new(parsed)), nty);
             }

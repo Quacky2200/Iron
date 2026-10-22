@@ -8,6 +8,8 @@ use std::collections::HashMap as Map;
 
 struct Builder {
     out: Vec<u8>,
+    /// Engine handles are their ids (the records the engine API takes and gives), not `{}`.
+    ids: bool,
     /// Struct bodies still to write: (struct id, class header word).
     queue: Vec<StructId>,
     /// Body offset of every struct whose body is written or queued, and the places that need it.
@@ -106,6 +108,7 @@ impl<'a> Lowerer<'a> {
             }
             // Engine objects (GameObject, Camera, ...) stringify as `{}` like host objects in a
             // browser: their members are not own properties. They cannot be parsed.
+            Ty::Handle(_) if b.ids => b.out.push(9),
             Ty::Map(..) | Ty::Set(_) | Ty::Handle(_) => b.out.push(7),
             t => bail!("JSON of {t} values is not supported"),
         }
@@ -114,7 +117,13 @@ impl<'a> Lowerer<'a> {
 
     /// The descriptor blob for a type, as an index into `Module::blobs`.
     pub(crate) fn json_blob(&mut self, ty: &Ty) -> R<u32> {
+        self.json_blob_with(ty, false)
+    }
+
+    /// [`Self::json_blob`]; with `ids` an engine handle is its id.
+    pub(crate) fn json_blob_with(&mut self, ty: &Ty, ids: bool) -> R<u32> {
         let mut b = Builder {
+            ids,
             out: vec![0; 8],
             queue: Vec::new(),
             body_at: Map::new(),
@@ -176,7 +185,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn json_text_of(&mut self, v: Expr) -> R<Expr> {
         use super::expr::{mk, num};
         let v = self.widen_lit(v);
-        let blob = self.json_blob(&v.ty.clone())?;
+        let blob = self.json_blob_with(&v.ty.clone(), true)?;
         // The value goes into a local first: the runtime allocates the text while it walks the
         // value, and only a local is a GC root.
         let held = self.new_local(v.ty.clone());
@@ -270,8 +279,13 @@ impl<'a> Lowerer<'a> {
 
     /// The value of type `ty` that JSON text holds (what `JSON.parse(text)` makes there).
     pub(crate) fn json_value_of(&mut self, text: Expr, ty: Ty) -> R<Expr> {
+        self.json_value_with(text, ty, false)
+    }
+
+    /// [`Self::json_value_of`]; with `ids` an engine handle is read from its id.
+    pub(crate) fn json_value_with(&mut self, text: Expr, ty: Ty, ids: bool) -> R<Expr> {
         use super::expr::mk;
-        let blob = self.json_blob(&ty)?;
+        let blob = self.json_blob_with(&ty, ids)?;
         // The text goes into a local first: the parser allocates while it reads it.
         let held = self.new_local(Ty::Str);
         let raw = mk(

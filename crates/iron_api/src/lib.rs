@@ -53,6 +53,9 @@ pub enum Ty {
     /// An array of handles (the TypeScript name, and that name with `[]`): the engine reads the
     /// 64-bit ids (`script_handles`).
     Handles(&'static str, &'static str),
+    /// A list of records that travels as JSON text (a parameter `&[R]` or a result `Vec<R>` of a
+    /// record with optional keys, lists or handles): the record's name and `R[]`.
+    Records(&'static str, &'static str),
     /// A closure the engine keeps and calls later: the manifest signature (`fn(f64,string):void`)
     /// and the TypeScript type (`(a: number, b: string) => void`).
     Callback(&'static str, &'static str),
@@ -86,7 +89,7 @@ impl Ty {
             Ty::Str => "string",
             Ty::F64s => "number[]",
             Ty::Strs => "string[]",
-            Ty::Values(_, arr) | Ty::Handles(_, arr) => arr,
+            Ty::Values(_, arr) | Ty::Handles(_, arr) | Ty::Records(_, arr) => arr,
             Ty::Callback(_, ts) => ts,
             Ty::Enum(name) | Ty::Record(name) => name,
             Ty::List(_, arr) => arr,
@@ -110,6 +113,7 @@ impl Ty {
             Ty::Strs => "strings".into(),
             Ty::Values(n, _) => format!("values:{n}"),
             Ty::Handles(n, _) => format!("handles:{n}"),
+            Ty::Records(n, _) => format!("records:{n}"),
             Ty::Callback(sig, _) => (*sig).into(),
             Ty::Enum(n) => format!("enum:{n}"),
             Ty::Record(n) => format!("record:{n}"),
@@ -134,6 +138,8 @@ pub struct Param {
     /// What the parameter is, from a `/// name: text` line of the function's doc (the JSDoc of
     /// the key in a named options object).
     pub doc: &'static str,
+    /// `#[ts_param(name = "..")]`: the declared TypeScript type, when it is not the Rust type's (or `""`).
+    pub ts: &'static str,
 }
 
 /// How a function is called from a script.
@@ -595,6 +601,66 @@ pub fn json_record<T>(text: &str, from: fn(&serde_json::Value) -> Result<T, Stri
     }
 }
 
+/// The record a parsed JSON value holds (see [`json_record`]).
+pub fn json_record_value<T>(
+    v: &serde_json::Value,
+    from: fn(&serde_json::Value) -> Result<T, String>,
+) -> Option<T> {
+    if v.is_null() {
+        return None;
+    }
+    match from(v) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            eprintln!("iron_api: an object argument was ignored: {e}");
+            None
+        }
+    }
+}
+
+/// The records a JSON array holds (a `&[R]` parameter travels as JSON text): empty for an empty text,
+/// `null` or text that is not an array of records of this kind (reported).
+pub fn json_records<T>(text: &str, from: fn(&serde_json::Value) -> Result<T, String>) -> Vec<T> {
+    let text = text.trim();
+    if text.is_empty() || text == "null" {
+        return Vec::new();
+    }
+    match serde_json::from_str::<serde_json::Value>(text)
+        .map_err(|e| e.to_string())
+        .and_then(|v| json_records_value(&v, from))
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("iron_api: a list argument was ignored: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// [`json_records`] for a parsed value.
+pub fn json_records_value<T>(
+    v: &serde_json::Value,
+    from: fn(&serde_json::Value) -> Result<T, String>,
+) -> Result<Vec<T>, String> {
+    v.as_array()
+        .ok_or_else(|| "expected an array".to_string())?
+        .iter()
+        .map(from)
+        .collect()
+}
+
+/// [`script_json_records`] for a script string.
+///
+/// # Safety
+/// `p` must be null or a live script string.
+pub unsafe fn script_json_records<T>(
+    p: *const u8,
+    from: fn(&serde_json::Value) -> Result<T, String>,
+) -> Vec<T> {
+    // SAFETY: by contract.
+    json_records(&unsafe { script_str(p) }, from)
+}
+
 /// [`json_record`] for a script string.
 ///
 /// # Safety
@@ -859,14 +925,19 @@ fn function_json(f: &Function) -> String {
         .iter()
         .map(|p| {
             format!(
-                "{{\"name\":{},\"type\":{}{}{}{}{}}}",
+                "{{\"name\":{},\"type\":{}{}{}{}{}{}}}",
                 json_str(p.name),
                 json_str(&p.ty.name()),
                 if p.optional { ",\"optional\":true" } else { "" },
                 p.default
                     .map_or(String::new(), |d| format!(",\"default\":{d}")),
                 if p.rest { ",\"rest\":true" } else { "" },
-                doc_json(p.doc)
+                doc_json(p.doc),
+                if p.ts.is_empty() {
+                    String::new()
+                } else {
+                    format!(",\"ts\":{}", json_str(p.ts))
+                }
             )
         })
         .collect();

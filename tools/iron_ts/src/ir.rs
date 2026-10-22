@@ -441,6 +441,8 @@ pub enum ExtTy {
     StrList,
     /// A result `Vec` of an enum: the count, and the indexes in the buffer.
     EnumList(String),
+    /// A list of records that travels as JSON text (a parameter or a result): the record's name.
+    RecordsJson(String),
     /// A result `Vec<f64>`: the count, and the numbers in the buffer.
     F64List,
     /// A result `Vec` of handles: the count, and the ids read with `iron_api_result_id`.
@@ -476,6 +478,7 @@ impl ExtTy {
             ExtTy::ValueList(_) | ExtTy::RecordList(_) => Ty::JsValue,
             ExtTy::StrList | ExtTy::EnumList(_) => Ty::Arr(Box::new(Ty::Str)),
             ExtTy::F64List => Ty::Arr(Box::new(Ty::Num)),
+            ExtTy::RecordsJson(_) => Ty::JsValue,
             ExtTy::HandleList(n) => Ty::Arr(Box::new(Ty::Handle(n.clone()))),
             ExtTy::Opt(inner) => inner.to_ir().nullable(),
         }

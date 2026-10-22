@@ -485,3 +485,24 @@ export function unsubscribes(): string {
   offLoad();
   return `${screens}|${levels}|${loads}`;
 }
+
+export function recordLists(): string {
+  const go = new GameObject("g");
+  const r1 = go.addComponent(MeshRenderer, { mesh: "cube" });
+  const r2 = go.addComponent(MeshRenderer, { mesh: "sphere" });
+  const lod = go.addComponent(LODGroup);
+  const same = lod.setLODs([
+    { screenRelativeTransitionHeight: 0.6, renderers: [r1, r2] },
+    { screenRelativeTransitionHeight: 0.2, renderers: [r2] },
+    { screenRelativeTransitionHeight: 0.9, renderers: [r1] },
+  ]);
+  const ps = go.addComponent(ParticleSystem);
+  ps.bursts = [{ time: 0, count: 5 }, { time: 1, count: 2, cycles: 3, interval: 0.5 }];
+  ps.colorOverLifetime = [{ time: 0, color: new Color(1, 0, 0, 1) }, { time: 1, color: Color.white }];
+  ps.sizeOverLifetime = [{ time: 0, value: 1 }, { time: 1, value: 0.5 }];
+  ps.shape = { type: "box", size: new Vector3(1, 2, 3) };
+  const b = ps.bursts;
+  const c = ps.colorOverLifetime;
+  const s = ps.shape;
+  return `${lod.lodCount}|${lod.lodRendererCount(0)}|${lod.lodRendererCount(1)}|${same.lodCount}|${b.length}|${b[0]!.cycles}|${b[1]!.interval}|${c[0]!.color.r}|${ps.sizeOverLifetime[1]!.value}|${s!.type}|${s!.size!.y}|${s!.angle}`;
+}
