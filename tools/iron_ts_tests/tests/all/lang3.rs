@@ -32,6 +32,8 @@ bun_tests! {
     3313 flat_with_a_run_time_depth_over_two_levels_returns_a_union_array "flat_run_time_depth_two_levels" "m1_" 2300000;
     3314 flat_with_a_run_time_depth_over_three_levels_flattens_exactly_that_deep "flat_run_time_depth_three_levels" "m2_" 2301000;
     3315 flat_with_a_constant_depth_keeps_its_exact_type "flat_constant_depths_keep_exact_types" "m3_" 2302000;
+    3317 this_in_object_literal_methods_and_accessors_is_the_object "this_in_object_literal_methods_and_accessors" "m5_" 2304000;
+    3318 this_in_literal_methods_with_a_declared_type_nesting_and_closures "this_in_literal_methods_with_a_declared_type_and_nesting" "m6_" 2305000;
 }
 
 // M9-TS-3316

@@ -867,7 +867,11 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
 - **Objects.** A constant object whose methods name the constant (`const sfx = { play() { sfx.preload(); } }`) gets its type from
   the methods' written signatures first (`object_shape`). A getter in an object literal (`get scene() { return self.effects; }`)
   is a hidden closure field `_p_get_<name>` in every plain struct that has a field of that name; a read calls it when it is set
-  (`accessors.rs`). `new (a.constructor as new (n: number) => T)(len)` makes another typed array (or an object of a class of the
+  (`accessors.rs`). Methods, getters and setters of an object literal may use `this`: it is the literal's object (a cell filled once
+  the object exists, captured by those closures as a class method captures its own; `lower_this_prop` in `expr.rs`). A literal
+  with such a method gets a struct of its own whose method fields are patched with the types the bodies give; one whose type is
+  declared (an interface) keeps that struct. A method taken off its object (`const f = o.m; f()`) keeps its binding (JavaScript
+  has `this` undefined there). `M9-TS-3317/3318`. `new (a.constructor as new (n: number) => T)(len)` makes another typed array (or an object of a class of the
   program) like `a`. A generic arrow declared in a function (`const more = <T extends Float32Array>(a: T): T => ..`) is a generic
   function of its own (it cannot use the locals around it). `Record<Union, V>` with more than 48 keys is a dictionary
   (`Map<string, V>`: a struct holds 64 fields), and `Partial<Record<..>>` of a dictionary is the dictionary.

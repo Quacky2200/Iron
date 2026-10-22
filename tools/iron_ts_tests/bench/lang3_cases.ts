@@ -62,3 +62,97 @@ function t(): string {
     return "threw:" + (e as Error).message;
   }
 }
+//## this_in_object_literal_methods_and_accessors
+function t(): string {
+  const o = {
+    n: 1,
+    get double() {
+      return this.n * 2;
+    },
+    set double(v: number) {
+      this.n = v / 2;
+    },
+    inc() {
+      this.n++;
+    },
+    add(k: number): number {
+      this.n += k;
+      return this.n;
+    },
+    label: "x",
+    get tag(): string {
+      return this.label + this.n;
+    },
+  };
+  const out: string[] = [];
+  out.push(o.double + "");
+  o.inc();
+  out.push(o.n + "," + o.double);
+  o.double = 20;
+  out.push(o.n + "," + o.add(5) + "," + o.tag);
+  o.label = "y";
+  out.push(o.tag);
+  o.double += 2;
+  out.push(o.n + "");
+  return out.join("|");
+}
+//## this_in_literal_methods_with_a_declared_type_and_nesting
+interface Counter {
+  count: number;
+  step: number;
+  bump(): number;
+  twice(): void;
+  readonly label: string;
+}
+function make(step: number): Counter {
+  return {
+    count: 0,
+    step,
+    bump() {
+      this.count += this.step;
+      return this.count;
+    },
+    twice() {
+      this.bump();
+      this.bump();
+    },
+    get label() {
+      return "c" + this.count;
+    },
+  };
+}
+const shared = {
+  total: 100,
+  take(n: number) {
+    this.total -= n;
+    return this.total;
+  },
+  inner: {
+    v: 7,
+    get plus() {
+      return this.v + 1;
+    },
+  },
+};
+function t(): string {
+  const a = make(2);
+  const b = make(10);
+  a.bump();
+  a.twice();
+  b.twice();
+  const fn = () => shared.take(30);
+  const arrow = {
+    k: 3,
+    run() {
+      const f = () => this.k * 2;
+      return f();
+    },
+    list: [1, 2, 3],
+    sum() {
+      let s = 0;
+      for (const x of this.list) s += x * this.k;
+      return s;
+    },
+  };
+  return `${a.count} ${b.count} ${a.label} ${b.label} ${fn()} ${shared.take(5)} ${shared.inner.plus} ${arrow.run()} ${arrow.sum()}`;
+}

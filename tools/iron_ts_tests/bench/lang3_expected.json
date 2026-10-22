@@ -2,5 +2,7 @@
  "flat_run_time_depth_two_levels": "a2 a1 a0 |n1 n2 n3 |n1 n2 n3 |a2 a1 a0 |a2 a1 a0 |a2 a1 a0 |n1 n2 n3 |n1 n2 n3 ",
  "flat_run_time_depth_three_levels": "3:[2][1][0] 3 3:[2][1][1] 4 4:1;2;3;4; 400 4:1;2;3;4; 400 3:[2][1][0] 3 3:[2][1][0] 3 3:[2][1][1] 4 4:1;2;3;4; 400 3:[2][1][0] 3",
  "flat_constant_depths_keep_exact_types": "3 1234 2 4",
- "flat_cast_with_a_too_shallow_depth": "1"
+ "flat_cast_with_a_too_shallow_depth": "1",
+ "this_in_object_literal_methods_and_accessors": "2|2,4|10,15,x15|y15|16",
+ "this_in_literal_methods_with_a_declared_type_and_nesting": "6 20 c6 c20 70 65 8 6 18"
 }

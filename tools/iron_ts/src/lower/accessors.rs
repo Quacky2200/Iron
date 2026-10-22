@@ -6,7 +6,7 @@
 //! field of that name; the literal stores its getter there, and a read of the field calls the
 //! closure when there is one (`member_of`). A setter (`set v(n) { .. }`) is the same with
 //! `_p_set_<name>`: a write of the field calls the closure when there is one (`Place::Thunked`).
-//! Neither can use `this` (an object literal's methods have no `this` here).
+//! Either may use `this`: it is the object being made (`lower_this_prop` in `expr.rs`).
 
 use super::expr::mk;
 use super::*;

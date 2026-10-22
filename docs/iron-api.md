@@ -732,7 +732,7 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
   mentions `LineRenderer2D` no longer pulls a chunk written over it into programs without that class.
 - **Compiler changes this needed** (`tools/iron_ts`): interface and type-literal *method signatures* are function-valued
   properties (`at(t: number): Move;`, optional ones too); named tuple members (`[t: number, run: () => void]`); a method shorthand
-  in an object literal (`{ at(t) { .. } }`, no `this`) is a property whose closure takes its parameter types from the declared
+  in an object literal (`{ at(t) { .. } }`) is a property whose closure takes its parameter types from the declared
   field; closures inside closures in a **top-level initialiser** now capture the outer closure's locals; errors in top-level
   declarations and object types carry their line; the JSX rewrite keeps the lines of what follows each multi-line element, so
   later error lines are right; `clipPath` is an attribute of `IronProps` (inline SVG `<g clipPath="url(#id)">`).

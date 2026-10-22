@@ -2541,11 +2541,13 @@ impl<'a> Lowerer<'a> {
         }
         // Lower every value first (with the field type as context when the struct is known), in
         // source order: a later spread or property wins.
-        enum Item {
+        enum Item<'b> {
             Spread(Expr),
             Prop(String, Expr),
+            /// A method or accessor that uses `this`: lowered once the object's struct exists.
+            Pending(&'b ObjectProperty<'b>),
         }
-        let mut items: Vec<Item> = Vec::new();
+        let mut items: Vec<Item<'a>> = Vec::new();
         for p in &o.properties {
             match p {
                 ObjectPropertyKind::SpreadProperty(s) => {
@@ -2560,6 +2562,10 @@ impl<'a> Lowerer<'a> {
                     items.push(Item::Spread(e));
                 }
                 ObjectPropertyKind::ObjectProperty(p) => {
+                    if self.uses_this(p) {
+                        items.push(Item::Pending(p));
+                        continue;
+                    }
                     // `get scene() { .. }`: the closure goes in the hidden field, the real one
                     // holds a placeholder.
                     if p.kind == PropertyKind::Get
@@ -2640,6 +2646,7 @@ impl<'a> Lowerer<'a> {
                 }
             }
         }
+        let has_pending = items.iter().any(|i| matches!(i, Item::Pending(_)));
         let sid = match exp_sid {
             Some(s) => s,
             None => {
@@ -2672,30 +2679,78 @@ impl<'a> Lowerer<'a> {
                             record.cloned().unwrap_or_else(|| v.ty.clone()),
                             false,
                         ),
+                        Item::Pending(p) => {
+                            let n = self.key_name(&p.key)?;
+                            let ty = self.pending_placeholder(p)?;
+                            upsert(n, ty, false)
+                        }
                     }
                 }
-                let single_spread = items.len() == 1 && matches!(items[0], Item::Spread(_));
-                // `{ ...base, name }`: the type of `base` when it already has every property.
-                let covers = only_spread.filter(|s| {
-                    !self.class_of_sid.contains_key(s)
-                        && items.iter().all(|it| match it {
-                            Item::Spread(e) => matches!(e.ty.strip(), Ty::Obj(t) if t == s),
-                            Item::Prop(n, v) => self.m.structs[*s].field(n).is_some_and(|i| {
-                                self.m.structs[*s].fields[i].ty.strip() == v.ty.strip()
-                            }),
-                        })
-                });
-                match only_spread {
-                    // `{ ...a }` is a copy with the type of `a`.
-                    Some(s) if single_spread => s,
-                    Some(_) if covers.is_some() => covers.expect("checked"),
-                    _ => self.anon_struct("Anon", fields),
+                if has_pending {
+                    // The methods' types are not known yet: a struct of its own, patched below.
+                    let fields = self.with_thunks(fields);
+                    self.new_struct("Anon", fields)
+                } else {
+                    let single_spread = items.len() == 1 && matches!(items[0], Item::Spread(_));
+                    // `{ ...base, name }`: the type of `base` when it already has every property.
+                    let covers = only_spread.filter(|s| {
+                        !self.class_of_sid.contains_key(s)
+                            && items.iter().all(|it| match it {
+                                Item::Spread(e) => matches!(e.ty.strip(), Ty::Obj(t) if t == s),
+                                Item::Prop(n, v) => self.m.structs[*s].field(n).is_some_and(|i| {
+                                    self.m.structs[*s].fields[i].ty.strip() == v.ty.strip()
+                                }),
+                                Item::Pending(_) => false,
+                            })
+                    });
+                    match only_spread {
+                        // `{ ...a }` is a copy with the type of `a`.
+                        Some(s) if single_spread => s,
+                        Some(_) if covers.is_some() => covers.expect("checked"),
+                        _ => self.anon_struct("Anon", fields),
+                    }
                 }
             }
         };
+        // Methods and accessors that use `this`: `this` is the object, a cell filled once it
+        // exists (as the closures of a class capture theirs).
+        let mut this_cell: Option<VarId> = None;
+        if has_pending {
+            let cell_ty = Ty::Cell(Box::new(Ty::Obj(sid)));
+            let cell = self.new_local(cell_ty.clone());
+            this_cell = Some(cell);
+            self.cur.scopes.push(HashMap::new());
+            let scope = self.cur.scopes.len() - 1;
+            self.cur.scopes[scope].insert("this".to_string(), Binding::Boxed(cell, Ty::Obj(sid)));
+            let mut done: Vec<Item<'a>> = Vec::new();
+            for it in items {
+                match it {
+                    Item::Pending(p) => {
+                        for (n, v) in self.lower_this_prop(p, sid, exp_sid.is_none())? {
+                            done.push(Item::Prop(n, v));
+                        }
+                    }
+                    other => done.push(other),
+                }
+            }
+            items = done;
+            self.cur.scopes.pop();
+        }
         let tmp = self.new_local(Ty::Obj(sid));
         let t = self.var_expr(tmp);
         let mut stmts = vec![Stmt::Assign(tmp, mk(ExprKind::NewObj(sid), Ty::Obj(sid)))];
+        let mut pre: Vec<Stmt> = Vec::new();
+        if let Some(cell) = this_cell {
+            let zero = self.default_value(&Ty::Obj(sid));
+            pre.push(Stmt::Assign(
+                cell,
+                mk(
+                    ExprKind::NewCell(Box::new(zero)),
+                    Ty::Cell(Box::new(Ty::Obj(sid))),
+                ),
+            ));
+            stmts.push(Stmt::CellSet(self.var_expr(cell), t.clone()));
+        }
         for it in items {
             match it {
                 Item::Spread(s) => {
@@ -2735,6 +2790,7 @@ impl<'a> Lowerer<'a> {
                         }
                     }
                 }
+                Item::Pending(_) => unreachable!("lowered above"),
                 Item::Prop(name, v) => {
                     let Some(i) = self.m.structs[sid].field(&name) else {
                         bail!("{} has no field `{name}`", self.m.structs[sid].name)
@@ -2761,7 +2817,109 @@ impl<'a> Lowerer<'a> {
                 );
             }
         }
-        Ok(mk(ExprKind::Seq(stmts, Box::new(t)), Ty::Obj(sid)))
+        pre.extend(stmts);
+        Ok(mk(ExprKind::Seq(pre, Box::new(t)), Ty::Obj(sid)))
+    }
+
+    /// Does this property of an object literal bind `this` to the object: a method, getter or
+    /// setter (a function expression) whose body mentions `this`.
+    fn uses_this(&self, p: &ObjectProperty<'_>) -> bool {
+        !p.computed
+            && matches!(&p.value, Expression::FunctionExpression(f)
+                if self.closure_free.get(&f.span.start).is_some_and(|v| v.iter().any(|n| n == "this")))
+    }
+
+    /// The type a method or accessor that uses `this` has in the object's struct until its body
+    /// has been lowered: from its annotations (a getter's return type, a setter's parameter, a
+    /// method's signature), with a number or nothing where it has none.
+    fn pending_placeholder(&mut self, p: &'a ObjectProperty<'a>) -> R<Ty> {
+        let Expression::FunctionExpression(f) = &p.value else {
+            unreachable!("uses_this")
+        };
+        let mut params = Vec::new();
+        for q in &f.params.items {
+            params.push(match &q.type_annotation {
+                Some(a) => self.ty(&a.type_annotation, "method")?,
+                None => Ty::Num,
+            });
+        }
+        let ret = match &f.return_type {
+            Some(r) => self.ty(&r.type_annotation, "method")?,
+            None => Ty::Void,
+        };
+        Ok(match p.kind {
+            PropertyKind::Get => match &f.return_type {
+                Some(_) => ret,
+                None => Ty::Num,
+            },
+            PropertyKind::Set => params.first().cloned().unwrap_or(Ty::Num),
+            PropertyKind::Init => Ty::Fn(Box::new(FnTy { params, ret })),
+        })
+    }
+
+    /// A method or accessor that uses `this`, lowered with `this` bound to the object being made
+    /// (the binding is in scope). With `patch`, the struct fields it fills get its real types.
+    fn lower_this_prop(
+        &mut self,
+        p: &'a ObjectProperty<'a>,
+        sid: StructId,
+        patch: bool,
+    ) -> R<Vec<(String, Expr)>> {
+        let Expression::FunctionExpression(f) = &p.value else {
+            unreachable!("uses_this")
+        };
+        let name = self.key_name(&p.key)?;
+        let field_ty = |this: &Self, n: &str| {
+            this.m.structs[sid]
+                .field(n)
+                .map(|i| this.m.structs[sid].fields[i].ty.strip().clone())
+        };
+        let set_ty = |this: &mut Self, n: &str, ty: Ty| {
+            if let Some(i) = this.m.structs[sid].field(n) {
+                this.m.structs[sid].fields[i].ty = ty;
+            }
+        };
+        match p.kind {
+            PropertyKind::Get => {
+                let hidden = accessors::thunk_name(&name);
+                let want = if patch { None } else { field_ty(self, &hidden) };
+                let c = self.lower_closure(closure::ClosureNode::Func(f), want.as_ref())?;
+                let Ty::Fn(sig) = c.ty.strip().clone() else {
+                    unreachable!("a closure")
+                };
+                if patch {
+                    set_ty(self, &name, sig.ret.clone());
+                    set_ty(self, &hidden, Ty::Fn(sig.clone()).nullable());
+                }
+                let placeholder = self.default_value(&sig.ret);
+                Ok(vec![(name, placeholder), (hidden, c)])
+            }
+            PropertyKind::Set => {
+                let hidden = accessors::setter_name(&name);
+                let want = if patch { None } else { field_ty(self, &hidden) };
+                let c = self.lower_closure(closure::ClosureNode::Func(f), want.as_ref())?;
+                let Ty::Fn(sig) = c.ty.strip().clone() else {
+                    unreachable!("a closure")
+                };
+                let Some(value_ty) = sig.params.first().cloned() else {
+                    bail!("{}: a setter takes one parameter", self.loc(p.span.start))
+                };
+                if patch {
+                    set_ty(self, &name, value_ty.clone());
+                    set_ty(self, &hidden, Ty::Fn(sig.clone()).nullable());
+                }
+                let placeholder = self.default_value(&value_ty);
+                Ok(vec![(name, placeholder), (hidden, c)])
+            }
+            PropertyKind::Init => {
+                let want = if patch { None } else { field_ty(self, &name) };
+                let c = self.lower_closure(closure::ClosureNode::Func(f), want.as_ref())?;
+                if patch {
+                    set_ty(self, &name, c.ty.clone());
+                }
+                Ok(vec![(name, c)])
+            }
+        }
     }
 
     /// `{ [Weather.Rain]: v, ... }` as an array indexed by the enum values; keys nobody gave hold the
