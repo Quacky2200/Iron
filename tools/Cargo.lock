@@ -1363,6 +1363,7 @@ dependencies = [
  "memmap2",
  "miniz_oxide 0.9.1",
  "siphasher",
+ "tracing",
  "zstd",
 ]
 

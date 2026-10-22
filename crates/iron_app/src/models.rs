@@ -81,9 +81,7 @@ fn read_uri(root: &Path, model_dir: &str, uri: &str) -> Result<Vec<u8>, String> 
     } else {
         format!("{model_dir}/{uri}")
     };
-    let path = iron_core::resolve_asset(root, &relative)
-        .ok_or_else(|| format!("`{uri}` is outside the game folder"))?;
-    std::fs::read(&path).map_err(|e| format!("`{uri}`: {e}"))
+    iron_core::read_asset(root, &relative).map_err(|e| e.to_string())
 }
 
 /// glTF URIs are percent-encoded (`my%20texture.png`).
@@ -110,9 +108,7 @@ fn percent_decode(s: &str) -> String {
 
 /// Loads `src` (relative to the game folder `root`).
 pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String> {
-    let path = iron_core::resolve_asset(root, src)
-        .ok_or_else(|| format!("`{src}` must be a relative path inside the game folder"))?;
-    let bytes = std::fs::read(&path).map_err(|e| format!("`{src}`: {e}"))?;
+    let bytes = iron_core::read_asset(root, src).map_err(|e| e.to_string())?;
     let model_dir = src.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
     let gltf = gltf::Gltf::from_slice(&bytes).map_err(|e| format!("`{src}`: {e}"))?;
     let doc = &gltf.document;

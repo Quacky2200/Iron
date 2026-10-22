@@ -2162,6 +2162,7 @@ dependencies = [
  "iron_core",
  "iron_engine_api",
  "iron_native",
+ "iron_pack",
  "iron_physics",
  "iron_physics_api",
  "iron_platform",
@@ -2191,6 +2192,7 @@ dependencies = [
  "iron_core",
  "kira",
  "mint",
+ "symphonia",
  "tracing",
 ]
 
@@ -2262,6 +2264,7 @@ dependencies = [
  "memmap2",
  "miniz_oxide 0.9.1",
  "siphasher",
+ "tracing",
  "zstd",
 ]
 

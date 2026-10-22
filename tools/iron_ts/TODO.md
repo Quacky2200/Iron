@@ -172,10 +172,12 @@ unreferenced assets, both forms for code-literal textures, one shared pack, the 
 Differences to keep in mind:
 
 - [x] Dynamic asset paths built at run time (virtual file system plan, phase 0, 2026-10-22): `include` / `exclude` take globs (default `assets/**`), the build infers `assets/sfx/*.*` from template literals and `+` chains (`iron_ts::assetpaths`), reports what each reached, and `dist/assets.plan` makes the dev app warn about a loaded file a packaged build would miss (`M9-TS-2550..2553`, `M9-API-1143`). Packaged `emoji` checked in a screenshot run.
-- [x] Pack build, phase 1 (2026-10-22): `iron-build package --packs` writes `data/assets.dat` + `scene-<slug>.dat` + `index.json` with the reference-counting rule, `iron-build pack-info`; deterministic; source forms only (`M9-TS-2554..2559`). The runtime does not read them yet (phase 2: mount through `Vfs`).
+- [x] Pack build, phase 1 (2026-10-22): `iron-build package --packs` writes `data/assets.dat` + `scene-<slug>.dat` + `index.json` with the reference-counting rule, `iron-build pack-info`; deterministic; source forms only (`M9-TS-2554..2559`). The runtime reads them since phase 2 (below).
+- [x] Runtime reads through the `Vfs`, phase 2 (2026-10-22): `iron_app` mounts `index.json`'s packs (`assets.dat`, then scene packs) or the folder, `iron_core::set_asset_fs` / `read_asset` is the one read call for every loader, streamed sounds read through the chunk table, not-found messages name where they looked, dev case warning (`M9-API-1144..1149`, `1205`). Packaged `emoji` and `scenes` with `--packs` run with no not-found errors. Not done: patches/DLC/mods overlays, cooked forms from packs, an asset watcher over packs, `guid:` sources rescanning after a `.meta` change.
+- [x] zstd as the second codec (`--codec zstd`, `Codec::Zstd = 3`); `iron-build package` picks the newest host by modified time and prints it (`M9-TS-2559`, `2560`).
 - [ ] **Flip `iron-build package` to write packs by default** (and add `--loose` for debugging and modding) once packs have been exercised on real games (decision 8 of the virtual-fs plan).
 - [ ] Revisit: textures named in code are stored in source form only for now; the cooked form, and both, come with the cooker move (decision 5: both forms for now, consider cooked only to cut bloat).
-- [ ] zstd as the second codec (approved, crate not added yet); DirectStorage and `CODEC-1` come later.
+- [ ] DirectStorage and `CODEC-1` (GPU codecs) come later; LZ4 stays the default codec.
 - [ ] A cooked texture's GUID differs from its source's (`Assets.pathToGuid` answers the source GUID).
 - [ ] Packs hold `IRTX` v1 (largest mip first) until step 12; no mip streaming before that.
 - [ ] `iron-build pack` needs a built `iron_app` for cooking until `crates/iron_cook` (step 15).

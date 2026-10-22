@@ -358,9 +358,9 @@ cooker in the build; a note says so); both cooked and source forms is the decisi
 `iron-build pack-info <file.dat>` lists a pack: version, id, entries, codec totals and one row per entry (kind, size, stored size,
 codec, GUID, path).
 
-**Not usable by a running game yet:** `iron_app` still reads a loose `data/` folder (phase 2 mounts `index.json` through `Vfs`), so
-a `--packs` exe needs that later step. The default stays loose; flipping it is a TODO (`tools/iron_ts/TODO.md`, asset packs).
-`emoji` with `--packs`: one `assets.dat`, 157 entries, 6.41 MB raw, 5.93 MB on disk.
+**A running game reads them** (phase 2, see "Where the assets are read from"): `iron_app` mounts `data/index.json` through `Vfs`. The
+default stays loose; flipping it is a TODO (`tools/iron_ts/TODO.md`, asset packs). `emoji` with `--packs`: one `assets.dat`, 157
+entries, 6.41 MB raw, 5.93 MB on disk.
 
 **The host** is `--host`, else `$IRON_HOST`, else the newest of `iron_app` next to `iron-build` and `target/{release,debug}/iron_app`
 found going up from the game folder and the current folder, by modified time (a stale release build no longer wins over a fresh
@@ -444,10 +444,24 @@ Textures, models, sounds, fonts, scenes, `url()`s and `@import`s in the CSS (reb
 `dist/font.ttf` is found as `data/dist/font.ttf`), GUID `.meta` files and the asset watcher all use the asset root. `Application`,
 the window title and icon and the PlayerPrefs folder come from the code folder's `project.json` (the identifier), not from the data.
 
-*Why a folder and not an in-memory file system:* about a hundred places in `iron_app`, `iron_render` and `iron_audio` read
-textures, models, sounds, fonts, scenes and CSS from disk (and the asset watcher and the cooker walk the folder). One real folder
-(now `data/`) keeps every one of them unchanged. `AssetRoot` is the seam where asset packs (`docs/research/iron-asset-packs.md`)
-will mount later; they are not built yet.
+**The file system over that folder** (`asset_root::mount`, `iron_pack::Vfs`; `docs/research/iron-virtual-fs-plan.md` phase 2). At
+start `iron_app` mounts, bottom to top: the folder itself only when it holds no packs (a game folder in the dev loop, or a loose
+`data/` from an older package), else `assets.dat` and then every scene pack, from `index.json` (any `assets.dat` / `scene-*.dat` are
+found by name when there is no manifest). All packs are mounted at start, never per scene, so a script can load a path that only
+another scene's pack holds. Lookups go from the top: scene data, then `assets.dat`, then the folder. `iron_core::set_asset_fs`
+installs it for every loader; `iron_core::read_asset(root, path)` (which falls back to `root/path` when none is installed, as
+tests do) is the one call textures, sprites, models (and the textures a glTF names), sounds, fonts, `url()` / `@import` in CSS, SVG
+images, cursors, scenes, prefabs and `Assets`/`asset.readText` make. A streamed sound (`audio.load(path, true)`) is read in 256 KiB
+windows through the pack's chunk table (`Vfs::open_range`, `iron_core::RangeRead`), so a big compressed sound is never inflated whole.
+The asset database scripts see (`__iron_info.assets`) lists the `.meta` assets of the folder and of the packs. Packs are read-only:
+the asset watcher runs only over a folder.
+
+Errors name where the lookup went, top to bottom: `asset "assets/sfx/boom.wav" not found in scene data, assets.dat or folder`
+(`not found in assets.dat` for a packaged game, `not found in folder` in the dev loop), with ` (the file on disk is "assets/sfx/boom.wav";
+asset paths are case-sensitive)` added when only the case differs. Pack keys are exact-case; loose lookups follow the OS. Where the OS
+ignores case (Windows, macOS) a loose load of `assets/SFX/Boom.wav` still works in the dev loop and logs once
+`asset "assets/SFX/Boom.wav": the file on disk is "assets/sfx/boom.wav" (packs are case-sensitive)`. The dev `assets.plan` warning
+(`M9-API-1143`) fires on loads only, not on listing.
 
 `--sign-cmd "<command>"` runs after the file is complete: `{exe}` is replaced by the quoted path and the command goes through
 `cmd /S /C` (Windows) or `sh -c`. A failing command fails the package. Nothing is signed by Iron itself; see
@@ -483,7 +497,7 @@ Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--a
 a certificate table), `M9-API-1010..1011` the runtime side (`iron_app/src/payload.rs`), `M9-TS-2400..2402` metadata, `2410..2412` file
 collection and a full package with the sign hook, `2420..2421` icon conversion, `2430` the PE resource round trip, `2440` (ignored
 unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built host and a GPU) the standalone run,
-`M9-API-1200..1204` the asset root (`iron_app/src/asset_root.rs`), `M9-TS-2550..2553` globs, dynamic path inference, include/exclude and the packaged emoji run, `2554..2559` the pack build (placement, determinism, byte-identical read back, case), `M9-API-1143` the dev `assets.plan` warning, `M9-TS-2600..2603` the payload/data split, the data-folder name and
+`M9-API-1200..1205` the asset root and mounting (`iron_app/src/asset_root.rs`), `M9-API-1145..1149` lookup order and the not-found message, the case check, ranged reads, sounds and SVGs from packs, `M9-API-1144` zstd chunks, `M9-TS-2550..2553` globs, dynamic path inference, include/exclude and the packaged emoji run, `2554..2559` the pack build (placement, determinism, byte-identical read back, case), `M9-API-1143` the dev `assets.plan` warning, `M9-TS-2600..2603` the payload/data split, the data-folder name and
 `--data-dir` / `--no-data`, `2610` (ignored, `-- --ignored standalone_data`) a packaged game reading `data/` and the missing-folder error.
 
 `M9-API-1300..1318` the project loader (`iron_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license, required `name`, silent defaults, empty fields: `1321..1322`), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples (found by `project.json`, none has a `package.json`), `2722` and `2724` the empty-field warnings (build, package; not check), `2723` package default warnings, `2725` game discovery.

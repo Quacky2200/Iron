@@ -146,10 +146,10 @@ music.setVolume(0.2, 1.5);
   `setVolume`, `remove`.
 - `audio.setListener(position, rotation)`, `audio.setMasterVolume(volume, fade)`.
 
-`audio.load` sends `audio.load id src stream`. `load_sound` in `main.rs` reads the file from the
-game folder through `resolve_asset` (relative paths, no `..`) or decodes a `data:` URL, then
+`audio.load` sends `audio.load id src stream`. `load_sound` in `main.rs` reads the file through the
+asset file system (`iron_core::read_asset`: packs or the game folder, relative paths, no `..`) or decodes a `data:` URL, then
 hands the bytes to `Mixer::load`. Static sounds are decoded up front; `stream: true` decodes
-while playing.
+while playing and is read in windows (`Vfs::open_range` -> `Mixer::load_stream`), never whole.
 
 ## Components on GameObjects (M5.a2)
 

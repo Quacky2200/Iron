@@ -14,3 +14,4 @@ miniz_oxide = "0.9.1"
 siphasher = "1.0.4"
 iron_core = { path = "../iron_core" }
 zstd = { version = "0.14.3", default-features = false }
+tracing = "0.1.44"

@@ -36,7 +36,7 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 /// Case is kept: paths are case-sensitive, as on Linux and Android.
 pub fn normalize_path(path: &str) -> Option<String> {
     let p = path.trim().replace('\\', "/");
-    iron_core::resolve_asset(std::path::Path::new(""), &p)?;
+    iron_core::resolve_asset_quiet(std::path::Path::new(""), &p)?;
     let parts: Vec<&str> = p
         .split('/')
         .filter(|s| !s.is_empty() && *s != ".")

@@ -16,7 +16,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 
-use iron_core::Value;
+use iron_core::{RangeRead, Value};
 use kira::backend::Backend;
 use kira::listener::ListenerHandle;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
@@ -36,8 +36,73 @@ pub type ScriptId = u32;
 enum Sound {
     /// Decoded up front: short effects, played many times at once.
     Static(Box<StaticSoundData>),
-    /// The file's bytes, decoded while playing (music, ambience).
-    Stream(Arc<[u8]>),
+    /// The file, read in pieces and decoded while playing (music, ambience): from memory, or
+    /// from a pack's chunks or a folder without reading it all first.
+    Stream(Arc<dyn RangeRead>),
+}
+
+/// An in-memory file as a [`RangeRead`].
+struct Memory(Vec<u8>);
+
+impl RangeRead for Memory {
+    fn len(&self) -> u64 {
+        self.0.len() as u64
+    }
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<usize> {
+        let from = (offset as usize).min(self.0.len());
+        let n = buf.len().min(self.0.len() - from);
+        buf[..n].copy_from_slice(&self.0[from..from + n]);
+        Ok(n)
+    }
+}
+
+/// A [`RangeRead`] as the `Read + Seek` source a decoder wants.
+struct Reader {
+    src: Arc<dyn RangeRead>,
+    pos: u64,
+}
+
+impl std::io::Read for Reader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.src.read_at(self.pos, buf)?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl std::io::Seek for Reader {
+    fn seek(&mut self, to: std::io::SeekFrom) -> std::io::Result<u64> {
+        let len = self.src.len();
+        let target = match to {
+            std::io::SeekFrom::Start(n) => Some(n),
+            std::io::SeekFrom::End(d) => len.checked_add_signed(d),
+            std::io::SeekFrom::Current(d) => self.pos.checked_add_signed(d),
+        };
+        self.pos = target.ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "seek before the start")
+        })?;
+        Ok(self.pos)
+    }
+}
+
+impl symphonia::core::io::MediaSource for Reader {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        Some(self.src.len())
+    }
+}
+
+fn stream_data(
+    src: &Arc<dyn RangeRead>,
+) -> Result<StreamingSoundData<FromFileError>, FromFileError> {
+    StreamingSoundData::from_media_source(Reader {
+        src: src.clone(),
+        pos: 0,
+    })
 }
 
 enum Instance {
@@ -149,17 +214,21 @@ where
     /// sounds are decoded while they play instead of up front.
     pub fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String> {
         let sound = if stream {
-            // Check it decodes now, so a bad file fails at load like a static one.
-            let bytes: Arc<[u8]> = bytes.into();
-            StreamingSoundData::from_cursor(Cursor::new(bytes.clone()))
-                .map_err(|e| e.to_string())?;
-            Sound::Stream(bytes)
+            return self.load_stream(id, Arc::new(Memory(bytes)));
         } else {
             Sound::Static(Box::new(
                 StaticSoundData::from_cursor(Cursor::new(bytes)).map_err(|e| e.to_string())?,
             ))
         };
         self.sounds.insert(id, sound);
+        Ok(())
+    }
+
+    /// Registers a streamed sound read in pieces from `src` (a pack entry, a file).
+    pub fn load_stream(&mut self, id: ScriptId, src: Arc<dyn RangeRead>) -> Result<(), String> {
+        // Check it decodes now, so a bad file fails at load like a static one.
+        stream_data(&src).map_err(|e| e.to_string())?;
+        self.sounds.insert(id, Sound::Stream(src));
         Ok(())
     }
 
@@ -220,8 +289,8 @@ where
                 .map_err(|e| e.to_string())?;
                 Instance::Static(handle)
             }
-            Sound::Stream(bytes) => {
-                let mut data = StreamingSoundData::from_cursor(Cursor::new(bytes.clone()))
+            Sound::Stream(src) => {
+                let mut data = stream_data(src)
                     .map_err(|e| e.to_string())?
                     .volume(gain_to_db(options.volume))
                     .playback_rate(PlaybackRate(options.rate.max(0.0) as f64))
@@ -561,6 +630,8 @@ impl Args<'_> {
 /// time.
 pub trait Mixer {
     fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String>;
+    /// A streamed sound read in pieces (see [`Audio::load_stream`]).
+    fn load_stream(&mut self, id: ScriptId, src: Arc<dyn RangeRead>) -> Result<(), String>;
     fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String>;
     fn poll(&mut self) -> Vec<ScriptId>;
     /// Lets `seconds` of audio play: a device plays on its own; an offline mixer renders
@@ -573,6 +644,9 @@ pub trait Mixer {
 impl Mixer for Audio<DefaultBackend> {
     fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String> {
         Audio::load(self, id, bytes, stream)
+    }
+    fn load_stream(&mut self, id: ScriptId, src: Arc<dyn RangeRead>) -> Result<(), String> {
+        Audio::load_stream(self, id, src)
     }
     fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
         Audio::apply(self, name, args)
@@ -589,6 +663,9 @@ impl Mixer for Audio<DefaultBackend> {
 impl Mixer for Audio<OfflineBackend> {
     fn load(&mut self, id: ScriptId, bytes: Vec<u8>, stream: bool) -> Result<(), String> {
         Audio::load(self, id, bytes, stream)
+    }
+    fn load_stream(&mut self, id: ScriptId, src: Arc<dyn RangeRead>) -> Result<(), String> {
+        Audio::load_stream(self, id, src)
     }
     fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {
         Audio::apply(self, name, args)

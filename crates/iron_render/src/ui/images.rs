@@ -167,10 +167,11 @@ impl ImageCache {
         } else if text.trim_start().starts_with("data:") {
             iron_core::decode_data_url(text)
         } else {
-            self.root
-                .as_ref()
-                .and_then(|root| iron_core::resolve_asset(root, text))
-                .and_then(|path| std::fs::read(path).ok())
+            self.root.as_ref().and_then(|root| {
+                iron_core::read_asset(root, text)
+                    .inspect_err(|e| tracing::warn!("{e}"))
+                    .ok()
+            })
         };
         let tree = match data.map(|d| usvg::Tree::from_data(&d, options)) {
             Some(Ok(tree)) => Some(Arc::new(tree)),
@@ -229,13 +230,14 @@ impl ImageCache {
                 tracing::warn!("background image `{url}` ignored: no asset folder set");
                 return None;
             };
-            let Some(path) = iron_core::resolve_asset(root, url) else {
-                tracing::warn!(
-                    "background image `{url}` rejected: it must be a relative path inside the game folder"
-                );
-                return None;
+            let bytes = match iron_core::read_asset(root, url) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("background image `{url}`: {e}");
+                    return None;
+                }
             };
-            image::open(&path)
+            image::load_from_memory(&bytes)
         };
         let image = match decoded {
             Ok(i) => i.to_rgba8(),
@@ -566,5 +568,58 @@ mod tests {
         let big = Rect::new(7.0, 3.0, 60.0, 30.0);
         let (t, _, rep) = repeat_tiles(big, area, repeat(RepeatAxis::Space, RepeatAxis::NoRepeat));
         assert_eq!((t.x, rep), (7.0, [false, false]));
+    }
+
+    struct MapFs(HashMap<String, Vec<u8>>);
+
+    impl iron_core::AssetFs for MapFs {
+        fn read(&self, path: &str) -> std::io::Result<Vec<u8>> {
+            self.0.get(path).cloned().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("asset \"{path}\" not found in assets.dat"),
+                )
+            })
+        }
+        fn open_range(&self, _: &str) -> std::io::Result<Arc<dyn iron_core::RangeRead>> {
+            Err(std::io::ErrorKind::Unsupported.into())
+        }
+        fn exists(&self, path: &str) -> bool {
+            self.0.contains_key(path)
+        }
+        fn list(&self) -> Vec<String> {
+            self.0.keys().cloned().collect()
+        }
+        fn pack_of(&self, _: &str) -> String {
+            "assets".into()
+        }
+    }
+
+    // M9-API-1149
+    #[test]
+    fn svg_images_load_from_the_asset_file_system_not_the_folder() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="6"><rect width="8" height="6"/></svg>"#;
+        let fs = MapFs(HashMap::from([("assets/a.svg".to_owned(), svg.to_vec())]));
+        let mut cache = ImageCache::default();
+        cache.set_root(PathBuf::from("no-such-folder"));
+        iron_core::with_asset_fs(Arc::new(fs), || {
+            let tree = cache
+                .svg_tree("assets/a.svg", "assets/a.svg", false)
+                .unwrap();
+            assert_eq!(svg_natural(&tree), (8, 6));
+            assert!(
+                cache
+                    .svg_tree("assets/b.svg", "assets/b.svg", false)
+                    .is_none()
+            );
+        });
+        // Without a file system the (missing) folder is asked, as before.
+        let mut cache = ImageCache::default();
+        cache.set_root(PathBuf::from("no-such-folder"));
+        assert!(
+            cache
+                .svg_tree("assets/a.svg", "assets/a.svg", false)
+                .is_none()
+        );
     }
 }

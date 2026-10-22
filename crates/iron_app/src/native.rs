@@ -263,16 +263,19 @@ impl Native {
         }
     }
 
+    /// A text asset (scene, prefab) through the asset file system.
+    fn read_text(&self, path: &str) -> Result<String, String> {
+        match self.root.as_deref() {
+            Some(root) => iron_core::read_asset_string(root, path).map_err(|e| e.to_string()),
+            None => Err("no asset folder".to_string()),
+        }
+    }
+
     /// Scene files the program asked for (`SceneManager.load`): read from the game folder.
     /// Runs with the scene current.
     fn load_requested_scenes(&mut self) {
         for (id, path) in iron_scenes::take_load_requests() {
-            let text = self
-                .root
-                .as_deref()
-                .and_then(|root| iron_core::resolve_asset(root, &path))
-                .ok_or_else(|| "must be a relative path inside the game folder".to_string())
-                .and_then(|file| std::fs::read_to_string(&file).map_err(|e| e.to_string()));
+            let text = self.read_text(&path);
             let result = match text {
                 Ok(text) => iron_scenes::finish_load(id, &text),
                 Err(e) => {
@@ -289,12 +292,7 @@ impl Native {
             }
         }
         for (id, path) in iron_scenes::take_prefab_requests() {
-            let text = self
-                .root
-                .as_deref()
-                .and_then(|root| iron_core::resolve_asset(root, &path))
-                .ok_or_else(|| "must be a relative path inside the game folder".to_string())
-                .and_then(|file| std::fs::read_to_string(&file).map_err(|e| e.to_string()));
+            let text = self.read_text(&path);
             let result = match &text {
                 Ok(text) => iron_scenes::finish_prefab(id, Ok(text)),
                 Err(e) => iron_scenes::finish_prefab(id, Err(e)),

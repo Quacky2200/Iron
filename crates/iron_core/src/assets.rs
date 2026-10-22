@@ -1,6 +1,85 @@
 //! Resolving asset paths (`url(...)` images, fonts) that scripts give the engine.
 
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, RwLock};
+
+/// Random access to one asset without reading it all (streamed sounds): packs decode the
+/// chunks a read covers, folders seek.
+pub trait RangeRead: Send + Sync {
+    fn len(&self) -> u64;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    /// Reads up to `buf.len()` bytes at `offset`; 0 at or past the end.
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<usize>;
+}
+
+/// The files a game can load: the app installs one ([`set_asset_fs`]) over packs and/or the game
+/// folder, and every asset read ([`read_asset`]) goes through it. Paths are game paths.
+pub trait AssetFs: Send + Sync {
+    fn read(&self, path: &str) -> std::io::Result<Vec<u8>>;
+    /// A handle for reading the asset in pieces.
+    fn open_range(&self, path: &str) -> std::io::Result<Arc<dyn RangeRead>>;
+    fn exists(&self, path: &str) -> bool;
+    /// Every visible asset path, sorted.
+    fn list(&self) -> Vec<String>;
+    /// The pack that holds `path` (`assets`, `scene-level1`), `""` for a loose file or a miss.
+    fn pack_of(&self, path: &str) -> String;
+}
+
+static FS: RwLock<Option<Arc<dyn AssetFs>>> = RwLock::new(None);
+
+/// Installs the file system (or removes it with `None`: reads go to the folder `root` they are
+/// given, as before).
+pub fn set_asset_fs(fs: Option<Arc<dyn AssetFs>>) {
+    *FS.write().expect("not poisoned") = fs;
+}
+
+thread_local! {
+    static LOCAL: std::cell::RefCell<Option<Arc<dyn AssetFs>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The installed file system: this thread's [`with_asset_fs`] one, else the app's.
+pub fn asset_fs() -> Option<Arc<dyn AssetFs>> {
+    LOCAL
+        .with(|l| l.borrow().clone())
+        .or_else(|| FS.read().expect("not poisoned").clone())
+}
+
+/// Runs `f` with `fs` as this thread's file system only (tests: other threads and the app's own
+/// are unaffected).
+pub fn with_asset_fs<R>(fs: Arc<dyn AssetFs>, f: impl FnOnce() -> R) -> R {
+    let previous = LOCAL.with(|l| l.replace(Some(fs)));
+    let result = f();
+    LOCAL.with(|l| *l.borrow_mut() = previous);
+    result
+}
+
+/// The bytes of an asset: a `data:` URL decoded, else the installed file system's answer, else
+/// `root/<path>` (checked by [`resolve_asset`]).
+pub fn read_asset(root: &Path, path: &str) -> std::io::Result<Vec<u8>> {
+    if path.trim_start().starts_with("data:") {
+        return decode_data_url(path)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad data URL"));
+    }
+    if let Some(fs) = asset_fs() {
+        return fs.read(path);
+    }
+    let file = resolve_asset(root, path).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("`{path}` is outside the game folder (asset paths are relative to it)"),
+        )
+    })?;
+    std::fs::read(&file)
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {e}", file.display())))
+}
+
+/// [`read_asset`] as text.
+pub fn read_asset_string(root: &Path, path: &str) -> std::io::Result<String> {
+    String::from_utf8(read_asset(root, path)?)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
 
 /// Decodes a `data:` URL (`data:[<type>][;base64],<data>`), as Bun emits for small
 /// assets referenced from CSS. Returns `None` if `url` isn't a valid data URL.
@@ -78,12 +157,14 @@ fn check_plan(url: &str, path: &Path) {
 /// leave it: absolute paths, drive letters, URL schemes and `..` components.
 /// Game scripts can't use this to read arbitrary files.
 pub fn resolve_asset(root: &Path, url: &str) -> Option<PathBuf> {
-    let path = resolve_unchecked(root, url)?;
+    let path = resolve_asset_quiet(root, url)?;
     check_plan(url.trim(), &path);
     Some(path)
 }
 
-fn resolve_unchecked(root: &Path, url: &str) -> Option<PathBuf> {
+/// [`resolve_asset`] without the dev-loop plan warning: for looking a file up (listing, `exists`)
+/// rather than loading it.
+pub fn resolve_asset_quiet(root: &Path, url: &str) -> Option<PathBuf> {
     let url = url.trim();
     if url.is_empty() || url.contains(':') || url.starts_with(['/', '\\']) {
         return None;

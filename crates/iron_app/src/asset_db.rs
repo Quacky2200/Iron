@@ -16,6 +16,37 @@ pub fn scan(root: &Path) -> Value {
     Value::Array(out)
 }
 
+/// [`scan`] for a game folder plus the packs mounted: every pack entry whose GUID came from a
+/// `.meta` file (the others have a GUID made from the path, which scripts have no use for).
+pub fn scan_vfs(vfs: &iron_pack::Vfs, root: &Path) -> Value {
+    let mut out: Vec<Value> = match vfs.root() {
+        Some(_) => scan(root).as_array().cloned().unwrap_or_default(),
+        None => Vec::new(),
+    };
+    for path in vfs.paths() {
+        let Some(info) = vfs.info(&path) else {
+            continue;
+        };
+        let Some(guid) = info.guid else { continue };
+        if info.source.starts_with("dir:")
+            || guid == iron_pack::Guid::from_path(&path)
+            || out
+                .iter()
+                .any(|a| a["path"].as_str() == Some(path.as_str()))
+        {
+            continue;
+        }
+        let importer = serde_json::from_str::<Value>(&info.meta).unwrap_or(json!({}));
+        out.push(json!({
+            "path": path,
+            "guid": guid.to_hex(),
+            "importer": if importer.is_object() { importer } else { json!({}) },
+        }));
+    }
+    out.sort_by(|a: &Value, b: &Value| a["path"].as_str().cmp(&b["path"].as_str()));
+    Value::Array(out)
+}
+
 fn walk(root: &Path, dir: &Path, out: &mut Vec<Value>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;

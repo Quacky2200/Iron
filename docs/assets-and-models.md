@@ -32,7 +32,7 @@ A `RenderTexture` is a texture cameras draw into (see [world-rendering.md](world
 (`ENGINE_IDS`), so they never meet.
 
 **Loading is synchronous in the app.** `WorldViews::texture_op` reads the file (a relative path, no
-`..`, through `resolve_asset`; `data:` URLs work too), decodes it with the `image` crate to RGBA8 and
+`..`, through `iron_core::read_asset`, i.e. the packs or folder the app mounted, see `docs/iron-build.md`; `data:` URLs work too), decodes it with the `image` crate to RGBA8 and
 queues a `TextureData` in `texture_uploads`. `apply_script_output` collects `(id, width, height)` and
 calls `__iron_textures([[id, w, h], ...])` after the batch of ops, which sets `width`, `height` and
 `isLoaded` and resolves `whenLoaded`. A failure logs a warning and reports 0 x 0 (`failed`). The size

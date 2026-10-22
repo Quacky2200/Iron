@@ -10,11 +10,9 @@ pub const MAX_CURSOR_SIZE: u32 = 128;
 
 /// Reads a cursor image from the game folder or a `data:` URL.
 pub fn read(root: &Path, url: &str) -> Option<Vec<u8>> {
-    if url.trim_start().starts_with("data:") {
-        return iron_core::decode_data_url(url);
-    }
-    let path = iron_core::resolve_asset(root, url)?;
-    std::fs::read(path).ok()
+    iron_core::read_asset(root, url)
+        .inspect_err(|e| tracing::warn!("cursor image: {e}"))
+        .ok()
 }
 
 /// Decodes a PNG, JPEG or Windows `.cur` file into a cursor scaled for the window's

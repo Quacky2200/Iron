@@ -1435,6 +1435,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1105 | Unit | Identical bytes share chunks; building the same entries twice gives byte-identical packs; the pack id follows the content. |
 | M9-API-1106 | Unit | Truncated packs, flipped TOC bytes and flipped data bytes are errors (format or checksum), never panics, over a sweep of damage. |
 | M9-API-1144 | Unit | Zstd chunks round-trip whole, in ranges across chunk boundaries and under `verify`; incompressible data stays stored (`iron_pack`). |
+| M9-API-1145 | Unit | Lookup order: a key in a scene pack and in `assets.dat` comes from the scene pack, then `assets.dat`, then the folder; a patch above wins and a tombstone hides both; `pack_of`; the not-found message names `scene data, assets.dat or folder` (`iron_pack::vfs`). |
+| M9-API-1146 | Unit | A loose path that differs only in case from the file on disk reports the real spelling (`DirSource::real_case`: dev warning once, hint in the not-found message). |
+| M9-API-1147 | Unit | `Vfs::open_range` reads a compressed pack entry in windows across chunk boundaries, to the end and past it. |
+| M9-API-1148 | Unit | `load_sound` loads a WAV whole and streamed from a pack-only `Vfs` (offline mixer, no GPU) and a miss says `not found in assets.dat` (`iron_app/src/main.rs`). |
+| M9-API-1149 | Unit | A UI SVG image loads from the installed asset file system, not the folder (`iron_render::ui::images`). |
+| M9-API-1205 | Unit | `asset_root::mount`: loose folder, packs from `index.json` in any manifest order (scene packs above `assets.dat`), packs found by name without a manifest, a manifest path outside the folder or a missing pack is an error. |
+| M9-API-1150 | Manual | `iron-build package examples/emoji --packs --host target/debug/iron_app.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
 | M9-API-1107 | Unit | Stored, LZ4 and deflate packs read back the same bytes; compressed text shrinks over 4x. |
 | M9-API-1108 | Unit | A pack inside a larger file (an APK asset) opens at its offset, mapped and read. |
 | M9-API-1109 | Unit | The writer refuses a repeated GUID, a repeated path of the same form, and paths outside the game. |

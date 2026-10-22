@@ -15,7 +15,10 @@ pub mod payload;
 pub mod project;
 mod value;
 
-pub use assets::{decode_data_url, plan_warning, resolve_asset, set_pack_plan};
+pub use assets::{
+    AssetFs, RangeRead, asset_fs, decode_data_url, plan_warning, read_asset, read_asset_string,
+    resolve_asset, resolve_asset_quiet, set_asset_fs, set_pack_plan, with_asset_fs,
+};
 pub use ids::{ComponentId, EntityId, NodeId};
 pub use ops::{Commit, Op, OpBuffer};
 pub use value::Value;

@@ -739,10 +739,7 @@ impl WorldViews {
                 let bytes = if src.trim_start().starts_with("data:") {
                     iron_core::decode_data_url(src).ok_or("bad data URL")?
                 } else {
-                    let path = iron_core::resolve_asset(root, src).ok_or_else(|| {
-                        format!("`{src}` must be a relative path inside the game folder")
-                    })?;
-                    std::fs::read(&path).map_err(|e| format!("`{src}`: {e}"))?
+                    iron_core::read_asset(root, src).map_err(|e| e.to_string())?
                 };
                 let image = image::load_from_memory(&bytes)
                     .map_err(|e| format!("`{src}`: {e}"))?

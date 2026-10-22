@@ -209,6 +209,10 @@ fn run() -> Result<()> {
     )
     .path()
     .to_path_buf();
+    // Every asset read goes through this: the packs of a packaged game (all mounted now, so a
+    // script can load any path), else the folder.
+    let vfs = asset_root::mount(&asset_root).map_err(anyhow::Error::msg)?;
+    iron_core::set_asset_fs(Some(std::sync::Arc::new(vfs.clone())));
     // Dev loop: `iron-build build` lists what a packaged build would hold; loading a file outside
     // it logs a warning (a packaged game would not find it).
     if let Ok(plan) = std::fs::read_to_string(code_root.join("dist/assets.plan")) {
@@ -258,7 +262,7 @@ fn run() -> Result<()> {
     }
     info.set("prefs", serde_json::Value::Object(prefs.all().clone()));
     // Assets' GUIDs and importer settings from their `.meta` files.
-    info.set("assets", asset_db::scan(&asset_root));
+    info.set("assets", asset_db::scan_vfs(&vfs, &asset_root));
     info.set("display", display::state(None, &display_settings));
     let mut scripts = QuickJsRuntime::new();
     // The native API (`Window`, `Shapes`, `Spline`, ...) for bundled (JavaScript) games: the same
@@ -347,6 +351,8 @@ fn run() -> Result<()> {
     // Asset files that change (textures, models, sounds) load again in place.
     let asset_watcher = match args.screenshot {
         Some(_) => None,
+        // Packs are read-only: only loose files are watched.
+        None if vfs.root().is_none() => None,
         None => reload::AssetWatcher::new(&asset_root)
             .inspect_err(|e| tracing::warn!("not watching for asset changes: {e}"))
             .ok(),
@@ -408,6 +414,7 @@ fn run() -> Result<()> {
         ime_allowed: false,
         ime_area: None,
         asset_root,
+        vfs,
         code_root: code_root.clone(),
         gfx: None,
         started: Instant::now(),
@@ -585,6 +592,8 @@ struct App {
     ui: UiTree,
     /// Where textures, models, sounds, fonts and scenes are read from.
     asset_root: PathBuf,
+    /// The assets' file system (also installed for the loaders through `iron_core`).
+    vfs: iron_pack::Vfs,
     /// Where the game's code, `package.json` and CSS are (the asset root, except in a packaged exe).
     code_root: PathBuf,
     gfx: Option<Gfx>,
@@ -1326,9 +1335,8 @@ impl App {
                         .get(1)
                         .and_then(iron_core::Value::as_str)
                         .unwrap_or("");
-                    let text = iron_core::resolve_asset(&self.asset_root, path)
-                        .ok_or_else(|| "outside the game folder".to_string())
-                        .and_then(|file| std::fs::read_to_string(file).map_err(|e| e.to_string()));
+                    let text = iron_core::read_asset_string(&self.asset_root, path)
+                        .map_err(|e| e.to_string());
                     texts.push(id);
                     texts.push(match text {
                         Ok(text) => iron_core::Value::String(text),
@@ -1437,7 +1445,8 @@ impl App {
     fn reload_assets(&mut self, keys: &[String]) {
         // New or changed `.meta` files: the database scripts read.
         if keys.iter().any(|k| k.ends_with(".meta")) {
-            self.info.set("assets", asset_db::scan(&self.asset_root));
+            self.info
+                .set("assets", asset_db::scan_vfs(&self.vfs, &self.asset_root));
             if let Err(e) = self.scripts.eval(&self.info.script()) {
                 tracing::error!("asset database: {e}");
             }
@@ -2836,16 +2845,7 @@ fn load_font(
     weight: Option<f32>,
     italic: Option<bool>,
 ) {
-    let data = if src.trim_start().starts_with("data:") {
-        iron_core::decode_data_url(src).ok_or_else(|| "invalid data URL".to_owned())
-    } else {
-        match iron_core::resolve_asset(root, src) {
-            Some(path) => std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display())),
-            None => Err(format!(
-                "`{src}` must be a relative path inside the game folder"
-            )),
-        }
-    };
+    let data = iron_core::read_asset(root, src).map_err(|e| e.to_string());
     match data.and_then(|d| ui.register_font(d, Some(family), weight, italic)) {
         Ok(_) => tracing::info!("loaded font `{family}`"),
         Err(e) => tracing::warn!("font `{family}` failed to load: {e}"),
@@ -2867,13 +2867,17 @@ fn load_sound(
         return Err("needs an id and a file".into());
     };
     let stream = matches!(args.get(2), Some(iron_core::Value::Bool(true)));
-    let bytes = if src.trim_start().starts_with("data:") {
-        iron_core::decode_data_url(src).ok_or_else(|| "invalid data URL".to_owned())?
-    } else {
-        let path = iron_core::resolve_asset(root, src)
-            .ok_or_else(|| format!("`{src}` must be a relative path inside the game folder"))?;
-        std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?
-    };
+    // A streamed sound is read in pieces (a pack's chunks, a file's windows), never whole.
+    if stream
+        && !src.trim_start().starts_with("data:")
+        && let Some(fs) = iron_core::asset_fs()
+    {
+        let reader = fs.open_range(src).map_err(|e| e.to_string())?;
+        return mixer
+            .load_stream(id as u32, reader)
+            .map_err(|e| format!("`{src}`: {e}"));
+    }
+    let bytes = iron_core::read_asset(root, src).map_err(|e| e.to_string())?;
     mixer
         .load(id as u32, bytes, stream)
         .map_err(|e| format!("`{src}`: {e}"))
@@ -2972,8 +2976,7 @@ fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &
     // `@import`s load from the game folder (Bun inlines them when bundling; this is
     // for stylesheets added at runtime).
     let added = ui.add_stylesheet_with_imports(css, base, &mut |path| {
-        let file = iron_core::resolve_asset(root, path)?;
-        std::fs::read_to_string(file).ok()
+        iron_core::read_asset_string(root, path).ok()
     });
     for warning in &added.warnings {
         tracing::warn!(target: "css", "{source}: {warning}");
@@ -3032,5 +3035,61 @@ mod tests {
         assert!(parse(&["a", "b"]).is_err());
         assert!(parse(&["--nope"]).is_err());
         assert!(parse(&["--cook", "examples/world"]).unwrap().cook);
+    }
+
+    /// A mono 16-bit WAV of a sine, `n` samples at 8 kHz.
+    fn wav(n: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + n * 2).to_le_bytes());
+        out.extend_from_slice(b"WAVEfmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&[1, 0, 1, 0]);
+        out.extend_from_slice(&8000u32.to_le_bytes());
+        out.extend_from_slice(&16000u32.to_le_bytes());
+        out.extend_from_slice(&[2, 0, 16, 0]);
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&(n * 2).to_le_bytes());
+        for i in 0..n {
+            let v = ((i as f32 * 0.3).sin() * 8000.0) as i16;
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        out
+    }
+
+    // M9-API-1148
+    #[test]
+    fn sounds_load_from_packs_whole_and_streamed_and_a_miss_says_where_it_looked() {
+        use iron_core::Value;
+        use iron_pack::{EntrySpec, Pack, PackSource, PackWriter, Vfs, WriteOptions};
+        let sound = wav(40_000);
+        let mut w =
+            PackWriter::new(std::io::Cursor::new(Vec::new()), WriteOptions::default()).unwrap();
+        w.add(&EntrySpec::new("assets/sfx/beep.wav", &sound))
+            .unwrap();
+        let pack = Pack::from_bytes(w.finish().unwrap().0.into_inner()).unwrap();
+        let mut vfs = Vfs::new();
+        vfs.mount(std::sync::Arc::new(PackSource::new("assets", pack)));
+        let root = Path::new("no-such-folder");
+        let load = |mixer: &mut dyn iron_audio::Mixer, id: f64, src: &str, stream: bool| {
+            let args = [
+                Value::Number(id),
+                Value::String(src.into()),
+                Value::Bool(stream),
+            ];
+            iron_core::with_asset_fs(std::sync::Arc::new(vfs.clone()), || {
+                load_sound(mixer, root, &args)
+            })
+        };
+        let mut mixer = iron_audio::open_mixer(true);
+        load(mixer.as_mut(), 1.0, "assets/sfx/beep.wav", false).unwrap();
+        // Streamed: read through the pack's chunks (the file is compressed, 3 chunks of 256 KiB
+        // would not be needed for 80 kB, but the reader works in windows all the same).
+        load(mixer.as_mut(), 2.0, "assets/sfx/beep.wav", true).unwrap();
+        let e = load(mixer.as_mut(), 3.0, "assets/sfx/none.wav", false).unwrap_err();
+        assert_eq!(e, "asset \"assets/sfx/none.wav\" not found in assets.dat");
+        let e = load(mixer.as_mut(), 4.0, "assets/sfx/none.wav", true).unwrap_err();
+        assert!(e.contains("not found in assets.dat"), "{e}");
+        mixer.advance(0.1);
     }
 }
