@@ -70,7 +70,7 @@ export function useDevice(): Device {
 
 // --- Icons -----------------------------------------------------------------------------
 
-export type Action = "browse" | "move" | "ok" | "back" | "view" | "options" | "menu";
+export type Action = "browse" | "move" | "ok" | "back" | "view" | "options" | "menu" | "category";
 
 const MAC = Application.platform === "MacOSX";
 
@@ -109,6 +109,11 @@ const BUMPERS: Record<PadStyle, [string, string]> = {
   xbox: ["LB", "RB"],
   playstation: ["L1", "R1"],
   nintendo: ["L", "R"],
+};
+const TRIGGERS: Record<PadStyle, [string, string]> = {
+  xbox: ["LT", "RT"],
+  playstation: ["L2", "R2"],
+  nintendo: ["ZL", "ZR"],
 };
 
 function PsSymbol({ shape, color }: { shape: string; color: string }) {
@@ -233,6 +238,8 @@ export function Glyphs({ action, device }: { action: Action; device: Device }) {
         return <Key>C</Key>;
       case "menu":
         return <Key>Esc</Key>;
+      case "category":
+        return <Key>Tab</Key>;
     }
   }
   const s = device.style;
@@ -257,6 +264,13 @@ export function Glyphs({ action, device }: { action: Action; device: Device }) {
       return <FaceButton button="North" style={s} />;
     case "menu":
       return <MenuButton style={s} />;
+    case "category":
+      return (
+        <>
+          <Bumper label={TRIGGERS[s][0]} />
+          <Bumper label={TRIGGERS[s][1]} />
+        </>
+      );
   }
 }
 

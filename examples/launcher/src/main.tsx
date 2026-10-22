@@ -3,12 +3,13 @@
 // mouse (arrows, clicks, wheel), the keys (arrows, WASD) or a gamepad (d-pad, bumpers, left
 // stick). Button prompts follow the last device used (prompts.tsx). A sidebar menu (Menu /
 // Esc / the ☰ button) has the views, settings and Exit; a context menu (Y / C / right-click)
-// has the selected game's actions. Opening a game shows its details and a Play button;
+// has the selected game's actions. Both views show all games or just the favourites (the
+// tabs, LT / RT, Tab). Opening a game shows its details and a Play button;
 // playing shows a loading spinner, then says launching isn't implemented yet.
 //
 // `iron examples/launcher -- --select <example> --show details|loading|alert|menu|context
-// --view grid --pad xbox|playstation|nintendo` starts on that game, screen, view and pad
-// icons (for screenshot runs).
+// --view grid --category favourites --favourites a,b --pad xbox|playstation|nintendo` starts on that game,
+// screen, view, category and pad icons (for screenshot runs).
 import "./launcher.css";
 
 import { Application, input, PlayerPrefs, Screen } from "@iron/engine";
@@ -22,6 +23,7 @@ import {
   type Device,
   deviceName,
   FaceButton,
+  Glyphs,
   Hint,
   noteMouse,
   okButton,
@@ -42,7 +44,8 @@ const MARGIN = 48;
 
 type Mode = "browse" | "details" | "loading" | "alert" | "menu" | "context";
 type View = "carousel" | "grid";
-type Act = "left" | "right" | "up" | "down" | "ok" | "back" | "view" | "options" | "menu" | "escape";
+type Category = "all" | "favourites";
+type Act = "left" | "right" | "up" | "down" | "ok" | "back" | "view" | "options" | "menu" | "escape" | "category";
 interface Alert {
   title: string;
   body: string;
@@ -59,7 +62,9 @@ interface MenuItem {
 }
 
 const MODES: Mode[] = ["browse", "details", "loading", "alert", "menu", "context"];
-const START_INDEX = Math.max(0, GAMES.findIndex((g) => g.name === arg("--select")));
+const START_CATEGORY: Category =
+  (arg("--category") ?? PlayerPrefs.getString("category", "all")) === "favourites" ? "favourites" : "all";
+const START_NAME = arg("--select");
 const START_MODE = MODES.find((m) => m === arg("--show")) ?? "browse";
 const START_VIEW: View = (arg("--view") ?? PlayerPrefs.getString("view", "carousel")) === "grid" ? "grid" : "carousel";
 
@@ -74,7 +79,9 @@ const cantStart = (game: Game): Alert => ({
 /** How many tiles fit across the window. */
 const gridColumns = () => Math.max(1, Math.floor((Screen.width - 2 * MARGIN + GAP) / (TILE + GAP)));
 
-const loadFavourites = () => new Set(PlayerPrefs.getString("favourites", "").split(",").filter(Boolean));
+/** Favourite games by folder name (`--favourites a,b` overrides the saved ones). */
+const loadFavourites = () =>
+  new Set((arg("--favourites") ?? PlayerPrefs.getString("favourites", "")).split(",").filter(Boolean));
 
 /** Where card `d` places from the selected one sits: the cover-flow shape. */
 function cardStyle(d: number) {
@@ -171,6 +178,7 @@ function Menu({ items, focus, setFocus }: { items: MenuItem[]; focus: number; se
 // --- Views -----------------------------------------------------------------------------
 
 interface ViewProps {
+  games: Game[];
   index: number;
   favourites: Set<string>;
   select: (i: number) => void;
@@ -178,10 +186,10 @@ interface ViewProps {
   context: (i: number) => void;
 }
 
-function Carousel({ index, favourites, select, open, context }: ViewProps) {
+function Carousel({ games, index, favourites, select, open, context }: ViewProps) {
   return (
     <box className="track">
-      {GAMES.map((g, i) => {
+      {games.map((g, i) => {
         const d = i - index;
         return (
           <box
@@ -204,7 +212,7 @@ function Carousel({ index, favourites, select, open, context }: ViewProps) {
   );
 }
 
-function Grid({ index, columns, favourites, select, open, context }: ViewProps & { columns: number }) {
+function Grid({ games, index, columns, favourites, select, open, context }: ViewProps & { columns: number }) {
   const selected = useRef<IronElement>(null);
   useEffect(() => {
     selected.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -212,7 +220,7 @@ function Grid({ index, columns, favourites, select, open, context }: ViewProps &
   return (
     <box className="grid-scroll">
       <box className="grid" style={{ width: columns * (TILE + GAP) - GAP }}>
-        {GAMES.map((g, i) => (
+        {games.map((g, i) => (
           // The cell's padding leaves room for the lifted tile when it scrolls into view.
           <box key={g.name} className="cell" ref={i === index ? selected : undefined}>
             <box
@@ -243,16 +251,23 @@ function Grid({ index, columns, favourites, select, open, context }: ViewProps &
 }
 
 /** The prompts along the bottom for the current screen. */
-function Hints({ mode, view, device }: { mode: Mode; view: View; device: Device }) {
-  const key = `${device.kind}-${device.kind === "gamepad" ? device.style : ""}-${mode}-${view}`;
+function Hints({ mode, view, device, empty }: { mode: Mode; view: View; device: Device; empty: boolean }) {
+  const key = `${device.kind}-${device.kind === "gamepad" ? device.style : ""}-${mode}-${view}-${empty}`;
   return (
     <box key={key} className="hints">
-      {mode === "browse" ? (
+      {mode === "browse" && empty ? (
+        <>
+          <Hint action="category" label="Category" device={device} />
+          <Hint action="menu" label="Menu" device={device} />
+        </>
+      ) : null}
+      {mode === "browse" && !empty ? (
         <>
           <Hint action={view === "grid" ? "move" : "browse"} label={view === "grid" ? "Move" : "Browse"} device={device} />
           <Hint action="ok" label="Open" device={device} />
           <Hint action="options" label="Options" device={device} />
           <Hint action="view" label={view === "grid" ? "Carousel" : "Grid"} device={device} />
+          <Hint action="category" label="Category" device={device} />
           <Hint action="menu" label="Menu" device={device} />
         </>
       ) : null}
@@ -278,18 +293,31 @@ function Hints({ mode, view, device }: { mode: Mode; view: View; device: Device 
 // --- The app ---------------------------------------------------------------------------
 
 function App() {
-  const [index, setIndex] = useState(START_INDEX);
+  const [category, setCategoryState] = useState<Category>(START_CATEGORY);
+  const [favourites, setFavourites] = useState(loadFavourites);
+  const list = category === "favourites" ? GAMES.filter((g) => favourites.has(g.name)) : GAMES;
+  const [index, setIndex] = useState(() => Math.max(0, list.findIndex((g) => g.name === START_NAME)));
   const [mode, setMode] = useState<Mode>(START_MODE);
   const [view, setViewState] = useState<View>(START_VIEW);
   const [columns, setColumns] = useState(gridColumns);
-  const [favourites, setFavourites] = useState(loadFavourites);
   const [focus, setFocus] = useState(0);
   /** Where the context menu was opened from, to go back there. */
   const [contextFrom, setContextFrom] = useState<Mode>("browse");
-  const [alert, setAlert] = useState<Alert | null>(() => (START_MODE === "alert" ? cantStart(GAMES[START_INDEX]!) : null));
+  const [alert, setAlert] = useState<Alert | null>(() => (START_MODE === "alert" && list[index] ? cantStart(list[index]!) : null));
   const device = useDevice();
   const pad = device.kind === "gamepad" ? device.style : null;
-  const game = GAMES[index]!;
+  // `null` when the category is empty (no favourites yet).
+  const at = Math.max(0, Math.min(index, list.length - 1));
+  const game: Game | null = list[at] ?? null;
+
+  // The list shrank (a favourite removed): stay on the last one.
+  useEffect(() => {
+    if (index !== at) setIndex(at);
+  }, [index, at]);
+  // Nothing to show details of.
+  useEffect(() => {
+    if (!game && mode !== "browse" && mode !== "menu" && mode !== "alert") setMode("browse");
+  }, [game, mode]);
 
   // The grid follows the window's width.
   useEffect(() => {
@@ -306,7 +334,14 @@ function App() {
     setViewState(v);
     PlayerPrefs.setString("view", v);
   };
-  const clamp = (i: number) => Math.max(0, Math.min(GAMES.length - 1, i));
+  const clamp = (i: number) => Math.max(0, Math.min(list.length - 1, i));
+  const setCategory = (c: Category) => {
+    const next = c === "favourites" ? GAMES.filter((g) => favourites.has(g.name)) : GAMES;
+    // Keep the selected game when it's in the other list too.
+    setIndex(Math.max(0, next.findIndex((g) => g.name === game?.name)));
+    setCategoryState(c);
+    PlayerPrefs.setString("category", c);
+  };
   const move = (by: number) => setIndex((i) => clamp(i + by));
   const show = (m: Mode) => {
     setFocus(0);
@@ -323,6 +358,7 @@ function App() {
   };
   const toggleFavourite = () => {
     const next = new Set(favourites);
+    if (!game) return;
     if (!next.delete(game.name)) next.add(game.name);
     setFavourites(next);
     PlayerPrefs.setString("favourites", [...next].join(","));
@@ -338,6 +374,14 @@ function App() {
         setMode("browse");
       },
     },
+    {
+      label: category === "favourites" ? "All games" : "Favourites",
+      icon: category === "favourites" ? ICONS.library : ICONS.star,
+      run: () => {
+        setCategory(category === "favourites" ? "all" : "favourites");
+        setMode("browse");
+      },
+    },
     { label: "Settings", icon: ICONS.settings, run: () => notYet("Settings", "menu") },
     { label: "Exit", icon: ICONS.exit, run: () => Application.quit(), danger: true },
   ];
@@ -345,7 +389,7 @@ function App() {
     { label: "Play", icon: ICONS.play, run: () => show("loading") },
     { label: "Details", icon: ICONS.info, run: () => setMode("details") },
     {
-      label: favourites.has(game.name) ? "Remove from favourites" : "Add to favourites",
+      label: game && favourites.has(game.name) ? "Remove from favourites" : "Add to favourites",
       icon: ICONS.star,
       run: () => {
         toggleFavourite();
@@ -358,7 +402,7 @@ function App() {
 
   // Loading spins for a moment, then admits it can't start anything.
   useEffect(() => {
-    if (mode !== "loading") return;
+    if (mode !== "loading" || !game) return;
     const t = setTimeout(() => {
       setAlert(cantStart(game));
       setMode("alert");
@@ -371,17 +415,21 @@ function App() {
   const handler = useRef<(a: Act) => void>(() => {});
   handler.current = (act: Act) => {
     const a = act === "escape" ? (mode === "browse" ? "menu" : "back") : act;
-    if (mode === "browse") {
-      if (a === "left") move(-1);
+    if (a === "category" && (mode === "browse" || mode === "menu")) {
+      setCategory(category === "favourites" ? "all" : "favourites");
+      setMode("browse");
+    } else if (mode === "browse") {
+      if (a === "menu") show("menu");
+      else if (!game) return;
+      else if (a === "left") move(-1);
       else if (a === "right") move(1);
       else if (view === "grid" && a === "up") setIndex((i) => (i - columns >= 0 ? i - columns : i));
       else if (view === "grid" && a === "down") {
-        const lastRow = Math.floor((GAMES.length - 1) / columns);
-        setIndex((i) => (i + columns < GAMES.length ? i + columns : Math.floor(i / columns) < lastRow ? GAMES.length - 1 : i));
+        const lastRow = Math.floor((list.length - 1) / columns);
+        setIndex((i) => (i + columns < list.length ? i + columns : Math.floor(i / columns) < lastRow ? list.length - 1 : i));
       } else if (a === "ok") setMode("details");
       else if (a === "options") openContext();
       else if (a === "view") setView(view === "grid" ? "carousel" : "grid");
-      else if (a === "menu") show("menu");
     } else if (mode === "menu" || mode === "context") {
       const close = () => setMode(mode === "menu" ? "browse" : contextFrom);
       if (a === "up") setFocus((f) => (f + menuItems.length - 1) % menuItems.length);
@@ -415,6 +463,7 @@ function App() {
       KeyG: "view",
       KeyC: "options",
       ContextMenu: "options",
+      Tab: "category",
     };
     const PAD: Record<string, Act> = {
       DPadLeft: "left",
@@ -426,6 +475,8 @@ function App() {
       North: "options",
       RightStick: "view",
       Start: "menu",
+      LeftTrigger: "category",
+      RightTrigger: "category",
     };
     const STEPS = new Set<Act>(["left", "right", "up", "down"]);
     const offKeys = input.on("keydown", (e) => {
@@ -477,9 +528,11 @@ function App() {
   return (
     <box className={pad ? "app pad" : "app"} onPointerMove={noteMouse} onPointerDown={noteMouse}>
       {/* The selected game's screenshot, large and dim, fading in on each change. */}
-      <box key={game.name} className="backdrop">
-        <Shot game={game} className="backdrop-shot" />
-      </box>
+      {game ? (
+        <box key={game.name} className="backdrop">
+          <Shot game={game} className="backdrop-shot" />
+        </box>
+      ) : null}
       <box className="shade" />
 
       <box className="top">
@@ -488,6 +541,18 @@ function App() {
         </box>
         <Text className="logo">IRON</Text>
         <Text className="logo-sub">examples</Text>
+        <box className="tabs">
+          {pad ? <Glyphs action="category" device={device} /> : null}
+          <box className={category === "all" ? "tab on" : "tab"} onClick={() => setCategory("all")}>
+            <Text>All games</Text>
+            <Text className="tab-count">{String(GAMES.length)}</Text>
+          </box>
+          <box className={category === "favourites" ? "tab on" : "tab"} onClick={() => setCategory("favourites")}>
+            <Star size={13} />
+            <Text>Favourites</Text>
+            <Text className="tab-count">{String(favourites.size)}</Text>
+          </box>
+        </box>
         <box className="grow" />
         <Text key={deviceName(device)} className="device">
           {deviceName(device)}
@@ -500,22 +565,34 @@ function App() {
             <Icon d={ICONS.grid} />
           </box>
         </box>
-        <Text className="count">{`${index + 1} / ${GAMES.length}`}</Text>
+        <Text className="count">{list.length ? `${at + 1} / ${list.length}` : "0 / 0"}</Text>
       </box>
 
-      {view === "carousel" ? (
-        <box key="carousel" className="view carousel-view">
+      {!game ? (
+        <box key={`empty-${category}`} className="view empty">
+          <box className="empty-star">
+            <Star size={44} />
+          </box>
+          <Text className="empty-title">No favourites yet</Text>
+          <Text className="empty-body">Open a game's options and add it to your favourites to see it here.</Text>
+          <box className="empty-hint">
+            <Glyphs action="options" device={device} />
+            <Text className="hint-label">Options on a game</Text>
+          </box>
+        </box>
+      ) : view === "carousel" ? (
+        <box key={`carousel-${category}`} className="view carousel-view">
           <box
             className="stage"
             onWheel={(e: IronWheelEvent) => {
               if (mode === "browse") move(Math.sign(e.deltaY || e.deltaX));
             }}
           >
-            <Carousel index={index} favourites={favourites} select={setIndex} open={() => setMode("details")} context={openContext} />
-            <box className="arrow left" disabled={index === 0} onClick={() => move(-1)}>
+            <Carousel games={list} index={at} favourites={favourites} select={setIndex} open={() => setMode("details")} context={openContext} />
+            <box className="arrow left" disabled={at === 0} onClick={() => move(-1)}>
               <Text>{"‹"}</Text>
             </box>
-            <box className="arrow right" disabled={index === GAMES.length - 1} onClick={() => move(1)}>
+            <box className="arrow right" disabled={at === list.length - 1} onClick={() => move(1)}>
               <Text>{"›"}</Text>
             </box>
           </box>
@@ -525,9 +602,10 @@ function App() {
           </box>
         </box>
       ) : (
-        <box key="grid" className="view grid-view">
+        <box key={`grid-${category}`} className="view grid-view">
           <Grid
-            index={index}
+            games={list}
+            index={at}
             columns={columns}
             favourites={favourites}
             select={setIndex}
@@ -537,9 +615,9 @@ function App() {
         </box>
       )}
 
-      <Hints mode={mode} view={view} device={device} />
+      <Hints mode={mode} view={view} device={device} empty={!game} />
 
-      {showDetails ? (
+      {showDetails && game ? (
         <box className="scrim" onClick={() => mode === "details" && setMode("browse")}>
           <box className="details" onClick={(e) => e.stopPropagation()}>
             <Shot game={game} className="details-shot" />
@@ -589,7 +667,7 @@ function App() {
         </box>
       ) : null}
 
-      {mode === "context" ? (
+      {mode === "context" && game ? (
         <box className="context-scrim" onClick={() => setMode(contextFrom)}>
           <box className="context" onClick={(e) => e.stopPropagation()}>
             <box className="context-head">
@@ -603,7 +681,7 @@ function App() {
         </box>
       ) : null}
 
-      {mode === "loading" ? (
+      {mode === "loading" && game ? (
         <box className="loading">
           <Spinner />
           <Text className="loading-text">{`Starting ${game.title}…`}</Text>

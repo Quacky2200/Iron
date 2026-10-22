@@ -164,23 +164,33 @@
   align-items: flex-start;
   justify-content: center;
   flex-direction: row;
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.15) 3%,
-    rgba(0, 0, 0, 0.55) 6%,
-    #000 9%,
-    #000 91%,
-    rgba(0, 0, 0, 0.55) 94%,
-    rgba(0, 0, 0, 0.15) 97%,
-    transparent 100%
-  );
+  /* The second layer keeps the scrollbar's strip on the right unfaded. */
+  mask-image:
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.15) 3%,
+      rgba(0, 0, 0, 0.55) 6%,
+      #000 9%,
+      #000 91%,
+      rgba(0, 0, 0, 0.55) 94%,
+      rgba(0, 0, 0, 0.15) 97%,
+      transparent 100%
+    ),
+    linear-gradient(#000, #000);
+  mask-size:
+    100% 100%,
+    16px 100%;
+  mask-position:
+    0 0,
+    100% 0;
+  mask-repeat: no-repeat;
 }
 .grid {
   flex-direction: row;
   flex-wrap: wrap;
   column-gap: 24px;
-  padding: 18px 0 24px;
+  padding: 48px 0 56px;
 }
 /* Room above and below for the lifted tile, so scrolling it into view shows it whole. */
 .cell {
@@ -207,6 +217,7 @@
   z-index: 10;
 }
 .tile-frame {
+  position: relative;
   height: 131px;
   border-radius: 10px;
   overflow: hidden;
@@ -776,4 +787,73 @@
   font-weight: 800;
   background: radial-gradient(circle, #3a404b, #1d2128);
   border: 1.5px solid rgba(255, 255, 255, 0.35);
+}
+
+/* --- Categories -------------------------------------------------------------------------- */
+
+.tabs {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-left: 28px;
+}
+.tab {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 17px;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tab.on {
+  color: #04111f;
+  background: var(--accent);
+}
+.tab-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.tab.on .tab-count {
+  background: rgba(4, 17, 31, 0.18);
+}
+
+.view.empty {
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-bottom: 40px;
+}
+.empty-star {
+  width: 92px;
+  height: 92px;
+  border-radius: 46px;
+  align-items: center;
+  justify-content: center;
+  color: #ffd25a;
+  background: rgba(255, 210, 90, 0.1);
+  border: 1px solid rgba(255, 210, 90, 0.3);
+  margin-bottom: 6px;
+}
+.empty-title {
+  font-size: 24px;
+  font-weight: 700;
+}
+.empty-body {
+  font-size: 15px;
+  color: var(--muted);
+}
+.empty-hint {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }

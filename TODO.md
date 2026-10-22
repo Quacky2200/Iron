@@ -1702,6 +1702,8 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   - [x] Engine: smooth scrolling (`behavior: "smooth"`, `scroll-behavior: smooth`), eased over
     250 to 500 ms (`M3-EVT-09`); the grid keeps its selection in view with it, and fades out
     at its top and bottom edges under the header
+  - [x] A Favourites category for both views (tabs, LT / RT, Tab, the sidebar), with an
+    empty state; the grid has room under its fades, and its scrollbar stays unfaded
   - [ ] Engine: gradients draw only 8 stops and warn every frame about the rest; warn once
   - [ ] Actually launch a game (start `iron <folder>` as a child process, or switch games in
     place) and return to the launcher when it quits
