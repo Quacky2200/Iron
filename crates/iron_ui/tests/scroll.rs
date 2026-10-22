@@ -8,7 +8,7 @@ use common::{Dom, n, op, px};
 use iron_core::{Commit, NodeId};
 use iron_ui::events::Modifiers;
 use iron_ui::opcodes::{REMOVE_CHILD, SET_ATTRS};
-use iron_ui::{DrawCmd, Input, Interaction, Rect, ScrollAlign, UiEvent, UiTree};
+use iron_ui::{DrawCmd, Input, Interaction, Rect, ScrollAlign, ScrollBehavior, UiEvent, UiTree};
 
 struct Rec {
     events: Vec<UiEvent>,
@@ -369,6 +369,7 @@ fn scripts_scroll_with_scroll_to_by_and_into_view() {
             id: scroller,
             x: 0.0,
             y: 70.0,
+            behavior: ScrollBehavior::Auto,
         },
     );
     assert_eq!(tree.scroll_offset(scroller), (0.0, 70.0));
@@ -381,6 +382,7 @@ fn scripts_scroll_with_scroll_to_by_and_into_view() {
             id: scroller,
             dx: 0.0,
             dy: -20.0,
+            behavior: ScrollBehavior::Auto,
         },
     );
     assert_eq!(tree.scroll_offset(scroller), (0.0, 50.0));
@@ -388,6 +390,7 @@ fn scripts_scroll_with_scroll_to_by_and_into_view() {
         id,
         block: ScrollAlign::Nearest,
         inline: ScrollAlign::Nearest,
+        behavior: ScrollBehavior::Auto,
     };
     handle(&mut ui, &mut tree, &mut rec, nearest(rows[5]));
     assert_eq!(tree.scroll_offset(scroller), (0.0, 200.0));
@@ -409,6 +412,7 @@ fn scroll_into_view_aligns_to_start_center_end_or_nearest() {
             id: rows[2],
             block,
             inline: ScrollAlign::Nearest,
+            behavior: ScrollBehavior::Auto,
         };
         handle(&mut ui, tree, &mut rec, input);
         tree.scroll_offset(scroller).1
@@ -437,6 +441,7 @@ fn scroll_into_view_aligns_to_start_center_end_or_nearest() {
         id: rows[5],
         block: ScrollAlign::Start,
         inline: ScrollAlign::Nearest,
+        behavior: ScrollBehavior::Auto,
     };
     handle(&mut ui, &mut tree, &mut rec, input);
     assert_eq!(tree.scroll_offset(scroller), (0.0, 200.0));
@@ -777,4 +782,78 @@ fn content_scrolled_out_of_view_is_not_drawn() {
     let tops = text_tops(&mut tree);
     assert!(tops.contains(&0.0), "row 50 at the top of the view");
     assert!(!tops.contains(&-1000.0), "the first row, scrolled away");
+}
+
+// M3-EVT-09
+#[test]
+fn smooth_scrolls_ease_over_time_and_send_scroll_events() {
+    let (mut tree, scroller, rows) = list("hidden", 6);
+    let mut ui = Interaction::new();
+    let mut rec = Rec::new();
+    tree.set_time(1000.0);
+    let to = |y| Input::ScrollTo {
+        id: scroller,
+        x: f32::NAN,
+        y,
+        behavior: ScrollBehavior::Smooth,
+    };
+    handle(&mut ui, &mut tree, &mut rec, to(200.0));
+    assert_eq!(
+        tree.scroll_offset(scroller),
+        (0.0, 0.0),
+        "starts next frame"
+    );
+    assert!(tree.is_animating());
+    // 200px takes 250 ms, eased in and out: halfway at half time.
+    tree.set_time(1125.0);
+    handle(&mut ui, &mut tree, &mut rec, Input::Refresh);
+    let (_, mid) = tree.scroll_offset(scroller);
+    assert!((mid - 100.0).abs() < 1.0, "{mid}");
+    assert!(rec.names().contains(&"scroll"));
+    tree.set_time(1300.0);
+    handle(&mut ui, &mut tree, &mut rec, Input::Refresh);
+    assert_eq!(tree.scroll_offset(scroller), (0.0, 200.0));
+    assert!(!tree.is_animating());
+
+    // A plain scroll (the wheel, a scrollbar, `scrollTo`) stops one in flight.
+    handle(&mut ui, &mut tree, &mut rec, to(0.0));
+    tree.set_time(1350.0);
+    tree.scroll_to(scroller, 0.0, 120.0, false);
+    tree.set_time(1600.0);
+    assert_eq!(tree.scroll_offset(scroller), (0.0, 120.0));
+
+    // `scrollBy` steps add up from where it's heading, not where it is.
+    let by = Input::ScrollBy {
+        id: scroller,
+        dx: 0.0,
+        dy: 30.0,
+        behavior: ScrollBehavior::Smooth,
+    };
+    handle(&mut ui, &mut tree, &mut rec, by.clone());
+    handle(&mut ui, &mut tree, &mut rec, by);
+    assert_eq!(tree.scroll_goal(scroller), (0.0, 180.0));
+    tree.set_time(2200.0);
+    assert_eq!(tree.scroll_offset(scroller), (0.0, 180.0));
+
+    // `scroll-behavior: smooth` makes `auto` script scrolls smooth too.
+    tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_STYLE,
+            &[n(scroller.0), "scrollBehavior".into(), "smooth".into()],
+        )],
+    });
+    tree.scroll_to(scroller, 0.0, 0.0, false);
+    let into_view = Input::ScrollIntoView {
+        id: rows[5],
+        block: ScrollAlign::Nearest,
+        inline: ScrollAlign::Nearest,
+        behavior: ScrollBehavior::Auto,
+    };
+    handle(&mut ui, &mut tree, &mut rec, into_view);
+    assert_eq!(tree.scroll_offset(scroller), (0.0, 0.0));
+    assert_eq!(tree.scroll_goal(scroller), (0.0, 200.0));
+    assert_eq!(
+        ScrollBehavior::parse("smooth"),
+        Some(ScrollBehavior::Smooth)
+    );
 }

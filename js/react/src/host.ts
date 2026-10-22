@@ -77,40 +77,56 @@ export class Instance {
   }
 
   /**
-   * Scrolls the element's content to (`left`, `top`), clamped to its range. Works on
+   * Scrolls the element's content to (`left`, `top`), clamped to its range, or as the
+   * DOM's `{ left, top, behavior }` (an axis left out stays put). Works on
    * `overflow: hidden` too. Applied next frame; `onScroll` reports the result.
+   * `behavior: "smooth"` (or `scroll-behavior: smooth` on the element) eases over 250 to
+   * 500 ms.
    */
-  scrollTo(left: number, top: number): void {
-    op("scrollTo", this.id, left, top);
+  scrollTo(left: number | ScrollToOptions, top?: number): void {
+    const o = typeof left === "object" ? left : { left, top };
+    op("scrollTo", this.id, o.left ?? null, o.top ?? null, o.behavior ?? "auto");
   }
 
-  /** Scrolls the element's content by (`dx`, `dy`). */
-  scrollBy(dx: number, dy: number): void {
-    op("scrollBy", this.id, dx, dy);
+  /** Scrolls the element's content by (`dx`, `dy`), or the DOM's `{ left, top, behavior }`. */
+  scrollBy(dx: number | ScrollToOptions, dy?: number): void {
+    const o = typeof dx === "object" ? dx : { left: dx, top: dy };
+    op("scrollBy", this.id, o.left ?? 0, o.top ?? 0, o.behavior ?? "auto");
   }
 
   /**
    * Scrolls the element's scroll containers to show it, as in the DOM: `true` or nothing
    * puts it at the top (`block: "start"`), `false` at the bottom, or say where with
    * `{ block, inline }` (`"start"`, `"center"`, `"end"` or `"nearest"`, which scrolls only
-   * as far as needed; `inline` defaults to `"nearest"`). `behavior` isn't supported:
-   * scrolling is instant.
+   * as far as needed; `inline` defaults to `"nearest"`). `behavior: "smooth"` eases there
+   * (as does `"auto"` in a container with `scroll-behavior: smooth`).
    */
   scrollIntoView(arg: boolean | ScrollIntoViewOptions = true): void {
-    const { block = "start", inline = "nearest" } =
-      typeof arg === "boolean" ? { block: arg ? "start" : "end" } : arg;
-    op("scrollIntoView", this.id, block, inline);
+    const {
+      block = "start",
+      inline = "nearest",
+      behavior = "auto",
+    } = typeof arg === "boolean" ? { block: arg ? ("start" as const) : ("end" as const) } : arg;
+    op("scrollIntoView", this.id, block, inline, behavior);
   }
 }
 
 /** Where `scrollIntoView` puts an element, per axis (the DOM's `ScrollLogicalPosition`). */
 export type ScrollLogicalPosition = "start" | "center" | "end" | "nearest";
 
+/** How a script's scroll moves: `auto` follows the container's `scroll-behavior`. */
+export type ScrollBehavior = "auto" | "instant" | "smooth";
+
 export interface ScrollIntoViewOptions {
   block?: ScrollLogicalPosition;
   inline?: ScrollLogicalPosition;
-  /** Accepted for portability; scrolling is always instant. */
-  behavior?: "auto" | "instant" | "smooth";
+  behavior?: ScrollBehavior;
+}
+
+export interface ScrollToOptions {
+  left?: number;
+  top?: number;
+  behavior?: ScrollBehavior;
 }
 
 export interface Container {

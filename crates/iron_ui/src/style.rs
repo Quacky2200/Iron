@@ -108,6 +108,8 @@ pub struct Visual {
     /// `overscrollBehavior` (x, y): `true` for `contain` / `none`, which stop scrolling
     /// from passing to the scroll containers outside once this one hits its end.
     pub overscroll_contain: [bool; 2],
+    /// `scrollBehavior: smooth`: script scrolls that don't name a behaviour animate.
+    pub scroll_smooth: bool,
     /// `scrollbarColor` as (thumb, track); `None` inherits, `Some(None)` is `auto`.
     pub scrollbar_color: Option<Option<(Rgba, Rgba)>>,
     /// `display: contents`: no box of its own; children join the parent's layout.
@@ -185,6 +187,7 @@ impl Default for Visual {
             scrollbar_width: ScrollbarWidth::Auto,
             scrollbar_gutter: false,
             overscroll_contain: [false; 2],
+            scroll_smooth: false,
             scrollbar_color: None,
             contents: false,
             list_item: false,
@@ -1155,6 +1158,13 @@ fn apply_property(
                 _ => return Err(invalid()),
             }
         }
+        "scrollBehavior" => {
+            visual.scroll_smooth = match kw()?.trim() {
+                "auto" => false,
+                "smooth" => true,
+                _ => return Err(invalid()),
+            };
+        }
         "scrollbarColor" => {
             visual.scrollbar_color = match kw()?.trim() {
                 "auto" => Some(None),
@@ -1491,6 +1501,7 @@ pub(crate) fn copy_prop(
         "overscrollBehaviorY" | "overscrollBehaviorBlock" => {
             visual.overscroll_contain[1] = v.overscroll_contain[1]
         }
+        "scrollBehavior" => visual.scroll_smooth = v.scroll_smooth,
         "scrollbarColor" => visual.scrollbar_color = v.scrollbar_color,
         "pointerEvents" => visual.pointer_events = v.pointer_events,
         "cursor" => {

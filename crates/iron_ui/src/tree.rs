@@ -14,6 +14,7 @@ use crate::draw::{ClipShape, DrawCmd, ImageFill, LayerShadow, Quad, Radii, Rect,
 use crate::editor::{Editor, KeyOutcome, PointerSelect, TEXTAREA_ROWS, is_editor_kind};
 use crate::events::Modifiers;
 use crate::layout::{LayoutEngine, NodeLayout, TaffyLayout};
+use crate::motion::Timing;
 use crate::opcodes;
 use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle, Overflow, Shadow,
@@ -337,6 +338,17 @@ fn is_inline(kind: &str) -> bool {
     matches!(kind, "span" | TEXT_NODE)
 }
 
+/// A smooth scroll in progress ([`UiTree::smooth_scroll_to`]).
+#[derive(Clone, Copy, Debug)]
+struct SmoothScroll {
+    from: (f32, f32),
+    to: (f32, f32),
+    start_ms: f64,
+    duration_ms: f64,
+    timing: Timing,
+    by_user: bool,
+}
+
 /// The UI node tree, owned by Rust and built from React commits (DESIGN.md §3, §5).
 pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// Boxed: nodes are large (~700 bytes), so the map stays cheap to grow.
@@ -349,6 +361,10 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     rects: HashMap<NodeId, Rect>,
     /// Scroll offsets of scrolled elements (x, y), clamped to their range at layout.
     scroll: HashMap<NodeId, (f32, f32)>,
+    /// Smooth scrolls in progress, moved on by [`Self::set_time`].
+    smooth_scrolls: HashMap<NodeId, SmoothScroll>,
+    /// Containers a smooth scroll moved since [`Self::take_smooth_scrolled`].
+    smooth_scrolled: Vec<NodeId>,
     /// Nodes whose styles use relative units (`em`, `rem`, viewport units), restyled
     /// when what those resolve against changes.
     unit_uses: HashMap<NodeId, Uses>,
@@ -476,6 +492,8 @@ impl<L: LayoutEngine> UiTree<L> {
             needs_layout: true,
             rects: HashMap::default(),
             scroll: HashMap::default(),
+            smooth_scrolls: HashMap::default(),
+            smooth_scrolled: Vec::new(),
             unit_uses: HashMap::default(),
             fixed: HashSet::default(),
             image_sizes: HashMap::default(),
@@ -2041,9 +2059,11 @@ impl<L: LayoutEngine> UiTree<L> {
         std::mem::take(&mut self.motion_events)
     }
 
-    /// Whether any transition is running (the app keeps drawing frames while so).
+    /// Whether any transition or smooth scroll is running (the app keeps drawing frames
+    /// while so).
     pub fn is_animating(&self) -> bool {
-        self.motion.values().any(crate::motion::Motion::is_moving)
+        !self.smooth_scrolls.is_empty()
+            || self.motion.values().any(crate::motion::Motion::is_moving)
     }
 
     /// The node's attributes (`className`, `id`, `data-*`, ...).
@@ -2873,6 +2893,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let mut stack = vec![id];
         while let Some(id) = stack.pop() {
             self.scroll.remove(&id);
+            self.smooth_scrolls.remove(&id);
             self.editors.remove(&id);
             self.unit_uses.remove(&id);
             self.fixed.remove(&id);
@@ -3136,6 +3157,7 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Sets engine time (ms) for caret blinking.
     pub fn set_time(&mut self, now_ms: f64) {
         self.time_ms = now_ms;
+        self.step_smooth_scrolls();
         // Running transitions restyle every frame.
         let moving: Vec<NodeId> = self
             .motion
@@ -3473,7 +3495,100 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Scrolls `id` to (x, y), clamped to its range on the axes it can scroll (see
     /// [`Self::scroll_axes`]; `by_user` limits it to user-scrollable axes). Lays out
     /// first if needed. Returns whether the offset changed.
+    /// Stops any smooth scroll of `id`.
     pub fn scroll_to(&mut self, id: NodeId, x: f32, y: f32, by_user: bool) -> bool {
+        self.smooth_scrolls.remove(&id);
+        self.set_scroll(id, x, y, by_user)
+    }
+
+    /// Starts scrolling `id` smoothly toward (x, y) (clamped as [`Self::scroll_to`] does):
+    /// `behavior: "smooth"`. It eases in and out over 250 to 500 ms, longer for longer
+    /// distances; a new target mid-flight carries on from where it is, easing out only, so
+    /// repeated steps (a held key) don't stall. Returns the clamped target, or `None` when
+    /// it's already there.
+    pub fn smooth_scroll_to(
+        &mut self,
+        id: NodeId,
+        x: f32,
+        y: f32,
+        by_user: bool,
+    ) -> Option<(f32, f32)> {
+        let from = self.scroll_offset(id);
+        let running = self.smooth_scrolls.remove(&id).is_some();
+        // Find the clamped target, then put the offset back.
+        if !self.set_scroll(id, x, y, by_user) {
+            return None;
+        }
+        let to = self.scroll_offset(id);
+        self.scroll.insert(id, from);
+        let distance = (to.0 - from.0).hypot(to.1 - from.1) as f64;
+        self.smooth_scrolls.insert(
+            id,
+            SmoothScroll {
+                from,
+                to,
+                start_ms: self.time_ms,
+                duration_ms: (200.0 + distance * 0.25).clamp(250.0, 500.0),
+                timing: if running {
+                    Timing::CubicBezier(0.0, 0.0, 0.58, 1.0)
+                } else {
+                    Timing::CubicBezier(0.42, 0.0, 0.58, 1.0)
+                },
+                by_user,
+            },
+        );
+        Some(to)
+    }
+
+    /// Where `id`'s scroll is heading: a smooth scroll's target, else its offset.
+    pub fn scroll_goal(&self, id: NodeId) -> (f32, f32) {
+        self.smooth_scrolls
+            .get(&id)
+            .map_or_else(|| self.scroll_offset(id), |s| s.to)
+    }
+
+    /// Whether `id` has `scroll-behavior: smooth`.
+    pub fn smooth_by_default(&self, id: NodeId) -> bool {
+        self.nodes.get(&id).is_some_and(|n| n.visual.scroll_smooth)
+    }
+
+    /// Whether `id` is scrolling smoothly.
+    pub fn is_smooth_scrolling(&self, id: NodeId) -> bool {
+        self.smooth_scrolls.contains_key(&id)
+    }
+
+    /// Containers smooth scrolls moved since the last call (for `scroll` events).
+    pub fn take_smooth_scrolled(&mut self) -> Vec<NodeId> {
+        std::mem::take(&mut self.smooth_scrolled)
+    }
+
+    fn step_smooth_scrolls(&mut self) {
+        if self.smooth_scrolls.is_empty() {
+            return;
+        }
+        let now = self.time_ms;
+        let scrolls: Vec<(NodeId, SmoothScroll)> = self
+            .smooth_scrolls
+            .iter()
+            .map(|(id, s)| (*id, *s))
+            .collect();
+        for (id, s) in scrolls {
+            let t = ((now - s.start_ms) / s.duration_ms).clamp(0.0, 1.0) as f32;
+            let e = s.timing.eval(t);
+            let (x, y) = (
+                s.from.0 + (s.to.0 - s.from.0) * e,
+                s.from.1 + (s.to.1 - s.from.1) * e,
+            );
+            if self.set_scroll(id, x, y, s.by_user) && !self.smooth_scrolled.contains(&id) {
+                self.smooth_scrolled.push(id);
+            }
+            if t >= 1.0 {
+                self.smooth_scrolls.remove(&id);
+            }
+        }
+    }
+
+    fn set_scroll(&mut self, id: NodeId, x: f32, y: f32, by_user: bool) -> bool {
         self.layout_if_needed();
         let axes = self.scroll_axes(id, by_user);
         let (max_x, max_y) = self.scroll_max(id);

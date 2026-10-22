@@ -46,7 +46,9 @@ use iron_render::{
     Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface, WorldRenderer,
 };
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Clipboard, Input, Interaction, ScrollAlign, UiEvent, UiTree, events};
+use iron_ui::{
+    Clipboard, Input, Interaction, ScrollAlign, ScrollBehavior, UiEvent, UiTree, events,
+};
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
@@ -1038,14 +1040,36 @@ impl App {
                         tracing::warn!("{} needs an element id", op.name);
                         continue;
                     };
-                    let (a, b) = (num(1).unwrap_or(0.0) as f32, num(2).unwrap_or(0.0) as f32);
+                    // `scrollTo` keeps an axis it isn't given (NaN); the others default to 0.
+                    let missing = if op.name == "scrollTo" { f64::NAN } else { 0.0 };
+                    let (a, b) = (
+                        num(1).unwrap_or(missing) as f32,
+                        num(2).unwrap_or(missing) as f32,
+                    );
+                    // The last argument: `"auto"`, `"instant"` or `"smooth"`.
+                    let behavior = op
+                        .args
+                        .get(3)
+                        .and_then(iron_core::Value::as_str)
+                        .and_then(ScrollBehavior::parse)
+                        .unwrap_or_default();
                     let surface = self.surface_of(id);
                     self.handle_on(
                         surface,
                         match op.name.as_str() {
-                            "scrollTo" => Input::ScrollTo { id, x: a, y: b },
-                            "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
-                            // `scrollIntoView id block inline`; the DOM's defaults otherwise.
+                            "scrollTo" => Input::ScrollTo {
+                                id,
+                                x: a,
+                                y: b,
+                                behavior,
+                            },
+                            "scrollBy" => Input::ScrollBy {
+                                id,
+                                dx: a,
+                                dy: b,
+                                behavior,
+                            },
+                            // `scrollIntoView id block inline behavior`; the DOM's defaults otherwise.
                             _ => {
                                 let align = |i: usize, default| {
                                     op.args
@@ -1058,6 +1082,7 @@ impl App {
                                     id,
                                     block: align(1, ScrollAlign::Start),
                                     inline: align(2, ScrollAlign::Nearest),
+                                    behavior,
                                 }
                             }
                         },

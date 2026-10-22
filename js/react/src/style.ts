@@ -308,6 +308,8 @@ export interface IronStyle {
   overscrollBehavior?: string;
   overscrollBehaviorX?: "auto" | "contain" | "none";
   overscrollBehaviorY?: "auto" | "contain" | "none";
+  /** `smooth`: script scrolls (`scrollTo`, `scrollIntoView`) ease instead of jumping. */
+  scrollBehavior?: "auto" | "smooth";
   overscrollBehaviorInline?: "auto" | "contain" | "none";
   overscrollBehaviorBlock?: "auto" | "contain" | "none";
   /** `auto` or `<thumb colour> <track colour>`; inherited. */
