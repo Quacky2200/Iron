@@ -27,6 +27,24 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | World panel input | Screen UI takes the pointer wherever it has an element; full-screen layout boxes need `pointerEvents: none` to let the pointer through to world panels | Unity: only graphics marked as raycast targets block; s&box: similar to Iron | The CSS way, no extra flags |
 | Transform setters | Each set sends an op; world values are worked out in JS from the parent chain (shear from non-uniform scale under rotation is dropped) | Native | Rust owns the world; scripts mirror locals |
 
+## Collisions (compiled games, 2026-10-22)
+
+`Collision`, `Collision2D`, `ContactPoint`, `ContactPoint2D`, `Collider` and `Collider2D` follow Unity (`docs/iron-api.md`,
+physics). What is left out or differs:
+
+| Area | Iron | Unity | Why |
+|---|---|---|---|
+| `GetContacts(array)` / `GetContacts(List)` | Not there: `contacts` (a new array) or `contactCount` with `getContact(i)` (no array) | Fills the caller's array | An engine call cannot fill a script's array; `getContact(i)` is the allocation-free path |
+| Keeping a `Collision` | Valid until the next contact dispatch (the next fixed tick); after that it reads as empty | A new object, unless `reuseCollisionCallbacks` (the default) reuses it the same way | Handles into one per-dispatch buffer, no allocation per contact |
+| `Collision.articulationBody`, `body`, `ContactPoint2D.friction` / `bounciness`, `Collision2D.shapeCount`, `ContactPoint.thisCollider` for colliders made without a component | Not there (a `PhysicsBody.addBox` collider's `Collider` is the null handle: `gameObject` still works on the `Collision`) | Present | No articulations, no per-contact materials kept, no custom 2D shapes, every Unity collider is a component |
+| `Collider.enabled`, `contactOffset`, `material`, `sharedMaterial`, `Raycast`; `Collider2D.density`, `Distance`, `IsTouching`, `OverlapPoint`, `Raycast` | Not there; friction and bounciness are `dynamicFriction` / `bounciness` on each collider class | Present | Collider components have no enable switch or material assets yet |
+| `Collision2D.enabled`, `ContactPoint2D.enabled` | Always `true` | False when an effector or contact modification turns the response off | Iron has neither |
+| Impulses | `Collision.impulse` and `ContactPoint.impulse` are along the contact normals (the push this object got in the last step); `ContactPoint2D.tangentImpulse` is the friction impulse rapier keeps for warm starting, projected on the normal turned a quarter clockwise | PhysX / Box2D solver impulses | rapier's numbers; friction is solved per manifold, so every point of one carries the manifold's share |
+| `relativeVelocity` | The other side's velocity minus this one's: going into the contact for Enter, as the bodies move for Stay and Exit | The velocity at the contact | Read from the bodies when the hook runs |
+| Contact points | Halfway between the two surfaces; points within rapier's prediction distance count (`separation` may be a little above 0); none in Exit or trigger hooks | PhysX: on the surface, within `contactOffset` | rapier's manifolds |
+| Trigger hooks | Get the other `Collider` / `Collider2D`; one whose parameter is typed `Collision` gets a `Collision` (no contact points) | Always the `Collider` | Older Iron games typed it that way |
+| The concrete 2D collider classes | Still name it `attachedRigidbody2d` (the base `Collider2D` has `attachedRigidbody`) | `attachedRigidbody` | Kept so existing games build |
+
 ## Native Shapes, Spline and SplineAnimate (2026-10-22)
 
 They were TypeScript (`js/engine`, and a compiled copy in `facade.ts`); they are native Rust now, called by compiled code and QuickJS alike.

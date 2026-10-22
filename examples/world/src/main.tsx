@@ -19,8 +19,9 @@ class Spin extends Component {
 /** Thuds from its object when it lands, louder for harder hits. */
 class Thud extends Component {
   onCollisionEnter(c: Collision) {
-    if (c.relativeSpeed < 0.8) return;
-    this.getComponent(AudioSource)?.playOneShot("assets/thud.wav", Math.min(1, c.relativeSpeed / 6));
+    const speed = c.relativeVelocity.magnitude;
+    if (speed < 0.8) return;
+    this.getComponent(AudioSource)?.playOneShot("assets/thud.wav", Math.min(1, speed / 6));
   }
 }
 

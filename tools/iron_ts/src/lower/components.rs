@@ -401,17 +401,40 @@ pub fn desugar(src: &str, has_game_object: bool, has_contacts: bool) -> R<Option
     Ok(Some(out))
 }
 
-/// The thunk of a contact hook: the host passes the other object, its collider's id, the speed and
-/// the sensor flag as plain values and the thunk builds the `Collision` record (`collider`: the
-/// other object's side).
+/// The thunk of a contact hook: the host passes the `Collision` handle and the other side's
+/// `Collider` handle (`iron_physics_api::contacts`), and the thunk hands the hook the one it asks
+/// for. As in Unity, a trigger hook gets the other `Collider` (or `Collider2D`) and a collision hook
+/// a `Collision` (or `Collision2D`) unless its parameter names the other kind.
 fn contact_thunk(name: &str, h: &str, method: &str, param: Option<&str>) -> String {
-    // A hook that takes the other `Collider` (a trigger's `other`) gets it; the rest a `Collision`.
-    let arg = if param == Some("Collider") {
-        "const e: Collider = { gameObject: other! };"
+    let two_d = method.ends_with("2D");
+    let wants = match param {
+        Some(t @ ("Collider" | "Collider2D" | "Collision" | "Collision2D")) => t,
+        _ if h.starts_with("onTrigger") => {
+            if two_d {
+                "Collider2D"
+            } else {
+                "Collider"
+            }
+        }
+        _ if two_d => "Collision2D",
+        _ => "Collision",
+    };
+    let collision_ty = match wants {
+        "Collision" | "Collision2D" => wants,
+        _ if two_d => "Collision2D",
+        _ => "Collision",
+    };
+    let collider_ty = match wants {
+        "Collider" | "Collider2D" => wants,
+        _ if two_d => "Collider2D",
+        _ => "Collider",
+    };
+    let arg = if wants == collision_ty {
+        "collision"
     } else {
-        "const e: Collision = { gameObject: other!, collider: { gameObject: other! }, relativeSpeed: speed, speed: speed, sensor: sensor !== 0 };"
+        "collider"
     };
     format!(
-        "export function iron_hook_{name}_{h}(c: {name}, other: GameObject | null, collider: number, speed: number, sensor: number): void {{ {arg} c.{method}(e); }}\n"
+        "export function iron_hook_{name}_{h}(c: {name}, collision: {collision_ty}, collider: {collider_ty}): void {{ c.{method}({arg}); }}\n"
     )
 }

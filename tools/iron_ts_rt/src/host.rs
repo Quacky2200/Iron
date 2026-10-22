@@ -32,9 +32,9 @@ const HOOK_NAMES: [&str; 9] = [
 
 type Create = unsafe extern "C" fn(f64, u64) -> *mut u8;
 type Hook = unsafe extern "C" fn(*mut u8, f64);
-/// A contact hook: (this, the other object's raw handle or 0, the other collider's number, speed,
-/// sensor flag). The compiled thunk builds the `Collision` the script sees.
-type ContactHook = unsafe extern "C" fn(*mut u8, u64, u64, f64, f64);
+/// A contact hook: (this, the `Collision` handle, the other side's `Collider` handle or 0). The
+/// compiled thunk passes the script whichever of the two its hook asks for.
+type ContactHook = unsafe extern "C" fn(*mut u8, u64, u64);
 
 pub const CONTACT_ENTER: usize = 0;
 pub const CONTACT_EXIT: usize = 1;
@@ -289,15 +289,17 @@ pub struct Fault {
     pub hook: &'static str,
 }
 
-/// One side of a contact, as the host dispatches it: `object` is the object being told, `other`
-/// the object on the other side (0: none) with its collider `collider`.
+/// One side of a contact, as the host dispatches it: `object` is the object being told, with its
+/// collider `own`, `other` the object on the other side (0: none) with its collider `collider`
+/// (rapier collider numbers), and `velocity` the other side's velocity minus this one's going in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContactEvent {
     pub started: bool,
     pub object: u64,
+    pub own: u64,
     pub other: u64,
     pub collider: u64,
-    pub speed: f64,
+    pub velocity: [f64; 3],
     pub sensor: bool,
 }
 
@@ -553,6 +555,8 @@ impl NativeHost {
         active: &dyn Fn(u64) -> bool,
     ) -> Vec<Fault> {
         let mut faults = Vec::new();
+        // The `Collision` handles of the last dispatch are done with.
+        iron_physics_api::contacts::clear_collisions();
         for ev in events {
             let same = |t: &ContactEvent| {
                 t.object == ev.object && t.collider == ev.collider && t.other == ev.other
@@ -570,7 +574,9 @@ impl NativeHost {
                 (true, true) => TRIGGER_ENTER,
                 (true, false) => TRIGGER_EXIT,
             };
-            faults.extend(self.contact_hook(hook, ev, active));
+            // Enter carries the velocity going in; Exit has no contact points.
+            let velocity = ev.started.then_some(ev.velocity);
+            faults.extend(self.contact_hook(hook, ev, velocity, ev.started, active));
         }
         for ev in self.touching.clone() {
             let hook = if ev.sensor {
@@ -578,7 +584,7 @@ impl NativeHost {
             } else {
                 CONTACT_STAY
             };
-            faults.extend(self.contact_hook(hook, &ev, active));
+            faults.extend(self.contact_hook(hook, &ev, None, true, active));
         }
         faults
     }
@@ -592,14 +598,19 @@ impl NativeHost {
         let mut events = Vec::new();
         for c in iron_physics_api::take_contacts() {
             let (oa, ob) = (raw(c.a), raw(c.b));
-            for (me, other, coll) in [(oa, ob, c.b), (ob, oa, c.a)] {
+            // `velocity` is b's minus a's: a is told the other way round.
+            let v = c.velocity.map(f64::from);
+            for (me, other, own, coll, velocity) in
+                [(oa, ob, c.a, c.b, v), (ob, oa, c.b, c.a, v.map(|x| -x))]
+            {
                 if let Some(object) = me {
                     events.push(ContactEvent {
                         started: c.started,
                         object,
+                        own: u64::from(own),
                         other: other.unwrap_or(0),
                         collider: u64::from(coll),
-                        speed: f64::from(c.speed),
+                        velocity,
                         sensor: c.sensor,
                     });
                 }
@@ -608,11 +619,15 @@ impl NativeHost {
         self.dispatch_contacts(&events, active)
     }
 
-    /// Runs one contact hook on every component of the event's object that has it.
+    /// Runs one contact hook on every component of the event's object that has it, with one
+    /// `Collision` for all of them (`velocity`: the one going in, or `None` for the bodies' current
+    /// velocities; `touching`: it has contact points).
     fn contact_hook(
         &mut self,
         hook: usize,
         ev: &ContactEvent,
+        velocity: Option<[f64; 3]>,
+        touching: bool,
         active: &dyn Fn(u64) -> bool,
     ) -> Vec<Fault> {
         let mut faults = Vec::new();
@@ -626,6 +641,7 @@ impl NativeHost {
             .filter(|e| e.object == Some(ev.object))
             .map(|e| e.id)
             .collect();
+        let mut collision = None;
         for id in ids {
             let Some(i) = self.entries.iter().position(|e| e.id == id) else {
                 continue;
@@ -634,6 +650,15 @@ impl NativeHost {
             if !e.enabled || self.classes[e.class].contact_hooks[hook].is_none() {
                 continue;
             }
+            let collision = *collision.get_or_insert_with(|| {
+                iron_physics_api::contacts::collision(
+                    ev.own as u32,
+                    ev.collider as u32,
+                    ev.other,
+                    velocity,
+                    touching && !ev.sensor,
+                )
+            });
             if !e.started {
                 self.entries[i].started = true;
                 let f = self.call(i, HOOK_START, 0.0);
@@ -650,7 +675,7 @@ impl NativeHost {
             let Some(i) = self.entries.iter().position(|e| e.id == id) else {
                 continue;
             };
-            if let Some(f) = self.call_contact(i, hook, ev) {
+            if let Some(f) = self.call_contact(i, hook, collision, ev) {
                 faults.push(f);
             }
             faults.extend(self.adopt());
@@ -658,20 +683,19 @@ impl NativeHost {
         faults
     }
 
-    fn call_contact(&mut self, i: usize, hook: usize, ev: &ContactEvent) -> Option<Fault> {
+    fn call_contact(
+        &mut self,
+        i: usize,
+        hook: usize,
+        collision: u64,
+        ev: &ContactEvent,
+    ) -> Option<Fault> {
         let e = &self.entries[i];
         let class = &self.classes[e.class];
         let f = class.contact_hooks[hook]?;
+        let collider = iron_physics_api::contacts::collider_component(ev.collider as u32);
         // SAFETY: `this` is rooted and has the class the thunk was generated for.
-        unsafe {
-            f(
-                e.this,
-                ev.other,
-                ev.collider,
-                ev.speed,
-                f64::from(u8::from(ev.sensor)),
-            )
-        };
+        unsafe { f(e.this, collision, collider) };
         ts_rt_microtasks_run();
         if ts_rt_exc_pending() {
             ts_rt_exc_take();

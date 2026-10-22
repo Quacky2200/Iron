@@ -13,7 +13,7 @@ class Thing extends Component {
   half = 0.25;
   color = "#ffffff";
   onCollisionEnter(c: Collision) {
-    const speed = c.relativeSpeed;
+    const speed = c.relativeVelocity.magnitude;
     if (speed < 0.8) return;
     audio.play("assets/thud.wav", {
       volume: Math.min(1, speed / 8),

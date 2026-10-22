@@ -28,6 +28,29 @@ pub struct Contact {
     pub speed: f32,
     /// One of them is a sensor (a trigger: reports overlaps, doesn't push).
     pub sensor: bool,
+    /// `b`'s velocity minus `a`'s going into the contact (its length is `speed`). Zero when
+    /// it stops.
+    pub velocity: [f32; 3],
+}
+
+/// One point of the contact between two colliders after a step, as seen from one of them
+/// ("this"; [`Physics::contact_points`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ContactPoint {
+    /// World position: halfway between the two surfaces.
+    pub point: [f32; 3],
+    /// World normal, pointing from the other collider towards this one.
+    pub normal: [f32; 3],
+    /// Distance between the surfaces along the normal (negative: overlapping).
+    pub separation: f32,
+    /// The solver's impulse along the normal at this point in the last step (N·s, pushing
+    /// this collider's body along `normal`).
+    pub normal_impulse: f32,
+    /// The friction impulse on this collider's body (world, N·s), as the solver keeps it for
+    /// warm starting the next step.
+    pub tangent_impulse: [f32; 3],
+    /// The other body's velocity at the point minus this body's.
+    pub relative_velocity: [f32; 3],
 }
 
 /// A body's pose and velocity after a step.
@@ -121,9 +144,9 @@ impl Batch {
 }
 
 /// Collects rapier's collision events during a step, with the colliders' relative
-/// speed (events fire before the solver, so it's the speed going into the contact).
+/// velocity (events fire before the solver, so it's the velocity going into the contact).
 #[derive(Default)]
-struct Events(Mutex<Vec<(CollisionEvent, f32)>>);
+struct Events(Mutex<Vec<(CollisionEvent, Vector)>>);
 
 impl EventHandler for Events {
     fn handle_collision_event(
@@ -139,13 +162,13 @@ impl EventHandler for Events {
                 .and_then(|c| bodies.get(c.parent()?))
                 .map_or(Vector::ZERO, |b| b.linvel())
         };
-        let speed = if event.started() {
-            (velocity(event.collider1()) - velocity(event.collider2())).length()
+        let relative = if event.started() {
+            velocity(event.collider2()) - velocity(event.collider1())
         } else {
-            0.0
+            Vector::ZERO
         };
         if let Ok(mut events) = self.0.lock() {
-            events.push((event, speed));
+            events.push((event, relative));
         }
     }
 
@@ -248,6 +271,89 @@ impl Physics {
         self.bodies
             .iter()
             .find_map(|(&id, &h)| (h == parent).then_some(id))
+    }
+
+    /// The linear velocity of a collider's body (zero for a world collider or an unknown id).
+    pub fn collider_velocity(&self, collider: ScriptId) -> [f32; 3] {
+        self.colliders
+            .get(&collider)
+            .and_then(|h| self.world.colliders.get(*h))
+            .and_then(|c| self.world.bodies.get(c.parent()?))
+            .map_or([0.0; 3], |b| b.linvel().to_array())
+    }
+
+    /// A collider's world-space bounding box (min, max).
+    pub fn collider_aabb(&self, collider: ScriptId) -> Option<([f32; 3], [f32; 3])> {
+        let c = self.world.colliders.get(*self.colliders.get(&collider)?)?;
+        let aabb = c.compute_aabb();
+        Some((aabb.mins.to_array(), aabb.maxs.to_array()))
+    }
+
+    /// The point of a collider closest to `point` (the point itself when it is inside).
+    pub fn closest_point(&self, collider: ScriptId, point: [f32; 3]) -> Option<[f32; 3]> {
+        let c = self.world.colliders.get(*self.colliders.get(&collider)?)?;
+        let p = c
+            .shape()
+            .project_point(c.position(), Vector::from_array(point), true);
+        Some(p.point.to_array())
+    }
+
+    /// Appends the points where `this` touches `other` after the last step, as seen from `this`
+    /// (normals point towards it, impulses push it). Nothing when they do not touch, one of them
+    /// is a sensor, or an id is unknown. Reads the narrow phase: no copy is kept per step.
+    pub fn contact_points(&self, this: ScriptId, other: ScriptId, out: &mut Vec<ContactPoint>) {
+        let (Some(&h_this), Some(&h_other)) =
+            (self.colliders.get(&this), self.colliders.get(&other))
+        else {
+            return;
+        };
+        let Some(pair) = self.world.narrow_phase.contact_pair(h_this, h_other) else {
+            return;
+        };
+        let (Some(c1), Some(c2)) = (
+            self.world.colliders.get(pair.collider1),
+            self.world.colliders.get(pair.collider2),
+        ) else {
+            return;
+        };
+        // rapier's normal points from the pair's first collider to its second (flipped when
+        // "this" is the first), and its friction impulse is the one on the first collider's body
+        // (flipped when "this" is the second).
+        let flip = pair.collider1 == h_this;
+        let sign = if flip { -1.0 } else { 1.0 };
+        let point_velocity = |c: &Collider, p: Vector| {
+            c.parent()
+                .and_then(|b| self.world.bodies.get(b))
+                .map_or(Vector::ZERO, |b| b.velocity_at_point(p))
+        };
+        for m in pair.solver_manifolds() {
+            if m.data.solver_contacts.is_empty() {
+                continue;
+            }
+            let (pose1, pose2) = match &m.subshape_poses {
+                Some(s) => (
+                    s.pos1.map_or(*c1.position(), |p| *c1.position() * p),
+                    s.pos2.map_or(*c2.position(), |p| *c2.position() * p),
+                ),
+                None => (*c1.position(), *c2.position()),
+            };
+            let normal = m.data.normal * sign;
+            for p in &m.points {
+                let w1 = pose1.transform_point(p.local_p1);
+                let w2 = pose2.transform_point(p.local_p2);
+                let at = (w1 + w2) * 0.5;
+                let (mine, theirs) = if flip { (c1, c2) } else { (c2, c1) };
+                let relative = point_velocity(theirs, at) - point_velocity(mine, at);
+                out.push(ContactPoint {
+                    point: at.to_array(),
+                    normal: normal.to_array(),
+                    separation: p.dist,
+                    normal_impulse: p.data.impulse,
+                    tangent_impulse: (p.data.warmstart_tangent_world * -sign).to_array(),
+                    relative_velocity: relative.to_array(),
+                });
+            }
+        }
     }
 
     /// Casts a ray at once: the first collider hit within `max` metres (its id, the distance and
@@ -789,7 +895,7 @@ impl Physics {
         self.hold_pins();
 
         let script_id = |h: ColliderHandle| self.world.colliders.get(h).map(|c| c.user_data as u32);
-        for (event, speed) in events.0.into_inner().unwrap_or_default() {
+        for (event, relative) in events.0.into_inner().unwrap_or_default() {
             let (Some(a), Some(b)) = (script_id(event.collider1()), script_id(event.collider2()))
             else {
                 continue;
@@ -799,7 +905,8 @@ impl Physics {
                 a,
                 b,
                 sensor: event.sensor(),
-                speed,
+                speed: relative.length(),
+                velocity: relative.to_array(),
             });
         }
 

@@ -549,3 +549,92 @@ fn friction_stops_a_box_locked_to_a_plane() {
     steps(&mut p, 10);
     assert_eq!(p.position(2).unwrap()[2], -1.0, "not held where it was put");
 }
+
+// M4-PHY-08
+//
+// After a step the contact points of a pair are read from either side: a box resting on the floor
+// touches it at its corners, at the floor's top, with normals towards the side asking and normal
+// impulses that hold up its weight; shoved along x, friction pushes it back. A collision's start
+// carries the velocity going in.
+#[test]
+fn contact_points_are_read_from_either_side() {
+    let mut p = Physics::new();
+    floor(&mut p);
+    op(
+        &mut p,
+        "body",
+        vec![num(2.0), "dynamic".into(), arr(&[0.0, 1.0, 0.0])],
+    );
+    op(
+        &mut p,
+        "collider",
+        vec![
+            num(2.0),
+            num(2.0),
+            "box".into(),
+            arr(&[0.5, 0.5, 0.5]),
+            Value::Null,
+            Value::Null,
+            // friction, restitution, density, sensor, events
+            Value::Array(vec![
+                num(0.5),
+                num(0.0),
+                num(1.0),
+                Value::Bool(false),
+                Value::Bool(true),
+            ]),
+        ],
+    );
+    steps(&mut p, 120);
+    let start = p
+        .take_batch()
+        .contacts
+        .into_iter()
+        .find(|c| c.started)
+        .expect("the box lands");
+    // b's velocity minus a's: the box (2) was falling at about sqrt(2 g 0.5) = 3.1 m/s.
+    let v = if start.b == 2 {
+        -start.velocity[1]
+    } else {
+        start.velocity[1]
+    };
+    assert!((v - 3.1).abs() < 0.3, "{start:?}");
+    assert!((start.speed - v.abs()).abs() < 1e-4);
+
+    let mut out = Vec::new();
+    p.contact_points(2, 1, &mut out);
+    assert!(out.len() >= 4, "{out:?}");
+    let mut total = 0.0;
+    for c in &out {
+        assert!(c.point[1].abs() < 0.05, "{c:?}");
+        assert!(c.point[0].abs() < 0.55 && c.point[2].abs() < 0.55, "{c:?}");
+        assert!((c.normal[1] - 1.0).abs() < 1e-3, "towards the box: {c:?}");
+        assert!(c.separation < 0.05, "{c:?}");
+        total += c.normal_impulse;
+    }
+    // A 1 kg box: m g dt = 9.81 / 60 N·s a step.
+    assert!((total - 9.81 / 60.0).abs() < 0.03, "{total}");
+    let mut floor_side = Vec::new();
+    p.contact_points(1, 2, &mut floor_side);
+    assert_eq!(floor_side.len(), out.len());
+    assert!(floor_side.iter().all(|c| (c.normal[1] + 1.0).abs() < 1e-3));
+
+    // Sliding along +x: the friction on the box points back along -x, the floor moves at -x
+    // relative to it.
+    op(
+        &mut p,
+        "set",
+        vec![num(2.0), "velocity".into(), arr(&[3.0, 0.0, 0.0])],
+    );
+    steps(&mut p, 2);
+    out.clear();
+    p.contact_points(2, 1, &mut out);
+    let fx: f32 = out.iter().map(|c| c.tangent_impulse[0]).sum();
+    assert!(fx < 0.0, "{out:?}");
+    assert!(out.iter().all(|c| c.relative_velocity[0] < 0.0), "{out:?}");
+
+    // No pair, no points.
+    out.clear();
+    p.contact_points(2, 99, &mut out);
+    assert!(out.is_empty());
+}

@@ -100,15 +100,18 @@ fn stay_runs_while_touching_and_exit_when_it_ends() {
             host.dispatch_physics(&all);
         }
         let l = log();
-        assert!(l.starts_with("ball:X(floor)"), "{l}");
+        assert!(
+            l.starts_with("ball:X(floor,0)"),
+            "no contact points on exit: {l}"
+        );
         assert_eq!(l.matches("ball:S").count(), 0, "no Stay after Exit: {l}");
     });
 }
 
 // M9-TS-1002
 //
-// A sensor collider reports `onTriggerEnter` (with `sensor` true) and `onTriggerStay`, not the
-// collision hooks.
+// A sensor collider reports `onTriggerEnter` (a hook that asks for a `Collision` gets one, without
+// contact points) and `onTriggerStay`, not the collision hooks.
 #[test]
 fn a_sensor_calls_the_trigger_hooks() {
     in_every_gc_mode(|| unsafe {
@@ -126,8 +129,8 @@ fn a_sensor_calls_the_trigger_hooks() {
             host.dispatch_physics(&all);
         }
         let l = log();
-        assert!(l.contains("ball:TE(floor,true)"), "{l}");
-        assert!(l.contains("floor:TE(ball,true)"), "{l}");
+        assert!(l.contains("ball:TE(floor,0)"), "{l}");
+        assert!(l.contains("floor:TE(ball,0)"), "{l}");
         assert!(l.contains("ball:TS"), "{l}");
         assert!(!l.contains(":E(") && !l.contains(":S"), "{l}");
         ts_cnt_clearLog();
@@ -156,9 +159,10 @@ fn events_skip_inactive_objects_and_faults_are_reported() {
         let ev = |object: u64| ContactEvent {
             started: true,
             object,
+            own: 6,
             other: b.to_raw(),
             collider: 7,
-            speed: 3.0,
+            velocity: [0.0, 3.0, 0.0],
             sensor: false,
         };
         let inactive = |_: u64| false;
@@ -173,5 +177,126 @@ fn events_skip_inactive_objects_and_faults_are_reported() {
         assert_eq!(faults[0].hook, "onCollisionEnter");
         assert!(!host.is_enabled(t));
         assert_eq!(host.len(), 1, "the quitter is gone");
+    });
+}
+
+/// The `key=value` fields of the log entry that starts with `head`.
+fn entry(log: &str, head: &str) -> std::collections::HashMap<String, String> {
+    let e = log
+        .split(';')
+        .find(|e| e.starts_with(head))
+        .unwrap_or_else(|| panic!("no {head} in {log}"));
+    e.split(' ')
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+fn num(f: &std::collections::HashMap<String, String>, k: &str) -> f64 {
+    f[k].parse().unwrap_or_else(|_| panic!("{k} = {}", f[k]))
+}
+
+/// Steps and dispatches until the log has an entry starting with `head`.
+fn until(host: &mut NativeHost, head: &str) -> String {
+    for _ in 0..120 {
+        unsafe { ts_cnt_steps(1.0) };
+        assert!(host.dispatch_physics(&all).is_empty());
+        if log().contains(head) {
+            return log();
+        }
+    }
+    panic!("no {head}: {}", log())
+}
+
+// M9-TS-1004
+//
+// A collision hook sees Unity's `Collision`: the object hit, its real `Collider` (with `isTrigger`
+// and `gameObject`), its `Rigidbody` (none for a static floor), `transform`, `relativeVelocity`
+// (the other side minus this one, going in), contact points at the floor's top with normals
+// towards the object told, an impulse that pushes it apart, and the same points through
+// `contacts` and `getContact(i)`. A trigger hook gets the other `Collider`.
+#[test]
+fn a_collision_hook_sees_unity_collision_members() {
+    in_every_gc_mode(|| unsafe {
+        let mut scene = Scene::new();
+        let _scope = iron_scene::api::enter(&mut scene);
+        let mut host = NativeHost::new(classes());
+        ts_cnt_clearLog();
+        let floor = named("floor");
+        let ball = named("ball");
+        let zone = named("zone");
+        host.spawn("Recorder", Some(floor.to_raw())).unwrap();
+        host.spawn("Recorder", Some(ball.to_raw())).unwrap();
+        ts_cnt_buildComponents(floor.to_raw(), ball.to_raw(), zone.to_raw());
+        until(&mut host, "floor:ball");
+        let l = log();
+        // The ball passed the trigger first: its Collider, a trigger with no Rigidbody, 2 m across.
+        assert!(l.contains("ball:T(zone,true,none,2"), "{l}");
+
+        let b = entry(&l, "ball:floor");
+        assert_eq!(b["collider"], "floor");
+        assert_eq!(b["trigger"], "false");
+        assert_eq!(b["rigidbody"], "none");
+        assert_eq!(num(&b, "ty"), -0.5);
+        // Fallen 1.5 m: about sqrt(2 g h) = 5.4 m/s; the floor comes up at it.
+        let vy = num(&b, "vy");
+        assert!((vy - 5.4).abs() < 0.5, "{vy}");
+        assert!(num(&b, "n") >= 1.0, "{l}");
+        assert!(num(&b, "y").abs() < 0.05, "{l}");
+        assert!((num(&b, "ny") - 1.0).abs() < 1e-3, "{l}");
+        assert!(num(&b, "iy") > 0.0, "{l}");
+        assert_eq!(b["same"], "true");
+
+        let f = entry(&l, "floor:ball");
+        assert_eq!(f["collider"], "ball");
+        assert_eq!(f["rigidbody"], "ball");
+        assert!((num(&f, "vy") + vy).abs() < 1e-9, "{l}");
+        assert!((num(&f, "ny") + 1.0).abs() < 1e-3, "{l}");
+        assert!(num(&f, "iy") < 0.0, "{l}");
+        assert_eq!(f["same"], "true");
+    });
+}
+
+// M9-TS-1005
+//
+// The 2D hooks see `Collision2D`: the collider hit and this object's own (`otherCollider`), the
+// Rigidbody2D on each side (none for the floor), a 2D `relativeVelocity`, contact points with
+// normals and normal impulses, `enabled`; a 2D trigger hook gets the other `Collider2D`.
+#[test]
+fn a_2d_collision_hook_sees_unity_collision2d_members() {
+    in_every_gc_mode(|| unsafe {
+        let mut scene = Scene::new();
+        let _scope = iron_scene::api::enter(&mut scene);
+        let mut host = NativeHost::new(classes());
+        ts_cnt_clearLog();
+        let floor = named("floor");
+        let ball = named("ball");
+        let zone = named("zone");
+        host.spawn("Recorder2D", Some(floor.to_raw())).unwrap();
+        host.spawn("Recorder2D", Some(ball.to_raw())).unwrap();
+        ts_cnt_buildComponents2D(floor.to_raw(), ball.to_raw(), zone.to_raw());
+        until(&mut host, "floor:ball");
+        let l = log();
+        assert!(l.contains("ball:T2(zone,true)"), "{l}");
+
+        let b = entry(&l, "ball:floor");
+        assert_eq!(b["collider"], "floor");
+        assert_eq!(b["other"], "ball");
+        assert_eq!(b["rigidbody"], "none");
+        assert_eq!(b["own"], "ball");
+        let vy = num(&b, "vy");
+        assert!((vy - 5.4).abs() < 0.5, "{vy}");
+        assert!(num(&b, "n") >= 1.0, "{l}");
+        assert!(num(&b, "y").abs() < 0.05, "{l}");
+        assert!((num(&b, "ny") - 1.0).abs() < 1e-3, "{l}");
+        assert!(num(&b, "impulse") > 0.0, "{l}");
+        assert_eq!(b["enabled"], "true");
+
+        let f = entry(&l, "floor:ball");
+        assert_eq!(f["collider"], "ball");
+        assert_eq!(f["other"], "floor");
+        assert_eq!(f["rigidbody"], "ball");
+        assert_eq!(f["own"], "none");
+        assert!((num(&f, "ny") + 1.0).abs() < 1e-3, "{l}");
     });
 }

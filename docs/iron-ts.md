@@ -1168,11 +1168,13 @@ failed while evaluating: ..") and the game never starts. A hot reload into a pro
 back when its startup finishes. A scene or prefab that names a component class no `register` call named gets a warning that names
 it (`go.addComponent(Class)` needs no registration). Tests `M9-TS-3211..3215`, `M9-API-1615..1618`.
 
-Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`, and the `..2D` forms) take a `Collision` (`gameObject`,
-`collider`, `relativeSpeed`, `speed`, `sensor`; a trigger hook that names `Collider` gets the other side, `{ gameObject }`): records
-of the physics manifest (`iron_physics_api`, `Collision2D` an alias) that the thunk builds from what the host passes;
-`NativeClass.contact_hooks` holds their thunks and `NativeHost::dispatch_physics` / `dispatch_contacts` call them
-(design: `docs/research/iron-native-physics.md` section 8). Tests `M9-TS-1000..1003`.
+Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`, and the `..2D` forms) take Unity's `Collision`
+(`Collision2D` for the `..2D` names), and the trigger hooks the other `Collider` (`Collider2D`); a parameter typed as the
+other kind gets that one. They are handle classes of the physics manifest (`iron_physics_api::contacts`, see
+`docs/iron-api.md`). The host passes each thunk `(this, collision, collider)`, two handles (`ContactHook`), and the thunk hands
+the hook the one it asks for; `NativeClass.contact_hooks` holds the thunks and `NativeHost::dispatch_physics` /
+`dispatch_contacts` call them, one `Collision` per event shared by the object's components (design:
+`docs/research/iron-native-physics.md` section 8). Tests `M9-TS-1000..1005`.
 
 The `GameObject` properties that are arrays or not in the engine API are done by the compiler: `go.children` and `GameObject.roots`
 (TypeScript helpers over `childAt` / `rootAt`, appended when the source names them), `go.components` (every component of the program on

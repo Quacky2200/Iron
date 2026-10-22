@@ -451,6 +451,50 @@ declare class Cloth :: static attach(object: GameObject): Cloth;
 declare class Cloth :: static findOn(object: GameObject): Cloth;
 declare class Cloth :: stretchingStiffness: number;
 declare class Cloth :: useGravity: boolean;
+declare class Collider
+declare class Collider :: closestPoint(position: Vector3): Vector3;
+declare class Collider :: closestPointOnBounds(position: Vector3): Vector3;
+declare class Collider :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class Collider :: isTrigger: boolean;
+declare class Collider :: readonly attachedRigidbody: Rigidbody | null;
+declare class Collider :: readonly bounds: Bounds;
+declare class Collider :: readonly gameObject: GameObject;
+declare class Collider :: readonly transform: Transform;
+declare class Collider :: static findOn(object: GameObject): Collider;
+declare class Collider2D
+declare class Collider2D :: closestPoint(position: Vector2): Vector2;
+declare class Collider2D :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class Collider2D :: isTrigger: boolean;
+declare class Collider2D :: offset: Vector2;
+declare class Collider2D :: readonly attachedRigidbody: Rigidbody2D | null;
+declare class Collider2D :: readonly bounds: Bounds;
+declare class Collider2D :: readonly gameObject: GameObject;
+declare class Collider2D :: readonly transform: Transform;
+declare class Collider2D :: static findOn(object: GameObject): Collider2D;
+declare class Collision
+declare class Collision :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class Collision :: getContact(index: number): ContactPoint;
+declare class Collision :: readonly collider: Collider;
+declare class Collision :: readonly contactCount: number;
+declare class Collision :: readonly contacts: ContactPoint[];
+declare class Collision :: readonly gameObject: GameObject;
+declare class Collision :: readonly impulse: Vector3;
+declare class Collision :: readonly relativeVelocity: Vector3;
+declare class Collision :: readonly rigidbody: Rigidbody | null;
+declare class Collision :: readonly transform: Transform;
+declare class Collision2D
+declare class Collision2D :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class Collision2D :: getContact(index: number): ContactPoint2D;
+declare class Collision2D :: readonly collider: Collider2D;
+declare class Collision2D :: readonly contactCount: number;
+declare class Collision2D :: readonly contacts: ContactPoint2D[];
+declare class Collision2D :: readonly enabled: boolean;
+declare class Collision2D :: readonly gameObject: GameObject;
+declare class Collision2D :: readonly otherCollider: Collider2D;
+declare class Collision2D :: readonly otherRigidbody: Rigidbody2D | null;
+declare class Collision2D :: readonly relativeVelocity: Vector2;
+declare class Collision2D :: readonly rigidbody: Rigidbody2D | null;
+declare class Collision2D :: readonly transform: Transform;
 declare class Color
 declare class Color :: a: number;
 declare class Color :: b: number;
@@ -460,6 +504,25 @@ declare class Color :: lerp(to: Color, t: number): Color;
 declare class Color :: r: number;
 declare class Color :: toHex(): string;
 declare class Color :: withAlpha(a: number): Color;
+declare class ContactPoint
+declare class ContactPoint :: readonly impulse: Vector3;
+declare class ContactPoint :: readonly normal: Vector3;
+declare class ContactPoint :: readonly otherCollider: Collider;
+declare class ContactPoint :: readonly point: Vector3;
+declare class ContactPoint :: readonly separation: number;
+declare class ContactPoint :: readonly thisCollider: Collider;
+declare class ContactPoint2D
+declare class ContactPoint2D :: readonly collider: Collider2D;
+declare class ContactPoint2D :: readonly enabled: boolean;
+declare class ContactPoint2D :: readonly normal: Vector2;
+declare class ContactPoint2D :: readonly normalImpulse: number;
+declare class ContactPoint2D :: readonly otherCollider: Collider2D;
+declare class ContactPoint2D :: readonly otherRigidbody: Rigidbody2D | null;
+declare class ContactPoint2D :: readonly point: Vector2;
+declare class ContactPoint2D :: readonly relativeVelocity: Vector2;
+declare class ContactPoint2D :: readonly rigidbody: Rigidbody2D | null;
+declare class ContactPoint2D :: readonly separation: number;
+declare class ContactPoint2D :: readonly tangentImpulse: number;
 declare class DateTime
 declare class DateTime :: add(s: TimeSpan): DateTime;
 declare class DateTime :: addDays(days: number): DateTime;
@@ -1672,14 +1735,6 @@ declare interface BoneWeights :: weights: number[];
 declare interface ClothBox
 declare interface ClothBox :: max: Vector3Like;
 declare interface ClothBox :: min: Vector3Like;
-declare interface Collider
-declare interface Collider :: gameObject: GameObject;
-declare interface Collision
-declare interface Collision :: collider: Collider;
-declare interface Collision :: gameObject: GameObject;
-declare interface Collision :: relativeSpeed: number;
-declare interface Collision :: sensor: boolean;
-declare interface Collision :: speed: number;
 declare interface ColorKey
 declare interface ColorKey :: color: Color;
 declare interface ColorKey :: time: number;
@@ -1857,6 +1912,7 @@ declare module "@iron/engine" :: export import ClassOf = globalThis.ClassOf;
 declare module "@iron/engine" :: export import Cloth = globalThis.Cloth;
 declare module "@iron/engine" :: export import ClothBox = globalThis.ClothBox;
 declare module "@iron/engine" :: export import Collider = globalThis.Collider;
+declare module "@iron/engine" :: export import Collider2D = globalThis.Collider2D;
 declare module "@iron/engine" :: export import Collision = globalThis.Collision;
 declare module "@iron/engine" :: export import Collision2D = globalThis.Collision2D;
 declare module "@iron/engine" :: export import Color = globalThis.Color;
@@ -1865,6 +1921,8 @@ declare module "@iron/engine" :: export import Component = globalThis.Component;
 declare module "@iron/engine" :: export import ComponentClass = globalThis.ComponentClass;
 declare module "@iron/engine" :: export import ConditionSpec = globalThis.ConditionSpec;
 declare module "@iron/engine" :: export import Console = globalThis.Console;
+declare module "@iron/engine" :: export import ContactPoint = globalThis.ContactPoint;
+declare module "@iron/engine" :: export import ContactPoint2D = globalThis.ContactPoint2D;
 declare module "@iron/engine" :: export import Cursor = globalThis.Cursor;
 declare module "@iron/engine" :: export import CursorLockMode = globalThis.CursorLockMode;
 declare module "@iron/engine" :: export import DateTime = globalThis.DateTime;
@@ -2687,7 +2745,6 @@ declare namespace input :: function onGamepadDisconnected(f: (a0: number) => voi
 declare namespace input :: function onKeyDown(f: (a0: string, a1: boolean) => void): number;
 declare namespace input :: function onKeyUp(f: (a0: string) => void): number;
 declare type AnimatorController = AnimationController;
-declare type Collision2D = Collision;
 declare type ExposureMetering = "average" | "centerWeighted" | "spot";
 declare type FilterMode = "point" | "bilinear" | "trilinear";
 declare type FogMode = "linear" | "exponential" | "exponentialSquared";

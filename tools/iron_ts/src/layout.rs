@@ -198,7 +198,7 @@ fn component_table(m: &Module) -> String {
                 hooks.push("None".to_string());
             }
         }
-        // Contact hooks take (this, other object, its collider, speed, sensor flag).
+        // Contact hooks take (this, the Collision handle, the other Collider handle).
         let mut contact_hooks = Vec::new();
         for h in crate::lower::components::CONTACT_HOOKS {
             let name = format!("iron_hook_{class}_{h}");
@@ -208,10 +208,10 @@ fn component_table(m: &Module) -> String {
                 let t1 = rust_ty(m, &hf.locals[hf.params[1] as usize], false);
                 let t2 = rust_ty(m, &hf.locals[hf.params[2] as usize], false);
                 out += &format!(
-                    "unsafe extern \"C\" fn hook_{class}_{h}(c: *mut u8, other: u64, coll: u64, speed: f64, sensor: f64) {{ unsafe {{ {hs}(c as {ty}, other as {t1}, coll as {t2}, speed, sensor) }} }}\n"
+                    "unsafe extern \"C\" fn hook_{class}_{h}(c: *mut u8, collision: u64, collider: u64) {{ unsafe {{ {hs}(c as {ty}, collision as {t1}, collider as {t2}) }} }}\n"
                 );
                 contact_hooks.push(format!(
-                    "Some(hook_{class}_{h} as unsafe extern \"C\" fn(*mut u8, u64, u64, f64, f64))"
+                    "Some(hook_{class}_{h} as unsafe extern \"C\" fn(*mut u8, u64, u64))"
                 ));
             } else {
                 contact_hooks.push("None".to_string());

@@ -101,7 +101,7 @@ class Coin extends Component {
     this.t += dt;
     this.getComponent(SpriteRenderer)!.sprite = COIN[Math.floor(this.t * 8) % 4]!;
   }
-  onTriggerEnter2D(other: Collider) {
+  onTriggerEnter2D(other: Collider2D) {
     if (other.gameObject.name !== "fox") return;
     score++;
     for (const f of scoreListeners) f(score);

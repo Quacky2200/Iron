@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 mod comp;
 pub mod components;
+pub mod contacts;
 pub mod joints;
 mod kinds;
 pub mod physics2d;
@@ -38,25 +39,6 @@ macro_rules! number_handle {
             }
         }
     )*};
-}
-
-/// The other side of a contact (`Collider` to scripts).
-#[derive(Clone, Debug, PartialEq)]
-pub struct ContactCollider {
-    pub game_object: ObjectId,
-}
-
-/// What the contact hooks get (`Collision` to scripts): compiled code builds it from the pieces the
-/// host passes for a contact (`iron_ts` `components.rs`); `js/engine` makes its own for QuickJS games.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ContactInfo {
-    pub game_object: ObjectId,
-    pub collider: ContactCollider,
-    /// How fast the two met (m/s); the same as `speed`.
-    pub relative_speed: f64,
-    pub speed: f64,
-    /// One of them is a sensor (a trigger).
-    pub sensor: bool,
 }
 
 // 0 is "none" in each (a script's `Body | null`).
@@ -110,6 +92,10 @@ struct State {
     /// Ray hits handed out since the last step.
     pub(crate) hits: Vec<HitData>,
     contacts: Vec<Contact>,
+    /// The collisions handed to contact hooks since the last dispatch (`Collision` handles).
+    pub(crate) collisions: Vec<contacts::Slot>,
+    /// Contact points of those collisions, read from the world when a script first asks.
+    pub(crate) points: Vec<iron_physics::ContactPoint>,
     /// Physics components (a handle is the place plus one).
     comps: Vec<Option<comp::Comp>>,
     /// The body, Rigidbody and colliders of each GameObject with physics components.
@@ -135,6 +121,8 @@ impl State {
             kinds: HashMap::new(),
             hits: Vec::new(),
             contacts: Vec::new(),
+            collisions: Vec::new(),
+            points: Vec::new(),
             comps: Vec::new(),
             objects: HashMap::new(),
             col_owner: HashMap::new(),
@@ -376,20 +364,7 @@ fn flat(points: &[V3]) -> Vec<f64> {
 #[iron_api(
     namespace = "Physics", quickjs,
     handles(PhysicsBody = BodyRef, PhysicsCollider = ColliderRef, RaycastHit = HitRef, PhysicsJoint = JointRef, GameObject = ObjectId),
-    values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64]),
-    records(
-        /// The other side of a contact, as a trigger hook gets it (`onTriggerEnter(other: Collider)`).
-        Collider = ContactCollider [game_object: GameObject],
-        /// What `onCollisionEnter` and the other contact hooks get: the other side of the contact.
-        Collision = ContactInfo [
-            game_object: GameObject,
-            collider: Collider,
-            relative_speed: f64,
-            speed: f64,
-            sensor: bool
-        ]
-    ),
-    aliases(Collision2D = Collision)
+    values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
 )]
 pub mod physics_api {
     use super::*;
@@ -895,6 +870,7 @@ pub fn manifests() -> Vec<String> {
         components::constraints_api::MANIFEST.to_json(),
         joints::joints_api::MANIFEST.to_json(),
         physics2d::physics2d_api::MANIFEST.to_json(),
+        contacts::contacts_api::MANIFEST.to_json(),
     ]
 }
 
@@ -914,5 +890,6 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     components::constraints_api::register_quickjs(ctx)?;
     joints::joints_api::register_quickjs(ctx)?;
     physics2d::physics2d_api::register_quickjs(ctx)?;
+    contacts::contacts_api::register_quickjs(ctx)?;
     Ok(())
 }

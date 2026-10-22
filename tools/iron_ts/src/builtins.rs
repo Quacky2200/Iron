@@ -295,7 +295,7 @@ fn component_class() -> String {
     );
     let contacts: Vec<String> = CONTACT_HOOKS.iter().map(|h| format!("`{h}`")).collect();
     s += &contacts.join(", ");
-    s += ", and their `..2D` forms) take a `Collision` (a trigger's may take the other `Collider`); they are not\n * declared, so a game writes them without `override`.\n */\ndeclare abstract class Component {\n  /** Set by the engine when the component is created. */\n  readonly id: number;\n  /** The object this component is attached to. */\n  readonly gameObject: GameObject;\n  /** The object's transform. */\n  readonly transform: Transform;\n";
+    s += ", and their `..2D` forms) take a `Collision` (`Collision2D`), a trigger's the other `Collider` (`Collider2D`); they are not\n * declared, so a game writes them without `override`.\n */\ndeclare abstract class Component {\n  /** Set by the engine when the component is created. */\n  readonly id: number;\n  /** The object this component is attached to. */\n  readonly gameObject: GameObject;\n  /** The object's transform. */\n  readonly transform: Transform;\n";
     for h in HOOKS {
         let param = hook_param(h).map_or("", |(_, p)| p);
         s += &format!("  {h}?({param}): void;\n");

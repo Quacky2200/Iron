@@ -404,9 +404,26 @@ puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
   objects (pose differs by more than 1e-4 m), remakes colliders whose object was scaled, steps the world, writes the moved
   bodies back into the scene and keeps the contacts. Objects that are gone from the scene lose their physics. Then it runs the
   closures `Physics.afterNextStep(f)` was given, once each (what `Light.measureIlluminance` waits for).
-- **For the host:** `take_contacts()` (collider numbers, `speed`, `sensor`), `collider_info(collider)` (the object, the
-  collider class name, its component handle, `two_d`, the Rigidbody component) to dispatch `onCollisionEnter` /
-  `onTriggerEnter` (and the `2D` names), `object_destroyed(object)` for destroyed GameObjects, `register_kinds()`.
+- **For the host:** `take_contacts()` (collider numbers, `speed`, the relative `velocity` going in, `sensor`),
+  `collider_info(collider)` (the object, the collider class name, its component handle, `two_d`, the Rigidbody component) to
+  dispatch `onCollisionEnter` / `onTriggerEnter` (and the `2D` names), `object_destroyed(object)` for destroyed GameObjects,
+  `register_kinds()`.
+- **What the contact hooks get** (`contacts.rs`, the namespace `PhysicsContacts`, 2026-10-22): Unity's shape, as handle classes.
+  `Collision` (`gameObject` and `transform` of the other side, `collider`, `rigidbody` (null for none), `relativeVelocity`,
+  `impulse`, `contactCount`, `contacts`, `getContact(i)`), `ContactPoint` (`point`, `normal`, `separation`, `impulse`,
+  `thisCollider`, `otherCollider`), `Collision2D` (also `otherCollider`, `otherRigidbody`, `enabled`, 2D vectors) and
+  `ContactPoint2D` (`normalImpulse`, `tangentImpulse`, `relativeVelocity`, `collider`, `otherCollider`, `rigidbody`,
+  `otherRigidbody`, `enabled`). `Collider` and `Collider2D` are every collider component seen through its shared members
+  (`gameObject`, `isTrigger`, `attachedRigidbody`, `bounds`, `closestPoint`, `closestPointOnBounds` / `offset`); the handle is
+  the component's own number, and `go.getComponent(Collider)` finds the first collider of any shape (`findOn`). The host calls
+  `contacts::collision(own, other, object, velocity, touching)` once per event (the handle), `collider_component(collider)`
+  for a trigger's `other`, and `clear_collisions()` at the start of each dispatch: a `Collision` is valid until the next
+  dispatch, like Unity's reused ones. `relativeVelocity` is the other side's velocity minus this one's (going in for Enter,
+  current for Stay and Exit). Contact points are read from rapier's narrow phase the first time a script asks
+  (`iron_physics::Physics::contact_points`: world point halfway between the surfaces, normal towards the side asking, the
+  solver's normal impulse and the friction impulse it keeps for warm starting) into one buffer kept between dispatches, so
+  a hook that does not look at them costs nothing; Exit and trigger collisions have none. Unity members left out are in
+  `docs/differences.md` ("Collisions"). Tests `M4-PHY-08`, `M9-TS-1004`, `M9-TS-1005`.
 - Differences to the TypeScript are listed in `tools/iron_ts/TODO.md` ("Physics components"). Tests `M9-API-200..209`,
   `M9-TS-1100..1105`.
 ## Audio (`audio`, `AudioSource`, `AudioListener`)

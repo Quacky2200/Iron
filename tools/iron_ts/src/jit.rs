@@ -246,7 +246,7 @@ impl Game {
     pub fn classes(&self) -> Result<Vec<iron_ts_rt::NativeClass>, String> {
         type Create = unsafe extern "C" fn(f64, u64) -> *mut u8;
         type Hook = unsafe extern "C" fn(*mut u8, f64);
-        type Contact = unsafe extern "C" fn(*mut u8, u64, u64, f64, f64);
+        type Contact = unsafe extern "C" fn(*mut u8, u64, u64);
         let addr = |sym: &str| {
             self.funcs
                 .get(sym)
@@ -265,7 +265,7 @@ impl Game {
             let mut contact_hooks: [Option<Contact>; 6] = [None; 6];
             for (i, h) in c.contact_hooks.iter().enumerate() {
                 if let Some(h) = h {
-                    // SAFETY: the compiled hook takes (this, other, collider, speed, sensor).
+                    // SAFETY: the compiled hook takes (this, collision, collider).
                     contact_hooks[i] =
                         Some(unsafe { std::mem::transmute::<usize, Contact>(addr(h)?) });
                 }

@@ -420,8 +420,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let src = with_cic.as_deref().unwrap_or(src);
     let with_tree = components::tree_helpers(src, has_go).map(|h| format!("{src}{h}"));
     let src = with_tree.as_deref().unwrap_or(src);
-    // The contact hooks get the `Collision` record of the physics manifest.
-    let has_contacts = manifest.records.contains_key("Collision");
+    // The contact hooks get the `Collision` class of the physics manifest.
+    let has_contacts = manifest.classes.contains_key("Collision");
     let rewritten4 = components::desugar(src, has_go, has_contacts)?;
     let wants_components = components::wanted(src);
     let src = rewritten4.as_deref().unwrap_or(src);
