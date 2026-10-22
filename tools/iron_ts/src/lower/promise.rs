@@ -189,7 +189,7 @@ impl<'a> Lowerer<'a> {
             }
             if keys.iter().any(|k| k.is_some()) && keys.windows(2).any(|w| w[0] != w[1]) {
                 bail!(
-                    "{at}: Promise.{m} over promises of different value types is not supported (the result would be a tuple): await each one in an async function, or give them one type"
+                    "{at}: Promise.{m} over promises of different value types is not supported unless it is awaited on the spot (`const [a, b] = await Promise.all([p, q])`, which gives a tuple): await each one, or give them one type"
                 )
             }
         }
@@ -238,6 +238,10 @@ impl<'a> Lowerer<'a> {
         let Some(arg) = c.arguments.first().and_then(|a| a.as_expression()) else {
             bail!("{at}: await needs an operand")
         };
+        // `await Promise.all([a, b])` over promises of different value types: a tuple.
+        if let Some(e) = self.await_all_tuple(arg)? {
+            return Ok(e);
+        }
         let mut v = self.lower_expr(arg, None)?;
         if v.ty == Ty::Lit {
             v = self.coerce(v, &Ty::Str)?;
@@ -253,6 +257,85 @@ impl<'a> Lowerer<'a> {
             )
         };
         self.call_helper(&format!("__awaitV${k}"), vec![v])
+    }
+
+    /// `await Promise.all([a, b, c])` where the promises have different value types: the result
+    /// is a tuple, which no promise class stands for (they are written per type, before lowering),
+    /// so the operand is not made into a promise: the elements are evaluated (starting every
+    /// promise), then awaited one after the other into a tuple. A promise that rejects while an
+    /// earlier one is still pending is reported as unhandled until its turn comes.
+    fn await_all_tuple(&mut self, arg: &'a Expression<'a>) -> R<Option<Expr>> {
+        let mut inner = arg;
+        while let Expression::ParenthesizedExpression(p) = inner {
+            inner = &p.expression;
+        }
+        let Expression::CallExpression(call) = inner else {
+            return Ok(None);
+        };
+        let Expression::StaticMemberExpression(m) = &call.callee else {
+            return Ok(None);
+        };
+        if m.property.name != "all"
+            || !matches!(&m.object, Expression::Identifier(id) if id.name == "Promise")
+            || self.lookup("Promise").is_some()
+        {
+            return Ok(None);
+        }
+        let Some(Expression::ArrayExpression(list)) =
+            call.arguments.first().and_then(|a| a.as_expression())
+        else {
+            return Ok(None);
+        };
+        if list.elements.len() < 2 || list.elements.iter().any(|e| e.as_expression().is_none()) {
+            return Ok(None);
+        }
+        // Do the promises have one type? Then the promise class of the array does the work.
+        let mut keys: Vec<Option<String>> = Vec::new();
+        for el in &list.elements {
+            let e = el.as_expression().expect("checked");
+            let mark = self.cur.locals.len();
+            let t = self.lower_expr(e, None);
+            self.cur.locals.truncate(mark);
+            keys.push(self.promise_of(&t?.ty).map(|(k, _)| k));
+        }
+        if keys.windows(2).all(|w| w[0] == w[1]) {
+            return Ok(None);
+        }
+        let mut stmts = Vec::new();
+        let mut parts: Vec<Expr> = Vec::new();
+        let mut started = Vec::new();
+        for el in &list.elements {
+            let e = el.as_expression().expect("checked");
+            let mut v = self.lower_expr(e, None)?;
+            if v.ty == Ty::Lit {
+                v = self.coerce(v, &Ty::Str)?;
+            }
+            let tmp = self.new_local(v.ty.clone());
+            stmts.push(Stmt::Assign(tmp, v));
+            started.push(tmp);
+        }
+        for tmp in started {
+            let v = self.var_expr(tmp);
+            let awaited = if let Some((k, _)) = self.promise_of(&v.ty) {
+                self.call_helper(&format!("__await${k}"), vec![v])?
+            } else {
+                let Some(k) = self.promise_key_for(&v.ty) else {
+                    bail!(
+                        "{}: awaiting a {} needs a `Promise<{}>` somewhere in the program",
+                        self.loc(call.span.start),
+                        v.ty,
+                        v.ty
+                    )
+                };
+                self.call_helper(&format!("__awaitV${k}"), vec![v])?
+            };
+            let slot = self.new_local(awaited.ty.clone());
+            stmts.push(Stmt::Assign(slot, awaited));
+            parts.push(self.var_expr(slot));
+        }
+        let tuple = self.tuple_or_array(parts)?;
+        let ty = tuple.ty.clone();
+        Ok(Some(mk(ExprKind::Seq(stmts, Box::new(tuple)), ty)))
     }
 
     /// The helper `__asyncG<X>(..)` / `__newPromiseG<X>(..)` stands for, once `X` (written with a

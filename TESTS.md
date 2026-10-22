@@ -1698,3 +1698,17 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3146 | Integration | An abstract class implementing two interfaces, `this` and `super.m()`, a method with a default parameter called through an interface with the argument left out, arrays of the interface inside objects (`ifaces.rs`). |
 | M9-TS-3147 | Integration | Spread (and destructuring writes, JSON, `Object.keys`) of an interface implemented by classes is a compile error naming the interface (`ifaces.rs`). |
 | M9-TS-3148 | Integration | A computed key in a style object, `style={{ [side]: 8 }}` with `side` a string-literal union (`tools/iron_ts_tests/tests/all/ui.rs`). |
+| M9-TS-3149 | Integration | Tuple `.length`, `t[0] = x`, `t[1] += "z"`, `list[1]![0] = 9` on tuples of mixed types and arrays of tuples equal bun's (`tools/iron_ts_tests/tests/all/tuples.rs`, `bench/tuples_cases.ts`). |
+| M9-TS-3150 | Integration | `const [first, ...rest] = tuple` (the rest is a tuple), `[...tuple]`, `[...tuple, 7]`, `f(...tuple)` into fixed parameters of different types (`tuples.rs`). |
+| M9-TS-3151 | Integration | Tuple parameters (`([n, s], i) =>`, `function f([a, b]: [number, string])`), `for (const [n, s] of pairs)`, `.map(([k, v]) => ..)` (`tuples.rs`). |
+| M9-TS-3152 | Integration | Destructuring assignment: swaps, `[p[0], p[3]] = [p[3], p[0]]`, `[n, s] = pair()`, `({ x, y } = o)`, defaults, `[first, ...rest] = xs`, element targets in nested arrays (`tuples.rs`). |
+| M9-TS-3153 | Integration | A bubble sort and Fibonacci written with `[a, b] = [b, a + b]` swaps (`tuples.rs`). |
+| M9-TS-3154 | Integration | Closure parameters of type `boolean` with defaults (`(flag = false, n = 1) =>`) left out at a call (`tuples.rs`). |
+| M9-TS-3155 | Integration | `await Promise.all([num(3), str("x")])` over promises of different value types (and a plain value) gives a tuple, in order, with timers (`tools/iron_ts_tests/tests/all/promises2.rs`). |
+| M9-TS-3156 | Integration | The tuple form of `Promise.all` rejects with the first failure (`promises2.rs`). |
+| M9-TS-3157 | Integration | Top-level `await`: module code runs in order across awaits, a function declared after sees the module variables (`tools/iron_ts_tests/tests/all/tla.rs`, `bench/tla_cases.ts`). |
+| M9-TS-3158 | Integration | Top-level awaits inside `for`, `if`, `for await` and `try/catch` (`tla.rs`). |
+| M9-TS-3159 | Integration | Top-level `await` with classes, closures and a later function (`tla.rs`). |
+| M9-TS-3160 | Integration | `const [a, b] = await Promise.all([p, q])` at the top level (`tla.rs`). |
+| M9-TS-3161 | Integration | Only the code before the first top-level `await` has run when `ts_init` returns (`tla.rs`). |
+| M9-TS-3162 | Integration | Top-level destructuring declarations: `const [a, b] = ..`, `const { p, q } = ..`, `let [m, s] = pair()`, `const [h, ...t] = ..` become module variables (`misc.rs`). |

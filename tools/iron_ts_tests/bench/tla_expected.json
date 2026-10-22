@@ -1,0 +1,6 @@
+{
+ "ordering_and_variables": "abc5d10",
+ "awaits_in_blocks_and_loops": "0,1,4,10012boom",
+ "classes_closures_and_a_later_function": "L2",
+ "promise_all_tuple_at_the_top": "4four"
+}

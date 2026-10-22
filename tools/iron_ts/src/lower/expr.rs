@@ -469,6 +469,14 @@ impl<'a> Lowerer<'a> {
         let obj = self.widen_lit(obj);
         match obj.ty.strip().clone() {
             Ty::Obj(sid) if self.is_dyn(sid) => self.iface_member(obj, sid, prop),
+            // `pair.length` of a tuple is its number of elements.
+            Ty::Obj(sid) if prop == "length" && self.is_tuple(sid) => {
+                let n = self.m.structs[sid].fields.len();
+                Ok(mk(
+                    ExprKind::Seq(vec![Stmt::Eval(obj)], Box::new(num(n as f64))),
+                    Ty::Num,
+                ))
+            }
             Ty::Obj(sid) => {
                 let Some(i) = self.m.structs[sid].field(prop) else {
                     if Some(sid) == self.match_sid() && prop == "length" {
@@ -2551,6 +2559,18 @@ impl<'a> Lowerer<'a> {
                 let hint = el.clone().map(|e| Ty::Arr(Box::new(e)));
                 let mut v = self.lower_expr(&sp.argument, hint.as_ref())?;
                 v = self.match_view(v);
+                // `[...tuple]`: its elements.
+                if let Ty::Obj(sid) = v.ty.strip().clone()
+                    && self.is_tuple(sid)
+                {
+                    for e in self.tuple_elements(v, sid) {
+                        if el.is_none() {
+                            el = Some(e.ty.clone());
+                        }
+                        elems.push(Elem::One(e));
+                    }
+                    continue;
+                }
                 // `[..."text"]`: the code points.
                 v = self.string_chars(v);
                 // `[...set]`: the set's elements now.
@@ -2622,6 +2642,56 @@ impl<'a> Lowerer<'a> {
                 .iter()
                 .enumerate()
                 .all(|(i, f)| f.name == i.to_string())
+    }
+
+    /// The values as a tuple (an object with a field per element), or as an array when they all
+    /// have one type: what `[a, b]` is in a type annotation.
+    pub(crate) fn tuple_or_array(&mut self, vals: Vec<Expr>) -> R<Expr> {
+        let tys: Vec<Ty> = vals.iter().map(|v| v.ty.clone()).collect();
+        match tys.first() {
+            None => self.build_array(vec![], Ty::Num),
+            Some(first) if tys.iter().all(|t| t == first) => {
+                let el = first.clone();
+                self.build_array(vals.into_iter().map(Elem::One).collect(), el)
+            }
+            _ => {
+                let fields = tys
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| Field {
+                        name: i.to_string(),
+                        ty: t.clone(),
+                        optional: false,
+                    })
+                    .collect();
+                let sid = self.anon_struct("Tuple", fields);
+                self.build_tuple(sid, vals)
+            }
+        }
+    }
+
+    /// A tuple value read element by element: it goes in a temporary first (set by the first
+    /// element's expression).
+    pub(crate) fn tuple_elements(&mut self, v: Expr, sid: StructId) -> Vec<Expr> {
+        let tmp = self.new_local(v.ty.clone());
+        let n = self.m.structs[sid].fields.len();
+        (0..n)
+            .map(|i| {
+                let ty = self.m.structs[sid].fields[i].ty.clone();
+                let read = mk(
+                    ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i),
+                    ty.clone(),
+                );
+                if i == 0 {
+                    mk(
+                        ExprKind::Seq(vec![Stmt::Assign(tmp, v.clone())], Box::new(read)),
+                        ty,
+                    )
+                } else {
+                    read
+                }
+            })
+            .collect()
     }
 
     fn build_tuple(&mut self, sid: StructId, vals: Vec<Expr>) -> R<Expr> {
@@ -2885,6 +2955,22 @@ impl<'a> Lowerer<'a> {
         pre: &mut Vec<Stmt>,
     ) -> R<Place> {
         let arr = self.lower_expr(&m.object, None)?;
+        // `pair[0] = x` on a tuple (an object with a field per element).
+        if let Ty::Obj(sid) = arr.ty.strip().clone()
+            && self.is_tuple(sid)
+        {
+            let Expression::NumericLiteral(n) = &m.expression else {
+                bail!("a tuple is indexed by a number written in the source")
+            };
+            let i = n.value as usize;
+            if n.value < 0.0 || i >= self.m.structs[sid].fields.len() {
+                bail!("tuple index {} is out of range", n.value)
+            }
+            let ty = self.m.structs[sid].fields[i].ty.clone();
+            let tmp = self.new_local(arr.ty.clone());
+            pre.push(Stmt::Assign(tmp, arr));
+            return Ok(Place::Field(self.var_expr(tmp), sid, i, ty));
+        }
         let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
         let idx = self.as_num(idx)?;
         let ty = match arr.ty.strip() {
@@ -3081,9 +3167,239 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `[a, b] = [b, a]`, `[xs[i], xs[j]] = [xs[j], xs[i]]`, `({ x, y } = o)`, `[n, s] = pair()`:
+    /// the right side first, then each target in order. An array literal on the right with an
+    /// element per target is not built: its elements are evaluated into temporaries first (so a
+    /// swap reads both before writing either).
+    fn lower_destructure_assign(
+        &mut self,
+        a: &'a AssignmentExpression<'a>,
+    ) -> R<(Vec<Stmt>, Expr)> {
+        let mut out = Vec::new();
+        if let (AssignmentTarget::ArrayAssignmentTarget(t), Expression::ArrayExpression(lit)) =
+            (&a.left, &a.right)
+            && t.rest.is_none()
+            && lit.elements.len() >= t.elements.len()
+            && lit.elements.iter().all(|e| e.as_expression().is_some())
+        {
+            let mut temps = Vec::new();
+            for e in &lit.elements {
+                let e = e.as_expression().expect("checked");
+                let v = self.lower_expr(e, None)?;
+                let v = self.widen_lit(v);
+                let tmp = self.new_local(v.ty.clone());
+                out.push(Stmt::Assign(tmp, v));
+                temps.push(self.var_expr(tmp));
+            }
+            for (el, v) in t.elements.iter().zip(temps) {
+                if let Some(el) = el {
+                    self.assign_maybe_default(el, v, &mut out)?;
+                }
+            }
+            return Ok((out, mk(ExprKind::Null, Ty::Null)));
+        }
+        let v = self.lower_expr(&a.right, None)?;
+        let v = self.widen_lit(v);
+        let tmp = self.new_local(v.ty.clone());
+        out.push(Stmt::Assign(tmp, v));
+        let value = self.var_expr(tmp);
+        self.assign_pattern(&a.left, value.clone(), &mut out)?;
+        Ok((out, value))
+    }
+
+    /// `value` with `init` where it is null.
+    fn with_default(
+        &mut self,
+        value: Expr,
+        init: &'a Expression<'a>,
+        out: &mut Vec<Stmt>,
+    ) -> R<Expr> {
+        if !value.ty.is_nullable() {
+            return Ok(value);
+        }
+        let base = value.ty.strip().clone();
+        let tmp = self.new_local(value.ty.clone());
+        out.push(Stmt::Assign(tmp, value));
+        let t = self.var_expr(tmp);
+        let d = self.lower_expr(init, Some(&base))?;
+        let d = self.coerce(d, &base)?;
+        let have = mk(ExprKind::Cast(Box::new(t.clone())), base.clone());
+        Ok(mk(
+            ExprKind::Cond(
+                Box::new(mk(ExprKind::IsNull(Box::new(t)), Ty::Bool)),
+                Box::new(d),
+                Box::new(have),
+            ),
+            base,
+        ))
+    }
+
+    fn assign_maybe_default(
+        &mut self,
+        el: &'a AssignmentTargetMaybeDefault<'a>,
+        value: Expr,
+        out: &mut Vec<Stmt>,
+    ) -> R<()> {
+        match el {
+            AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(w) => {
+                let v = self.with_default(value, &w.init, out)?;
+                self.assign_pattern(&w.binding, v, out)
+            }
+            other => {
+                let Some(t) = other.as_assignment_target() else {
+                    bail!("unsupported destructuring assignment target")
+                };
+                self.assign_pattern(t, value, out)
+            }
+        }
+    }
+
+    /// Writes the parts of `value` to the targets of a destructuring assignment.
+    fn assign_pattern(
+        &mut self,
+        t: &'a AssignmentTarget<'a>,
+        value: Expr,
+        out: &mut Vec<Stmt>,
+    ) -> R<()> {
+        match t {
+            AssignmentTarget::ArrayAssignmentTarget(a) => {
+                if let Ty::Obj(sid) = value.ty.strip().clone()
+                    && self.is_tuple(sid)
+                {
+                    let n = self.m.structs[sid].fields.len();
+                    if a.elements.len() > n {
+                        bail!("a tuple pattern names at most its {n} elements")
+                    }
+                    let tmp = self.new_local(value.ty.clone());
+                    out.push(Stmt::Assign(tmp, value));
+                    for (i, el) in a.elements.iter().enumerate() {
+                        let Some(el) = el else { continue };
+                        let ty = self.m.structs[sid].fields[i].ty.clone();
+                        let part = mk(ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i), ty);
+                        self.assign_maybe_default(el, part, out)?;
+                    }
+                    if let Some(r) = &a.rest {
+                        let vals: Vec<Expr> = (a.elements.len()..n)
+                            .map(|i| {
+                                let ty = self.m.structs[sid].fields[i].ty.clone();
+                                mk(ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i), ty)
+                            })
+                            .collect();
+                        let rest = self.tuple_or_array(vals)?;
+                        self.assign_pattern(&r.target, rest, out)?;
+                    }
+                    return Ok(());
+                }
+                let value = self.match_view(value);
+                let Ty::Arr(el) = value.ty.strip().clone() else {
+                    bail!("cannot destructure {} as an array", value.ty)
+                };
+                let el = *el;
+                let tmp = self.new_local(value.ty.clone());
+                out.push(Stmt::Assign(tmp, value));
+                for (i, elt) in a.elements.iter().enumerate() {
+                    let Some(elt) = elt else { continue };
+                    // Past the end an element reads as null (a zero pointer, or the null NaN).
+                    let read_ty = if el.is_ptr() || el == Ty::Num {
+                        el.clone().nullable()
+                    } else {
+                        el.clone()
+                    };
+                    let read = mk(
+                        ExprKind::Index(Box::new(self.var_expr(tmp)), Box::new(num(i as f64))),
+                        read_ty.clone(),
+                    );
+                    let part = if matches!(
+                        elt,
+                        AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(_)
+                    ) || read_ty == el
+                    {
+                        read
+                    } else {
+                        mk(ExprKind::Cast(Box::new(read)), el.clone())
+                    };
+                    self.assign_maybe_default(elt, part, out)?;
+                }
+                if let Some(r) = &a.rest {
+                    let ty = self.var_expr(tmp).ty;
+                    let rest = mk(
+                        ExprKind::Rt(
+                            RtFn::ArrSlice,
+                            vec![
+                                self.var_expr(tmp),
+                                num(a.elements.len() as f64),
+                                num(f64::INFINITY),
+                            ],
+                        ),
+                        ty,
+                    );
+                    self.assign_pattern(&r.target, rest, out)?;
+                }
+                Ok(())
+            }
+            AssignmentTarget::ObjectAssignmentTarget(o) => {
+                let tmp = self.new_local(value.ty.clone());
+                out.push(Stmt::Assign(tmp, value));
+                let mut taken = Vec::new();
+                for p in &o.properties {
+                    match p {
+                        AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(p) => {
+                            let key = p.binding.name.to_string();
+                            let part = self.member_of(self.var_expr(tmp), &key)?;
+                            let part = match &p.init {
+                                Some(init) => self.with_default(part, init, out)?,
+                                None => part,
+                            };
+                            let place = self.place_ident(&key)?;
+                            let pty = Self::place_ty(&place).clone();
+                            let v = self.coerce(part, &pty)?;
+                            out.push(self.place_write(&place, v));
+                            taken.push(key);
+                        }
+                        AssignmentTargetProperty::AssignmentTargetPropertyProperty(p) => {
+                            if p.computed {
+                                bail!("computed key in an object pattern")
+                            }
+                            let key = self.key_name(&p.name)?;
+                            let part = self.member_of(self.var_expr(tmp), &key)?;
+                            taken.push(key);
+                            self.assign_maybe_default(&p.binding, part, out)?;
+                        }
+                    }
+                }
+                if let Some(r) = &o.rest {
+                    let rest = self.object_rest(&self.var_expr(tmp), &taken)?;
+                    self.assign_pattern(&r.target, rest, out)?;
+                }
+                Ok(())
+            }
+            other => {
+                let Some(s) = other.as_simple_assignment_target() else {
+                    bail!("unsupported destructuring assignment target")
+                };
+                let mut pre = Vec::new();
+                let place = self.place_of(s, &mut pre)?;
+                let pty = Self::place_ty(&place).clone();
+                let v = self.coerce_ext(value, &pty)?;
+                out.extend(pre);
+                out.push(self.place_write(&place, v));
+                Ok(())
+            }
+        }
+    }
+
     /// Statements for an assignment, and an expression for its value.
     pub(crate) fn lower_assign(&mut self, a: &'a AssignmentExpression<'a>) -> R<(Vec<Stmt>, Expr)> {
         use AssignmentOperator as A;
+        if a.operator == A::Assign
+            && matches!(
+                a.left,
+                AssignmentTarget::ArrayAssignmentTarget(_)
+                    | AssignmentTarget::ObjectAssignmentTarget(_)
+            )
+        {
+            return self.lower_destructure_assign(a);
+        }
         let mut pre = Vec::new();
         if let Some(stmts) = self.lower_split_assign(a)? {
             return Ok((stmts, mk(ExprKind::Null, Ty::Null)));
@@ -3370,6 +3686,45 @@ impl<'a> Lowerer<'a> {
             unreachable!()
         };
         let arr = self.lower_expr(&sp.argument, None)?;
+        // `f(...tuple)`: element `j` feeds parameter `k + j`.
+        if let Ty::Obj(sid) = arr.ty.strip().clone()
+            && self.is_tuple(sid)
+        {
+            if fp.rest.is_some() {
+                bail!("{name}: a tuple cannot be spread into a rest parameter")
+            }
+            let tv = self.new_local(arr.ty.clone());
+            pre.push(Stmt::Assign(tv, arr));
+            let n = self.m.structs[sid].fields.len();
+            for j in k..n_fixed {
+                let pty = ptys[j].clone();
+                let p = &fp.items[j];
+                let v = if j - k < n {
+                    let fty = self.m.structs[sid].fields[j - k].ty.clone();
+                    let read = mk(
+                        ExprKind::Field(Box::new(self.var_expr(tv)), sid, j - k),
+                        fty,
+                    );
+                    self.coerce(read, &pty)?
+                } else if let Some(init) = &p.initializer {
+                    let saved = std::mem::replace(&mut self.cur.scopes, vec![HashMap::new()]);
+                    let d = self.lower_expr(init, Some(&pty));
+                    self.cur.scopes = saved;
+                    self.coerce(d?, &pty)?
+                } else if p.optional {
+                    self.coerce(mk(ExprKind::Null, Ty::Null), &pty)?
+                } else {
+                    bail!(
+                        "{name}: the tuple has {n} elements, {} parameters need values",
+                        n_fixed - k
+                    )
+                };
+                let tmp = self.new_local(pty);
+                pre.push(Stmt::Assign(tmp, v));
+                vals.push(self.var_expr(tmp));
+            }
+            return Ok((pre, vals));
+        }
         let Ty::Arr(el) = arr.ty.strip().clone() else {
             bail!("{name}: cannot spread {} into parameters", arr.ty)
         };

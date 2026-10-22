@@ -525,7 +525,6 @@ export function f(): number { return 1; }";
                 "async function g(): number { return 1; }",
                 "must return `Promise<T>`",
             ),
-            ("const v = await 1;", "top-level `await` is not supported"),
             (
                 "async function g(): Promise<Promise<number>> { return Promise.resolve(1); }",
                 "promise of a promise",

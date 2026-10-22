@@ -78,7 +78,8 @@ impl<'a> Lowerer<'a> {
                 },
             };
             // A parameter with a default may be left out: it is null, and the body replaces it.
-            let defaulted = p.initializer.is_some() && (ty.is_ptr() || ty == Ty::Num);
+            let defaulted =
+                p.initializer.is_some() && (ty.is_ptr() || ty == Ty::Num || ty == Ty::Bool);
             ptys.push(if (p.optional && p.initializer.is_none()) || defaulted {
                 ty.nullable()
             } else {

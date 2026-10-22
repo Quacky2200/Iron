@@ -27,6 +27,9 @@ use std::collections::BTreeMap;
 pub(crate) struct Desugared {
     pub src: String,
     pub templates: String,
+    /// The program has an `await` at the top level of a module: its top-level code is the body of
+    /// an implicit async function (see `Lowerer::top_await`).
+    pub top_await: bool,
 }
 
 /// The value types every program with promises gets a class for.
@@ -58,6 +61,8 @@ struct Pass<'s> {
     async_from: Option<u32>,
     /// A `.then(f, g)` call exists.
     then2: bool,
+    /// An `await` or `for await` outside every function.
+    top_await: bool,
     error: Option<String>,
 }
 
@@ -87,8 +92,12 @@ impl<'a> Pass<'_> {
     /// values): `for (const __faN of xs) { const x = __await(__faN); body }`.
     fn for_await(&mut self, it: &ForOfStatement<'a>) {
         if !matches!(self.asyncs.last(), Some(Some(_))) {
-            self.fail("`for await` is only supported inside an async function".into());
-            return;
+            if self.asyncs.is_empty() && self.fn_depth == 0 {
+                self.top_await = true;
+            } else {
+                self.fail("`for await` is only supported inside an async function".into());
+                return;
+            }
         }
         let ForStatementLeft::VariableDeclaration(decl) = &it.left else {
             self.fail("`for await` needs a declaration: `for await (const x of xs)`".into());
@@ -404,15 +413,13 @@ impl<'a> Visit<'a> for Pass<'_> {
 
     fn visit_await_expression(&mut self, it: &AwaitExpression<'a>) {
         if !matches!(self.asyncs.last(), Some(Some(_))) {
-            self.fail(
-                if self.asyncs.is_empty() && self.fn_depth == 0 {
-                    "top-level `await` is not supported: put the code in an `async function main() { .. }` and call `main()`"
-                } else {
-                    "`await` is only supported inside an async function"
-                }
-                .into(),
-            );
-            return;
+            if self.asyncs.is_empty() && self.fn_depth == 0 {
+                // Top-level `await`: the module's code runs as an implicit async function.
+                self.top_await = true;
+            } else {
+                self.fail("`await` is only supported inside an async function".into());
+                return;
+            }
         }
         let a = it.argument.span();
         self.edits
@@ -513,6 +520,7 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
         decl_types: Vec::new(),
         async_from: None,
         then2: false,
+        top_await: false,
         error: None,
     };
     pass.visit_program(&ret.program);
@@ -609,6 +617,7 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
     Ok(Some(Desugared {
         src: out,
         templates,
+        top_await: pass.top_await,
     }))
 }
 

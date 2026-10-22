@@ -298,3 +298,41 @@ async function t(): Promise<string> {
   s += settled[0]!.status + settled[1]!.status;
   return s + r + f;
 }
+//## all_tuple_of_different_types
+async function num(n: number): Promise<number> {
+  await Promise.resolve();
+  return n;
+}
+async function str(s: string): Promise<string> {
+  await Promise.resolve();
+  return s;
+}
+function delay<T>(ms: number, v: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    setTimeout(() => {
+      resolve(v);
+    }, ms);
+  });
+}
+async function t(): Promise<string> {
+  const [a, b] = await Promise.all([num(3), str("x")]);
+  const all = await Promise.all([num(1), str("y"), Promise.resolve(true), 7]);
+  const [slow, fast] = await Promise.all([delay(20, "slow"), delay(5, 42)]);
+  return `${a}${b} ${all[0]}${all[1]}${all[2]}${all[3]} ${all.length} ${slow}${fast}`;
+}
+//## all_tuple_rejects_with_the_first_failure
+async function bad(): Promise<number> {
+  throw new Error("nope");
+}
+async function str(s: string): Promise<string> {
+  await Promise.resolve();
+  return s;
+}
+async function t(): Promise<string> {
+  try {
+    const [a, b] = await Promise.all([bad(), str("q")]);
+    return "no" + a + b;
+  } catch (e) {
+    return "caught " + (e as Error).message;
+  }
+}

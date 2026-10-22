@@ -738,6 +738,30 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   in `implements` is a "type mismatch" (name the interface in `implements`: that is what makes it dynamic). Generic interfaces
   (`implements Comparable<T>`) are not dynamic.
 
+## Tuples, destructuring assignment and top-level `await`
+
+- **Tuples.** A tuple of one element type is an array; a tuple of mixed types is an object with a field per element (`Tuple`, fields
+  `"0"`, `"1"`, ..). `t.length` is the number of elements, `t[0] = x` and `t[1] += y` write the field (the index is a number written in
+  the source), `const [a, ...rest] = t` binds the rest as a tuple (or an array when the remaining elements agree), `[...t, x]` and
+  `f(...t)` read the elements one by one (into fixed parameters; not into a rest parameter). Tuple types in rest parameters
+  (`...args: [number, string]`) are not built.
+- **Destructuring assignment** (`lower_destructure_assign`): `[a, b] = [b, a]`, `[xs[i], xs[j]] = [xs[j], xs[i]]`, `[n, s] = pair()`,
+  `({ x, y } = o)`, defaults, rest, nested patterns, element and member targets. An array literal on the right with an element per
+  target is not built: its elements go into temporaries first (so a swap reads both before writing), then are assigned in order.
+- **Top-level destructuring declarations** (`const [a, b] = ..`, `let { x, y } = ..`) make every name a module variable.
+- **`await Promise.all([a, b])` over different value types** is a tuple: when the operand of `await` is `Promise.all` of an array
+  literal whose promises (or plain values) have different types, the elements are evaluated (every promise starts), then awaited one
+  after the other into a tuple (`await_all_tuple`). Not the same as JavaScript only in this: a promise that rejects while an earlier
+  one is pending is reported as unhandled until its turn comes. `Promise.all` of mixed promises that is not awaited on the spot is
+  still a compile error (no promise class stands for a tuple); `Promise<Promise<T>>` too.
+- **Top-level `await`** (the entry module and the modules it imports): the module's top-level code becomes the body of an implicit
+  async function (`tla$main`, run by `__async$number`), started by `ts_init`. Module variables are still globals, so functions
+  declared anywhere see them as they are set. **Ordering:** the code before the first `await` runs inside `ts_init` (the statements,
+  the initialisers, the classes' static fields in source order); everything after it continues when the awaited promise settles, i.e.
+  when the host drains microtasks and timers (`ts_rt_run_loop`). A host function called in between sees the variables initialised so
+  far (and zero / null for the later ones). An error thrown after an await is an unhandled promise rejection (logged once).
+- **Defaulted closure parameters of type `boolean`** may be left out at a call, like numbers and strings.
+
 ## Symbol, iterators and generators
 
 - **Well-known symbols.** `[Symbol.iterator]()` in a class is a method with the internal name `@@iterator`

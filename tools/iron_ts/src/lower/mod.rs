@@ -256,6 +256,9 @@ pub struct Lowerer<'a> {
     /// `instanceof GenericClass` tables, filled in once every specialisation exists.
     pub(crate) generic_itables: Vec<(usize, String)>,
     /// `Partial<Class>` and friends met before the classes had fields: (struct, utility, class struct, keys).
+    /// The program has a top-level `await`: its initialisers and statements run as the body of an
+    /// implicit async function, started by `ts_init` (see `lower_program`).
+    pub(crate) top_await: bool,
     /// Interfaces some class implements (and the ones those extend): see `ifaces.rs`.
     pub(crate) dyn_ifaces: HashSet<String>,
     /// The structs of those interfaces, by interface name.
@@ -264,6 +267,10 @@ pub struct Lowerer<'a> {
     pub(crate) iface_impls: std::cell::RefCell<HashSet<(StructId, StructId)>>,
     pub(crate) iface_tables: Vec<ifaces::IfaceTable>,
     pub(crate) pending_utility: Vec<(StructId, String, Ty, Option<Vec<String>>)>,
+}
+
+fn mk_expr(kind: ExprKind, ty: Ty) -> Expr {
+    Expr { kind, ty }
 }
 
 /// Parses and lowers one TypeScript module.
@@ -310,9 +317,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     };
     let src = rewritten.as_deref().unwrap_or(src);
     // Promises and async functions become closures over coroutines too.
-    let (rewritten2, async_templates) = match asyncs::desugar(src)? {
-        Some(d) => (Some(d.src), d.templates),
-        None => (None, String::new()),
+    let (rewritten2, async_templates, top_await) = match asyncs::desugar(src)? {
+        Some(d) => (Some(d.src), d.templates, d.top_await),
+        None => (None, String::new(), false),
     };
     let src = rewritten2.as_deref().unwrap_or(src);
     // `Temporal.PlainDate` is the prelude class `Temporal_PlainDate`.
@@ -475,6 +482,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         classes_ready: false,
         generic_itables: Vec::new(),
         pending_utility: Vec::new(),
+        top_await,
         dyn_ifaces: HashSet::new(),
         iface_sids: HashMap::new(),
         iface_impls: Default::default(),
@@ -656,6 +664,16 @@ impl<'a> Lowerer<'a> {
         self.fstate.push(2);
         self.cur = FnCtx::default();
         self.cur.scopes.push(HashMap::new());
+        // With a top-level `await` the statements below become a closure `(p) => { .. }` that
+        // `__async$number` runs as a coroutine: its environment and promise are the first locals.
+        let tla = if self.top_await {
+            let env = self.new_local(Self::env_ty());
+            let promise = self.named_type("Promise$number")?;
+            let p = self.new_local(promise.clone());
+            Some((env, p, promise))
+        } else {
+            None
+        };
         let mut init_body = Vec::new();
         for item in vars {
             match item {
@@ -672,8 +690,32 @@ impl<'a> Lowerer<'a> {
         }
         init_body.push(Stmt::Return(None));
         let ctx = std::mem::take(&mut self.cur);
-        self.m.funcs[init_id].locals = ctx.locals;
-        self.m.funcs[init_id].body = init_body;
+        if let Some((env, p, promise)) = tla {
+            let main_id = self.m.funcs.len();
+            self.m.funcs.push(Func {
+                name: "tla$main".into(),
+                exported: false,
+                params: vec![env, p],
+                ret: Ty::Void,
+                locals: ctx.locals,
+                body: init_body,
+            });
+            self.fsig.push((vec![promise.clone()], Some(Ty::Void)));
+            self.fstate.push(2);
+            let clo = mk_expr(
+                ExprKind::MakeClosure(main_id, None),
+                Ty::Fn(Box::new(FnTy {
+                    params: vec![promise],
+                    ret: Ty::Void,
+                })),
+            );
+            let started = self.call_helper("__async$number", vec![clo])?;
+            self.m.funcs[init_id].locals = vec![];
+            self.m.funcs[init_id].body = vec![Stmt::Eval(started), Stmt::Return(None)];
+        } else {
+            self.m.funcs[init_id].locals = ctx.locals;
+            self.m.funcs[init_id].body = init_body;
+        }
         self.m.init = Some(init_id);
         // 3. Every function body. Lowering can declare more functions (specialisations of
         // generics): go on until none is left. A plain top-level function that nothing lowered so
@@ -1173,6 +1215,49 @@ impl<'a> Lowerer<'a> {
         })
     }
 
+    /// `const [a, b] = pair();` / `const { x, y } = o;` at the top level: every name becomes a
+    /// module variable, set by the statements that take the value apart.
+    fn lower_top_destructure(
+        &mut self,
+        d: &'a VariableDeclarator<'a>,
+        is_const: bool,
+        init_body: &mut Vec<Stmt>,
+    ) -> R<()> {
+        let Some(init) = &d.init else {
+            bail!("a destructuring declaration needs a value")
+        };
+        let exp = match &d.type_annotation {
+            Some(a) => Some(self.ty(&a.type_annotation, "destructuring")?),
+            None => None,
+        };
+        let mut value = self.lower_expr(init, exp.as_ref())?;
+        if let Some(t) = &exp {
+            value = self.coerce(value, t)?;
+        }
+        let mut stmts = Vec::new();
+        self.bind_pattern(&d.id, value, &mut stmts)?;
+        let mut names = Vec::new();
+        pattern_names(&d.id, &mut names);
+        for name in names {
+            // The pattern bound the name to a local of the init function; the module variable
+            // takes its place, so functions (and the code after) see the same one.
+            let Some(b) = self.cur.scopes[0].remove(&name) else {
+                continue;
+            };
+            let read = self.read_binding(&b);
+            let g = self.m.globals.len();
+            self.m.globals.push(Global {
+                name: name.clone(),
+                ty: read.ty.clone(),
+            });
+            self.consts
+                .insert(name, ConstInfo::Global(g, read.ty.clone(), !is_const));
+            stmts.push(Stmt::StoreGlobal(g, read));
+        }
+        init_body.extend(stmts);
+        Ok(())
+    }
+
     fn lower_top_var_inner(
         &mut self,
         d: &'a VariableDeclarator<'a>,
@@ -1180,7 +1265,7 @@ impl<'a> Lowerer<'a> {
         init_body: &mut Vec<Stmt>,
     ) -> R<()> {
         let BindingPattern::BindingIdentifier(id) = &d.id else {
-            bail!("destructured top-level binding")
+            return self.lower_top_destructure(d, is_const, init_body);
         };
         let name = id.name.to_string();
         let exp = match &d.type_annotation {
@@ -1224,6 +1309,30 @@ impl<'a> Lowerer<'a> {
             .insert(name, ConstInfo::Global(g, e.ty.clone(), !is_const));
         init_body.push(Stmt::StoreGlobal(g, e));
         Ok(())
+    }
+}
+
+/// The names a binding pattern declares.
+fn pattern_names(p: &BindingPattern<'_>, out: &mut Vec<String>) {
+    match p {
+        BindingPattern::BindingIdentifier(id) => out.push(id.name.to_string()),
+        BindingPattern::AssignmentPattern(a) => pattern_names(&a.left, out),
+        BindingPattern::ObjectPattern(o) => {
+            for prop in &o.properties {
+                pattern_names(&prop.value, out);
+            }
+            if let Some(r) = &o.rest {
+                pattern_names(&r.argument, out);
+            }
+        }
+        BindingPattern::ArrayPattern(a) => {
+            for el in a.elements.iter().flatten() {
+                pattern_names(el, out);
+            }
+            if let Some(r) = &a.rest {
+                pattern_names(&r.argument, out);
+            }
+        }
     }
 }
 

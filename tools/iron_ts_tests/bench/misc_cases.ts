@@ -165,3 +165,16 @@ class Gauge {
 function t(): string {
   return new Gauge().report();
 }
+//## top_level_destructuring
+function pair(): [number, string] {
+  return [7, "seven"];
+}
+const [ta, tb] = [1, 2];
+const { p, q } = { p: "p", q: 4 };
+let [m, s] = pair();
+const [head, ...tail] = [10, 20, 30];
+const fromClosure = () => ta + tb + q + m + head + tail.length;
+function t(): string {
+  m += 1;
+  return `${ta}${tb}${p}${q} ${m}${s} ${head} ${tail.join("+")} ${fromClosure()}`;
+}

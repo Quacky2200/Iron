@@ -798,11 +798,9 @@ impl<'a> Lowerer<'a> {
                 let Ty::Obj(sid) = value.ty.strip().clone() else {
                     unreachable!("checked")
                 };
-                if a.rest.is_some() || a.elements.len() > self.m.structs[sid].fields.len() {
-                    bail!(
-                        "a tuple pattern names at most its {} elements",
-                        self.m.structs[sid].fields.len()
-                    )
+                let n = self.m.structs[sid].fields.len();
+                if a.elements.len() > n || (a.rest.is_none() && a.elements.len() > n) {
+                    bail!("a tuple pattern names at most its {n} elements")
                 }
                 let tmp = self.new_local(value.ty.clone());
                 out.push(Stmt::Assign(tmp, value));
@@ -811,6 +809,17 @@ impl<'a> Lowerer<'a> {
                     let ty = self.m.structs[sid].fields[i].ty.clone();
                     let part = mk(ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i), ty);
                     self.bind_pattern(p, part, out)?;
+                }
+                // `[first, ...rest]`: the other elements, as a tuple (or an array when they agree).
+                if let Some(r) = &a.rest {
+                    let vals: Vec<Expr> = (a.elements.len()..n)
+                        .map(|i| {
+                            let ty = self.m.structs[sid].fields[i].ty.clone();
+                            mk(ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i), ty)
+                        })
+                        .collect();
+                    let rest = self.tuple_or_array(vals)?;
+                    self.bind_pattern(&r.argument, rest, out)?;
                 }
             }
             BindingPattern::ArrayPattern(a) => {

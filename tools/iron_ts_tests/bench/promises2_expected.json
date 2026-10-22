@@ -17,5 +17,7 @@
  "with_resolvers": "5no",
  "awaiting_values_and_iifes": "5:6:c",
  "timers_order_inside_async": "abcbcayy",
- "rejection_paths": "bad1Frejectedfulfilled-1-2"
+ "rejection_paths": "bad1Frejectedfulfilled-1-2",
+ "all_tuple_of_different_types": "3x 1ytrue7 4 slow42",
+ "all_tuple_rejects_with_the_first_failure": "caught nope"
 }

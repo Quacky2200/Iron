@@ -136,6 +136,8 @@ bun_tests! {
     2913 await_of_values_and_async_iifes "awaiting_values_and_iifes" "pg17_" 226_000;
     2914 timers_race_and_all_inside_async_code "timers_order_inside_async" "pg18_" 227_000;
     2915 rejection_paths_through_catch_finally_and_all_settled "rejection_paths" "pg19_" 228_000;
+    3155 await_promise_all_of_different_types_gives_a_tuple "all_tuple_of_different_types" "pg20_" 231_000;
+    3156 await_promise_all_tuple_rejects_with_the_first_failure "all_tuple_rejects_with_the_first_failure" "pg21_" 232_000;
 }
 
 // M9-TS-2916
@@ -231,8 +233,8 @@ fn unsupported_promise_shapes_are_clear_compile_errors() {
     };
     let e = bad(
         "async function t(): Promise<string> {\n\
-           const [a, b] = await Promise.all([Promise.resolve(1), Promise.resolve(\"x\")]);\n\
-           return \"\" + a + b;\n\
+           const p = Promise.all([Promise.resolve(1), Promise.resolve(\"x\")]);\n\
+           return \"\" + (await p);\n\
          }",
         "pe1_",
     );
@@ -241,10 +243,10 @@ fn unsupported_promise_shapes_are_clear_compile_errors() {
         "{e}"
     );
     let e = bad(
-        "const v = await Promise.resolve(1);\nasync function t(): Promise<string> { return \"\" + v; }",
+        "function f(): number { return await Promise.resolve(1); }\nasync function t(): Promise<string> { return \"\" + f(); }",
         "pe2_",
     );
-    assert!(e.contains("top-level `await` is not supported"), "{e}");
+    assert!(e.contains("only allowed within async functions"), "{e}");
     let e = bad(
         "async function inner(): Promise<Promise<number>> { return Promise.resolve(4); }\n\
          async function t(): Promise<string> { return \"\" + await inner(); }",

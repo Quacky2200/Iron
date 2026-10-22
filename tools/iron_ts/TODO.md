@@ -362,8 +362,8 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [x] `null as T | null`, `[] as T[]`, `{} as T` casts in object literals/consts (`M9-TS-3130`).
 - [x] Class fields without an annotation whose initialiser is a constructor call (`private a = new Float32Array(n)`), `NaN`, `-Infinity`, `Math.*`, `new Int8Array(n).fill(x)`, `[] as T[]` (`M9-TS-3131/3137`).
 - [x] Non-null assertion on an assignment target: `x[i]! += d`; closures over destructured `const [a, b]` (`M9-TS-3132/3133`; the closures already worked).
-- [ ] Tuples: `.length`, rest patterns, assignment through `t[0]` (tuples are objects with fields `0`, `1`).
-- [ ] Defaulted closure parameters of type `boolean` are not nullable yet.
+- [x] Tuples: `.length`, rest patterns, spread of tuples (into arrays and fixed parameters), assignment through `t[0]`, tuple parameters (2026-10-22, `M9-TS-3149..3151`). Not built: a tuple type as a rest parameter.
+- [x] Defaulted closure parameters of type `boolean` may be left out (`M9-TS-3154`).
 - [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner.
 - [x] Arrays: an indexed write at `arr.length` (`arr[arr.length] = x`) has no bounds check and crashed a game with a segfault. Fixed 2026-10-22: it appends like JavaScript; a write further out (or negative / NaN) throws a `RangeError`.
 - [ ] A skipped (unreachable) function is only checked by `tsc`, never by our compiler: add an optional `--check-unused` that lowers everything.
@@ -381,7 +381,7 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [x] A local typed as a string-literal union assigned from an optional field of the same type (`let mode: M = "auto"; if (o.mode !== undefined) mode = o.mode;`) panicked Cranelift (`declared type of variable .. doesn't match`); also with `as M` and with a `const` copy. Fixed 2026-10-22: `Nullable(Lit)` is an `i32` like `Lit` with tag 0 reserved as "no tag" (`M9-TS-3000..3012`); `as M` lowers literals as members; `Map.get` and `join` over members; `keyof typeof X` / `keyof Iface` are the key union; a non-member literal in a typed declaration is a compile error; `Spline.mode` is `TangentMode` again.
 - [x] `Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Readonly<T>` over interfaces, aliases, records, classes and engine classes, as option bags too (2026-10-22, `M9-TS-3120..3127`). [ ] `ReturnType<typeof f>`.
 - [x] Classes assigned to an interface (`class C implements I`, `I[]` holding different classes, `extends` between interfaces): dispatch by the object's struct id through per-interface tables (2026-10-22, `M9-TS-3140..3147`, `docs/iron-ts.md` "Interfaces implemented by classes").
-- [ ] Object-literal accessors (`get scene() { .. }`), computed keys, spread call arguments (`rnd(...range)`), destructuring assignment (`[a, b] = [b, a]`).
+- [ ] Object-literal accessors (`get scene() { .. }`), computed keys in object literals, spread call arguments for function values (`rnd(...range)` works for declared functions with fixed or rest parameters and for tuples). [x] Destructuring assignment (`[a, b] = [b, a]`, `M9-TS-3152/3153`).
 - [ ] `Map.get` / `Set` over engine handles as values (box them in a class); `.pop()` over handle arrays; `indexOf` over object arrays.
 - [ ] Line numbers in errors from facade chunks and from code appended after the user's source point past the file.
 - [x] Facade chunk classes (`Spline`, `SplineAnimate`) were not `@property` aware (no scene saving): both are native now and `SplineAnimate` saves its fields and spline (2026-10-22).
@@ -411,7 +411,7 @@ callbacks in `tools/iron_ts/src/lower/facade.ts`.
 
 Behaviours checked 2026-10-22 (all with GC stress where it applies):
 
-- Top-level `await` in the entry module: compile error `top-level await is not supported: put the code in an async function main()`.
+- Top-level `await` (2026-10-22): the module's code is an implicit async function started by `ts_init` (`docs/iron-ts.md` "Tuples, destructuring assignment and top-level `await`", `M9-TS-3157..3161`). `Promise.all([a, b])` over different value types, awaited on the spot, gives a tuple (`M9-TS-3155/3156`).
 - `async onStart()` / `onUpdate` etc.: work (the component hooks return a promise that is dropped; a rejection is reported as unhandled). `M9-API-1513`.
 - Async JSX handlers (`onClick={async () => ..}`): work; a callback typed to return nothing may return a value (it is evaluated and dropped). `M9-API-1515`.
 - `for await (const x of xs)` over arrays/iterables: works (rewritten). Async generators, `AsyncGenerator`, `Symbol.asyncIterator`: compile error naming async generators.
@@ -420,7 +420,7 @@ Behaviours checked 2026-10-22 (all with GC stress where it applies):
 - `await new Promise(r => setTimeout(r, ms))` with `resolve` passed as the callback: works (`setTimeout` takes `(arg?: number) => void`).
 - Hot reload: pending timers and awaits of the old code are dropped (`ts_rt_events_clear`); the new code starts its own. `M9-API-1516`. (Before, an old timer fired into the new world.)
 - A component destroyed while it awaits: the coroutine continues (no cancellation, JavaScript semantics), engine calls on the dead object are no-ops; check `go.exists()`. `M9-API-1514`.
-- Generics: `load<T>(): Promise<T>`, `Promise<T[]>`, `Promise<Map<string, T>>` (when `Promise<Map<string, number>>` is written once), generic async classes and recursion, `T` inferred from `Promise<T>` parameters and promise-returning closures: work. Still failing, each with a message: `Promise.all([a, b])` over different value types (a tuple), `Promise<Promise<T>>`, `Promise<Alias>` where the alias is never written in a `Promise<..>` (`the program never writes Promise<..>`), `Promise.withResolvers` inside generic code, generic *methods* (`map<U>(..)` in a class: "generic methods are not built").
+- Generics: `load<T>(): Promise<T>`, `Promise<T[]>`, `Promise<Map<string, T>>` (when `Promise<Map<string, number>>` is written once), generic async classes and recursion, `T` inferred from `Promise<T>` parameters and promise-returning closures: work. Still failing, each with a message: `Promise.all([a, b])` over different value types when not awaited on the spot, `Promise<Promise<T>>`, `Promise<Alias>` where the alias is never written in a `Promise<..>` (`the program never writes Promise<..>`), `Promise.withResolvers` inside generic code, generic *methods* (`map<U>(..)` in a class: "generic methods are not built").
 
 - [ ] **Asset packs default (decided 2026-10-22, `docs/research/iron-virtual-fs-plan.md` section 6):** `iron-build package` stays loose (`data/`) until packs are tried and tested on real games; then flip it to write `assets.dat` + scene packs by default with `--loose` for debugging/modding. Also revisit storing cooked-only textures (currently both forms) to reduce bloat; DirectStorage / `CODEC-1` later.
 - [ ] **Enums as indexes (decided 2026-10-22, `docs/research/iron-generated-dts-plan.md` section 6):** native name/index converters per enum, constant literals converted at compile time.
