@@ -259,6 +259,24 @@ fn run(o: &Options) -> Result<(), String> {
         }
     }
 
+    let raw = out_dir.join("benchmarks");
+    let json_path = raw.join("results.json");
+    // `--only` re-runs some games: the others keep their last results.
+    if o.only.is_some()
+        && let Some(old) = std::fs::read_to_string(&json_path)
+            .ok()
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+    {
+        let mut merged: Vec<Value> = old["results"].as_array().cloned().unwrap_or_default();
+        for r in results {
+            match merged.iter_mut().find(|m| m["game"] == r["game"]) {
+                Some(m) => *m = r,
+                None => merged.push(r),
+            }
+        }
+        merged.sort_by(|a, b| a["game"].as_str().cmp(&b["game"].as_str()));
+        results = merged;
+    }
     let machine = machine_info(&results);
     let all = json!({
         "head": head_commit,
@@ -268,9 +286,7 @@ fn run(o: &Options) -> Result<(), String> {
         "machine": machine,
         "results": results,
     });
-    let raw = out_dir.join("benchmarks");
     std::fs::create_dir_all(&raw).map_err(|e| e.to_string())?;
-    let json_path = raw.join("results.json");
     std::fs::write(
         &json_path,
         serde_json::to_string_pretty(&all).unwrap() + "\n",
@@ -325,6 +341,7 @@ fn extract_base(repo: &Path, base: &str) -> Result<PathBuf, String> {
 /// branch's copy has and git does not (fonts kept out of git, downloaded models).
 fn build_original(original: &Path, current: &Path) -> Result<(), String> {
     copy_missing(current, original, true).map_err(|e| format!("copying assets: {e}"))?;
+    copy_charm(original, current).map_err(|e| format!("copying the Charm font: {e}"))?;
     run_tool(
         Command::new("bun")
             .args(["run", "build"])
@@ -332,6 +349,49 @@ fn build_original(original: &Path, current: &Path) -> Result<(), String> {
             .stdin(Stdio::null()),
         "bun run build",
     )
+}
+
+/// The Charm font is kept out of git (a `Charm/` folder at the top of a checkout, copied into the
+/// examples that use it): an original whose code names it gets it in `assets/fonts`, from the
+/// nearest `Charm/` above the game (a worktree may have no copies of its own).
+fn copy_charm(original: &Path, current: &Path) -> std::io::Result<()> {
+    let uses = |dir: &Path| -> bool {
+        walk(dir)
+            .iter()
+            .any(|f| std::fs::read_to_string(f).is_ok_and(|t| t.contains("Charm-")))
+    };
+    if !uses(&original.join("src")) {
+        return Ok(());
+    }
+    let Some(charm) = current
+        .ancestors()
+        .map(|a| a.join("Charm"))
+        .find(|c| c.is_dir())
+    else {
+        return Ok(());
+    };
+    let fonts = original.join("assets/fonts");
+    std::fs::create_dir_all(&fonts)?;
+    for e in std::fs::read_dir(charm)?.flatten() {
+        let dest = fonts.join(e.file_name());
+        if e.path().is_file() && !dest.exists() {
+            std::fs::copy(e.path(), dest)?;
+        }
+    }
+    Ok(())
+}
+
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            out.extend(walk(&p));
+        } else {
+            out.push(p);
+        }
+    }
+    out
 }
 
 /// Copies files of `from`'s folders that `to` lacks. At the top only folders count, and not the

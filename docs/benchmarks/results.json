@@ -1,0 +1,4580 @@
+{
+  "base": "main (5b8aa52)",
+  "fixedDt": 0.016666666666666666,
+  "head": "189b820",
+  "machine": {
+    "cpu": "AMD Ryzen 9 5900X 12-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+    "os": "Microsoft Windows 11 Pro 10.0.22631",
+    "ramGb": "32"
+  },
+  "results": [
+    {
+      "game": "animation",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "animation",
+        "loadMs": 747.3,
+        "peakMemoryMb": 164.4,
+        "segments": [
+          {
+            "fps": 1840.588,
+            "frames": 600,
+            "meanMs": 0.543,
+            "medianMs": 0.461,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 0.845,
+            "p99Ms": 1.178,
+            "renderMs": 0.464,
+            "scriptMs": 0.018,
+            "syncMs": 0.052,
+            "warmup": 0,
+            "worstMs": 2.189
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 801.5,
+        "total": {
+          "fps": 1840.588,
+          "frames": 600,
+          "meanMs": 0.543,
+          "medianMs": 0.461,
+          "otherMs": 0.01,
+          "p95Ms": 0.845,
+          "p99Ms": 1.178,
+          "renderMs": 0.464,
+          "scriptMs": 0.018,
+          "syncMs": 0.052,
+          "worstMs": 2.189
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "animation",
+        "loadMs": 758.6,
+        "peakMemoryMb": 165.7,
+        "segments": [
+          {
+            "fps": 911.801,
+            "frames": 600,
+            "meanMs": 1.097,
+            "medianMs": 1.019,
+            "name": "idle",
+            "otherMs": 0.013,
+            "p95Ms": 1.523,
+            "p99Ms": 1.857,
+            "renderMs": 0.46,
+            "scriptMs": 0.624,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 3.868
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 799.2,
+        "total": {
+          "fps": 911.801,
+          "frames": 600,
+          "meanMs": 1.097,
+          "medianMs": 1.019,
+          "otherMs": 0.013,
+          "p95Ms": 1.523,
+          "p99Ms": 1.857,
+          "renderMs": 0.46,
+          "scriptMs": 0.624,
+          "syncMs": 0.0,
+          "worstMs": 3.868
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "arcade",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "arcade",
+        "loadMs": 637.7,
+        "peakMemoryMb": 165.3,
+        "segments": [
+          {
+            "fps": 1624.42,
+            "frames": 300,
+            "meanMs": 0.616,
+            "medianMs": 0.492,
+            "name": "idle",
+            "otherMs": 0.011,
+            "p95Ms": 1.111,
+            "p99Ms": 1.408,
+            "renderMs": 0.52,
+            "scriptMs": 0.051,
+            "syncMs": 0.034,
+            "warmup": 0,
+            "worstMs": 3.655
+          },
+          {
+            "fps": 2277.613,
+            "frames": 720,
+            "meanMs": 0.439,
+            "medianMs": 0.383,
+            "name": "steer",
+            "otherMs": 0.009,
+            "p95Ms": 0.742,
+            "p99Ms": 1.216,
+            "renderMs": 0.38,
+            "scriptMs": 0.022,
+            "syncMs": 0.027,
+            "warmup": 0,
+            "worstMs": 2.246
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 697.4,
+        "total": {
+          "fps": 2036.734,
+          "frames": 1020,
+          "meanMs": 0.491,
+          "medianMs": 0.394,
+          "otherMs": 0.01,
+          "p95Ms": 0.914,
+          "p99Ms": 1.336,
+          "renderMs": 0.421,
+          "scriptMs": 0.031,
+          "syncMs": 0.029,
+          "worstMs": 3.655
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "arcade",
+        "loadMs": 757.4,
+        "peakMemoryMb": 166.7,
+        "segments": [
+          {
+            "fps": 1040.606,
+            "frames": 300,
+            "meanMs": 0.961,
+            "medianMs": 0.824,
+            "name": "idle",
+            "otherMs": 0.015,
+            "p95Ms": 1.76,
+            "p99Ms": 2.335,
+            "renderMs": 0.458,
+            "scriptMs": 0.489,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.494
+          },
+          {
+            "fps": 1348.979,
+            "frames": 720,
+            "meanMs": 0.741,
+            "medianMs": 0.656,
+            "name": "steer",
+            "otherMs": 0.012,
+            "p95Ms": 1.283,
+            "p99Ms": 1.537,
+            "renderMs": 0.399,
+            "scriptMs": 0.33,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.307
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 792.6,
+        "total": {
+          "fps": 1240.83,
+          "frames": 1020,
+          "meanMs": 0.806,
+          "medianMs": 0.686,
+          "otherMs": 0.013,
+          "p95Ms": 1.479,
+          "p99Ms": 2.116,
+          "renderMs": 0.416,
+          "scriptMs": 0.377,
+          "syncMs": 0.0,
+          "worstMs": 2.494
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "boxes",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "boxes",
+        "loadMs": 691.9,
+        "peakMemoryMb": 164.1,
+        "segments": [
+          {
+            "fps": 2394.368,
+            "frames": 600,
+            "meanMs": 0.418,
+            "medianMs": 0.321,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 0.797,
+            "p99Ms": 1.419,
+            "renderMs": 0.386,
+            "scriptMs": 0.012,
+            "syncMs": 0.01,
+            "warmup": 0,
+            "worstMs": 1.714
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 699.7,
+        "total": {
+          "fps": 2394.368,
+          "frames": 600,
+          "meanMs": 0.418,
+          "medianMs": 0.321,
+          "otherMs": 0.01,
+          "p95Ms": 0.797,
+          "p99Ms": 1.419,
+          "renderMs": 0.386,
+          "scriptMs": 0.012,
+          "syncMs": 0.01,
+          "worstMs": 1.714
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "boxes",
+        "loadMs": 783.4,
+        "peakMemoryMb": 166.4,
+        "segments": [
+          {
+            "fps": 2123.122,
+            "frames": 600,
+            "meanMs": 0.471,
+            "medianMs": 0.379,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 0.863,
+            "p99Ms": 1.457,
+            "renderMs": 0.423,
+            "scriptMs": 0.038,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.915
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 790.2,
+        "total": {
+          "fps": 2123.122,
+          "frames": 600,
+          "meanMs": 0.471,
+          "medianMs": 0.379,
+          "otherMs": 0.01,
+          "p95Ms": 0.863,
+          "p99Ms": 1.457,
+          "renderMs": 0.423,
+          "scriptMs": 0.038,
+          "syncMs": 0.0,
+          "worstMs": 2.915
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "classics",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "classics",
+        "loadMs": 729.2,
+        "peakMemoryMb": 164.0,
+        "segments": [
+          {
+            "fps": 2400.92,
+            "frames": 600,
+            "meanMs": 0.417,
+            "medianMs": 0.384,
+            "name": "idle",
+            "otherMs": 0.008,
+            "p95Ms": 0.561,
+            "p99Ms": 1.345,
+            "renderMs": 0.371,
+            "scriptMs": 0.011,
+            "syncMs": 0.026,
+            "warmup": 0,
+            "worstMs": 2.325
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 774.8,
+        "total": {
+          "fps": 2400.92,
+          "frames": 600,
+          "meanMs": 0.417,
+          "medianMs": 0.384,
+          "otherMs": 0.008,
+          "p95Ms": 0.561,
+          "p99Ms": 1.345,
+          "renderMs": 0.371,
+          "scriptMs": 0.011,
+          "syncMs": 0.026,
+          "worstMs": 2.325
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "classics",
+        "loadMs": 733.9,
+        "peakMemoryMb": 165.6,
+        "segments": [
+          {
+            "fps": 1801.533,
+            "frames": 600,
+            "meanMs": 0.555,
+            "medianMs": 0.491,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 0.79,
+            "p99Ms": 1.42,
+            "renderMs": 0.397,
+            "scriptMs": 0.148,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.815
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 805.3,
+        "total": {
+          "fps": 1801.533,
+          "frames": 600,
+          "meanMs": 0.555,
+          "medianMs": 0.491,
+          "otherMs": 0.01,
+          "p95Ms": 0.79,
+          "p99Ms": 1.42,
+          "renderMs": 0.397,
+          "scriptMs": 0.148,
+          "syncMs": 0.0,
+          "worstMs": 2.815
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "clock",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "clock",
+        "loadMs": 855.1,
+        "peakMemoryMb": 244.7,
+        "segments": [
+          {
+            "fps": 826.503,
+            "frames": 240,
+            "meanMs": 1.21,
+            "medianMs": 1.166,
+            "name": "Analog",
+            "otherMs": 0.063,
+            "p95Ms": 1.588,
+            "p99Ms": 1.794,
+            "renderMs": 0.5,
+            "scriptMs": 0.054,
+            "syncMs": 0.593,
+            "warmup": 60,
+            "worstMs": 1.866
+          },
+          {
+            "fps": 733.326,
+            "frames": 240,
+            "meanMs": 1.364,
+            "medianMs": 1.248,
+            "name": "Dials",
+            "otherMs": 0.06,
+            "p95Ms": 1.938,
+            "p99Ms": 2.53,
+            "renderMs": 0.623,
+            "scriptMs": 0.02,
+            "syncMs": 0.661,
+            "warmup": 60,
+            "worstMs": 3.098
+          },
+          {
+            "fps": 751.338,
+            "frames": 240,
+            "meanMs": 1.331,
+            "medianMs": 1.313,
+            "name": "Meter",
+            "otherMs": 0.05,
+            "p95Ms": 1.493,
+            "p99Ms": 1.561,
+            "renderMs": 0.688,
+            "scriptMs": 0.021,
+            "syncMs": 0.571,
+            "warmup": 60,
+            "worstMs": 1.631
+          },
+          {
+            "fps": 478.368,
+            "frames": 240,
+            "meanMs": 2.09,
+            "medianMs": 2.021,
+            "name": "Sundial",
+            "otherMs": 0.053,
+            "p95Ms": 2.633,
+            "p99Ms": 3.531,
+            "renderMs": 1.353,
+            "scriptMs": 0.043,
+            "syncMs": 0.641,
+            "warmup": 60,
+            "worstMs": 10.095
+          },
+          {
+            "fps": 888.839,
+            "frames": 240,
+            "meanMs": 1.125,
+            "medianMs": 1.102,
+            "name": "Sand timer",
+            "otherMs": 0.049,
+            "p95Ms": 1.225,
+            "p99Ms": 1.509,
+            "renderMs": 0.443,
+            "scriptMs": 0.033,
+            "syncMs": 0.6,
+            "warmup": 60,
+            "worstMs": 2.14
+          },
+          {
+            "fps": 559.295,
+            "frames": 240,
+            "meanMs": 1.788,
+            "medianMs": 1.765,
+            "name": "Lava lamp",
+            "otherMs": 0.05,
+            "p95Ms": 1.947,
+            "p99Ms": 2.109,
+            "renderMs": 0.641,
+            "scriptMs": 0.439,
+            "syncMs": 0.657,
+            "warmup": 60,
+            "worstMs": 2.364
+          },
+          {
+            "fps": 819.295,
+            "frames": 240,
+            "meanMs": 1.221,
+            "medianMs": 1.191,
+            "name": "Underwater",
+            "otherMs": 0.05,
+            "p95Ms": 1.35,
+            "p99Ms": 1.64,
+            "renderMs": 0.533,
+            "scriptMs": 0.044,
+            "syncMs": 0.593,
+            "warmup": 60,
+            "worstMs": 2.71
+          },
+          {
+            "fps": 652.796,
+            "frames": 240,
+            "meanMs": 1.532,
+            "medianMs": 1.504,
+            "name": "Chandelier",
+            "otherMs": 0.051,
+            "p95Ms": 1.702,
+            "p99Ms": 1.943,
+            "renderMs": 0.816,
+            "scriptMs": 0.03,
+            "syncMs": 0.635,
+            "warmup": 60,
+            "worstMs": 2.213
+          },
+          {
+            "fps": 767.181,
+            "frames": 240,
+            "meanMs": 1.303,
+            "medianMs": 1.257,
+            "name": "Rainbow",
+            "otherMs": 0.053,
+            "p95Ms": 1.608,
+            "p99Ms": 2.156,
+            "renderMs": 0.535,
+            "scriptMs": 0.079,
+            "syncMs": 0.637,
+            "warmup": 60,
+            "worstMs": 3.14
+          },
+          {
+            "fps": 936.784,
+            "frames": 240,
+            "meanMs": 1.067,
+            "medianMs": 1.051,
+            "name": "Morphing",
+            "otherMs": 0.049,
+            "p95Ms": 1.182,
+            "p99Ms": 1.389,
+            "renderMs": 0.388,
+            "scriptMs": 0.02,
+            "syncMs": 0.611,
+            "warmup": 60,
+            "worstMs": 1.712
+          },
+          {
+            "fps": 817.067,
+            "frames": 240,
+            "meanMs": 1.224,
+            "medianMs": 1.202,
+            "name": "Flip",
+            "otherMs": 0.05,
+            "p95Ms": 1.329,
+            "p99Ms": 1.408,
+            "renderMs": 0.412,
+            "scriptMs": 0.157,
+            "syncMs": 0.605,
+            "warmup": 60,
+            "worstMs": 2.713
+          },
+          {
+            "fps": 769.796,
+            "frames": 240,
+            "meanMs": 1.299,
+            "medianMs": 1.271,
+            "name": "Alarm clock",
+            "otherMs": 0.049,
+            "p95Ms": 1.409,
+            "p99Ms": 1.49,
+            "renderMs": 0.626,
+            "scriptMs": 0.017,
+            "syncMs": 0.607,
+            "warmup": 60,
+            "worstMs": 3.322
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 1017.7,
+        "total": {
+          "fps": 724.886,
+          "frames": 2880,
+          "meanMs": 1.38,
+          "medianMs": 1.259,
+          "otherMs": 0.052,
+          "p95Ms": 2.021,
+          "p99Ms": 2.483,
+          "renderMs": 0.63,
+          "scriptMs": 0.08,
+          "syncMs": 0.618,
+          "worstMs": 10.095
+        },
+        "warmupFrames": 60
+      },
+      "nativeError": null,
+      "note": "the right arrow clicked through all twelve faces",
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "clock",
+        "loadMs": 880.2,
+        "peakMemoryMb": 247.0,
+        "segments": [
+          {
+            "fps": 680.278,
+            "frames": 240,
+            "meanMs": 1.47,
+            "medianMs": 1.413,
+            "name": "Analog",
+            "otherMs": 0.027,
+            "p95Ms": 2.004,
+            "p99Ms": 2.099,
+            "renderMs": 0.444,
+            "scriptMs": 0.999,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.282
+          },
+          {
+            "fps": 1151.781,
+            "frames": 240,
+            "meanMs": 0.868,
+            "medianMs": 0.843,
+            "name": "Dials",
+            "otherMs": 0.029,
+            "p95Ms": 0.973,
+            "p99Ms": 1.297,
+            "renderMs": 0.505,
+            "scriptMs": 0.335,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.465
+          },
+          {
+            "fps": 962.366,
+            "frames": 240,
+            "meanMs": 1.039,
+            "medianMs": 1.029,
+            "name": "Meter",
+            "otherMs": 0.032,
+            "p95Ms": 1.132,
+            "p99Ms": 1.247,
+            "renderMs": 0.68,
+            "scriptMs": 0.328,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 1.459
+          },
+          {
+            "fps": 607.895,
+            "frames": 240,
+            "meanMs": 1.645,
+            "medianMs": 1.588,
+            "name": "Sundial",
+            "otherMs": 0.076,
+            "p95Ms": 2.204,
+            "p99Ms": 2.486,
+            "renderMs": 1.352,
+            "scriptMs": 0.216,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 3.716
+          },
+          {
+            "fps": 1281.108,
+            "frames": 240,
+            "meanMs": 0.781,
+            "medianMs": 0.767,
+            "name": "Sand timer",
+            "otherMs": 0.047,
+            "p95Ms": 0.851,
+            "p99Ms": 1.231,
+            "renderMs": 0.396,
+            "scriptMs": 0.338,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 1.302
+          },
+          {
+            "fps": 250.756,
+            "frames": 240,
+            "meanMs": 3.988,
+            "medianMs": 3.808,
+            "name": "Lava lamp",
+            "otherMs": 0.11,
+            "p95Ms": 5.326,
+            "p99Ms": 7.005,
+            "renderMs": 0.795,
+            "scriptMs": 3.083,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 8.387
+          },
+          {
+            "fps": 832.645,
+            "frames": 240,
+            "meanMs": 1.201,
+            "medianMs": 1.181,
+            "name": "Underwater",
+            "otherMs": 0.051,
+            "p95Ms": 1.293,
+            "p99Ms": 1.384,
+            "renderMs": 0.541,
+            "scriptMs": 0.609,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.839
+          },
+          {
+            "fps": 630.044,
+            "frames": 240,
+            "meanMs": 1.587,
+            "medianMs": 1.553,
+            "name": "Chandelier",
+            "otherMs": 0.062,
+            "p95Ms": 1.966,
+            "p99Ms": 2.193,
+            "renderMs": 0.927,
+            "scriptMs": 0.598,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.431
+          },
+          {
+            "fps": 651.743,
+            "frames": 240,
+            "meanMs": 1.534,
+            "medianMs": 1.513,
+            "name": "Rainbow",
+            "otherMs": 0.048,
+            "p95Ms": 1.639,
+            "p99Ms": 1.671,
+            "renderMs": 0.52,
+            "scriptMs": 0.966,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 3.105
+          },
+          {
+            "fps": 1829.426,
+            "frames": 240,
+            "meanMs": 0.547,
+            "medianMs": 0.533,
+            "name": "Morphing",
+            "otherMs": 0.024,
+            "p95Ms": 0.586,
+            "p99Ms": 1.168,
+            "renderMs": 0.383,
+            "scriptMs": 0.14,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 1.349
+          },
+          {
+            "fps": 408.743,
+            "frames": 240,
+            "meanMs": 2.447,
+            "medianMs": 2.403,
+            "name": "Flip",
+            "otherMs": 0.043,
+            "p95Ms": 2.68,
+            "p99Ms": 2.797,
+            "renderMs": 0.451,
+            "scriptMs": 1.953,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 4.094
+          },
+          {
+            "fps": 1186.92,
+            "frames": 240,
+            "meanMs": 0.843,
+            "medianMs": 0.828,
+            "name": "Alarm clock",
+            "otherMs": 0.028,
+            "p95Ms": 0.932,
+            "p99Ms": 1.064,
+            "renderMs": 0.631,
+            "scriptMs": 0.184,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.882
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 999.1,
+        "total": {
+          "fps": 668.56,
+          "frames": 2880,
+          "meanMs": 1.496,
+          "medianMs": 1.289,
+          "otherMs": 0.048,
+          "p95Ms": 3.758,
+          "p99Ms": 4.414,
+          "renderMs": 0.635,
+          "scriptMs": 0.812,
+          "syncMs": 0.0,
+          "worstMs": 8.387
+        },
+        "warmupFrames": 60
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "cloth",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "cloth",
+        "loadMs": 600.5,
+        "peakMemoryMb": 164.5,
+        "segments": [
+          {
+            "fps": 799.776,
+            "frames": 600,
+            "meanMs": 1.25,
+            "medianMs": 1.224,
+            "name": "idle",
+            "otherMs": 0.765,
+            "p95Ms": 2.136,
+            "p99Ms": 2.554,
+            "renderMs": 0.453,
+            "scriptMs": 0.011,
+            "syncMs": 0.022,
+            "warmup": 0,
+            "worstMs": 2.917
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 644.1,
+        "total": {
+          "fps": 799.776,
+          "frames": 600,
+          "meanMs": 1.25,
+          "medianMs": 1.224,
+          "otherMs": 0.765,
+          "p95Ms": 2.136,
+          "p99Ms": 2.554,
+          "renderMs": 0.453,
+          "scriptMs": 0.011,
+          "syncMs": 0.022,
+          "worstMs": 2.917
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "cloth",
+        "loadMs": 554.0,
+        "peakMemoryMb": 166.2,
+        "segments": [
+          {
+            "fps": 807.979,
+            "frames": 600,
+            "meanMs": 1.238,
+            "medianMs": 1.224,
+            "name": "idle",
+            "otherMs": 0.752,
+            "p95Ms": 2.085,
+            "p99Ms": 2.38,
+            "renderMs": 0.419,
+            "scriptMs": 0.066,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.855
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 595.0,
+        "total": {
+          "fps": 807.979,
+          "frames": 600,
+          "meanMs": 1.238,
+          "medianMs": 1.224,
+          "otherMs": 0.752,
+          "p95Ms": 2.085,
+          "p99Ms": 2.38,
+          "renderMs": 0.419,
+          "scriptMs": 0.066,
+          "syncMs": 0.0,
+          "worstMs": 2.855
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "cornell",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "cornell",
+        "loadMs": 638.0,
+        "peakMemoryMb": 185.6,
+        "segments": [
+          {
+            "fps": 1871.096,
+            "frames": 600,
+            "meanMs": 0.534,
+            "medianMs": 0.484,
+            "name": "idle",
+            "otherMs": 0.008,
+            "p95Ms": 0.641,
+            "p99Ms": 1.237,
+            "renderMs": 0.496,
+            "scriptMs": 0.009,
+            "syncMs": 0.023,
+            "warmup": 0,
+            "worstMs": 2.565
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 674.1,
+        "total": {
+          "fps": 1871.096,
+          "frames": 600,
+          "meanMs": 0.534,
+          "medianMs": 0.484,
+          "otherMs": 0.008,
+          "p95Ms": 0.641,
+          "p99Ms": 1.237,
+          "renderMs": 0.496,
+          "scriptMs": 0.009,
+          "syncMs": 0.023,
+          "worstMs": 2.565
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "cornell",
+        "loadMs": 633.2,
+        "peakMemoryMb": 186.9,
+        "segments": [
+          {
+            "fps": 1849.397,
+            "frames": 600,
+            "meanMs": 0.541,
+            "medianMs": 0.501,
+            "name": "idle",
+            "otherMs": 0.007,
+            "p95Ms": 0.662,
+            "p99Ms": 1.36,
+            "renderMs": 0.506,
+            "scriptMs": 0.028,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.177
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 668.3,
+        "total": {
+          "fps": 1849.397,
+          "frames": 600,
+          "meanMs": 0.541,
+          "medianMs": 0.501,
+          "otherMs": 0.007,
+          "p95Ms": 0.662,
+          "p99Ms": 1.36,
+          "renderMs": 0.506,
+          "scriptMs": 0.028,
+          "syncMs": 0.0,
+          "worstMs": 2.177
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "css",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "css",
+        "loadMs": 545.7,
+        "peakMemoryMb": 166.2,
+        "segments": [
+          {
+            "fps": 2385.95,
+            "frames": 600,
+            "meanMs": 0.419,
+            "medianMs": 0.403,
+            "name": "idle",
+            "otherMs": 0.012,
+            "p95Ms": 0.471,
+            "p99Ms": 1.031,
+            "renderMs": 0.387,
+            "scriptMs": 0.011,
+            "syncMs": 0.009,
+            "warmup": 0,
+            "worstMs": 1.423
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 557.3,
+        "total": {
+          "fps": 2385.95,
+          "frames": 600,
+          "meanMs": 0.419,
+          "medianMs": 0.403,
+          "otherMs": 0.012,
+          "p95Ms": 0.471,
+          "p99Ms": 1.031,
+          "renderMs": 0.387,
+          "scriptMs": 0.011,
+          "syncMs": 0.009,
+          "worstMs": 1.423
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "css",
+        "loadMs": 599.1,
+        "peakMemoryMb": 167.5,
+        "segments": [
+          {
+            "fps": 2211.307,
+            "frames": 600,
+            "meanMs": 0.452,
+            "medianMs": 0.369,
+            "name": "idle",
+            "otherMs": 0.011,
+            "p95Ms": 0.46,
+            "p99Ms": 3.9,
+            "renderMs": 0.396,
+            "scriptMs": 0.044,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 4.432
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 608.0,
+        "total": {
+          "fps": 2211.307,
+          "frames": 600,
+          "meanMs": 0.452,
+          "medianMs": 0.369,
+          "otherMs": 0.011,
+          "p95Ms": 0.46,
+          "p99Ms": 3.9,
+          "renderMs": 0.396,
+          "scriptMs": 0.044,
+          "syncMs": 0.0,
+          "worstMs": 4.432
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "dark-room",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "dark-room",
+        "loadMs": 718.4,
+        "peakMemoryMb": 340.9,
+        "segments": [
+          {
+            "fps": 338.3,
+            "frames": 2400,
+            "meanMs": 2.956,
+            "medianMs": 2.777,
+            "name": "capture",
+            "otherMs": 0.018,
+            "p95Ms": 4.313,
+            "p99Ms": 4.547,
+            "renderMs": 2.593,
+            "scriptMs": 0.117,
+            "syncMs": 0.228,
+            "warmup": 0,
+            "worstMs": 10.597
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 773.5,
+        "total": {
+          "fps": 338.3,
+          "frames": 2400,
+          "meanMs": 2.956,
+          "medianMs": 2.777,
+          "otherMs": 0.018,
+          "p95Ms": 4.313,
+          "p99Ms": 4.547,
+          "renderMs": 2.593,
+          "scriptMs": 0.117,
+          "syncMs": 0.228,
+          "worstMs": 10.597
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "dark-room",
+        "loadMs": 612.2,
+        "peakMemoryMb": 333.5,
+        "segments": [
+          {
+            "fps": 323.861,
+            "frames": 2400,
+            "meanMs": 3.088,
+            "medianMs": 2.772,
+            "name": "capture",
+            "otherMs": 0.032,
+            "p95Ms": 5.009,
+            "p99Ms": 5.481,
+            "renderMs": 2.291,
+            "scriptMs": 0.765,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 8.317
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 669.5,
+        "total": {
+          "fps": 323.861,
+          "frames": 2400,
+          "meanMs": 3.088,
+          "medianMs": 2.772,
+          "otherMs": 0.032,
+          "p95Ms": 5.009,
+          "p99Ms": 5.481,
+          "renderMs": 2.291,
+          "scriptMs": 0.765,
+          "syncMs": 0.0,
+          "worstMs": 8.317
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "emoji",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "emoji",
+        "loadMs": 1609.3,
+        "peakMemoryMb": 282.2,
+        "segments": [
+          {
+            "fps": 476.873,
+            "frames": 3600,
+            "meanMs": 2.097,
+            "medianMs": 1.902,
+            "name": "shows",
+            "otherMs": 0.08,
+            "p95Ms": 3.361,
+            "p99Ms": 4.232,
+            "renderMs": 1.454,
+            "scriptMs": 0.063,
+            "syncMs": 0.5,
+            "warmup": 0,
+            "worstMs": 47.491
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 2183.3,
+        "total": {
+          "fps": 476.873,
+          "frames": 3600,
+          "meanMs": 2.097,
+          "medianMs": 1.902,
+          "otherMs": 0.08,
+          "p95Ms": 3.361,
+          "p99Ms": 4.232,
+          "renderMs": 1.454,
+          "scriptMs": 0.063,
+          "syncMs": 0.5,
+          "worstMs": 47.491
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": "the show is random: each run picks other performers",
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "emoji",
+        "loadMs": 791.1,
+        "peakMemoryMb": 270.9,
+        "segments": [
+          {
+            "fps": 284.018,
+            "frames": 3600,
+            "meanMs": 3.521,
+            "medianMs": 2.632,
+            "name": "shows",
+            "otherMs": 0.135,
+            "p95Ms": 9.856,
+            "p99Ms": 13.837,
+            "renderMs": 1.855,
+            "scriptMs": 1.531,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 38.575
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 1221.5,
+        "total": {
+          "fps": 284.018,
+          "frames": 3600,
+          "meanMs": 3.521,
+          "medianMs": 2.632,
+          "otherMs": 0.135,
+          "p95Ms": 9.856,
+          "p99Ms": 13.837,
+          "renderMs": 1.855,
+          "scriptMs": 1.531,
+          "syncMs": 0.0,
+          "worstMs": 38.575
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "fishtank",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fishtank",
+        "loadMs": 533.1,
+        "peakMemoryMb": 166.3,
+        "segments": [
+          {
+            "fps": 885.566,
+            "frames": 1800,
+            "meanMs": 1.129,
+            "medianMs": 1.056,
+            "name": "capture",
+            "otherMs": 0.01,
+            "p95Ms": 1.58,
+            "p99Ms": 2.112,
+            "renderMs": 0.662,
+            "scriptMs": 0.172,
+            "syncMs": 0.286,
+            "warmup": 0,
+            "worstMs": 5.536
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 564.7,
+        "total": {
+          "fps": 885.566,
+          "frames": 1800,
+          "meanMs": 1.129,
+          "medianMs": 1.056,
+          "otherMs": 0.01,
+          "p95Ms": 1.58,
+          "p99Ms": 2.112,
+          "renderMs": 0.662,
+          "scriptMs": 0.172,
+          "syncMs": 0.286,
+          "worstMs": 5.536
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fishtank",
+        "loadMs": 566.8,
+        "peakMemoryMb": 167.8,
+        "segments": [
+          {
+            "fps": 271.384,
+            "frames": 1800,
+            "meanMs": 3.685,
+            "medianMs": 3.63,
+            "name": "capture",
+            "otherMs": 0.088,
+            "p95Ms": 4.031,
+            "p99Ms": 4.466,
+            "renderMs": 0.647,
+            "scriptMs": 2.95,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 5.692
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 601.9,
+        "total": {
+          "fps": 271.384,
+          "frames": 1800,
+          "meanMs": 3.685,
+          "medianMs": 3.63,
+          "otherMs": 0.088,
+          "p95Ms": 4.031,
+          "p99Ms": 4.466,
+          "renderMs": 0.647,
+          "scriptMs": 2.95,
+          "syncMs": 0.0,
+          "worstMs": 5.692
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "fog",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog",
+        "loadMs": 526.1,
+        "peakMemoryMb": 185.9,
+        "segments": [
+          {
+            "fps": 1295.462,
+            "frames": 1200,
+            "meanMs": 0.772,
+            "medianMs": 0.72,
+            "name": "capture",
+            "otherMs": 0.01,
+            "p95Ms": 0.969,
+            "p99Ms": 2.027,
+            "renderMs": 0.609,
+            "scriptMs": 0.012,
+            "syncMs": 0.141,
+            "warmup": 0,
+            "worstMs": 2.437
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 560.7,
+        "total": {
+          "fps": 1295.462,
+          "frames": 1200,
+          "meanMs": 0.772,
+          "medianMs": 0.72,
+          "otherMs": 0.01,
+          "p95Ms": 0.969,
+          "p99Ms": 2.027,
+          "renderMs": 0.609,
+          "scriptMs": 0.012,
+          "syncMs": 0.141,
+          "worstMs": 2.437
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog",
+        "loadMs": 561.4,
+        "peakMemoryMb": 187.3,
+        "segments": [
+          {
+            "fps": 1198.556,
+            "frames": 1200,
+            "meanMs": 0.834,
+            "medianMs": 0.805,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 1.065,
+            "p99Ms": 1.992,
+            "renderMs": 0.569,
+            "scriptMs": 0.256,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.652
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 601.7,
+        "total": {
+          "fps": 1198.556,
+          "frames": 1200,
+          "meanMs": 0.834,
+          "medianMs": 0.805,
+          "otherMs": 0.009,
+          "p95Ms": 1.065,
+          "p99Ms": 1.992,
+          "renderMs": 0.569,
+          "scriptMs": 0.256,
+          "syncMs": 0.0,
+          "worstMs": 2.652
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "fog-blocks",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-blocks",
+        "loadMs": 507.4,
+        "peakMemoryMb": 165.7,
+        "segments": [
+          {
+            "fps": 2266.906,
+            "frames": 1200,
+            "meanMs": 0.441,
+            "medianMs": 0.406,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 0.536,
+            "p99Ms": 1.353,
+            "renderMs": 0.364,
+            "scriptMs": 0.012,
+            "syncMs": 0.056,
+            "warmup": 0,
+            "worstMs": 2.541
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 548.1,
+        "total": {
+          "fps": 2266.906,
+          "frames": 1200,
+          "meanMs": 0.441,
+          "medianMs": 0.406,
+          "otherMs": 0.009,
+          "p95Ms": 0.536,
+          "p99Ms": 1.353,
+          "renderMs": 0.364,
+          "scriptMs": 0.012,
+          "syncMs": 0.056,
+          "worstMs": 2.541
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-blocks",
+        "loadMs": 550.7,
+        "peakMemoryMb": 166.9,
+        "segments": [
+          {
+            "fps": 2447.688,
+            "frames": 1200,
+            "meanMs": 0.409,
+            "medianMs": 0.376,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 0.496,
+            "p99Ms": 1.362,
+            "renderMs": 0.349,
+            "scriptMs": 0.05,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.043
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 637.7,
+        "total": {
+          "fps": 2447.688,
+          "frames": 1200,
+          "meanMs": 0.409,
+          "medianMs": 0.376,
+          "otherMs": 0.009,
+          "p95Ms": 0.496,
+          "p99Ms": 1.362,
+          "renderMs": 0.349,
+          "scriptMs": 0.05,
+          "syncMs": 0.0,
+          "worstMs": 2.043
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "fog-park",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-park",
+        "loadMs": 544.1,
+        "peakMemoryMb": 308.5,
+        "segments": [
+          {
+            "fps": 223.02,
+            "frames": 1800,
+            "meanMs": 4.484,
+            "medianMs": 4.277,
+            "name": "capture",
+            "otherMs": 0.014,
+            "p95Ms": 5.703,
+            "p99Ms": 6.363,
+            "renderMs": 2.495,
+            "scriptMs": 0.024,
+            "syncMs": 1.951,
+            "warmup": 0,
+            "worstMs": 10.289
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 601.0,
+        "total": {
+          "fps": 223.02,
+          "frames": 1800,
+          "meanMs": 4.484,
+          "medianMs": 4.277,
+          "otherMs": 0.014,
+          "p95Ms": 5.703,
+          "p99Ms": 6.363,
+          "renderMs": 2.495,
+          "scriptMs": 0.024,
+          "syncMs": 1.951,
+          "worstMs": 10.289
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-park",
+        "loadMs": 575.1,
+        "peakMemoryMb": 254.1,
+        "segments": [
+          {
+            "fps": 209.153,
+            "frames": 1800,
+            "meanMs": 4.781,
+            "medianMs": 4.703,
+            "name": "capture",
+            "otherMs": 0.017,
+            "p95Ms": 5.413,
+            "p99Ms": 6.06,
+            "renderMs": 2.33,
+            "scriptMs": 2.434,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 8.957
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 824.4,
+        "total": {
+          "fps": 209.153,
+          "frames": 1800,
+          "meanMs": 4.781,
+          "medianMs": 4.703,
+          "otherMs": 0.017,
+          "p95Ms": 5.413,
+          "p99Ms": 6.06,
+          "renderMs": 2.33,
+          "scriptMs": 2.434,
+          "syncMs": 0.0,
+          "worstMs": 8.957
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "fog-raider",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-raider",
+        "loadMs": 536.1,
+        "peakMemoryMb": 165.2,
+        "segments": [
+          {
+            "fps": 1669.534,
+            "frames": 1200,
+            "meanMs": 0.599,
+            "medianMs": 0.585,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 0.718,
+            "p99Ms": 0.882,
+            "renderMs": 0.361,
+            "scriptMs": 0.017,
+            "syncMs": 0.212,
+            "warmup": 0,
+            "worstMs": 2.282
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 565.7,
+        "total": {
+          "fps": 1669.534,
+          "frames": 1200,
+          "meanMs": 0.599,
+          "medianMs": 0.585,
+          "otherMs": 0.009,
+          "p95Ms": 0.718,
+          "p99Ms": 0.882,
+          "renderMs": 0.361,
+          "scriptMs": 0.017,
+          "syncMs": 0.212,
+          "worstMs": 2.282
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-raider",
+        "loadMs": 574.3,
+        "peakMemoryMb": 166.5,
+        "segments": [
+          {
+            "fps": 1194.11,
+            "frames": 1200,
+            "meanMs": 0.837,
+            "medianMs": 0.768,
+            "name": "capture",
+            "otherMs": 0.018,
+            "p95Ms": 1.086,
+            "p99Ms": 1.252,
+            "renderMs": 0.409,
+            "scriptMs": 0.41,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.776
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 614.0,
+        "total": {
+          "fps": 1194.11,
+          "frames": 1200,
+          "meanMs": 0.837,
+          "medianMs": 0.768,
+          "otherMs": 0.018,
+          "p95Ms": 1.086,
+          "p99Ms": 1.252,
+          "renderMs": 0.409,
+          "scriptMs": 0.41,
+          "syncMs": 0.0,
+          "worstMs": 2.776
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "fog-teapots",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-teapots",
+        "loadMs": 545.2,
+        "peakMemoryMb": 165.6,
+        "segments": [
+          {
+            "fps": 2157.328,
+            "frames": 1200,
+            "meanMs": 0.464,
+            "medianMs": 0.407,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 0.617,
+            "p99Ms": 0.802,
+            "renderMs": 0.426,
+            "scriptMs": 0.01,
+            "syncMs": 0.019,
+            "warmup": 0,
+            "worstMs": 2.21
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 610.5,
+        "total": {
+          "fps": 2157.328,
+          "frames": 1200,
+          "meanMs": 0.464,
+          "medianMs": 0.407,
+          "otherMs": 0.009,
+          "p95Ms": 0.617,
+          "p99Ms": 0.802,
+          "renderMs": 0.426,
+          "scriptMs": 0.01,
+          "syncMs": 0.019,
+          "worstMs": 2.21
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-teapots",
+        "loadMs": 540.2,
+        "peakMemoryMb": 166.8,
+        "segments": [
+          {
+            "fps": 2107.24,
+            "frames": 1200,
+            "meanMs": 0.475,
+            "medianMs": 0.44,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 0.616,
+            "p99Ms": 0.801,
+            "renderMs": 0.412,
+            "scriptMs": 0.054,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.172
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 651.8,
+        "total": {
+          "fps": 2107.24,
+          "frames": 1200,
+          "meanMs": 0.475,
+          "medianMs": 0.44,
+          "otherMs": 0.009,
+          "p95Ms": 0.616,
+          "p99Ms": 0.801,
+          "renderMs": 0.412,
+          "scriptMs": 0.054,
+          "syncMs": 0.0,
+          "worstMs": 2.172
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "fog-world",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-world",
+        "loadMs": 505.2,
+        "peakMemoryMb": 299.2,
+        "segments": [
+          {
+            "fps": 323.249,
+            "frames": 1800,
+            "meanMs": 3.094,
+            "medianMs": 2.95,
+            "name": "capture",
+            "otherMs": 0.012,
+            "p95Ms": 3.643,
+            "p99Ms": 7.417,
+            "renderMs": 1.001,
+            "scriptMs": 0.252,
+            "syncMs": 1.829,
+            "warmup": 0,
+            "worstMs": 12.536
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 689.2,
+        "total": {
+          "fps": 323.249,
+          "frames": 1800,
+          "meanMs": 3.094,
+          "medianMs": 2.95,
+          "otherMs": 0.012,
+          "p95Ms": 3.643,
+          "p99Ms": 7.417,
+          "renderMs": 1.001,
+          "scriptMs": 0.252,
+          "syncMs": 1.829,
+          "worstMs": 12.536
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "fog-world",
+        "loadMs": 548.0,
+        "peakMemoryMb": 279.3,
+        "segments": [
+          {
+            "fps": 376.638,
+            "frames": 1800,
+            "meanMs": 2.655,
+            "medianMs": 1.492,
+            "name": "capture",
+            "otherMs": 0.026,
+            "p95Ms": 9.94,
+            "p99Ms": 15.844,
+            "renderMs": 0.97,
+            "scriptMs": 1.659,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 18.693
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 921.1,
+        "total": {
+          "fps": 376.638,
+          "frames": 1800,
+          "meanMs": 2.655,
+          "medianMs": 1.492,
+          "otherMs": 0.026,
+          "p95Ms": 9.94,
+          "p99Ms": 15.844,
+          "renderMs": 0.97,
+          "scriptMs": 1.659,
+          "syncMs": 0.0,
+          "worstMs": 18.693
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "form",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "form",
+        "loadMs": 500.7,
+        "peakMemoryMb": 165.8,
+        "segments": [
+          {
+            "fps": 3293.079,
+            "frames": 600,
+            "meanMs": 0.304,
+            "medianMs": 0.298,
+            "name": "idle",
+            "otherMs": 0.011,
+            "p95Ms": 0.315,
+            "p99Ms": 0.345,
+            "renderMs": 0.277,
+            "scriptMs": 0.008,
+            "syncMs": 0.008,
+            "warmup": 0,
+            "worstMs": 1.452
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 508.9,
+        "total": {
+          "fps": 3293.079,
+          "frames": 600,
+          "meanMs": 0.304,
+          "medianMs": 0.298,
+          "otherMs": 0.011,
+          "p95Ms": 0.315,
+          "p99Ms": 0.345,
+          "renderMs": 0.277,
+          "scriptMs": 0.008,
+          "syncMs": 0.008,
+          "worstMs": 1.452
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "form",
+        "loadMs": 537.0,
+        "peakMemoryMb": 167.6,
+        "segments": [
+          {
+            "fps": 3401.696,
+            "frames": 600,
+            "meanMs": 0.294,
+            "medianMs": 0.291,
+            "name": "idle",
+            "otherMs": 0.011,
+            "p95Ms": 0.303,
+            "p99Ms": 0.314,
+            "renderMs": 0.273,
+            "scriptMs": 0.01,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 1.441
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 544.9,
+        "total": {
+          "fps": 3401.696,
+          "frames": 600,
+          "meanMs": 0.294,
+          "medianMs": 0.291,
+          "otherMs": 0.011,
+          "p95Ms": 0.303,
+          "p99Ms": 0.314,
+          "renderMs": 0.273,
+          "scriptMs": 0.01,
+          "syncMs": 0.0,
+          "worstMs": 1.441
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "godrays-cell",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-cell",
+        "loadMs": 499.9,
+        "peakMemoryMb": 199.0,
+        "segments": [
+          {
+            "fps": 386.197,
+            "frames": 1200,
+            "meanMs": 2.589,
+            "medianMs": 2.509,
+            "name": "capture",
+            "otherMs": 0.01,
+            "p95Ms": 2.9,
+            "p99Ms": 4.135,
+            "renderMs": 1.854,
+            "scriptMs": 0.131,
+            "syncMs": 0.595,
+            "warmup": 0,
+            "worstMs": 6.293
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 551.3,
+        "total": {
+          "fps": 386.197,
+          "frames": 1200,
+          "meanMs": 2.589,
+          "medianMs": 2.509,
+          "otherMs": 0.01,
+          "p95Ms": 2.9,
+          "p99Ms": 4.135,
+          "renderMs": 1.854,
+          "scriptMs": 0.131,
+          "syncMs": 0.595,
+          "worstMs": 6.293
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-cell",
+        "loadMs": 538.0,
+        "peakMemoryMb": 205.9,
+        "segments": [
+          {
+            "fps": 314.566,
+            "frames": 1200,
+            "meanMs": 3.179,
+            "medianMs": 3.119,
+            "name": "capture",
+            "otherMs": 0.088,
+            "p95Ms": 3.677,
+            "p99Ms": 4.061,
+            "renderMs": 1.058,
+            "scriptMs": 2.033,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 5.591
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 610.4,
+        "total": {
+          "fps": 314.566,
+          "frames": 1200,
+          "meanMs": 3.179,
+          "medianMs": 3.119,
+          "otherMs": 0.088,
+          "p95Ms": 3.677,
+          "p99Ms": 4.061,
+          "renderMs": 1.058,
+          "scriptMs": 2.033,
+          "syncMs": 0.0,
+          "worstMs": 5.591
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "godrays-clouds",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-clouds",
+        "loadMs": 482.4,
+        "peakMemoryMb": 219.6,
+        "segments": [
+          {
+            "fps": 206.382,
+            "frames": 1200,
+            "meanMs": 4.845,
+            "medianMs": 4.718,
+            "name": "capture",
+            "otherMs": 0.011,
+            "p95Ms": 5.409,
+            "p99Ms": 5.944,
+            "renderMs": 2.663,
+            "scriptMs": 0.304,
+            "syncMs": 1.868,
+            "warmup": 0,
+            "worstMs": 9.019
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 534.6,
+        "total": {
+          "fps": 206.382,
+          "frames": 1200,
+          "meanMs": 4.845,
+          "medianMs": 4.718,
+          "otherMs": 0.011,
+          "p95Ms": 5.409,
+          "p99Ms": 5.944,
+          "renderMs": 2.663,
+          "scriptMs": 0.304,
+          "syncMs": 1.868,
+          "worstMs": 9.019
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-clouds",
+        "loadMs": 532.2,
+        "peakMemoryMb": 210.6,
+        "segments": [
+          {
+            "fps": 178.241,
+            "frames": 1200,
+            "meanMs": 5.61,
+            "medianMs": 5.536,
+            "name": "capture",
+            "otherMs": 0.316,
+            "p95Ms": 6.07,
+            "p99Ms": 6.429,
+            "renderMs": 2.814,
+            "scriptMs": 2.481,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 10.708
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 676.5,
+        "total": {
+          "fps": 178.241,
+          "frames": 1200,
+          "meanMs": 5.61,
+          "medianMs": 5.536,
+          "otherMs": 0.316,
+          "p95Ms": 6.07,
+          "p99Ms": 6.429,
+          "renderMs": 2.814,
+          "scriptMs": 2.481,
+          "syncMs": 0.0,
+          "worstMs": 10.708
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "godrays-forest",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-forest",
+        "loadMs": 484.1,
+        "peakMemoryMb": 201.1,
+        "segments": [
+          {
+            "fps": 275.906,
+            "frames": 1200,
+            "meanMs": 3.624,
+            "medianMs": 3.435,
+            "name": "capture",
+            "otherMs": 0.012,
+            "p95Ms": 4.366,
+            "p99Ms": 4.775,
+            "renderMs": 2.159,
+            "scriptMs": 0.016,
+            "syncMs": 1.437,
+            "warmup": 0,
+            "worstMs": 7.403
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 538.1,
+        "total": {
+          "fps": 275.906,
+          "frames": 1200,
+          "meanMs": 3.624,
+          "medianMs": 3.435,
+          "otherMs": 0.012,
+          "p95Ms": 4.366,
+          "p99Ms": 4.775,
+          "renderMs": 2.159,
+          "scriptMs": 0.016,
+          "syncMs": 1.437,
+          "worstMs": 7.403
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-forest",
+        "loadMs": 540.2,
+        "peakMemoryMb": 206.4,
+        "segments": [
+          {
+            "fps": 252.676,
+            "frames": 1200,
+            "meanMs": 3.958,
+            "medianMs": 3.895,
+            "name": "capture",
+            "otherMs": 0.016,
+            "p95Ms": 4.345,
+            "p99Ms": 4.879,
+            "renderMs": 2.034,
+            "scriptMs": 1.908,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 8.691
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 743.4,
+        "total": {
+          "fps": 252.676,
+          "frames": 1200,
+          "meanMs": 3.958,
+          "medianMs": 3.895,
+          "otherMs": 0.016,
+          "p95Ms": 4.345,
+          "p99Ms": 4.879,
+          "renderMs": 2.034,
+          "scriptMs": 1.908,
+          "syncMs": 0.0,
+          "worstMs": 8.691
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "godrays-lift",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-lift",
+        "loadMs": 485.1,
+        "peakMemoryMb": 190.6,
+        "segments": [
+          {
+            "fps": 1434.561,
+            "frames": 1800,
+            "meanMs": 0.697,
+            "medianMs": 0.674,
+            "name": "capture",
+            "otherMs": 0.008,
+            "p95Ms": 0.806,
+            "p99Ms": 1.225,
+            "renderMs": 0.63,
+            "scriptMs": 0.011,
+            "syncMs": 0.048,
+            "warmup": 0,
+            "worstMs": 2.537
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 518.1,
+        "total": {
+          "fps": 1434.561,
+          "frames": 1800,
+          "meanMs": 0.697,
+          "medianMs": 0.674,
+          "otherMs": 0.008,
+          "p95Ms": 0.806,
+          "p99Ms": 1.225,
+          "renderMs": 0.63,
+          "scriptMs": 0.011,
+          "syncMs": 0.048,
+          "worstMs": 2.537
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-lift",
+        "loadMs": 531.9,
+        "peakMemoryMb": 190.3,
+        "segments": [
+          {
+            "fps": 1393.35,
+            "frames": 1800,
+            "meanMs": 0.718,
+            "medianMs": 0.684,
+            "name": "capture",
+            "otherMs": 0.01,
+            "p95Ms": 0.87,
+            "p99Ms": 1.608,
+            "renderMs": 0.606,
+            "scriptMs": 0.102,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.758
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 569.1,
+        "total": {
+          "fps": 1393.35,
+          "frames": 1800,
+          "meanMs": 0.718,
+          "medianMs": 0.684,
+          "otherMs": 0.01,
+          "p95Ms": 0.87,
+          "p99Ms": 1.608,
+          "renderMs": 0.606,
+          "scriptMs": 0.102,
+          "syncMs": 0.0,
+          "worstMs": 2.758
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "godrays-room",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-room",
+        "loadMs": 506.8,
+        "peakMemoryMb": 211.7,
+        "segments": [
+          {
+            "fps": 475.454,
+            "frames": 4500,
+            "meanMs": 2.103,
+            "medianMs": 2.03,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 2.536,
+            "p99Ms": 2.749,
+            "renderMs": 1.083,
+            "scriptMs": 0.208,
+            "syncMs": 0.803,
+            "warmup": 0,
+            "worstMs": 7.587
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 547.5,
+        "total": {
+          "fps": 475.454,
+          "frames": 4500,
+          "meanMs": 2.103,
+          "medianMs": 2.03,
+          "otherMs": 0.009,
+          "p95Ms": 2.536,
+          "p99Ms": 2.749,
+          "renderMs": 1.083,
+          "scriptMs": 0.208,
+          "syncMs": 0.803,
+          "worstMs": 7.587
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-room",
+        "loadMs": 544.7,
+        "peakMemoryMb": 213.1,
+        "segments": [
+          {
+            "fps": 174.039,
+            "frames": 4500,
+            "meanMs": 5.746,
+            "medianMs": 5.758,
+            "name": "capture",
+            "otherMs": 0.179,
+            "p95Ms": 6.308,
+            "p99Ms": 7.003,
+            "renderMs": 1.135,
+            "scriptMs": 4.432,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 9.614
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 630.3,
+        "total": {
+          "fps": 174.039,
+          "frames": 4500,
+          "meanMs": 5.746,
+          "medianMs": 5.758,
+          "otherMs": 0.179,
+          "p95Ms": 6.308,
+          "p99Ms": 7.003,
+          "renderMs": 1.135,
+          "scriptMs": 4.432,
+          "syncMs": 0.0,
+          "worstMs": 9.614
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "godrays-shed",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-shed",
+        "loadMs": 513.9,
+        "peakMemoryMb": 201.6,
+        "segments": [
+          {
+            "fps": 221.893,
+            "frames": 1200,
+            "meanMs": 4.507,
+            "medianMs": 4.335,
+            "name": "capture",
+            "otherMs": 0.012,
+            "p95Ms": 5.383,
+            "p99Ms": 6.073,
+            "renderMs": 4.061,
+            "scriptMs": 0.102,
+            "syncMs": 0.332,
+            "warmup": 0,
+            "worstMs": 6.911
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 557.7,
+        "total": {
+          "fps": 221.893,
+          "frames": 1200,
+          "meanMs": 4.507,
+          "medianMs": 4.335,
+          "otherMs": 0.012,
+          "p95Ms": 5.383,
+          "p99Ms": 6.073,
+          "renderMs": 4.061,
+          "scriptMs": 0.102,
+          "syncMs": 0.332,
+          "worstMs": 6.911
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-shed",
+        "loadMs": 561.4,
+        "peakMemoryMb": 199.8,
+        "segments": [
+          {
+            "fps": 220.846,
+            "frames": 1200,
+            "meanMs": 4.528,
+            "medianMs": 4.341,
+            "name": "capture",
+            "otherMs": 0.066,
+            "p95Ms": 5.428,
+            "p99Ms": 6.117,
+            "renderMs": 2.233,
+            "scriptMs": 2.229,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 7.351
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 618.8,
+        "total": {
+          "fps": 220.846,
+          "frames": 1200,
+          "meanMs": 4.528,
+          "medianMs": 4.341,
+          "otherMs": 0.066,
+          "p95Ms": 5.428,
+          "p99Ms": 6.117,
+          "renderMs": 2.233,
+          "scriptMs": 2.229,
+          "syncMs": 0.0,
+          "worstMs": 7.351
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "godrays-sunset",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-sunset",
+        "loadMs": 515.0,
+        "peakMemoryMb": 223.0,
+        "segments": [
+          {
+            "fps": 802.177,
+            "frames": 4200,
+            "meanMs": 1.247,
+            "medianMs": 1.087,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 2.008,
+            "p99Ms": 2.3,
+            "renderMs": 0.971,
+            "scriptMs": 0.017,
+            "syncMs": 0.249,
+            "warmup": 0,
+            "worstMs": 5.828
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 579.3,
+        "total": {
+          "fps": 802.177,
+          "frames": 4200,
+          "meanMs": 1.247,
+          "medianMs": 1.087,
+          "otherMs": 0.009,
+          "p95Ms": 2.008,
+          "p99Ms": 2.3,
+          "renderMs": 0.971,
+          "scriptMs": 0.017,
+          "syncMs": 0.249,
+          "worstMs": 5.828
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "godrays-sunset",
+        "loadMs": 536.3,
+        "peakMemoryMb": 236.3,
+        "segments": [
+          {
+            "fps": 717.926,
+            "frames": 4200,
+            "meanMs": 1.393,
+            "medianMs": 1.244,
+            "name": "capture",
+            "otherMs": 0.012,
+            "p95Ms": 2.184,
+            "p99Ms": 2.568,
+            "renderMs": 0.996,
+            "scriptMs": 0.386,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 4.277
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 945.0,
+        "total": {
+          "fps": 717.926,
+          "frames": 4200,
+          "meanMs": 1.393,
+          "medianMs": 1.244,
+          "otherMs": 0.012,
+          "p95Ms": 2.184,
+          "p99Ms": 2.568,
+          "renderMs": 0.996,
+          "scriptMs": 0.386,
+          "syncMs": 0.0,
+          "worstMs": 4.277
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "hello",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "hello",
+        "loadMs": 476.1,
+        "peakMemoryMb": 163.2,
+        "segments": [
+          {
+            "fps": 8155.986,
+            "frames": 600,
+            "meanMs": 0.123,
+            "medianMs": 0.118,
+            "name": "idle",
+            "otherMs": 0.007,
+            "p95Ms": 0.128,
+            "p99Ms": 0.218,
+            "renderMs": 0.1,
+            "scriptMs": 0.009,
+            "syncMs": 0.008,
+            "warmup": 0,
+            "worstMs": 1.247
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 477.2,
+        "total": {
+          "fps": 8155.986,
+          "frames": 600,
+          "meanMs": 0.123,
+          "medianMs": 0.118,
+          "otherMs": 0.007,
+          "p95Ms": 0.128,
+          "p99Ms": 0.218,
+          "renderMs": 0.1,
+          "scriptMs": 0.009,
+          "syncMs": 0.008,
+          "worstMs": 1.247
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "hello",
+        "loadMs": 488.3,
+        "peakMemoryMb": 163.7,
+        "segments": [
+          {
+            "fps": 6794.417,
+            "frames": 600,
+            "meanMs": 0.147,
+            "medianMs": 0.119,
+            "name": "idle",
+            "otherMs": 0.008,
+            "p95Ms": 0.219,
+            "p99Ms": 0.251,
+            "renderMs": 0.115,
+            "scriptMs": 0.024,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 1.276
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 489.4,
+        "total": {
+          "fps": 6794.417,
+          "frames": 600,
+          "meanMs": 0.147,
+          "medianMs": 0.119,
+          "otherMs": 0.008,
+          "p95Ms": 0.219,
+          "p99Ms": 0.251,
+          "renderMs": 0.115,
+          "scriptMs": 0.024,
+          "syncMs": 0.0,
+          "worstMs": 1.276
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "launcher",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "launcher",
+        "loadMs": 575.9,
+        "peakMemoryMb": 168.3,
+        "segments": [
+          {
+            "fps": 1793.432,
+            "frames": 300,
+            "meanMs": 0.558,
+            "medianMs": 0.533,
+            "name": "idle",
+            "otherMs": 0.011,
+            "p95Ms": 0.686,
+            "p99Ms": 1.067,
+            "renderMs": 0.527,
+            "scriptMs": 0.011,
+            "syncMs": 0.008,
+            "warmup": 0,
+            "worstMs": 2.696
+          },
+          {
+            "fps": 508.495,
+            "frames": 660,
+            "meanMs": 1.967,
+            "medianMs": 2.018,
+            "name": "carousel",
+            "otherMs": 0.038,
+            "p95Ms": 2.275,
+            "p99Ms": 3.258,
+            "renderMs": 1.911,
+            "scriptMs": 0.009,
+            "syncMs": 0.009,
+            "warmup": 0,
+            "worstMs": 6.617
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 611.8,
+        "total": {
+          "fps": 655.189,
+          "frames": 960,
+          "meanMs": 1.526,
+          "medianMs": 1.987,
+          "otherMs": 0.03,
+          "p95Ms": 2.217,
+          "p99Ms": 3.246,
+          "renderMs": 1.479,
+          "scriptMs": 0.009,
+          "syncMs": 0.008,
+          "worstMs": 6.617
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": null,
+      "quickjsError": "n/a: not on main"
+    },
+    {
+      "game": "layers",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "layers",
+        "loadMs": 484.8,
+        "peakMemoryMb": 164.9,
+        "segments": [
+          {
+            "fps": 1391.723,
+            "frames": 600,
+            "meanMs": 0.719,
+            "medianMs": 0.703,
+            "name": "idle",
+            "otherMs": 0.008,
+            "p95Ms": 0.752,
+            "p99Ms": 1.121,
+            "renderMs": 0.486,
+            "scriptMs": 0.01,
+            "syncMs": 0.214,
+            "warmup": 0,
+            "worstMs": 2.374
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 521.4,
+        "total": {
+          "fps": 1391.723,
+          "frames": 600,
+          "meanMs": 0.719,
+          "medianMs": 0.703,
+          "otherMs": 0.008,
+          "p95Ms": 0.752,
+          "p99Ms": 1.121,
+          "renderMs": 0.486,
+          "scriptMs": 0.01,
+          "syncMs": 0.214,
+          "worstMs": 2.374
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "layers",
+        "loadMs": 534.3,
+        "peakMemoryMb": 166.4,
+        "segments": [
+          {
+            "fps": 1257.125,
+            "frames": 600,
+            "meanMs": 0.795,
+            "medianMs": 0.781,
+            "name": "idle",
+            "otherMs": 0.009,
+            "p95Ms": 0.829,
+            "p99Ms": 0.901,
+            "renderMs": 0.479,
+            "scriptMs": 0.308,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.408
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 580.6,
+        "total": {
+          "fps": 1257.125,
+          "frames": 600,
+          "meanMs": 0.795,
+          "medianMs": 0.781,
+          "otherMs": 0.009,
+          "p95Ms": 0.829,
+          "p99Ms": 0.901,
+          "renderMs": 0.479,
+          "scriptMs": 0.308,
+          "syncMs": 0.0,
+          "worstMs": 2.408
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "light-units",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "light-units",
+        "loadMs": 506.3,
+        "peakMemoryMb": 193.7,
+        "segments": [
+          {
+            "fps": 1428.253,
+            "frames": 1200,
+            "meanMs": 0.7,
+            "medianMs": 0.67,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 0.843,
+            "p99Ms": 1.409,
+            "renderMs": 0.642,
+            "scriptMs": 0.017,
+            "syncMs": 0.032,
+            "warmup": 0,
+            "worstMs": 2.609
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 550.8,
+        "total": {
+          "fps": 1428.253,
+          "frames": 1200,
+          "meanMs": 0.7,
+          "medianMs": 0.67,
+          "otherMs": 0.009,
+          "p95Ms": 0.843,
+          "p99Ms": 1.409,
+          "renderMs": 0.642,
+          "scriptMs": 0.017,
+          "syncMs": 0.032,
+          "worstMs": 2.609
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "light-units",
+        "loadMs": 530.2,
+        "peakMemoryMb": 193.9,
+        "segments": [
+          {
+            "fps": 1328.474,
+            "frames": 1200,
+            "meanMs": 0.753,
+            "medianMs": 0.706,
+            "name": "capture",
+            "otherMs": 0.011,
+            "p95Ms": 1.063,
+            "p99Ms": 1.269,
+            "renderMs": 0.646,
+            "scriptMs": 0.096,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 3.216
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 575.0,
+        "total": {
+          "fps": 1328.474,
+          "frames": 1200,
+          "meanMs": 0.753,
+          "medianMs": 0.706,
+          "otherMs": 0.011,
+          "p95Ms": 1.063,
+          "p99Ms": 1.269,
+          "renderMs": 0.646,
+          "scriptMs": 0.096,
+          "syncMs": 0.0,
+          "worstMs": 3.216
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "materials",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "materials",
+        "loadMs": 536.0,
+        "peakMemoryMb": 186.4,
+        "segments": [
+          {
+            "fps": 484.872,
+            "frames": 600,
+            "meanMs": 2.062,
+            "medianMs": 1.714,
+            "name": "idle",
+            "otherMs": 0.008,
+            "p95Ms": 2.827,
+            "p99Ms": 3.396,
+            "renderMs": 2.007,
+            "scriptMs": 0.011,
+            "syncMs": 0.036,
+            "warmup": 0,
+            "worstMs": 4.516
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 622.7,
+        "total": {
+          "fps": 484.872,
+          "frames": 600,
+          "meanMs": 2.062,
+          "medianMs": 1.714,
+          "otherMs": 0.008,
+          "p95Ms": 2.827,
+          "p99Ms": 3.396,
+          "renderMs": 2.007,
+          "scriptMs": 0.011,
+          "syncMs": 0.036,
+          "worstMs": 4.516
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "materials",
+        "loadMs": 541.5,
+        "peakMemoryMb": 194.0,
+        "segments": [
+          {
+            "fps": 483.197,
+            "frames": 600,
+            "meanMs": 2.07,
+            "medianMs": 1.783,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 2.83,
+            "p99Ms": 3.329,
+            "renderMs": 1.938,
+            "scriptMs": 0.122,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 4.488
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 644.8,
+        "total": {
+          "fps": 483.197,
+          "frames": 600,
+          "meanMs": 2.07,
+          "medianMs": 1.783,
+          "otherMs": 0.01,
+          "p95Ms": 2.83,
+          "p99Ms": 3.329,
+          "renderMs": 1.938,
+          "scriptMs": 0.122,
+          "syncMs": 0.0,
+          "worstMs": 4.488
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "md-reader",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "md-reader",
+        "loadMs": 1268.4,
+        "peakMemoryMb": 181.6,
+        "segments": [
+          {
+            "fps": 1712.291,
+            "frames": 300,
+            "meanMs": 0.584,
+            "medianMs": 0.572,
+            "name": "idle",
+            "otherMs": 0.014,
+            "p95Ms": 0.688,
+            "p99Ms": 0.832,
+            "renderMs": 0.552,
+            "scriptMs": 0.009,
+            "syncMs": 0.009,
+            "warmup": 0,
+            "worstMs": 1.434
+          },
+          {
+            "fps": 1250.795,
+            "frames": 800,
+            "meanMs": 0.799,
+            "medianMs": 0.616,
+            "name": "scroll",
+            "otherMs": 0.056,
+            "p95Ms": 1.166,
+            "p99Ms": 1.416,
+            "renderMs": 0.727,
+            "scriptMs": 0.008,
+            "syncMs": 0.008,
+            "warmup": 0,
+            "worstMs": 41.402
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 1322.8,
+        "total": {
+          "fps": 1350.03,
+          "frames": 1100,
+          "meanMs": 0.741,
+          "medianMs": 0.584,
+          "otherMs": 0.044,
+          "p95Ms": 1.074,
+          "p99Ms": 1.408,
+          "renderMs": 0.679,
+          "scriptMs": 0.009,
+          "syncMs": 0.008,
+          "worstMs": 41.402
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": null,
+      "quickjsError": "n/a: not on main"
+    },
+    {
+      "game": "physics",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "physics",
+        "loadMs": 481.2,
+        "peakMemoryMb": 165.0,
+        "segments": [
+          {
+            "fps": 3347.273,
+            "frames": 300,
+            "meanMs": 0.299,
+            "medianMs": 0.302,
+            "name": "idle",
+            "otherMs": 0.025,
+            "p95Ms": 0.415,
+            "p99Ms": 0.49,
+            "renderMs": 0.146,
+            "scriptMs": 0.12,
+            "syncMs": 0.008,
+            "warmup": 0,
+            "worstMs": 1.166
+          },
+          {
+            "fps": 1550.835,
+            "frames": 600,
+            "meanMs": 0.645,
+            "medianMs": 0.628,
+            "name": "drop 40",
+            "otherMs": 0.143,
+            "p95Ms": 1.046,
+            "p99Ms": 1.256,
+            "renderMs": 0.166,
+            "scriptMs": 0.328,
+            "syncMs": 0.008,
+            "warmup": 0,
+            "worstMs": 2.259
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 487.4,
+        "total": {
+          "fps": 1888.719,
+          "frames": 900,
+          "meanMs": 0.529,
+          "medianMs": 0.441,
+          "otherMs": 0.103,
+          "p95Ms": 0.983,
+          "p99Ms": 1.198,
+          "renderMs": 0.159,
+          "scriptMs": 0.259,
+          "syncMs": 0.008,
+          "worstMs": 2.259
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "physics",
+        "loadMs": 534.5,
+        "peakMemoryMb": 166.2,
+        "segments": [
+          {
+            "fps": 1246.628,
+            "frames": 300,
+            "meanMs": 0.802,
+            "medianMs": 0.784,
+            "name": "idle",
+            "otherMs": 0.144,
+            "p95Ms": 1.035,
+            "p99Ms": 1.144,
+            "renderMs": 0.158,
+            "scriptMs": 0.5,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 1.314
+          },
+          {
+            "fps": 626.803,
+            "frames": 600,
+            "meanMs": 1.595,
+            "medianMs": 1.55,
+            "name": "drop 40",
+            "otherMs": 0.398,
+            "p95Ms": 2.307,
+            "p99Ms": 2.422,
+            "renderMs": 0.164,
+            "scriptMs": 1.034,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 3.644
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 538.0,
+        "total": {
+          "fps": 751.323,
+          "frames": 900,
+          "meanMs": 1.331,
+          "medianMs": 1.239,
+          "otherMs": 0.313,
+          "p95Ms": 2.266,
+          "p99Ms": 2.408,
+          "renderMs": 0.162,
+          "scriptMs": 0.856,
+          "syncMs": 0.0,
+          "worstMs": 3.644
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "platformer",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "platformer",
+        "loadMs": 496.6,
+        "peakMemoryMb": 165.5,
+        "segments": [
+          {
+            "fps": 2019.805,
+            "frames": 300,
+            "meanMs": 0.495,
+            "medianMs": 0.491,
+            "name": "idle",
+            "otherMs": 0.02,
+            "p95Ms": 0.597,
+            "p99Ms": 0.79,
+            "renderMs": 0.314,
+            "scriptMs": 0.073,
+            "syncMs": 0.088,
+            "warmup": 0,
+            "worstMs": 1.908
+          },
+          {
+            "fps": 2130.605,
+            "frames": 660,
+            "meanMs": 0.469,
+            "medianMs": 0.442,
+            "name": "run and jump",
+            "otherMs": 0.016,
+            "p95Ms": 0.54,
+            "p99Ms": 0.717,
+            "renderMs": 0.28,
+            "scriptMs": 0.087,
+            "syncMs": 0.087,
+            "warmup": 0,
+            "worstMs": 7.756
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 540.8,
+        "total": {
+          "fps": 2094.696,
+          "frames": 960,
+          "meanMs": 0.477,
+          "medianMs": 0.454,
+          "otherMs": 0.017,
+          "p95Ms": 0.556,
+          "p99Ms": 0.772,
+          "renderMs": 0.29,
+          "scriptMs": 0.082,
+          "syncMs": 0.087,
+          "worstMs": 7.756
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "platformer",
+        "loadMs": 544.7,
+        "peakMemoryMb": 167.0,
+        "segments": [
+          {
+            "fps": 1454.514,
+            "frames": 300,
+            "meanMs": 0.688,
+            "medianMs": 0.656,
+            "name": "idle",
+            "otherMs": 0.069,
+            "p95Ms": 0.916,
+            "p99Ms": 1.035,
+            "renderMs": 0.301,
+            "scriptMs": 0.317,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 1.942
+          },
+          {
+            "fps": 1427.203,
+            "frames": 660,
+            "meanMs": 0.701,
+            "medianMs": 0.692,
+            "name": "run and jump",
+            "otherMs": 0.094,
+            "p95Ms": 0.875,
+            "p99Ms": 1.041,
+            "renderMs": 0.296,
+            "scriptMs": 0.311,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.232
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 808.5,
+        "total": {
+          "fps": 1435.627,
+          "frames": 960,
+          "meanMs": 0.697,
+          "medianMs": 0.674,
+          "otherMs": 0.086,
+          "p95Ms": 0.885,
+          "p99Ms": 1.041,
+          "renderMs": 0.297,
+          "scriptMs": 0.313,
+          "syncMs": 0.0,
+          "worstMs": 2.232
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "quality",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "quality",
+        "loadMs": 479.8,
+        "peakMemoryMb": 164.5,
+        "segments": [
+          {
+            "fps": 2051.126,
+            "frames": 300,
+            "meanMs": 0.488,
+            "medianMs": 0.465,
+            "name": "Low",
+            "otherMs": 0.013,
+            "p95Ms": 0.539,
+            "p99Ms": 0.879,
+            "renderMs": 0.392,
+            "scriptMs": 0.011,
+            "syncMs": 0.072,
+            "warmup": 60,
+            "worstMs": 1.985
+          },
+          {
+            "fps": 1884.55,
+            "frames": 300,
+            "meanMs": 0.531,
+            "medianMs": 0.524,
+            "name": "Medium",
+            "otherMs": 0.029,
+            "p95Ms": 0.655,
+            "p99Ms": 0.807,
+            "renderMs": 0.418,
+            "scriptMs": 0.01,
+            "syncMs": 0.073,
+            "warmup": 60,
+            "worstMs": 1.973
+          },
+          {
+            "fps": 1833.172,
+            "frames": 300,
+            "meanMs": 0.546,
+            "medianMs": 0.538,
+            "name": "High",
+            "otherMs": 0.031,
+            "p95Ms": 0.649,
+            "p99Ms": 0.81,
+            "renderMs": 0.433,
+            "scriptMs": 0.01,
+            "syncMs": 0.071,
+            "warmup": 60,
+            "worstMs": 2.018
+          },
+          {
+            "fps": 2151.139,
+            "frames": 300,
+            "meanMs": 0.465,
+            "medianMs": 0.454,
+            "name": "Ultra",
+            "otherMs": 0.013,
+            "p95Ms": 0.477,
+            "p99Ms": 0.505,
+            "renderMs": 0.372,
+            "scriptMs": 0.01,
+            "syncMs": 0.071,
+            "warmup": 60,
+            "worstMs": 2.006
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 512.0,
+        "total": {
+          "fps": 1971.861,
+          "frames": 1200,
+          "meanMs": 0.507,
+          "medianMs": 0.466,
+          "otherMs": 0.022,
+          "p95Ms": 0.627,
+          "p99Ms": 0.81,
+          "renderMs": 0.404,
+          "scriptMs": 0.01,
+          "syncMs": 0.072,
+          "worstMs": 2.018
+        },
+        "warmupFrames": 60
+      },
+      "nativeError": null,
+      "note": "each quality level clicked in the menu (this stops the demo's own cycling)",
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "quality",
+        "loadMs": 532.5,
+        "peakMemoryMb": 166.2,
+        "segments": [
+          {
+            "fps": 1399.279,
+            "frames": 300,
+            "meanMs": 0.715,
+            "medianMs": 0.714,
+            "name": "Low",
+            "otherMs": 0.034,
+            "p95Ms": 0.922,
+            "p99Ms": 1.128,
+            "renderMs": 0.511,
+            "scriptMs": 0.17,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.254
+          },
+          {
+            "fps": 1870.909,
+            "frames": 300,
+            "meanMs": 0.534,
+            "medianMs": 0.512,
+            "name": "Medium",
+            "otherMs": 0.017,
+            "p95Ms": 0.643,
+            "p99Ms": 0.774,
+            "renderMs": 0.369,
+            "scriptMs": 0.149,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.063
+          },
+          {
+            "fps": 1864.753,
+            "frames": 300,
+            "meanMs": 0.536,
+            "medianMs": 0.522,
+            "name": "High",
+            "otherMs": 0.014,
+            "p95Ms": 0.554,
+            "p99Ms": 0.611,
+            "renderMs": 0.375,
+            "scriptMs": 0.147,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.055
+          },
+          {
+            "fps": 1886.768,
+            "frames": 300,
+            "meanMs": 0.53,
+            "medianMs": 0.516,
+            "name": "Ultra",
+            "otherMs": 0.014,
+            "p95Ms": 0.556,
+            "p99Ms": 0.667,
+            "renderMs": 0.367,
+            "scriptMs": 0.148,
+            "syncMs": 0.0,
+            "warmup": 60,
+            "worstMs": 2.068
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 577.1,
+        "total": {
+          "fps": 1727.545,
+          "frames": 1200,
+          "meanMs": 0.579,
+          "medianMs": 0.523,
+          "otherMs": 0.02,
+          "p95Ms": 0.747,
+          "p99Ms": 1.087,
+          "renderMs": 0.406,
+          "scriptMs": 0.154,
+          "syncMs": 0.0,
+          "worstMs": 2.254
+        },
+        "warmupFrames": 60
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "raindrop-demo",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "raindrop-demo",
+        "loadMs": 493.8,
+        "peakMemoryMb": 169.6,
+        "segments": [
+          {
+            "fps": 1695.7,
+            "frames": 600,
+            "meanMs": 0.59,
+            "medianMs": 0.573,
+            "name": "idle",
+            "otherMs": 0.022,
+            "p95Ms": 0.75,
+            "p99Ms": 0.91,
+            "renderMs": 0.345,
+            "scriptMs": 0.126,
+            "syncMs": 0.097,
+            "warmup": 0,
+            "worstMs": 2.139
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 536.7,
+        "total": {
+          "fps": 1695.7,
+          "frames": 600,
+          "meanMs": 0.59,
+          "medianMs": 0.573,
+          "otherMs": 0.022,
+          "p95Ms": 0.75,
+          "p99Ms": 0.91,
+          "renderMs": 0.345,
+          "scriptMs": 0.126,
+          "syncMs": 0.097,
+          "worstMs": 2.139
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "raindrop-demo",
+        "loadMs": 745.8,
+        "peakMemoryMb": 182.8,
+        "segments": [
+          {
+            "fps": 273.844,
+            "frames": 600,
+            "meanMs": 3.652,
+            "medianMs": 3.597,
+            "name": "idle",
+            "otherMs": 0.18,
+            "p95Ms": 4.09,
+            "p99Ms": 4.869,
+            "renderMs": 0.405,
+            "scriptMs": 3.067,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 14.109
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 788.5,
+        "total": {
+          "fps": 273.844,
+          "frames": 600,
+          "meanMs": 3.652,
+          "medianMs": 3.597,
+          "otherMs": 0.18,
+          "p95Ms": 4.09,
+          "p99Ms": 4.869,
+          "renderMs": 0.405,
+          "scriptMs": 3.067,
+          "syncMs": 0.0,
+          "worstMs": 14.109
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "scenes",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "scenes",
+        "loadMs": 534.6,
+        "peakMemoryMb": 166.2,
+        "segments": [
+          {
+            "fps": 2717.123,
+            "frames": 600,
+            "meanMs": 0.368,
+            "medianMs": 0.356,
+            "name": "idle",
+            "otherMs": 0.008,
+            "p95Ms": 0.382,
+            "p99Ms": 0.412,
+            "renderMs": 0.33,
+            "scriptMs": 0.011,
+            "syncMs": 0.02,
+            "warmup": 0,
+            "worstMs": 1.952
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 565.7,
+        "total": {
+          "fps": 2717.123,
+          "frames": 600,
+          "meanMs": 0.368,
+          "medianMs": 0.356,
+          "otherMs": 0.008,
+          "p95Ms": 0.382,
+          "p99Ms": 0.412,
+          "renderMs": 0.33,
+          "scriptMs": 0.011,
+          "syncMs": 0.02,
+          "worstMs": 1.952
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "scenes",
+        "loadMs": 549.5,
+        "peakMemoryMb": 166.3,
+        "segments": [
+          {
+            "fps": 2172.389,
+            "frames": 600,
+            "meanMs": 0.46,
+            "medianMs": 0.427,
+            "name": "idle",
+            "otherMs": 0.012,
+            "p95Ms": 0.579,
+            "p99Ms": 0.794,
+            "renderMs": 0.343,
+            "scriptMs": 0.105,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.111
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 588.6,
+        "total": {
+          "fps": 2172.389,
+          "frames": 600,
+          "meanMs": 0.46,
+          "medianMs": 0.427,
+          "otherMs": 0.012,
+          "p95Ms": 0.579,
+          "p99Ms": 0.794,
+          "renderMs": 0.343,
+          "scriptMs": 0.105,
+          "syncMs": 0.0,
+          "worstMs": 2.111
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "shapes",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "shapes",
+        "loadMs": 467.0,
+        "peakMemoryMb": 163.2,
+        "segments": [
+          {
+            "fps": 2850.424,
+            "frames": 600,
+            "meanMs": 0.351,
+            "medianMs": 0.324,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 0.418,
+            "p99Ms": 0.585,
+            "renderMs": 0.294,
+            "scriptMs": 0.01,
+            "syncMs": 0.037,
+            "warmup": 0,
+            "worstMs": 1.962
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 502.4,
+        "total": {
+          "fps": 2850.424,
+          "frames": 600,
+          "meanMs": 0.351,
+          "medianMs": 0.324,
+          "otherMs": 0.01,
+          "p95Ms": 0.418,
+          "p99Ms": 0.585,
+          "renderMs": 0.294,
+          "scriptMs": 0.01,
+          "syncMs": 0.037,
+          "worstMs": 1.962
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "shapes",
+        "loadMs": 491.1,
+        "peakMemoryMb": 163.9,
+        "segments": [
+          {
+            "fps": 2835.989,
+            "frames": 600,
+            "meanMs": 0.353,
+            "medianMs": 0.344,
+            "name": "idle",
+            "otherMs": 0.009,
+            "p95Ms": 0.373,
+            "p99Ms": 0.433,
+            "renderMs": 0.262,
+            "scriptMs": 0.082,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 1.871
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 528.0,
+        "total": {
+          "fps": 2835.989,
+          "frames": 600,
+          "meanMs": 0.353,
+          "medianMs": 0.344,
+          "otherMs": 0.009,
+          "p95Ms": 0.373,
+          "p99Ms": 0.433,
+          "renderMs": 0.262,
+          "scriptMs": 0.082,
+          "syncMs": 0.0,
+          "worstMs": 1.871
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "sine-circle-demo",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "sine-circle-demo",
+        "loadMs": 499.3,
+        "peakMemoryMb": 165.1,
+        "segments": [
+          {
+            "fps": 3044.596,
+            "frames": 600,
+            "meanMs": 0.328,
+            "medianMs": 0.298,
+            "name": "idle",
+            "otherMs": 0.011,
+            "p95Ms": 0.384,
+            "p99Ms": 0.43,
+            "renderMs": 0.277,
+            "scriptMs": 0.022,
+            "syncMs": 0.018,
+            "warmup": 0,
+            "worstMs": 1.791
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 533.7,
+        "total": {
+          "fps": 3044.596,
+          "frames": 600,
+          "meanMs": 0.328,
+          "medianMs": 0.298,
+          "otherMs": 0.011,
+          "p95Ms": 0.384,
+          "p99Ms": 0.43,
+          "renderMs": 0.277,
+          "scriptMs": 0.022,
+          "syncMs": 0.018,
+          "worstMs": 1.791
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "sine-circle-demo",
+        "loadMs": 536.0,
+        "peakMemoryMb": 166.3,
+        "segments": [
+          {
+            "fps": 1997.786,
+            "frames": 600,
+            "meanMs": 0.501,
+            "medianMs": 0.437,
+            "name": "idle",
+            "otherMs": 0.017,
+            "p95Ms": 0.763,
+            "p99Ms": 0.961,
+            "renderMs": 0.361,
+            "scriptMs": 0.122,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.106
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 572.3,
+        "total": {
+          "fps": 1997.786,
+          "frames": 600,
+          "meanMs": 0.501,
+          "medianMs": 0.437,
+          "otherMs": 0.017,
+          "p95Ms": 0.763,
+          "p99Ms": 0.961,
+          "renderMs": 0.361,
+          "scriptMs": 0.122,
+          "syncMs": 0.0,
+          "worstMs": 2.106
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "splines",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "splines",
+        "loadMs": 480.9,
+        "peakMemoryMb": 164.5,
+        "segments": [
+          {
+            "fps": 2360.119,
+            "frames": 600,
+            "meanMs": 0.424,
+            "medianMs": 0.375,
+            "name": "idle",
+            "otherMs": 0.009,
+            "p95Ms": 0.618,
+            "p99Ms": 0.82,
+            "renderMs": 0.302,
+            "scriptMs": 0.048,
+            "syncMs": 0.064,
+            "warmup": 0,
+            "worstMs": 1.872
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 515.6,
+        "total": {
+          "fps": 2360.119,
+          "frames": 600,
+          "meanMs": 0.424,
+          "medianMs": 0.375,
+          "otherMs": 0.009,
+          "p95Ms": 0.618,
+          "p99Ms": 0.82,
+          "renderMs": 0.302,
+          "scriptMs": 0.048,
+          "syncMs": 0.064,
+          "worstMs": 1.872
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "splines",
+        "loadMs": 487.1,
+        "peakMemoryMb": 163.6,
+        "segments": [
+          {
+            "fps": 812.267,
+            "frames": 600,
+            "meanMs": 1.231,
+            "medianMs": 1.182,
+            "name": "idle",
+            "otherMs": 0.037,
+            "p95Ms": 1.426,
+            "p99Ms": 1.621,
+            "renderMs": 0.308,
+            "scriptMs": 0.886,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 2.664
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 522.2,
+        "total": {
+          "fps": 812.267,
+          "frames": 600,
+          "meanMs": 1.231,
+          "medianMs": 1.182,
+          "otherMs": 0.037,
+          "p95Ms": 1.426,
+          "p99Ms": 1.621,
+          "renderMs": 0.308,
+          "scriptMs": 0.886,
+          "syncMs": 0.0,
+          "worstMs": 2.664
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "text",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "text",
+        "loadMs": 477.5,
+        "peakMemoryMb": 165.2,
+        "segments": [
+          {
+            "fps": 2250.295,
+            "frames": 600,
+            "meanMs": 0.444,
+            "medianMs": 0.434,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 0.46,
+            "p99Ms": 0.635,
+            "renderMs": 0.418,
+            "scriptMs": 0.008,
+            "syncMs": 0.008,
+            "warmup": 0,
+            "worstMs": 1.418
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 538.9,
+        "total": {
+          "fps": 2250.295,
+          "frames": 600,
+          "meanMs": 0.444,
+          "medianMs": 0.434,
+          "otherMs": 0.01,
+          "p95Ms": 0.46,
+          "p99Ms": 0.635,
+          "renderMs": 0.418,
+          "scriptMs": 0.008,
+          "syncMs": 0.008,
+          "worstMs": 1.418
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "text",
+        "loadMs": 529.3,
+        "peakMemoryMb": 166.4,
+        "segments": [
+          {
+            "fps": 2227.605,
+            "frames": 600,
+            "meanMs": 0.449,
+            "medianMs": 0.425,
+            "name": "idle",
+            "otherMs": 0.01,
+            "p95Ms": 0.508,
+            "p99Ms": 0.889,
+            "renderMs": 0.423,
+            "scriptMs": 0.016,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 1.466
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 539.3,
+        "total": {
+          "fps": 2227.605,
+          "frames": 600,
+          "meanMs": 0.449,
+          "medianMs": 0.425,
+          "otherMs": 0.01,
+          "p95Ms": 0.508,
+          "p99Ms": 0.889,
+          "renderMs": 0.423,
+          "scriptMs": 0.016,
+          "syncMs": 0.0,
+          "worstMs": 1.466
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "tunnel",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "tunnel",
+        "loadMs": 484.3,
+        "peakMemoryMb": 212.3,
+        "segments": [
+          {
+            "fps": 613.418,
+            "frames": 1800,
+            "meanMs": 1.63,
+            "medianMs": 1.681,
+            "name": "capture",
+            "otherMs": 0.009,
+            "p95Ms": 1.929,
+            "p99Ms": 3.058,
+            "renderMs": 1.344,
+            "scriptMs": 0.012,
+            "syncMs": 0.266,
+            "warmup": 0,
+            "worstMs": 3.794
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 556.4,
+        "total": {
+          "fps": 613.418,
+          "frames": 1800,
+          "meanMs": 1.63,
+          "medianMs": 1.681,
+          "otherMs": 0.009,
+          "p95Ms": 1.929,
+          "p99Ms": 3.058,
+          "renderMs": 1.344,
+          "scriptMs": 0.012,
+          "syncMs": 0.266,
+          "worstMs": 3.794
+        },
+        "warmupFrames": 300
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "tunnel",
+        "loadMs": 531.2,
+        "peakMemoryMb": 211.6,
+        "segments": [
+          {
+            "fps": 610.306,
+            "frames": 1800,
+            "meanMs": 1.639,
+            "medianMs": 1.683,
+            "name": "capture",
+            "otherMs": 0.01,
+            "p95Ms": 1.935,
+            "p99Ms": 3.068,
+            "renderMs": 1.257,
+            "scriptMs": 0.372,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 5.923
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 667.3,
+        "total": {
+          "fps": 610.306,
+          "frames": 1800,
+          "meanMs": 1.639,
+          "medianMs": 1.683,
+          "otherMs": 0.01,
+          "p95Ms": 1.935,
+          "p99Ms": 3.068,
+          "renderMs": 1.257,
+          "scriptMs": 0.372,
+          "syncMs": 0.0,
+          "worstMs": 5.923
+        },
+        "warmupFrames": 300
+      },
+      "quickjsError": null
+    },
+    {
+      "game": "windows",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "windows",
+        "loadMs": 683.8,
+        "peakMemoryMb": 166.7,
+        "segments": [
+          {
+            "fps": 1366.709,
+            "frames": 600,
+            "meanMs": 0.732,
+            "medianMs": 0.819,
+            "name": "idle",
+            "otherMs": 0.016,
+            "p95Ms": 0.961,
+            "p99Ms": 1.235,
+            "renderMs": 0.688,
+            "scriptMs": 0.018,
+            "syncMs": 0.009,
+            "warmup": 0,
+            "worstMs": 2.443
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 687.9,
+        "total": {
+          "fps": 1366.709,
+          "frames": 600,
+          "meanMs": 0.732,
+          "medianMs": 0.819,
+          "otherMs": 0.016,
+          "p95Ms": 0.961,
+          "p99Ms": 1.235,
+          "renderMs": 0.688,
+          "scriptMs": 0.018,
+          "syncMs": 0.009,
+          "worstMs": 2.443
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": null,
+      "quickjsError": "n/a: not on main"
+    },
+    {
+      "game": "world",
+      "native": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "native",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "world",
+        "loadMs": 552.0,
+        "peakMemoryMb": 192.9,
+        "segments": [
+          {
+            "fps": 1173.266,
+            "frames": 300,
+            "meanMs": 0.852,
+            "medianMs": 0.842,
+            "name": "idle",
+            "otherMs": 0.016,
+            "p95Ms": 0.908,
+            "p99Ms": 1.03,
+            "renderMs": 0.754,
+            "scriptMs": 0.044,
+            "syncMs": 0.038,
+            "warmup": 0,
+            "worstMs": 2.38
+          },
+          {
+            "fps": 1057.006,
+            "frames": 600,
+            "meanMs": 0.946,
+            "medianMs": 0.869,
+            "name": "pointer sweep",
+            "otherMs": 0.038,
+            "p95Ms": 1.242,
+            "p99Ms": 1.454,
+            "renderMs": 0.819,
+            "scriptMs": 0.051,
+            "syncMs": 0.038,
+            "warmup": 0,
+            "worstMs": 2.614
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 597.6,
+        "total": {
+          "fps": 1093.111,
+          "frames": 900,
+          "meanMs": 0.915,
+          "medianMs": 0.855,
+          "otherMs": 0.031,
+          "p95Ms": 1.195,
+          "p99Ms": 1.415,
+          "renderMs": 0.797,
+          "scriptMs": 0.049,
+          "syncMs": 0.038,
+          "worstMs": 2.614
+        },
+        "warmupFrames": 120
+      },
+      "nativeError": null,
+      "note": null,
+      "quickjs": {
+        "adapter": "NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu)",
+        "backend": "quickjs",
+        "exitedEarly": false,
+        "fixedDt": 0.016666666666666666,
+        "game": "world",
+        "loadMs": 528.3,
+        "peakMemoryMb": 198.3,
+        "segments": [
+          {
+            "fps": 259.765,
+            "frames": 300,
+            "meanMs": 3.85,
+            "medianMs": 4.458,
+            "name": "idle",
+            "otherMs": 0.922,
+            "p95Ms": 4.972,
+            "p99Ms": 5.345,
+            "renderMs": 1.038,
+            "scriptMs": 1.89,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 6.015
+          },
+          {
+            "fps": 272.8,
+            "frames": 600,
+            "meanMs": 3.666,
+            "medianMs": 4.303,
+            "name": "pointer sweep",
+            "otherMs": 0.897,
+            "p95Ms": 4.606,
+            "p99Ms": 4.901,
+            "renderMs": 0.945,
+            "scriptMs": 1.824,
+            "syncMs": 0.0,
+            "warmup": 0,
+            "worstMs": 6.44
+          }
+        ],
+        "size": [
+          1280,
+          720
+        ],
+        "startupMs": 573.4,
+        "total": {
+          "fps": 268.312,
+          "frames": 900,
+          "meanMs": 3.727,
+          "medianMs": 4.333,
+          "otherMs": 0.905,
+          "p95Ms": 4.845,
+          "p99Ms": 5.171,
+          "renderMs": 0.976,
+          "scriptMs": 1.846,
+          "syncMs": 0.0,
+          "worstMs": 6.44
+        },
+        "warmupFrames": 120
+      },
+      "quickjsError": null
+    }
+  ],
+  "size": "1280x720"
+}
