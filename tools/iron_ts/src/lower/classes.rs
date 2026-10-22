@@ -162,7 +162,7 @@ impl<'a> Lowerer<'a> {
     /// The type of a field initialiser, found from the syntax alone (the class is declared before
     /// any code is lowered): literals, arithmetic, a top-level `const` without an annotation,
     /// `a.b` of an object literal, and object literals of those.
-    fn guess_ty(&mut self, e: &'a Expression<'a>, depth: u8) -> R<Option<Ty>> {
+    pub(crate) fn guess_ty(&mut self, e: &'a Expression<'a>, depth: u8) -> R<Option<Ty>> {
         if depth > 8 {
             return Ok(None);
         }
@@ -221,6 +221,7 @@ impl<'a> Lowerer<'a> {
             {
                 Some(self.ty(&a.type_annotation, "as")?)
             }
+            Expression::TSAsExpression(a) => self.guess_ty(&a.expression, depth + 1)?,
             Expression::TSNonNullExpression(n) => self
                 .guess_ty(&n.expression, depth + 1)?
                 .map(|t| t.strip().clone()),

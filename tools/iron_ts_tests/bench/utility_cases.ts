@@ -116,3 +116,23 @@ function t(): string {
   for (const p of all) sum += (p.a ?? 10) + (p.b ?? 100);
   return ext("boom") + ext("pop") + cut("pop") + cut("ding") + " " + sum;
 }
+//## pick_of_an_interface_reached_through_its_own_members
+interface Ctx {
+  sfx: (n: string) => string;
+  shake: number;
+  scene: Effects;
+}
+interface Effects {
+  host: Host;
+  name: string;
+}
+type Host = Pick<Ctx, "sfx" | "shake">;
+function useHost(h: Host): string {
+  return h.sfx("s") + h.shake;
+}
+function t(): string {
+  const host: Host = { sfx: (n: string) => n + "!", shake: 4 };
+  const fx: Effects = { host, name: "fx" };
+  const ctx: Ctx = { sfx: (n: string) => n + "?", shake: 7, scene: fx };
+  return useHost(ctx) + " " + useHost(fx.host) + " " + ctx.scene.name;
+}

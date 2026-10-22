@@ -353,9 +353,9 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 `docs/research/iron-examples-on-iron-ts.md` sections 1c, 6 and 10 and the agents' notes above. Tick an item when the workaround can go.
 
 **Language features**
-- [ ] Computed property access with a literal-union key: `state[key] = !state[key]` where `key: keyof typeof state` (rewritten as `if` chains; `lower/keyed.rs` covers only generic arrows over `keyof`).
-- [ ] `Record<string, V>` and `Record<Union, V>` as real dictionaries, including indexing with a string that is not a literal (workaround: arrays plus index, or a loop with `===`).
-- [ ] Tables indexed by a tag/enum-like string (`TINTS[state.tint]`, `typeof TINTS[Tint]`).
+- [x] Computed property access with a literal-union key: `state[key] = !state[key]` where `key: keyof typeof state` or a union of some names (`M9-TS-3165`, `3169`).
+- [x] `Record<string, V>` (a `Map<string, V>`) and `Record<Union, V>` as dictionaries, indexed by any string (`M9-TS-3167`, `3168`).
+- [x] Tables indexed by a tag/enum-like string (`TINTS[state.tint]`, `(typeof TINTS)[Tint]`, `(typeof NAMES)[number]`, `M9-TS-3166`, `3170`).
 - [x] `Array.prototype.indexOf` on arrays of string literals; `Array.from({ length }, f)` and `Array.from(xs, f)`; `new Array(n).fill(x)`; `.flat(depth)` (2026-10-22, `M9-TS-3020..3034`).
 - [x] Spread arguments: `Math.min(a, ...list)`, `Math.max(...xs)`, `f(...xs)` into rest and fixed parameters (not into function values or `new`).
 - [x] A static function as a value: `const hex = Color.hex`, `xs.map(Math.abs)` (2026-10-22, `M9-TS-3128/3129/3135`).

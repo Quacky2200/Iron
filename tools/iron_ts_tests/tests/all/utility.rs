@@ -35,4 +35,5 @@ bun_tests! {
     3124 partial_of_class "partial_of_class" "ut4_" 504000;
     3125 spread_partial_in_literals "spread_partial_in_literals" "ut5_" 505000;
     3126 partial_records_and_arrays "partial_records_and_arrays" "ut6_" 506000;
+    3172 pick_of_an_interface_reached_through_its_own_members "pick_of_an_interface_reached_through_its_own_members" "ut7_" 507000;
 }

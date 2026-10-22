@@ -59,6 +59,11 @@ pub(crate) enum Place {
     Accessor(Expr, Option<classes::Target>, classes::Target, Ty),
     Field(Expr, StructId, usize, Ty),
     Index(Expr, Expr, Ty),
+    /// `obj[key]` where `key` is a string or a union member naming one of the fields (`state[key]`
+    /// with `key: keyof typeof state`): the object, its struct, the key, the one type of the fields.
+    Keyed(Expr, StructId, Expr, Ty, Vec<usize>),
+    /// `dict[key]` of a `Record<string, V>` (a map): the map, the key, the value type.
+    MapEntry(Expr, Expr, Ty),
     /// A property of an engine handle class: the receiver, its getter (if any), its setter and
     /// the value type.
     Ext(Expr, Option<ExternFn>, ExternFn, Ty),
@@ -152,6 +157,12 @@ impl<'a> Lowerer<'a> {
                     return Ok(self.coerce(v.clone(), &to).unwrap_or(v));
                 }
                 let v = self.lower_expr(&a.expression, exp)?;
+                // `(table as Record<string, V>)[name]`: a record as a dictionary.
+                if let Ok(to @ Ty::Map(..)) = self.ty(&a.type_annotation, "as")
+                    && matches!(v.ty, Ty::Obj(_))
+                {
+                    return self.coerce(v, &to);
+                }
                 // `x as Sub` for classes: the same pointer, seen as the subclass.
                 if let Ok(Ty::Obj(t)) = self.ty(&a.type_annotation, "as")
                     && self.class_of_sid.contains_key(&t)
@@ -530,7 +541,9 @@ impl<'a> Lowerer<'a> {
             Ty::Str if prop == "length" => Ok(self.str_length(obj)),
             Ty::Map(..) | Ty::Set(_) if prop == "size" => Ok(self.collection_size(obj)),
             // `m.groups.year`: a regular expression's named groups are read by name.
-            Ty::Map(k, v) if *k == Ty::Str && v.is_ptr() => self.map_prop(obj, prop),
+            Ty::Map(k, v) if *k == Ty::Str && (v.is_ptr() || *v == Ty::Num || *v == Ty::Lit) => {
+                self.map_prop(obj, prop)
+            }
             Ty::Handle(class) => {
                 if let Some(e) = self.ext_getter(&class, prop, &obj)? {
                     return Ok(e);
@@ -553,6 +566,15 @@ impl<'a> Lowerer<'a> {
 
     fn lower_computed_member(&mut self, m: &'a ComputedMemberExpression<'a>) -> R<Expr> {
         let mut arr = self.lower_expr(&m.object, None)?;
+        // `dict[key]` of a `Record<string, V>`: the entry, or undefined.
+        if let Ty::Map(k, _) = arr.ty.strip().clone()
+            && *k == Ty::Str
+            && !m.optional
+        {
+            let key = self.lower_expr(&m.expression, Some(&Ty::Str))?;
+            let key = self.widen_lit(key);
+            return self.map_get_value(arr, key, "a Record<string, V> lookup");
+        }
         // `names[kind]` where `names` is a `Record<Kind, V>` and `kind` a union member.
         if let Ty::Obj(sid) = arr.ty.strip().clone()
             && Some(sid) != self.match_sid()
@@ -570,13 +592,38 @@ impl<'a> Lowerer<'a> {
             }
             let key = self.lower_expr(&m.expression, None)?;
             if matches!(key.ty, Ty::Lit | Ty::Str) && !self.m.structs[sid].fields.is_empty() {
-                return Ok(self.record_index(arr, sid, key));
+                let idxs = self.key_indices(sid, &m.expression)?;
+                return Ok(self.record_index_over(arr, sid, key, &idxs));
             }
             bail!("cannot index an object by {}", key.ty)
         }
         arr = self.match_view(arr);
         if m.optional {
             arr = self.chain_guard(arr)?;
+        }
+        // `s[i]`: the character, or undefined past the ends.
+        let arr = self.widen_lit(arr);
+        if arr.ty.strip() == &Ty::Str {
+            let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
+            let idx = self.as_num(idx)?;
+            let (ts, ti) = (self.new_local(arr.ty.clone()), self.new_local(Ty::Num));
+            let (sv, iv) = (self.var_expr(ts), self.var_expr(ti));
+            let ch = self.rt_str("ts_rt_str_at_gc", vec![sv, iv.clone()], Ty::Str.nullable());
+            let negative = mk(
+                ExprKind::Cmp(CmpOp::Lt, Box::new(iv), Box::new(num(0.0))),
+                Ty::Bool,
+            );
+            let none = mk(ExprKind::Null, Ty::Str.nullable());
+            return Ok(mk(
+                ExprKind::Seq(
+                    vec![Stmt::Assign(ts, arr), Stmt::Assign(ti, idx)],
+                    Box::new(mk(
+                        ExprKind::Cond(Box::new(negative), Box::new(none), Box::new(ch)),
+                        Ty::Str.nullable(),
+                    )),
+                ),
+                Ty::Str.nullable(),
+            ));
         }
         let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
         let idx = self.as_num(idx)?;
@@ -593,9 +640,30 @@ impl<'a> Lowerer<'a> {
     }
 
     /// `rec[key]` for a record struct: the field whose name is the key's tag.
-    fn record_index(&mut self, obj: Expr, sid: StructId, key: Expr) -> Expr {
+    /// The fields a key written as `key_ast` can name: those of its union of string literals when
+    /// it is a parameter written as one, else all of them. They must have one type.
+    fn key_indices(&self, sid: StructId, key_ast: &Expression<'_>) -> R<Vec<usize>> {
+        let fields = &self.m.structs[sid].fields;
+        let mut idxs: Vec<usize> = (0..fields.len()).collect();
+        if let Expression::Identifier(id) = key_ast
+            && let Some(ms) = self.cur.lit_sets.get(id.name.as_str())
+        {
+            idxs.retain(|i| ms.contains(&fields[*i].name));
+            if idxs.is_empty() {
+                bail!("`{}` names none of the fields", id.name)
+            }
+        }
+        let ty = &fields[idxs[0]].ty;
+        if idxs.iter().any(|i| fields[*i].ty != *ty) {
+            bail!("an object indexed by a key needs the fields the key can name to have one type")
+        }
+        Ok(idxs)
+    }
+
+    /// `rec[key]`: the field (among `idxs`, which have one type) whose name is the key.
+    fn record_index_over(&mut self, obj: Expr, sid: StructId, key: Expr, idxs: &[usize]) -> Expr {
         let fields = self.m.structs[sid].fields.clone();
-        let ty = fields[0].ty.clone();
+        let ty = fields[idxs[0]].ty.clone();
         let by_str = key.ty.strip() == &Ty::Str;
         let (to, tk) = (
             self.new_local(obj.ty.clone()),
@@ -603,8 +671,8 @@ impl<'a> Lowerer<'a> {
         );
         let (ov, kv) = (self.var_expr(to), self.var_expr(tk));
         let field = |i: usize| mk(ExprKind::Field(Box::new(ov.clone()), sid, i), ty.clone());
-        let mut acc = field(fields.len() - 1);
-        for i in (0..fields.len() - 1).rev() {
+        let mut acc = field(*idxs.last().expect("one field at least"));
+        for &i in idxs[..idxs.len() - 1].iter().rev() {
             let name = fields[i].name.clone();
             let want = if by_str {
                 self.str_lit(&name)
@@ -2230,6 +2298,13 @@ impl<'a> Lowerer<'a> {
         // struct of its own, with the types of the interface for its values.
         let want_sid = exp_sid;
         let exp_sid = exp_sid.filter(|s| !self.is_dyn(*s));
+        // `{ a: 1, b: 2 }` where a `Record<string, V>` (a map) is expected.
+        if let Some(t @ Ty::Map(k, _)) = exp.map(|t| t.strip())
+            && **k == Ty::Str
+        {
+            let t = t.clone();
+            return self.lower_record_map(o, &t);
+        }
         // `{ [Weather.Rain]: "Rain" }` where a `Record<Weather, string>` (an array) is expected.
         if let Some(Ty::Arr(el)) = exp.map(|t| t.strip())
             && o.properties
@@ -2534,7 +2609,10 @@ impl<'a> Lowerer<'a> {
         // `[1, "a"]` where a tuple type (an object with fields `0`, `1`, ..) is expected.
         if let Some(Ty::Obj(sid)) = exp.map(|t| t.strip())
             && self.is_tuple(*sid)
-            && a.elements.len() == self.m.structs[*sid].fields.len()
+            && a.elements.len() <= self.m.structs[*sid].fields.len()
+            && self.m.structs[*sid].fields[a.elements.len()..]
+                .iter()
+                .all(|f| f.ty.is_nullable())
         {
             let sid = *sid;
             let mut vals = Vec::new();
@@ -2545,6 +2623,11 @@ impl<'a> Lowerer<'a> {
                 let want = self.m.structs[sid].fields[i].ty.clone();
                 let v = self.lower_expr(e, Some(&want))?;
                 vals.push(self.coerce(v, &want)?);
+            }
+            // Elements left out (`[x, y]` for `[number, number, "c"?]`) are undefined.
+            for i in a.elements.len()..self.m.structs[sid].fields.len() {
+                let want = self.m.structs[sid].fields[i].ty.clone();
+                vals.push(mk(ExprKind::Null, want));
             }
             return self.build_tuple(sid, vals);
         }
@@ -2971,6 +3054,41 @@ impl<'a> Lowerer<'a> {
             pre.push(Stmt::Assign(tmp, arr));
             return Ok(Place::Field(self.var_expr(tmp), sid, i, ty));
         }
+        // `dict[key] = v` on a `Record<string, V>`.
+        if let Ty::Map(k, v) = arr.ty.strip().clone()
+            && *k == Ty::Str
+        {
+            let key = self.lower_expr(&m.expression, Some(&Ty::Str))?;
+            let key = self.widen_lit(key);
+            let (tm, tk) = (self.new_local(arr.ty.clone()), self.new_local(Ty::Str));
+            pre.push(Stmt::Assign(tm, arr));
+            pre.push(Stmt::Assign(tk, key));
+            return Ok(Place::MapEntry(self.var_expr(tm), self.var_expr(tk), *v));
+        }
+        // `state[key] = v` with `key: keyof typeof state`: the field the key names.
+        if let Ty::Obj(sid) = arr.ty.strip().clone()
+            && !self.m.structs[sid].fields.is_empty()
+        {
+            let key = self.lower_expr(&m.expression, None)?;
+            if matches!(key.ty, Ty::Lit | Ty::Str) {
+                let idxs = self.key_indices(sid, &m.expression)?;
+                let ty = self.m.structs[sid].fields[idxs[0]].ty.clone();
+                let (to, tk) = (
+                    self.new_local(arr.ty.clone()),
+                    self.new_local(key.ty.clone()),
+                );
+                pre.push(Stmt::Assign(to, arr));
+                pre.push(Stmt::Assign(tk, key));
+                return Ok(Place::Keyed(
+                    self.var_expr(to),
+                    sid,
+                    self.var_expr(tk),
+                    ty,
+                    idxs,
+                ));
+            }
+            bail!("cannot index an object by {}", key.ty)
+        }
         let idx = self.lower_expr(&m.expression, Some(&Ty::Num))?;
         let idx = self.as_num(idx)?;
         let ty = match arr.ty.strip() {
@@ -2993,6 +3111,15 @@ impl<'a> Lowerer<'a> {
             pre.push(Stmt::Assign(tmp, obj));
             let recv = self.var_expr(tmp);
             return self.iface_place(recv, sid, prop);
+        }
+        // `dict.name = v` on a `Record<string, V>`.
+        if let Ty::Map(k, v) = obj.ty.strip().clone()
+            && *k == Ty::Str
+        {
+            let tmp = self.new_local(obj.ty.clone());
+            pre.push(Stmt::Assign(tmp, obj));
+            let key = self.str_lit(prop);
+            return Ok(Place::MapEntry(self.var_expr(tmp), key, *v));
         }
         if let Ty::Handle(class) = obj.ty.strip().clone() {
             if let Some((fid, ty)) = self.ext_setter(&class, prop)? {
@@ -3056,6 +3183,8 @@ impl<'a> Lowerer<'a> {
             | Place::Cell(_, t)
             | Place::Global(_, t)
             | Place::Field(_, _, _, t)
+            | Place::Keyed(_, _, _, t, _)
+            | Place::MapEntry(_, _, t)
             | Place::Index(_, _, t) => t,
         }
     }
@@ -3083,6 +3212,17 @@ impl<'a> Lowerer<'a> {
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
                 t.clone(),
             ),
+            Place::Keyed(o, sid, k, _, idxs) => {
+                self.record_index_over(o.clone(), *sid, k.clone(), idxs)
+            }
+            Place::MapEntry(m, k, v) => {
+                let got = self.map_get_value(m.clone(), k.clone(), "a Record<string, V> lookup");
+                match got {
+                    Ok(e) => e,
+                    // A value type that cannot be told from a missing key: reading is not possible.
+                    Err(_) => mk(ExprKind::Null, v.clone().nullable()),
+                }
+            }
         }
     }
 
@@ -3153,6 +3293,43 @@ impl<'a> Lowerer<'a> {
                 Ty::Void,
             )),
             Place::Field(o, s, i, _) => Stmt::StoreField(o.clone(), *s, *i, v),
+            Place::MapEntry(m, k, _) => {
+                // The caller coerced the value to the entry type, so this cannot fail.
+                let set = self
+                    .map_set_value(m.clone(), k.clone(), Some(v))
+                    .expect("a Record<string, V> store of a coerced value");
+                Stmt::Eval(set)
+            }
+            Place::Keyed(o, sid, k, ty, idxs) => {
+                // The value once, then the store of the field the key names.
+                let tmp = self.new_local(ty.clone());
+                let tv = self.var_expr(tmp);
+                let by_str = k.ty.strip() == &Ty::Str;
+                let last = *idxs.last().expect("one field at least");
+                let mut chain = vec![Stmt::StoreField(o.clone(), *sid, last, tv.clone())];
+                for &i in idxs[..idxs.len() - 1].iter().rev() {
+                    let name = self.m.structs[*sid].fields[i].name.clone();
+                    let want = if by_str {
+                        self.str_lit(&name)
+                    } else {
+                        let t = self.tag(&name);
+                        mk(ExprKind::Tag(t), Ty::Lit)
+                    };
+                    let is = mk(
+                        ExprKind::Cmp(CmpOp::Eq, Box::new(k.clone()), Box::new(want)),
+                        Ty::Bool,
+                    );
+                    chain = vec![Stmt::If(
+                        is,
+                        vec![Stmt::StoreField(o.clone(), *sid, i, tv.clone())],
+                        chain,
+                    )];
+                }
+                let label = self.new_label();
+                let mut body = vec![Stmt::Assign(tmp, v)];
+                body.extend(chain);
+                Stmt::Block(label, body)
+            }
             Place::Index(a, i, _) if matches!(a.ty.strip(), Ty::Arr(_)) => {
                 self.array_store(a, i, v)
             }

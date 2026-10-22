@@ -1714,3 +1714,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3162 | Integration | Top-level destructuring declarations: `const [a, b] = ..`, `const { p, q } = ..`, `let [m, s] = pair()`, `const [h, ...t] = ..` become module variables (`misc.rs`). |
 | M9-TS-3163 | Integration | `f(...xs)` / `f(a, ...xs)` for a function value (the elements feed the parameters, null past the end), `new C(...xs)` and `rnd(...tuple)` equal bun's (`tools/iron_ts_tests/tests/all/misc.rs`). |
 | M9-TS-3164 | Integration | The generated declarations are the ones games are written against: handle properties and options are `T \| null`, a property that is one of a few names reads as the union (`get type(): "directional" \| ..`, `set type(v: string)`), a namespace one is the union (`tools/iron_build/tests/generated_dts.rs`). |
+| M9-TS-3165 | Integration | `state[key] = !state[key]`, `counts[k] += n`, `counts[k]++` with `key: keyof typeof state` or a union of names equal bun's (`tools/iron_ts_tests/tests/all/tables.rs`, `bench/tables_cases.ts`). |
+| M9-TS-3166 | Integration | Tables indexed by a tag: `NAMES[k]`, `TINTS[k]`, `Record<Tint, V>` over `keyof typeof TINTS`, `NAMES.warm = ..` (`tables.rs`). |
+| M9-TS-3167 | Integration | `Record<string, V>` as a dictionary: a literal, `dict[k]`, `dict[k] = v`, `dict[k] += n`, `dict.name`, a missing key is `undefined` (`tables.rs`). |
+| M9-TS-3168 | Integration | A `Record<"a" \| "b", V>` as a `Record<string, V>`: `(POSES as Record<string, number>)[name]`, assignment, then writes to the copy (`tables.rs`). |
+| M9-TS-3169 | Integration | A key that is a parameter written as a union of some names indexes only the fields it can name, so the object may have fields of other types (`tables.rs`). |
+| M9-TS-3170 | Integration | `(typeof NAMES)[number]` over `as const`, `(typeof TINTS)[Tint]`, optional tuple elements (`[number, number, "c"?]`), `s[i]` on a string, `Array.from({ length }, () => null)` as `(T \| null)[]` (`tables.rs`). |
+| M9-TS-3171 | Integration | A prop typed `object` is a bag of style properties spread into `style` (`tools/iron_ts_tests/tests/all/ui.rs`). |
+| M9-TS-3172 | Integration | `Pick<Ctx, ..>` of an interface that reaches the pick through its own members (`Ctx.scene: Effects`, `Effects.host: Host`) (`tools/iron_ts_tests/tests/all/utility.rs`). |

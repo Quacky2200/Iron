@@ -1,0 +1,8 @@
+{
+ "keyed_writes": "truefalsefalse 0 8 2 16",
+ "tables_by_tag": "Cool0.50,Warm1.51,Neutral12,W",
+ "string_dictionary": "Linear dflt Off|Linear|? 6 2 10 true",
+ "record_struct_as_dictionary": "2 -1 3 9 1",
+ "keys_that_name_some_fields": "falsetruefalse 13 linear",
+ "types_from_values_and_small_forms": "mp3wav 31 -C- 13 héo!? nxn"
+}

@@ -190,6 +190,9 @@ pub(crate) struct FnCtx {
     pub chain: Vec<(LabelId, VarId)>,
     /// Lowering a method or constructor of this class.
     pub cls: Option<(String, StructId)>,
+    /// Parameters written as a union of string literals (`key: "fog" | "lowRes"`): the members,
+    /// so `state[key]` knows which fields the key can name.
+    pub lit_sets: HashMap<String, Vec<String>>,
 }
 
 pub struct Lowerer<'a> {
@@ -1029,6 +1032,13 @@ impl<'a> Lowerer<'a> {
             pvars.push(v);
         }
         for (p, ty) in params.items.iter().zip(ptys.by_ref()) {
+            if let BindingPattern::BindingIdentifier(id) = &p.pattern
+                && ty.strip() == &Ty::Lit
+                && let Some(a) = &p.type_annotation
+                && let Some(ms) = self.lit_members_opt(&a.type_annotation)
+            {
+                self.cur.lit_sets.insert(id.name.to_string(), ms);
+            }
             let v = self.new_local(ty);
             self.bind_param(&p.pattern, v, &mut pro)?;
             pvars.push(v);

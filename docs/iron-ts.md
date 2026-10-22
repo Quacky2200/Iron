@@ -767,6 +767,27 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   the elements of an array or tuple feed the parameters after the plain arguments (null past the end).
 - **Defaulted closure parameters of type `boolean`** may be left out at a call, like numbers and strings.
 
+## Tables, dictionaries and types from values
+
+- **An object indexed by a key.** `state[key]` (read, write, `+=`, `++`) where `key` is a string-literal union member or a `string`
+  names the field: a chain of comparisons over the fields, `Place::Keyed`. A key that is a *parameter written as a union of some
+  names* (`key: "fog" | "lowRes"`) can only name those fields (`FnCtx::lit_sets`), which must share one type; otherwise all fields of the
+  object must. Tables by tag (`TINTS[tint]`, `NAMES[k]`) are the same.
+- **`Record<string, V>`** is a `Map<string, V>`: an object literal builds the map (`{ [k]: v }` too), `dict[k]` and `dict.name` read the
+  entry (`undefined` when missing: the value type must be a number, string, object or union member, as for `Map.get`), `dict[k] = v`,
+  `dict[k] += n` and `dict.name = v` write it (`Place::MapEntry`). A record struct (`Record<"a" | "b", V>`, an object literal of one
+  type) goes where a `Record<string, V>` is expected (assignment, `as Record<string, V>`) as a copy.
+- **Types written from values.** `(typeof NAMES)[number]` with `NAMES = ["a", "b"] as const` is the union (and the keys of
+  `Record<Sfx, V>`); `typeof TABLE` is the type of a top-level constant whose initialiser's type can be found from its syntax;
+  `(typeof TINTS)[Tint]` is the type its named fields share; `Record<Tint, V>` takes `keyof typeof TINTS` (also through an alias) as
+  its keys. `object` is a style bag (`IronStyle`) when the program has the UI prelude. Optional tuple elements
+  (`[number, number, "c"?]`) are nullable fields, left out in a literal that is shorter. `s[i]` on a string is the character or
+  `undefined`. An array of nothing but `null` (`Array.from({ length }, () => null)`) goes where `(T | null)[]` is expected.
+- A `Pick`/`Partial` of an interface that is still being laid out (reached again through its own members) is filled in at the end.
+- **Not built:** `["a", "b"] as const` is still a `string[]` (the engine's enums are strings too, so the two meet as strings);
+  `ReturnType<typeof f>` of a generic function with an inferred result; generic arrows that build `new (a.constructor as ..)(n)`;
+  `Mesh.createFlat` with some of its lists; a tuple type as a rest parameter; `flat(depth)` with a depth that is not a literal.
+
 ## Symbol, iterators and generators
 
 - **Well-known symbols.** `[Symbol.iterator]()` in a class is a method with the internal name `@@iterator`

@@ -33,7 +33,10 @@ impl<'a> Lowerer<'a> {
         };
         // A class declared later has no fields yet: fill the struct in once every class is laid out.
         let early = match base.strip() {
-            Ty::Obj(sid) => self.class_of_sid.contains_key(sid),
+            // (an interface still being laid out, reached again through its own members, has none yet)
+            Ty::Obj(sid) => {
+                self.class_of_sid.contains_key(sid) || self.m.structs[*sid].fields.is_empty()
+            }
             // The facade's property functions are declared after the program's own code.
             Ty::Handle(_) => true,
             _ => false,

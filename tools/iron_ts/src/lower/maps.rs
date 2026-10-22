@@ -284,6 +284,143 @@ impl<'a> Lowerer<'a> {
     }
 
     /// A method call on a `Map` or a `Set`.
+    /// `map.get(key)` over lowered values: the value, or null when the key is missing.
+    pub(crate) fn map_get_value(&mut self, recv: Expr, key: Expr, what: &str) -> R<Expr> {
+        let (k, v, _) = Self::parts(&recv.ty).expect("a map");
+        let ty = recv.ty.strip().clone();
+        if !(v.is_ptr() || v == Ty::Num || v == Ty::Lit) {
+            bail!(
+                "{what} over {v} values is not supported (the result could not be told from a missing key); use has() first"
+            )
+        }
+        let t = self.new_local(ty);
+        let tv = self.var_expr(t);
+        let kw = self.key_word(key, &k)?;
+        let idx = self.new_local(Ty::Num);
+        let iv = self.var_expr(idx);
+        let found = self.rt_map("ts_rt_map_find", vec![tv.clone(), kw], Ty::Num);
+        let raw = self.rt_map(
+            "ts_rt_map_value_at",
+            vec![tv.clone(), iv.clone()],
+            Ty::Handle("bits".into()),
+        );
+        let rty = v.clone().nullable();
+        let hit = mk(
+            ExprKind::Cast(Box::new(self.unbits(raw, v.clone()))),
+            rty.clone(),
+        );
+        let miss = mk(ExprKind::Null, rty.clone());
+        let missing = mk(
+            ExprKind::Cmp(CmpOp::Lt, Box::new(iv), Box::new(num(0.0))),
+            Ty::Bool,
+        );
+        Ok(mk(
+            ExprKind::Seq(
+                vec![Stmt::Assign(t, recv), Stmt::Assign(idx, found)],
+                Box::new(mk(
+                    ExprKind::Cond(Box::new(missing), Box::new(miss), Box::new(hit)),
+                    rty.clone(),
+                )),
+            ),
+            rty,
+        ))
+    }
+
+    /// `map.set(key, value)` / `set.add(key)` over lowered values (`None` for a set): the
+    /// expression's value is the collection.
+    pub(crate) fn map_set_value(&mut self, recv: Expr, key: Expr, value: Option<Expr>) -> R<Expr> {
+        let (k, v, _) = Self::parts(&recv.ty).expect("a map or set");
+        let ty = recv.ty.strip().clone();
+        let t = self.new_local(ty.clone());
+        let tv = self.var_expr(t);
+        let kw = self.key_word(key, &k)?;
+        let vw = match value {
+            None => self.bits(num(0.0)),
+            Some(vv) => self.val_word(vv, &v)?,
+        };
+        let (kt, vt) = (
+            self.new_local(Ty::Handle("bits".into())),
+            self.new_local(Ty::Handle("bits".into())),
+        );
+        Ok(mk(
+            ExprKind::Seq(
+                vec![
+                    Stmt::Assign(t, recv),
+                    Stmt::Assign(kt, kw),
+                    Stmt::Assign(vt, vw),
+                    Stmt::Eval(self.rt_map(
+                        "ts_rt_map_set",
+                        vec![tv.clone(), self.var_expr(kt), self.var_expr(vt)],
+                        Ty::Void,
+                    )),
+                ],
+                Box::new(tv),
+            ),
+            ty,
+        ))
+    }
+
+    /// A `Record<string, V>` object literal: a new map with an entry per property (`{ [k]: v }` too).
+    pub(crate) fn lower_record_map(&mut self, o: &'a ObjectExpression<'a>, ty: &Ty) -> R<Expr> {
+        let Some((k, v, false)) = Self::parts(ty) else {
+            bail!("a Record literal needs a map type")
+        };
+        let m = self.new_local(ty.clone());
+        let mut stmts = vec![Stmt::Assign(m, self.new_collection(ty)?)];
+        for p in &o.properties {
+            let ObjectPropertyKind::ObjectProperty(p) = p else {
+                bail!("spread in a Record literal is not supported")
+            };
+            let key = if p.computed {
+                let Some(e) = p.key.as_expression() else {
+                    bail!("a computed key must be an expression")
+                };
+                self.lower_expr(e, Some(&k))?
+            } else {
+                let name = self.key_name(&p.key)?;
+                self.str_lit(&name)
+            };
+            let val = self.lower_expr(&p.value, Some(&v))?;
+            let val = self.coerce(val, &v)?;
+            let set = self.map_set_value(self.var_expr(m), key, Some(val))?;
+            stmts.push(Stmt::Eval(set));
+        }
+        Ok(mk(
+            ExprKind::Seq(stmts, Box::new(self.var_expr(m))),
+            ty.clone(),
+        ))
+    }
+
+    /// A record struct (`Record<"a" | "b", V>`) as a `Record<string, V>` map: a copy.
+    pub(crate) fn struct_to_map(&mut self, obj: Expr, sid: StructId, ty: &Ty) -> R<Expr> {
+        let Some((_, v, false)) = Self::parts(ty) else {
+            bail!("a map type is needed")
+        };
+        let src = self.new_local(obj.ty.clone());
+        let m = self.new_local(ty.clone());
+        let mut stmts = vec![
+            Stmt::Assign(src, obj),
+            Stmt::Assign(m, self.new_collection(ty)?),
+        ];
+        let fields = self.m.structs[sid].fields.clone();
+        for (i, f) in fields.iter().enumerate() {
+            if f.ty.strip() != v.strip() {
+                bail!("a record with fields of different types is not a Record<string, {v}>")
+            }
+            let read = mk(
+                ExprKind::Field(Box::new(self.var_expr(src)), sid, i),
+                f.ty.clone(),
+            );
+            let key = self.str_lit(&f.name);
+            let set = self.map_set_value(self.var_expr(m), key, Some(read))?;
+            stmts.push(Stmt::Eval(set));
+        }
+        Ok(mk(
+            ExprKind::Seq(stmts, Box::new(self.var_expr(m))),
+            ty.clone(),
+        ))
+    }
+
     pub(crate) fn lower_collection_method(
         &mut self,
         recv: Expr,
@@ -303,71 +440,17 @@ impl<'a> Lowerer<'a> {
         let tv = self.var_expr(t);
         match (m, is_set) {
             ("get", false) => {
-                if !(v.is_ptr() || v == Ty::Num || v == Ty::Lit) {
-                    bail!(
-                        "{at}: Map.get over {v} values is not supported (the result could not be told from a missing key); use has() first"
-                    )
-                }
                 let key = arg(self, 0, &k)?;
-                let kw = self.key_word(key, &k)?;
-                let idx = self.new_local(Ty::Num);
-                let iv = self.var_expr(idx);
-                let found = self.rt_map("ts_rt_map_find", vec![tv.clone(), kw], Ty::Num);
-                let raw = self.rt_map(
-                    "ts_rt_map_value_at",
-                    vec![tv.clone(), iv.clone()],
-                    Ty::Handle("bits".into()),
-                );
-                let rty = v.clone().nullable();
-                let hit = mk(
-                    ExprKind::Cast(Box::new(self.unbits(raw, v.clone()))),
-                    rty.clone(),
-                );
-                let miss = mk(ExprKind::Null, rty.clone());
-                let missing = mk(
-                    ExprKind::Cmp(CmpOp::Lt, Box::new(iv), Box::new(num(0.0))),
-                    Ty::Bool,
-                );
-                Ok(mk(
-                    ExprKind::Seq(
-                        vec![Stmt::Assign(t, recv), Stmt::Assign(idx, found)],
-                        Box::new(mk(
-                            ExprKind::Cond(Box::new(missing), Box::new(miss), Box::new(hit)),
-                            rty.clone(),
-                        )),
-                    ),
-                    rty,
-                ))
+                self.map_get_value(recv, key, "Map.get")
             }
             ("set", false) | ("add", true) => {
                 let key = arg(self, 0, &k)?;
-                let kw = self.key_word(key, &k)?;
-                let vw = if is_set {
-                    self.bits(num(0.0))
+                let vv = if is_set {
+                    None
                 } else {
-                    let vv = arg(self, 1, &v)?;
-                    self.val_word(vv, &v)?
+                    Some(arg(self, 1, &v)?)
                 };
-                let (kt, vt) = (
-                    self.new_local(Ty::Handle("bits".into())),
-                    self.new_local(Ty::Handle("bits".into())),
-                );
-                Ok(mk(
-                    ExprKind::Seq(
-                        vec![
-                            Stmt::Assign(t, recv),
-                            Stmt::Assign(kt, kw),
-                            Stmt::Assign(vt, vw),
-                            Stmt::Eval(self.rt_map(
-                                "ts_rt_map_set",
-                                vec![tv.clone(), self.var_expr(kt), self.var_expr(vt)],
-                                Ty::Void,
-                            )),
-                        ],
-                        Box::new(tv),
-                    ),
-                    ty,
-                ))
+                self.map_set_value(recv, key, vv)
             }
             ("has", _) | ("delete", _) => {
                 let key = arg(self, 0, &k)?;

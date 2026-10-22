@@ -62,6 +62,27 @@ impl<'a> Lowerer<'a> {
             TSType::TSSymbolKeyword(_) => self.named_type("Symbol_")?,
             TSType::TSBooleanKeyword(_) => Ty::Bool,
             TSType::TSStringKeyword(_) => Ty::Str,
+            // `object` (a bag of properties, in practice a style): an `IronStyle` when the program
+            // has the UI prelude.
+            TSType::TSObjectKeyword(_) if self.class_decls.contains_key("StyleEntry") => {
+                self.named_type("IronStyle")?
+            }
+            // `typeof TABLE`: the type of a top-level constant, from its initialiser.
+            TSType::TSTypeQuery(q) => {
+                let TSTypeQueryExprName::IdentifierReference(id) = &q.expr_name else {
+                    bail!("typeof of a qualified name")
+                };
+                let Some(init) = self.const_inits.get(id.name.as_str()).copied() else {
+                    bail!("typeof {}: only a top-level constant with a value", id.name)
+                };
+                match self.guess_ty(init, 0)? {
+                    Some(t) => t,
+                    None => bail!(
+                        "typeof {}: the type of its value is not known without lowering it; write the type",
+                        id.name
+                    ),
+                }
+            }
             TSType::TSVoidKeyword(_) | TSType::TSUndefinedKeyword(_) => Ty::Void,
             TSType::TSNullKeyword(_) => Ty::Null,
             TSType::TSParenthesizedType(p) => self.ty(&p.type_annotation, hint)?,
@@ -90,17 +111,24 @@ impl<'a> Lowerer<'a> {
             // `[number, number]`: a tuple of one element type is an array of it.
             TSType::TSTupleType(t) => {
                 let mut tys = Vec::new();
+                let mut optional_from: Option<usize> = None;
                 for el in &t.element_types {
+                    // `"c"?`: an optional element is `undefined` when the array is shorter.
+                    if let TSTupleElement::TSOptionalType(o) = el {
+                        optional_from.get_or_insert(tys.len());
+                        tys.push(self.ty(&o.type_annotation, hint)?.nullable());
+                        continue;
+                    }
                     let Some(et) = el.as_ts_type() else {
                         bail!(
-                            "{}: optional and rest tuple elements are not supported",
+                            "{}: rest tuple elements are not supported",
                             self.loc(t.span.start)
                         )
                     };
                     tys.push(self.ty(et, hint)?);
                 }
                 match tys.first() {
-                    Some(first) if tys.iter().all(|t| t == first) => {
+                    Some(first) if optional_from.is_none() && tys.iter().all(|t| t == first) => {
                         Ty::Arr(Box::new(first.clone()))
                     }
                     // Mixed element types: an object with fields `0`, `1`, ..
@@ -145,7 +173,41 @@ impl<'a> Lowerer<'a> {
                 Ty::Fn(Box::new(FnTy { params, ret }))
             }
             TSType::TSIndexedAccessType(i) => {
+                // `(typeof NAMES)[number]` where `NAMES = ["a", "b"] as const`: the union of them.
+                if matches!(i.index_type, TSType::TSNumberKeyword(_))
+                    && let Some(ms) = self.lit_members(t)
+                {
+                    for m in &ms {
+                        self.tag(m);
+                    }
+                    return Ok(Ty::Lit);
+                }
                 let obj = self.ty(&i.object_type, hint)?;
+                // `(typeof NAMES)[number]`: the element type of an array.
+                if let (TSType::TSNumberKeyword(_), Ty::Arr(el)) = (&i.index_type, obj.strip()) {
+                    return Ok((**el).clone());
+                }
+                // `(typeof TINTS)[Tint]`: the type the named fields have (one type for all).
+                if !matches!(i.index_type, TSType::TSLiteralType(_))
+                    && let Ty::Obj(sid) = obj.strip()
+                    && let Some(keys) = self
+                        .lit_members(&i.index_type)
+                        .or_else(|| self.keys_of_keyof(&i.index_type))
+                {
+                    let st = &self.m.structs[*sid];
+                    let mut found: Option<Ty> = None;
+                    for k in &keys {
+                        let Some(f) = st.field(k) else {
+                            bail!("indexed access: no field {k}")
+                        };
+                        match &found {
+                            None => found = Some(st.fields[f].ty.clone()),
+                            Some(t) if *t == st.fields[f].ty => {}
+                            Some(_) => bail!("indexed access over fields of different types"),
+                        }
+                    }
+                    return found.ok_or_else(|| "indexed access by no keys".to_string());
+                }
                 let TSType::TSLiteralType(l) = &i.index_type else {
                     bail!("indexed access by a non-literal")
                 };
@@ -269,10 +331,20 @@ impl<'a> Lowerer<'a> {
                         {
                             return self.named_type("IronStyle");
                         }
-                        let Some(keys) = self.lit_members(args[0]) else {
+                        // `Record<string, V>`: a dictionary, a `Map<string, V>`.
+                        if matches!(args[0], TSType::TSStringKeyword(_)) {
+                            return Ok(Ty::Map(
+                                Box::new(Ty::Str),
+                                Box::new(self.ty(args[1], hint)?),
+                            ));
+                        }
+                        let Some(keys) = self
+                            .lit_members(args[0])
+                            .or_else(|| self.keys_of_keyof(args[0]))
+                        else {
                             bail!(
-                                "Record needs a union of string literals as its keys; \
-                                 use Map<string, V> for other keys"
+                                "Record needs a union of string literals (or `string`) as its keys; \
+                                 use Map<K, V> for other keys"
                             )
                         };
                         let vt = self.ty(args[1], hint)?;
@@ -420,6 +492,25 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// The names a key type stands for when it is `keyof typeof TABLE` / `keyof Iface`, written
+    /// directly or through aliases (`type Tint = keyof typeof TINTS`).
+    fn keys_of_keyof(&mut self, t: &'a TSType<'a>) -> Option<Vec<String>> {
+        match t {
+            TSType::TSParenthesizedType(p) => self.keys_of_keyof(&p.type_annotation),
+            TSType::TSTypeOperatorType(o) if o.operator == TSTypeOperatorOperator::Keyof => {
+                self.keyof_names(&o.type_annotation)
+            }
+            TSType::TSTypeReference(r) => {
+                let TSTypeName::IdentifierReference(id) = &r.type_name else {
+                    return None;
+                };
+                let a = self.aliases.get(id.name.as_str()).copied()?;
+                self.keys_of_keyof(&a.type_annotation)
+            }
+            _ => None,
+        }
+    }
+
     fn member_names(&mut self, members: &'a [TSSignature<'a>]) -> Option<Vec<String>> {
         let mut out = Vec::new();
         for m in members {
@@ -475,7 +566,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// The members of a union of string literals (through aliases), or `None` for any other type.
-    fn lit_members(&self, t: &'a TSType<'a>) -> Option<Vec<String>> {
+    pub(crate) fn lit_members(&self, t: &'a TSType<'a>) -> Option<Vec<String>> {
         match t {
             TSType::TSParenthesizedType(p) => self.lit_members(&p.type_annotation),
             TSType::TSLiteralType(l) => match &l.literal {
@@ -495,6 +586,41 @@ impl<'a> Lowerer<'a> {
                 };
                 let a = self.aliases.get(id.name.as_str())?;
                 self.lit_members(&a.type_annotation)
+            }
+            // `(typeof NAMES)[number]` where `NAMES = ["a", "b"] as const`.
+            TSType::TSIndexedAccessType(i)
+                if matches!(i.index_type, TSType::TSNumberKeyword(_)) =>
+            {
+                let mut obj_ty = &i.object_type;
+                while let TSType::TSParenthesizedType(p) = obj_ty {
+                    obj_ty = &p.type_annotation;
+                }
+                let TSType::TSTypeQuery(q) = obj_ty else {
+                    return None;
+                };
+                let TSTypeQueryExprName::IdentifierReference(id) = &q.expr_name else {
+                    return None;
+                };
+                let mut init = *self.const_inits.get(id.name.as_str())?;
+                loop {
+                    match init {
+                        Expression::TSAsExpression(a) => init = &a.expression,
+                        Expression::TSSatisfiesExpression(a) => init = &a.expression,
+                        Expression::ParenthesizedExpression(p) => init = &p.expression,
+                        _ => break,
+                    }
+                }
+                let Expression::ArrayExpression(arr) = init else {
+                    return None;
+                };
+                let mut out = Vec::new();
+                for el in &arr.elements {
+                    match el.as_expression()? {
+                        Expression::StringLiteral(s) => out.push(s.value.to_string()),
+                        _ => return None,
+                    }
+                }
+                Some(out)
             }
             _ => None,
         }
@@ -743,6 +869,28 @@ impl<'a> Lowerer<'a> {
                 }
             } else {
                 copy
+            });
+        }
+        // A record (`Record<"a" | "b", V>`, an object of one type) where a `Record<string, V>` goes:
+        // a map with its entries (a copy).
+        if let (Ty::Obj(sid), Ty::Map(k, _)) = (&e.ty, to.strip())
+            && **k == Ty::Str
+            && !self.class_of_sid.contains_key(sid)
+            && !self.is_dyn(*sid)
+        {
+            let (sid, to) = (*sid, to.strip().clone());
+            return self.struct_to_map(e, sid, &to);
+        }
+        // An array of nothing but nulls (`Array.from({ length }, () => null)`) where an array of
+        // nullable objects goes: the slots are all zero already.
+        if let (Ty::Arr(a), Ty::Arr(b)) = (e.ty.strip(), to.strip())
+            && **a == Ty::Null
+            && b.is_nullable()
+            && b.strip().is_ptr()
+        {
+            return Ok(Expr {
+                kind: ExprKind::Cast(Box::new(e)),
+                ty: to.clone(),
             });
         }
         match (&e.ty, to) {

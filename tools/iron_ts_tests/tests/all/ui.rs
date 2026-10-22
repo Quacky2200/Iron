@@ -449,6 +449,25 @@ fn a_style_key_can_be_computed() {
     });
 }
 
+// M9-TS-3171
+//
+// A prop typed `object` is a bag of style properties (`extra?: object`, spread into `style`).
+#[test]
+fn an_object_typed_style_prop_is_spread_into_a_style() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_objectStyleApp(true) });
+        let b = ui.tree.children(ROOT)[0];
+        ui.tree.layout_if_needed();
+        let r = ui.tree.rect(b).unwrap();
+        assert_eq!((r.width, r.height), (20.0, 30.0));
+        ui.show(unsafe { ts_uic_objectStyleApp(false) });
+        let b = ui.tree.children(ROOT)[0];
+        ui.tree.layout_if_needed();
+        assert_eq!(ui.tree.rect(b).unwrap().width, 20.0);
+    });
+}
+
 // M9-TS-2847
 //
 // A function that returns a number, a string, a class object, an object literal or an element is

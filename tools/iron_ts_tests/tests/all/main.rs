@@ -84,6 +84,7 @@ mod stdlib;
 mod strings;
 mod switches;
 mod symbols;
+mod tables;
 mod task;
 mod temporal;
 mod timespan;

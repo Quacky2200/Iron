@@ -342,6 +342,14 @@ export function edgeApp(top: boolean): UiElement {
   return <box style={{ position: "absolute", width: 72, height: 30, [side]: 8 }} />;
 }
 
+function Sized(props: { extra?: object }) {
+  return <box style={{ width: 20, ...props.extra }} />;
+}
+
+export function objectStyleApp(more: boolean): UiElement {
+  return more ? <Sized extra={{ height: 30 }} /> : <Sized />;
+}
+
 // ---- functions that return a value where `() => void` is expected ----
 
 const tapLog: string[] = [];
