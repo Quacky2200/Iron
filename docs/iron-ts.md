@@ -337,7 +337,8 @@ only to validate regex literals at compile time (`regex_validate`).
   a `Map<string, V>`). `String(re)` and objects with `toString()` convert to strings.
 - **Limits** (see [differences.md](differences.md)): a group that did not take part is null where JavaScript
   has undefined, so `m[1].length` dereferences null instead of throwing a `TypeError`; `groups === null`
-  is true where JavaScript has undefined; tuple types are not supported.
+  is true where JavaScript has undefined; a match is an object seen as its array, not an array (see
+  "Tuples" below for tuple types).
 - Tests: `bench/regexp.ts` with `tests/regexp.rs` (M9-TS-222..231), expected values from
   `bench/gen_regexp_expected.ts` (bun) into `regexp_expected.json`.
 
