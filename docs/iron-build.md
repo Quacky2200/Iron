@@ -363,7 +363,8 @@ a `--packs` exe needs that later step. The default stays loose; flipping it is a
 `emoji` with `--packs`: one `assets.dat`, 157 entries, 6.41 MB raw, 5.93 MB on disk.
 
 **The host** is `--host`, else `$IRON_HOST`, else the newest of `iron_app` next to `iron-build` and `target/{release,debug}/iron_app`
-found going up from the game folder and the current folder (release first). A host that already carries a payload is stripped first, so
+found going up from the game folder and the current folder, by modified time (a stale release build no longer wins over a fresh
+debug one; it lacked payload support and died with a missing `game.js`). `package` prints `host: <path>` first. A host that already carries a payload is stripped first, so
 a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much smaller: ship release.
 
 **Metadata** (command line, then the `project.json` field, then the default; the table lists the flags, the fields are in "`project.json`"):

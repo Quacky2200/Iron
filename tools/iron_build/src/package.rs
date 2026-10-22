@@ -470,6 +470,8 @@ pub struct PackageOptions {
 #[derive(Debug)]
 pub struct Packaged {
     pub path: PathBuf,
+    /// The engine host the exe was made from.
+    pub host: PathBuf,
     pub size: u64,
     pub payload_size: u64,
     pub files: usize,
@@ -529,12 +531,27 @@ pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String
             }
         }
     }
-    let mtime = |p: &PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    found
-        .into_iter()
-        .filter(|p| p.is_file())
-        .max_by_key(|p| (p.to_string_lossy().contains("release"), mtime(p)))
+    newest_host(found)
         .ok_or_else(|| "no iron_app host found (build it, or pass --host <path>)".to_string())
+}
+
+/// The most recently built of the candidate hosts. Not "release first": a stale release build
+/// from before the payload support would win over a fresh debug one and die with
+/// `.\dist\game.js not found`. Equal times go to the earlier candidate.
+pub fn newest_host(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
+    for p in candidates {
+        let Ok(t) = std::fs::metadata(&p).and_then(|m| m.modified()) else {
+            continue;
+        };
+        if !p.is_file() {
+            continue;
+        }
+        if best.as_ref().is_none_or(|(bt, _)| t > *bt) {
+            best = Some((t, p));
+        }
+    }
+    best.map(|(_, p)| p)
 }
 
 fn run_sign(cmd: &str, exe: &Path) -> Result<(), String> {
@@ -723,6 +740,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
     let size = std::fs::metadata(&out).map_err(|e| io(&out, e))?.len();
     Ok(Packaged {
         path: out,
+        host: host_path,
         size,
         payload_size,
         files: check.entries.len(),
@@ -781,6 +799,7 @@ pub fn run_cli(args: &[String]) -> i32 {
     let game = game.unwrap_or_else(|| PathBuf::from("."));
     match package(&game, &opts) {
         Ok(p) => {
+            println!("host: {}", p.host.display());
             println!(
                 "{}: {} file(s) embedded ({} bytes), {} bytes total{}",
                 p.path.display(),
@@ -1660,6 +1679,42 @@ mod tests {
         let err = String::from_utf8_lossy(&bad.stderr);
         assert!(err.contains("data folder was not found"), "{err}");
         assert!(!cwd.join("none.png").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2559
+    #[test]
+    fn the_newest_host_wins_not_the_release_one() {
+        let d = std::env::temp_dir().join(format!("iron_build_host_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let (release, debug, gone) = (
+            d.join("release.exe"),
+            d.join("debug.exe"),
+            d.join("gone.exe"),
+        );
+        std::fs::write(&release, b"old").unwrap();
+        std::fs::write(&debug, b"new").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&release)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        // The stale release build is listed first, as `find_host` lists it.
+        let list = vec![release.clone(), debug.clone(), gone];
+        assert_eq!(newest_host(list), Some(debug.clone()));
+        assert_eq!(newest_host(vec![d.join("none.exe")]), None);
+        // Equal times: the first candidate.
+        let t = std::fs::metadata(&debug).unwrap().modified().unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&release)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
+        assert_eq!(newest_host(vec![release.clone(), debug]), Some(release));
         let _ = std::fs::remove_dir_all(&d);
     }
 }
