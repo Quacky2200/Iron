@@ -1955,6 +1955,8 @@ impl<'a> Lowerer<'a> {
                     ExtTy::Opt(inner) if matches!(**inner, ExtTy::Record(_)) => {
                         self.str_lit("null")
                     }
+                    // A left-out nullable (`normal?: Vector3 | null`) is null.
+                    ExtTy::Opt(_) if i >= opt_from => mk(ExprKind::Null, self.ext_ir(pt)),
                     // An optional value class has NaN in every field: the function tells "left
                     // out" from a value.
                     ExtTy::Value(vn) if i >= opt_from => {

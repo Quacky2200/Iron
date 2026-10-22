@@ -43,6 +43,7 @@ mod effects;
 )]
 #[allow(clippy::possible_missing_else)] // the snippets are one-liners, not formatted
 mod generated;
+mod light_meter;
 mod models;
 mod render_settings;
 mod resources;

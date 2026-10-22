@@ -127,6 +127,25 @@ fn measure_illuminance_resolves_after_the_next_physics_step() {
     });
 }
 
+// M9-API-1645
+#[test]
+fn the_native_light_meter_faces_the_normal_and_counts_colliders_as_shadows() {
+    use iron_ts_rt::ts_rt_microtasks_run;
+    in_every_gc_mode(|| unsafe {
+        iron_physics_api::reset();
+        // 16 pi lumens over 4 pi sr = 4 cd, 1 lux at 2 m head-on (times the range fade, 0.9998); 0 facing away.
+        assert_eq!((ts_ogn_startShadowed() * 1000.0).round(), 9998.0);
+        iron_physics_api::step();
+        ts_rt_microtasks_run();
+        assert_eq!(
+            ts_ogn_shadowedLux(),
+            0.0,
+            "the roof's collider is in the way"
+        );
+        iron_physics_api::reset();
+    });
+}
+
 // M9-TS-3200
 #[test]
 fn a_closure_given_to_after_next_step_runs_once_after_a_step() {

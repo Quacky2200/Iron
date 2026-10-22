@@ -121,7 +121,7 @@ pub const COMPONENTS: &[Component] = &[
         extra_load: None,
         extra_handles: &[],
         extra_records: &[],
-        extra_value_types: &[],
+        extra_value_types: &[r#"v3"#],
         items: None,
         api: Some(
             r#"
@@ -135,6 +135,30 @@ pub const COMPONENTS: &[Component] = &[
             super::lights()
                 .get(index as usize)
                 .map_or(LightRef(0), |(r, _)| *r)
+        }
+
+        /// A light meter: how much light falls on `point` from every light (lux in physical light units), facing `normal` if given. Shadows are not counted.
+        #[optional(normal)]
+        #[like]
+        pub fn illuminance_at(point: V3, normal: Option<V3>) -> f64 {
+            crate::light_meter::illuminance(point, normal, false)
+        }
+
+        /// A light meter that counts shadows: each light only if a physics ray from `point` reaches it (walls need colliders). Resolves after the next physics step.
+        #[optional(normal)]
+        #[like]
+        #[promise]
+        pub fn measure_illuminance(
+            point: V3,
+            normal: Option<V3>,
+            resolve: Callback<(f64,)>,
+            reject: Callback<(String,)>,
+        ) {
+            // Nothing makes it fail.
+            drop(reject);
+            iron_physics_api::physics_api::after_next_step(Callback::from_fn(move |()| {
+                resolve.call((crate::light_meter::illuminance(point, normal, true),));
+            }));
         }
 "#,
         ),

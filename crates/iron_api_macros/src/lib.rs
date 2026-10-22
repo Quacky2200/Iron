@@ -831,7 +831,7 @@ fn js_default(k: &Kind) -> TokenStream2 {
             quote!(::std::vec::Vec::new())
         }
         Kind::Records(_) => quote!(::iron_api::rquickjs::Value::new_undefined(ctx.clone())),
-        Kind::OptRecord(_) => quote!(::std::option::Option::None),
+        Kind::OptRecord(_) | Kind::Opt(_) => quote!(::std::option::Option::None),
         Kind::Str(_) | Kind::Enum(_) | Kind::OptEnum(_) => quote!(::std::string::String::new()),
         _ => quote!(compile_error!("this parameter type cannot be optional")),
     }

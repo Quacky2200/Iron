@@ -120,6 +120,25 @@ export function expectedLux(): number {
   return Light.illuminanceAt(new Vector3(0, 0, 0));
 }
 
+let shadowed = -1;
+
+export function startShadowed(): number {
+  const lamp = new GameObject("lamp", { position: new Vector3(0, 2, 0) });
+  lamp.addComponent(Light, { type: "point", intensity: 4 * Math.PI * 4, range: 20 });
+  const roof = new GameObject("roof", { position: new Vector3(0, 1, 0) });
+  roof.addComponent(BoxCollider, { size: new Vector3(4, 0.1, 4) });
+  Light.measureIlluminance(new Vector3(0, 0, 0), Vector3.up).then((lux) => {
+    shadowed = lux;
+  });
+  // Facing away from the lamp: nothing.
+  const away = Light.illuminanceAt(new Vector3(0, 0, 0), Vector3.down);
+  return Light.illuminanceAt(new Vector3(0, 0, 0), Vector3.up) * 10 + away;
+}
+
+export function shadowedLux(): number {
+  return shadowed;
+}
+
 let ticks = 0;
 
 export function afterStepTwice(): number {

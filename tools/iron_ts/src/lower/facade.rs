@@ -151,7 +151,10 @@ fn ext_ts(t: &crate::ir::ExtTy) -> String {
     match t {
         ExtTy::Bool => "boolean".into(),
         ExtTy::Str | ExtTy::Enum(_) => "string".into(),
-        ExtTy::Handle(n) => n.clone(),
+        ExtTy::Handle(n) | ExtTy::Value(n) => n.clone(),
+        ExtTy::Opt(inner) if matches!(**inner, ExtTy::Value(_)) => {
+            format!("{} | null", ext_ts(inner))
+        }
         _ => "number".into(),
     }
 }
@@ -281,6 +284,12 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
                 match t {
                     crate::ir::ExtTy::Str | crate::ir::ExtTy::Enum(_) => format!("({p} ?? \"\")"),
                     crate::ir::ExtTy::Bool => format!("({p} ?? false)"),
+                    // A nullable value: left out is null.
+                    crate::ir::ExtTy::Opt(inner)
+                        if matches!(**inner, crate::ir::ExtTy::Value(_)) =>
+                    {
+                        p.clone()
+                    }
                     _ => format!("({p} ?? NaN)"),
                 }
             })

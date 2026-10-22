@@ -1401,6 +1401,7 @@ dependencies = [
  "iron_engine_api",
  "iron_kinds",
  "iron_math",
+ "iron_physics_api",
  "iron_scene",
  "serde_json",
 ]

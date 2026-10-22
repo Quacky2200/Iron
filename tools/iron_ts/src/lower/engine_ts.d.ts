@@ -134,12 +134,6 @@ interface MeshRenderer {
   /** A mesh, or the name of a primitive. */
   mesh: Mesh | PrimitiveType;
 }
-declare namespace Light {
-  /** A light meter: how much light falls on `point` from every light (lux in physical light units), facing `normal` if given. Shadows are not counted. */
-  function illuminanceAt(point: Vector3Like, normal?: Vector3Like): number;
-  /** A light meter that counts shadows: each light only if a physics ray from `point` reaches it (walls need colliders). */
-  function measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number>;
-}
 interface AudioSource {
   playOneShot(clip: Sound | string, volumeScale?: number): void;
 }

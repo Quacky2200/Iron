@@ -627,6 +627,10 @@ declare class Light :: static at(index: number): Light;
 declare class Light :: static attach(object: GameObject): Light;
 declare class Light :: static count(): number;
 declare class Light :: static findOn(object: GameObject): Light;
+declare class Light :: static illuminanceAt(point: Vector3Like, normal?: Vector3Like | null): number;
+declare class Light :: static illuminanceAt(point: Vector3Like, options?: { normal?: Vector3Like | null }): number;
+declare class Light :: static measureIlluminance(point: Vector3Like, normal?: Vector3Like | null): Promise<number>;
+declare class Light :: static measureIlluminance(point: Vector3Like, options?: { normal?: Vector3Like | null }): Promise<number>;
 declare class Light :: volumetricIntensity: number;
 declare class LineRenderer
 declare class LineRenderer :: get positions(): Vector3[];
@@ -2149,9 +2153,6 @@ declare namespace LayerMask :: function getMask(n0?: string, n1?: string, n2?: s
 declare namespace LayerMask :: function getMask(options?: { n0?: string; n1?: string; n2?: string; n3?: string }): number;
 declare namespace LayerMask :: function layerToName(layer: number): string;
 declare namespace LayerMask :: function nameToLayer(name: string): number;
-declare namespace Light
-declare namespace Light :: function illuminanceAt(point: Vector3Like, normal?: Vector3Like): number;
-declare namespace Light :: function measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number>;
 declare namespace LoadSceneMode
 declare namespace LoadSceneMode :: function name(index: number): LoadSceneMode;
 declare namespace LoadSceneMode :: function parse(name: string): number;
