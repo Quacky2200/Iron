@@ -1,0 +1,135 @@
+{
+  "warmup": 120,
+  "segments": [
+    {
+      "name": "idle",
+      "frames": 300
+    },
+    {
+      "name": "carousel",
+      "frames": 660,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 30,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 60,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 90,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 120,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 150,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 180,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 210,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 240,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 270,
+          "kind": "key",
+          "code": "ArrowRight",
+          "hold": 2
+        },
+        {
+          "frame": 300,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 330,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 360,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 390,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 420,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 450,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 480,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 510,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 540,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        },
+        {
+          "frame": 570,
+          "kind": "key",
+          "code": "ArrowLeft",
+          "hold": 2
+        }
+      ]
+    }
+  ]
+}

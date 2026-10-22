@@ -426,8 +426,9 @@ impl App {
         }
         let open = win::open_windows();
         let (cmds, title) = requests_to_commands(reqs, win::state, &open);
-        if let (Some(t), Some(gfx)) = (title, &self.gfx) {
-            gfx.window.set_title(&t);
+        if let (Some(t), Some(window)) = (title, self.gfx.as_ref().and_then(|g| g.window.as_ref()))
+        {
+            window.set_title(&t);
         }
         for c in &cmds {
             if let WindowCommand::Open(k, spec) = c {
@@ -852,7 +853,7 @@ impl App {
     pub(super) fn sync_domains(&mut self) {
         let open = win::domains();
         self.domains
-            .sync(&open, win::run_in_background, self.screenshot.is_some());
+            .sync(&open, win::run_in_background, self.offline);
     }
 
     /// The isolated domains' turns, after the main game's (`tick`): each, with its domain current,

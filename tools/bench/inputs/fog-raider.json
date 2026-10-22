@@ -1,0 +1,9 @@
+{
+  "warmup": 300,
+  "segments": [
+    {
+      "name": "capture",
+      "frames": 1200
+    }
+  ]
+}

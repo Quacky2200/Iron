@@ -11,7 +11,8 @@ const USAGE: &str = "usage:
   iron-build pack-info <file.dat>                       list a pack: header, codecs, entries
   iron-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json (see: iron-build init --help)
   iron-build package <game> [--host exe] [--out f] ...   one executable (see: iron-build package --help)
-  iron-build check <examples folder> [--tsc] [--full]   build every game in it and print a table";
+  iron-build check <examples folder> [--tsc] [--full]   build every game in it and print a table
+  iron-build bench <examples folder> [--only a,b] ...   time every game, native vs QuickJS (see: iron-build bench --help)";
 
 fn options(args: &[String]) -> Options {
     Options {
@@ -157,6 +158,7 @@ fn main() {
             0
         }
         "package" => package::run_cli(&args[1..]),
+        "bench" => iron_build::bench::run_cli(&args[1..]),
         "pack-info" => match pos.first() {
             Some(f) => match iron_build::packs::info(Path::new(f.as_str())) {
                 Ok(t) => {

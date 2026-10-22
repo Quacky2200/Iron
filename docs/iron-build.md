@@ -513,7 +513,41 @@ Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--a
 - Both need the `--aot` path to cover all of the engine API first (today the examples run through the JIT) and a mobile windowing and
   input layer in `iron_platform`.
 
+## Benchmarks (`iron --bench`, `iron-build bench`)
+
+`iron <game> --bench` runs a game with **no OS window**: the main window is an offscreen texture
+(`iron_app/src/frame_target.rs`), the platform is `iron_platform::FakePlatform` (secondary windows virtual, as in screenshot
+runs), and there is no vsync or frame cap. Each frame waits for the GPU work of the frame before it (like a swapchain queueing one
+frame), so GPU time counts. It warms up, measures, and writes JSON (`--bench-out file`, else stdout): fps, mean / median / p95 /
+p99 / worst frame ms, and the mean split into `script` (game code: hooks, timers, the UI it renders), `sync` (a compiled game's
+`sync_native_render`: animation, splines, cameras, registries into `WorldViews`; 0 under QuickJS, which does that in script),
+`render` (layout and draw list, world, GPU wait) and `other`; start-up (process start to the first frame), load time and peak
+working set. Flags: `--warmup N` (120), `--frames N` (600), `--fixed-dt s` (every frame advances the game's clock by exactly
+`s`, so runs are comparable whatever their speed), `--size WxH`, `--bench-shots dir` (a PNG after each segment, to check the
+input did what it should), `--force` for a QuickJS bundle as usual.
+
+`--bench-input spec.json` scripts the run: `{"warmup": N, "segments": [{"name", "warmup", "frames", "input": [...]}]}`. Input
+frames count from the segment's start (its warm-up included); kinds are `key` (`code`, optional `key`, `hold` frames),
+`keyDown` / `keyUp`, `mouseMove` / `click` (`x`, `y` in window pixels, `button`), `mouseDown` / `mouseUp`, `wheel` (`dy` lines),
+`clickText` / `moveToText` (the middle of the first screen text reading `text`, found when the frame comes), and gamepad `axis` /
+`button`; `count` and `every` repeat one. They are sent as the platform sends the OS's (`window_input`), so both backends see
+the same input. The examples' scripts are in `tools/bench/inputs/<name>.json` (the example sources stay unchanged).
+
+`iron-build bench <examples> [--only a,b] [--base main] [--no-quickjs] [--no-host-build] [--frames N] [--timeout s]` builds the
+release host (`cargo build --release -p iron_app`), every example natively, and the base branch's QuickJS originals:
+`git archive <base>` into a folder of the OS temp dir (deleted afterwards), `bun install`, then each example's own
+`bun run build`, with files git does not hold (fonts kept out of git, downloaded models) copied in from the branch's folder. It
+runs both with `--fixed-dt 1/60 --size 1280x720` and writes `docs/benchmarks/results.json` and the generated part of
+`docs/benchmarks.md` (between its `bench:begin` / `bench:end` markers; text around them is kept). To re-run:
+
+```bash
+cd tools && cargo run -q -p iron_build -- bench ../examples
+```
+
 ## Tests
+
+`M9-BEN-01` bench files and frame stats, `M9-BEN-02` the page, `M9-BEN-03` (needs a GPU) a windowless bench run of a native
+game with scripted keys.
 
 `M9-API-1000..1005` the payload format (round trip, no trailer, unsafe paths, damage and duplicates, extraction and id, a payload before
 a certificate table), `M9-API-1010..1011` the runtime side (`iron_app/src/payload.rs`), `M9-TS-2400..2402` metadata, `2410..2412` file

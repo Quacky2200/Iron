@@ -10,6 +10,7 @@
 
 pub(crate) mod asset_db;
 mod asset_root;
+mod bench;
 mod cloth_sync;
 pub(crate) mod cook;
 mod cursor;
@@ -17,6 +18,7 @@ mod display;
 mod editor;
 mod file_drop;
 mod fps;
+mod frame_target;
 mod game_input;
 // `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
 // re-exports these at its root, for the `crate::` paths between modules.
@@ -50,9 +52,7 @@ use iron_platform::{
     WheelDelta, Window, WindowConfig,
 };
 use iron_render::wgpu;
-use iron_render::{
-    Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface, WorldRenderer,
-};
+use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WorldRenderer};
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
 use iron_ui::{
     Clipboard, Input, Interaction, ScrollAlign, ScrollBehavior, UiEvent, UiTree, events,
@@ -84,6 +84,15 @@ struct Args {
     force: bool,
     /// Everything after `--`, for the game's scripts (`Application.args`).
     script_args: Vec<String>,
+    /// `--bench`: a windowless timed run (see `bench.rs`).
+    bench: Option<bench::BenchArgs>,
+}
+
+impl Args {
+    /// No player: a screenshot or bench run.
+    fn offline(&self) -> bool {
+        self.screenshot.is_some() || self.bench.is_some()
+    }
 }
 
 /// The deprecation note for the QuickJS backend (logged once per run).
@@ -137,7 +146,9 @@ fn parse_args() -> Result<Args> {
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
     let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder] [--force] [-- script args]
---force runs a QuickJS (deprecated) bundle; games built with `iron-build build` are native; arguments after -- reach scripts as Application.args";
+       iron [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
+--force runs a QuickJS (deprecated) bundle; games built with `iron-build build` are native; arguments after -- reach scripts as Application.args;
+--bench runs without a window as fast as it can and writes timings as JSON (docs/iron-build.md, \"Benchmarks\")";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
@@ -150,8 +161,15 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         asset_root: None,
         force: false,
         script_args: Vec::new(),
+        bench: None,
     };
+    let mut frames_given = false;
     while let Some(arg) = args.next() {
+        if let Some(flag) = arg.to_str().filter(|s| bench::is_flag(s)) {
+            let bench = parsed.bench.get_or_insert_with(bench::BenchArgs::default);
+            bench.flag(flag, &mut args).context(usage)?;
+            continue;
+        }
         match arg.to_str() {
             Some("--data") => parsed.data = Some(args.next().context(usage)?.into()),
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
@@ -164,6 +182,7 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
                 break;
             }
             Some("--frames") => {
+                frames_given = true;
                 parsed.frames = args
                     .next()
                     .and_then(|n| n.to_str()?.parse().ok())
@@ -177,6 +196,12 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
     if let Some(game) = game {
         parsed.game = game;
     }
+    // `--frames` is the measured frames of a bench run without an input file.
+    if let Some(bench) = parsed.bench.as_mut()
+        && frames_given
+    {
+        bench.frames = parsed.frames;
+    }
     Ok(parsed)
 }
 
@@ -184,6 +209,7 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
 static EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 pub(crate) fn main() -> Result<()> {
+    bench::mark_start();
     logging::attach_console();
     // The editor's console shows the log from the start.
     logging::capture(editor::ENABLED);
@@ -217,7 +243,7 @@ fn run() -> Result<()> {
         .as_deref()
         .map(info::Manifest::load)
         .and_then(|m| prefs::settings_dir(&m))
-        .filter(|_| args.screenshot.is_none());
+        .filter(|_| !args.offline());
     if let Some(log) = logging::init(logging::log_path(settings.as_deref())) {
         tracing::info!("log: {}", log.display());
     }
@@ -299,9 +325,11 @@ fn run() -> Result<()> {
     info.set_app("args", serde_json::json!(args.script_args));
     // The player's saved settings (not for screenshot runs, which stay the same every
     // time) and the window mode: the manifest's default, then the player's choice.
-    let prefs = match args.screenshot {
-        Some(_) => prefs::Prefs::in_memory(),
-        None => prefs::Prefs::load(&manifest),
+    let offline = args.offline();
+    let prefs = if offline {
+        prefs::Prefs::in_memory()
+    } else {
+        prefs::Prefs::load(&manifest)
     };
     // A game that keeps a fixed size (`iron.display.resizable: false`) always gets its own
     // settings: saved ones would tell its scripts about a window size it never has.
@@ -392,10 +420,11 @@ fn run() -> Result<()> {
         None => None,
     };
 
-    // Rebuilds by `bun build --watch` reload the scripts (not for screenshot runs).
-    let watcher = match args.screenshot {
-        Some(_) => None,
-        None => reload::BundleWatcher::new(vec![
+    // Rebuilds by `bun build --watch` reload the scripts (not for screenshot or bench runs).
+    let watcher = if offline {
+        None
+    } else {
+        reload::BundleWatcher::new(vec![
             bundle_path.clone(),
             css_path.clone(),
             bundle_path.with_file_name("vendor.js"),
@@ -403,16 +432,16 @@ fn run() -> Result<()> {
             bundle_path.with_file_name(".iron-reload"),
         ])
         .inspect_err(|e| tracing::warn!("not watching for script changes: {e}"))
-        .ok(),
+        .ok()
     };
-    // Asset files that change (textures, models, sounds) load again in place.
-    let asset_watcher = match args.screenshot {
-        Some(_) => None,
-        // Packs are read-only: only loose files are watched.
-        None if vfs.root().is_none() => None,
-        None => reload::AssetWatcher::new(&asset_root)
+    // Asset files that change (textures, models, sounds) load again in place. Packs are
+    // read-only: only loose files are watched.
+    let asset_watcher = if offline || vfs.root().is_none() {
+        None
+    } else {
+        reload::AssetWatcher::new(&asset_root)
             .inspect_err(|e| tracing::warn!("not watching for asset changes: {e}"))
-            .ok(),
+            .ok()
     };
 
     let app = App {
@@ -476,20 +505,24 @@ fn run() -> Result<()> {
         gfx: None,
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
-        lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, args.screenshot.is_some()),
+        lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, offline),
         physical_units: manifest.physical_units,
         pipeline_warned: false,
         frames: 0,
         fps_on: fps::enabled(
-            args.fps
-                .or((editor::ENABLED && args.screenshot.is_none()).then_some(false)),
-            args.screenshot.is_some(),
+            args.fps.or((editor::ENABLED && !offline).then_some(false)),
+            offline,
             std::env::var("IRON_FPS").ok().as_deref(),
             manifest.fps,
         ),
         fps: fps::FpsCounter::default(),
         fps_overlay: fps::FpsOverlay::new(),
         screenshot: args.screenshot.map(|path| (path, args.frames)),
+        offline,
+        fake_now: None,
+        script_time: Duration::ZERO,
+        render_time: Duration::ZERO,
+        sync_time: Duration::ZERO,
         done: false,
         info,
         editor: editor::EditorHost::default(),
@@ -505,6 +538,11 @@ fn run() -> Result<()> {
         display_settings.window_width,
         display_settings.window_height,
     );
+    // A bench run makes no OS window at all: it draws offscreen, its own loop drives the frames.
+    if let Some(bench) = args.bench {
+        let size = bench.size.unwrap_or((width, height));
+        return bench::run(app, &bench, size, &manifest.title);
+    }
     // Screenshot runs make no OS windows for secondary windows: they draw offscreen.
     let virtual_windows = app.screenshot.is_some();
     Platform::new().run(
@@ -548,8 +586,9 @@ fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
 
 struct Gfx {
     gpu: Gpu,
-    surface: WindowSurface,
-    window: Arc<Window>,
+    surface: frame_target::FrameTarget,
+    /// The OS window; `None` for a windowless `--bench` run.
+    window: Option<Arc<Window>>,
     renderer: UiRenderer,
     world: WorldRenderer,
 }
@@ -660,6 +699,17 @@ struct App {
     lifecycle: lifecycle::Lifecycle,
     frames: u32,
     screenshot: Option<(PathBuf, u32)>,
+    /// A run without a player (`--screenshot`, `--bench`): no saved prefs, file watching, frame
+    /// cap or pausing, and a silent mixer.
+    offline: bool,
+    /// The clock of a `--bench --fixed-dt` run (each frame exactly one step); `None`: real time.
+    fake_now: Option<Instant>,
+    /// Time spent in game code this frame (native or QuickJS hooks), and drawing it, for `--bench`.
+    script_time: Duration,
+    render_time: Duration,
+    /// A compiled game's per-frame sync of its registries into the renderer
+    /// (`sync_native_render`: animation, splines, cameras, `WorldViews` ops).
+    sync_time: Duration,
     /// The FPS counter overlay (drawn last, at window resolution).
     fps_on: bool,
     fps: fps::FpsCounter,
@@ -722,12 +772,12 @@ impl App {
         let Some(gfx) = &self.gfx else {
             return;
         };
-        let scale = ui_factor(&gfx.window, self.ui_scale);
-        let size = gfx.window.inner_size();
+        let scale = ui_factor(gfx, self.ui_scale);
+        let (width, height) = gfx.inner_size();
         self.ui
-            .set_size(size.width as f32 / scale, size.height as f32 / scale);
+            .set_size(width as f32 / scale, height as f32 / scale);
         // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
-        let screen = (size.width as f32 / scale, size.height as f32 / scale, scale);
+        let screen = (width as f32 / scale, height as f32 / scale, scale);
         if self.screen != screen {
             self.screen = screen;
             let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
@@ -983,7 +1033,7 @@ impl App {
     }
 
     fn tick(&mut self) {
-        let now = Instant::now();
+        let now = self.now();
         if self.watcher.as_mut().is_some_and(|w| w.poll(now)) {
             self.reload_scripts();
         }
@@ -1001,13 +1051,19 @@ impl App {
         }
         let (elapsed, ticks) = self.clock.advance(now, TICK, MAX_TICKS_PER_FRAME);
         for _ in 0..ticks {
+            // Script time leaves out applying what scripts asked for (`native_after`,
+            // `apply_script_output`): that is engine work for both backends.
             if let Some(n) = self.native.as_mut() {
+                let t = Instant::now();
                 n.fixed_tick(&mut self.scene.scene, &mut self.ui, TICK);
+                self.script_time += t.elapsed();
                 self.native_after();
             }
+            let t = Instant::now();
             let scene = &self.scene;
             self.components
                 .fixed_update(&mut self.scripts, TICK, &|o| scene.active(o));
+            self.script_time += t.elapsed();
             // What the components asked for applies before physics steps.
             self.apply_script_output();
             self.step_physics();
@@ -1022,27 +1078,33 @@ impl App {
         }
 
         // Script time: timers and their microtasks, once per frame.
+        let t = Instant::now();
         let now_ms = now.duration_since(self.started).as_secs_f64() * 1000.0;
         for e in self.scripts.tick(now_ms) {
             tracing::error!(target: "script", "uncaught: {e}");
         }
+        self.script_time += t.elapsed();
 
         // Per-frame component updates (`onUpdate`, `onLateUpdate`).
         self.apply_script_output();
         if let Some(n) = self.native.as_mut() {
+            let t = Instant::now();
             n.frame(
                 &mut self.scene.scene,
                 &mut self.ui,
                 elapsed.min(MAX_FRAME_DT),
                 now_ms,
             );
+            self.script_time += t.elapsed();
             self.native_after();
         }
+        let t = Instant::now();
         let scene = &self.scene;
         self.components
             .update_active(&mut self.scripts, elapsed.min(MAX_FRAME_DT), &|o| {
                 scene.active(o)
             });
+        self.script_time += t.elapsed();
         self.apply_script_output();
         let dt = self.components.frame_dt() as f32;
         // Auto exposure adapts by the frame's time.
@@ -1233,7 +1295,7 @@ impl App {
     /// Runs one `audio.*` op, opening the mixer on first use (games without sound never
     /// open a device). Screenshot runs mix offline, silently.
     fn audio_op(&mut self, name: &str, args: &[iron_core::Value]) {
-        let offline = self.screenshot.is_some();
+        let offline = self.offline;
         let paused = self.lifecycle.paused();
         let mixer = self
             .audio
@@ -1888,9 +1950,9 @@ impl App {
     /// Puts the window in a mode (screenshot runs leave it alone) and updates
     /// `__iron_info.display`.
     fn apply_display(&mut self, wanted: iron_platform::DisplaySettings) {
-        let window = self.gfx.as_ref().map(|g| g.window.clone());
-        self.display = match (&window, &self.screenshot) {
-            (Some(w), None) => iron_platform::display::apply(w, &wanted),
+        let window = self.gfx.as_ref().and_then(|g| g.window.clone());
+        self.display = match (&window, self.offline) {
+            (Some(w), false) => iron_platform::display::apply(w, &wanted),
             _ => wanted,
         };
         self.info
@@ -1939,17 +2001,16 @@ impl App {
     /// Holds the cursor as scripts asked. Locking isn't available everywhere (Windows
     /// can only confine): it falls back to confining, with the cursor hidden.
     fn apply_cursor_lock(&mut self) {
-        let Some(gfx) = &self.gfx else {
+        let Some(window) = self.gfx.as_ref().and_then(|g| g.window.as_ref()) else {
             return;
         };
         use iron_platform::CursorGrabMode;
         let result = match self.script_cursor.lock {
-            CursorLock::None => gfx.window.set_cursor_grab(CursorGrabMode::None),
-            CursorLock::Confined => gfx.window.set_cursor_grab(CursorGrabMode::Confined),
-            CursorLock::Locked => gfx
-                .window
+            CursorLock::None => window.set_cursor_grab(CursorGrabMode::None),
+            CursorLock::Confined => window.set_cursor_grab(CursorGrabMode::Confined),
+            CursorLock::Locked => window
                 .set_cursor_grab(CursorGrabMode::Locked)
-                .or_else(|_| gfx.window.set_cursor_grab(CursorGrabMode::Confined)),
+                .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined)),
         };
         if let Err(e) = result {
             tracing::debug!("cursor lock: {e}");
@@ -1959,7 +2020,8 @@ impl App {
     /// Shows the hovered element's cursor: its first image that loads, else its keyword.
     /// Where the UI asks for nothing special, scripts' `Cursor` image is the default.
     fn update_cursor(&mut self) {
-        let Some(gfx) = &self.gfx else {
+        // No window, no cursor.
+        let Some(window) = self.gfx.as_ref().and_then(|g| g.window.clone()) else {
             return;
         };
         let (keyword, ui_images) = match self.pointer_on {
@@ -1977,7 +2039,7 @@ impl App {
             }
             _ => ui_images,
         };
-        let scale = gfx.window.scale_factor();
+        let scale = window.scale_factor();
         if (keyword, images, scale) == (self.cursor.0, &self.cursor.1[..], self.cursor.2) {
             return;
         }
@@ -2015,13 +2077,13 @@ impl App {
         });
         match custom {
             Some(request) => {
-                gfx.window.set_cursor_visible(shown);
+                window.set_cursor_visible(shown);
                 self.custom_cursor = Some(request);
             }
             None => {
-                gfx.window.set_cursor_visible(shown && keyword != "none");
+                window.set_cursor_visible(shown && keyword != "none");
                 if let Ok(icon) = keyword.parse::<CursorIcon>() {
-                    gfx.window.set_cursor(icon);
+                    window.set_cursor(icon);
                 }
             }
         }
@@ -2031,6 +2093,9 @@ impl App {
     /// window next to its caret.
     fn update_ime(&mut self) {
         let Some(gfx) = &self.gfx else {
+            return;
+        };
+        let Some(window) = &gfx.window else {
             return;
         };
         // A field on a world panel takes IME text too; its candidate window stays where
@@ -2050,7 +2115,7 @@ impl App {
         };
         if allowed != self.ime_allowed {
             self.ime_allowed = allowed;
-            gfx.window.set_ime_allowed(self.ime_allowed);
+            window.set_ime_allowed(self.ime_allowed);
             self.ime_area = None;
         }
         if let Some(a) = area
@@ -2058,8 +2123,8 @@ impl App {
         {
             self.ime_area = Some(a);
             // UI pixels → the window's logical pixels.
-            let z = ui_factor(&gfx.window, self.ui_scale) / gfx.window.scale_factor() as f32;
-            gfx.window.set_ime_cursor_area(
+            let z = ui_factor(gfx, self.ui_scale) / gfx.dpi() as f32;
+            window.set_ime_cursor_area(
                 iron_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
                 iron_platform::dpi::LogicalSize::new(
                     (a.width * z).max(1.0),
@@ -2099,11 +2164,16 @@ impl App {
     fn scale(&self) -> f32 {
         self.gfx
             .as_ref()
-            .map_or(1.0, |gfx| ui_factor(&gfx.window, self.ui_scale))
+            .map_or(1.0, |gfx| ui_factor(gfx, self.ui_scale))
     }
 
     fn now_ms(&self) -> f64 {
-        self.started.elapsed().as_secs_f64() * 1000.0
+        self.now().duration_since(self.started).as_secs_f64() * 1000.0
+    }
+
+    /// The game's clock: real time, or a `--fixed-dt` bench run's steps.
+    fn now(&self) -> Instant {
+        self.fake_now.unwrap_or_else(Instant::now)
     }
 
     /// `loadFont(family, src, weight, style)` from `@iron/engine`.
@@ -2179,6 +2249,68 @@ impl App {
             .push((js_id, css.to_owned(), String::new(), "addStyleSheet".into()));
     }
 
+    /// The renderer is ready: tells `SystemInfo` and `Window.main` about the GPU and the screen
+    /// and makes the UI and world renderers. `window` is `None` for a windowless `--bench` run.
+    fn install_gfx(
+        &mut self,
+        gpu: Gpu,
+        surface: frame_target::FrameTarget,
+        window: Option<Arc<Window>>,
+    ) {
+        tracing::info!(adapter = %gpu.adapter_name(), "renderer ready");
+        let size = surface.size();
+        let adapter = gpu.adapter.get_info();
+        let monitor = window.as_ref().and_then(|w| w.current_monitor());
+        let (sw, sh) = monitor.as_ref().map_or(size, |m| {
+            let s = m.size();
+            (s.width, s.height)
+        });
+        let hz = monitor
+            .as_ref()
+            .and_then(|m| m.refresh_rate_millihertz())
+            .map_or(0.0, |mhz| f64::from(mhz) / 1000.0);
+        let dpi = window.as_ref().map_or(1.0, |w| w.scale_factor());
+        self.info.set_system(serde_json::json!({
+            "graphicsDeviceName": adapter.name,
+            "graphicsDeviceVendorID": adapter.vendor,
+            "graphicsDeviceType": format!("{:?}", adapter.backend),
+            "graphicsDeviceKind": format!("{:?}", adapter.device_type),
+            "graphicsDriver": adapter.driver_info,
+            "screenWidth": sw,
+            "screenHeight": sh,
+            "screenRefreshRate": hz,
+            "dpi": dpi * 96.0,
+        }));
+        self.info
+            .set("display", display::state(window.as_deref(), &self.display));
+        if let Err(e) = self.scripts.eval(&self.info.script()) {
+            tracing::error!("system info: {e}");
+        }
+        let mut renderer = UiRenderer::new(&gpu);
+        renderer.set_asset_root(&self.asset_root);
+        let mut world = WorldRenderer::new(&gpu);
+        world.physical_units = self.physical_units;
+        if self.physical_units {
+            tracing::info!("real-world light units");
+        }
+        // `Window.main` learns the real size and scale (its title may be the game's own).
+        let title = iron_engine_api::window::state(iron_engine_api::window::MAIN)
+            .map_or_else(String::new, |s| s.title);
+        iron_engine_api::window::set_main(&title, windows::to_ui(size, dpi), dpi);
+        if let Some(w) = &window
+            && title != w.title()
+        {
+            w.set_title(&title);
+        }
+        self.gfx = Some(Gfx {
+            gpu,
+            surface,
+            window,
+            renderer,
+            world,
+        });
+    }
+
     fn save_screenshot(&mut self, path: &Path) -> Result<()> {
         let gfx = self.gfx.as_mut().context("no renderer")?;
         let (w, h) = gfx.surface.size();
@@ -2246,6 +2378,7 @@ impl App {
         );
         let views = self.world_view.views(&self.scene, (w, h), &quads);
         let textures: Vec<&wgpu::TextureView> = textures.iter().collect();
+        let scale = ui_factor(gfx, self.ui_scale);
         draw_frame(
             &gfx.gpu,
             &mut gfx.renderer,
@@ -2254,7 +2387,7 @@ impl App {
                 view: &view,
                 format: target.format(),
                 size: (w, h),
-                scale: ui_factor(&gfx.window, self.ui_scale),
+                scale,
             },
             &views,
             &textures,
@@ -2262,7 +2395,7 @@ impl App {
         );
         if self.fps_on {
             let now = self.started.elapsed().as_secs_f64();
-            let scale = gfx.window.scale_factor() as f32;
+            let scale = gfx.dpi() as f32;
             let text = self.fps.text(now);
             let fps_cmds = self.fps_overlay.draw_list(&text, w, h, scale);
             gfx.renderer.render_overlay(
@@ -2328,67 +2461,17 @@ impl PlatformApp for App {
     fn window_ready(&mut self, window: Arc<Window>) {
         // The saved (or default) window mode, before the first frame shows. Screenshot
         // runs stay windowed.
-        if self.screenshot.is_none() && self.display.mode != iron_platform::FullScreenMode::Windowed
-        {
+        if !self.offline && self.display.mode != iron_platform::FullScreenMode::Windowed {
             self.display = iron_platform::display::apply(&window, &self.display);
         }
         let size = window.inner_size();
         match Gpu::with_surface(window.clone(), size.width, size.height) {
             Ok((gpu, surface)) => {
-                tracing::info!(adapter = %gpu.adapter_name(), "renderer ready");
-                // `SystemInfo` learns the GPU and the screen.
-                let adapter = gpu.adapter.get_info();
-                let monitor = window.current_monitor();
-                let (sw, sh) = monitor.as_ref().map_or((size.width, size.height), |m| {
-                    let s = m.size();
-                    (s.width, s.height)
-                });
-                let hz = monitor
-                    .as_ref()
-                    .and_then(|m| m.refresh_rate_millihertz())
-                    .map_or(0.0, |mhz| f64::from(mhz) / 1000.0);
-                self.info.set_system(serde_json::json!({
-                    "graphicsDeviceName": adapter.name,
-                    "graphicsDeviceVendorID": adapter.vendor,
-                    "graphicsDeviceType": format!("{:?}", adapter.backend),
-                    "graphicsDeviceKind": format!("{:?}", adapter.device_type),
-                    "graphicsDriver": adapter.driver_info,
-                    "screenWidth": sw,
-                    "screenHeight": sh,
-                    "screenRefreshRate": hz,
-                    "dpi": window.scale_factor() * 96.0,
-                }));
-                self.info
-                    .set("display", display::state(Some(&window), &self.display));
-                if let Err(e) = self.scripts.eval(&self.info.script()) {
-                    tracing::error!("system info: {e}");
-                }
-                let mut renderer = UiRenderer::new(&gpu);
-                renderer.set_asset_root(&self.asset_root);
-                let mut world = WorldRenderer::new(&gpu);
-                world.physical_units = self.physical_units;
-                if self.physical_units {
-                    tracing::info!("real-world light units");
-                }
-                // `Window.main` learns the real size and scale (its title may be the game's own).
-                let dpi = window.scale_factor();
-                let title = iron_engine_api::window::state(iron_engine_api::window::MAIN)
-                    .map_or_else(String::new, |s| s.title);
-                iron_engine_api::window::set_main(
-                    &title,
-                    windows::to_ui((size.width, size.height), dpi),
-                    dpi,
-                );
-                if title != window.title() {
-                    window.set_title(&title);
-                }
-                self.gfx = Some(Gfx {
+                self.install_gfx(
                     gpu,
-                    surface,
-                    window,
-                    renderer,
-                    world,
-                });
+                    frame_target::FrameTarget::Window(surface),
+                    Some(window),
+                );
             }
             Err(e) => tracing::error!("renderer unavailable: {e}"),
         }
@@ -2460,7 +2543,7 @@ impl PlatformApp for App {
             InputEvent::Resized { width, height } => {
                 self.lifecycle.set_size(width, height);
                 if let Some(gfx) = &self.gfx {
-                    let dpi = gfx.window.scale_factor();
+                    let dpi = gfx.dpi();
                     let size = windows::to_ui((width, height), dpi);
                     self.in_game(|| {
                         iron_engine_api::window::resized(
@@ -2473,7 +2556,7 @@ impl PlatformApp for App {
             }
             InputEvent::Moved { x, y } => {
                 if let Some(gfx) = &self.gfx {
-                    let dpi = gfx.window.scale_factor();
+                    let dpi = gfx.dpi();
                     let (lx, ly) = (f64::from(x) / dpi, f64::from(y) / dpi);
                     self.in_game(|| {
                         iron_engine_api::window::moved(iron_engine_api::window::MAIN, lx, ly)
@@ -2657,14 +2740,20 @@ impl PlatformApp for App {
         // Last-moment changes before drawing (`onPreRender`).
         if !self.lifecycle.paused() {
             if let Some(n) = self.native.as_mut() {
+                let t = Instant::now();
                 n.pre_render(&mut self.scene.scene, &mut self.ui);
+                self.script_time += t.elapsed();
                 self.native_after();
                 self.native_audio_commands();
+                let t = Instant::now();
                 self.sync_native_render();
+                self.sync_time += t.elapsed();
             }
+            let t = Instant::now();
             let scene = &self.scene;
             self.components
                 .pre_render(&mut self.scripts, &|o| scene.active(o));
+            self.script_time += t.elapsed();
             self.apply_script_output();
         }
         // Caret blinking.
@@ -2673,10 +2762,11 @@ impl PlatformApp for App {
         self.update_ime();
         // Again, for a UI scale the scripts changed this frame.
         self.sync_screen();
+        let render_started = Instant::now();
         let Some(gfx) = &mut self.gfx else {
             return;
         };
-        let scale = ui_factor(&gfx.window, self.ui_scale);
+        let scale = ui_factor(gfx, self.ui_scale);
         // Scripts' `RenderStats`: what the last frame drew and culled, when it changes.
         let stats = gfx.world.stats();
         if self.render_stats != stats {
@@ -2738,7 +2828,7 @@ impl PlatformApp for App {
             }
         }
         // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
-        let dark = gfx.window.theme() == Some(iron_platform::Theme::Dark);
+        let dark = gfx.window.as_ref().and_then(|w| w.theme()) == Some(iron_platform::Theme::Dark);
         self.ui.set_media_env(iron_ui::media::MediaEnv {
             resolution: scale,
             dark,
@@ -2795,8 +2885,13 @@ impl PlatformApp for App {
                     .set_texture(&gfx.gpu, id, &cook::uncook_texture(&cooked));
             }
         }
-        let now = self.started.elapsed().as_secs_f64() * 1000.0;
-        let gfx_window_scale = gfx.window.scale_factor() as f32;
+        let now = self
+            .fake_now
+            .unwrap_or_else(Instant::now)
+            .duration_since(self.started)
+            .as_secs_f64()
+            * 1000.0;
+        let gfx_window_scale = gfx.dpi() as f32;
         let (scene, world_view) = (&self.scene, &self.world_view);
         let Gfx {
             gpu,
@@ -2850,6 +2945,7 @@ impl PlatformApp for App {
         });
         self.world_view.probes_rendered();
         self.draw_windows();
+        self.render_time += render_started.elapsed();
         if self.fps_on {
             self.fps.frame(self.started.elapsed().as_secs_f64());
         }
@@ -2884,7 +2980,7 @@ impl PlatformApp for App {
         lifecycle::frame_cap_with(
             self.target_frame_rate,
             self.world_view.quality.vsync,
-            self.screenshot.is_some(),
+            self.offline,
             self.lifecycle.paused() && !self.paused(),
         )
     }
@@ -2934,10 +3030,10 @@ fn dispatch(scripts: &mut QuickJsRuntime, enabled: bool, event: &UiEvent) -> boo
 
 /// Physical pixels per UI pixel for `window`: its DPI scale times `ui_scale`'s factor
 /// for its logical size.
-fn ui_factor(window: &Window, ui_scale: ui_scale::UiScale) -> f32 {
-    let dpi = window.scale_factor() as f32;
-    let size = window.inner_size();
-    let (w, h) = (size.width as f32 / dpi, size.height as f32 / dpi);
+fn ui_factor(gfx: &Gfx, ui_scale: ui_scale::UiScale) -> f32 {
+    let dpi = gfx.dpi() as f32;
+    let (width, height) = gfx.inner_size();
+    let (w, h) = (width as f32 / dpi, height as f32 / dpi);
     dpi * ui_scale.factor(w, h)
 }
 

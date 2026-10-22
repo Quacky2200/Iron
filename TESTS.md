@@ -1447,6 +1447,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-APP-03 | Integration | `iron_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `iron-build build` (`crates/iron_app/tests/quickjs_deprecated.rs`). |
 | M9-APP-04 | Integration | The same with `--force` runs, saves the screenshot and logs the deprecation note exactly once. |
 | M9-APP-05 | Integration | A native game (a bare `.ts` source) runs without `--force` and logs no deprecation note. |
+| M9-BEN-01 | Unit | `iron --bench`: a bench file becomes segments of timed platform events (keys held, clicks, `clickText`, `count`/`every` repeats, unknown kinds refused), and frame stats give fps, median, p99, worst and the script share (`crates/iron_app/src/bench.rs`). |
+| M9-BEN-02 | Unit | `iron-build bench` writes the summary table with speed-ups, marks games the base branch lacks as n/a, and keeps hand-written text around the generated part of `docs/benchmarks.md`. |
+| M9-BEN-03 | Integration | `iron_app game.ts --bench --bench-input spec.json` runs a native game with no window (offscreen target, fake platform), the scripted keys reach it, and the JSON report has the segments, frame counts, fps and start-up time (needs a GPU; `crates/iron_app/tests/bench_smoke.rs`). |
 | M9-API-1100 | Unit | Asset pack hashes are fixed functions of the bytes (SipHash-1-3 128 content hash, FNV-1a path hash, CRC-32 vectors) and game paths normalize like `resolve_asset` (`crates/iron_pack/src/hash.rs`). |
 | M9-API-1101 | Unit | The LZ4 block codec round-trips (runs, text, noise, matches across the 64 KiB window), reads a reference block, and damaged input is an error, never a panic (`lz4.rs`). |
 | M9-API-1102 | Unit | Pack header (64 bytes), entry (64) and chunk (24) records round-trip, the header checksum catches a flipped bit, GUIDs parse from `.meta` hex (`format.rs`). |

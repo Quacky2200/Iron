@@ -1,0 +1,155 @@
+{
+  "warmup": 60,
+  "note": "the right arrow clicked through all twelve faces",
+  "segments": [
+    {
+      "name": "Analog",
+      "warmup": 60,
+      "frames": 240,
+      "input": []
+    },
+    {
+      "name": "Dials",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Meter",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Sundial",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Sand timer",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Lava lamp",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Underwater",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Chandelier",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Rainbow",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Morphing",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Flip",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    },
+    {
+      "name": "Alarm clock",
+      "warmup": 60,
+      "frames": 240,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 1236,
+          "y": 360.0
+        }
+      ]
+    }
+  ]
+}

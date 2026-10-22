@@ -1,0 +1,54 @@
+{
+  "warmup": 60,
+  "note": "each quality level clicked in the menu (this stops the demo's own cycling)",
+  "segments": [
+    {
+      "name": "Low",
+      "warmup": 60,
+      "frames": 300,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "clickText",
+          "text": "Low"
+        }
+      ]
+    },
+    {
+      "name": "Medium",
+      "warmup": 60,
+      "frames": 300,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "clickText",
+          "text": "Medium"
+        }
+      ]
+    },
+    {
+      "name": "High",
+      "warmup": 60,
+      "frames": 300,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "clickText",
+          "text": "High"
+        }
+      ]
+    },
+    {
+      "name": "Ultra",
+      "warmup": 60,
+      "frames": 300,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "clickText",
+          "text": "Ultra"
+        }
+      ]
+    }
+  ]
+}

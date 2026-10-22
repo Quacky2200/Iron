@@ -103,7 +103,8 @@ impl App {
         let cursor = self
             .gfx
             .as_ref()
-            .and_then(|g| iron_platform::cursor_in_window(&g.window))
+            .and_then(|g| g.window.as_ref())
+            .and_then(|w| iron_platform::cursor_in_window(w))
             .or(self.pointer_px.map(|(x, y)| (f64::from(x), f64::from(y))))
             .map(|(x, y)| ((x / scale) as f32, (y / scale) as f32));
         for input in self.file_drag.inputs(cursor) {

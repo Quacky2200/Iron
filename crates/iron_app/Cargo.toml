@@ -37,7 +37,7 @@ iron_pack = { path = "../iron_pack" }
 gltf = { version = "1.4.1", default-features = false, features = ["utils", "names", "KHR_materials_unlit", "KHR_materials_emissive_strength"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 
 # The editor (`src/bin/iron_editor.rs`): the same program loading the editor's UI.
 # Its tests are iron_app's, so they don't run twice.

@@ -1,0 +1,255 @@
+{
+  "warmup": 120,
+  "segments": [
+    {
+      "name": "idle",
+      "frames": 300
+    },
+    {
+      "name": "drop 40",
+      "frames": 600,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "click",
+          "x": 340,
+          "y": 160
+        },
+        {
+          "frame": 10,
+          "kind": "click",
+          "x": 437,
+          "y": 197
+        },
+        {
+          "frame": 20,
+          "kind": "click",
+          "x": 534,
+          "y": 234
+        },
+        {
+          "frame": 30,
+          "kind": "click",
+          "x": 631,
+          "y": 271
+        },
+        {
+          "frame": 40,
+          "kind": "click",
+          "x": 728,
+          "y": 188
+        },
+        {
+          "frame": 50,
+          "kind": "click",
+          "x": 825,
+          "y": 225
+        },
+        {
+          "frame": 60,
+          "kind": "click",
+          "x": 922,
+          "y": 262
+        },
+        {
+          "frame": 70,
+          "kind": "click",
+          "x": 419,
+          "y": 179
+        },
+        {
+          "frame": 80,
+          "kind": "click",
+          "x": 516,
+          "y": 216
+        },
+        {
+          "frame": 90,
+          "kind": "click",
+          "x": 613,
+          "y": 253
+        },
+        {
+          "frame": 100,
+          "kind": "click",
+          "x": 710,
+          "y": 170
+        },
+        {
+          "frame": 110,
+          "kind": "click",
+          "x": 807,
+          "y": 207
+        },
+        {
+          "frame": 120,
+          "kind": "click",
+          "x": 904,
+          "y": 244
+        },
+        {
+          "frame": 130,
+          "kind": "click",
+          "x": 401,
+          "y": 161
+        },
+        {
+          "frame": 140,
+          "kind": "click",
+          "x": 498,
+          "y": 198
+        },
+        {
+          "frame": 150,
+          "kind": "click",
+          "x": 595,
+          "y": 235
+        },
+        {
+          "frame": 160,
+          "kind": "click",
+          "x": 692,
+          "y": 272
+        },
+        {
+          "frame": 170,
+          "kind": "click",
+          "x": 789,
+          "y": 189
+        },
+        {
+          "frame": 180,
+          "kind": "click",
+          "x": 886,
+          "y": 226
+        },
+        {
+          "frame": 190,
+          "kind": "click",
+          "x": 383,
+          "y": 263
+        },
+        {
+          "frame": 200,
+          "kind": "click",
+          "x": 480,
+          "y": 180
+        },
+        {
+          "frame": 210,
+          "kind": "click",
+          "x": 577,
+          "y": 217
+        },
+        {
+          "frame": 220,
+          "kind": "click",
+          "x": 674,
+          "y": 254
+        },
+        {
+          "frame": 230,
+          "kind": "click",
+          "x": 771,
+          "y": 171
+        },
+        {
+          "frame": 240,
+          "kind": "click",
+          "x": 868,
+          "y": 208
+        },
+        {
+          "frame": 250,
+          "kind": "click",
+          "x": 365,
+          "y": 245
+        },
+        {
+          "frame": 260,
+          "kind": "click",
+          "x": 462,
+          "y": 162
+        },
+        {
+          "frame": 270,
+          "kind": "click",
+          "x": 559,
+          "y": 199
+        },
+        {
+          "frame": 280,
+          "kind": "click",
+          "x": 656,
+          "y": 236
+        },
+        {
+          "frame": 290,
+          "kind": "click",
+          "x": 753,
+          "y": 273
+        },
+        {
+          "frame": 300,
+          "kind": "click",
+          "x": 850,
+          "y": 190
+        },
+        {
+          "frame": 310,
+          "kind": "click",
+          "x": 347,
+          "y": 227
+        },
+        {
+          "frame": 320,
+          "kind": "click",
+          "x": 444,
+          "y": 264
+        },
+        {
+          "frame": 330,
+          "kind": "click",
+          "x": 541,
+          "y": 181
+        },
+        {
+          "frame": 340,
+          "kind": "click",
+          "x": 638,
+          "y": 218
+        },
+        {
+          "frame": 350,
+          "kind": "click",
+          "x": 735,
+          "y": 255
+        },
+        {
+          "frame": 360,
+          "kind": "click",
+          "x": 832,
+          "y": 172
+        },
+        {
+          "frame": 370,
+          "kind": "click",
+          "x": 929,
+          "y": 209
+        },
+        {
+          "frame": 380,
+          "kind": "click",
+          "x": 426,
+          "y": 246
+        },
+        {
+          "frame": 390,
+          "kind": "click",
+          "x": 523,
+          "y": 163
+        }
+      ]
+    }
+  ]
+}

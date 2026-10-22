@@ -214,14 +214,34 @@ impl<A: PlatformApp> FakePlatform<A> {
         p
     }
 
-    fn open_main(&mut self, main: WindowSpec) {
-        let plan = plan(&main, self.os);
+    /// Like [`FakePlatform::new`], but the app is not told about the main window: it draws its
+    /// own (an offscreen target for a windowless benchmark run). Its secondary windows are
+    /// virtual, as in screenshot runs.
+    pub fn with_app_main(app: A, main: WindowSpec, scale: f64) -> Self {
+        let mut p = FakePlatform {
+            app,
+            backend: VirtualBackend::new(Os::current(), scale),
+            tree: WindowTree::default(),
+            os: Os::current(),
+            exited: false,
+        };
+        p.register_main(&main);
+        p
+    }
+
+    fn register_main(&mut self, main: &WindowSpec) -> WindowHost {
+        let plan = plan(main, self.os);
         self.backend.os = self.os;
         let host = self
             .backend
-            .open(WindowKey::MAIN, &main, &plan)
+            .open(WindowKey::MAIN, main, &plan)
             .expect("the virtual backend always opens");
         self.tree.insert(WindowKey::MAIN, None);
+        host
+    }
+
+    fn open_main(&mut self, main: WindowSpec) {
+        let host = self.register_main(&main);
         self.app.window_opened(WindowKey::MAIN, host);
     }
 

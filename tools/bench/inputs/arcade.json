@@ -1,0 +1,63 @@
+{
+  "warmup": 120,
+  "segments": [
+    {
+      "name": "idle",
+      "frames": 300
+    },
+    {
+      "name": "steer",
+      "frames": 720,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "key",
+          "code": "KeyW",
+          "hold": 80
+        },
+        {
+          "frame": 90,
+          "kind": "key",
+          "code": "KeyD",
+          "hold": 80
+        },
+        {
+          "frame": 180,
+          "kind": "key",
+          "code": "KeyS",
+          "hold": 80
+        },
+        {
+          "frame": 270,
+          "kind": "key",
+          "code": "KeyA",
+          "hold": 80
+        },
+        {
+          "frame": 360,
+          "kind": "key",
+          "code": "KeyW",
+          "hold": 80
+        },
+        {
+          "frame": 450,
+          "kind": "key",
+          "code": "KeyA",
+          "hold": 80
+        },
+        {
+          "frame": 540,
+          "kind": "key",
+          "code": "KeyS",
+          "hold": 80
+        },
+        {
+          "frame": 630,
+          "kind": "key",
+          "code": "KeyD",
+          "hold": 80
+        }
+      ]
+    }
+  ]
+}

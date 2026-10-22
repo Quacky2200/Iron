@@ -1,0 +1,43 @@
+{
+  "warmup": 120,
+  "segments": [
+    {
+      "name": "idle",
+      "frames": 300
+    },
+    {
+      "name": "run and jump",
+      "frames": 660,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "keyDown",
+          "code": "ArrowRight"
+        },
+        {
+          "frame": 300,
+          "kind": "keyUp",
+          "code": "ArrowRight"
+        },
+        {
+          "frame": 300,
+          "kind": "keyDown",
+          "code": "ArrowLeft"
+        },
+        {
+          "frame": 600,
+          "kind": "keyUp",
+          "code": "ArrowLeft"
+        },
+        {
+          "frame": 20,
+          "kind": "key",
+          "code": "Space",
+          "hold": 12,
+          "count": 10,
+          "every": 60
+        }
+      ]
+    }
+  ]
+}

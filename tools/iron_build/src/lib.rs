@@ -8,6 +8,7 @@
 //! the program names.
 
 pub mod assets;
+pub mod bench;
 pub mod css;
 pub mod dev;
 pub mod icon;
