@@ -2012,10 +2012,12 @@ impl<L: LayoutEngine> UiTree<L> {
             .filter(|(id, since)| {
                 let mut stack = vec![**id];
                 while let Some(n) = stack.pop() {
-                    // Transitions, and animations the exit started (not an ongoing
-                    // spinner, which would hold it forever).
+                    // Transitions and animations the exit started: not one already
+                    // running (a fade-in cut short, a spinner that would hold it forever).
+                    // An `:outro` that redirects a running transition restarts it, so
+                    // that one counts.
                     let exiting = self.motion.get(&n).is_some_and(|m| {
-                        !m.transitions.is_empty()
+                        m.transitions.iter().any(|t| t.start_ms >= **since)
                             || m.animations
                                 .iter()
                                 .any(|a| !a.ended && a.paused_at.is_none() && a.start_ms >= **since)

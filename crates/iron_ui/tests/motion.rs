@@ -454,6 +454,22 @@ fn removal_is_immediate_without_an_exit() {
 
 // M3-ANI-05
 #[test]
+fn a_transition_running_before_removal_doesnt_hold_it() {
+    // The item is still fading in when it's removed; an `:outro` rule elsewhere turns
+    // deferred removal on, but nothing of the item's exits, so it goes at once.
+    let css = ".item { opacity: 1; transition: opacity 1s linear }
+        @starting-style { .item { opacity: 0 } }
+        .other:outro { opacity: 0 }";
+    let mut tree = item_tree(css);
+    at(&mut tree, 300.0);
+    assert!(opacity(&tree, 1) < 1.0, "fading in");
+    remove_item(&mut tree);
+    at(&mut tree, 310.0);
+    assert!(!tree.contains(NodeId(1)));
+}
+
+// M3-ANI-05
+#[test]
 fn exit_animations_hold_removal_but_ongoing_ones_dont() {
     let css = "@keyframes spin { to { transform: rotate(360deg) } }
         @keyframes out { to { opacity: 0 } }
