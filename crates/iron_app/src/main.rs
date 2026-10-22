@@ -63,6 +63,8 @@ struct Args {
     frames: u32,
     /// Cook the game's assets (`--cook`) and exit.
     cook: bool,
+    /// Everything after `--`, for the game's scripts (`Application.args`).
+    script_args: Vec<String>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -78,8 +80,7 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage =
-        "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook]";
+    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [-- script args]";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
@@ -87,11 +88,16 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         screenshot: None,
         frames: 60,
         cook: false,
+        script_args: Vec::new(),
     };
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
             Some("--cook") => parsed.cook = true,
+            Some("--") => {
+                parsed.script_args = args.map(|a| a.to_string_lossy().into_owned()).collect();
+                break;
+            }
             Some("--frames") => {
                 parsed.frames = args
                     .next()
@@ -175,6 +181,7 @@ fn run() -> Result<()> {
     // the bundle's top level runs.
     let manifest = info::Manifest::load(&asset_root);
     let mut info = info::Info::new(&manifest);
+    info.set_app("args", serde_json::json!(args.script_args));
     // The player's saved settings (not for screenshot runs, which stay the same every
     // time) and the window mode: the manifest's default, then the player's choice.
     let prefs = match args.screenshot {
@@ -2485,5 +2492,17 @@ mod tests {
         assert!(parse(&["a", "b"]).is_err());
         assert!(parse(&["--nope"]).is_err());
         assert!(parse(&["--cook", "examples/world"]).unwrap().cook);
+    }
+
+    // M5-APP-11
+    #[test]
+    fn arguments_after_a_double_dash_are_for_scripts() {
+        let args = parse(&["examples/md-reader", "--", "--goto", "a.md#b", "x"]).unwrap();
+        assert_eq!(args.game, PathBuf::from("examples/md-reader"));
+        assert_eq!(args.script_args, ["--goto", "a.md#b", "x"]);
+        // Iron's own options before `--` still count; nothing after it does.
+        let args = parse(&["--frames", "3", "--", "--frames", "9"]).unwrap();
+        assert_eq!((args.frames, args.script_args.len()), (3, 2));
+        assert!(parse(&["examples/css"]).unwrap().script_args.is_empty());
     }
 }

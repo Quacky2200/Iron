@@ -54,6 +54,16 @@ describe("Application and SystemInfo", () => {
     expect(SystemInfo.screen).toEqual({ width: 2560, height: 1440, refreshRate: 144, dpi: 144 });
   });
 
+  // M5-APP-11
+  test("args are the command line's arguments after --", () => {
+    expect(Application.args).toEqual([]);
+    globalThis.__iron_info = { app: { args: ["--goto", "a.md#b"] }, system: {} } as never;
+    const args = Application.args;
+    expect(args).toEqual(["--goto", "a.md#b"]);
+    args.push("changed");
+    expect(Application.args).toEqual(["--goto", "a.md#b"]);
+  });
+
   test("quit is an op", () => {
     const ops: unknown[][] = [];
     (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);

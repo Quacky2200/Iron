@@ -219,7 +219,7 @@ pointer events use), `scale` and `aspect`, set by `__iron_screen`. Window mode, 
 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
 `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
-`isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
+`args` (the command line's arguments after `--`, `iron game -- --level 2`, from `__iron_info.app.args`), `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
 `quit()`; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__iron_info` from the
 game's `package.json` (`name`, `version`, and an `iron` section with `title`, `company`, `identifier`

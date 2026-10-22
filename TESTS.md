@@ -366,6 +366,7 @@ layout pass):
 | M5-APP-01 | Unit | The game's manifest comes from its `package.json` (`name`, `version`, `author`, and `iron.title` / `company` / `identifier` / `icon`), with the folder name and defaults when missing; `__iron_info` carries the app and system sections and later GPU / screen additions. |
 | M5-APP-02 | JS unit | `Application` and `SystemInfo` read `__iron_info` (defaults before it exists); `Application.quit()` is an op. |
 | M5-APP-04 | Unit | The log goes to `Player.log` in the game's settings folder (or `IRON_LOG_FILE`); the last run's is kept as `Player-prev.log`. |
+| M5-APP-11 | Unit + JS unit | Arguments after `--` on `iron`'s command line go to scripts as `Application.args` (Iron's own options before it still apply); a copy each read. |
 | M5-APP-03 | Unit | `iron` without a game argument runs the current folder; the game folder may come before or after the options, and a second folder or an unknown option is an error. |
 | M5-APP-05 | Unit | winit's `Focused` and `Occluded` window events become `InputEvent::Focused` / `Occluded`. |
 | M5-APP-06 | Integration | Muting the mixer for the background silences everything and fades back to the scripts' master volume, including a master set while muted. |

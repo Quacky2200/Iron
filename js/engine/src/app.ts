@@ -27,6 +27,8 @@ interface InfoApp {
   targetFrameRate?: number;
   /** True in `iron_editor`. */
   isEditor?: boolean;
+  /** The command line's arguments after `--` (`iron game -- --level 2`). */
+  args?: string[];
 }
 
 interface InfoSystem {
@@ -103,6 +105,13 @@ export const Application = {
   /** The user's language as a BCP 47 tag (`en-GB`). Unity's `systemLanguage`. */
   get systemLanguage(): string {
     return sys().language ?? "en-US";
+  },
+  /**
+   * The command line's arguments for the game: everything after `--`
+   * (`iron examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`.
+   */
+  get args(): string[] {
+    return [...(app().args ?? [])];
   },
   /** Whether this runs in the editor (`iron_editor`) rather than the player (`iron`). */
   get isEditor(): boolean {
