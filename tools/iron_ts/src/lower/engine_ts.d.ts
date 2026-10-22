@@ -154,16 +154,6 @@ declare namespace input {
   function on(type: "gamepadconnected" | "gamepaddisconnected", fn: (e: { gamepad: Gamepad }) => void): () => void;
 }
 
-interface FontFace {
-  family: string;
-  src: string;
-  weight?: number;
-  style?: string;
-}
-declare function loadFont(face: FontFace): void;
-declare function addStyleSheet(css: string): number;
-declare function removeStyleSheet(id: number): void;
-
 // ---- More rendering shapes ---------------------------------------------------------------------
 
 //@ctor Material(color?: Color, emission?: Color, smoothness?: number, unlit?: boolean, mainTexture?: Texture | null, mainTextureScale?: Vector2, mainTextureOffset?: Vector2, metallic?: number)

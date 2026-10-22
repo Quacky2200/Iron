@@ -292,6 +292,50 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
             ));
         }
     }
+    // `#[global]` functions: a plain function of the program over the namespace's.
+    let mut globals = manifest.globals.clone();
+    globals.sort();
+    for (ns, name) in globals {
+        if !src.contains(&format!("{name}(")) {
+            continue;
+        }
+        let Some(f) = manifest.namespaces.get(&ns).and_then(|n| n.get(&name)) else {
+            continue;
+        };
+        let ret = match &f.ret {
+            crate::ir::ExtTy::Void => "void".to_string(),
+            other => ext_ts(other),
+        };
+        let call = if matches!(f.ret, crate::ir::ExtTy::Void) {
+            ""
+        } else {
+            "return "
+        };
+        if manifest
+            .object_args
+            .contains(&(ns.clone(), name.clone(), false, false))
+        {
+            extra.push_str(&format!(
+                "\nfunction {name}<D>(data: D): {ret} {{\n  {call}{ns}.{name}(data);\n}}\n"
+            ));
+        } else {
+            let decl: Vec<String> = f
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, (p, t))| {
+                    let opt = if i >= f.optional_from { "?" } else { "" };
+                    format!("{p}{opt}: {}", ext_ts(t))
+                })
+                .collect();
+            let pass: Vec<&str> = f.params.iter().map(|(p, _)| p.as_str()).collect();
+            extra.push_str(&format!(
+                "\nfunction {name}({}): {ret} {{\n  {call}{ns}.{name}({});\n}}\n",
+                decl.join(", "),
+                pass.join(", ")
+            ));
+        }
+    }
     // `#[options(.., object)]` functions: called with one object (a literal or any value with the
     // keys), read key by key; a key left out of the object's type is the parameter's default.
     let mut objects = manifest.object_args.clone();
@@ -300,7 +344,7 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
         let used = if is_method {
             src.contains(&format!(".{name}("))
         } else {
-            src.contains(&format!("{owner}.{name}"))
+            src.contains(&format!("{owner}.{name}")) || extra.contains(&format!("{owner}.{name}"))
         };
         if !used {
             continue;
@@ -328,16 +372,20 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
                 continue;
             }
             use crate::ir::ExtTy;
+            // What the API says a left-out parameter is (`#[optional(weight = 0)]`), else the usual.
+            let given = f.defaults.get(skip + i).copied().flatten();
             let default = match t {
                 ExtTy::F64Arr
                 | ExtTy::StrArr
                 | ExtTy::ValueArr(_)
                 | ExtTy::HandleArr(_)
                 | ExtTy::RecordsJson(_)
-                | ExtTy::F64List => "[]",
-                ExtTy::Bool => "false",
-                ExtTy::Str | ExtTy::Enum(_) => "\"\"",
-                ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => "NaN",
+                | ExtTy::F64List => "[]".to_string(),
+                ExtTy::Bool => (given.is_some_and(|d| d != 0.0)).to_string(),
+                ExtTy::Str | ExtTy::Enum(_) => "\"\"".to_string(),
+                ExtTy::F64 | ExtTy::F32 | ExtTy::I32 | ExtTy::U32 => {
+                    given.map_or("NaN".to_string(), |d| format!("{d}"))
+                }
                 _ => {
                     ok = false;
                     break;

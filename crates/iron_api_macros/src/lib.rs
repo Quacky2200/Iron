@@ -1221,6 +1221,7 @@ fn is_ours(a: &syn::Attribute) -> bool {
         "subscription",
         "promise",
         "ts_param",
+        "global",
     ]
     .iter()
     .any(|n| a.path().is_ident(n))
@@ -1330,6 +1331,8 @@ struct Api {
     /// stopping function, the declared TypeScript type of the callback when it is not the
     /// callback's own.)
     subscription: Option<(String, Option<String>)>,
+    /// `#[global]`: a namespace function that is also a global function of the same name.
+    global: bool,
     /// `#[promise]`: the last two parameters are the resolve and reject callbacks; scripts call it
     /// without them and get a `Promise` (resolved with the first callback's argument).
     promise: bool,
@@ -1422,6 +1425,7 @@ fn api_of(
     }
     // Only trailing parameters can be left out (a promise's resolve and reject callbacks follow).
     let promise = attrs.iter().any(|a| a.path().is_ident("promise"));
+    let global = attrs.iter().any(|a| a.path().is_ident("global"));
     let user_len = params.len() - if promise { 2.min(params.len()) } else { 0 };
     let first_opt = params
         .iter()
@@ -1641,6 +1645,7 @@ fn api_of(
         like: attrs.iter().any(|a| a.path().is_ident("like")),
         subscription,
         promise,
+        global,
         ts_params,
         ret,
     })
@@ -2442,6 +2447,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         .collect();
 
     let mut ns_entries = Vec::new();
+    // Script names of the namespace functions that are also globals (`#[global]`).
+    let mut global_names: Vec<String> = Vec::new();
     let mut class_order: Vec<String> = Vec::new();
     let mut class_entries: Vec<Vec<TokenStream2>> = Vec::new();
     let mut shims = Vec::new();
@@ -2540,6 +2547,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         };
         let like = a.like;
         let promise = a.promise;
+        let global = a.global;
         let subscription = match &a.subscription {
             Some((off, ts)) => {
                 let off = camel(off);
@@ -2582,10 +2590,16 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 like: #like,
                 subscription: #subscription,
                 promise: #promise,
+                global: #global,
             }
         };
         match &a.class {
-            None => ns_entries.push(entry),
+            None => {
+                if a.global && a.tag == Tag::Static {
+                    global_names.push(js_name.clone());
+                }
+                ns_entries.push(entry)
+            }
             Some((ts, _)) => {
                 let i = match class_order.iter().position(|c| c == ts) {
                     Some(i) => i,
@@ -3663,6 +3677,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 #( #js_hidden )*
                 #( #js_sets )*
                 ::iron_api::qjs::install_namespace(ctx, #ns, ns)?;
+                #(
+                    {
+                        let space: ::iron_api::rquickjs::Object = ctx.globals().get(#ns)?;
+                        let f: ::iron_api::rquickjs::Value = space.get(#global_names)?;
+                        ctx.globals().set(#global_names, f)?;
+                    }
+                )*
                 #(
                     ctx.globals().set(
                         #alias_names,

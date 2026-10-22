@@ -63,6 +63,7 @@ pub mod lists_api {
     /// Adds up its parts.
     /// a: The first.
     /// b: The second.
+    #[global]
     #[options(name = "SumOptions", only, object)]
     #[optional(b)]
     pub fn sum(a: f64, b: f64) -> f64 {
@@ -150,6 +151,8 @@ fn a_function_called_with_one_object_declares_it_and_quickjs_reads_the_keys() {
         .unwrap();
     assert_eq!(sum["optionsObject"], true);
     assert_eq!(sum["optionsName"], "SumOptions");
+    // `#[global]`: also a global function of the same name.
+    assert_eq!(sum["global"], true);
     use iron_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
@@ -157,10 +160,10 @@ fn a_function_called_with_one_object_declares_it_and_quickjs_reads_the_keys() {
         lists_api::register_quickjs(&ctx).unwrap();
         let out: String = ctx
             .eval(
-                r#"JSON.stringify([Lists.sum({ a: 1, b: 2 }), Lists.sum({ a: 1 }), Lists.sum(5, 6)])"#,
+                r#"JSON.stringify([Lists.sum({ a: 1, b: 2 }), Lists.sum({ a: 1 }), Lists.sum(5, 6), sum({ a: 2, b: 2 })])"#,
             )
             .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
-        assert_eq!(out, "[3,101,11]");
+        assert_eq!(out, "[3,101,11,4]");
     });
 }
 

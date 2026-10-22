@@ -84,6 +84,8 @@ export function uiResources(): string {
   const a = addStyleSheet(".a { color: red }");
   loadFont({ family: "Charm", src: "fonts/x.ttf", weight: 700 });
   removeStyleSheet(a);
+  const plain = { family: "Plain", src: "fonts/p.ttf" };
+  loadFont(plain);
   const update = () => {};
   const stop = input.on("gamepadconnected", update);
   stop();

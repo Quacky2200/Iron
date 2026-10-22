@@ -121,6 +121,8 @@ struct Func {
     options_only: bool,
     /// `#[options(.., object)]`: the declared type of the one object parameter and its keys.
     object_keys: Option<(String, OptionKeys)>,
+    /// `#[global]`: also a global function.
+    global: bool,
     /// Per parameter (with the receiver): its doc, and whether it is a handle.
     param_docs: Vec<String>,
     param_handle: Vec<bool>,
@@ -243,6 +245,7 @@ fn func_of(f: &Value, like: bool) -> Func {
         options_name: f["optionsName"].as_str().map(str::to_string),
         options_only: f["optionsOnly"].as_bool() == Some(true),
         object_keys: None,
+        global: f["global"].as_bool() == Some(true),
         param_docs: f["params"]
             .as_array()
             .map(|ps| {
@@ -514,6 +517,8 @@ struct Decls {
     classes: BTreeMap<String, Vec<String>>,
     /// Namespace -> member lines.
     namespaces: BTreeMap<String, Vec<String>>,
+    /// Global functions (`#[global]`): (declaration line without `declare`, doc).
+    globals: BTreeMap<String, (String, String)>,
     /// Class -> the parameters of its static `create` (`new Class(..)` calls it).
     creates: BTreeMap<String, Vec<(String, String, bool)>>,
     /// Class -> the index of the `create` parameter after which an options object may follow
@@ -786,6 +791,20 @@ impl Decls {
                     }
                     "set" => {}
                     _ => {
+                        if f.global {
+                            self.globals.insert(
+                                f.name.clone(),
+                                (
+                                    format!(
+                                        "function {}({}): {};",
+                                        f.name,
+                                        params_text(f, false),
+                                        f.ret
+                                    ),
+                                    f.doc.clone(),
+                                ),
+                            );
+                        }
                         let options = options_params(f, false);
                         if !(f.options_only && options.is_some()) {
                             add(
@@ -1039,6 +1058,10 @@ impl Decls {
             }
             s += &format!("{indent}}}\n");
         }
+        for (line, doc) in self.globals.values() {
+            s += &jsdoc(doc, indent);
+            s += &format!("{indent}{prefix}{line}\n");
+        }
         s
     }
 }
@@ -1106,6 +1129,7 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     engine.extend(d.aliases.keys().cloned());
     engine.extend(d.option_types.keys().cloned());
     engine.extend(d.namespaces.keys().filter(|n| !n.is_empty()).cloned());
+    engine.extend(d.globals.keys().cloned());
     engine.extend(
         crate::ui_dts::ENGINE_AMBIENT_NAMES
             .iter()

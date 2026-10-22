@@ -74,6 +74,8 @@ pub struct Manifest {
     /// `Mesh.createFlat({ positions, triangles })`): (owner namespace or class, name, owner is a
     /// class, is a method).
     pub object_args: Vec<(String, String, bool, bool)>,
+    /// Namespace functions that are also globals (`#[global]`): (namespace, name).
+    pub globals: Vec<(String, String)>,
 }
 
 /// An enum of the engine API.
@@ -324,6 +326,9 @@ impl Manifest {
             if f["optionsObject"].as_bool() == Some(true) {
                 self.object_args
                     .push((ns.clone(), name.clone(), false, false));
+            }
+            if f["global"].as_bool() == Some(true) {
+                self.globals.push((ns.clone(), name.clone()));
             }
             if let Some(off) = f["subscription"]["off"].as_str() {
                 self.subscriptions

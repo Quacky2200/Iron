@@ -54,6 +54,7 @@ pub mod ui_resources_api {
 
     /// Adds a stylesheet from CSS text; `url()`s are relative to the game folder. Returns an id for
     /// `removeStyleSheet`.
+    #[global]
     pub fn add_style_sheet(css: &str) -> f64 {
         STATE.with(|s| {
             let mut s = s.borrow_mut();
@@ -68,6 +69,7 @@ pub mod ui_resources_api {
     }
 
     /// Removes a stylesheet added with `addStyleSheet`.
+    #[global]
     pub fn remove_style_sheet(id: f64) {
         STATE.with(|s| {
             s.borrow_mut()
@@ -77,6 +79,12 @@ pub mod ui_resources_api {
     }
 
     /// Loads a font for `fontFamily` to use (like CSS `@font-face`).
+    /// family: The name `fontFamily` uses.
+    /// src: The font file, relative to the game folder.
+    /// weight: The CSS weight it is for (the font's own when left out).
+    /// style: `normal`, `italic` or `oblique` (the font's own when left out).
+    #[global]
+    #[options(name = "FontFace", only, object)]
     #[optional(weight = 0, style)]
     pub fn load_font(family: &str, src: &str, weight: f64, style: &str) {
         STATE.with(|s| {

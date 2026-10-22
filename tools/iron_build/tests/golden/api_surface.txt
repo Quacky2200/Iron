@@ -1572,7 +1572,7 @@ declare function clearTimeout(id: number): void;
 declare function createContext<T>(def: T): { Provider: (props: { value: T; children?: ReactNode }) => ReactElementLike };
 declare function createRoot(target?: WorldPanel | Window | number): { render(node: ReactNode): void; unmount(): void };
 declare function forwardRef<P, T>(f: (props: P, ref: Ref<T>) => ReactElementLike | null): (props: P & { ref?: Ref<T> }) => ReactElementLike | null;
-declare function loadFont(face: FontFace): void;
+declare function loadFont(data: FontFace): void;
 declare function memo<P>(c: (props: P) => ReactElementLike | null): (props: P) => ReactElementLike | null;
 declare function property(value: unknown, context: ClassFieldDecoratorContext | ClassGetterDecoratorContext): void;
 declare function register(components: Record<string, ComponentClass>, options?: { spawn?: boolean }): void;
@@ -1633,6 +1633,11 @@ declare interface FlatMeshData :: normals?: NumberList;
 declare interface FlatMeshData :: positions: NumberList;
 declare interface FlatMeshData :: triangles: NumberList;
 declare interface FlatMeshData :: uv?: NumberList;
+declare interface FontFace
+declare interface FontFace :: family: string;
+declare interface FontFace :: src: string;
+declare interface FontFace :: style?: string;
+declare interface FontFace :: weight?: number;
 declare interface HeightFogSettings
 declare interface HeightFogSettings :: baseHeight: number;
 declare interface HeightFogSettings :: density: number;
@@ -2508,8 +2513,7 @@ declare namespace TimeSpan :: function parse(text: string): TimeSpan;
 declare namespace TimeUntil
 declare namespace UiResources
 declare namespace UiResources :: function addStyleSheet(css: string): number;
-declare namespace UiResources :: function loadFont(family: string, src: string, options?: { weight?: number; style?: string }): void;
-declare namespace UiResources :: function loadFont(family: string, src: string, weight?: number, style?: string): void;
+declare namespace UiResources :: function loadFont(data: FontFace): void;
 declare namespace UiResources :: function removeStyleSheet(id: number): void;
 declare namespace Vector2
 declare namespace Vector2 :: const down: Vector2;
@@ -2644,11 +2648,6 @@ interface Collision :: readonly gameObject: GameObject;
 interface Collision :: readonly relativeSpeed: number;
 interface Collision :: readonly sensor: boolean;
 interface Collision :: readonly speed: number;
-interface FontFace
-interface FontFace :: family: string;
-interface FontFace :: src: string;
-interface FontFace :: style?: string;
-interface FontFace :: weight?: number;
 interface GameObject
 interface GameObject :: addComponent<T>(cls: ClassOf<T>, props?: Partial<T>): T;
 interface GameObject :: getComponent<T>(cls: ClassOf<T>): T | undefined;

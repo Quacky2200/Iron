@@ -77,25 +77,6 @@ function __xs_ParticleSystem_startColor$a(self: ParticleSystem, v: Color[]): voi
 }
 
 
-//# when addStyleSheet(|removeStyleSheet(
-function addStyleSheet(css: string): number {
-  return UiResources.addStyleSheet(css);
-}
-function removeStyleSheet(id: number): void {
-  UiResources.removeStyleSheet(id);
-}
-
-//# when loadFont(
-interface FontFace {
-  family: string;
-  src: string;
-  weight?: number;
-  style?: string;
-}
-function loadFont(face: FontFace): void {
-  UiResources.loadFont(face.family, face.src, face.weight ?? 0, face.style ?? "");
-}
-
 //# when input.gamepads()|input.on(
 interface Gamepad {
   id: number;

@@ -113,10 +113,16 @@ fn style_sheets_fonts_and_gamepad_wrappers_go_through_the_ui_resources_queue() {
         iron_engine_api::ui_resources::reset();
         assert_eq!(text(ts_fac_uiResources()), "1|0");
         let r = iron_engine_api::ui_resources::take_requests();
-        assert_eq!(r.len(), 3);
+        assert_eq!(r.len(), 4);
         assert!(matches!(
             r[1],
             iron_engine_api::ui_resources::UiRequest::LoadFont { weight, .. } if weight == 700.0
+        ));
+        // A font object held in a variable, with the weight and style left out: the font's own.
+        assert!(matches!(
+            &r[3],
+            iron_engine_api::ui_resources::UiRequest::LoadFont { family, weight, style, .. }
+                if family == "Plain" && *weight == 0.0 && style.is_empty()
         ));
     });
 }

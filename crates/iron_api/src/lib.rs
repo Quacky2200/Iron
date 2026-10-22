@@ -208,6 +208,9 @@ pub struct Function {
     /// `#[promise]`: the last two parameters are the resolve and reject callbacks of a promise
     /// scripts get back (declared `Promise<T>`, `T` the resolve callback's argument).
     pub promise: bool,
+    /// `#[global]`: a namespace function that is also a global function of the same name
+    /// (`UiResources.loadFont` is `loadFont` too).
+    pub global: bool,
 }
 
 /// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
@@ -946,7 +949,7 @@ fn function_json(f: &Function) -> String {
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -987,7 +990,8 @@ fn function_json(f: &Function) -> String {
             json_str(off),
             json_str(ts)
         )),
-        if f.promise { ",\"promise\":true" } else { "" }
+        if f.promise { ",\"promise\":true" } else { "" },
+        if f.global { ",\"global\":true" } else { "" }
     )
 }
 
