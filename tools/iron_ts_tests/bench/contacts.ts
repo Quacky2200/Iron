@@ -6,16 +6,16 @@ let ball: PhysicsBody | null = null;
 
 class Probe extends Component {
   onCollisionEnter(c: Collision): void {
-    log += `${this.gameObject!.name}:E(${c.other!.name},${c.speed > 0.1 ? "fast" : "slow"})`;
+    log += `${this.gameObject!.name}:E(${c.gameObject.name},${c.speed > 0.1 ? "fast" : "slow"})`;
   }
   onCollisionExit(c: Collision): void {
-    log += `${this.gameObject!.name}:X(${c.other!.name})`;
+    log += `${this.gameObject!.name}:X(${c.gameObject.name})`;
   }
   onCollisionStay(c: Collision): void {
     log += `${this.gameObject!.name}:S`;
   }
   onTriggerEnter(c: Collision): void {
-    log += `${this.gameObject!.name}:TE(${c.other!.name},${c.sensor})`;
+    log += `${this.gameObject!.name}:TE(${c.gameObject.name},${c.sensor})`;
   }
   onTriggerExit(c: Collision): void {
     log += `${this.gameObject!.name}:TX`;

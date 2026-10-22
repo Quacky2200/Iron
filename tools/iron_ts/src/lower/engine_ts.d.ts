@@ -15,11 +15,6 @@ type QuaternionLike = { x: number; y: number; z: number; w: number };
 
 // ---- Components --------------------------------------------------------------------------------
 
-/** What `onCollisionEnter` and friends get: the other side of the contact. */
-interface Collider {
-  readonly gameObject: GameObject;
-}
-
 type ComponentClass<T = Component> = new () => T;
 type ClassOf<T> = { prototype: T };
 

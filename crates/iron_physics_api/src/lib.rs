@@ -40,6 +40,25 @@ macro_rules! number_handle {
     )*};
 }
 
+/// The other side of a contact (`Collider` to scripts).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContactCollider {
+    pub game_object: ObjectId,
+}
+
+/// What the contact hooks get (`Collision` to scripts): compiled code builds it from the pieces the
+/// host passes for a contact (`iron_ts` `components.rs`); `js/engine` makes its own for QuickJS games.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContactInfo {
+    pub game_object: ObjectId,
+    pub collider: ContactCollider,
+    /// How fast the two met (m/s); the same as `speed`.
+    pub relative_speed: f64,
+    pub speed: f64,
+    /// One of them is a sensor (a trigger).
+    pub sensor: bool,
+}
+
 // 0 is "none" in each (a script's `Body | null`).
 number_handle!(
     BodyRef,
@@ -357,7 +376,20 @@ fn flat(points: &[V3]) -> Vec<f64> {
 #[iron_api(
     namespace = "Physics", quickjs,
     handles(PhysicsBody = BodyRef, PhysicsCollider = ColliderRef, RaycastHit = HitRef, PhysicsJoint = JointRef, GameObject = ObjectId),
-    values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
+    values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64]),
+    records(
+        /// The other side of a contact, as a trigger hook gets it (`onTriggerEnter(other: Collider)`).
+        Collider = ContactCollider [game_object: GameObject],
+        /// What `onCollisionEnter` and the other contact hooks get: the other side of the contact.
+        Collision = ContactInfo [
+            game_object: GameObject,
+            collider: Collider,
+            relative_speed: f64,
+            speed: f64,
+            sensor: bool
+        ]
+    ),
+    aliases(Collision2D = Collision)
 )]
 pub mod physics_api {
     use super::*;

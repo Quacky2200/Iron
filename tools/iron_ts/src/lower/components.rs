@@ -31,7 +31,8 @@ pub const HOOKS: [&str; 9] = [
 ];
 
 /// The contact hooks, called by name when the physics step reports a contact. Each takes a
-/// `Collision` (the other side). Their thunks take the pieces, the host passes plain numbers.
+/// `Collision` (the other side; a record of `iron_physics_api`). Their thunks take the pieces, the
+/// host passes plain numbers.
 pub const CONTACT_HOOKS: [&str; 6] = [
     "onCollisionEnter",
     "onCollisionExit",
@@ -41,38 +42,14 @@ pub const CONTACT_HOOKS: [&str; 6] = [
     "onTriggerStay",
 ];
 
-/// The base class. `gameObject` is there when the manifest has the `GameObject` handle; so is
-/// `Collision`, whose `collider` is a `Collider` handle when the manifest has one.
-pub fn prelude(has_game_object: bool, has_collider: bool) -> String {
+/// The base class. `gameObject` is there when the manifest has the `GameObject` handle.
+pub fn prelude(has_game_object: bool) -> String {
     let go = if has_game_object {
         "  gameObject: GameObject | null = null;\n  get transform(): Transform {\n    return this.gameObject!.transform;\n  }\n"
     } else {
         ""
     };
-    let collision = if has_game_object {
-        let ct = if has_collider {
-            "Collider | null"
-        } else {
-            "number"
-        };
-        format!(
-            "class Collision {{\n  other: GameObject | null;\n  collider: {ct};\n  speed: number;\n  sensor: boolean;\n  constructor(other: GameObject | null, collider: {ct}, speed: number, sensor: boolean) {{\n    this.other = other;\n    this.collider = collider;\n    this.speed = speed;\n    this.sensor = sensor;\n  }}\n  get gameObject(): GameObject | null {{\n    return this.other;\n  }}\n  get relativeSpeed(): number {{\n    return this.speed;\n  }}\n}}\ntype Collision2D = Collision;\n"
-        )
-    } else {
-        String::new()
-    };
-    // `Collision2D` is the same data; a trigger hook that names `Collider` gets one holding the object.
-    let extra = if has_game_object {
-        let collider = if has_collider {
-            ""
-        } else {
-            "class Collider {\n  gameObject: GameObject;\n  constructor(gameObject: GameObject) {\n    this.gameObject = gameObject;\n  }\n}\n"
-        };
-        format!("type Collision2D = Collision;\n{collider}")
-    } else {
-        String::new()
-    };
-    format!("{collision}{extra}class Component {{\n  id: number = 0;\n{go}}}\n")
+    format!("class Component {{\n  id: number = 0;\n{go}}}\n")
 }
 
 /// Helper functions for `getComponentInChildren(Class)` calls: one per class named, appended to
@@ -195,7 +172,7 @@ impl<'a> Visit<'a> for RegisterFinder<'_> {
 /// The program with every `register(Class)` call turned into a run-time call that records the
 /// class (`__registerClass`, so registration works in a branch, a loop or after an `await`) and
 /// the thunks appended. `None` when there is nothing to register.
-pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option<String>> {
+pub fn desugar(src: &str, has_game_object: bool, has_contacts: bool) -> R<Option<String>> {
     if !src.contains("register(") {
         return Ok(None);
     }
@@ -391,11 +368,11 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
                 None => break,
             }
         }
-        if has_game_object {
+        if has_game_object && has_contacts {
             for h in CONTACT_HOOKS {
                 if have.contains(&h) {
                     let (method, ty) = contact_impl[h].clone();
-                    tail += &contact_thunk(name, h, &method, ty.as_deref(), has_collider);
+                    tail += &contact_thunk(name, h, &method, ty.as_deref());
                 }
             }
         }
@@ -419,27 +396,17 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
     Ok(Some(out))
 }
 
-/// The thunk of a contact hook: the host passes the other object, its collider, the speed and
-/// the sensor flag as plain values and the thunk builds the `Collision`.
-fn contact_thunk(
-    name: &str,
-    h: &str,
-    method: &str,
-    param: Option<&str>,
-    has_collider: bool,
-) -> String {
-    let ct = if has_collider {
-        "Collider | null"
-    } else {
-        "number"
-    };
+/// The thunk of a contact hook: the host passes the other object, its collider's id, the speed and
+/// the sensor flag as plain values and the thunk builds the `Collision` record (`collider`: the
+/// other object's side).
+fn contact_thunk(name: &str, h: &str, method: &str, param: Option<&str>) -> String {
     // A hook that takes the other `Collider` (a trigger's `other`) gets it; the rest a `Collision`.
-    let arg = if param == Some("Collider") && !has_collider {
-        "new Collider(other!)"
+    let arg = if param == Some("Collider") {
+        "const e: Collider = { gameObject: other! };"
     } else {
-        "new Collision(other, collider, speed, sensor !== 0)"
+        "const e: Collision = { gameObject: other!, collider: { gameObject: other! }, relativeSpeed: speed, speed: speed, sensor: sensor !== 0 };"
     };
     format!(
-        "export function iron_hook_{name}_{h}(c: {name}, other: GameObject | null, collider: {ct}, speed: number, sensor: number): void {{ c.{method}({arg}); }}\n"
+        "export function iron_hook_{name}_{h}(c: {name}, other: GameObject | null, collider: number, speed: number, sensor: number): void {{ {arg} c.{method}(e); }}\n"
     )
 }

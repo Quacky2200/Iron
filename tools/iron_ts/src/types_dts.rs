@@ -1227,11 +1227,6 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     engine.extend(d.option_types.keys().cloned());
     engine.extend(d.namespaces.keys().filter(|n| !n.is_empty()).cloned());
     engine.extend(d.globals.keys().cloned());
-    engine.extend(
-        crate::ui_dts::ENGINE_AMBIENT_NAMES
-            .iter()
-            .map(|s| s.to_string()),
-    );
     engine.extend(sup.names.iter().cloned());
     engine.extend(FIXED_NAMES.iter().map(|s| (*s).to_string()));
     out += "\n";

@@ -1642,6 +1642,14 @@ declare interface BoneWeights :: weights: number[];
 declare interface ClothBox
 declare interface ClothBox :: max: Vector3Like;
 declare interface ClothBox :: min: Vector3Like;
+declare interface Collider
+declare interface Collider :: gameObject: GameObject;
+declare interface Collision
+declare interface Collision :: collider: Collider;
+declare interface Collision :: gameObject: GameObject;
+declare interface Collision :: relativeSpeed: number;
+declare interface Collision :: sensor: boolean;
+declare interface Collision :: speed: number;
 declare interface ColorKey
 declare interface ColorKey :: color: Color;
 declare interface ColorKey :: time: number;
@@ -2657,6 +2665,7 @@ declare namespace input :: function onGamepadDisconnected(f: (a0: number) => voi
 declare namespace input :: function onKeyDown(f: (a0: string, a1: boolean) => void): number;
 declare namespace input :: function onKeyUp(f: (a0: string) => void): number;
 declare type AnimatorController = AnimationController;
+declare type Collision2D = Collision;
 declare type ExposureMetering = "average" | "centerWeighted" | "spot";
 declare type FilterMode = "point" | "bilinear" | "trilinear";
 declare type FogMode = "linear" | "exponential" | "exponentialSquared";
@@ -2675,14 +2684,6 @@ declare type VolumeDetail = "low" | "medium" | "high" | "ultra";
 declare type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";
 interface AudioSource
 interface AudioSource :: playOneShot(clip: Sound | string, volumeScale?: number): void;
-interface Collider
-interface Collider :: readonly gameObject: GameObject;
-interface Collision
-interface Collision :: readonly collider: Collider;
-interface Collision :: readonly gameObject: GameObject;
-interface Collision :: readonly relativeSpeed: number;
-interface Collision :: readonly sensor: boolean;
-interface Collision :: readonly speed: number;
 interface GameObject
 interface GameObject :: addComponent<T>(cls: ClassOf<T>, props?: Partial<T>): T;
 interface GameObject :: getComponent<T>(cls: ClassOf<T>): T | undefined;
@@ -3135,7 +3136,6 @@ interface Window :: request<R = unknown>(data: unknown, timeoutMs?: number): Pro
 type BlendMode = | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "color-dodge" | "color-burn" | "hard-light" | "soft-light" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 type BorderStyle = | "none" | "hidden" | "solid" | "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset";
 type ClassOf<T> = { prototype: T };
-type Collision2D = Collision;
 type ComponentClass<T = Component> = new () => T;
 type Cursor = | "auto" | "default" | "none" | "context-menu" | "help" | "pointer" | "progress" | "wait" | "cell" | "crosshair" | "text" | "vertical-text" | "alias" | "copy" | "move" | "no-drop" | "not-allowed" | "grab" | "grabbing" | "all-scroll" | "col-resize" | "row-resize" | "n-resize" | "e-resize" | "s-resize" | "w-resize" | "ne-resize" | "nw-resize" | "se-resize" | "sw-resize" | "ew-resize" | "ns-resize" | "nesw-resize" | "nwse-resize" | "zoom-in" | "zoom-out";
 type Length = number | string;

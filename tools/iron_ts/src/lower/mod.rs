@@ -420,8 +420,9 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let src = with_cic.as_deref().unwrap_or(src);
     let with_tree = components::tree_helpers(src, has_go).map(|h| format!("{src}{h}"));
     let src = with_tree.as_deref().unwrap_or(src);
-    let has_collider = manifests.iter().any(|m| m.contains("\"Collider\""));
-    let rewritten4 = components::desugar(src, has_go, has_collider)?;
+    // The contact hooks get the `Collision` record of the physics manifest.
+    let has_contacts = manifest.records.contains_key("Collision");
+    let rewritten4 = components::desugar(src, has_go, has_contacts)?;
     let wants_components = components::wanted(src);
     let src = rewritten4.as_deref().unwrap_or(src);
     // Programs that use errors get the `Error` classes compiled in front of them.
@@ -479,7 +480,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         head += prelude::INTL_DATETIME;
     }
     if wants_components {
-        head += &components::prelude(has_go, has_collider);
+        head += &components::prelude(has_go);
     }
     if wants_ui {
         head += jsx::UI_PRELUDE;

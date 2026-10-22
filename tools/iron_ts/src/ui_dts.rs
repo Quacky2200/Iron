@@ -161,21 +161,6 @@ fn jsx_namespace() -> String {
     s
 }
 
-/// Names the engine used to declare in `ambient.d.ts` but are not UI: they wait for `#[iron_enum]` /
-/// `#[iron_record]` on their Rust types (plan phase 2, `FullScreenMode` / `Gamepad` / `Collision`).
-const ENGINE_AMBIENT: &str = "interface Collision {
-  readonly gameObject: GameObject;
-  readonly collider: Collider;
-  readonly relativeSpeed: number;
-  readonly speed: number;
-  readonly sensor: boolean;
-}
-type Collision2D = Collision;
-";
-
-/// The names of [`ENGINE_AMBIENT`], re-exported from `@iron/engine`.
-pub const ENGINE_AMBIENT_NAMES: &[&str] = &["Collision", "Collision2D"];
-
 /// React's own types and the compiler's console, as TypeScript text.
 const REACT_TYPES_TS: &str = "type ReactNode = ReactElementLike | string | number | boolean | null | undefined | ReactNode[];
 interface ReactElementLike {
@@ -239,8 +224,6 @@ pub fn declarations() -> String {
             s += &format!("declare function {c}(props: IronProps): ReactElementLike;\n");
         }
     }
-    s += "\n";
-    s += ENGINE_AMBIENT;
     s
 }
 

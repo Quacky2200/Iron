@@ -3780,6 +3780,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let like = args.like;
     let alias_names: Vec<&String> = args.aliases.iter().map(|(a, _)| a).collect();
     let alias_targets: Vec<&String> = args.aliases.iter().map(|(_, t)| t).collect();
+    // A record is a type only: QuickJS has no global to give a second name.
+    let (js_alias_names, js_alias_targets): (Vec<&String>, Vec<&String>) = args
+        .aliases
+        .iter()
+        .filter(|(_, t)| !args.records.iter().any(|r| &r.ts == t))
+        .map(|(a, t)| (a, t))
+        .unzip();
 
     let quickjs = if args.quickjs {
         quote! {
@@ -3805,8 +3812,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 )*
                 #(
                     ctx.globals().set(
-                        #alias_names,
-                        ctx.globals().get::<_, ::iron_api::rquickjs::Value>(#alias_targets)?,
+                        #js_alias_names,
+                        ctx.globals().get::<_, ::iron_api::rquickjs::Value>(#js_alias_targets)?,
                     )?;
                 )*
                 Ok(())
