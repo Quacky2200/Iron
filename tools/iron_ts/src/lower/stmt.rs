@@ -1007,6 +1007,12 @@ impl<'a> Lowerer<'a> {
             let var = self.new_local(ty.clone());
             out.push(Stmt::Assign(var, v));
             self.note_regex(id.name.as_str(), d.init.as_ref());
+            if v_kind == VariableDeclarationKind::Const
+                && !self.captured.contains(id.name.as_str())
+                && let Some(Expression::NumericLiteral(n)) = &d.init
+            {
+                self.cur.const_nums.insert(var, n.value);
+            }
             self.bind_var(id.name.as_str(), var, out);
         }
         Ok(())

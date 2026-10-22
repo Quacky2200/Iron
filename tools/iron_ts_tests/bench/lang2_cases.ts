@@ -198,15 +198,3 @@ function t(): string {
   const xs = [[[1, 2], [3]], [[4]]];
   return flatten(xs, 2).join("") + " " + flatten(xs, 10).join("") + " " + flatten(xs, Infinity).join("");
 }
-//## flat_with_a_run_time_depth_one_level_short
-function flatten(xs: number[][][], depth: number): number[] {
-  return xs.flat(depth) as number[];
-}
-function t(): string {
-  const xs = [[[1, 2], [3]], [[4]]];
-  try {
-    return flatten(xs, 1).length + "";
-  } catch (e) {
-    return "threw:" + (e as Error).message;
-  }
-}

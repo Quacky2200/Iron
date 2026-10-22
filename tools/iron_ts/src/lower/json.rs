@@ -74,6 +74,11 @@ impl<'a> Lowerer<'a> {
                     b.out.extend_from_slice(f.name.as_bytes());
                 }
             }
+            Ty::Obj(sid) if self.unions.contains_key(sid) => {
+                bail!(
+                    "JSON.stringify / JSON.parse of a union value (a tagged `A | B`) is not supported"
+                )
+            }
             Ty::Obj(sid) => {
                 // The class and every class that extends it: an object may be a subclass.
                 let mut family: Vec<StructId> = vec![*sid];

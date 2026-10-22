@@ -201,6 +201,12 @@ impl<'a> Lowerer<'a> {
                     };
                     return Ok(mk(ExprKind::Cast(Box::new(v)), ty));
                 }
+                // `xs.flat(depth) as number[]`: an array of a union as an array of one member.
+                if let Ok(to @ Ty::Arr(_)) = self.ty(&a.type_annotation, "as")
+                    && let Some(e) = self.union_array_cast(&v, &to)?
+                {
+                    return Ok(e);
+                }
                 Ok(v)
             }
             Expression::TSSatisfiesExpression(s) => {
@@ -555,6 +561,11 @@ impl<'a> Lowerer<'a> {
                     });
                     if let Some(sub) = sub {
                         return self.member_of(Self::downcast(obj, sub), prop);
+                    }
+                    if prop == "length"
+                        && let Some(e) = self.union_length(obj.clone())
+                    {
+                        return Ok(e);
                     }
                     bail!("{} has no field `{prop}`", self.m.structs[sid].name)
                 };

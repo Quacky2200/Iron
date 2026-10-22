@@ -333,6 +333,52 @@ impl<'a> Lowerer<'a> {
         )
     }
 
+    /// `u.length` of a union value whose arrays (and strings) the program's tests narrowed to
+    /// several members: the length of the member the tag names. `None` when the union has no
+    /// member with a length.
+    pub(crate) fn union_length(&mut self, u: Expr) -> Option<Expr> {
+        let members = self.union_members(&u.ty)?;
+        let Ty::Obj(sid) = u.ty.strip().clone() else {
+            return None;
+        };
+        if !members
+            .iter()
+            .any(|m| matches!(m.strip(), Ty::Arr(_) | Ty::Typed(_) | Ty::Str))
+        {
+            return None;
+        }
+        let tmp = self.new_local(u.ty.clone());
+        let t = self.var_expr(tmp);
+        let plain = mk(ExprKind::Cast(Box::new(t.clone())), Ty::Obj(sid));
+        let tag_of = mk(ExprKind::Field(Box::new(plain), sid, 0), Ty::Num);
+        let mut result = num(0.0);
+        for (i, m) in members.iter().enumerate().rev() {
+            let len = match m.strip() {
+                Ty::Arr(_) | Ty::Typed(_) => {
+                    let member = self.project_union(t.clone(), i);
+                    mk(ExprKind::Len(Box::new(member)), Ty::Num)
+                }
+                Ty::Str => {
+                    let member = self.project_union(t.clone(), i);
+                    self.str_length(member)
+                }
+                _ => continue,
+            };
+            let is = mk(
+                ExprKind::Cmp(CmpOp::Eq, Box::new(tag_of.clone()), Box::new(num(i as f64))),
+                Ty::Bool,
+            );
+            result = mk(
+                ExprKind::Cond(Box::new(is), Box::new(len), Box::new(result)),
+                Ty::Num,
+            );
+        }
+        Some(mk(
+            ExprKind::Seq(vec![Stmt::Assign(tmp, u)], Box::new(result)),
+            Ty::Num,
+        ))
+    }
+
     // ---- narrowing ----
 
     /// The text of a path (`x`, `this.o.scale`) a test can narrow.

@@ -259,6 +259,8 @@ pub(crate) struct FnCtx {
     /// Paths (`o.scale`) the tests around the expression narrowed to members of their union
     /// (`tagged.rs`); a function or closure body starts with none.
     pub narrowed: Vec<(String, Vec<usize>)>,
+    /// Locals declared `const x = <number literal>`: their values, so `xs.flat(x)` is exact.
+    pub const_nums: HashMap<VarId, f64>,
 }
 
 pub struct Lowerer<'a> {

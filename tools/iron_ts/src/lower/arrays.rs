@@ -496,6 +496,145 @@ impl<'a> Lowerer<'a> {
         Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty))
     }
 
+    /// `flat(depth)` with a depth known only at run time. Every element of the receiver has the
+    /// same declared nesting, so after `i` flattenings the array holds exactly one type
+    /// (`E_{L-i}`); the result is an array of the union of every level (`T | T[] | T[][]`) and the
+    /// run-time depth picks the step whose array is wrapped into it (0, a negative or NaN depth
+    /// copies; a fraction truncates; `Infinity` flattens fully).
+    fn flat_dynamic(&mut self, recv: Expr, d: Expr) -> R<Expr> {
+        // Element types, deepest first: [E_L, .., E_0].
+        let mut levels: Vec<Ty> = Vec::new();
+        let mut t = recv.ty.strip().clone();
+        while let Ty::Arr(inner) = t.strip().clone() {
+            levels.push((*inner).clone());
+            let more = matches!(inner.strip(), Ty::Arr(_));
+            t = (*inner).clone();
+            if !more {
+                break;
+            }
+        }
+        let top = levels.len() - 1;
+        let members: Vec<Ty> = levels.iter().rev().cloned().collect();
+        let union = self.make_union(members);
+        let res_ty = Ty::Arr(Box::new(union.clone()));
+        let res = self.new_local(res_ty.clone());
+        let first = self.new_local(recv.ty.clone());
+        let dl = self.new_local(Ty::Num);
+        let mut stmts = vec![Stmt::Assign(first, recv), Stmt::Assign(dl, d)];
+        let steps = self.flat_steps(first, 0, top, dl, &union, res)?;
+        stmts.extend(steps);
+        Ok(mk(
+            ExprKind::Seq(stmts, Box::new(self.var_expr(res))),
+            res_ty,
+        ))
+    }
+
+    /// Step `i` of `flat_dynamic`: `cur` holds the array flattened `i` times.
+    fn flat_steps(
+        &mut self,
+        cur: VarId,
+        i: usize,
+        top: usize,
+        dl: VarId,
+        union: &Ty,
+        res: VarId,
+    ) -> R<Vec<Stmt>> {
+        let res_ty = Ty::Arr(Box::new(union.clone()));
+        let stop = |this: &mut Self| -> R<Vec<Stmt>> {
+            let ce = this.var_expr(cur);
+            let it = this.begin_iter(ce)?;
+            let out = this.new_local(res_ty.clone());
+            let ov = this.var_expr(out);
+            let mut stmts = it.pre.clone();
+            stmts.push(Stmt::Assign(
+                out,
+                mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), res_ty.clone()),
+            ));
+            let el = this.var_expr(it.elem);
+            let wrapped = this.wrap_in_union(el, union, top - i)?;
+            let mut body = it.head.clone();
+            body.push(Stmt::Eval(mk(
+                ExprKind::Rt(RtFn::ArrPush, vec![ov.clone(), wrapped]),
+                Ty::Void,
+            )));
+            stmts.push(Stmt::Loop(it.label, body));
+            stmts.push(Stmt::Assign(res, ov));
+            Ok(stmts)
+        };
+        if i == top {
+            return stop(self);
+        }
+        let more = mk(
+            ExprKind::Cmp(
+                CmpOp::Ge,
+                Box::new(self.var_expr(dl)),
+                Box::new(num((i + 1) as f64)),
+            ),
+            Ty::Bool,
+        );
+        let ce = self.var_expr(cur);
+        let next_e = self.flat_once(ce)?;
+        let next = self.new_local(next_e.ty.clone());
+        let mut then = vec![Stmt::Assign(next, next_e)];
+        then.extend(self.flat_steps(next, i + 1, top, dl, union, res)?);
+        let els = stop(self)?;
+        Ok(vec![Stmt::If(more, then, els)])
+    }
+
+    /// `xs as number[]` where `xs` is an array of a union (`number | number[]`, what `flat(depth)`
+    /// gives for a depth known at run time): a new array of the elements that are that member. An
+    /// element of another member means the assertion was wrong (the depth did not reach it): a
+    /// `TypeError` names it. `None` when this is not such a cast.
+    pub(crate) fn union_array_cast(&mut self, v: &Expr, to: &Ty) -> R<Option<Expr>> {
+        let (Ty::Arr(from_el), Ty::Arr(to_el)) = (v.ty.strip(), to.strip()) else {
+            return Ok(None);
+        };
+        let Some(members) = self.union_members(from_el) else {
+            return Ok(None);
+        };
+        let Some(idx) = members.iter().position(|m| m.strip() == to_el.strip()) else {
+            return Ok(None);
+        };
+        let Ty::Obj(sid) = from_el.strip().clone() else {
+            return Ok(None);
+        };
+        let it = self.begin_iter(v.clone())?;
+        let out = self.new_local(to.clone());
+        let ov = self.var_expr(out);
+        let mut stmts = it.pre.clone();
+        stmts.push(Stmt::Assign(
+            out,
+            mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), to.clone()),
+        ));
+        let el = self.var_expr(it.elem);
+        let tag = mk(ExprKind::Field(Box::new(el.clone()), sid, 0), Ty::Num);
+        let is = mk(
+            ExprKind::Cmp(CmpOp::Eq, Box::new(tag), Box::new(num(idx as f64))),
+            Ty::Bool,
+        );
+        let member = self.project_union(el, idx);
+        let push = Stmt::Eval(mk(
+            ExprKind::Rt(RtFn::ArrPush, vec![ov.clone(), member]),
+            Ty::Void,
+        ));
+        let wrong = match self.fids.get("__rtThrow").copied() {
+            Some(fid) => {
+                let msg = self.str_lit(&format!(
+                    "the array holds values that are not {to_el} (a flat depth that does not reach them)"
+                ));
+                vec![Stmt::Eval(mk(
+                    ExprKind::Call(fid, vec![num(2.0), msg]),
+                    Ty::Void,
+                ))]
+            }
+            None => vec![],
+        };
+        let mut body = it.head.clone();
+        body.push(Stmt::If(is, vec![push], wrong));
+        stmts.push(Stmt::Loop(it.label, body));
+        Ok(Some(mk(ExprKind::Seq(stmts, Box::new(ov)), to.clone())))
+    }
+
     /// An optional number argument of a call, or `default` when it is missing.
     fn num_arg_or(&mut self, c: &'a CallExpression<'a>, i: usize, default: f64) -> R<Expr> {
         match c.arguments.get(i).and_then(|a| a.as_expression()) {
@@ -1027,58 +1166,42 @@ impl<'a> Lowerer<'a> {
                 if !matches!(el.strip(), Ty::Arr(_)) {
                     bail!("flat: the elements are {el}, not arrays")
                 }
-                let mut depth_pre: Vec<Stmt> = Vec::new();
                 let depth = match c.arguments.first().and_then(|a| a.as_expression()) {
                     None => 1,
-                    Some(Expression::NumericLiteral(n))
-                        if n.value >= 0.0 && n.value.fract() == 0.0 =>
-                    {
-                        n.value as usize
+                    Some(Expression::NumericLiteral(n)) => {
+                        if n.value.is_nan() || n.value <= 0.0 {
+                            0
+                        } else if n.value.is_infinite() {
+                            usize::MAX
+                        } else {
+                            n.value as usize
+                        }
                     }
                     Some(Expression::Identifier(i)) if i.name == "Infinity" => usize::MAX,
-                    // A depth known only at run time: the result has the type of the full
-                    // flattening, so a depth that is too small to reach it cannot be honoured
-                    // (the result would hold arrays typed as their elements): it throws.
+                    // `const d = 2; xs.flat(d)`: a constant is exact too.
+                    Some(Expression::Identifier(i))
+                        if let Some(Binding::Direct(v)) = self.lookup(i.name.as_str())
+                            && let Some(&n) = self.cur.const_nums.get(&v) =>
+                    {
+                        if n.is_nan() || n <= 0.0 {
+                            0
+                        } else if n.is_infinite() {
+                            usize::MAX
+                        } else {
+                            n as usize
+                        }
+                    }
+                    // A depth known only at run time: the result holds the levels the
+                    // declared nesting allows, as a union (`flat_dynamic`).
                     Some(e) => {
                         let v = self.lower_expr(e, Some(&Ty::Num))?;
                         match v.kind {
-                            ExprKind::Num(n) if n >= 0.0 && n.fract() == 0.0 => n as usize,
+                            ExprKind::Num(n) if n.is_nan() || n <= 0.0 => 0,
+                            ExprKind::Num(n) if n.is_infinite() => usize::MAX,
+                            ExprKind::Num(n) => n as usize,
                             _ => {
-                                let mut levels = 0usize;
-                                let mut t = recv.ty.strip().clone();
-                                while let Ty::Arr(inner) = t.strip().clone() {
-                                    if !matches!(inner.strip(), Ty::Arr(_)) {
-                                        break;
-                                    }
-                                    levels += 1;
-                                    t = inner.strip().clone();
-                                }
-                                let d = self.new_local(Ty::Num);
-                                depth_pre.push(Stmt::Assign(d, v));
-                                if let Some(&fid) = self.fids.get("__rtThrow") {
-                                    let enough = mk(
-                                        ExprKind::Cmp(
-                                            CmpOp::Ge,
-                                            Box::new(self.var_expr(d)),
-                                            Box::new(num(levels as f64)),
-                                        ),
-                                        Ty::Bool,
-                                    );
-                                    let too_small =
-                                        mk(ExprKind::Un(UnOp::Not, Box::new(enough)), Ty::Bool);
-                                    let msg = self.str_lit(&format!(
-                                        "flat(depth): the depth is smaller than the {levels} level(s) the result type flattens (the result would hold arrays typed as their elements); use a constant depth"
-                                    ));
-                                    depth_pre.push(Stmt::If(
-                                        too_small,
-                                        vec![Stmt::Eval(mk(
-                                            ExprKind::Call(fid, vec![num(1.0), msg]),
-                                            Ty::Void,
-                                        ))],
-                                        vec![],
-                                    ));
-                                }
-                                usize::MAX
+                                let v = self.as_num(v)?;
+                                return self.flat_dynamic(recv, v);
                             }
                         }
                     }
@@ -1098,11 +1221,7 @@ impl<'a> Lowerer<'a> {
                     cur = self.flat_once(cur)?;
                     left -= 1;
                 }
-                if depth_pre.is_empty() {
-                    return Ok(cur);
-                }
-                let ty = cur.ty.clone();
-                Ok(mk(ExprKind::Seq(depth_pre, Box::new(cur)), ty))
+                Ok(cur)
             }
             // `xs.flatMap(f)`: `f` returns an array for each element.
             (Ty::Arr(_), "flatMap") => {

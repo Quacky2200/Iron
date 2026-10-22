@@ -40,19 +40,3 @@ bun_tests! {
     3223 truthiness_narrows_a_union_of_number_string_array_and_null "truthiness_narrowing_of_a_union" "l28_" 2208000;
     3224 flat_with_a_run_time_depth_flattens_that_deep "flat_with_a_run_time_depth" "l29_" 2209000;
 }
-
-// M9-TS-3225
-//
-// `flat(depth)` with a depth known only at run time cannot give a result of another type than the
-// declared one: a depth smaller than the nesting throws instead of returning nested arrays that
-// the type would call numbers (documented in docs/differences.md).
-#[test]
-fn flat_with_a_run_time_depth_smaller_than_the_nesting_throws() {
-    let got = run(
-        case(CASES, "flat_with_a_run_time_depth_one_level_short"),
-        "l2a_",
-        2_210_000,
-    )
-    .unwrap();
-    assert!(got.starts_with("threw:") && got.contains("flat"), "{got}");
-}
