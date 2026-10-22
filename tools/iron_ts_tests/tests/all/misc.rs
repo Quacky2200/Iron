@@ -40,4 +40,5 @@ bun_tests! {
     3137 field_types_from_expressions "field_types_from_expressions" "mi8_" 608000;
     3162 top_level_destructuring "top_level_destructuring" "mi9_" 609000;
     3163 spread_into_function_values_and_constructors "spread_into_function_values_and_constructors" "mi10_" 610000;
+    3173 generic_function_with_void "generic_function_with_void" "mi11_" 611000;
 }

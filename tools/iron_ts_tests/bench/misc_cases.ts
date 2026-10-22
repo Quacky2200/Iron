@@ -206,3 +206,17 @@ function t(): string {
   const mul = (a: number, b: number) => a * b;
   return `${apply(mul, ys)} ${apply((a, b) => a - b, [10, 4])} ${apply3((a, b, c) => `${a}${b}${c}`, 1, [2, 3])} ${p.sum()} ${q.sum()} ${rnd(...range)}`;
 }
+//## generic_function_with_void
+function under<T>(f: () => T): T {
+  return f();
+}
+let n = 0;
+function t(): string {
+  under<void>(() => {
+    n++;
+  });
+  under<void>(() => {
+    n += 2;
+  });
+  return `${n} ${under(() => 3)} ${under(() => "s")}`;
+}

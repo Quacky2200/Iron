@@ -765,6 +765,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   `LineRenderer2D.fillRule`, `TextMesh.alignment`, ..) `#[ts_type]`; `QualitySettings.shadows`, `softShadowQuality` and
   `anisotropicFiltering` too (`docs/iron-api.md`). Spreading into function values / `new C(...xs)` / `f(a, ...xs)` is built:
   the elements of an array or tuple feed the parameters after the plain arguments (null past the end).
+- **`return f()` of a void call** (a generic function with `T = void`) evaluates the call and returns nothing.
 - **Defaulted closure parameters of type `boolean`** may be left out at a call, like numbers and strings.
 
 ## Tables, dictionaries and types from values

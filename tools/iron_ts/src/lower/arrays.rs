@@ -170,6 +170,13 @@ impl<'a> Lowerer<'a> {
                     out.push(Stmt::Return(None));
                     return Ok(());
                 }
+                // `return f()` where `f` gives nothing (a generic function with `T = void`).
+                if v.ty == Ty::Void && self.cur.ret.as_ref().is_none_or(|t| *t == Ty::Void) {
+                    self.cur.ret = Some(Ty::Void);
+                    out.push(Stmt::Eval(v));
+                    out.push(Stmt::Return(None));
+                    return Ok(());
+                }
                 let v = match self.cur.ret.clone() {
                     Some(t) => self.coerce(v, &t)?,
                     None => {

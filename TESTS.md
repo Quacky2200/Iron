@@ -1722,3 +1722,4 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3170 | Integration | `(typeof NAMES)[number]` over `as const`, `(typeof TINTS)[Tint]`, optional tuple elements (`[number, number, "c"?]`), `s[i]` on a string, `Array.from({ length }, () => null)` as `(T \| null)[]` (`tables.rs`). |
 | M9-TS-3171 | Integration | A prop typed `object` is a bag of style properties spread into `style` (`tools/iron_ts_tests/tests/all/ui.rs`). |
 | M9-TS-3172 | Integration | `Pick<Ctx, ..>` of an interface that reaches the pick through its own members (`Ctx.scene: Effects`, `Effects.host: Host`) (`tools/iron_ts_tests/tests/all/utility.rs`). |
+| M9-TS-3173 | Integration | A generic function with `T = void` (`under<void>(() => { n++; })`, `return f()` of a void call) (`tools/iron_ts_tests/tests/all/misc.rs`). |
