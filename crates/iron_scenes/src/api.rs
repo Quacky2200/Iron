@@ -98,11 +98,18 @@ pub mod scene_manager_api {
         }
     }
 
-    /// Asks the host to read a scene file from the game folder and load it; the number says which
-    /// request finished.
+    /// Reads a scene file from the game folder and loads it. Resolves with the scene in the tick
+    /// the host loads it; rejects with an `Error` when the file is missing, outside the game
+    /// folder or not a scene.
+    #[promise]
     #[optional(mode)]
-    pub fn load_scene_async(path: &str, mode: Option<LoadMode>) -> f64 {
-        manager::request_load(path, mode == Some(LoadMode::Additive)) as f64
+    pub fn load_scene_async(
+        path: &str,
+        mode: Option<LoadMode>,
+        resolve: Callback<(HandleArg<SceneRef>,)>,
+        reject: Callback<(String,)>,
+    ) {
+        manager::load_scene_promise(path, mode == Some(LoadMode::Additive), resolve, reject);
     }
 
     /// Destroys a scene's objects and drops it. The last scene cannot be unloaded.
@@ -146,12 +153,6 @@ pub mod scene_manager_api {
     /// parsed. Returns a token for `offSceneEvent`.
     pub fn on_scene_load_failed(f: Callback<(String, String)>) -> u32 {
         manager::on_load_failed(f)
-    }
-
-    /// Asks the host to read a prefab file from the game folder; `onPrefabLoaded` (or
-    /// `onSceneLoadFailed`) follows. The number says which request.
-    pub fn load_prefab_async(path: &str) -> f64 {
-        manager::request_prefab(path) as f64
     }
 
     /// Calls `f(path, prefab)` after a prefab asked for with `loadPrefabAsync` was read. Returns a
@@ -249,6 +250,17 @@ pub mod scene_manager_api {
     }
 
     impl PrefabRef {
+        /// Reads a prefab file (JSON) from the game folder. Resolves with the prefab; rejects with an
+        /// `Error` when it is missing or not a prefab.
+        #[promise]
+        pub fn load(
+            path: &str,
+            resolve: Callback<(HandleArg<PrefabRef>,)>,
+            reject: Callback<(String,)>,
+        ) {
+            manager::load_prefab_promise(path, resolve, reject);
+        }
+
         /// Captures an object and everything under it as it is now.
         pub fn from_object(object: ObjectId) -> PrefabRef {
             PrefabRef(manager::prefab_from_object(object))

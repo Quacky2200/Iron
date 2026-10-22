@@ -78,7 +78,15 @@ struct State {
     meshes: Vec<Option<MeshInfo>>,
     commands: Vec<RenderCommand>,
     primitives: HashMap<String, MeshRef>,
+    /// `whenLoaded()` promises of textures still loading: (texture, resolve, reject).
+    waiters: Vec<TextureWaiter>,
 }
+
+type TextureWaiter = (
+    u32,
+    Callback<(iron_api::callback::HandleArg<TextureRef>,)>,
+    Callback<(String,)>,
+);
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
@@ -115,6 +123,21 @@ pub fn texture_loaded(t: TextureRef, width: u32, height: u32) {
             d.height = height;
         }
     });
+    // The promises that were waiting hear it (outside the state: they run script code).
+    let waiting: Vec<TextureWaiter> = st(|s| {
+        let (mine, rest) = std::mem::take(&mut s.waiters)
+            .into_iter()
+            .partition(|w| w.0 == t.0);
+        s.waiters = rest;
+        mine
+    });
+    for (_, resolve, reject) in waiting {
+        if width == 0 {
+            reject.call(("texture failed to load".to_string(),));
+        } else {
+            resolve.call((iron_api::callback::HandleArg(t),));
+        }
+    }
 }
 
 fn with_texture<R>(t: TextureRef, f: impl FnOnce(&mut TextureInfo) -> R) -> Option<R> {
@@ -315,6 +338,22 @@ pub mod texture_api {
     use super::*;
 
     impl TextureRef {
+        /// A promise of the texture once it has loaded (resolved at once when it has); rejects with an
+        /// `Error` when loading failed.
+        #[promise]
+        pub fn when_loaded(
+            self,
+            resolve: Callback<(iron_api::callback::HandleArg<TextureRef>,)>,
+            reject: Callback<(String,)>,
+        ) {
+            match texture_info(self) {
+                Some(i) if i.failed => reject.call(("texture failed to load".to_string(),)),
+                Some(i) if i.loaded => resolve.call((iron_api::callback::HandleArg(self),)),
+                Some(_) => st(|s| s.waiters.push((self.0, resolve, reject))),
+                None => reject.call(("the texture was freed".to_string(),)),
+            }
+        }
+
         /// Loads a PNG or JPEG relative to the game folder (or `"guid:<guid>"`). Settings not
         /// given come from the file's `.meta` importer, then the defaults (`bilinear`, `repeat`,
         /// mipmaps on, anisotropy 1). The size is known once the host reports it (`isLoaded`).

@@ -63,6 +63,9 @@ pub struct Manifest {
     /// Functions that take a callback and return a token (`Screen.onChange`): (namespace, name) ->
     /// the name of the function that stops the listener. Scripts get a function that does it.
     pub subscriptions: HashMap<(String, String), String>,
+    /// Functions that settle a promise through their last two callbacks (`SceneManager.loadSceneAsync`):
+    /// (owner namespace or class, name, owner is a class, is a method).
+    pub promises: Vec<(String, String, bool, bool)>,
 }
 
 /// An enum of the engine API.
@@ -281,6 +284,9 @@ impl Manifest {
             .ok_or("manifest: missing `functions`")?
         {
             let (name, kind, func) = self.parse_fn(f)?;
+            if f["promise"].as_bool() == Some(true) {
+                self.promises.push((ns.clone(), name.clone(), false, false));
+            }
             if let Some(off) = f["subscription"]["off"].as_str() {
                 self.subscriptions
                     .insert((ns.clone(), name.clone()), off.to_string());
@@ -319,6 +325,10 @@ impl Manifest {
                 .ok_or("manifest: a class needs `functions`")?
             {
                 let (name, kind, func) = self.parse_fn(f)?;
+                if f["promise"].as_bool() == Some(true) {
+                    self.promises
+                        .push((cname.to_string(), name.clone(), true, kind == "method"));
+                }
                 // A getter or setter without `this` is a static property of the class (`Window.main`);
                 // compiled code reads a static getter like a no-argument static (`ext_static_prop`).
                 let has_this = func.params.first().is_some_and(|p| p.0 == "this");

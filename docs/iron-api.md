@@ -826,6 +826,16 @@ returns `() => void`. `Screen.onChange`, `QualitySettings.onLevelChanged`, `Asse
 `SceneManager.onSceneLoaded` / `onSceneUnloaded` / `onActiveSceneChanged` use it; the token forms (`input.onKeyDown`, window
 listeners) are unchanged. Tests: `M9-API-1636`, `M9-TS-3351`.
 
+**Promises (2026-10-22, plan phase 2d, second part).** `#[promise]` marks a function whose last two parameters are `resolve: Callback<(T,)>` and
+`reject: Callback<(String,)>` (nothing else is returned): scripts call it without them and get a `Promise<T>`, `T` the resolve callback's
+argument (`"promise": true` in the manifest; the declaration drops the two parameters). QuickJS makes a real promise and passes the two
+functions of `Promise::new` as the callbacks (the reject text becomes an `Error`: `qjs::error_rejecter`); compiled code gets a small
+function written from the manifest (`new Promise<T>((resolve, reject) => X.f$n(.., resolve, e => reject(new Error(e))))`). Optional
+parameters the generated function passes on become `""` / `NaN` / `false` when left out. Used by `SceneManager.loadSceneAsync`,
+`Prefab.load` (listeners the engine adds and removes itself, in `iron_scenes::manager`) and `Texture.whenLoaded()` / `Model.whenLoaded()`
+(a waiter list settled by `texture_loaded` / `model_loaded`, so no polling timer). Tests: `M9-API-1637`, `M9-API-1638`, and the
+existing `M9-API-1512`..`1517` and `M9-TS` promise tests.
+
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;
 parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string` (a result) and `strings` (a parameter). `tools/iron_ts/src/types_dts.rs` reads them

@@ -98,13 +98,6 @@ interface SceneData {
 interface Scene {
   serialize(): SceneData;
 }
-declare namespace SceneManager {
-  function loadSceneAsync(path: string, mode?: LoadSceneMode): Promise<Scene>;
-}
-declare namespace Prefab {
-  /** Reads a prefab file (JSON) from the game folder; rejects when it is missing or not a prefab. */
-  function load(path: string): Promise<Prefab>;
-}
 
 // ---- Rendering ---------------------------------------------------------------------------------
 
@@ -114,14 +107,8 @@ interface Camera {
   screenToWorldPoint(p: Vector3Like): Vector3;
 }
 
-interface Texture {
-  whenLoaded(): Promise<Texture>;
-}
 interface Material {
   withTexture(texture: Texture): Material;
-}
-interface Model {
-  whenLoaded(): Promise<Model>;
 }
 declare namespace Sprite {
   function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;

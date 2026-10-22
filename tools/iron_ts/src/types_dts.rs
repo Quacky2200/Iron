@@ -126,6 +126,19 @@ fn funcs(v: &Value, like: bool) -> Vec<Func> {
     arr.iter()
         .map(|f| {
             let mut func = func_of(f, like);
+            // `#[promise]`: the resolve and reject callbacks are the engine's; scripts get a promise.
+            if f["promise"].as_bool() == Some(true) && func.params.len() >= 2 {
+                let resolve = f["params"][func.params.len() - 2]["type"]
+                    .as_str()
+                    .unwrap_or("");
+                let value = resolve
+                    .strip_prefix("fn(")
+                    .and_then(|r| r.split_once("):"))
+                    .and_then(|(ps, _)| ps.split(',').find(|p| !p.is_empty()))
+                    .map_or("void".to_string(), ts_type);
+                func.ret = format!("Promise<{value}>");
+                func.params.truncate(func.params.len() - 2);
+            }
             // `#[subscription(off = ..)]`: scripts get a function that stops the listener.
             if let Some(sub) = f["subscription"].as_object() {
                 func.ret = "() => void".to_string();

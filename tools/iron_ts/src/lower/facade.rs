@@ -210,6 +210,88 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
             params.join(", ")
         ));
     }
+    // `#[promise]` functions: a promise whose resolve and reject are the engine's two callbacks.
+    let mut promises = manifest.promises.clone();
+    promises.sort();
+    for (owner, name, is_class, is_method) in promises {
+        let used = if is_method {
+            src.contains(&format!(".{name}("))
+        } else {
+            src.contains(&format!("{owner}.{name}"))
+        };
+        if !used {
+            continue;
+        }
+        let f = if !is_class {
+            manifest.namespaces.get(&owner).and_then(|n| n.get(&name))
+        } else if is_method {
+            manifest
+                .classes
+                .get(&owner)
+                .and_then(|c| c.methods.get(&name))
+        } else {
+            manifest
+                .classes
+                .get(&owner)
+                .and_then(|c| c.statics.get(&name))
+        };
+        let Some(f) = f else { continue };
+        let skip = usize::from(is_method);
+        if f.params.len() < skip + 2 {
+            continue;
+        }
+        let user = &f.params[skip..f.params.len() - 2];
+        let value = match &f.params[f.params.len() - 2].1 {
+            crate::ir::ExtTy::Fn(ps, _) => ps.first().map(ext_ts),
+            _ => None,
+        };
+        let decl: Vec<String> = user
+            .iter()
+            .enumerate()
+            .map(|(i, (p, t))| {
+                let opt = if skip + i >= f.optional_from { "?" } else { "" };
+                format!("{p}{opt}: {}", ext_ts(t))
+            })
+            .collect();
+        let pass: Vec<String> = user
+            .iter()
+            .enumerate()
+            .map(|(i, (p, t))| {
+                if skip + i < f.optional_from {
+                    return p.clone();
+                }
+                match t {
+                    crate::ir::ExtTy::Str | crate::ir::ExtTy::Enum(_) => format!("({p} ?? \"\")"),
+                    crate::ir::ExtTy::Bool => format!("({p} ?? false)"),
+                    _ => format!("({p} ?? NaN)"),
+                }
+            })
+            .collect();
+        let (promise_ty, resolve) = match &value {
+            Some(t) => (t.clone(), format!("(v: {t}) => {{ resolve(v); }}")),
+            None => ("void".to_string(), "() => { resolve(); }".to_string()),
+        };
+        let reject = "(e: string) => { reject(new Error(e)); }";
+        let args = pass
+            .iter()
+            .cloned()
+            .chain([resolve, reject.to_string()])
+            .collect::<Vec<_>>()
+            .join(", ");
+        if is_method {
+            let mut params = vec![format!("self: {owner}")];
+            params.extend(decl);
+            extra.push_str(&format!(
+                "\nfunction __xm_{owner}_{name}({}): Promise<{promise_ty}> {{\n  return new Promise<{promise_ty}>((resolve, reject) => {{ self.{name}$n({args}); }});\n}}\n",
+                params.join(", ")
+            ));
+        } else {
+            extra.push_str(&format!(
+                "\nfunction __xt_{owner}_{name}({}): Promise<{promise_ty}> {{\n  return new Promise<{promise_ty}>((resolve, reject) => {{ {owner}.{name}$n({args}); }});\n}}\n",
+                decl.join(", ")
+            ));
+        }
+    }
     for r in request_types(src, ".request<") {
         extra.push_str(
             &REQUEST_TEMPLATE

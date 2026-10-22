@@ -52,3 +52,91 @@ fn listeners_return_a_function_that_stops_them() {
         assert_eq!(after, before);
     });
 }
+
+// M9-API-1637
+//
+// `#[promise]` functions give a real promise that the engine settles through two callbacks:
+// `SceneManager.loadSceneAsync` and `Prefab.load` resolve in the tick the host loads the file and
+// reject with an `Error` for a file that cannot be read or parsed.
+#[test]
+fn load_functions_return_promises_the_host_settles() {
+    use iron_scenes as manager;
+    with_world(|ctx| {
+        iron_scenes::register_engine_kinds();
+        let text: String = js(
+            ctx,
+            r#"
+            const root = GameObject.create();
+            root.name = 'crate';
+            const level = SceneManager.createScene('level');
+            SceneManager.moveGameObjectToScene(root, level);
+            level.serialize()
+            "#,
+        );
+        let _: f64 = js(
+            ctx,
+            r#"
+            globalThis.log = [];
+            globalThis.p1 = SceneManager.loadSceneAsync('lvl.scene.json', 'additive');
+            p1.then(s => log.push('ok:' + s.path), e => log.push('err:' + e.message));
+            SceneManager.loadSceneAsync('bad.scene.json').then(s => log.push('bad ok'), e => log.push(e instanceof Error ? 'bad:' + e.message.slice(0, 30) : 'not an error'));
+            Prefab.load('p.prefab.json').then(p => log.push('prefab'), e => log.push('prefab err'));
+            0
+            "#,
+        );
+        assert_eq!(js::<String>(ctx, "typeof p1.then"), "function");
+        let requests = manager::take_load_requests();
+        assert_eq!(requests.len(), 2);
+        for (id, path) in requests {
+            if path == "lvl.scene.json" {
+                manager::finish_load(id, &text).unwrap();
+            } else {
+                assert!(manager::finish_load(id, "not json").is_err());
+            }
+        }
+        let (pid, _) = manager::take_prefab_requests()[0].clone();
+        assert!(manager::finish_prefab(pid, Err("missing")).is_err());
+        iron_scenes::dispatch();
+        while ctx.execute_pending_job() {}
+        let log: String = js(ctx, "JSON.stringify(log)");
+        assert_eq!(
+            log,
+            r#"["ok:lvl.scene.json","bad:could not load scene bad.scene","prefab err"]"#
+        );
+    });
+}
+
+// M9-API-1638
+//
+// `Texture.whenLoaded()` resolves in the call that reports the load (at once for a texture that
+// has loaded) and rejects with an `Error` when the load failed.
+#[test]
+fn when_loaded_promises_settle_when_the_host_reports_the_texture() {
+    use iron_render_api::{TextureRef, texture_loaded};
+    with_world(|ctx| {
+        let _: f64 = js(
+            ctx,
+            r#"
+            globalThis.log = [];
+            globalThis.a = Texture.load('a.png');
+            globalThis.b = Texture.load('b.png');
+            a.whenLoaded().then(t => log.push('a:' + (t.src === a.src) + ':' + t.width), e => log.push('a err'));
+            b.whenLoaded().then(t => log.push('b ok'), e => log.push(e instanceof Error ? 'b:' + e.message : '?'));
+            0
+            "#,
+        );
+        while ctx.execute_pending_job() {}
+        assert_eq!(js::<String>(ctx, "JSON.stringify(log)"), "[]");
+        texture_loaded(TextureRef(1), 8, 4);
+        texture_loaded(TextureRef(2), 0, 0);
+        while ctx.execute_pending_job() {}
+        assert_eq!(
+            js::<String>(ctx, "JSON.stringify(log)"),
+            r#"["a:true:8","b:texture failed to load"]"#
+        );
+        // Already loaded: settled without waiting.
+        let _: f64 = js(ctx, "a.whenLoaded().then(() => log.push('again')); 0");
+        while ctx.execute_pending_job() {}
+        assert_eq!(js::<String>(ctx, "log[2]"), "again");
+    });
+}

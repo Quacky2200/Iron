@@ -195,6 +195,9 @@ pub struct Function {
     /// script name of the stopping function; the declared type of the callback, or `""`). The C
     /// function returns a token and the stopping function takes it.
     pub subscription: Option<(&'static str, &'static str)>,
+    /// `#[promise]`: the last two parameters are the resolve and reject callbacks of a promise
+    /// scripts get back (declared `Promise<T>`, `T` the resolve callback's argument).
+    pub promise: bool,
 }
 
 /// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
@@ -868,7 +871,7 @@ fn function_json(f: &Function) -> String {
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}{}{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -903,7 +906,8 @@ fn function_json(f: &Function) -> String {
             ",\"subscription\":{{\"off\":{},\"ts\":{}}}",
             json_str(off),
             json_str(ts)
-        ))
+        )),
+        if f.promise { ",\"promise\":true" } else { "" }
     )
 }
 

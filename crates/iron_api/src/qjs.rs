@@ -174,3 +174,18 @@ pub fn call_function(
         ));
     }
 }
+
+/// A function that rejects `reject` (the second function of `Promise::new`) with an `Error` of
+/// the text it is given: what the engine's `Callback<(String,)>` reject argument becomes.
+pub fn error_rejecter<'js>(ctx: &Ctx<'js>, reject: Function<'js>) -> Result<Function<'js>> {
+    Function::new(
+        ctx.clone(),
+        move |ctx: Ctx<'js>, message: String| -> Result<()> {
+            let error: Value = ctx
+                .globals()
+                .get::<_, rquickjs::function::Constructor>("Error")?
+                .construct((message,))?;
+            reject.call::<_, ()>((error,))
+        },
+    )
+}

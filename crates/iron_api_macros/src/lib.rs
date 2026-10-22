@@ -1168,6 +1168,7 @@ fn is_ours(a: &syn::Attribute) -> bool {
         "ts_type",
         "like",
         "subscription",
+        "promise",
     ]
     .iter()
     .any(|n| a.path().is_ident(n))
@@ -1275,6 +1276,9 @@ struct Api {
     /// stopping function, the declared TypeScript type of the callback when it is not the
     /// callback's own.)
     subscription: Option<(String, Option<String>)>,
+    /// `#[promise]`: the last two parameters are the resolve and reject callbacks; scripts call it
+    /// without them and get a `Promise` (resolved with the first callback's argument).
+    promise: bool,
     ret: Kind,
 }
 
@@ -1359,12 +1363,14 @@ fn api_of(
             }
         }
     }
-    // Only trailing parameters can be left out.
+    // Only trailing parameters can be left out (a promise's resolve and reject callbacks follow).
+    let promise = attrs.iter().any(|a| a.path().is_ident("promise"));
+    let user_len = params.len() - if promise { 2.min(params.len()) } else { 0 };
     let first_opt = params
         .iter()
         .position(|(p, _)| optional.contains(&p.to_string()));
     if let Some(i) = first_opt
-        && params[i..]
+        && params[i..user_len.max(i)]
             .iter()
             .any(|(p, _)| !optional.contains(&p.to_string()))
     {
@@ -1460,6 +1466,18 @@ fn api_of(
             "#[options] cannot have optional value-class parameters (a value is itself a plain object)",
         ));
     }
+    if promise {
+        let ok = params.len() >= 2
+            && matches!(&params[params.len() - 2].1, Kind::Callback(ks) if ks.len() <= 1)
+            && matches!(&params[params.len() - 1].1, Kind::Callback(ks) if matches!(ks.as_slice(), [Kind::Str(_)]))
+            && matches!(ret, Kind::Unit);
+        if !ok {
+            return Err(syn::Error::new(
+                sig.span(),
+                "a promise function ends with `resolve: Callback<(T,)>` and `reject: Callback<(String,)>` and returns nothing",
+            ));
+        }
+    }
     let mut subscription = None;
     for at in attrs.iter().filter(|a| a.path().is_ident("subscription")) {
         let mut off = None;
@@ -1542,6 +1560,7 @@ fn api_of(
         ts_type: ts_type_attr(attrs),
         like: attrs.iter().any(|a| a.path().is_ident("like")),
         subscription,
+        promise,
         ret,
     })
 }
@@ -2259,6 +2278,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             None => quote!(::std::option::Option::None),
         };
         let like = a.like;
+        let promise = a.promise;
         let subscription = match &a.subscription {
             Some((off, ts)) => {
                 let off = camel(off);
@@ -2299,6 +2319,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 ts_type: #ts_type,
                 like: #like,
                 subscription: #subscription,
+                promise: #promise,
             }
         };
         match &a.class {
@@ -2558,7 +2579,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         if args.quickjs {
             let handle_class = a.class.as_ref().filter(|_| a.value_recv.is_none());
             // A value method takes the value first (an object), then its own parameters.
-            let all_params: Vec<&(Ident, Kind)> = a.value_recv.iter().chain(&a.params).collect();
+            let n_user = a.params.len() - if a.promise { 2 } else { 0 };
+            let all_params: Vec<&(Ident, Kind)> =
+                a.value_recv.iter().chain(&a.params[..n_user]).collect();
             let is_opt = |n: &Ident| a.optional.contains(&n.to_string());
             let recv_param = if has_receiver {
                 quote!(this: ::iron_api::rquickjs::function::This<::iron_api::rquickjs::Value<'js>>,)
@@ -2608,7 +2631,22 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .iter()
                 .map(|(n, k)| js_arg(k, quote!(#n), &args, is_opt(n)))
                 .collect();
-            let (js_ret, js_body) = if let Some((off, _)) = &a.subscription {
+            let (js_ret, js_body) = if a.promise {
+                // A real promise; the engine settles it through two callbacks.
+                let res_kind = a.params[a.params.len() - 2].1.clone();
+                let rej_kind = a.params[a.params.len() - 1].1.clone();
+                let res_cb = js_arg(&res_kind, quote!(__resolve), &args, false);
+                let rej_cb = js_arg(&rej_kind, quote!(__rejecter), &args, false);
+                (
+                    quote!(::iron_api::rquickjs::Promise<'js>),
+                    quote! {
+                        let (__promise, __resolve, __reject) = ::iron_api::rquickjs::Promise::new(&ctx)?;
+                        let __rejecter = ::iron_api::qjs::error_rejecter(&ctx, __reject)?;
+                        #call_path( #( #js_args, )* #res_cb, #rej_cb );
+                        Ok(__promise)
+                    },
+                )
+            } else if let Some((off, _)) = &a.subscription {
                 // The token goes into a function that stops the listener.
                 let off_fn = format_ident!("{}", off);
                 (

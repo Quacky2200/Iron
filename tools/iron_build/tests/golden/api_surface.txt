@@ -765,6 +765,7 @@ declare class Model :: readonly materialCount: number;
 declare class Model :: readonly meshCount: number;
 declare class Model :: readonly src: string;
 declare class Model :: static load(source: string): Model;
+declare class Model :: whenLoaded(): Promise<Model>;
 declare class ParticleSystem
 declare class ParticleSystem :: addBurst(time: number, count: number, cycles?: number, interval?: number): void;
 declare class ParticleSystem :: addBurst(time: number, count: number, options?: { cycles?: number; interval?: number }): void;
@@ -951,6 +952,7 @@ declare class Prefab :: instantiate(px?: number, py?: number, pz?: number, qx?: 
 declare class Prefab :: readonly name: string;
 declare class Prefab :: static fromData(data: string): Prefab;
 declare class Prefab :: static fromObject(object: GameObject): Prefab;
+declare class Prefab :: static load(path: string): Promise<Prefab>;
 declare class Prefab :: toJSON(): string;
 declare class Quaternion
 declare class Quaternion :: constructor(x: number, y: number, z: number, w: number);
@@ -1295,6 +1297,7 @@ declare class Texture :: setSize(width: number, height: number): void;
 declare class Texture :: static create(width: number, height: number, colors: readonly Color[], options?: TextureOptions): Texture;
 declare class Texture :: static createRenderTexture(width: number, height: number): Texture;
 declare class Texture :: static load(src: string, options?: TextureOptions): Texture;
+declare class Texture :: whenLoaded(): Promise<Texture>;
 declare class Texture :: wrapMode: TextureWrapMode;
 declare class TimeSince
 declare class TimeSince :: at: number;
@@ -2125,8 +2128,6 @@ declare namespace PlayerPrefs :: function setString(key: string, value: string):
 declare namespace Pose
 declare namespace Pose :: const identity: Pose;
 declare namespace Pose :: function create(position: Vector3, rotation: Quaternion): Pose;
-declare namespace Prefab
-declare namespace Prefab :: function load(path: string): Promise<Prefab>;
 declare namespace PrimitiveType
 declare namespace PrimitiveType :: const Capsule: PrimitiveType;
 declare namespace PrimitiveType :: const Cube: PrimitiveType;
@@ -2317,10 +2318,10 @@ declare namespace SceneManager :: function getSceneAt(index: number): Scene;
 declare namespace SceneManager :: function getSceneByName(name: string): Scene;
 declare namespace SceneManager :: function instantiate(original: GameObject, options?: { px?: number; py?: number; pz?: number; qx?: number; qy?: number; qz?: number; qw?: number; parent?: GameObject }): GameObject;
 declare namespace SceneManager :: function instantiate(original: GameObject, px?: number, py?: number, pz?: number, qx?: number, qy?: number, qz?: number, qw?: number, parent?: GameObject): GameObject;
-declare namespace SceneManager :: function loadPrefabAsync(path: string): number;
 declare namespace SceneManager :: function loadScene(data: string, mode?: LoadSceneMode): Scene;
 declare namespace SceneManager :: function loadScene(data: string, options?: { mode?: LoadSceneMode }): Scene;
 declare namespace SceneManager :: function loadSceneAsync(path: string, mode?: LoadSceneMode): Promise<Scene>;
+declare namespace SceneManager :: function loadSceneAsync(path: string, options?: { mode?: LoadSceneMode }): Promise<Scene>;
 declare namespace SceneManager :: function mergeScenes(source: Scene, destination: Scene): void;
 declare namespace SceneManager :: function moveGameObjectToScene(object: GameObject, scene: Scene): void;
 declare namespace SceneManager :: function offSceneEvent(token: number): boolean;
@@ -3058,8 +3059,6 @@ interface MeshData :: uv?: Vector2[];
 interface MeshData :: vertices: Vector3[];
 interface MeshRenderer
 interface MeshRenderer :: mesh: Mesh | PrimitiveType;
-interface Model
-interface Model :: whenLoaded(): Promise<Model>;
 interface ParticleBurst
 interface ParticleBurst :: count: number;
 interface ParticleBurst :: cycles?: number;
@@ -3098,8 +3097,6 @@ interface SizeKey :: value: number;
 interface StateOpts
 interface StateOpts :: speed?: number;
 interface StateOpts :: speedParameter?: string;
-interface Texture
-interface Texture :: whenLoaded(): Promise<Texture>;
 interface TransitionSpec
 interface TransitionSpec :: conditions?: ConditionSpec[];
 interface TransitionSpec :: duration?: number;

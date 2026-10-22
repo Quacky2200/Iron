@@ -258,6 +258,75 @@ pub fn on_prefab_loaded(f: iron_api::Callback<(String, HandleArg<PrefabRef>)>) -
     st(|s| s.on_prefab_loaded.add(f))
 }
 
+/// Asks for a scene file and settles with the scene that file made: `resolve(scene)` in the tick
+/// the host loads it, or `reject(message)` when it cannot be read or parsed. The listeners it adds
+/// go when either happens.
+pub fn load_scene_promise(
+    path: &str,
+    additive: bool,
+    resolve: iron_api::Callback<(HandleArg<SceneRef>,)>,
+    reject: iron_api::Callback<(String,)>,
+) {
+    let tokens = std::rc::Rc::new(std::cell::Cell::new((0u32, 0u32)));
+    let (want, on_ok) = (path.to_owned(), tokens.clone());
+    let loaded = on_loaded(iron_api::Callback::from_fn(
+        move |(scene, _mode): (HandleArg<SceneRef>, String)| {
+            if info(scene.0.0).and_then(|i| i.path).as_deref() == Some(want.as_str()) {
+                let (a, b) = on_ok.get();
+                off(a);
+                off(b);
+                resolve.call((scene,));
+            }
+        },
+    ));
+    let (want, on_err) = (path.to_owned(), tokens.clone());
+    let failed = on_load_failed(iron_api::Callback::from_fn(
+        move |(failed_path, error): (String, String)| {
+            if failed_path == want {
+                let (a, b) = on_err.get();
+                off(a);
+                off(b);
+                reject.call((format!("could not load scene {want}: {error}"),));
+            }
+        },
+    ));
+    tokens.set((loaded, failed));
+    request_load(path, additive);
+}
+
+/// [`load_scene_promise`] for a prefab file.
+pub fn load_prefab_promise(
+    path: &str,
+    resolve: iron_api::Callback<(HandleArg<PrefabRef>,)>,
+    reject: iron_api::Callback<(String,)>,
+) {
+    let tokens = std::rc::Rc::new(std::cell::Cell::new((0u32, 0u32)));
+    let (want, on_ok) = (path.to_owned(), tokens.clone());
+    let loaded = on_prefab_loaded(iron_api::Callback::from_fn(
+        move |(loaded_path, prefab): (String, HandleArg<PrefabRef>)| {
+            if loaded_path == want {
+                let (a, b) = on_ok.get();
+                off(a);
+                off(b);
+                resolve.call((prefab,));
+            }
+        },
+    ));
+    let (want, on_err) = (path.to_owned(), tokens.clone());
+    let failed = on_load_failed(iron_api::Callback::from_fn(
+        move |(failed_path, error): (String, String)| {
+            if failed_path == want {
+                let (a, b) = on_err.get();
+                off(a);
+                off(b);
+                reject.call((format!("could not load prefab {want}: {error}"),));
+            }
+        },
+    ));
+    tokens.set((loaded, failed));
+    request_prefab(path);
+}
+
 /// Removes a listener by its token; false when it is unknown.
 pub fn off(token: u32) -> bool {
     st(|s| {

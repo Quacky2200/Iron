@@ -38,7 +38,15 @@ struct State {
     roots: HashMap<u64, (String, String)>,
     /// Objects that are the model's own nodes (not saved: the root rebuilds them).
     parts: HashSet<u64>,
+    /// `whenLoaded()` promises of models still loading: (model, resolve, reject).
+    waiters: Vec<ModelWaiter>,
 }
+
+type ModelWaiter = (
+    u32,
+    Callback<(iron_api::callback::HandleArg<ModelRef>,)>,
+    Callback<(String,)>,
+);
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
@@ -186,6 +194,21 @@ pub fn model_loaded(m: ModelRef, description: Option<&str>) {
             if iron_scene::api::with_scene(|s| s.contains(root)).unwrap_or(false) {
                 build(m, root, &colliders);
             }
+        }
+    }
+    // The promises that were waiting hear it.
+    let waiting: Vec<ModelWaiter> = st(|s| {
+        let (mine, rest) = std::mem::take(&mut s.waiters)
+            .into_iter()
+            .partition(|w| w.0 == m.0);
+        s.waiters = rest;
+        mine
+    });
+    for (_, resolve, reject) in waiting {
+        if parsed.is_some() {
+            resolve.call((iron_api::callback::HandleArg(m),));
+        } else {
+            reject.call(("model failed to load".to_string(),));
         }
     }
 }
@@ -379,6 +402,22 @@ pub mod model_api {
     use super::*;
 
     impl ModelRef {
+        /// A promise of the model once it has loaded (resolved at once when it has); rejects with an
+        /// `Error` when loading failed.
+        #[promise]
+        pub fn when_loaded(
+            self,
+            resolve: Callback<(iron_api::callback::HandleArg<ModelRef>,)>,
+            reject: Callback<(String,)>,
+        ) {
+            match with_model(self, |d| (d.loaded, d.failed)) {
+                Some((_, true)) => reject.call(("model failed to load".to_string(),)),
+                Some((true, _)) => resolve.call((iron_api::callback::HandleArg(self),)),
+                Some(_) => st(|s| s.waiters.push((self.0, resolve, reject))),
+                None => reject.call(("the model was freed".to_string(),)),
+            }
+        }
+
         /// Loads a `.glb` or `.gltf` from the game folder, or `"guid:<guid>"` (once per file).
         pub fn load(source: &str) -> ModelRef {
             super::load_model(source)

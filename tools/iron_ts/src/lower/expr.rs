@@ -5261,7 +5261,7 @@ impl<'a> Lowerer<'a> {
                         .manifest
                         .classes
                         .get(id.name.as_str())
-                        .and_then(|k| k.statics.get(method))
+                        .and_then(|k| k.statics.get(method.strip_suffix("$n").unwrap_or(method)))
                         .cloned()
                 {
                     if method == "create" && self.is_create_with_options(id.name.as_str(), c) {
