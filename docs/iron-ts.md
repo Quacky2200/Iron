@@ -164,7 +164,7 @@ bytes, bindings text, IR dump and the time of each phase.
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |
 | Array callbacks | `map`, `filter`, `forEach`, `find`, `some`, `every` (and `reduce`, `findIndex`, `includes`) are index loops with an arrow callback's body inlined; no closure object. A non-arrow callback is called as a closure per element |
-| Array library | `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `reverse`, `fill`, `sort(cmp)` and default `sort()` (stable merge sort in the runtime), `indexOf`, `at`, `length = n`, `Array.from/of/isArray`, `new Array(n)`; see "Standard library tier 1" for the rest |
+| Array library | `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `reverse`, `fill(x, start?, end?)`, `sort(cmp)` and default `sort()` (stable merge sort in the runtime), `indexOf` / `lastIndexOf` / `includes` (with `fromIndex`, over numbers, strings, union members, booleans and objects), `at`, `length = n`, `Array.from/of/isArray` (`Array.from({ length: n }, f)`, `Array.from(xs \| set \| map.keys(), f)`), `new Array(n)` / `new Array<T>(n)` / `new Array(n).fill(x)` (n zeroed slots), `flat(depth)` (a literal depth or `Infinity`), `flatMap`; `xs[i] = v` inside the array stores, at `i === xs.length` it appends (as JavaScript), anywhere else (past the end, negative, NaN) it throws a `RangeError` (JavaScript would make holes; the error classes come along when a program writes `x[i] = ..`); an out-of-range read gives `undefined`, never garbage; typed arrays still ignore out-of-range writes. Spread arguments: `Math.min(a, ...xs)` / `Math.max(...xs)` (arrays and typed arrays), `f(...xs)` into rest parameters and, as the last argument, into fixed parameters (element `j`, or the default, or null past the end; `lower_fn_args_spread`); not for calls of function values or `new`. See "Standard library tier 1" for the rest |
 | Loops and labels | `while`, `for(;;)`, `do...while`, `for...of`, labelled `break`/`continue` and blocks; per-iteration `let` cells when a closure captures the variable |
 | `switch` | The clause index is chosen by `===` compares, then the bodies run in order (fall-through, `default` anywhere) |
 | Enums | Numeric and string enums fold to constants, no run-time cost |
@@ -260,7 +260,7 @@ JavaScript's answer exactly; anything not built is a compile error.
   Class fields initialised with a string literal are `string`.
 - **Fixed.** A `break` inside a callback inlined into a `try`/`finally`; the string scan cursor is one
   atomic word.
-- Not built: Array `with`, `toSpliced`, `copyWithin`, `Array.from({length})`, `Object.fromEntries`,
+- Not built: Array `with`, `toSpliced`, `copyWithin`, `Object.fromEntries`,
   `console` of objects.
 - Tests: `bench/stdlib.ts` with `tests/stdlib.rs` (M9-TS-199..205); expected values come from
   `bench/gen_stdlib_expected.ts` (bun) into `stdlib_expected.json`.

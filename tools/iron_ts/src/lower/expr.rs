@@ -2331,8 +2331,11 @@ impl<'a> Lowerer<'a> {
         match id.name.as_str() {
             // `new Array(n)`: n zeroed slots (a hole reads as undefined in JS; here it is 0 or null).
             "Array" => {
-                let el = match exp.map(|t| t.strip()) {
-                    Some(Ty::Arr(e)) => (**e).clone(),
+                let el = match (&n.type_arguments, exp.map(|t| t.strip())) {
+                    (Some(targs), _) if targs.params.len() == 1 => {
+                        self.ty(&targs.params[0], "Array")?
+                    }
+                    (_, Some(Ty::Arr(e))) => (**e).clone(),
                     _ => Ty::Num,
                 };
                 let ty = Ty::Arr(Box::new(el));
@@ -2590,6 +2593,58 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// `a[i] = v` on an array: inside the array it stores, at the length it grows the array by
+    /// one (as JavaScript does), anywhere else (past the end, negative, NaN) it throws a
+    /// `RangeError`: JavaScript would make holes or a property, which arrays here cannot hold.
+    fn array_store(&mut self, a: &Expr, i: &Expr, v: Expr) -> Stmt {
+        let Some(&fid) = self.fids.get("__rtThrow") else {
+            // No error classes in this program: the unchecked store (out of range is dropped).
+            return Stmt::StoreIndex(a.clone(), i.clone(), v);
+        };
+        let tmp = self.new_local(v.ty.clone());
+        let tv = self.var_expr(tmp);
+        let len = mk(ExprKind::Len(Box::new(a.clone())), Ty::Num);
+        let cmp = |op, l: Expr, r: Expr| mk(ExprKind::Cmp(op, Box::new(l), Box::new(r)), Ty::Bool);
+        let grow = Stmt::Eval(mk(
+            ExprKind::Rt(RtFn::ArrPush, vec![a.clone(), tv.clone()]),
+            Ty::Void,
+        ));
+        let inside = mk(
+            ExprKind::And(
+                Box::new(cmp(CmpOp::Ge, i.clone(), num(0.0))),
+                Box::new(cmp(CmpOp::Lt, i.clone(), len.clone())),
+            ),
+            Ty::Bool,
+        );
+        let head = self.str_lit("array index ");
+        let at = self
+            .stringify(i.clone())
+            .unwrap_or_else(|_| self.str_lit("?"));
+        let tail = self.str_lit(
+            " is beyond the end of the array: only the next index (the length) can be written",
+        );
+        let msg = self
+            .str_concat(head, at)
+            .and_then(|m| self.str_concat(m, tail))
+            .unwrap_or_else(|_| self.str_lit("array index out of range"));
+        let throw = Stmt::Eval(mk(ExprKind::Call(fid, vec![num(1.0), msg]), Ty::Void));
+        Stmt::Block(
+            self.new_label(),
+            vec![
+                Stmt::Assign(tmp, v),
+                Stmt::If(
+                    cmp(CmpOp::Eq, i.clone(), len),
+                    vec![grow],
+                    vec![Stmt::If(
+                        inside,
+                        vec![Stmt::StoreIndex(a.clone(), i.clone(), tv)],
+                        vec![throw],
+                    )],
+                ),
+            ],
+        )
+    }
+
     pub(crate) fn place_write(&mut self, p: &Place, v: Expr) -> Stmt {
         match p {
             Place::Var(var, _) => Stmt::Assign(*var, v),
@@ -2605,6 +2660,9 @@ impl<'a> Lowerer<'a> {
                 Ty::Void,
             )),
             Place::Field(o, s, i, _) => Stmt::StoreField(o.clone(), *s, *i, v),
+            Place::Index(a, i, _) if matches!(a.ty.strip(), Ty::Arr(_)) => {
+                self.array_store(a, i, v)
+            }
             Place::Index(a, i, _) => Stmt::StoreIndex(a.clone(), i.clone(), v),
         }
     }
@@ -2771,6 +2829,14 @@ impl<'a> Lowerer<'a> {
         let fp: &'a FormalParameters<'a> = self.fsrc[name].params;
         let n_fixed = fp.items.len();
         let rest_ty = fp.rest.as_ref().map(|_| ptys[n_fixed].clone());
+        // `f(a, ...xs)` where the spread feeds fixed parameters: elements are read by index.
+        if let Some(k) = args
+            .iter()
+            .position(|a| matches!(a, Argument::SpreadElement(_)))
+            && k < n_fixed
+        {
+            return self.lower_fn_args_spread(name, args, ptys, k);
+        }
         let given = args.len().min(n_fixed);
         // JavaScript evaluates and drops the arguments a function does not name.
         let mut dropped = Vec::new();
@@ -2863,6 +2929,97 @@ impl<'a> Lowerer<'a> {
                 }
             }
             vals.push(self.build_array(elems, el)?);
+        }
+        Ok((pre, vals))
+    }
+
+    /// A call whose last argument is a spread array that feeds the fixed parameters from `k` on
+    /// (`add(...xyz)`, `f(1, ...rest)`): parameter `j` is element `j - k`, its default (or null)
+    /// when the array is shorter; a rest parameter takes what is left.
+    #[allow(clippy::needless_range_loop)]
+    fn lower_fn_args_spread(
+        &mut self,
+        name: &str,
+        args: &'a [Argument<'a>],
+        ptys: &[Ty],
+        k: usize,
+    ) -> R<(Vec<Stmt>, Vec<Expr>)> {
+        let fp: &'a FormalParameters<'a> = self.fsrc[name].params;
+        let n_fixed = fp.items.len();
+        if k + 1 != args.len() {
+            bail!("{name}: a spread argument that feeds fixed parameters must be the last argument")
+        }
+        let mut pre = Vec::new();
+        let mut vals: Vec<Expr> = Vec::new();
+        for (a, p) in args[..k].iter().zip(ptys) {
+            let Some(e) = a.as_expression() else {
+                bail!("{name}: a second spread argument")
+            };
+            let v = self.lower_expr(e, Some(p))?;
+            let v = self.temporal_arg(v, p)?;
+            vals.push(self.coerce(v, p)?);
+        }
+        let Argument::SpreadElement(sp) = &args[k] else {
+            unreachable!()
+        };
+        let arr = self.lower_expr(&sp.argument, None)?;
+        let Ty::Arr(el) = arr.ty.strip().clone() else {
+            bail!("{name}: cannot spread {} into parameters", arr.ty)
+        };
+        let arr_ty = arr.ty.strip().clone();
+        let av = self.new_local(arr_ty.clone());
+        pre.push(Stmt::Assign(av, arr));
+        let raw_ty = if el.is_ptr() || *el == Ty::Num {
+            el.nullable()
+        } else {
+            (*el).clone()
+        };
+        for j in k..n_fixed {
+            let pty = ptys[j].clone();
+            let at = num((j - k) as f64);
+            let read = mk(
+                ExprKind::Index(Box::new(self.var_expr(av)), Box::new(at.clone())),
+                raw_ty.clone(),
+            );
+            let elem = self.coerce(read, &pty)?;
+            let p = &fp.items[j];
+            let v = if let Some(init) = &p.initializer {
+                let saved = std::mem::replace(&mut self.cur.scopes, vec![HashMap::new()]);
+                let d = self.lower_expr(init, Some(&pty));
+                self.cur.scopes = saved;
+                let d = self.coerce(d?, &pty)?;
+                let len = mk(ExprKind::Len(Box::new(self.var_expr(av))), Ty::Num);
+                let inside = mk(
+                    ExprKind::Cmp(CmpOp::Lt, Box::new(at), Box::new(len)),
+                    Ty::Bool,
+                );
+                mk(
+                    ExprKind::Cond(Box::new(inside), Box::new(elem), Box::new(d)),
+                    pty.clone(),
+                )
+            } else {
+                elem
+            };
+            let tmp = self.new_local(pty);
+            pre.push(Stmt::Assign(tmp, v));
+            vals.push(self.var_expr(tmp));
+        }
+        if fp.rest.is_some() {
+            let rt = ptys[n_fixed].clone();
+            if rt != arr_ty {
+                bail!("{name}: the spread array's type {arr_ty} is not the rest parameter's {rt}")
+            }
+            vals.push(mk(
+                ExprKind::Rt(
+                    RtFn::ArrSlice,
+                    vec![
+                        self.var_expr(av),
+                        num((n_fixed - k) as f64),
+                        num(f64::INFINITY),
+                    ],
+                ),
+                rt,
+            ));
         }
         Ok((pre, vals))
     }
@@ -3116,7 +3273,23 @@ impl<'a> Lowerer<'a> {
                     };
                     return self.call_declared(&f, &c.arguments, None);
                 }
-                let mut recv = self.lower_expr(&m.object, None)?;
+                // `new Array(n).fill(x)`: the element type is the type of `x`.
+                let mut recv_hint = None;
+                if method == "fill"
+                    && let Expression::NewExpression(ne) = &m.object
+                    && matches!(&ne.callee, Expression::Identifier(i) if i.name == "Array")
+                    && ne.type_arguments.is_none()
+                    && let Some(a) = c.arguments.first().and_then(|a| a.as_expression())
+                {
+                    let v = self.lower_expr(a, None)?;
+                    let el = match v.ty {
+                        Ty::Lit => Ty::Str,
+                        Ty::Null => Ty::Num.nullable(),
+                        t => t,
+                    };
+                    recv_hint = Some(Ty::Arr(Box::new(el)));
+                }
+                let mut recv = self.lower_expr(&m.object, recv_hint.as_ref())?;
                 if m.optional {
                     recv = self.chain_guard(recv)?;
                 }
@@ -3159,7 +3332,63 @@ impl<'a> Lowerer<'a> {
         ))
     }
 
+    /// `Math.min(a, ...xs)` / `Math.max(...xs)`: a fold over the plain arguments and the elements
+    /// of each spread array, starting from the identity (`Infinity` for min, `-Infinity` for max).
+    fn lower_math_spread(&mut self, f: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        let (op, start) = match f {
+            "min" => (BinOp::Min, f64::INFINITY),
+            "max" => (BinOp::Max, f64::NEG_INFINITY),
+            _ => bail!(
+                "{}: Math.{f} does not take spread arguments",
+                self.loc(c.span.start)
+            ),
+        };
+        let acc = self.new_local(Ty::Num);
+        let mut stmts = vec![Stmt::Assign(acc, num(start))];
+        for a in &c.arguments {
+            let fold = |this: &mut Self, x: Expr| {
+                let cur = this.var_expr(acc);
+                Stmt::Assign(
+                    acc,
+                    mk(ExprKind::Bin(op, Box::new(cur), Box::new(x)), Ty::Num),
+                )
+            };
+            if let Argument::SpreadElement(sp) = a {
+                let arr = self.lower_expr(&sp.argument, None)?;
+                if !matches!(arr.ty.strip(), Ty::Arr(e) if matches!(e.strip(), Ty::Num))
+                    && !matches!(arr.ty.strip(), Ty::Typed(_))
+                {
+                    bail!(
+                        "{}: Math.{f}(...xs) needs numbers, not {}",
+                        self.loc(sp.span.start),
+                        arr.ty
+                    );
+                }
+                let it = self.begin_iter(arr)?;
+                stmts.extend(it.pre.iter().cloned());
+                let mut body = it.head.clone();
+                let el = self.var_expr(it.elem);
+                body.push(fold(self, el));
+                stmts.push(Stmt::Loop(it.label, body));
+            } else if let Some(e) = a.as_expression() {
+                let v = self.lower_expr(e, Some(&Ty::Num))?;
+                let v = self.as_num(v)?;
+                stmts.push(fold(self, v));
+            }
+        }
+        Ok(mk(
+            ExprKind::Seq(stmts, Box::new(self.var_expr(acc))),
+            Ty::Num,
+        ))
+    }
+
     fn lower_math(&mut self, f: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+        if c.arguments
+            .iter()
+            .any(|a| matches!(a, Argument::SpreadElement(_)))
+        {
+            return self.lower_math_spread(f, c);
+        }
         let mut args = Vec::new();
         for a in &c.arguments {
             let Some(e) = a.as_expression() else {

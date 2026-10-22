@@ -362,30 +362,107 @@ impl<'a> Lowerer<'a> {
                     ];
                     return Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty));
                 }
-                if c.arguments.len() > 1 {
-                    bail!("Array.from(xs, fn): use xs.map(fn)")
-                }
                 let v = self.lower_expr(a0, None)?;
+                let v = self.widen_lit(v);
                 // A set, or the keys or values of a map, as an array now.
-                if let Some(snapshot) = self.collection_snapshot(v.clone()) {
-                    return Ok(snapshot);
-                }
-                let v = if self.is_iterable(&v.ty) {
-                    self.iterable_to_array(v)?
+                let copy = if let Some(snapshot) = self.collection_snapshot(v.clone()) {
+                    snapshot
                 } else {
-                    v
+                    let v = if self.is_iterable(&v.ty) {
+                        self.iterable_to_array(v)?
+                    } else {
+                        v
+                    };
+                    if !matches!(v.ty.strip(), Ty::Arr(_)) {
+                        bail!("Array.from of {} is not supported", v.ty)
+                    }
+                    let ty = v.ty.clone();
+                    mk(
+                        ExprKind::Rt(RtFn::ArrSlice, vec![v, num(0.0), num(f64::INFINITY)]),
+                        ty,
+                    )
                 };
-                if !matches!(v.ty.strip(), Ty::Arr(_)) {
-                    bail!("Array.from of {} is not supported", v.ty)
+
+                // `Array.from(xs, fn)` is `Array.from(xs).map(fn)`: the callback is argument 1.
+                if c.arguments.len() > 1 {
+                    self.cb_skip = 1;
+                    let r = self.lower_method(copy, "map", c);
+                    self.cb_skip = 0;
+                    return r;
                 }
-                let ty = v.ty.clone();
-                Ok(mk(
-                    ExprKind::Rt(RtFn::ArrSlice, vec![v, num(0.0), num(f64::INFINITY)]),
-                    ty,
-                ))
+                Ok(copy)
             }
             _ => bail!("Array.{f} is not supported"),
         }
+    }
+
+    /// The test that an element index is in range of the optional second argument of `indexOf`,
+    /// `lastIndexOf` and `includes` (`None` without one). The bound is computed before the loop,
+    /// into `stmts`.
+    fn search_bound(
+        &mut self,
+        it: &Iter,
+        c: &'a CallExpression<'a>,
+        last: bool,
+        stmts: &mut Vec<Stmt>,
+    ) -> R<Option<Expr>> {
+        let Some(f) = c.arguments.get(1).and_then(|a| a.as_expression()) else {
+            return Ok(None);
+        };
+        let f = self.lower_expr(f, Some(&Ty::Num))?;
+        let f = self.as_num(f)?;
+        let bound = self.new_local(Ty::Num);
+        let len = mk(ExprKind::Len(Box::new(self.var_expr(it.arr))), Ty::Num);
+        let fv = self.new_local(Ty::Num);
+        stmts.push(Stmt::Assign(fv, f));
+        let fe = self.var_expr(fv);
+        let neg = mk(
+            ExprKind::Cmp(CmpOp::Lt, Box::new(fe.clone()), Box::new(num(0.0))),
+            Ty::Bool,
+        );
+        let wrapped = mk(
+            ExprKind::Bin(BinOp::Add, Box::new(len), Box::new(fe.clone())),
+            Ty::Num,
+        );
+        stmts.push(Stmt::Assign(
+            bound,
+            mk(
+                ExprKind::Cond(Box::new(neg), Box::new(wrapped), Box::new(fe)),
+                Ty::Num,
+            ),
+        ));
+        let op = if last { CmpOp::Le } else { CmpOp::Ge };
+        Ok(Some(mk(
+            ExprKind::Cmp(
+                op,
+                Box::new(self.var_expr(it.idx)),
+                Box::new(self.var_expr(bound)),
+            ),
+            Ty::Bool,
+        )))
+    }
+
+    /// One level of `flat`: a new array of the elements of each element.
+    fn flat_once(&mut self, recv: Expr) -> R<Expr> {
+        let Ty::Arr(el) = recv.ty.strip().clone() else {
+            bail!("flat of {}", recv.ty)
+        };
+        let ty = *el;
+        let it = self.begin_iter(recv)?;
+        let out = self.new_local(ty.clone());
+        let ov = self.var_expr(out);
+        let mut stmts = it.pre.clone();
+        stmts.push(Stmt::Assign(
+            out,
+            mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty.clone()),
+        ));
+        let mut body = it.head.clone();
+        body.push(Stmt::Eval(mk(
+            ExprKind::Rt(RtFn::ArrAppend, vec![ov.clone(), self.var_expr(it.elem)]),
+            Ty::Void,
+        )));
+        stmts.push(Stmt::Loop(it.label, body));
+        Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty))
     }
 
     /// An optional number argument of a call, or `default` when it is missing.
@@ -588,9 +665,10 @@ impl<'a> Lowerer<'a> {
                 Ty::Void,
             )
         };
+        let skip = std::mem::take(&mut self.cb_skip);
         let cb_arg = |i: usize| -> R<&'a Expression<'a>> {
             c.arguments
-                .get(i)
+                .get(i + skip)
                 .and_then(|a| a.as_expression())
                 .ok_or_else(|| format!("{m}: missing callback"))
         };
@@ -907,33 +985,37 @@ impl<'a> Lowerer<'a> {
                 );
                 self.lower_method(copy, if m == "toSorted" { "sort" } else { "reverse" }, c)
             }
-            // `xss.flat()`: one level, the arrays' elements in order.
+            // `xss.flat(depth)`: the arrays' elements in order, `depth` levels (1 by default).
             (Ty::Arr(el), "flat") => {
-                let Ty::Arr(_) = el.strip() else {
+                if !matches!(el.strip(), Ty::Arr(_)) {
                     bail!("flat: the elements are {el}, not arrays")
-                };
-                if let Some(d) = c.arguments.first() {
-                    let ok = matches!(d.as_expression(), Some(Expression::NumericLiteral(n)) if n.value == 1.0);
-                    if !ok {
-                        bail!("flat: only the default depth (1) is supported")
-                    }
                 }
-                let ty = (**el).clone();
-                let it = self.begin_iter(recv)?;
-                let out = self.new_local(ty.clone());
-                let ov = self.var_expr(out);
-                let mut stmts = it.pre.clone();
-                stmts.push(Stmt::Assign(
-                    out,
-                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty.clone()),
-                ));
-                let mut body = it.head.clone();
-                body.push(Stmt::Eval(mk(
-                    ExprKind::Rt(RtFn::ArrAppend, vec![ov.clone(), self.var_expr(it.elem)]),
-                    Ty::Void,
-                )));
-                stmts.push(Stmt::Loop(it.label, body));
-                Ok(mk(ExprKind::Seq(stmts, Box::new(ov)), ty))
+                let depth = match c.arguments.first().and_then(|a| a.as_expression()) {
+                    None => 1,
+                    Some(Expression::NumericLiteral(n))
+                        if n.value >= 0.0 && n.value.fract() == 0.0 =>
+                    {
+                        n.value as usize
+                    }
+                    Some(Expression::Identifier(i)) if i.name == "Infinity" => usize::MAX,
+                    Some(_) => bail!("flat: the depth must be a number literal or Infinity"),
+                };
+                let mut cur = recv;
+                let mut left = depth;
+                if left == 0 {
+                    let ty = cur.ty.clone();
+                    return Ok(mk(
+                        ExprKind::Rt(RtFn::ArrSlice, vec![cur, num(0.0), num(f64::INFINITY)]),
+                        ty,
+                    ));
+                }
+                while left > 0
+                    && matches!(cur.ty.strip(), Ty::Arr(e) if matches!(e.strip(), Ty::Arr(_)))
+                {
+                    cur = self.flat_once(cur)?;
+                    left -= 1;
+                }
+                Ok(cur)
             }
             // `xs.flatMap(f)`: `f` returns an array for each element.
             (Ty::Arr(_), "flatMap") => {
@@ -1013,6 +1095,11 @@ impl<'a> Lowerer<'a> {
                     ),
                     Ty::Bool,
                 );
+                // `fromIndex`: where the search starts (indexOf) or ends (lastIndexOf).
+                let eq = match self.search_bound(&it, c, m == "lastIndexOf", &mut stmts)? {
+                    Some(guard) => mk(ExprKind::And(Box::new(guard), Box::new(eq)), Ty::Bool),
+                    None => eq,
+                };
                 let mut hit = vec![Stmt::Assign(out, self.var_expr(it.idx))];
                 if m == "indexOf" {
                     hit.push(Stmt::Break(it.label));
@@ -1090,6 +1177,10 @@ impl<'a> Lowerer<'a> {
                     ),
                     Ty::Bool,
                 );
+                let eq = match self.search_bound(&it, c, false, &mut stmts)? {
+                    Some(guard) => mk(ExprKind::And(Box::new(guard), Box::new(eq)), Ty::Bool),
+                    None => eq,
+                };
                 body.push(Stmt::If(
                     eq,
                     vec![

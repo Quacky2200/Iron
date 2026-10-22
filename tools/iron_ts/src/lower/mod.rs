@@ -233,6 +233,8 @@ pub struct Lowerer<'a> {
     /// The expected type is an array of string-literal members: the next `.map` keeps its
     /// callback's literals instead of making strings.
     pub(crate) map_keeps_lit: bool,
+    /// `Array.from(xs, fn)` lowers as `xs.map(fn)` with the callback one argument further.
+    pub(crate) cb_skip: usize,
     /// The type parameters of the specialisation being lowered (`generics.rs`).
     pub(crate) tenv: generics::TEnv,
     pub(crate) generic_fns: HashMap<String, generics::GenericFn<'a>>,
@@ -448,6 +450,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         prelude_lines,
         infer_ret: false,
         const_inits: HashMap::new(),
+        cb_skip: 0,
         map_keeps_lit: false,
         tenv: Default::default(),
         generic_fns: HashMap::new(),

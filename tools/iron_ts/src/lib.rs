@@ -556,11 +556,11 @@ export function f(): number { return 1; }";
         assert!(e.contains("at most 2"), "{e}");
         let e = lower::lower_source(
             "function f(a: number, b: number): number { return a + b; } \
-             export function g(xs: number[]): number { return f(...xs); }",
+             export function g(xs: number[]): number { return f(...xs, 1); }",
         )
         .err()
         .unwrap();
-        assert!(e.contains("rest parameter"), "{e}");
+        assert!(e.contains("must be the last argument"), "{e}");
     }
 
     // M9-TS-110

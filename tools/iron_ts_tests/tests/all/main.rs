@@ -3,6 +3,7 @@ mod anim_clips;
 mod anim_player;
 mod app;
 mod arraylib;
+mod arrays2;
 mod assets;
 mod audio_native;
 mod bigint;

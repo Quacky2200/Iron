@@ -500,9 +500,33 @@ fn has_bigint_literal(src: &str) -> bool {
     })
 }
 
+/// Whether the source assigns to something indexed (`xs[i] = v`): such a write past the end of an
+/// array throws a `RangeError`, so the error classes come along.
+fn writes_index(src: &str) -> bool {
+    let b = src.as_bytes();
+    (0..b.len()).any(|i| {
+        // `number[] = ..` is a type, not a write.
+        if b[i] != b']' || (i > 0 && b[i - 1] == b'[') {
+            return false;
+        }
+        let rest = src[i + 1..].trim_start_matches([' ', '\t']).as_bytes();
+        match rest {
+            [b'=', next, ..] => !matches!(next, b'=' | b'>'),
+            [b'=', ..] => true,
+            [
+                b'+' | b'-' | b'*' | b'/' | b'%' | b'|' | b'&' | b'^',
+                b'=',
+                ..,
+            ] => true,
+            _ => false,
+        }
+    })
+}
+
 /// Does the program use errors (and not define its own `Error`)?
 pub fn wanted(src: &str) -> bool {
     (src.contains("Error")
+        || writes_index(src)
         || src.contains("throw")
         || src.contains("catch")
         || src.contains("finally")

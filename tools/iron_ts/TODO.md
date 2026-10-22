@@ -356,8 +356,8 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [ ] Computed property access with a literal-union key: `state[key] = !state[key]` where `key: keyof typeof state` (rewritten as `if` chains; `lower/keyed.rs` covers only generic arrows over `keyof`).
 - [ ] `Record<string, V>` and `Record<Union, V>` as real dictionaries, including indexing with a string that is not a literal (workaround: arrays plus index, or a loop with `===`).
 - [ ] Tables indexed by a tag/enum-like string (`TINTS[state.tint]`, `typeof TINTS[Tint]`).
-- [ ] `Array.prototype.indexOf` on arrays of string literals; `Array.from({ length }, f)`; `new Array(n).fill(x)`; `.flat()`.
-- [ ] Spread arguments: `Math.min(a, ...list)`, `Math.max(...xs)`.
+- [x] `Array.prototype.indexOf` on arrays of string literals; `Array.from({ length }, f)` and `Array.from(xs, f)`; `new Array(n).fill(x)`; `.flat(depth)` (2026-10-22, `M9-TS-3020..3034`).
+- [x] Spread arguments: `Math.min(a, ...list)`, `Math.max(...xs)`, `f(...xs)` into rest and fixed parameters (not into function values or `new`).
 - [ ] A static function as a value: `const hex = Color.hex` (workaround: `(s: string) => Color.hex(s)`).
 - [ ] `null as T | null` and `[] as T[]` casts in object literals/consts (workaround: an interface and a typed const).
 - [ ] Class fields without an annotation whose initialiser is a constructor call (`private a = new Float32Array(n)`).
@@ -365,7 +365,7 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [ ] Tuples: `.length`, rest patterns, assignment through `t[0]` (tuples are objects with fields `0`, `1`).
 - [ ] Defaulted closure parameters of type `boolean` are not nullable yet.
 - [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner.
-- [ ] Arrays: an indexed write at `arr.length` (`arr[arr.length] = x`) has no bounds check and crashed a game with a segfault. Make it a compile/run-time error or grow the array like JavaScript.
+- [x] Arrays: an indexed write at `arr.length` (`arr[arr.length] = x`) has no bounds check and crashed a game with a segfault. Fixed 2026-10-22: it appends like JavaScript; a write further out (or negative / NaN) throws a `RangeError`.
 - [ ] A skipped (unreachable) function is only checked by `tsc`, never by our compiler: add an optional `--check-unused` that lowers everything.
 - [ ] `Texture | null` vs `Texture | undefined` and `string | undefined` from indexing: align the declared types with what `tsc` infers so examples need no edits.
 
@@ -421,3 +421,6 @@ Behaviours checked 2026-10-22 (all with GC stress where it applies):
 - Hot reload: pending timers and awaits of the old code are dropped (`ts_rt_events_clear`); the new code starts its own. `M9-API-1516`. (Before, an old timer fired into the new world.)
 - A component destroyed while it awaits: the coroutine continues (no cancellation, JavaScript semantics), engine calls on the dead object are no-ops; check `go.exists()`. `M9-API-1514`.
 - Generics: `load<T>(): Promise<T>`, `Promise<T[]>`, `Promise<Map<string, T>>` (when `Promise<Map<string, number>>` is written once), generic async classes and recursion, `T` inferred from `Promise<T>` parameters and promise-returning closures: work. Still failing, each with a message: `Promise.all([a, b])` over different value types (a tuple), `Promise<Promise<T>>`, `Promise<Alias>` where the alias is never written in a `Promise<..>` (`the program never writes Promise<..>`), `Promise.withResolvers` inside generic code, generic *methods* (`map<U>(..)` in a class: "generic methods are not built").
+
+- [ ] **Asset packs default (decided 2026-10-22, `docs/research/iron-virtual-fs-plan.md` section 6):** `iron-build package` stays loose (`data/`) until packs are tried and tested on real games; then flip it to write `assets.dat` + scene packs by default with `--loose` for debugging/modding. Also revisit storing cooked-only textures (currently both forms) to reduce bloat; DirectStorage / `CODEC-1` later.
+- [ ] **Enums as indexes (decided 2026-10-22, `docs/research/iron-generated-dts-plan.md` section 6):** native name/index converters per enum, constant literals converted at compile time.
