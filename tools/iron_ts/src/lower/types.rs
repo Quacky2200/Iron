@@ -206,6 +206,11 @@ impl<'a> Lowerer<'a> {
                     return self.generic_type(id.name.as_str(), targs);
                 }
                 match id.name.as_str() {
+                    "Partial" | "Required" | "Readonly" | "Pick" | "Omit"
+                        if !args.is_empty() && !self.class_decls.contains_key(id.name.as_str()) =>
+                    {
+                        self.utility_type(id.name.as_str(), &args, hint)?
+                    }
                     "WeakRef" if !args.is_empty() => {
                         let sp = oxc_span::GetSpan::span(args[0]);
                         let name = self.src[sp.start as usize..sp.end as usize].trim();
@@ -689,9 +694,27 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    pub(crate) fn coerce(&self, e: Expr, to: &Ty) -> R<Expr> {
+    pub(crate) fn coerce(&mut self, e: Expr, to: &Ty) -> R<Expr> {
         if e.ty == *to {
             return Ok(e);
+        }
+        // A plain object where a type with some of its fields (or `Partial`s of them) goes:
+        // a copy. (Writes through the copy do not reach the original.)
+        if let (Ty::Obj(a), Ty::Obj(b)) = (&e.ty, to.strip())
+            && a != b
+            && !self.assignable(&e.ty, to)
+            && self.can_copy_fields(*a, *b)
+        {
+            let (a, b) = (*a, *b);
+            let copy = self.copy_fields(e, a, b);
+            return Ok(if to.is_nullable() {
+                Expr {
+                    kind: ExprKind::Cast(Box::new(copy)),
+                    ty: to.clone(),
+                }
+            } else {
+                copy
+            });
         }
         match (&e.ty, to) {
             (Ty::Null, t) if t.is_nullable() => Ok(Expr {

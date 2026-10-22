@@ -1,0 +1,9 @@
+{
+ "partial_default_param": "1/x/false 5/x/false 1/q/true 0//false",
+ "partial_from_full_value": "12n -7? --?",
+ "pick_omit": "s!3 3true s?1",
+ "required_and_readonly": "two2 4-1 L4",
+ "partial_of_class": "10 15 t",
+ "spread_partial_in_literals": "1inktrue 1redtrue 9inkfalse",
+ "partial_records_and_arrays": "mp3wav60 230"
+}

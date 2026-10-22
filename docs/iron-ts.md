@@ -682,6 +682,21 @@ dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
 
+## Utility types and structural typing ([lower/utility.rs](../tools/iron_ts/src/lower/utility.rs))
+
+- **`Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Readonly<T>`** over interfaces, aliases, records, classes (data
+  fields only) and engine classes (their settable properties, as `tsc` sees them: manifest setters, `setX` methods and the facade's
+  `__xs_Class_x` functions). `Readonly<T>` is `T`. The others are ordinary structs (one per shape); an object literal builds one
+  directly, a full value of another struct goes where it is expected by a **field-by-field copy** (`coerce`, `copy_fields`), so
+  writes through the copy do not reach the original. A struct for a class or an engine class is filled in once the classes are laid
+  out (`finish_utility_types`), so they may be named before the class is declared.
+- **Absent fields.** An optional field that is not there is null. In `{ ...base, ...look }` a null optional field of a spread leaves
+  what an earlier part of the literal set (JavaScript keeps absent keys too; an *explicit* `undefined` would overwrite there, here it
+  cannot be told from absent).
+- **Option bags for engine classes.** `addComponent(Class, { a: 1, ...look })` and `new GameObject(name, look)` with `look` a
+  `Partial<LineRenderer2D>` (a literal with spreads, or a variable): every field that is there calls its setter (`apply_options_value`).
+  The same for script components (`component_fields_from`).
+
 ## Symbol, iterators and generators
 
 - **Well-known symbols.** `[Symbol.iterator]()` in a class is a method with the internal name `@@iterator`

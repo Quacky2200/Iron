@@ -90,6 +90,7 @@ mod typed;
 mod ui;
 mod unions;
 mod uri;
+mod utility;
 mod vectors;
 mod weak;
 mod windows;

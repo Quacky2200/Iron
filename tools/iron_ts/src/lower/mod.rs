@@ -39,6 +39,7 @@ mod strings;
 mod temporal;
 mod typed;
 mod types;
+mod utility;
 
 /// The `.d.ts` text of the ambient React/Iron types (`ReactNode`, `IronStyle`, `JSX`, the
 /// `react` and `@iron/react` modules), for a type check without `node_modules`.
@@ -252,6 +253,8 @@ pub struct Lowerer<'a> {
     pub(crate) classes_ready: bool,
     /// `instanceof GenericClass` tables, filled in once every specialisation exists.
     pub(crate) generic_itables: Vec<(usize, String)>,
+    /// `Partial<Class>` and friends met before the classes had fields: (struct, utility, class struct, keys).
+    pub(crate) pending_utility: Vec<(StructId, String, Ty, Option<Vec<String>>)>,
 }
 
 /// Parses and lowers one TypeScript module.
@@ -462,6 +465,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         pending_collect: Vec::new(),
         classes_ready: false,
         generic_itables: Vec::new(),
+        pending_utility: Vec::new(),
     };
     l.lower_program(&program)?;
     let mut m = l.m;
@@ -610,6 +614,7 @@ impl<'a> Lowerer<'a> {
         self.flush_pending_classes()?;
         self.finalize_classes()?;
         self.classes_ready = true;
+        self.finish_utility_types()?;
         // 2. Top-level values, in source order, into the init function.
         let init_id = self.m.funcs.len();
         self.m.funcs.push(Func {

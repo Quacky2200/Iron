@@ -1670,3 +1670,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3116 | Integration | A `SplineAnimate` places its object on the path facing along it, in every loop mode and in a container's space (the old `js/engine` `SplineAnimate` test) (`tools/iron_ts_tests/tests/all/outlines.rs`). |
 | M9-API-1606 | Integration | `SplineAnimate.pose`, `progress` and `facing` from QuickJS (`crates/iron_native/tests/splines.rs`). |
 | M9-API-1607 | Integration | A `SplineAnimate` and its spline survive a scene file: the inline `Spline` asset, loop mode and alignment names, the container reference (`crates/iron_native/tests/splines.rs`). |
+| M9-TS-3120 | Integration | `function f(o: Partial<Opts> = {})` with the parameter left out, partly and fully given equals bun's (`tools/iron_ts_tests/tests/all/utility.rs`, `bench/utility_cases.ts`). |
+| M9-TS-3121 | Integration | A full value (and `{}`) where a `Partial<T>` goes; absent fields read as `undefined` (`utility.rs`). |
+| M9-TS-3122 | Integration | `Pick<T, K>` / `Omit<T, K>` over an interface with function and data fields; a full value goes where the picked type is expected (`utility.rs`). |
+| M9-TS-3123 | Integration | `Required<T>` and `Readonly<T>` (`utility.rs`). |
+| M9-TS-3124 | Integration | `Partial<Class>` for a class declared after its use; methods of the class still work (`utility.rs`). |
+| M9-TS-3125 | Integration | `{ ...base, ...look }` with a `Partial` spread: a field that is absent leaves the earlier value (`utility.rs`). |
+| M9-TS-3126 | Integration | `Partial<Record<Union, V>>` tables and arrays of `Partial` objects (`utility.rs`). |
+| M9-TS-3127 | Integration | `Partial<LineRenderer2D>` / `Partial<TextMesh>` option bags spread into `addComponent` options, or passed as a variable (`tools/iron_ts_tests/tests/all/facade.rs`). |

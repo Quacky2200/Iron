@@ -110,7 +110,11 @@ impl<'a> Lowerer<'a> {
                     let h = self.var_expr(tmp);
                     stmts.push(Stmt::Eval(self.emit_extern(&setter, vec![h, v])));
                 }
-                _ => bail!("{at}: new {class}(name?, options?)"),
+                _ => {
+                    // `new GameObject(name, opts)` with `opts` a variable of an object type.
+                    let v = self.lower_expr(e, None)?;
+                    self.apply_options_value(class, tmp, v, &mut stmts, &at)?;
+                }
             }
         }
         let result = self.var_expr(tmp);
@@ -184,11 +188,20 @@ impl<'a> Lowerer<'a> {
         let mut stmts = vec![Stmt::Assign(tmp, mk(made, ty.clone()))];
         if let Some(e) = c.arguments.get(1).and_then(|a| a.as_expression()) {
             let Expression::ObjectExpression(o) = e else {
-                bail!("{at}: addComponent options are an object literal")
+                // A variable of an object type (a `Partial<MyComponent>`): its fields that are there.
+                let v = self.lower_expr(e, None)?;
+                self.component_fields_from(sid, tmp, v, &mut stmts, &at)?;
+                let result = self.var_expr(tmp);
+                return Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)));
             };
             for p in &o.properties {
-                let ObjectPropertyKind::ObjectProperty(p) = p else {
-                    bail!("{at}: spread in options")
+                let p = match p {
+                    ObjectPropertyKind::ObjectProperty(p) => p,
+                    ObjectPropertyKind::SpreadProperty(s) => {
+                        let v = self.lower_expr(&s.argument, None)?;
+                        self.component_fields_from(sid, tmp, v, &mut stmts, &at)?;
+                        continue;
+                    }
                 };
                 let PropertyKey::StaticIdentifier(key) = &p.key else {
                     bail!("{at}: option names are plain names")
@@ -395,13 +408,178 @@ impl<'a> Lowerer<'a> {
         let made = self.emit_extern(&attach, vec![recv]);
         let mut stmts = vec![Stmt::Assign(tmp, made)];
         if let Some(e) = c.arguments.get(1).and_then(|a| a.as_expression()) {
-            let Expression::ObjectExpression(o) = e else {
-                bail!("{at}: addComponent options are an object literal")
-            };
-            self.apply_options(&class, tmp, o, &mut stmts, &at)?;
+            if let Expression::ObjectExpression(o) = e {
+                self.apply_options(&class, tmp, o, &mut stmts, &at)?;
+            } else {
+                // A variable of an object type (`Partial<LineRenderer2D>`): its fields that are there.
+                let v = self.lower_expr(e, None)?;
+                self.apply_options_value(&class, tmp, v, &mut stmts, &at)?;
+            }
         }
         let result = self.var_expr(tmp);
         Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
+    }
+
+    /// The fields of an options object (`{ ...look }`, a `Partial<MyComponent>`) that are there,
+    /// stored into the script component in `tmp`.
+    fn component_fields_from(
+        &mut self,
+        sid: StructId,
+        tmp: VarId,
+        value: Expr,
+        stmts: &mut Vec<Stmt>,
+        at: &str,
+    ) -> R<()> {
+        let Ty::Obj(ssid) = value.ty.strip().clone() else {
+            bail!(
+                "{at}: component options must be an object, found {}",
+                value.ty
+            )
+        };
+        let src = self.new_local(value.ty.clone());
+        stmts.push(Stmt::Assign(src, value));
+        for fi in 0..self.m.structs[ssid].fields.len() {
+            let (key, fty) = {
+                let f = &self.m.structs[ssid].fields[fi];
+                (f.name.clone(), f.ty.clone())
+            };
+            let Some(idx) = self.m.structs[sid].field(&key) else {
+                bail!(
+                    "{at}: {} has no field `{key}` to set",
+                    self.m.structs[sid].name
+                )
+            };
+            let want = self.m.structs[sid].fields[idx].ty.clone();
+            let read = self.field_read(src, ssid, fi, fty.clone());
+            let read = self.coerce(read, &want)?;
+            let store = Stmt::StoreField(self.var_expr(tmp), sid, idx, read);
+            if fty.is_nullable() && !want.is_nullable() {
+                let absent = mk(
+                    ExprKind::IsNull(Box::new(self.field_read(src, ssid, fi, fty))),
+                    Ty::Bool,
+                );
+                stmts.push(Stmt::If(absent, vec![], vec![store]));
+            } else {
+                stmts.push(store);
+            }
+        }
+        Ok(())
+    }
+
+    /// How one option key of an engine class is set.
+    fn option_setter(&mut self, class: &str, key: &str, array: bool) -> R<Option<OptSet>> {
+        // `startLifetime: [min, max]` is the `$a` variant of the setter.
+        let array_key = format!("{key}$a");
+        let ext = if array {
+            self.ext_setter(class, &array_key)?
+                .or(self.ext_setter(class, key)?)
+        } else {
+            self.ext_setter(class, key)?
+        };
+        if let Some((fid, want)) = ext {
+            return Ok(Some(OptSet::Facade(fid, want)));
+        }
+        let own = self.manifest.classes[class]
+            .setters
+            .get(key)
+            .cloned()
+            .or_else(|| self.set_method(class, key));
+        if let Some(setter) = own {
+            let want = self.ext_ir(&setter.params[1].1);
+            return Ok(Some(OptSet::Own(setter, want)));
+        }
+        // `position` of a GameObject is its transform's.
+        let transform = self.manifest.classes[class]
+            .getters
+            .get("transform")
+            .cloned();
+        let tr_setter = self
+            .manifest
+            .classes
+            .get("Transform")
+            .and_then(|t| t.setters.get(key))
+            .cloned();
+        if let (Some(get), Some(setter)) = (transform, tr_setter) {
+            let want = self.ext_ir(&setter.params[1].1);
+            return Ok(Some(OptSet::Transform(get, setter, want)));
+        }
+        Ok(None)
+    }
+
+    /// The type a value for this setter has.
+    fn opt_want(set: &OptSet) -> &Ty {
+        match set {
+            OptSet::Facade(_, w) | OptSet::Own(_, w) | OptSet::Transform(_, _, w) => w,
+        }
+    }
+
+    /// The statement that sets the property on the handle in `tmp`; `v` is already of the wanted type.
+    fn opt_emit(&mut self, tmp: VarId, set: OptSet, v: Expr) -> Stmt {
+        let h = self.var_expr(tmp);
+        match set {
+            OptSet::Facade(fid, _) => Stmt::Eval(Self::target_call(
+                &classes::Target::Direct(fid),
+                vec![h, v],
+                Ty::Void,
+            )),
+            OptSet::Own(setter, _) => Stmt::Eval(self.emit_extern(&setter, vec![h, v])),
+            OptSet::Transform(get, setter, _) => {
+                let tr = self.emit_extern(&get, vec![h]);
+                Stmt::Eval(self.emit_extern(&setter, vec![tr, v]))
+            }
+        }
+    }
+
+    /// `{ ...look }` / a non-literal options value of an object type (a `Partial<Class>`): every
+    /// field that is there sets its property.
+    pub(crate) fn apply_options_value(
+        &mut self,
+        class: &str,
+        tmp: VarId,
+        value: Expr,
+        stmts: &mut Vec<Stmt>,
+        at: &str,
+    ) -> R<()> {
+        let Ty::Obj(sid) = value.ty.strip().clone() else {
+            bail!(
+                "{at}: options for {class} must be an object, found {}",
+                value.ty
+            )
+        };
+        let src = self.new_local(value.ty.clone());
+        stmts.push(Stmt::Assign(src, value));
+        for fi in 0..self.m.structs[sid].fields.len() {
+            let (key, fty) = {
+                let f = &self.m.structs[sid].fields[fi];
+                (f.name.clone(), f.ty.clone())
+            };
+            let array = matches!(fty.strip(), Ty::Arr(_));
+            let Some(set) = self.option_setter(class, &key, array)? else {
+                bail!("{at}: {class} has no property `{key}` to set")
+            };
+            let want = Self::opt_want(&set).clone();
+            let read = mk(
+                ExprKind::Field(Box::new(self.var_expr(src)), sid, fi),
+                fty.clone(),
+            );
+            let plain = mk(ExprKind::Cast(Box::new(read.clone())), fty.strip().clone());
+            let v = self.coerce_ext(if fty.is_nullable() { plain } else { read }, &want)?;
+            let store = self.opt_emit(tmp, set, v);
+            if fty.is_nullable() {
+                let absent = mk(
+                    ExprKind::IsNull(Box::new(self.field_read(src, sid, fi, fty))),
+                    Ty::Bool,
+                );
+                stmts.push(Stmt::If(absent, vec![], vec![store]));
+            } else {
+                stmts.push(store);
+            }
+        }
+        Ok(())
+    }
+
+    fn field_read(&self, src: VarId, sid: StructId, fi: usize, fty: Ty) -> Expr {
+        mk(ExprKind::Field(Box::new(self.var_expr(src)), sid, fi), fty)
     }
 
     /// The setters for `{ key: value, .. }` on the handle in `tmp`.
@@ -420,8 +598,13 @@ impl<'a> Lowerer<'a> {
                 if matches!(&p.key, PropertyKey::StaticIdentifier(k) if k.name == "parent"))
         });
         for p in props {
-            let ObjectPropertyKind::ObjectProperty(p) = p else {
-                bail!("{at}: spread in options")
+            let p = match p {
+                ObjectPropertyKind::ObjectProperty(p) => p,
+                ObjectPropertyKind::SpreadProperty(s) => {
+                    let v = self.lower_expr(&s.argument, None)?;
+                    self.apply_options_value(class, tmp, v, stmts, at)?;
+                    continue;
+                }
             };
             let PropertyKey::StaticIdentifier(key) = &p.key else {
                 bail!("{at}: option names are plain names")
@@ -430,59 +613,30 @@ impl<'a> Lowerer<'a> {
             if class == "GameObject" && self.game_object_option(tmp, key, &p.value, stmts, at)? {
                 continue;
             }
-            // `startLifetime: [min, max]` is the `$a` variant of the setter.
-            let array_key = format!("{key}$a");
-            let ext = match &p.value {
-                Expression::ArrayExpression(_) => self
-                    .ext_setter(class, &array_key)?
-                    .or(self.ext_setter(class, key)?),
-                _ => self.ext_setter(class, key)?,
-            };
-            if let Some((fid, want)) = ext {
-                let v = self.lower_expr(&p.value, Some(&want))?;
-                let v = self.coerce(v, &want)?;
-                let h = self.var_expr(tmp);
-                stmts.push(Stmt::Eval(Self::target_call(
-                    &classes::Target::Direct(fid),
-                    vec![h, v],
-                    Ty::Void,
-                )));
-                continue;
-            }
-            let own = self.manifest.classes[class]
-                .setters
-                .get(key)
-                .cloned()
-                .or_else(|| self.set_method(class, key));
-            if let Some(setter) = own {
-                let want = self.ext_ir(&setter.params[1].1);
-                let v = self.lower_expr(&p.value, Some(&want))?;
-                let v = self.coerce_ext(v, &want)?;
-                let h = self.var_expr(tmp);
-                stmts.push(Stmt::Eval(self.emit_extern(&setter, vec![h, v])));
-                continue;
-            }
-            // `position` of a GameObject is its transform's.
-            let transform = self.manifest.classes[class]
-                .getters
-                .get("transform")
-                .cloned();
-            let tr_setter = self
-                .manifest
-                .classes
-                .get("Transform")
-                .and_then(|t| t.setters.get(key))
-                .cloned();
-            let (Some(get), Some(setter)) = (transform, tr_setter) else {
+            let array = matches!(&p.value, Expression::ArrayExpression(_));
+            let Some(set) = self.option_setter(class, key, array)? else {
                 bail!("{at}: {class} has no property `{key}` to set")
             };
-            let want = self.ext_ir(&setter.params[1].1);
+            let want = Self::opt_want(&set).clone();
             let v = self.lower_expr(&p.value, Some(&want))?;
-            let v = self.coerce(v, &want)?;
-            let h = self.var_expr(tmp);
-            let tr = self.emit_extern(&get, vec![h]);
-            stmts.push(Stmt::Eval(self.emit_extern(&setter, vec![tr, v])));
+            let v = if matches!(set, OptSet::Facade(..) | OptSet::Transform(..)) {
+                self.coerce(v, &want)?
+            } else {
+                self.coerce_ext(v, &want)?
+            };
+            let st = self.opt_emit(tmp, set, v);
+            stmts.push(st);
         }
         Ok(())
     }
+}
+
+/// How an option of an engine class is set (see `option_setter`).
+pub(crate) enum OptSet {
+    /// A facade function taking the object and the value.
+    Facade(FuncId, Ty),
+    /// The class's own setter (or `setX` method).
+    Own(ExternFn, Ty),
+    /// A property of the object's transform: its getter on the object, the transform's setter.
+    Transform(ExternFn, ExternFn, Ty),
 }

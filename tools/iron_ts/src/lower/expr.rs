@@ -76,7 +76,8 @@ impl<'a> Lowerer<'a> {
         // A Date is its time value (`end - start`, `+date`).
         let e = self.date_value(e);
         match e.ty.strip() {
-            Ty::Num => self.coerce(e, &Ty::Num),
+            Ty::Num if e.ty == Ty::Num => Ok(e),
+            Ty::Num => Ok(mk(ExprKind::Cast(Box::new(e)), Ty::Num)),
             t => bail!("expected a number, found {t}"),
         }
     }
@@ -1638,19 +1639,23 @@ impl<'a> Lowerer<'a> {
         self.coerce(v, want)
     }
 
-    /// Every field of `to` is a field of `from` with the same type.
-    fn can_copy_fields(&self, from: StructId, to: StructId) -> bool {
-        if self.class_of_sid.contains_key(&from) || self.class_of_sid.contains_key(&to) {
+    /// Every field of `to` is a field of `from` with the same type (or `from`'s type made
+    /// nullable, for a `Partial`): a plain object can then be copied into a `to`.
+    pub(crate) fn can_copy_fields(&self, from: StructId, to: StructId) -> bool {
+        if self.class_of_sid.contains_key(&to) {
             return false;
         }
         let (f, t) = (&self.m.structs[from], &self.m.structs[to]);
         !t.fields.is_empty()
-            && t.fields
-                .iter()
-                .all(|tf| f.field(&tf.name).is_some_and(|i| f.fields[i].ty == tf.ty))
+            && t.fields.iter().all(|tf| {
+                f.field(&tf.name).is_some_and(|i| {
+                    let ft = &f.fields[i].ty;
+                    *ft == tf.ty || (tf.ty.is_nullable() && *ft == *tf.ty.strip())
+                })
+            })
     }
 
-    fn copy_fields(&mut self, v: Expr, from: StructId, to: StructId) -> Expr {
+    pub(crate) fn copy_fields(&mut self, v: Expr, from: StructId, to: StructId) -> Expr {
         let src = self.new_local(v.ty.clone());
         let ty = Ty::Obj(to);
         let dst = self.new_local(ty.clone());
@@ -1662,7 +1667,14 @@ impl<'a> Lowerer<'a> {
             let name = self.m.structs[to].fields[i].name.clone();
             let j = self.m.structs[from].field(&name).expect("checked");
             let fty = self.m.structs[to].fields[i].ty.clone();
-            let read = mk(ExprKind::Field(Box::new(self.var_expr(src)), from, j), fty);
+            let from_ty = self.m.structs[from].fields[j].ty.clone();
+            let mut read = mk(
+                ExprKind::Field(Box::new(self.var_expr(src)), from, j),
+                from_ty.clone(),
+            );
+            if from_ty != fty {
+                read = mk(ExprKind::Cast(Box::new(read)), fty);
+            }
             stmts.push(Stmt::StoreField(self.var_expr(dst), to, i, read));
         }
         mk(ExprKind::Seq(stmts, Box::new(self.var_expr(dst))), ty)
@@ -2288,17 +2300,34 @@ impl<'a> Lowerer<'a> {
                     let src = self.new_local(s.ty.clone());
                     stmts.push(Stmt::Assign(src, s));
                     for fi in 0..self.m.structs[ssid].fields.len() {
-                        let (name, fty) = {
+                        let (name, fty, optional) = {
                             let f = &self.m.structs[ssid].fields[fi];
-                            (f.name.clone(), f.ty.clone())
+                            (f.name.clone(), f.ty.clone(), f.optional)
                         };
                         let Some(i) = self.m.structs[sid].field(&name) else {
                             continue;
                         };
                         let want = self.m.structs[sid].fields[i].ty.clone();
-                        let read = mk(ExprKind::Field(Box::new(self.var_expr(src)), ssid, fi), fty);
+                        let read = mk(
+                            ExprKind::Field(Box::new(self.var_expr(src)), ssid, fi),
+                            fty.clone(),
+                        );
                         let read = self.coerce(read, &want)?;
-                        stmts.push(Stmt::StoreField(t.clone(), sid, i, read));
+                        let store = Stmt::StoreField(t.clone(), sid, i, read);
+                        // An optional property that is not there (a `Partial`) leaves what an
+                        // earlier part of the literal set.
+                        if optional && fty.is_nullable() {
+                            let absent = mk(
+                                ExprKind::IsNull(Box::new(mk(
+                                    ExprKind::Field(Box::new(self.var_expr(src)), ssid, fi),
+                                    fty,
+                                ))),
+                                Ty::Bool,
+                            );
+                            stmts.push(Stmt::If(absent, vec![], vec![store]));
+                        } else {
+                            stmts.push(store);
+                        }
                     }
                 }
                 Item::Prop(name, v) => {

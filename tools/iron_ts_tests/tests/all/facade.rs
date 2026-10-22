@@ -307,3 +307,14 @@ fn screen_to_world_point_matches_the_camera_frustum() {
         assert_eq!(text(ts_fac_screenToWorld()), "0|0|0|-6.67|5|0|7.7|-5.77|0");
     });
 }
+
+// M9-TS-3127
+#[test]
+fn partial_engine_classes_are_option_bags_that_spread_into_options() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_optionBags()),
+            "0.05|false|0.5|true|2|true|0.25|7|0.25|true|7|40|t|24"
+        );
+    });
+}

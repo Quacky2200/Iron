@@ -330,3 +330,23 @@ export function screenToWorld(): string {
   const r = (v: number) => Math.round(v * 100) / 100;
   return `${r(a.x)}|${r(a.y)}|${r(a.z)}|${r(b.x)}|${r(b.y)}|${r(b.z)}|${r(c.x)}|${r(c.y)}|${r(c.z)}`;
 }
+
+function shapeWith(name: string, look: Partial<LineRenderer2D>, at: Vector3 = Vector3.zero): LineRenderer2D {
+  return new GameObject(name, { position: at }).addComponent(LineRenderer2D, { width: 0.05, ...look });
+}
+
+function labelWith(look: Partial<TextMesh> = {}): TextMesh {
+  return new GameObject("lab").addComponent(TextMesh, { fontSize: 24, text: "t", ...look });
+}
+
+export function optionBags(): string {
+  const plain = shapeWith("a", {});
+  const wide = shapeWith("b", { width: 0.5, loop: true, fillColor: new Color(0, 1, 0, 1), sortingOrder: 2 });
+  const look: Partial<LineRenderer2D> = { width: 0.25, sortingOrder: 7 };
+  const viaVariable = new GameObject("c").addComponent(LineRenderer2D, look);
+  const withDefault = new GameObject("d").addComponent(LineRenderer2D, { width: 3, loop: true, ...look });
+  const big = labelWith({ fontSize: 40 });
+  const dflt = labelWith();
+  const r = (v: number) => Math.round(v * 100) / 100;
+  return `${r(plain.width)}|${plain.loop}|${r(wide.width)}|${wide.loop}|${wide.sortingOrder}|${wide.hasFill}|${r(viaVariable.width)}|${viaVariable.sortingOrder}|${r(withDefault.width)}|${withDefault.loop}|${withDefault.sortingOrder}|${big.fontSize}|${big.text}|${dflt.fontSize}`;
+}
