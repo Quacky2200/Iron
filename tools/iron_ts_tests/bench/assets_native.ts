@@ -1,4 +1,4 @@
-// Assets.exists / list / packOf from compiled code. The Rust test (tests/all/assets_native.rs)
+// Assets.exists / list / packOf from compiled code. The Rust test (tests/engine_api/assets_native.rs)
 // fills the index the host would, and checks what the program gets.
 
 export function files(): string {

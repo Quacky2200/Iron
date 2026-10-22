@@ -1,6 +1,6 @@
 // The native rendering data API from compiled code: lights, meshes, materials, textures,
 // sprites, mesh renderers, LOD groups and the camera extras. The Rust test
-// (tests/all/render_native.rs) reads the registries the renderer would.
+// (tests/engine_api/render_native.rs) reads the registries the renderer would.
 
 export function light(): string {
   const go = new GameObject("Sun");

@@ -1,5 +1,5 @@
 //! Enums, nullables and aliases of the real engine namespaces from QuickJS: the same native code
-//! compiled games call (`tools/iron_ts_tests/tests/all/facade.rs`, M9-TS-3340). IDs are in
+//! compiled games call (`tools/iron_ts_tests/tests/engine_api/facade.rs`, M9-TS-3340). IDs are in
 //! TESTS.md (M9-API-162x).
 mod common;
 use common::{js, throws, with_world};

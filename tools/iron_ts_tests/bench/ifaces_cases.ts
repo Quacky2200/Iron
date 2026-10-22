@@ -1,4 +1,4 @@
-// Interfaces implemented by classes, for tests/all/ifaces.rs. Each case (split at `//## name`)
+// Interfaces implemented by classes, for tests/lang/ifaces.rs. Each case (split at `//## name`)
 // defines `function t(): string`; the test compiles it with iron_ts (normal, GC-stress, GC-off)
 // and compares the result with bun's (`bun bench/gen_cases_expected.ts ifaces_cases.ts`).
 //## basic_dispatch

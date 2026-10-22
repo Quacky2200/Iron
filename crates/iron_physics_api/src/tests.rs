@@ -1,5 +1,5 @@
 //! Unit tests of the physics components (`M9-API-200..`): they work on `comp.rs` and the kinds
-//! directly; the compiled-program tests are in `tools/iron_ts_tests/tests/all/physics.rs`.
+//! directly; the compiled-program tests are in `tools/iron_ts_tests/tests/engine/physics.rs`.
 
 use crate::comp::{self, ColShape};
 use crate::{add_collider, reset, step, take_contacts};

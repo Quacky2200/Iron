@@ -1,6 +1,6 @@
 // The TypeScript `@iron/engine` shapes the examples use, over the native API: object-valued
 // namespace properties and `new GameObject(name, { .. })` option keys. The Rust test
-// (tests/all/facade.rs) reads the same state back.
+// (tests/engine_api/facade.rs) reads the same state back.
 
 export function skyAndBloom(): string {
   RenderSettings.skybox = { sunDirection: new Vector3(0.5, 0.45, 0.4), zenith: new Color(1, 0, 0, 1), sunSize: 2 };

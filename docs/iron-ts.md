@@ -21,6 +21,7 @@ cd tools && cargo fmt --all
 cd tools && cargo clippy --workspace --all-targets -- -D warnings
 cd tools && cargo test --workspace
 cd tools && IRON_TS_GC=stress cargo test -p iron_ts_tests      # collect at every allocation
+cd tools && cargo test -p iron_ts_tests --test engine contacts # one area (lang, stdlib, engine, engine_api, ui), one filter
 cd tools && cargo run --release -p iron_ts_tests --bin bench   # QuickJS vs bun vs native, 10,000 steps
 cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
 ```
@@ -854,7 +855,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 ## The original example sources ([lower/tagged.rs](../tools/iron_ts/src/lower/tagged.rs), [lower/accessors.rs](../tools/iron_ts/src/lower/accessors.rs))
 
 What the QuickJS-era sources of the examples (`git show main:examples/<name>/src/..`) needed, tested by
-`tools/iron_ts_tests/tests/all/originals.rs` (against bun, `M9-TS-3174..3183`) and `originals_engine.rs` (`M9-TS-3184..3189`):
+`tools/iron_ts_tests/tests/lang/originals.rs` (against bun, `M9-TS-3174..3183`) and `originals_engine.rs` (`M9-TS-3184..3189`):
 
 - **Generic inference.** A closure that returns nothing fixes `T = void` (`under(root, () => this.build())`). A written return type
   on an inlined array callback is the callback's result type (`rows.map(([a, b]): Star => ({ .. }))` gives `Star[]`). A string
@@ -1126,9 +1127,9 @@ calls into. Its header comment is the long version.
 | `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
 | `bench/engine.ts` | Calls the `Demo` engine API; `build.rs` compiles it with the manifest of [tools/iron_demo_api](../tools/iron_demo_api/src/lib.rs) (a small world of entities written with `#[iron_api]`), whose shims the test binaries link |
 | `bench/scene.ts` | Drives the real scene: `build.rs` compiles it (prefix `scn_`, base 15000) with `iron_scene`'s manifest (`iron_scene::api::scene_api::MANIFEST`) and the tests run it against a real `Scene` made current with `iron_scene::api::enter`; `iron_ts_tests::scene_anchor()` keeps the `Scene` shims linked |
-| `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker |
+| `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker. Each program is cached there under a hash of its (bundled) source, prefix, base, manifests and the build script's own executable (relinked by cargo whenever `iron_ts` changes), so a bench edit recompiles one program and a compiler edit all of them, in parallel. Build scripts run unoptimised (no `build-override`): `iron_ts` built once more at `opt-level = 3` cost more than it saved |
 | `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state); `demo_api_anchor()` uses `iron_demo_api` so the linker keeps its shims |
-| `tests/*.rs` | `sim_port` (13 ported cases), `gc`, and one file per language area |
+| `tests/<group>/*.rs` | Five test binaries by area, one file per module: `lang` (language, the bun-compared case files, the JIT), `stdlib` (Math, JSON, RegExp, typed arrays, Date, Intl, Temporal), `engine` (scenes, components, physics, animation, `sim_port` with 13 ported cases, `gc`), `engine_api` (engine services and maths, the facade) and `ui` (UI and windows); `tests/common/cases.rs` (the `//## name` case runner) is shared by `lang` and `engine_api` |
 | `src/bin/{bench,sine_bench}.rs` | The benchmarks: the same work in QuickJS, bun and native code, one checksum for all |
 
 Each language-area test calls the generated functions through the bindings (`ts_<prefix><name>`) inside
@@ -1146,7 +1147,7 @@ To add a test module:
 2. Add `("<name>", "<prefix>_", <struct_base>)` to the list in `build.rs`. Bases are 1000 apart (sim
    0, sine 1000, ... classes 11000, inherit 12000, props 13000, engine 14000, scene 15000, strings 16000, errors 17000); take the next free one.
 3. Add a `pub mod` for it in `src/lib.rs` that includes `<name>_bindings.rs`.
-4. Add `tests/<name>.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
+4. Add `tests/<group>/<name>.rs` and a `mod <name>;` line in that group's `main.rs`: call `ts_<prefix>init()` first, use `in_every_gc_mode`, and tag each test with
    its `// M9-TS-nnn` ID.
 5. Add the IDs to `TESTS.md`, then run fmt, clippy, `cargo test --workspace` and the stress run.
 

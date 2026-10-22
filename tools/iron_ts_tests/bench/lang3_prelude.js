@@ -1,4 +1,4 @@
-// What the `Words` test API of tests/all/lang3.rs does, for bun.
+// What the `Words` test API of tests/lang/lang3.rs does, for bun.
 var Words = {
   join: (words, sep) => words.join(sep),
   count: (words) => words.filter((w) => w !== "").length,

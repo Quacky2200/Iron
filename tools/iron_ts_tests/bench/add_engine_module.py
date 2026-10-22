@@ -4,9 +4,9 @@
 # them in bun and puts their exports on globalThis, so bench/<name>.ts runs there against the
 # original TypeScript, and compiled against the Rust API. It adds the program to build.rs (with all
 # engine manifests), a module to src/lib.rs, the generator bench/gen_<name>_expected.ts and a test
-# per exported function in tests/all/<name>.rs. Every exported function without parameters returns
+# per exported function in tests/engine_api/<name>.rs. Every exported function without parameters returns
 # a string. Then: `bun bench/gen_<name>_expected.ts` and
-# `cargo test -p iron_ts_tests --test all <name>`.
+# `cargo test -p iron_ts_tests --test engine_api <name>`.
 import os
 import re
 import sys
@@ -32,8 +32,7 @@ b = read("build.rs")
 nl = "\r\n" if "\r\n" in b else "\n"
 entry = f'        ("{name}", "{prefix}_", {base}),'
 if entry not in b:
-    marker = "    ] {"
-    i = b.index(marker)
+    i = b.index("\n];", b.index("const PROGRAMS")) + 1
     b = b[:i] + entry + nl + b[i:]
     b = re.sub(r'("engine2" \| "sine_demo_full"[^=]*?)( =>)', lambda m: m.group(1) + f' | "{name}"' + m.group(2), b, count=1)
     write("build.rs", b)
@@ -146,12 +145,14 @@ fn {snake(f)}_matches_the_original() {{
     }});
 }}
 """
-write(f"tests/all/{name}.rs", tests)
+write(f"tests/engine_api/{name}.rs", tests)
 
-mains = read("tests/all/main.rs")
+mains = read("tests/engine_api/main.rs")
 if f"mod {name};" not in mains:
-    lines = sorted(set(mains.split()) | {f"mod {name};"}) if False else None
+    # Keep the header (doc comment, the shared `cases` module) and sort only the test modules.
     ls = [x for x in mains.replace("\r\n", "\n").split("\n") if x.strip()]
-    ls.append(f"mod {name};")
-    write("tests/all/main.rs", "\n".join(sorted(ls)) + "\n")
+    head = [x for x in ls if not (x.startswith("mod ") and x != "mod cases;")]
+    mods = sorted({x for x in ls if x not in head} | {f"mod {name};"})
+    # The blank line keeps rustfmt from sorting `mod cases;` (and its attributes) into the list.
+    write("tests/engine_api/main.rs", "\n".join(head + [""] + mods) + "\n")
 print(f"{name}: {len(fns)} tests, ids {first}..{first + len(fns) - 1}")

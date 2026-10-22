@@ -1,5 +1,5 @@
 // The native audio API from compiled code: sounds, playbacks, buses, emitters, and the
-// AudioSource / AudioListener components. The Rust test (tests/all/audio_native.rs) reads the
+// AudioSource / AudioListener components. The Rust test (tests/engine_api/audio_native.rs) reads the
 // commands the host would run on the mixer.
 
 let ended = "";

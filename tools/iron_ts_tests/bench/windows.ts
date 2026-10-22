@@ -1,5 +1,5 @@
 // The Window API from compiled code: options objects, static properties, listeners and
-// `createRoot(win)`. The Rust test (tests/all/windows.rs) plays the host (opened, resized, closed).
+// `createRoot(win)`. The Rust test (tests/ui/windows.rs) plays the host (opened, resized, closed).
 
 let resizedCount = 0;
 let closedCount = 0;

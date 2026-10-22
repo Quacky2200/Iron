@@ -1,4 +1,4 @@
-// Tuples and destructuring assignment for tests/all/tuples.rs. Each case (split at `//## name`)
+// Tuples and destructuring assignment for tests/lang/tuples.rs. Each case (split at `//## name`)
 // defines `function t(): string`; the test compiles it with iron_ts (normal, GC-stress, GC-off)
 // and compares the result with bun's (`bun bench/gen_cases_expected.ts tuples_cases.ts`).
 //## length_and_index_writes

@@ -589,7 +589,7 @@ Ordered by how many examples hit them (`docs/research/iron-examples-on-iron-ts.m
 `console`, `Component` from `HOOKS` (plus the contact hooks), `register`, `property`, `ClassOf`, `ComponentClass`, generic `GameObject`
 members, `findObjectOfType`, `Random.pick`, React hooks, `ReactNode`, `Ref`, `JSX`, `React`, `createRoot`. Window messaging to
 **F-JSON** + `Pending` (removes chunks 33, 34, 40, `REQUEST_TEMPLATE`, `ASK_TEMPLATE`, `__win_pending`). Tests M9-TS-3030 (every builtin
-lowering reached), 3031 (window messaging tests `M9-TS` of `tools/iron_ts_tests/tests/all/windows.rs` keep passing unchanged), 3032
+lowering reached), 3031 (window messaging tests `M9-TS` of `tools/iron_ts_tests/tests/ui/windows.rs` keep passing unchanged), 3032
 (`setInterval` type-checks and runs). Risk: the window messaging rewrite touches a recently finished area (`docs/windows.md`); do it
 last in the phase and keep the old tests as the oracle.
 

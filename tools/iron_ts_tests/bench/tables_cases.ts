@@ -1,5 +1,5 @@
 // Tables: objects indexed by a key (`state[key] = !state[key]`) and `Record<string, V>` as a
-// dictionary, for tests/all/tables.rs. Each case (split at `//## name`) defines `function t():
+// dictionary, for tests/lang/tables.rs. Each case (split at `//## name`) defines `function t():
 // string`; the test compiles it with iron_ts (normal, GC-stress, GC-off) and compares the result
 // with bun's (`bun bench/gen_cases_expected.ts tables_cases.ts`).
 //## keyed_writes

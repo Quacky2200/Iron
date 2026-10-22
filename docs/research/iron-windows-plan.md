@@ -16,7 +16,7 @@ test as usual (`// M9-API-1401`).
   scratchpad (heredocs mangle quotes here).
 - Checks before each commit (CLAUDE.md): `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, `bun test`, `bun run typecheck`, `bun run build`, `bun run build:fixtures` (when `js/` changed). For
-  `tools/` changes also `cd tools && cargo test -p iron_ts_tests --test all windows` and `cargo clippy --workspace --all-targets
+  `tools/` changes also `cd tools && cargo test -p iron_ts_tests --test ui windows` and `cargo clippy --workspace --all-targets
   -- -D warnings` there. The disk is tight: use `CARGO_INCREMENTAL=0` for one-off checks, and delete corrupt `.pdb` files after an
   interrupted build.
 - Commit trailer: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Update `TODO.md` and `tools/iron_ts/TODO.md`
@@ -264,7 +264,7 @@ Then put `#[options]` on `WindowRef::create`.
   - `win_mount(h)`: `createRoot(w).render(<box><text>{w.title}</text></box>)` (JSX in a `.ts` bench needs the `.tsx` path:
     name the file `windows.tsx` if the build script supports it, else build the element with the `Ui` helpers the other UI
     benches use; check `bench/ui.ts`).
-- New `tools/iron_ts_tests/tests/all/windows.rs` (`mod windows;` in `main.rs`), using the `in_every_gc_mode` pattern of
+- New `tools/iron_ts_tests/tests/ui/windows.rs` (`mod windows;` in `main.rs`), using the `in_every_gc_mode` pattern of
   `render_native.rs` with `iron_engine_api::window::reset()`.
 
 **Tests.**
@@ -279,7 +279,7 @@ Then put `#[options]` on `WindowRef::create`.
 | M9-TS-2805 | `create_root_of_a_window_queues_a_window_mount` (`iron_ts_ui::take_window_mounts()` has `(handle, element)`; `take_mounts()` is empty) |
 | M9-TS-2806 | `iron_build_types_declare_window_and_window_options` (in `tools/iron_build` tests: `types` output contains `declare class Window`, `interface WindowOptions`, `const main: Window`) |
 
-**Acceptance.** `cd tools && cargo test -p iron_ts_tests --test all windows` and `cargo test -p iron_build` pass, also with
+**Acceptance.** `cd tools && cargo test -p iron_ts_tests --test ui windows` and `cargo test -p iron_build` pass, also with
 `IRON_TS_GC=stress` (the `in_every_gc_mode` helper covers it).
 
 ---
@@ -519,7 +519,7 @@ and the log line `saved screenshot`. No second window appears on screen (Virtual
 
 (These are app-side Rust unit tests; they use IDs from the range given for this work.)
 
-**Acceptance.** `cargo test --workspace`, `cd tools && cargo test -p iron_ts_tests --test all windows`, and one screenshot run
+**Acceptance.** `cargo test --workspace`, `cd tools && cargo test -p iron_ts_tests --test ui windows`, and one screenshot run
 of the step 8 probe extended with `Window.create({ title: "Probe isolated", width: 160, height: 100 })`: three PNGs.
 
 ---
@@ -580,7 +580,7 @@ of the step 8 probe extended with `Window.create({ title: "Probe isolated", widt
 | M9-TS-2845 | `quickjs_post_message_refuses_handles_and_functions` |
 | M9-TS-2846 | `quickjs_request_resolves_after_reply` (run the job queue after `deliver`) |
 
-**Acceptance (M1 to M3).** `cargo test -p iron_engine_api -p iron_native`, `cd tools && cargo test -p iron_ts_tests --test all
+**Acceptance (M1 to M3).** `cargo test -p iron_engine_api -p iron_native`, `cd tools && cargo test -p iron_ts_tests --test ui
 windows`, `bun test`.
 
 ---

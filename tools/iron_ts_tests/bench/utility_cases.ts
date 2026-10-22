@@ -1,4 +1,4 @@
-// Partial / Required / Pick / Omit / Readonly for tests/all/utility.rs. Each case (split at
+// Partial / Required / Pick / Omit / Readonly for tests/lang/utility.rs. Each case (split at
 // `//## name`) defines `function t(): string`; the test compiles it with iron_ts (normal,
 // GC-stress, GC-off) and compares the result with bun's (`bun bench/gen_cases_expected.ts
 // utility_cases.ts`).
