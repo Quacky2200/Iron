@@ -256,10 +256,10 @@ refreshes hover (content moved under the pointer).
 |---|---|
 | `wheel` not prevented | `scroll_chain`: the first element on the path (innermost first) that can still move by the delta scrolls; otherwise the next ancestor takes over, unless the element that could not move has `overscroll-behavior: contain` (or `none`) on that axis (`UiTree::contains_overscroll`), which ends the chain. With Shift held and no `dx`, a vertical wheel scrolls horizontally |
 | Keys (`key_scroll`, after `keydown` is not prevented) | Arrows scroll `SCROLL_LINE` (40 px), Page Up/Down and Space (Shift+Space up) scroll `SCROLL_PAGE` (0.875) of the visible height, Home/End jump. Origin is the focused element, else the hovered one; the first container on its path that moves wins, and `overscroll-behavior` stops the walk the same way |
-| Tab / `ref.focus()` | `scroll_into_view`: each scrolling ancestor scrolls just enough to show the element, keeping its start edge visible if it is larger than the viewport |
+| Tab / `ref.focus()` | `scroll_into_view` with `ScrollAlign::Nearest` on both axes: each scrolling ancestor scrolls just enough to show the element, keeping its start edge visible if it is larger than the viewport |
 | Scrollbar press (primary button, checked **before** the page sees `pointerdown`) | `press_scrollbar` via `UiTree::scrollbar_at`: on the thumb it starts a drag (remembering the grab offset), on the track it pages toward the press |
 | Pointer move while dragging | `drag_scrollbar` maps the thumb position back to an offset; `PointerUp` ends the drag |
-| Scripts | `ScrollTo`, `ScrollBy`, `ScrollIntoView` inputs (`by_user = false`, so they also scroll `overflow: hidden`) |
+| Scripts | `ScrollTo`, `ScrollBy`, `ScrollIntoView { block, inline }` inputs (`by_user = false`, so they also scroll `overflow: hidden`). `ScrollAlign` per axis, as the DOM's `ScrollLogicalPosition`: `Start` / `End` line up that edge with the container's, `Center` centres, `Nearest` is the focus behaviour above; each container is scrolled innermost first and clamped to its range (`M3-EVT-08`) |
 
 User scrolling needs `overflow: scroll` or `auto` on that axis; `hidden` scrolls only from scripts;
 `clip` and `visible` never scroll. The `scroll` event does not bubble and carries `ScrollInfo`

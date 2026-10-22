@@ -313,10 +313,17 @@ describe("@iron/react events", () => {
     ref.current!.scrollTo(0, 50);
     ref.current!.scrollBy(0, -10);
     ref.current!.scrollIntoView();
+    ref.current!.scrollIntoView(false);
+    ref.current!.scrollIntoView({ block: "center" });
+    ref.current!.scrollIntoView({ block: "nearest", inline: "end" });
+    // M3-EVT-08: the DOM's defaults (block "start", inline "nearest").
     expect(ops).toEqual([
       ["scrollTo", id, 0, 50],
       ["scrollBy", id, 0, -10],
-      ["scrollIntoView", id],
+      ["scrollIntoView", id, "start", "nearest"],
+      ["scrollIntoView", id, "end", "nearest"],
+      ["scrollIntoView", id, "center", "nearest"],
+      ["scrollIntoView", id, "nearest", "end"],
     ]);
     delete (globalThis as { __iron_op?: unknown }).__iron_op;
   });

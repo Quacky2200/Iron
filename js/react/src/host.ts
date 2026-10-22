@@ -89,10 +89,28 @@ export class Instance {
     op("scrollBy", this.id, dx, dy);
   }
 
-  /** Scrolls the element's scroll containers just enough to show it. */
-  scrollIntoView(): void {
-    op("scrollIntoView", this.id);
+  /**
+   * Scrolls the element's scroll containers to show it, as in the DOM: `true` or nothing
+   * puts it at the top (`block: "start"`), `false` at the bottom, or say where with
+   * `{ block, inline }` (`"start"`, `"center"`, `"end"` or `"nearest"`, which scrolls only
+   * as far as needed; `inline` defaults to `"nearest"`). `behavior` isn't supported:
+   * scrolling is instant.
+   */
+  scrollIntoView(arg: boolean | ScrollIntoViewOptions = true): void {
+    const { block = "start", inline = "nearest" } =
+      typeof arg === "boolean" ? { block: arg ? "start" : "end" } : arg;
+    op("scrollIntoView", this.id, block, inline);
   }
+}
+
+/** Where `scrollIntoView` puts an element, per axis (the DOM's `ScrollLogicalPosition`). */
+export type ScrollLogicalPosition = "start" | "center" | "end" | "nearest";
+
+export interface ScrollIntoViewOptions {
+  block?: ScrollLogicalPosition;
+  inline?: ScrollLogicalPosition;
+  /** Accepted for portability; scrolling is always instant. */
+  behavior?: "auto" | "instant" | "smooth";
 }
 
 export interface Container {

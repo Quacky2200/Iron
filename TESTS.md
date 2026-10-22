@@ -225,6 +225,7 @@ layout pass):
 | M3-EVT-06 | Integration + JS unit | Pointer capture needs a held button; while captured, moves and hover go to the capturer even over another element; the release goes to it and clicks it, then `lostpointercapture` and hover returns to what's under the pointer; capture ends on `releasePointerCapture`, removal and window blur; React sends the ops and `hasPointerCapture` follows the events. |
 | M3-EVT-05 | Integration + Golden | `overflow: hidden` clips children (including rounded clips); `overflow: scroll` scrolls with the wheel and keeps hit testing consistent with what's drawn. |
 | M3-EVT-07 | Integration | A span inside text is the target over its own characters (and in event paths, under its text); elsewhere, and over a `pointerEvents: none` span, the text element is hit. |
+| M3-EVT-08 | Integration + JS unit | `scrollIntoView` puts an element at the start, centre or end of each scroll container, or (`nearest`) scrolls only as far as needed and not at all when it's visible, clamped to the scroll range; `ref.scrollIntoView()` takes the DOM's arguments and defaults (`block: "start"`, `inline: "nearest"`; `false` is the end). |
 | M3-IME-01 | Integration | IME composition (pre-edit) text shows in a text field and the committed text is inserted; the candidate window is positioned at the caret. |
 | M3-BG-01 | Unit + Golden | `conic-gradient` (start angle, centre, angle/percentage stops, two-position stops) and the `repeating-` gradients parse, and render as a pie, repeating stripes and a rotated off-centre conic. |
 | M3-BG-02 | Unit + Golden | Background layer lists (images, clips, repeats, positions, `position-x/-y`) parse; `round`/`space` fit whole tiles; a content-box-clipped colour, two clipped layers, spaced tiles and gradient text (`background-clip: text`) render. |
@@ -367,6 +368,7 @@ layout pass):
 | M5-APP-02 | JS unit | `Application` and `SystemInfo` read `__iron_info` (defaults before it exists); `Application.quit()` is an op. |
 | M5-APP-04 | Unit | The log goes to `Player.log` in the game's settings folder (or `IRON_LOG_FILE`); the last run's is kept as `Player-prev.log`. |
 | M5-APP-11 | Unit + JS unit | Arguments after `--` on `iron`'s command line go to scripts as `Application.args` (Iron's own options before it still apply); a copy each read. |
+| M5-APP-12 | JS unit + Manual | `Application.quit(code)` sends `app.quit` with a whole exit code (0 by default) and `iron` exits with it (checked by hand: the md-reader's `--root` exits with 2). |
 | M5-APP-03 | Unit | `iron` without a game argument runs the current folder; the game folder may come before or after the options, and a second folder or an unknown option is an error. |
 | M5-APP-05 | Unit | winit's `Focused` and `Occluded` window events become `InputEvent::Focused` / `Occluded`. |
 | M5-APP-06 | Integration | Muting the mixer for the background silences everything and fades back to the scripts' master volume, including a master set while muted. |

@@ -46,7 +46,7 @@ use iron_render::{
     Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WindowSurface, WorldRenderer,
 };
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Clipboard, Input, Interaction, UiEvent, UiTree, events};
+use iron_ui::{Clipboard, Input, Interaction, ScrollAlign, UiEvent, UiTree, events};
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
@@ -115,6 +115,9 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
     Ok(parsed)
 }
 
+/// The process's exit code, set by `Application.quit(code)`.
+static EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
 pub(crate) fn main() -> Result<()> {
     logging::attach_console();
     // The editor's console shows the log from the start.
@@ -123,6 +126,10 @@ pub(crate) fn main() -> Result<()> {
     if let Err(e) = &result {
         // Into the log as well as stderr: a windowed program's stderr may go nowhere.
         tracing::error!("{e:#}");
+    }
+    let code = EXIT_CODE.load(std::sync::atomic::Ordering::Relaxed);
+    if result.is_ok() && code != 0 {
+        std::process::exit(code);
     }
     result
 }
@@ -1038,7 +1045,21 @@ impl App {
                         match op.name.as_str() {
                             "scrollTo" => Input::ScrollTo { id, x: a, y: b },
                             "scrollBy" => Input::ScrollBy { id, dx: a, dy: b },
-                            _ => Input::ScrollIntoView(id),
+                            // `scrollIntoView id block inline`; the DOM's defaults otherwise.
+                            _ => {
+                                let align = |i: usize, default| {
+                                    op.args
+                                        .get(i)
+                                        .and_then(iron_core::Value::as_str)
+                                        .and_then(ScrollAlign::parse)
+                                        .unwrap_or(default)
+                                };
+                                Input::ScrollIntoView {
+                                    id,
+                                    block: align(1, ScrollAlign::Start),
+                                    inline: align(2, ScrollAlign::Nearest),
+                                }
+                            }
                         },
                     );
                 }
@@ -1121,7 +1142,15 @@ impl App {
                         }
                     });
                 }
-                "app.quit" => self.done = true,
+                "app.quit" => {
+                    let code = op
+                        .args
+                        .first()
+                        .and_then(iron_core::Value::as_f64)
+                        .unwrap_or(0.0);
+                    EXIT_CODE.store(code as i32, std::sync::atomic::Ordering::Relaxed);
+                    self.done = true;
+                }
                 "app.targetFrameRate" => {
                     let rate = op.args.first().and_then(iron_core::Value::as_f64);
                     self.target_frame_rate = rate.map_or(-1, |r| r.round() as i32);

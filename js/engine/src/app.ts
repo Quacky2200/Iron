@@ -159,9 +159,9 @@ export const Application = {
       focusListeners.delete(f);
     };
   },
-  /** Closes the game after this frame. */
-  quit(): void {
-    __iron_op("app.quit");
+  /** Closes the game after this frame; `iron` exits with `exitCode` (0, success, by default). */
+  quit(exitCode = 0): void {
+    __iron_op("app.quit", Math.trunc(exitCode));
   },
 };
 

@@ -64,11 +64,16 @@ describe("Application and SystemInfo", () => {
     expect(Application.args).toEqual(["--goto", "a.md#b"]);
   });
 
-  test("quit is an op", () => {
+  // M5-APP-12
+  test("quit is an op, with an exit code", () => {
     const ops: unknown[][] = [];
     (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
     Application.quit();
-    expect(ops).toEqual([["app.quit"]]);
+    Application.quit(2.7);
+    expect(ops).toEqual([
+      ["app.quit", 0],
+      ["app.quit", 2],
+    ]);
   });
 });
 

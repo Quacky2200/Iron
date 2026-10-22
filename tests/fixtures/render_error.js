@@ -17201,8 +17201,9 @@ ${err.stack}` : ""}`);
     scrollBy(dx, dy) {
       op("scrollBy", this.id, dx, dy);
     }
-    scrollIntoView() {
-      op("scrollIntoView", this.id);
+    scrollIntoView(arg = true) {
+      const { block = "start", inline = "nearest" } = typeof arg === "boolean" ? { block: arg ? "start" : "end" } : arg;
+      op("scrollIntoView", this.id, block, inline);
     }
   }
   var pointerCapture = { element: null };

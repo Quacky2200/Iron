@@ -34,7 +34,7 @@ pub use draw::{
     Rect, ShadowShape, TextCmd, TextDecoration,
 };
 pub use events::{EventKind, Pointer, ScrollInfo, UiEvent};
-pub use interaction::{Clipboard, Direction, Input, Interaction};
+pub use interaction::{Clipboard, Direction, Input, Interaction, ScrollAlign};
 pub use layout::{LayoutEngine, NodeLayout, TaffyLayout};
 pub use paint::{
     BackgroundClip, BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,

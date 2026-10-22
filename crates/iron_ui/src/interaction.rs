@@ -22,6 +22,49 @@ pub const SCROLL_LINE: f32 = 40.0;
 /// Page Up / Page Down scroll this fraction of the visible height.
 pub const SCROLL_PAGE: f32 = 0.875;
 
+/// Where [`Input::ScrollIntoView`] puts an element in a scroll container, per axis (the
+/// DOM's `ScrollLogicalPosition`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollAlign {
+    /// Its start edge at the container's start.
+    Start,
+    /// Centred.
+    Center,
+    /// Its end edge at the container's end.
+    End,
+    /// Only as far as needed to show it (its start edge when it's bigger than the view);
+    /// not at all when it's already visible.
+    #[default]
+    Nearest,
+}
+
+impl ScrollAlign {
+    /// `"start"`, `"center"`, `"end"` or `"nearest"`.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "start" => Self::Start,
+            "center" => Self::Center,
+            "end" => Self::End,
+            "nearest" => Self::Nearest,
+            _ => return None,
+        })
+    }
+
+    /// How far to scroll so an item at `start` (length `len`) lands here in a view at
+    /// `view_start` (length `view_len`).
+    fn delta(self, start: f32, len: f32, view_start: f32, view_len: f32) -> f32 {
+        let (end, view_end) = (start + len, view_start + view_len);
+        match self {
+            Self::Start => start - view_start,
+            Self::End => end - view_end,
+            Self::Center => (start + len / 2.0) - (view_start + view_len / 2.0),
+            Self::Nearest if start < view_start => start - view_start,
+            Self::Nearest if end > view_end => (end - view_end).min(start - view_start),
+            Self::Nearest => 0.0,
+        }
+    }
+}
+
 /// One input for [`Interaction::handle`]. Positions and deltas are logical pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
@@ -88,8 +131,13 @@ pub enum Input {
         dx: f32,
         dy: f32,
     },
-    /// `ref.scrollIntoView()` from a script.
-    ScrollIntoView(NodeId),
+    /// `ref.scrollIntoView(...)` from a script: where the element ends up in each of its
+    /// scroll containers, vertically (`block`) and horizontally (`inline`).
+    ScrollIntoView {
+        id: NodeId,
+        block: ScrollAlign,
+        inline: ScrollAlign,
+    },
     /// `ref.setPointerCapture()` / `releasePointerCapture()` from a script.
     SetPointerCapture(NodeId),
     ReleasePointerCapture(NodeId),
@@ -361,7 +409,13 @@ impl Interaction {
                     let next = tab_target(tree, self.focused, self.modifiers.shift);
                     if let Some(id) = next {
                         self.set_focus(tree, next, true, dispatch);
-                        self.scroll_into_view(tree, id, dispatch);
+                        self.scroll_into_view(
+                            tree,
+                            id,
+                            ScrollAlign::Nearest,
+                            ScrollAlign::Nearest,
+                            dispatch,
+                        );
                     }
                 } else {
                     self.key_scroll(tree, &key, dispatch);
@@ -388,7 +442,13 @@ impl Interaction {
                 if focusable(tree, id) {
                     let visible = self.keyboard;
                     self.set_focus(tree, Some(id), visible, dispatch);
-                    self.scroll_into_view(tree, id, dispatch);
+                    self.scroll_into_view(
+                        tree,
+                        id,
+                        ScrollAlign::Nearest,
+                        ScrollAlign::Nearest,
+                        dispatch,
+                    );
                 }
             }
             Input::ScrollTo { id, x, y } => {
@@ -398,7 +458,9 @@ impl Interaction {
                 let (x, y) = tree.scroll_offset(id);
                 self.scroll(tree, id, x + dx, y + dy, false, dispatch);
             }
-            Input::ScrollIntoView(id) => self.scroll_into_view(tree, id, dispatch),
+            Input::ScrollIntoView { id, block, inline } => {
+                self.scroll_into_view(tree, id, block, inline, dispatch)
+            }
             Input::SetPointerCapture(id) => send(self.pointer.set_capture(tree, id), dispatch),
             Input::ReleasePointerCapture(id) => {
                 send(self.pointer.release_capture(tree, id), dispatch)
@@ -423,7 +485,13 @@ impl Interaction {
                 if let Some(next) = nearest_in_direction(tree, from, direction) {
                     self.keyboard = true;
                     self.set_focus(tree, Some(next), true, dispatch);
-                    self.scroll_into_view(tree, next, dispatch);
+                    self.scroll_into_view(
+                        tree,
+                        next,
+                        ScrollAlign::Nearest,
+                        ScrollAlign::Nearest,
+                        dispatch,
+                    );
                 }
             }
             Input::Activate => {
@@ -651,12 +719,14 @@ impl Interaction {
         }
     }
 
-    /// Scrolls `id`'s scroll containers (innermost first) just enough to show it,
-    /// keeping its start edge visible when it's bigger than the container.
+    /// Scrolls `id`'s scroll containers (innermost first) to put it at `block` vertically
+    /// and `inline` horizontally (clamped to what each can scroll).
     fn scroll_into_view(
         &mut self,
         tree: &mut UiTree,
         id: NodeId,
+        block: ScrollAlign,
+        inline: ScrollAlign,
         dispatch: &mut dyn FnMut(&UiEvent) -> bool,
     ) {
         tree.layout_if_needed();
@@ -668,18 +738,8 @@ impl Interaction {
             let (Some(target), Some(view)) = (tree.rect(id), tree.padding_box(container)) else {
                 continue;
             };
-            let delta = |start: f32, len: f32, view_start: f32, view_len: f32| {
-                let (end, view_end) = (start + len, view_start + view_len);
-                if start < view_start {
-                    start - view_start
-                } else if end > view_end {
-                    (end - view_end).min(start - view_start)
-                } else {
-                    0.0
-                }
-            };
-            let dx = delta(target.x, target.width, view.x, view.width);
-            let dy = delta(target.y, target.height, view.y, view.height);
+            let dx = inline.delta(target.x, target.width, view.x, view.width);
+            let dy = block.delta(target.y, target.height, view.y, view.height);
             if dx != 0.0 || dy != 0.0 {
                 let (x, y) = tree.scroll_offset(container);
                 self.scroll(tree, container, x + dx, y + dy, false, dispatch);

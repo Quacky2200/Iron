@@ -8,7 +8,7 @@ use common::{Dom, n, op, px};
 use iron_core::{Commit, NodeId};
 use iron_ui::events::Modifiers;
 use iron_ui::opcodes::{REMOVE_CHILD, SET_ATTRS};
-use iron_ui::{DrawCmd, Input, Interaction, Rect, UiEvent, UiTree};
+use iron_ui::{DrawCmd, Input, Interaction, Rect, ScrollAlign, UiEvent, UiTree};
 
 struct Rec {
     events: Vec<UiEvent>,
@@ -384,11 +384,64 @@ fn scripts_scroll_with_scroll_to_by_and_into_view() {
         },
     );
     assert_eq!(tree.scroll_offset(scroller), (0.0, 50.0));
-    handle(&mut ui, &mut tree, &mut rec, Input::ScrollIntoView(rows[5]));
+    let nearest = |id| Input::ScrollIntoView {
+        id,
+        block: ScrollAlign::Nearest,
+        inline: ScrollAlign::Nearest,
+    };
+    handle(&mut ui, &mut tree, &mut rec, nearest(rows[5]));
     assert_eq!(tree.scroll_offset(scroller), (0.0, 200.0));
     rec.names();
-    handle(&mut ui, &mut tree, &mut rec, Input::ScrollIntoView(rows[5]));
+    handle(&mut ui, &mut tree, &mut rec, nearest(rows[5]));
     assert!(rec.names().is_empty(), "already visible: no scroll event");
+}
+
+// M3-EVT-08
+#[test]
+fn scroll_into_view_aligns_to_start_center_end_or_nearest() {
+    // A 100px scroller of 50px rows: row 2 spans 100..150.
+    let (mut tree, scroller, rows) = list("hidden", 6);
+    let mut ui = Interaction::new();
+    let mut rec = Rec::new();
+    let mut place = |tree: &mut UiTree, from: f32, block: ScrollAlign| {
+        tree.scroll_to(scroller, 0.0, from, false);
+        let input = Input::ScrollIntoView {
+            id: rows[2],
+            block,
+            inline: ScrollAlign::Nearest,
+        };
+        handle(&mut ui, tree, &mut rec, input);
+        tree.scroll_offset(scroller).1
+    };
+    assert_eq!(place(&mut tree, 0.0, ScrollAlign::Start), 100.0);
+    assert_eq!(place(&mut tree, 0.0, ScrollAlign::End), 50.0);
+    assert_eq!(place(&mut tree, 0.0, ScrollAlign::Center), 75.0);
+    assert_eq!(
+        place(&mut tree, 0.0, ScrollAlign::Nearest),
+        50.0,
+        "from above: its end"
+    );
+    assert_eq!(
+        place(&mut tree, 200.0, ScrollAlign::Nearest),
+        100.0,
+        "from below: its start"
+    );
+    assert_eq!(
+        place(&mut tree, 80.0, ScrollAlign::Nearest),
+        80.0,
+        "visible: stays"
+    );
+    // Clamped: the last row can't reach the top.
+    tree.scroll_to(scroller, 0.0, 0.0, false);
+    let input = Input::ScrollIntoView {
+        id: rows[5],
+        block: ScrollAlign::Start,
+        inline: ScrollAlign::Nearest,
+    };
+    handle(&mut ui, &mut tree, &mut rec, input);
+    assert_eq!(tree.scroll_offset(scroller), (0.0, 200.0));
+    assert_eq!(ScrollAlign::parse("center"), Some(ScrollAlign::Center));
+    assert_eq!(ScrollAlign::parse("middle"), None);
 }
 
 fn quads(tree: &mut UiTree) -> Vec<Rect> {
