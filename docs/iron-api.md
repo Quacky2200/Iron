@@ -482,7 +482,7 @@ draws, the app reads per-thread registries and a command queue. **No change to `
 - **Differences from the TypeScript.** `RenderSettings.skybox = { .. }` is the `sky...` properties; `Cursor.setCursor(texture)` takes a
   path only. `Material` is mutable (a shared handle, like Unity's `sharedMaterial`; `with(..)` is
   `copy()`); `Texture.load` mipmaps / linear given as their defaults let the importer decide; `RenderTexture` is a `Texture`
-  (`createRenderTexture`, `isRenderTexture`); `whenLoaded()` promises are not there (read `isLoaded`); `Sprite.create(texture, ppu?)`
+  (`createRenderTexture`, `isRenderTexture`); `whenLoaded()` is a facade promise (polled each frame; rejects when loading failed); `Sprite.create(texture, ppu?)`
   with `pivot` / `setRect(..)` setters and `Sprite.gridCell(texture, columns, rows, index)` instead of `grid`; a `SkinnedMeshRenderer` is not
   found by `getComponent(MeshRenderer)`; arrays of objects are `addBone(b)` / `addLod(..)` style calls (`bones`, `lods`, `points`);
   `Mirror.normal` has a `hasNormal` flag; `specularColor = null` is `clearSpecularColor()`; enum-like strings (`Light.type`) ignore

@@ -1586,3 +1586,35 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2891 | Integration | A closure inside a closure in a top-level initialiser shares the outer closure's locals. |
 | M9-TS-2892 | Unit | An error after a multi-line JSX element is reported at its own line. |
 | M9-TS-2893 | Unit | A comment naming a facade trigger does not pull in a chunk written over a class the program's engine API lacks. |
+| M9-API-1512 | Integration | `await SceneManager.loadSceneAsync(path, mode)` in a compiled game resolves with the `Scene` (its `path` is set) in the tick that read the file; code after the await runs in that tick (`native.rs`). |
+| M9-API-1513 | Integration | `loadSceneAsync` rejects with an `Error` for a missing file, a file that is not a scene and a path outside the game folder; an `async onStart()` can await it (`native.rs`). |
+| M9-API-1514 | Integration | A component awaiting a delay in an object that is destroyed meanwhile continues after the await; writing to the dead object does nothing (GC stress, `native.rs`). |
+| M9-API-1515 | Integration | An `async () => {..}` JSX handler (`onClick`) awaits a microtask and a `Task.delay` and the state it sets re-renders (`native.rs`). |
+| M9-API-1516 | Integration | A hot reload drops the old code's timers and awaits (`ts_rt_events_clear`): only the new code's own wait fires (`native.rs`). |
+| M9-API-1517 | Integration | `Prefab.load(path)` resolves with the prefab (instantiable) and rejects for a missing file (`native.rs`). |
+| M9-TS-2894 | Integration | A compiled `answer` handler may be `async` (`Promise<R>`): the reply goes out when the promise resolves, a rejection fails the asker's `ask` with the error's message (`tests/windows.rs`). |
+| M9-TS-2895 | Integration | A compiled raw `onRequest` handler may be `async`: it replies later, and a rejection before the reply fails the `request`. |
+| M9-TS-2896 | Integration | In QuickJS async `answer` and `onRequest` handlers reply when resolved and reject to the asker (`Window.replyError`). |
+| M9-TS-2897 | Integration | `async function load<T>(x: T): Promise<T>` and `load<number>(3)` / `load(true)` (bun-compared, `bench/promises2_cases.ts`, normal, GC stress, GC off). |
+| M9-TS-2898 | Integration | `async function wrap<T>(f: () => T): Promise<T>`: `T` inferred from a closure's result (bun-compared). |
+| M9-TS-2899 | Integration | `Promise<T[]>` from a generic function (bun-compared). |
+| M9-TS-2900 | Integration | `Promise<Map<string, T>>` from a generic function when `Promise<Map<string, number>>` is written once (bun-compared). |
+| M9-TS-2901 | Integration | `function delay<T>(ms, v: T): Promise<T>` with `new Promise<T>(..)` and `setTimeout` (bun-compared). |
+| M9-TS-2902 | Integration | Generic `retry<T>(f: () => Promise<T>)`: `T` inferred from a promise-returning closure; `try`/`catch` around `await` in a loop (bun-compared). |
+| M9-TS-2903 | Integration | `function twice<T>(p: Promise<T>): Promise<T[]>` with `.then` on a generic promise (bun-compared). |
+| M9-TS-2904 | Integration | Generic `each<T, U>(xs, f): Promise<U[]>` over `Promise.all(xs.map(f))` (bun-compared). |
+| M9-TS-2905 | Integration | `class Box<T>` holding a `Promise<T>` and an async method returning `Promise<T>` (bun-compared). |
+| M9-TS-2906 | Integration | A generic function promising a program class (inferred and written `<Foo>`): the promise class exists for every declared class once a generic promise is written (bun-compared). |
+| M9-TS-2907 | Integration | A recursive generic async function (bun-compared). |
+| M9-TS-2908 | Integration | Async methods keep `this` across awaits (bun-compared). |
+| M9-TS-2909 | Integration | Promises of interfaces (object literal result) and of `T \| null` (bun-compared). |
+| M9-TS-2910 | Integration | `await` in `try`, `catch` and `finally` blocks (bun-compared). |
+| M9-TS-2911 | Integration | `for await (const x of ..)` over an array of promises and over plain values, with `continue` / `break` (bun-compared). |
+| M9-TS-2912 | Integration | `Promise.withResolvers<T>()` (value, `void`, rejection; bun-compared). |
+| M9-TS-2913 | Integration | `await` of a plain value, of an async IIFE, of `Promise.resolve()` and `Promise.resolve("literal")` (bun-compared). |
+| M9-TS-2914 | Integration | Timers, `Promise.all` and `Promise.race` inside async code (bun-compared). |
+| M9-TS-2915 | Integration | `catch`, `finally` and `allSettled` over rejections (bun-compared). |
+| M9-TS-2916 | Integration | An unhandled rejection is reported once, after the microtask queue drained, as a level-4 console line with the error's `name: message`, and the program goes on. |
+| M9-TS-2917 | Integration | A rejection handled in the same drain is not reported; a `then` chain reports only its last promise. |
+| M9-TS-2918 | Integration | An exception escaping a `setTimeout` or `queueMicrotask` callback is reported and the other timers still run. |
+| M9-TS-2919 | Integration | Clear compile errors: `Promise.all` of promises of different types, top-level `await`, `Promise<Promise<T>>`, async generators, a generic promise of a type no `Promise<..>` names (alias). |

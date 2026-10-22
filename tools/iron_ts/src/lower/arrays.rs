@@ -148,6 +148,17 @@ impl<'a> Lowerer<'a> {
                 {
                     self.cur.ret = Some(v.ty.clone().nullable());
                 }
+                // A callback typed to return nothing may return a value (`onClick={async () => ..}`
+                // makes a promise): it is evaluated and dropped, as in TypeScript.
+                if self.cur.ret == Some(Ty::Void)
+                    && !self.cur.ret_inferred
+                    && !self.cur.bare_returns
+                    && v.ty != Ty::Void
+                {
+                    out.push(Stmt::Eval(v));
+                    out.push(Stmt::Return(None));
+                    return Ok(());
+                }
                 let v = match self.cur.ret.clone() {
                     Some(t) => self.coerce(v, &t)?,
                     None => {

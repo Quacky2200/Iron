@@ -51,9 +51,27 @@ pub struct SceneInfo {
 /// Something the game may want to react to; read with [`take_events`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum SceneEvent {
-    Loaded { scene: u32, additive: bool },
-    Unloaded { scene: u32 },
-    ActiveChanged { previous: u32, next: u32 },
+    Loaded {
+        scene: u32,
+        additive: bool,
+    },
+    Unloaded {
+        scene: u32,
+    },
+    ActiveChanged {
+        previous: u32,
+        next: u32,
+    },
+    /// A scene or prefab file could not be read or parsed (`loadSceneAsync` / `Prefab.load` reject).
+    LoadFailed {
+        path: String,
+        error: String,
+    },
+    /// A prefab file asked for with [`request_prefab`] was read.
+    PrefabLoaded {
+        path: String,
+        prefab: u32,
+    },
 }
 
 struct Prefab {
@@ -72,6 +90,9 @@ struct State {
     on_loaded: Listeners<(HandleArg<SceneRef>, String)>,
     on_unloaded: Listeners<(HandleArg<SceneRef>,)>,
     on_active: Listeners<(HandleArg<SceneRef>, HandleArg<SceneRef>)>,
+    on_load_failed: Listeners<(String, String)>,
+    on_prefab_loaded: Listeners<(String, HandleArg<PrefabRef>)>,
+    prefab_requests: Vec<(u64, String)>,
     requests: Vec<(u64, String, bool)>,
     next_request: u64,
     prefabs: Vec<Prefab>,
@@ -98,6 +119,9 @@ impl State {
             on_loaded: Listeners::default(),
             on_unloaded: Listeners::default(),
             on_active: Listeners::default(),
+            on_load_failed: Listeners::default(),
+            on_prefab_loaded: Listeners::default(),
+            prefab_requests: Vec::new(),
             requests: Vec::new(),
             next_request: 1,
             prefabs: Vec::new(),
@@ -182,12 +206,14 @@ pub fn set_active(scene: u32) -> bool {
 /// Gives the events since the last call to the script listeners (after the world is consistent,
 /// so a listener may call back into the manager).
 pub fn dispatch() {
-    let (events, loaded, unloaded, active) = st(|s| {
+    let (events, loaded, unloaded, active, failed, prefabs) = st(|s| {
         (
             std::mem::take(&mut s.pending),
             s.on_loaded.snapshot(),
             s.on_unloaded.snapshot(),
             s.on_active.snapshot(),
+            s.on_load_failed.snapshot(),
+            s.on_prefab_loaded.snapshot(),
         )
     });
     for e in events {
@@ -197,6 +223,10 @@ pub fn dispatch() {
                 emit(&loaded, (HandleArg(SceneRef(scene)), mode.to_string()));
             }
             SceneEvent::Unloaded { scene } => emit(&unloaded, (HandleArg(SceneRef(scene)),)),
+            SceneEvent::LoadFailed { path, error } => emit(&failed, (path, error)),
+            SceneEvent::PrefabLoaded { path, prefab } => {
+                emit(&prefabs, (path, HandleArg(PrefabRef(prefab))))
+            }
             SceneEvent::ActiveChanged { previous, next } => emit(
                 &active,
                 (HandleArg(SceneRef(previous)), HandleArg(SceneRef(next))),
@@ -218,9 +248,25 @@ pub fn on_active_changed(f: iron_api::Callback<(HandleArg<SceneRef>, HandleArg<S
     st(|s| s.on_active.add(f))
 }
 
+/// Calls `f(path, error)` when a scene file asked for with [`request_load`] fails to load.
+pub fn on_load_failed(f: iron_api::Callback<(String, String)>) -> u32 {
+    st(|s| s.on_load_failed.add(f))
+}
+
+/// Calls `f(path, prefab)` when a prefab file asked for with [`request_prefab`] was read.
+pub fn on_prefab_loaded(f: iron_api::Callback<(String, HandleArg<PrefabRef>)>) -> u32 {
+    st(|s| s.on_prefab_loaded.add(f))
+}
+
 /// Removes a listener by its token; false when it is unknown.
 pub fn off(token: u32) -> bool {
-    st(|s| s.on_loaded.remove(token) | s.on_unloaded.remove(token) | s.on_active.remove(token))
+    st(|s| {
+        s.on_loaded.remove(token)
+            | s.on_unloaded.remove(token)
+            | s.on_active.remove(token)
+            | s.on_load_failed.remove(token)
+            | s.on_prefab_loaded.remove(token)
+    })
 }
 
 /// A new empty scene, loaded alongside the others (0 if the name is taken).
@@ -319,6 +365,12 @@ fn unload(scene: u32) {
 /// Loads scene data (text). `additive` adds it to the loaded scenes; otherwise every other scene
 /// is unloaded first (not the objects kept with [`dont_destroy_on_load`]) and it becomes active.
 pub fn load_scene(text: &str, additive: bool) -> Result<u32, String> {
+    load_scene_from(text, additive, None)
+}
+
+/// As [`load_scene`], remembering the file the text came from before the listeners run (they
+/// match a `loadSceneAsync` by `path`).
+fn load_scene_from(text: &str, additive: bool, path: Option<String>) -> Result<u32, String> {
     sync();
     let data: Value = serde_json::from_str(text).map_err(|e| format!("not a scene: {e}"))?;
     if data.get("format").and_then(Value::as_str) != Some("iron.scene") {
@@ -339,7 +391,7 @@ pub fn load_scene(text: &str, additive: bool) -> Result<u32, String> {
         s.scenes.push(SceneInfo {
             handle,
             name: name.to_owned(),
-            path: None,
+            path,
             render_settings: data.get("renderSettings").cloned(),
         });
         (handle, old)
@@ -429,6 +481,66 @@ pub fn take_load_requests() -> Vec<(u64, String)> {
     st(|s| s.requests.iter().map(|(i, p, _)| (*i, p.clone())).collect())
 }
 
+/// Asks the host to read a prefab file (`Prefab.load`); the host calls [`finish_prefab`].
+pub fn request_prefab(path: &str) -> u64 {
+    st(|s| {
+        let id = s.next_request;
+        s.next_request += 1;
+        s.prefab_requests.push((id, path.to_owned()));
+        id
+    })
+}
+
+/// The prefab files the script asked for, as (request id, path).
+pub fn take_prefab_requests() -> Vec<(u64, String)> {
+    st(|s| s.prefab_requests.clone())
+}
+
+/// The host read the file of a prefab request (`text`), or could not (`Err`): the listeners hear
+/// the prefab or the failure.
+pub fn finish_prefab(id: u64, text: Result<&str, &str>) -> Result<u32, String> {
+    let path = st(|s| {
+        let i = s.prefab_requests.iter().position(|r| r.0 == id)?;
+        Some(s.prefab_requests.remove(i).1)
+    })
+    .ok_or_else(|| format!("no prefab request {id}"))?;
+    match text
+        .map_err(str::to_owned)
+        .and_then(|t| prefab_from_data(t, Some(&path)))
+    {
+        Ok(prefab) => {
+            st(|s| s.push(SceneEvent::PrefabLoaded { path, prefab }));
+            dispatch();
+            Ok(prefab)
+        }
+        Err(e) => {
+            fail(&path, &e);
+            Err(e)
+        }
+    }
+}
+
+/// The host could not read the file of a request: the listeners of [`on_load_failed`] hear it.
+pub fn fail_load(id: u64, error: &str) {
+    let path = st(|s| {
+        let i = s.requests.iter().position(|r| r.0 == id)?;
+        Some(s.requests.remove(i).1)
+    });
+    if let Some(path) = path {
+        fail(&path, error);
+    }
+}
+
+fn fail(path: &str, error: &str) {
+    st(|s| {
+        s.push(SceneEvent::LoadFailed {
+            path: path.to_owned(),
+            error: error.to_owned(),
+        })
+    });
+    dispatch();
+}
+
 /// The host read the file of a request: the scene loads (the new scene's handle).
 pub fn finish_load(id: u64, text: &str) -> Result<u32, String> {
     let (path, additive) = st(|s| {
@@ -437,12 +549,13 @@ pub fn finish_load(id: u64, text: &str) -> Result<u32, String> {
         Some((r.1, r.2))
     })
     .ok_or_else(|| format!("no load request {id}"))?;
-    let handle = load_scene(text, additive)?;
-    st(|s| {
-        if let Some(i) = s.scenes.iter_mut().find(|i| i.handle == handle) {
-            i.path = Some(path);
+    let handle = match load_scene_from(text, additive, Some(path.clone())) {
+        Ok(h) => h,
+        Err(e) => {
+            fail(&path, &e);
+            return Err(e);
         }
-    });
+    };
     Ok(handle)
 }
 

@@ -1,0 +1,21 @@
+{
+ "generic_identity": "3strue",
+ "generic_closure_result": "5five",
+ "generic_array_result": "3,3|ab,ab",
+ "generic_map_result": "71",
+ "generic_delay": "42x",
+ "generic_retry": "3:never",
+ "generic_then_chain": "2-2/z-z",
+ "generic_all_map": "2,4,6|n4,n5",
+ "generic_class_with_promise": "7s",
+ "generic_with_class_value": "2",
+ "generic_recursive": "30",
+ "class_async_methods": "132:r1r2",
+ "interface_and_union_results": "4p1null",
+ "try_catch_finally_with_awaits": "cxftg",
+ "for_await_array_of_promises": "13,10,20",
+ "with_resolvers": "5no",
+ "awaiting_values_and_iifes": "5:6:c",
+ "timers_order_inside_async": "abcbcayy",
+ "rejection_paths": "bad1Frejectedfulfilled-1-2"
+}

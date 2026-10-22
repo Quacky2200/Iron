@@ -153,7 +153,7 @@ Next, in order:
      - [ ] Lightweight data: generate a baked ICU4X data crate for the main-market locale list with `icu4x-datagen` and use it instead of `compiled_data` (today every locale is linked: large binary). Keep the per-game locale list from `package.json` as the accept list.
      - [ ] (optional, LATER; the user said to ignore it for now, 2026-10-19) `icu-full` cargo feature of `iron_ts_rt` (off by default): backend `rust_icu`/ICU4C for exact `availableFormats` (`udatpg_getBestPattern` via `rust_icu_sys`), all locales, calendars, `formatToParts`, `formatRange`. First a spike: build `rust_icu_sys` + `rust_icu_udat` on this Windows machine against a source-built ICU 77 (static, versioned symbols, `icu-config`, bindgen/LLVM); see the note for the prerequisites. Decide after the spike whether I1/I2 (collator, NumberFormat) also get an `icu-full` path.
    - Done (2026-10-19): `Symbol()` values (a prelude class `Symbol_`: identity, `description`, `toString`, `Symbol.for`/`keyFor`, `typeof`; `M9-TS-394..398`), `generator.throw()`, `return(v)` running `finally` blocks (a marker error that user `catch` blocks rethrow), `return value` (`Generator<T, T>`) (`M9-TS-399..407`). Not done: symbols as property keys or Map keys, other well-known symbols as values, `yield*` as a value, untyped generators.
-  - Done (2026-10-19): `Promise<T>`, `async`/`await`, `new Promise<T>(...)`, `.then/.catch/.finally`, `Promise.resolve/reject/all/race/any/allSettled`, `then(f, g)`, `queueMicrotask`, `setTimeout/setInterval/clear*` on stackful coroutines with the microtask and timer queues in the runtime (`event.rs`), bun-compared tick order (`M9-TS-408..430`). Host contract: call `ts_rt_microtasks_run()` after every call into script and `ts_rt_timers_advance(now_ms)` once per frame (`ts_rt_run_loop()` for tests). Not done: `for await`/async iterators, async generators, top-level `await`, awaiting a thenable that is not a Promise, a `Promise<A | B>`, `Promise.reject` typed from context, `setTimeout` extra arguments, unhandled-rejection reports, wiring the host loop in `iron_app` (off limits).
+  - Done (2026-10-19): `Promise<T>`, `async`/`await`, `new Promise<T>(...)`, `.then/.catch/.finally`, `Promise.resolve/reject/all/race/any/allSettled`, `then(f, g)`, `queueMicrotask`, `setTimeout/setInterval/clear*` on stackful coroutines with the microtask and timer queues in the runtime (`event.rs`), bun-compared tick order (`M9-TS-408..430`). Host contract: call `ts_rt_microtasks_run()` after every call into script and `ts_rt_timers_advance(now_ms)` once per frame (`ts_rt_run_loop()` for tests). Not done: async iterators and async generators, top-level `await`, awaiting a thenable that is not a Promise, a `Promise<A | B>` (a union as the value type of a *written* `Promise<>` works for `T | null`), `Promise.reject` typed from context, `setTimeout` extra arguments. Done 2026-10-22: generic promises, `for await` over arrays, `Promise.withResolvers`, unhandled-rejection reports, the host loop in `iron_app` (see 'Promises audit').
   - Done (2026-10-19): `ArrayBuffer`, `DataView`, `new Float32Array(buffer, offset, length)`, `subarray`, `.buffer`, `.byteOffset` as views sharing memory (`HDR_VIEW`, `M9-TS-431..441`). `.buffer` of an owning array makes a new `ArrayBuffer` object each time (same memory, not `===`). Not done: `SharedArrayBuffer`, resizable buffers, `BigInt64Array`, `DataView` BigInt accessors, `Atomics`, transfer, passing buffers across the engine boundary (needs `iron_app`).
   - Done (2026-10-19): bytes across the engine boundary in the runtime (`ts_rt_typed_from_host_gc`, `ts_rt_typed_data`, `ts_rt_typed_byte_len`; the generated Rust bindings for exported functions with typed-array parameters are not done), `structuredClone` (`clone.rs`, no Map/Set/cycles, class instances keep their class), `WeakRef<T>` for program classes (strong), `WeakMap`/`WeakSet` (strong; already there) (`M9-TS-442..455`). Not done: `FinalizationRegistry`, `globalThis`, real weak references.
   - Done (2026-10-19): `Intl.Segmenter` (grapheme, word, sentence; `intl_segment.rs`), `Intl.Locale` (parts, extension keywords, options, maximize/minimize; `intl_locale.rs`), `Intl.DisplayNames` for region, script and language (`intl_names.rs`) (`M9-TS-456..479`). Differences: `"und"` maximizes to `en-Latn-US` by a special case, CLDR names can differ from bun's (`zh-Hans` is "Simplified Mandarin Chinese"), `isWordLike` is false for non-word granularities (undefined in JS), DisplayNames types currency/calendar/dateTimeField are not built, `fallback: "none"` is not built. Not done: `formatToParts`, `formatRange`, `resolvedOptions`, `Intl.supportedValuesOf`, `Intl.getCanonicalLocales`.
@@ -371,12 +371,12 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 
 **Library / API gaps that forced rewrites**
 - [ ] `input.gamepads()` / `input.on("gamepadconnected", ..)` as in QuickJS (form uses `gamepadCount()` / `gamepadName(i)` instead).
-- [ ] `await SceneManager.loadSceneAsync(..)` returns a number, not a promise.
+- [x] `await SceneManager.loadSceneAsync(..)` returns a promise (a facade over the native token form `loadSceneAsync$n`; it was there since the facade work but never rejected and hung because `Scene.path` was set after `onSceneLoaded` ran; fixed 2026-10-22, `M9-API-1512/1513`). `Prefab.load(path)` too (`M9-API-1517`).
 - [ ] `UiTarget.type` needs the host to set a resolver (`iron_ts_ui::set_target_kind_resolver`).
 - [ ] Scene-file keys for fog and exposure (QuickJS `scenes.ts` saves them; `iron_scenes` does not).
 - [ ] `Light.measureIlluminance` answers at once instead of after the next physics tick.
 - [ ] `Mesh.createFlat` needs all four lists (positions, triangles, normals, uv); allow a partial data object.
-- [ ] `answer` handlers cannot return a promise.
+- [x] `answer` handlers (and raw `onRequest` handlers) may return a promise: the reply goes out when it resolves, a rejection fails the asker (`M9-TS-2894..2896`).
 - [ ] Facade chunk triggers for `.on(` / `.emit(` also pull the helpers into programs using those names on their own classes (generic, unused): tighten the triggers.
 - [ ] A local typed as a string-literal union assigned from an optional field of the same type (`let mode: M = "auto"; if (o.mode !== undefined) mode = o.mode;`) panics Cranelift (`declared type of variable .. doesn't match`); also with `as M` and with a `const` copy.
 - [ ] `Partial<T>` (the examples write an options interface); `Pick<T, K>`; `ReturnType<typeof f>`.
@@ -385,3 +385,39 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [ ] `Map.get` / `Set` over engine handles as values (box them in a class); `.pop()` over handle arrays; `indexOf` over object arrays.
 - [ ] Line numbers in errors from facade chunks and from code appended after the user's source point past the file.
 - [ ] Facade chunk classes (`Spline`, `SplineAnimate`) are not `@property` aware (no scene saving, no hot-reload state).
+
+## Promises audit (2026-10-22)
+
+Every async or promise-returning API of `js/engine/src` against the compiled tier (`iron_engine_api`,
+`iron_scenes`, `facade.ts`, `engine_ts.d.ts`). "Facade" = a promise written in TypeScript over native
+callbacks in `tools/iron_ts/src/lower/facade.ts`.
+
+| API (QuickJS tier) | Where | Compiled tier before | Now |
+|---|---|---|---|
+| `SceneManager.loadSceneAsync(path \| data, mode): Promise<Scene>` | `scenes.ts` | Facade promise, but it never rejected and never resolved for files loaded by the host (`Scene.path` was set after `onSceneLoaded`) | Resolves in the tick that read the file, rejects with an `Error` (missing, bad JSON, outside the folder); `M9-API-1512/1513` |
+| `Prefab.load(path): Promise<Prefab>` (cached per path) | `scenes.ts` | Missing (only `Prefab.fromData`) | Facade over `SceneManager.loadPrefabAsync` + `onPrefabLoaded`; no per-path cache; `M9-API-1517` |
+| `Texture.whenLoaded()`, `Model.whenLoaded()` | `textures.ts`, `models.ts` | Facade polling every frame, resolved also when loading failed | Rejects with an `Error` when failed (QuickJS rejects with the source in the message) |
+| `physics.raycast(origin, dir, max): Promise<RayHit \| null>` (after the next tick) | `physics.ts` | `Physics.raycast` answers at once (`HitRef`) | Unchanged on purpose: a different shape, no promise to return |
+| `Physics2D.raycast` (async) | `physics2d.ts` | sync like the 3D one | Unchanged (same) |
+| `Light.measureIlluminance(point, normal?): Promise<number>` | `rendering.ts` | Facade promise, answers at once | Unchanged (resolves in the next microtask; the QuickJS one waits for the physics tick) |
+| `Task.delay`, `delaySeconds`, `frame` | `clock.ts` | Prelude class over `setTimeout` | Unchanged |
+| `Window.request`, `Window.ask` | `window.ts` | Facade promise per reply type | Unchanged |
+| `Window.answer(name, f)`, `onRequest(f)` handlers | `window.ts` | A returned promise was serialised as JSON | An async handler replies when it resolves and rejects the asker on failure (`..P` facade, `Window.replyError`) |
+| `setTimeout`/`setInterval`/`queueMicrotask` | prelude | Existed; an exception in a callback vanished | Reported (`Uncaught exception in a timer or microtask`) |
+| Unhandled promise rejection | none (silent) | Silent | Logged once as an error after the microtask drain |
+| `audio` `onEnded`, `input.on`, `Assets.onChanged`, `Application.onFocusChanged`, scene events | `audio.ts` etc. | Closures (`Callback`) | Unchanged (callbacks, not promises) |
+| `fetch`, `WebSocket`, file reads | none yet | none | M6 (Script IO) |
+| `AbortController` / `AbortSignal` | none in either tier | none | Not implemented (report only) |
+
+Behaviours checked 2026-10-22 (all with GC stress where it applies):
+
+- Top-level `await` in the entry module: compile error `top-level await is not supported: put the code in an async function main()`.
+- `async onStart()` / `onUpdate` etc.: work (the component hooks return a promise that is dropped; a rejection is reported as unhandled). `M9-API-1513`.
+- Async JSX handlers (`onClick={async () => ..}`): work; a callback typed to return nothing may return a value (it is evaluated and dropped). `M9-API-1515`.
+- `for await (const x of xs)` over arrays/iterables: works (rewritten). Async generators, `AsyncGenerator`, `Symbol.asyncIterator`: compile error naming async generators.
+- `await` inside `try`/`catch`/`finally`: works (`M9-TS-2910`).
+- `Promise.withResolvers<T>()`: works (not inside generic code).
+- `await new Promise(r => setTimeout(r, ms))` with `resolve` passed as the callback: works (`setTimeout` takes `(arg?: number) => void`).
+- Hot reload: pending timers and awaits of the old code are dropped (`ts_rt_events_clear`); the new code starts its own. `M9-API-1516`. (Before, an old timer fired into the new world.)
+- A component destroyed while it awaits: the coroutine continues (no cancellation, JavaScript semantics), engine calls on the dead object are no-ops; check `go.exists()`. `M9-API-1514`.
+- Generics: `load<T>(): Promise<T>`, `Promise<T[]>`, `Promise<Map<string, T>>` (when `Promise<Map<string, number>>` is written once), generic async classes and recursion, `T` inferred from `Promise<T>` parameters and promise-returning closures: work. Still failing, each with a message: `Promise.all([a, b])` over different value types (a tuple), `Promise<Promise<T>>`, `Promise<Alias>` where the alias is never written in a `Promise<..>` (`the program never writes Promise<..>`), `Promise.withResolvers` inside generic code, generic *methods* (`map<U>(..)` in a class: "generic methods are not built").

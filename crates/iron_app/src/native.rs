@@ -276,8 +276,8 @@ impl Native {
             let result = match text {
                 Ok(text) => iron_scenes::finish_load(id, &text),
                 Err(e) => {
-                    // Drops the request.
-                    let _ = iron_scenes::finish_load(id, "");
+                    // Drops the request; `loadSceneAsync` rejects.
+                    iron_scenes::fail_load(id, &e);
                     Err(e)
                 }
             };
@@ -286,6 +286,21 @@ impl Native {
             }
             for w in iron_scenes::take_warnings() {
                 tracing::warn!(target: "script", "scene `{path}`: {w}");
+            }
+        }
+        for (id, path) in iron_scenes::take_prefab_requests() {
+            let text = self
+                .root
+                .as_deref()
+                .and_then(|root| iron_core::resolve_asset(root, &path))
+                .ok_or_else(|| "must be a relative path inside the game folder".to_string())
+                .and_then(|file| std::fs::read_to_string(&file).map_err(|e| e.to_string()));
+            let result = match &text {
+                Ok(text) => iron_scenes::finish_prefab(id, Ok(text)),
+                Err(e) => iron_scenes::finish_prefab(id, Err(e)),
+            };
+            if let Err(e) = result {
+                tracing::error!(target: "script", "loading prefab `{path}`: {e}");
             }
         }
     }
@@ -347,6 +362,8 @@ impl Native {
         self.load_requested_scenes();
         // Scene events reach the program's listeners once the world is consistent.
         iron_scenes::dispatch();
+        // A `loadSceneAsync` promise settled by that dispatch continues in this tick.
+        ts_rt_microtasks_run();
         log_faults(self.host.settle());
         // `createRoot(win)`: the main window is the screen; other windows get their root from the app.
         let mut mounts: Vec<(u64, u64)> = iron_ts_ui::take_mounts();
@@ -586,6 +603,8 @@ impl Native {
         super::native_render::reconfigure();
         iron_physics_api::reset();
         iron_scenes::reset();
+        // Timers and awaits of the old code would run it against the new world.
+        iron_ts_rt::ts_rt_events_clear();
         *scene = Scene::new();
         self.game = game;
         self.generation = generation;
@@ -1131,6 +1150,212 @@ mod tests {
             iron_engine_api::assets::changed(["a.png".to_string()]);
         });
         assert_eq!(scene.local(go).unwrap().scale.x, 5.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M9-API-1512
+    #[test]
+    fn load_scene_async_is_a_promise_that_resolves_with_the_scene_in_the_tick_it_loads() {
+        let dir = std::env::temp_dir().join(format!("iron-native-await-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("lvl.scene.json"),
+            r#"{"format":"iron.scene","version":1,"name":"Second","objects":[]}"#,
+        )
+        .unwrap();
+        let (mut n, mut scene, mut ui) = start(
+            "async function go(o: GameObject): Promise<void> {
+               const s = await SceneManager.loadSceneAsync(\"lvl.scene.json\", \"additive\");
+               o.transform.localPosition = new Vector3(s.name === \"Second\" ? 4 : 5, SceneManager.sceneCount, 0);
+             }
+             class Loader extends Component {
+               onStart(): void {
+                 go(this.gameObject!);
+               }
+             }
+             register(Loader);",
+        );
+        n.set_root(&dir);
+        let go = scene.find("Loader").unwrap();
+        // The scene loads in the tick that asked for it, and the awaiting code runs in that tick.
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        assert_eq!(scene.local(go).unwrap().position.x, 4.0);
+        assert_eq!(scene.local(go).unwrap().position.y, 2.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M9-API-1513
+    #[test]
+    fn load_scene_async_rejects_with_an_error_for_a_missing_file_and_a_bad_one() {
+        let dir = std::env::temp_dir().join(format!("iron-native-reject-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bad.scene.json"), "not json").unwrap();
+        let (mut n, mut scene, mut ui) = start(
+            "async function go(o: GameObject): Promise<void> {
+               let seen = 0;
+               try { await SceneManager.loadSceneAsync(\"missing.scene.json\"); } catch (e) { seen += 1; }
+               try { await SceneManager.loadSceneAsync(\"bad.scene.json\"); } catch (e) { seen += 10; }
+               try { await SceneManager.loadSceneAsync(\"../outside.scene.json\"); } catch (e) { seen += 100; }
+               o.transform.localPosition = new Vector3(seen, 0, 0);
+             }
+             class Loader extends Component {
+               async onStart(): Promise<void> {
+                 await go(this.gameObject!);
+               }
+             }
+             register(Loader);",
+        );
+        n.set_root(&dir);
+        let go = scene.find("Loader").unwrap();
+        // Each failed read rejects in the tick that found it; the awaiting code continues there
+        // and asks for the next file, which the following tick reads.
+        for _ in 0..4 {
+            n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        }
+        assert_eq!(scene.local(go).unwrap().position.x, 111.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M9-API-1514
+    #[test]
+    fn code_awaiting_in_a_destroyed_object_runs_on_without_touching_freed_memory() {
+        // Garbage collection at every allocation, poisoned: a dangling pointer would show.
+        iron_ts_rt::ts_rt_gc_stress(true);
+        let (mut n, mut scene, mut ui) = start(
+            "class Probe extends Component {}
+             class Victim extends Component {
+               async onStart(): Promise<void> {
+                 const me = this.gameObject!;
+                 const probe = GameObject.findObjectOfType(Probe)!.gameObject!;
+                 await Task.delay(30);
+                 me.transform.localPosition = new Vector3(5, 0, 0);
+                 probe.transform.localPosition = new Vector3(me.exists() ? 1 : 2, 0, 0);
+               }
+             }
+             class Killer extends Component {
+               onStart(): void {
+                 const v = GameObject.findObjectOfType(Victim)!.gameObject!;
+                 setTimeout(() => { v.destroy(); }, 10);
+               }
+             }
+             register(Probe);
+             register(Victim);
+             register(Killer);",
+        );
+        let probe = scene.find("Probe").unwrap();
+        for (i, now) in [0.0, 16.0, 32.0, 48.0, 64.0].into_iter().enumerate() {
+            n.frame(&mut scene, &mut ui, 0.016, now);
+            if i == 0 {
+                assert!(scene.find("Victim").is_some());
+            }
+        }
+        assert!(scene.find("Victim").is_none(), "destroyed while it awaited");
+        // The code after the await ran, saw its object gone (`exists()`), and writing to the
+        // dead object did nothing.
+        assert_eq!(scene.local(probe).unwrap().position.x, 2.0);
+        iron_ts_rt::ts_rt_gc_stress(false);
+    }
+
+    // M9-API-1515
+    #[test]
+    fn an_async_event_handler_continues_after_its_await_and_the_ui_updates() {
+        let (mut n, mut scene, mut ui) = start(
+            "function Counter(): UiElement {
+               const [n, setN] = useState(0);
+               return (
+                 <box style={{ width: 100 }} onClick={async () => {
+                   await Promise.resolve();
+                   await Task.delay(5);
+                   setN(n + 10);
+                 }}>
+                   <text>{\"n=\" + n}</text>
+                 </box>
+               );
+             }
+             function boot(): number {
+               UiRoot.mount(0, <Counter />);
+               return 0;
+             }
+             const booted = boot();",
+        );
+        assert_eq!(dump(&ui, ROOT), "root(box(text(text:n=0)))");
+        let target = ui.children(ROOT)[0];
+        let click = UiEvent::new(EventKind::Click, vec![target], Modifiers::default());
+        n.ui_events(&mut scene, &mut ui, &[click]);
+        assert_eq!(
+            dump(&ui, ROOT),
+            "root(box(text(text:n=0)))",
+            "still waiting"
+        );
+        n.frame(&mut scene, &mut ui, 0.016, 1.0);
+        n.frame(&mut scene, &mut ui, 0.016, 20.0);
+        assert_eq!(dump(&ui, ROOT), "root(box(text(text:n=10)))");
+    }
+
+    // M9-API-1516
+    #[test]
+    fn a_reload_drops_the_timers_and_awaits_of_the_old_code() {
+        let game = "class Late extends Component {
+               async onStart(): Promise<void> {
+                 await Task.delay(100);
+                 Application.targetFrameRate = RATE;
+               }
+             }
+             register(Late);";
+        let (mut n, mut scene, mut ui) = start(&game.replace("RATE", "77"));
+        n.frame(&mut scene, &mut ui, 0.016, 0.0);
+        n.frame(&mut scene, &mut ui, 0.016, 50.0);
+        assert!(iron_engine_api::app::take_requests().is_empty());
+        n.reload(bundle(&game.replace("RATE", "88")), &mut scene, &mut ui)
+            .expect("reloads");
+        // The old await would set 77 at 100 ms; the new code starts its own wait at its first frame.
+        n.frame(&mut scene, &mut ui, 0.016, 60.0);
+        n.frame(&mut scene, &mut ui, 0.016, 120.0);
+        n.frame(&mut scene, &mut ui, 0.016, 300.0);
+        let rates: Vec<_> = iron_engine_api::app::take_requests()
+            .into_iter()
+            .filter_map(|r| match r {
+                iron_engine_api::app::Request::TargetFrameRate(r) => Some(r),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rates, [88]);
+    }
+
+    // M9-API-1517
+    #[test]
+    fn prefab_load_is_a_promise_of_the_prefab_and_rejects_for_a_missing_file() {
+        let dir = std::env::temp_dir().join(format!("iron-native-prefab-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("thing.prefab.json"),
+            r#"{"format":"iron.prefab","version":1,"name":"Thing","root":{"id":1,"name":"Made"}}"#,
+        )
+        .unwrap();
+        let (mut n, mut scene, mut ui) = start(
+            "async function go(): Promise<void> {
+               const p = await Prefab.load(\"thing.prefab.json\");
+               GameObject.instantiate(p, { position: new Vector3(3, 0, 0) });
+               try {
+                 await Prefab.load(\"nope.prefab.json\");
+               } catch (e) {
+                 new GameObject(\"Failed\");
+               }
+             }
+             class Loader extends Component {
+               onStart(): void {
+                 go();
+               }
+             }
+             register(Loader);",
+        );
+        n.set_root(&dir);
+        for i in 0..4 {
+            n.frame(&mut scene, &mut ui, 0.016, 16.0 * f64::from(i));
+        }
+        let made = scene.find("Made").expect("the prefab was instantiated");
+        assert_eq!(scene.local(made).unwrap().position.x, 3.0);
+        assert!(scene.find("Failed").is_some(), "the missing file rejected");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

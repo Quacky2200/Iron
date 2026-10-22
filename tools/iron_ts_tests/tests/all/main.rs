@@ -58,6 +58,7 @@ mod physics;
 mod physics_comp;
 mod prefs;
 mod promises;
+mod promises2;
 mod props;
 mod random;
 mod regexp;

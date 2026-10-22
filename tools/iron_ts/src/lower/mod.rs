@@ -321,6 +321,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         || !async_templates.is_empty()
         || wants_temporal
         || prelude::wanted(src)
+        || prelude::wants_timers(src)
         || prelude::wants_regexp(src)
         || prelude::wants_date(src)
         || prelude::wants_intl(src)

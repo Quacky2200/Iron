@@ -106,6 +106,10 @@ declare namespace SceneManager {
   function onSceneUnloaded(fn: (scene: Scene) => void): () => void;
   function onActiveSceneChanged(fn: (from: Scene, to: Scene) => void): () => void;
 }
+declare namespace Prefab {
+  /** Reads a prefab file (JSON) from the game folder; rejects when it is missing or not a prefab. */
+  function load(path: string): Promise<Prefab>;
+}
 
 // ---- Rendering ---------------------------------------------------------------------------------
 

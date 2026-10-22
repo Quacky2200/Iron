@@ -264,32 +264,66 @@ function __sprite_make(texture: Texture, rect: Rect | null, pivot: Vector2 | und
 
 //# when loadSceneAsync
 function __xt_SceneManager_loadSceneAsync(path: string, mode?: string): Promise<Scene> {
-  return new Promise<Scene>((resolve) => {
-    let token = 0;
-    token = SceneManager.onSceneLoaded$n((scene: Scene, m: string) => {
+  return new Promise<Scene>((resolve, reject) => {
+    let loaded = 0;
+    let failed = 0;
+    loaded = SceneManager.onSceneLoaded$n((scene: Scene, m: string) => {
       if (scene.path === path) {
-        SceneManager.offSceneEvent(token);
+        SceneManager.offSceneEvent(loaded);
+        SceneManager.offSceneEvent(failed);
         resolve(scene);
+      }
+    });
+    failed = SceneManager.onSceneLoadFailed((p: string, error: string) => {
+      if (p === path) {
+        SceneManager.offSceneEvent(loaded);
+        SceneManager.offSceneEvent(failed);
+        reject(new Error("could not load scene " + path + ": " + error));
       }
     });
     SceneManager.loadSceneAsync$n(path, mode ?? "single");
   });
 }
 
-//# when whenLoaded
-function __poll_texture(self: Texture, resolve: (v: Texture) => void): void {
-  if (self.isLoaded || self.failed) resolve(self);
-  else setTimeout(() => { __poll_texture(self, resolve); }, 0);
+//# when Prefab.load
+function __xt_Prefab_load(path: string): Promise<Prefab> {
+  return new Promise<Prefab>((resolve, reject) => {
+    let loaded = 0;
+    let failed = 0;
+    loaded = SceneManager.onPrefabLoaded((p: string, prefab: Prefab) => {
+      if (p === path) {
+        SceneManager.offSceneEvent(loaded);
+        SceneManager.offSceneEvent(failed);
+        resolve(prefab);
+      }
+    });
+    failed = SceneManager.onSceneLoadFailed((p: string, error: string) => {
+      if (p === path) {
+        SceneManager.offSceneEvent(loaded);
+        SceneManager.offSceneEvent(failed);
+        reject(new Error("could not load prefab " + path + ": " + error));
+      }
+    });
+    SceneManager.loadPrefabAsync(path);
+  });
 }
-function __poll_model(self: Model, resolve: (v: Model) => void): void {
-  if (self.isLoaded || self.failed) resolve(self);
-  else setTimeout(() => { __poll_model(self, resolve); }, 0);
+
+//# when whenLoaded
+function __poll_texture(self: Texture, resolve: (v: Texture) => void, reject: (e: Error) => void): void {
+  if (self.failed) reject(new Error("texture failed to load"));
+  else if (self.isLoaded) resolve(self);
+  else setTimeout(() => { __poll_texture(self, resolve, reject); }, 0);
+}
+function __poll_model(self: Model, resolve: (v: Model) => void, reject: (e: Error) => void): void {
+  if (self.failed) reject(new Error("model failed to load"));
+  else if (self.isLoaded) resolve(self);
+  else setTimeout(() => { __poll_model(self, resolve, reject); }, 0);
 }
 function __xm_Texture_whenLoaded(self: Texture): Promise<Texture> {
-  return new Promise<Texture>((resolve) => { __poll_texture(self, resolve); });
+  return new Promise<Texture>((resolve, reject) => { __poll_texture(self, resolve, reject); });
 }
 function __xm_Model_whenLoaded(self: Model): Promise<Model> {
-  return new Promise<Model>((resolve) => { __poll_model(self, resolve); });
+  return new Promise<Model>((resolve, reject) => { __poll_model(self, resolve, reject); });
 }
 
 //# when .serialize()
@@ -501,12 +535,21 @@ function __xm_Window_onMessage<T>(self: Window, f: (from: Window, data: T) => vo
     f(from, data);
   });
 }
-function __xm_Window_onRequest<T, R>(self: Window, f: (from: Window, data: T, reply: (answer: R) => void) => void): number {
+function __xm_Window_onRequest<T, R, U = number>(self: Window, f: (from: Window, data: T, reply: (answer: R) => void) => U): number {
   return self.onRequestJson((from: Window, text: string, id: number) => {
     const data: T = JSON.parse(text);
     f(from, data, (answer: R) => {
       Window.replyJson(id, JSON.stringify(answer));
     });
+  });
+}
+// An async handler (it returns a promise, found by the compiler): a rejection fails the asker's promise.
+function __xm_Window_onRequestP<T, R>(self: Window, f: (from: Window, data: T, reply: (answer: R) => void) => Promise<void>): number {
+  return self.onRequestJson((from: Window, text: string, id: number) => {
+    const data: T = JSON.parse(text);
+    f(from, data, (answer: R) => {
+      Window.replyJson(id, JSON.stringify(answer));
+    }).then(() => {}, (e: Error) => { Window.replyError(id, e.message); });
   });
 }
 function __xt_Window_onMessage<T>(f: (from: Window, data: T) => void): number {
@@ -515,12 +558,20 @@ function __xt_Window_onMessage<T>(f: (from: Window, data: T) => void): number {
     f(from, data);
   });
 }
-function __xt_Window_onRequest<T, R>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number {
+function __xt_Window_onRequest<T, R, U = number>(f: (from: Window, data: T, reply: (answer: R) => void) => U): number {
   return Window.onRequestJson((from: Window, text: string, id: number) => {
     const data: T = JSON.parse(text);
     f(from, data, (answer: R) => {
       Window.replyJson(id, JSON.stringify(answer));
     });
+  });
+}
+function __xt_Window_onRequestP<T, R>(f: (from: Window, data: T, reply: (answer: R) => void) => Promise<void>): number {
+  return Window.onRequestJson((from: Window, text: string, id: number) => {
+    const data: T = JSON.parse(text);
+    f(from, data, (answer: R) => {
+      Window.replyJson(id, JSON.stringify(answer));
+    }).then(() => {}, (e: Error) => { Window.replyError(id, e.message); });
   });
 }
 function __xt_Window_broadcast<T>(data: T): number {
@@ -562,6 +613,25 @@ function __xm_Window_answer<T, R>(self: Window, name: string, f: (payload: T, fr
     const data: T = JSON.parse(body === "" ? "null" : body);
     const answer: R = f(data, from);
     Window.replyJson(id, JSON.stringify(answer));
+  });
+}
+// An async handler (it returns a promise, found by the compiler): the reply is sent when it resolves, a
+// rejection fails the asker's promise with the error's message.
+function __xm_Window_answerP<T, R>(self: Window, name: string, f: (payload: T, from: Window) => Promise<R>): number {
+  if (name === "") throw new Error("Window event names must not be empty");
+  return self.onAnswerJson(name, (from: Window, body: string, id: number) => {
+    const data: T = JSON.parse(body === "" ? "null" : body);
+    f(data, from).then((answer: R) => {
+      Window.replyJson(id, JSON.stringify(answer));
+    }, (e: Error) => { Window.replyError(id, e.message); });
+  });
+}
+function __xm_Window_answer0P<R>(self: Window, name: string, f: () => Promise<R>): number {
+  if (name === "") throw new Error("Window event names must not be empty");
+  return self.onAnswerJson(name, (from: Window, body: string, id: number) => {
+    f().then((answer: R) => {
+      Window.replyJson(id, JSON.stringify(answer));
+    }, (e: Error) => { Window.replyError(id, e.message); });
   });
 }
 // A handler without parameters (`win.on("ping", () => ..)`): there is no payload type to decode.

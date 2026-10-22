@@ -23,6 +23,8 @@ struct Timer {
 pub(crate) struct Events {
     /// Closure and the domain current when it was queued.
     micro: VecDeque<(*mut u8, u32)>,
+    /// Run when the microtask queue has drained (the unhandled-rejection check).
+    after: VecDeque<(*mut u8, u32)>,
     timers: Vec<Timer>,
     now: f64,
     next_id: u64,
@@ -33,6 +35,7 @@ impl Events {
     pub(crate) const fn new() -> Self {
         Events {
             micro: VecDeque::new(),
+            after: VecDeque::new(),
             timers: Vec::new(),
             now: 0.0,
             next_id: 1,
@@ -45,6 +48,7 @@ impl Events {
         self.micro
             .iter()
             .map(|(c, _)| c)
+            .chain(self.after.iter().map(|(c, _)| c))
             .chain(self.timers.iter().map(|t| &t.closure))
     }
 }
@@ -116,10 +120,28 @@ pub unsafe extern "C" fn ts_rt_microtask_push(closure: *mut Closure) {
     with_heap(|h| h.events.micro.push_back((closure as *mut u8, domain)));
 }
 
-/// Runs the microtasks until the queue is empty (jobs may queue more).
+/// Runs `closure` once the microtask queue has drained (before `ts_rt_microtasks_run` returns).
+///
+/// # Safety
+/// `closure` must be a live `() => void` closure.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_after_microtasks(closure: *mut Closure) {
+    let domain = (hooks().current)();
+    with_heap(|h| h.events.after.push_back((closure as *mut u8, domain)));
+}
+
+/// Runs the microtasks until the queue is empty (jobs may queue more), then the closures
+/// registered with [`ts_rt_after_microtasks`], which may queue more jobs.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_microtasks_run() {
-    while let Some((job, domain)) = with_heap(|h| h.events.micro.pop_front()) {
+    loop {
+        let next = with_heap(|h| {
+            h.events
+                .micro
+                .pop_front()
+                .or_else(|| h.events.after.pop_front())
+        });
+        let Some((job, domain)) = next else { break };
         // The job is no longer in the queue, so keep it reachable while it runs.
         with_heap(|h| h.temps.push(job));
         let hk = hooks();
@@ -251,6 +273,18 @@ pub extern "C" fn ts_rt_run_loop() {
         let Some(due) = next else { break };
         advance(due, None, false);
     }
+}
+
+/// Forgets every waiting microtask, after-hook and timer (a hot reload: they hold the closures of
+/// the program being replaced, and must not run its code against the new world). Suspended
+/// coroutines that only they referenced are collected as garbage.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rt_events_clear() {
+    with_heap(|h| {
+        h.events.micro.clear();
+        h.events.after.clear();
+        h.events.timers.clear();
+    });
 }
 
 /// How many timers and microtasks are waiting.

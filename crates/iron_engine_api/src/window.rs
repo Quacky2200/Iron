@@ -1392,8 +1392,14 @@ pub const QUICKJS_PRELUDE: &str = r#"
   };
   const def = (target, name, value) =>
     Object.defineProperty(target, name, { value, configurable: true, writable: true });
-  const requestListener = (f) => (from, text, id) =>
-    f(from, JSON.parse(text), (answer) => { W.replyJson(id, toJson(answer)); });
+  const errorText = (e) => (e instanceof Error ? e.message : String(e));
+  // A handler may be async: its rejection fails the asker's promise (unless it replied already).
+  const requestListener = (f) => (from, text, id) => {
+    const r = f(from, JSON.parse(text), (answer) => { W.replyJson(id, toJson(answer)); });
+    if (r !== null && typeof r === 'object' && typeof r.then === 'function') {
+      r.then(undefined, (e) => { W.replyError(id, errorText(e)); });
+    }
+  };
 
   Object.defineProperty(W.prototype, 'openError', {
     get() { const t = this.openErrorText; return t === '' ? null : t; },
@@ -1434,6 +1440,14 @@ pub const QUICKJS_PRELUDE: &str = r#"
     eventHead(name);
     return this.onAnswerJson(name, (from, body, id) => {
       const answer = f(decode(body), from);
+      // An async handler replies when its promise resolves; a rejection fails the asker's promise.
+      if (answer !== null && typeof answer === 'object' && typeof answer.then === 'function') {
+        answer.then(
+          (v) => { W.replyJson(id, toJson(v === undefined ? null : v)); },
+          (e) => { W.replyError(id, errorText(e)); },
+        );
+        return;
+      }
       W.replyJson(id, toJson(answer === undefined ? null : answer));
     });
   });
@@ -1826,6 +1840,20 @@ pub mod window_api {
                 });
                 true
             })
+        }
+
+        /// Fails request `request` (once; later calls are false): the sender's promise rejects with
+        /// an `Error` carrying `error`. For an async handler whose promise rejected.
+        pub fn reply_error(request: f64, error: &str) -> bool {
+            if request.is_nan() || request < 1.0 {
+                return false;
+            }
+            let id = request as u64;
+            if with(|s| s.pending.get(&id).is_none_or(|p| p.replied)) {
+                return false;
+            }
+            reject(id, error);
+            true
         }
 
         /// Posts JSON text to the root window of every other family. Returns how many were queued.

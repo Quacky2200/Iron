@@ -228,6 +228,13 @@ impl<'a> Lowerer<'a> {
                     ("Set" | "ReadonlySet" | "WeakSet", Ty::Set(k)) if args.len() == 1 => {
                         self.unify_ann(args[0], k, tps, out, what)
                     }
+                    // `Promise<T>` against a promise class: T is its value type.
+                    ("Promise", Ty::Obj(_)) if args.len() == 1 => {
+                        match self.promise_of(actual.strip()) {
+                            Some((_, value)) => self.unify_ann(args[0], &value, tps, out, what),
+                            None => Ok(()),
+                        }
+                    }
                     (_, Ty::Obj(sid)) => {
                         // A specialised class, interface or alias: match the arguments in order.
                         let Some((base, targs)) = self.targs_of_struct.get(sid).cloned() else {

@@ -406,9 +406,10 @@ pub fn wants_task(src: &str) -> bool {
 }
 
 /// `setTimeout` and friends over the runtime's timers (`iron_ts_rt/src/event.rs`).
-pub const TIMERS: &str = r#"function queueMicrotask(callback: () => void): void { __queueMicrotask(callback); }
-function setTimeout(callback: () => void, ms: number = 0): number { return __timerAdd(callback, ms, false); }
-function setInterval(callback: () => void, ms: number = 0): number { return __timerAdd(callback, ms, true); }
+pub const TIMERS: &str = r#"function __uncaught(e: Error): void { console.error("Uncaught exception in a timer or microtask: " + e.toString()); }
+function queueMicrotask(callback: () => void): void { __queueMicrotask(() => { try { callback(); } catch (e) { __uncaught(e as Error); } }); }
+function setTimeout(callback: (arg?: number) => void, ms: number = 0): number { return __timerAdd(() => { try { callback(undefined); } catch (e) { __uncaught(e as Error); } }, ms, false); }
+function setInterval(callback: (arg?: number) => void, ms: number = 0): number { return __timerAdd(() => { try { callback(undefined); } catch (e) { __uncaught(e as Error); } }, ms, true); }
 function clearTimeout(id: number): void { __timerClear(id); }
 function clearInterval(id: number): void { __timerClear(id); }
 "#;

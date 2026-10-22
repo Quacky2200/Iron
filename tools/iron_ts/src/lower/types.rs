@@ -207,7 +207,14 @@ impl<'a> Lowerer<'a> {
                     }
                     "Promise" if !args.is_empty() => {
                         let sp = oxc_span::GetSpan::span(args[0]);
-                        let key = asyncs::key(&self.src[sp.start as usize..sp.end as usize]);
+                        let text = &self.src[sp.start as usize..sp.end as usize];
+                        let key = if self.mentions_tparam(text) {
+                            // `Promise<T>` inside `f<T>`: the class of this specialisation's T.
+                            let at = self.loc(sp.start);
+                            self.generic_promise_key(args[0], &at)?
+                        } else {
+                            asyncs::key(text)
+                        };
                         self.named_type(&format!("Promise${key}"))?
                     }
                     // `Generator<T>`, `Iterator<T>`, `IteratorResult<T>`: the classes written per type.
@@ -428,6 +435,14 @@ impl<'a> Lowerer<'a> {
     }
 
     /// An interface or alias by name, resolved once.
+    /// Whether a written type names a type parameter of the specialisation being lowered.
+    pub(crate) fn mentions_tparam(&self, text: &str) -> bool {
+        !self.tenv.is_empty()
+            && text
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+                .any(|w| self.tenv.contains_key(w))
+    }
+
     pub(crate) fn named_type(&mut self, name: &str) -> R<Ty> {
         if let Some(t) = self.named.get(name) {
             return Ok(t.clone());

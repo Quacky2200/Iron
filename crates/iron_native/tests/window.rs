@@ -407,3 +407,23 @@ fn quickjs_events_and_raw_messages_are_separate_layers() {
         assert_eq!(out, "ask named|request raw|no answer for \"nope\"");
     });
 }
+
+// M9-TS-2896
+#[test]
+fn quickjs_async_answer_and_request_handlers_reply_when_resolved_and_reject_to_the_asker() {
+    with_world(|ctx| {
+        let _: () = js(
+            ctx,
+            "globalThis.out = [];             globalThis.iso = Window.create({ title: 'Inspector' });             iso.answer('double', async (n) => { await null; return n * 2; });             iso.answer('boom', async (n) => { await null; throw new Error('boom ' + n); });             iso.onRequest(async (from, r, reply) => { await null; if (r.k < 0) throw new Error('negative'); reply(r.k + 1); });             iso.ask('double', 21).then((r) => out.push('double ' + r));             iso.ask('boom', 5).catch((e) => out.push('boom ' + e.message));             iso.request({ k: 1 }).then((r) => out.push('request ' + r));             iso.request({ k: -1 }).catch((e) => out.push('request ' + e.message));",
+        );
+        // The handlers run on delivery and finish in later jobs; the replies travel back after.
+        for t in 0..4 {
+            window::deliver(window::DomainId(2), f64::from(t));
+            run_jobs(ctx);
+            window::deliver(window::DomainId::MAIN, f64::from(t) + 0.5);
+            run_jobs(ctx);
+        }
+        let out: String = js(ctx, "out.sort().join('|')");
+        assert_eq!(out, "boom boom 5|double 42|request 2|request negative");
+    });
+}

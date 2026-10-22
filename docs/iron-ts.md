@@ -732,6 +732,16 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   ...) by [lower/asyncs.rs](../tools/iron_ts/src/lower/asyncs.rs). `void` shares `number`'s class;
   `number`, `string` and `boolean` always exist; `T[]` too when `Promise.all` appears. A `Promise<T>` needs
   `T` written somewhere in the program, and awaiting needs the value's `Promise<T>` class to exist.
+- **Generic promises.** `async function load<T>(x: T): Promise<T>`, `new Promise<T>(..)`, `Promise<T[]>` and
+  a `class Box<T>` holding a `Promise<T>` work: the rewrite emits `__asyncG<T>(..)` / `__newPromiseG<T>(..)`
+  (and annotates the coroutine's `__p: Promise<T>`) for a type that mentions a type parameter, and the
+  lowerer resolves the class per specialisation (`generic_promise_key`: the promise class whose value type
+  is the specialised `T`). `T` is inferred from `Promise<T>` parameters (`unify_ann`) and from closures
+  that return promises. A promise class must exist for the specialised type: once a generic promise is
+  written, every non-generic class and interface the program declares, `number[]`, `string[]` and
+  `boolean[]` get one; other types (a type alias, `Map<..>`, an array of aliases) need a
+  `Promise<that type>` written once, otherwise the error says `the program never writes Promise<..>`.
+  Generic *methods* are still not built (a method of a generic class is fine).
 - **`async` rewrite** (`asyncs::desugar`, after the generator rewrite and before parsing). An `async`
   function, method or arrow becomes `__async$K((__p) => { ... })`, a coroutine closure; `return x` becomes
   `__asyncRet$K(__p, x)`, `await e` becomes `__await(e)` (the coroutine suspends and a reaction on the
@@ -743,7 +753,32 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 - **Microtasks and timers** ([iron_ts_rt/src/event.rs](../tools/iron_ts_rt/src/event.rs)). A FIFO microtask
   queue (`queueMicrotask`, promise reactions) and timers (`setTimeout`, `setInterval`, `clearTimeout`,
   `clearInterval`); no thread and no OS event loop. Timers run on virtual time and are at least 1 ms, like
-  browsers. Queued closures and timers are GC roots. An exception escaping a queued job is dropped.
+  browsers. Queued closures and timers are GC roots. `ts_rt_after_microtasks(f)` runs `f` once the queue
+  has drained (the rejection check). `setTimeout(callback, ms)` takes `(arg?: number) => void`, so
+  `new Promise<void>((resolve) => setTimeout(resolve, 100))` works.
+- **Unhandled rejections.** A promise that rejects with no reaction is tracked (`__Rej` in the
+  prelude); a reaction attached before the microtask queue drains marks it handled; the rest are reported
+  once, after the drain, with `console.error("Unhandled promise rejection: <name>: <message> (..)")`
+  (level 4: `iron_app` logs it as an error). The program goes on. A `then` chain reports its last promise
+  only. There is no stack (Error has none yet). An exception escaping a `setTimeout` / `setInterval` /
+  `queueMicrotask` callback is reported the same way (`Uncaught exception in a timer or microtask: ..`) and
+  the other jobs still run.
+- **Hot reload and destroyed objects.** A reload drops every pending microtask and timer (the old code's
+  awaits never continue; `ts_rt_events_clear`). An await in a component whose object was destroyed
+  continues normally (JavaScript semantics, there is no cancellation): the component and what it holds stay
+  alive until the coroutine ends, and engine calls on the dead object are no-ops or defaults (checked under
+  GC stress, M9-API-1514). After an await check `this.gameObject!.exists()` (the handle itself stays), or keep a flag that
+  `onDestroy` clears.
+- **Engine promises.** `SceneManager.loadSceneAsync(path, mode)` and `Prefab.load(path)` resolve in the tick
+  that read the file and reject with an `Error` (missing file, not a scene, path outside the game folder);
+  `Texture.whenLoaded()` / `Model.whenLoaded()` resolve when loaded and reject when loading failed;
+  `Task.delay` / `delaySeconds` / `frame`; `Window.request` / `ask`; `Light.measureIlluminance`. The
+  native forms (`loadSceneAsync$n`, `onSceneLoaded`, `onPrefabLoaded`, `onSceneLoadFailed`) are what the
+  facade promises are written over.
+- **Window handlers.** `answer(name, async (..) => ..)` and an `async` raw `onRequest` handler are
+  allowed: the compiler finds the handler's promise type (`async_variant` in `facade.rs`) and uses the
+  `..P` facade, which replies when the promise resolves and fails the asker's promise with the error's
+  message (`Window.replyError`) when it rejects.
 - **Host contract.** After every call into script the host calls `ts_rt_microtasks_run()`; once per frame it
   calls `ts_rt_timers_advance(now_ms)` with the game clock (a paused game pauses its timers);
   `ts_rt_run_loop()` runs both until nothing is left (tests and tools). `ts_rt_events_pending()` reports
@@ -755,14 +790,22 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   after the rewrites; `IRON_TS_TRACE=1` prints function names during codegen; parse errors give the line
   (counting the prelude).
 - **Limits:** `then(f, g)` needs both callbacks to return the same kind of result; `Promise.allSettled` results are `PromiseSettledResult<T>` objects with all of `status`/`value`/`reason`;
-  no `for await`, async generators or top-level `await`; `Promise.reject(e)` is `Promise<number>` unless
-  written `Promise.reject<T>(e)`; `resolve()` with no value only for `Promise<void>` / `Promise<number>`;
-  `resolve(v)` takes a value, not a promise; unhandled rejections are silent; `setTimeout` takes no extra
-  arguments; `Promise<Promise<T>>` is unsupported. See [differences.md](differences.md).
+  `for await` works over arrays and other sync iterables (each element is awaited; it is rewritten to a
+  `for..of` plus `await`); async generators, `Symbol.asyncIterator` and `AsyncGenerator` are compile errors;
+  top-level `await` is a compile error (`put the code in an async function main()`); `Promise.reject(e)` is
+  `Promise<number>` unless written `Promise.reject<T>(e)`; `resolve()` with no value only for
+  `Promise<void>` / `Promise<number>`; `resolve(v)` takes a value, not a promise; `setTimeout` takes no
+  extra arguments; `Promise<Promise<T>>` is a compile error (write `Promise<T>`); `Promise.all([a, b])`
+  over promises of different value types (a tuple result) is a compile error (await each one);
+  `Promise.withResolvers<T>()` needs its type written and is not available inside generic code;
+  `AbortController` / `AbortSignal` do not exist. See [differences.md](differences.md).
 - **Callback literals.** A callback that returns a string literal is typed `string` (inferred callback return types
   widen literals).
 - Tests: `M9-TS-408..427` (`bench/promises.ts` with `tests/promises.rs`, bun-compared; the source is
-  generated from `bench/promises_src.ts` by `gen_promises_program.py`).
+  generated from `bench/promises_src.ts` by `gen_promises_program.py`); `M9-TS-2897..2919`
+  (`bench/promises2_cases.ts` with `tests/promises2.rs`: each case is compiled in the process by the JIT, run
+  in the three GC modes and compared with `promises2_expected.json`, made by `bun
+  bench/gen_promises2_expected.ts`); engine promises `M9-API-1512..1517` (`crates/iron_app/src/native.rs`).
 
 ## Runtime and GC
 

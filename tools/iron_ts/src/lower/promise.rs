@@ -163,9 +163,41 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn lower_promise_static(&mut self, m: &str, c: &'a CallExpression<'a>) -> R<Expr> {
         let at = self.loc(c.span.start);
         let Some(arg) = c.arguments.first().and_then(|a| a.as_expression()) else {
+            // `Promise.resolve()`: a promise of nothing.
+            if m == "resolve" {
+                return self
+                    .call_helper("__resolved$number", vec![mk(ExprKind::Num(0.0), Ty::Num)]);
+            }
             bail!("{at}: Promise.{m} needs an argument")
         };
-        let v = self.lower_expr(arg, None)?;
+        // `Promise.all([a, b])` over promises of different types would be a tuple of promises'
+        // values; a promise class is written per type, so there is no such result type.
+        if matches!(m, "all" | "race" | "any" | "allSettled")
+            && let Expression::ArrayExpression(list) = arg
+            && list.elements.len() > 1
+        {
+            let mut keys: Vec<Option<String>> = Vec::new();
+            for el in &list.elements {
+                let Some(e) = el.as_expression() else {
+                    keys.clear();
+                    break;
+                };
+                let mark = self.cur.locals.len();
+                let t = self.lower_expr(e, None);
+                self.cur.locals.truncate(mark);
+                keys.push(self.promise_of(&t?.ty).map(|(k, _)| k));
+            }
+            if keys.iter().any(|k| k.is_some()) && keys.windows(2).any(|w| w[0] != w[1]) {
+                bail!(
+                    "{at}: Promise.{m} over promises of different value types is not supported (the result would be a tuple): await each one in an async function, or give them one type"
+                )
+            }
+        }
+        let mut v = self.lower_expr(arg, None)?;
+        // `Promise.resolve("c")`: a string literal is a string.
+        if v.ty == Ty::Lit {
+            v = self.coerce(v, &Ty::Str)?;
+        }
         match m {
             "resolve" => {
                 if self.promise_of(&v.ty).is_some() {
@@ -206,7 +238,10 @@ impl<'a> Lowerer<'a> {
         let Some(arg) = c.arguments.first().and_then(|a| a.as_expression()) else {
             bail!("{at}: await needs an operand")
         };
-        let v = self.lower_expr(arg, None)?;
+        let mut v = self.lower_expr(arg, None)?;
+        if v.ty == Ty::Lit {
+            v = self.coerce(v, &Ty::Str)?;
+        }
         if let Some((k, _)) = self.promise_of(&v.ty) {
             return self.call_helper(&format!("__await${k}"), vec![v]);
         }
@@ -218,6 +253,44 @@ impl<'a> Lowerer<'a> {
             )
         };
         self.call_helper(&format!("__awaitV${k}"), vec![v])
+    }
+
+    /// The helper `__asyncG<X>(..)` / `__newPromiseG<X>(..)` stands for, once `X` (written with a
+    /// type parameter) is known: `__async$K` / `__newPromise$K` of the promise class of that type.
+    pub(crate) fn generic_promise_name(
+        &mut self,
+        name: &str,
+        c: &'a CallExpression<'a>,
+    ) -> R<String> {
+        let at = self.loc(c.span.start);
+        let Some(ta) = c.type_arguments.as_ref().and_then(|t| t.params.first()) else {
+            bail!("{at}: {name} needs its promise type")
+        };
+        let key = self.generic_promise_key(ta, &at)?;
+        Ok(if name == "__asyncG" {
+            format!("__async${key}")
+        } else {
+            format!("__newPromise${key}")
+        })
+    }
+
+    /// The class key of `Promise<X>` where `X` mentions a type parameter of the specialisation
+    /// being lowered. The class must exist: some `Promise<..>` of that type is written in the
+    /// program (a promise class is written per value type before lowering starts).
+    pub(crate) fn generic_promise_key(&mut self, x: &'a TSType<'a>, at: &str) -> R<String> {
+        let t = self.ty(x, "gen")?;
+        if let Some(k) = self.promise_key_for(&t) {
+            return Ok(k);
+        }
+        let sp = oxc_span::GetSpan::span(x);
+        let text = self.src[sp.start as usize..sp.end as usize]
+            .trim()
+            .to_string();
+        let t = self.ty_key(&t);
+        let t = t.split('#').next().unwrap_or(&t);
+        bail!(
+            "{at}: a generic function or class makes `Promise<{text}>` here with {text} = {t}, but the program never writes `Promise<{t}>`. A promise class exists per value type written in the source (before lowering), so write that type once, for example `let p: Promise<{t}>` at the top of the file"
+        )
     }
 
     /// `__asyncRet$K(__p, e)`: what `return e` does in an async function.
@@ -232,7 +305,11 @@ impl<'a> Lowerer<'a> {
             bail!("{at}: __asyncRet$K(promise, value)")
         };
         let p = self.lower_expr(p, None)?;
-        let e = self.lower_expr(e, None)?;
+        // A promise made in a generic function names its class by the specialisation.
+        let key = &self.promise_of(&p.ty).map_or(key.to_string(), |(k, _)| k);
+        // The value is what the promise holds (an object literal takes its shape from it).
+        let want = self.promise_of(&p.ty).map(|(_, v)| v);
+        let e = self.lower_expr(e, want.as_ref())?;
         if e.ty == Ty::Void {
             let done = self.call_helper(&format!("__asyncRetN${key}"), vec![p])?;
             return Ok(mk(

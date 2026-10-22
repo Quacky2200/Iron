@@ -255,6 +255,7 @@ impl<'a> Lowerer<'a> {
                 None,
                 1,
             )?;
+            let (name, targs) = self.async_variant(&name, targs);
             self.check_message_types(what, class, m, &targs)?;
             let inst = self.instantiate_fn(&name, targs)?;
             return self
@@ -291,6 +292,7 @@ impl<'a> Lowerer<'a> {
                     None,
                     1,
                 )?;
+                let (name, targs) = self.async_variant(&name, targs);
                 self.check_message_types(&what, class, m, &targs)?;
                 let inst = self.instantiate_fn(&name, targs)?;
                 return self
@@ -383,6 +385,25 @@ impl<'a> Lowerer<'a> {
         let args: Vec<&'a Argument<'a>> = c.arguments.iter().take(1).collect();
         let inst = self.instantiate_fn(name, vec![Ty::Num])?;
         self.call_with_receiver_refs(&inst, recv.clone(), &args)
+    }
+
+    /// A window handler that returns a promise (`answer(name, async (..) => ..)`, an async
+    /// `onRequest` handler) goes to the facade function written for promises (`..P`), with the
+    /// promise's value as the type argument.
+    fn async_variant(&self, name: &str, targs: Vec<Ty>) -> (String, Vec<Ty>) {
+        let value = |t: &Ty| self.promise_of(t).map(|(_, v)| v);
+        let promised = match (name, targs.as_slice()) {
+            ("__xm_Window_answer", [t, r]) => value(r).map(|v| vec![t.clone(), v]),
+            ("__xm_Window_answer0", [r]) => value(r).map(|v| vec![v]),
+            ("__xm_Window_onRequest" | "__xt_Window_onRequest", [t, r, u]) => {
+                value(u).map(|_| vec![t.clone(), r.clone()])
+            }
+            _ => None,
+        };
+        match promised {
+            Some(targs) => (format!("{name}P"), targs),
+            None => (name.to_string(), targs),
+        }
     }
 
     /// Messages between windows travel as JSON of their static type: no engine handle (a
@@ -600,6 +621,7 @@ impl<'a> Lowerer<'a> {
                 None,
                 None,
             )?;
+            let (name, targs) = self.async_variant(&name, targs);
             self.check_message_types(&what, class, m, &targs)?;
             let inst = self.instantiate_fn(&name, targs)?;
             return self.call_declared(&inst, &c.arguments, None).map(Some);

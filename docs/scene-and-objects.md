@@ -360,6 +360,12 @@ answers with `__iron_asset_text([id, text | null, ...])` after the op batch. `nu
 unreadable or outside the folder) rejects the promise. Bundled data
 (`import level from "./level.scene.json"`) needs no read.
 
+In compiled games `loadSceneAsync(path, mode)` and `Prefab.load(path)` are promises too: the program asks
+(`iron_scenes::request_load` / `request_prefab`), the host reads the file from the game folder in the same
+tick (`Native::load_requested_scenes`), the scene loads (its `path` is set before `onSceneLoaded` runs) and
+the promise resolves; any failure (missing file, bad JSON, path outside the folder) rejects with an `Error`
+(`onSceneLoadFailed` natively). Code after the `await` runs in that tick.
+
 **DontDestroyOnLoad.** `GameObject.dontDestroyOnLoad(go)` moves the root of `go` to a scene of that
 name. A `single` load leaves it alone, and it isn't counted in `sceneCount`.
 

@@ -36,6 +36,9 @@ const BASE: [&str; 3] = ["number", "string", "boolean"];
 struct Entry {
     key: String,
     typed: bool,
+    /// The written value type when it mentions a type parameter (`Promise<T>` in `f<T>`): its
+    /// class is only known per instantiation, so the lowerer picks it (`__asyncG<T>`).
+    generic: Option<String>,
 }
 
 struct Pass<'s> {
@@ -44,10 +47,31 @@ struct Pass<'s> {
     /// Value types seen: class key to type text.
     types: BTreeMap<String, String>,
     asyncs: Vec<Option<Entry>>,
+    /// The type parameters of the functions and classes being walked, innermost last.
+    tparams: Vec<Vec<String>>,
+    /// How many functions the walk is inside (0: module level).
+    fn_depth: u32,
+    /// A promise type written with a type parameter exists: any class may be its value.
+    generic_used: bool,
+    /// Non-generic classes and interfaces declared, for those promises.
+    decl_types: Vec<String>,
     async_from: Option<u32>,
     /// A `.then(f, g)` call exists.
     then2: bool,
     error: Option<String>,
+}
+
+/// The span of `T` in a written `Promise<T>`.
+fn promise_arg(t: &TSType<'_>) -> Option<oxc_span::Span> {
+    let TSType::TSTypeReference(r) = t else {
+        return None;
+    };
+    let TSTypeName::IdentifierReference(id) = &r.type_name else {
+        return None;
+    };
+    (id.name == "Promise")
+        .then(|| r.type_arguments.as_ref()?.params.first().map(|a| a.span()))
+        .flatten()
 }
 
 fn type_text(x: &str) -> String {
@@ -58,7 +82,55 @@ fn type_text(x: &str) -> String {
     }
 }
 
-impl Pass<'_> {
+impl<'a> Pass<'_> {
+    /// `for await (const x of xs) body` over an array or other iterable (promises or plain
+    /// values): `for (const __faN of xs) { const x = __await(__faN); body }`.
+    fn for_await(&mut self, it: &ForOfStatement<'a>) {
+        if !matches!(self.asyncs.last(), Some(Some(_))) {
+            self.fail("`for await` is only supported inside an async function".into());
+            return;
+        }
+        let ForStatementLeft::VariableDeclaration(decl) = &it.left else {
+            self.fail("`for await` needs a declaration: `for await (const x of xs)`".into());
+            return;
+        };
+        let Some(d) = decl.declarations.first() else {
+            self.fail("`for await` needs a declaration".into());
+            return;
+        };
+        if d.type_annotation.is_some() {
+            self.fail("`for await (const x: T of ..)`: remove the annotation".into());
+            return;
+        }
+        let kind = decl.kind.as_str();
+        let id_span = d.id.span();
+        let pattern = self.text(id_span).to_string();
+        let tmp = format!("__fa{}", it.span.start);
+        let bind = format!(" {kind} {pattern} = __await({tmp});");
+        self.edits.push((
+            it.span.start as usize,
+            decl.span.start as usize,
+            "for (".into(),
+        ));
+        self.edits
+            .push((id_span.start as usize, id_span.end as usize, tmp));
+        match &it.body {
+            Statement::BlockStatement(b) => {
+                let at = b.span.start as usize + 1;
+                self.edits.push((at, at, bind));
+            }
+            other => {
+                let sp = other.span();
+                self.edits
+                    .push((sp.start as usize, sp.start as usize, format!("{{{bind} ")));
+                self.edits
+                    .push((sp.end as usize, sp.end as usize, " }".into()));
+            }
+        }
+        self.visit_expression(&it.right);
+        self.visit_statement(&it.body);
+    }
+
     fn text(&self, span: oxc_span::Span) -> &str {
         &self.src[span.start as usize..span.end as usize]
     }
@@ -67,8 +139,30 @@ impl Pass<'_> {
         self.error.get_or_insert(msg);
     }
 
+    /// Whether a written type mentions a type parameter in scope.
+    fn is_generic(&self, x: &str) -> bool {
+        x.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+            .any(|w| self.tparams.iter().flatten().any(|t| t == w))
+    }
+
+    fn push_tparams(&mut self, d: Option<&TSTypeParameterDeclaration<'_>>) {
+        self.tparams.push(
+            d.map(|d| d.params.iter().map(|p| p.name.name.to_string()).collect())
+                .unwrap_or_default(),
+        );
+    }
+
     fn add_type(&mut self, x: &str) -> String {
         let key = key_of(x, None);
+        if x.trim_start().starts_with("Promise<") {
+            self.fail(format!(
+                "`Promise<{x}>`: a promise of a promise is not supported (promises flatten: write the inner type)"
+            ));
+        }
+        if self.is_generic(x) {
+            self.generic_used = true;
+            return key;
+        }
         self.types
             .entry(key.clone())
             .or_insert_with(|| type_text(x));
@@ -102,6 +196,10 @@ impl Pass<'_> {
             return None;
         }
         let key = ret.and_then(|r| self.promise_key(&r.type_annotation));
+        let generic = ret
+            .and_then(|r| promise_arg(&r.type_annotation))
+            .map(|sp| self.text(sp).to_string())
+            .filter(|x| self.is_generic(x));
         if ret.is_some() && key.is_none() {
             self.fail(format!(
                 "an async function must return `Promise<T>` (at offset {at})"
@@ -109,10 +207,15 @@ impl Pass<'_> {
             return None;
         }
         Some(match key {
-            Some(key) => Entry { key, typed: true },
+            Some(key) => Entry {
+                key,
+                typed: true,
+                generic,
+            },
             None => Entry {
                 key: self.add_type("void"),
                 typed: false,
+                generic: None,
             },
         })
     }
@@ -125,23 +228,37 @@ impl Pass<'_> {
         }
     }
 
+    /// The call that starts the coroutine of an async function.
+    fn async_head(e: &Entry) -> String {
+        match &e.generic {
+            Some(x) => format!("__asyncG<{x}>((__p: Promise<{x}>) => {{"),
+            None => format!("__async${}((__p) => {{", e.key),
+        }
+    }
+
+    /// What `return e` calls (the lowerer reads the promise's class from `__p`).
+    fn ret_name(e: &Entry) -> String {
+        match &e.generic {
+            Some(_) => "__asyncRet$G".into(),
+            None => format!("__asyncRet${}", e.key),
+        }
+    }
+
     /// Wraps a block body (`{ ... }`) in the coroutine closure.
-    fn wrap_block(&mut self, body: oxc_span::Span, key: &str) {
+    fn wrap_block(&mut self, body: oxc_span::Span, e: &Entry) {
         let (open, close) = (body.start as usize + 1, body.end as usize - 1);
         self.edits
-            .push((open, open, format!(" return __async${key}((__p) => {{")));
+            .push((open, open, format!(" return {}", Self::async_head(e))));
         self.edits.push((close, close, "}); ".into()));
     }
-}
 
-impl<'a> Visit<'a> for Pass<'_> {
-    fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
+    fn visit_function_inner(&mut self, it: &Function<'a>, flags: ScopeFlags) {
         if it.r#async {
             let entry = self.begin_async(it.return_type.as_deref(), it.generator, it.span.start);
             if let (Some(e), Some(body)) = (&entry, &it.body) {
                 let from = self.async_from.take().unwrap_or(it.span.start) as usize;
                 self.drop_async(from, it.params.span.start as usize);
-                self.wrap_block(body.span, &e.key);
+                self.wrap_block(body.span, e);
             }
             self.asyncs.push(entry);
             walk::walk_function(self, it, flags);
@@ -154,7 +271,7 @@ impl<'a> Visit<'a> for Pass<'_> {
         }
     }
 
-    fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+    fn visit_arrow_inner(&mut self, it: &ArrowFunctionExpression<'a>) {
         if it.r#async {
             let entry = self.begin_async(it.return_type.as_deref(), false, it.span.start);
             let mut closer = None;
@@ -165,7 +282,7 @@ impl<'a> Visit<'a> for Pass<'_> {
                     params_end.max(it.span.start as usize),
                 );
                 match &it.body {
-                    ArrowFunctionBody::FunctionBody(b) => self.wrap_block(b.span, &e.key),
+                    ArrowFunctionBody::FunctionBody(b) => self.wrap_block(b.span, e),
                     other => {
                         let b = other.as_expression().map(|x| x.span());
                         let Some(b) = b else {
@@ -175,7 +292,7 @@ impl<'a> Visit<'a> for Pass<'_> {
                         self.edits.push((
                             b.start as usize,
                             b.start as usize,
-                            format!("__async${}((__p) => {{ __asyncRet${}(__p, ", e.key, e.key),
+                            format!("{} {}(__p, ", Self::async_head(e), Self::ret_name(e)),
                         ));
                         closer = Some(b.end as usize);
                     }
@@ -192,6 +309,40 @@ impl<'a> Visit<'a> for Pass<'_> {
             walk::walk_arrow_function_expression(self, it);
             self.asyncs = saved;
         }
+    }
+}
+
+impl<'a> Visit<'a> for Pass<'_> {
+    fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
+        self.push_tparams(it.type_parameters.as_deref());
+        self.fn_depth += 1;
+        self.visit_function_inner(it, flags);
+        self.fn_depth -= 1;
+        self.tparams.pop();
+    }
+
+    fn visit_ts_interface_declaration(&mut self, it: &TSInterfaceDeclaration<'a>) {
+        if it.type_parameters.is_none() {
+            self.decl_types.push(it.id.name.to_string());
+        }
+        walk::walk_ts_interface_declaration(self, it);
+    }
+
+    fn visit_class(&mut self, it: &Class<'a>) {
+        if let (Some(id), None) = (&it.id, &it.type_parameters) {
+            self.decl_types.push(id.name.to_string());
+        }
+        self.push_tparams(it.type_parameters.as_deref());
+        walk::walk_class(self, it);
+        self.tparams.pop();
+    }
+
+    fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+        self.push_tparams(it.type_parameters.as_deref());
+        self.fn_depth += 1;
+        self.visit_arrow_inner(it);
+        self.fn_depth -= 1;
+        self.tparams.pop();
     }
 
     fn visit_method_definition(&mut self, it: &MethodDefinition<'a>) {
@@ -233,11 +384,11 @@ impl<'a> Visit<'a> for Pass<'_> {
                 );
                 return;
             }
-            let key = entry.key.clone();
+            let ret = Self::ret_name(entry);
             self.edits.push((
                 it.span.start as usize,
                 arg.span().start as usize,
-                format!("{{ __asyncRet${key}(__p, "),
+                format!("{{ {ret}(__p, "),
             ));
             walk::walk_return_statement(self, it);
             // After the operand's own edits, so a closing `)` of an `await` comes first.
@@ -253,7 +404,14 @@ impl<'a> Visit<'a> for Pass<'_> {
 
     fn visit_await_expression(&mut self, it: &AwaitExpression<'a>) {
         if !matches!(self.asyncs.last(), Some(Some(_))) {
-            self.fail("`await` is only supported inside an async function".into());
+            self.fail(
+                if self.asyncs.is_empty() && self.fn_depth == 0 {
+                    "top-level `await` is not supported: put the code in an `async function main() { .. }` and call `main()`"
+                } else {
+                    "`await` is only supported inside an async function"
+                }
+                .into(),
+            );
             return;
         }
         let a = it.argument.span();
@@ -265,6 +423,33 @@ impl<'a> Visit<'a> for Pass<'_> {
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        // `Promise.withResolvers<T>()`.
+        if let Expression::StaticMemberExpression(m) = &it.callee
+            && m.property.name == "withResolvers"
+            && matches!(&m.object, Expression::Identifier(id) if id.name == "Promise")
+        {
+            match &it.type_arguments {
+                Some(ta) if !ta.params.is_empty() => {
+                    let x = self.text(ta.params[0].span()).to_string();
+                    let key = self.add_type(&x);
+                    let name = if self.is_generic(&x) {
+                        self.fail(
+                            "Promise.withResolvers<T> inside a generic function is not supported; use `new Promise<T>(..)`"
+                                .into(),
+                        );
+                        return;
+                    } else {
+                        format!("__withResolvers${key}")
+                    };
+                    self.edits
+                        .push((m.span.start as usize, ta.span.end as usize, name));
+                }
+                _ => self.fail(
+                    "`Promise.withResolvers` needs its type written, e.g. `Promise.withResolvers<number>()`"
+                        .into(),
+                ),
+            }
+        }
         if let Expression::StaticMemberExpression(m) = &it.callee
             && m.property.name == "then"
             && it.arguments.len() == 2
@@ -276,7 +461,7 @@ impl<'a> Visit<'a> for Pass<'_> {
 
     fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
         if it.r#await {
-            self.fail("`for await` is not supported".into());
+            self.for_await(it);
             return;
         }
         walk::walk_for_of_statement(self, it);
@@ -290,11 +475,13 @@ impl<'a> Visit<'a> for Pass<'_> {
                 Some(ta) if !ta.params.is_empty() => {
                     let x = self.text(ta.params[0].span()).to_string();
                     let key = self.add_type(&x);
-                    self.edits.push((
-                        it.span.start as usize,
-                        ta.span.end as usize,
-                        format!("__newPromise${key}"),
-                    ));
+                    let name = if self.is_generic(&x) {
+                        format!("__newPromiseG<{x}>")
+                    } else {
+                        format!("__newPromise${key}")
+                    };
+                    self.edits
+                        .push((it.span.start as usize, ta.span.end as usize, name));
                 }
                 _ => self.fail(
                     "`new Promise` needs its type written, e.g. `new Promise<number>(...)`".into(),
@@ -320,6 +507,10 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
         edits: Vec::new(),
         types: BTreeMap::new(),
         asyncs: Vec::new(),
+        tparams: Vec::new(),
+        fn_depth: 0,
+        generic_used: false,
+        decl_types: Vec::new(),
         async_from: None,
         then2: false,
         error: None,
@@ -333,6 +524,18 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
     }
     for b in BASE {
         pass.add_type(b);
+    }
+    // A generic function can make a promise of any type its callers use: give the program's own
+    // classes and the plain arrays a promise class each.
+    if pass.generic_used {
+        let mut more: Vec<String> = BASE.iter().map(|b| format!("{b}[]")).collect();
+        for d in std::mem::take(&mut pass.decl_types) {
+            more.push(format!("{d}[]"));
+            more.push(d);
+        }
+        for t in more {
+            pass.add_type(&t);
+        }
     }
     // The types the program wrote; `then` can return these. The arrays below are derived.
     let core: Vec<String> = pass.types.keys().cloned().collect();
@@ -369,6 +572,7 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
         race: src.contains("Promise.race"),
         any: src.contains("Promise.any"),
         then2: pass.then2,
+        resolvers: src.contains("withResolvers"),
     };
     let types: Vec<(String, String)> = pass.types.into_iter().collect();
     let mut templates = String::from(COMMON);
@@ -416,9 +620,38 @@ struct Wants {
     race: bool,
     any: bool,
     then2: bool,
+    resolvers: bool,
 }
 
-const COMMON: &str = "function __asyncStep(co: Coroutine): void { __coResume(co); }\n";
+const COMMON: &str = r#"function __asyncStep(co: Coroutine): void { __coResume(co); }
+class __Rej {
+  text: string;
+  handled: boolean;
+  constructor(text: string) {
+    this.text = text;
+    this.handled = false;
+  }
+}
+let __rejs: __Rej[] = [];
+let __rejScheduled = false;
+function __rejTrack(e: Error): __Rej {
+  const r = new __Rej(e.toString());
+  __rejs.push(r);
+  if (!__rejScheduled) {
+    __rejScheduled = true;
+    __afterMicrotasks(() => { __rejReport(); });
+  }
+  return r;
+}
+function __rejReport(): void {
+  __rejScheduled = false;
+  const list = __rejs;
+  __rejs = [];
+  for (const r of list) {
+    if (!r.handled) console.error("Unhandled promise rejection: " + r.text + " (await it in a try/catch or add .catch)");
+  }
+}
+"#;
 
 fn fill(t: &str, k: &str, x: &str) -> String {
     t.replace("@K@", k).replace("@X@", x)
@@ -436,6 +669,17 @@ fn per_type(k: &str, x: &str, w: &Wants) -> String {
     }
     if w.race {
         s += &fill(RACE, k, x);
+    }
+    if w.resolvers {
+        s += &fill(
+            if k == "number" {
+                RESOLVERS_OPTIONAL
+            } else {
+                RESOLVERS
+            },
+            k,
+            x,
+        );
     }
     s
 }
@@ -465,12 +709,14 @@ const PER_TYPE: &str = r#"class Promise$@K@ {
   state: number;
   value: @X@;
   reason: Error | null;
+  rej: __Rej | null;
   locked: boolean;
   reactions: (() => void)[];
   constructor() {
     this.state = 0;
     this.value = __coZero<@X@>();
     this.reason = null;
+    this.rej = null;
     this.locked = false;
     this.reactions = [];
   }
@@ -491,6 +737,7 @@ function __reject$@K@(p: Promise$@K@, e: Error): void {
   p.locked = true;
   const rs = p.reactions;
   p.reactions = [];
+  if (rs.length === 0) p.rej = __rejTrack(e);
   for (const r of rs) __queueMicrotask(r);
 }
 function __resolve$@K@(p: Promise$@K@, v: @X@): void {
@@ -502,8 +749,12 @@ function __rejectIf$@K@(p: Promise$@K@, e: Error): void {
   __reject$@K@(p, e);
 }
 function __onSettled$@K@(p: Promise$@K@, cb: () => void): void {
-  if (p.state === 0) p.reactions.push(cb);
-  else __queueMicrotask(cb);
+  if (p.state === 0) {
+    p.reactions.push(cb);
+  } else {
+    if (p.rej !== null) p.rej.handled = true;
+    __queueMicrotask(cb);
+  }
 }
 function __adoptSettled$@K@(p: Promise$@K@, q: Promise$@K@): void {
   if (q.state === 1) __fulfill$@K@(p, q.value);
@@ -674,6 +925,42 @@ const EXEC: &str = r#"function __newPromise$@K@(exec: (resolve: (value: @X@) => 
     __rejectIf$@K@(p, e as Error);
   }
   return p;
+}
+"#;
+
+const RESOLVERS: &str = r#"class Resolvers$@K@ {
+  promise: Promise$@K@;
+  resolve: (value: @X@) => void;
+  reject: (reason: Error) => void;
+  constructor(promise: Promise$@K@, resolve: (value: @X@) => void, reject: (reason: Error) => void) {
+    this.promise = promise;
+    this.resolve = resolve;
+    this.reject = reject;
+  }
+}
+function __withResolvers$@K@(): Resolvers$@K@ {
+  const p = new Promise$@K@();
+  return new Resolvers$@K@(p, (v: @X@) => { __resolve$@K@(p, v); }, (e: Error) => { __rejectIf$@K@(p, e); });
+}
+"#;
+
+const RESOLVERS_OPTIONAL: &str = r#"class Resolvers$@K@ {
+  promise: Promise$@K@;
+  resolve: (value?: @X@) => void;
+  reject: (reason: Error) => void;
+  constructor(promise: Promise$@K@, resolve: (value?: @X@) => void, reject: (reason: Error) => void) {
+    this.promise = promise;
+    this.resolve = resolve;
+    this.reject = reject;
+  }
+}
+function __withResolvers$@K@(): Resolvers$@K@ {
+  const p = new Promise$@K@();
+  return new Resolvers$@K@(p, (v?: @X@) => {
+    let vv = __coZero<@X@>();
+    if (v !== undefined) vv = v;
+    __resolve$@K@(p, vv);
+  }, (e: Error) => { __rejectIf$@K@(p, e); });
 }
 "#;
 

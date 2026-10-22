@@ -124,6 +124,24 @@ pub mod scene_manager_api {
         manager::on_active_changed(f)
     }
 
+    /// Calls `f(path, error)` when a scene asked for with `loadSceneAsync` could not be read or
+    /// parsed. Returns a token for `offSceneEvent`.
+    pub fn on_scene_load_failed(f: Callback<(String, String)>) -> u32 {
+        manager::on_load_failed(f)
+    }
+
+    /// Asks the host to read a prefab file from the game folder; `onPrefabLoaded` (or
+    /// `onSceneLoadFailed`) follows. The number says which request.
+    pub fn load_prefab_async(path: &str) -> f64 {
+        manager::request_prefab(path) as f64
+    }
+
+    /// Calls `f(path, prefab)` after a prefab asked for with `loadPrefabAsync` was read. Returns a
+    /// token for `offSceneEvent`.
+    pub fn on_prefab_loaded(f: Callback<(String, HandleArg<PrefabRef>)>) -> u32 {
+        manager::on_prefab_loaded(f)
+    }
+
     /// Stops a listener from one of the `onScene...` functions; false when the token is unknown.
     pub fn off_scene_event(token: u32) -> bool {
         manager::off(token)

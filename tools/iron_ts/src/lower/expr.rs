@@ -2874,6 +2874,11 @@ impl<'a> Lowerer<'a> {
                 {
                     name = "__Symbol";
                 }
+                let generic_name;
+                if name == "__asyncG" || name == "__newPromiseG" {
+                    generic_name = self.generic_promise_name(name, c)?;
+                    name = &generic_name;
+                }
                 if name == "__await" {
                     return self.lower_await(c);
                 }

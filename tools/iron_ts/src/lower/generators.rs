@@ -121,6 +121,13 @@ impl Pass<'_> {
     }
 
     fn begin(&mut self, f: &Function<'_>) {
+        if f.r#async {
+            self.fail(format!(
+                "async generators (`async function*`, `AsyncGenerator`, `for await` over one) are not supported: use an async function that returns an array, or a sync generator (at offset {})",
+                f.span.start
+            ));
+            return;
+        }
         let inst = f
             .return_type
             .as_ref()
@@ -587,6 +594,13 @@ impl<'a> Lowerer<'a> {
                 };
                 let cb = self.lower_expr(cb, None)?;
                 self.rt_str("ts_rt_microtask_push", vec![cb], Ty::Void)
+            }
+            "__afterMicrotasks" => {
+                let Some(cb) = args.first() else {
+                    bail!("{at}: __afterMicrotasks needs a callback")
+                };
+                let cb = self.lower_expr(cb, None)?;
+                self.rt_str("ts_rt_after_microtasks", vec![cb], Ty::Void)
             }
             "__timerAdd" => {
                 let (Some(cb), Some(ms), Some(rep)) = (args.first(), args.get(1), args.get(2))

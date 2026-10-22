@@ -705,3 +705,47 @@ fn named_events_refuse_handles_and_ask_needs_its_reply_type() {
     )
     .unwrap();
 }
+
+// M9-TS-2894
+#[test]
+fn an_async_answer_handler_replies_when_its_promise_resolves_and_a_rejection_fails_the_ask() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        ts_win_answerAsync(h);
+        ts_win_eventLogClear();
+        let _ = iron_api::callback::take_errors();
+        let p = ts_win_askAsync(h);
+        assert!(!p.is_null());
+        for i in 0..12 {
+            round(w, f64::from(i) * 10.0);
+        }
+        assert_eq!(
+            text(ts_win_eventLogText()),
+            "double 42;label async-label;stats 4|abcd;boom error boom 5;"
+        );
+        assert!(iron_api::callback::take_errors().is_empty());
+    });
+}
+
+// M9-TS-2895
+#[test]
+fn an_async_raw_request_handler_can_reply_later_and_its_rejection_fails_the_request() {
+    in_every_gc_mode(|| unsafe {
+        let h = ts_win_createInspector();
+        let w = WindowRef(h as u32);
+        ts_win_serveAsync(h);
+        ts_win_eventLogClear();
+        let _ = iron_api::callback::take_errors();
+        let p = ts_win_requestAsync(h);
+        assert!(!p.is_null());
+        for i in 0..12 {
+            round(w, f64::from(i) * 10.0);
+        }
+        assert_eq!(
+            text(ts_win_eventLogText()),
+            "request 42;request error negative -3;"
+        );
+        assert!(iron_api::callback::take_errors().is_empty());
+    });
+}

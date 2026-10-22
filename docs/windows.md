@@ -160,6 +160,9 @@ const thing = await Window.main.ask<Thing>("selected");                      // 
 Window.main.emit("edit", { name: thing.name, y: 2 });
 ```
 
+- **Async handlers:** an `answer` handler may return a promise (`async (n: number): Promise<number> => ..`): the reply is sent when
+  it resolves, and a rejection fails the asker's `ask` with the error's message. A raw `onRequest` handler may be `async` too (it
+  still calls `reply`; a rejection before the reply fails the `request`).
 - **Typing:** the handler's parameter type (or the explicit `on<T>(..)` / `answer<T, R>(..)`) tells the compiler how to decode the
   payload; a handler without parameters (`on("ping", () => ..)`) takes none, and an `answer` handler's return type is `R`.
   `ask<R>` needs its reply type, as `request<R>` does. QuickJS games treat the types as hints only. A later idea: one shared

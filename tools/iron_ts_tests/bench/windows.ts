@@ -535,3 +535,71 @@ export async function askHuge(h: number): Promise<number> {
   }
   return 0;
 }
+
+/** Async handlers: the reply goes out when the promise resolves, a rejection fails the asker. */
+export function answerAsync(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.answer("double", async (n: number): Promise<number> => {
+    await Promise.resolve();
+    await Promise.resolve();
+    return n * 2;
+  });
+  w.answer("boom", async (n: number): Promise<number> => {
+    await Promise.resolve();
+    throw new Error("boom " + n);
+  });
+  w.answer("label", async (): Promise<string> => {
+    await Promise.resolve();
+    return "async-label";
+  });
+  w.answer("stats", async (req: { kind: string }): Promise<Stats> => {
+    await Promise.resolve();
+    return { n: req.kind.length, tags: [req.kind], inner: { ok: true, vals: [3] } };
+  });
+}
+
+export async function askAsync(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const d = await w.ask<number>("double", 21);
+  eventLog += `double ${d};`;
+  const l = await w.ask<string>("label");
+  eventLog += `label ${l};`;
+  const s = await w.ask<Stats>("stats", { kind: "abcd" });
+  eventLog += `stats ${s.n}|${s.tags[0]};`;
+  try {
+    await w.ask<number>("boom", 5);
+    eventLog += "boom answered;";
+  } catch (e) {
+    eventLog += `boom error ${(e as Error).message};`;
+  }
+  return 0;
+}
+
+/** A raw request handler that is async: it replies later, a throw fails the request. */
+export function serveAsync(h: number): void {
+  const found = byHandle(h);
+  if (found === undefined) return;
+  const w: Window = found;
+  w.onRequest<{ k: number }, number>(async (from, req, reply) => {
+    await Promise.resolve();
+    if (req.k < 0) throw new Error("negative " + req.k);
+    reply(req.k + 1);
+  });
+}
+
+export async function requestAsync(h: number): Promise<number> {
+  const w = byHandle(h);
+  if (w === undefined) return -1;
+  const a = await w.request<number>({ k: 41 });
+  eventLog += `request ${a};`;
+  try {
+    await w.request<number>({ k: -3 });
+    eventLog += "negative answered;";
+  } catch (e) {
+    eventLog += `request error ${(e as Error).message};`;
+  }
+  return 0;
+}

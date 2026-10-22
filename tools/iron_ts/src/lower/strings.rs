@@ -658,8 +658,8 @@ impl<'a> Lowerer<'a> {
             }
             "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish"
             | "__coInject" | "__coInjectSet" | "__coZero" | "__coCurrent" | "__queueMicrotask"
-            | "__timerAdd" | "__timerClear" | "__dvGet" | "__dvSet" | "__coRet" | "__coStarted"
-            | "__coDone" => {
+            | "__timerAdd" | "__timerClear" | "__afterMicrotasks" | "__dvGet" | "__dvSet"
+            | "__coRet" | "__coStarted" | "__coDone" => {
                 return self.lower_coro_intrinsic(name, c);
             }
             // The prelude's `Intl.PluralRules.select`, `Intl.ListFormat.format` and
