@@ -472,3 +472,38 @@ Behaviours checked 2026-10-22 (all with GC stress where it applies):
 - [ ] P4b: the hook helpers of `ui.ts` (`useState`, `useReducer`, `useRef`, `useMemo`, `useContext`, `useImperativeHandle`, `useSyncExternalStore`) as Rust lowering over the `iron_ts_ui` slots: they are generic over the program's types, so each use is monomorphised by the compiler; not done (see the ratchet entry in `generated_dts.rs`).
 - [ ] P2 enums and nullables, records and option bags, lists, subscriptions and promises, remaining logic; P3 built-ins; P5 delete `engine_ts.d.ts` and make the ratchet empty.
 - Found while porting: the old compiled `Shapes.bezier(.., 0)` answered (0, 0) where JavaScript (and the native one) gives NaN, and a NaN spline index read 0 from a `Float64Array` where JavaScript reads `undefined`; both are edge cases outside any example.
+
+## Resume point (2026-10-22, generated declarations: phases 2b-2e)
+
+**Done (commits, newest first):** `8d011e9` Camera rect / horizontalFieldOfView / screenToWorldPoint / Material.withTexture native;
+`5cc6422` `gen_components.py` replaced by `crates/iron_render_api/build.rs` + `gen/components.rs` (byte-identical output);
+`c2b4298` lists of records, handles inside records (JSON id tag 9), LOD groups, particle records, `#[ts_param]`;
+`dbfd8fc` `#[promise]` (loadSceneAsync, Prefab.load, Texture/Model.whenLoaded); `9f630a7` handle/number lists, `#[like]`,
+`#[subscription]`; `6d282a8` JSON.parse GC fix + quality test. The tree is clean and green at `8d011e9`; nothing is in flight.
+
+**Sizes now:** `engine_ts.d.ts` 258 lines, `facade.ts` 435 lines, 14 chunks (`MAX_FACADE_CHUNKS` 14). Was 359 / 712 / 34.
+
+**Left, by chunk (facade.ts):** `new Material(` (F-CTOR positional + NaN defaults); `AnimatorController` builder (73 lines: records
+`BlendSpec`/`TransitionSpec`... as params + `addState(AnimationClip | BlendSpec)` union); `Sprite.create(` (Rect | null);
+`.serialize()` (SceneData record via JSON); `ParticleSystem` (only the six `$a` range setters: F-UNION `number | number[]`);
+`Mesh.create({` and `createFlat|setFlat` (MeshData / FlatMeshData / NumberList: the object holds the required arguments too, so
+`#[options]` does not fit; plan: a record param with value lists, or `#[options(all)]`); `addStyleSheet|removeStyleSheet`, `loadFont`
+(F-GLOBAL + FontFace record param that is not `Option`); `input.gamepads()|input.on(` (Gamepad with `buttons` / `axes` dictionaries:
+needs a dictionary record field and a JSON dictionary descriptor in `iron_ts_rt/src/json.rs`); the two window messaging chunks and
+`Random.pick` (phase 3 built-ins / F-JSON); the light meter (`illuminanceAt` / `measureIlluminance`, logic port + promise).
+Also left: `Collision` / `Collision2D` (still `ENGINE_AMBIENT` in `ui_dts.rs`), `engine_ts.d.ts` blocks for `GameObject` / `Component` /
+`GameObjectOptions` / `Scene.serialize` / `ComponentClass`, `Random.pick`, `QualitySettings`..., then phases 3-5 of the plan.
+
+**Risky spots:** records holding handles use id numbers in JSON (QuickJS ids above 2^53 would lose precision); `#[like]` on a
+`Rect` parameter generates a missing `RectLike` (do not use it there); `generated.rs` is now unformatted (clippy lint allowed in
+`lib.rs`); the cranelift path of `RecordsJson` results is covered only by `M9-TS-3352`.
+
+**Verify (all green at `8d011e9`):** root: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace`; tools: the same inside `tools/`, `IRON_TS_GC=stress cargo test -p iron_ts_tests --test all`,
+`cargo run -q -p iron_build -- check ../examples --tsc` (41 built, 0 failed); `bun run typecheck`, `bun test` (224 pass);
+`IRON_BLESS=1 cargo test -p iron_build --test generated_dts` re-blesses the API surface after a deliberate change.
+Edits: `iron_render_api` specs are `gen/components.rs` (raw strings). Working copies of some files are CRLF; perl `s|..|` patterns with
+`|` inside break, use the Edit tool or a Python file written with Write.
+
+**Next concrete step:** `Mesh.create` / `createFlat` / `setFlat` (NumberList as `#[ts_param]` + a fixed `type NumberList` in
+`types_dts.rs`), then `AnimatorController` records, then `loadFont` / style sheets (`#[global]`).

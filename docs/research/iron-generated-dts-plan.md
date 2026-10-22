@@ -757,3 +757,7 @@ facade kind are gone. The mechanism, which turned out to be small because the co
 - **Promises (P2d second part):** `#[promise]` (resolve and reject callbacks as the last two parameters; QuickJS a real `Promise`, compiled code a function written from the manifest). `loadSceneAsync`, `Prefab.load`, `Texture.whenLoaded`, `Model.whenLoaded` are native; chunks 17-19 are gone (the promise half of 41, the light meter, stays).
 - **Records with handles and lists of records (P2b/2c):** handles are ids inside engine records (JSON descriptor tag 9), `&[R]` / `Vec<R>` of records travel as JSON text (`records:R`), `#[ts_param]` for a wider declared parameter type. Native: `LODGroup.setLODs`, `ParticleSystem.bursts` / `colorOverLifetime` / `sizeOverLifetime` / `shape`, `AnimationCurve.fromPoints` (value rows). Chunks 9, 26 and most of 21 are gone (18 left).
 - **`gen_components.py` is Rust (question 8):** `crates/iron_render_api/build.rs` is the generator and `gen/components.rs` the specs (the Python data converted mechanically; the build script's output equals the Python generator's byte for byte, header line aside). `generated.rs` is not checked in (`include!` of `OUT_DIR`). The Rust snippets inside the specs (`api`, `items`, `extra_save`, ...) are still text.
+
+## 13. Resume point
+
+See "Resume point" at the end of `tools/iron_ts/TODO.md`: state at `8d011e9` (engine_ts.d.ts 258 lines, facade.ts 435 lines in 14 chunks), what remains and how to verify.
