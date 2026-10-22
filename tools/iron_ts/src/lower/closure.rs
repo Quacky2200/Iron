@@ -70,6 +70,22 @@ impl<'a> Lowerer<'a> {
                             Ty::Str
                         }
                         Some(Expression::BooleanLiteral(_)) => Ty::Bool,
+                        // `(i = index) => ..`: the default's type, as TypeScript infers it.
+                        Some(d) => {
+                            let mark = self.cur.locals.len();
+                            let v = self.lower_expr(d, None);
+                            self.cur.locals.truncate(mark);
+                            match v {
+                                Ok(v) if !matches!(v.ty, Ty::Null | Ty::Void) => {
+                                    let v = self.widen_lit(v);
+                                    v.ty.strip().clone()
+                                }
+                                _ => bail!(
+                                    "{}: closure parameter needs a type annotation",
+                                    self.loc(start)
+                                ),
+                            }
+                        }
                         _ => bail!(
                             "{}: closure parameter needs a type annotation",
                             self.loc(start)
@@ -177,10 +193,20 @@ impl<'a> Lowerer<'a> {
             .filter(|(p, _)| free.contains(p) && !self.assigned.contains(p))
             .cloned()
             .collect();
+        // No written or expected return type: the returns decide it (`return null` and then a
+        // string is `string | null`), as for a function declaration.
+        self.cur.ret_inferred = ret_exp.is_none();
         self.cur.ret = ret_exp;
         self.cur.widen_ret = infer;
         self.cur.scopes.push(HashMap::new());
-        let r = self.lift_body(params, &ptys, &caps, body);
+        // An error in an expression body (`() => setMode(x)`) says where the closure is.
+        let r = self.lift_body(params, &ptys, &caps, body).map_err(|e| {
+            if e.contains("line ") {
+                e
+            } else {
+                format!("{}: {e}", self.loc(start))
+            }
+        });
         let ctx = std::mem::take(&mut self.cur);
         self.cur = saved;
         let (pvars, envv, stmts, ret) = r?;

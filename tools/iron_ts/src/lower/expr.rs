@@ -255,7 +255,10 @@ impl<'a> Lowerer<'a> {
             Expression::CallExpression(c) if Self::is_json_parse(c) => {
                 self.lower_json_parse(c, exp)
             }
-            Expression::CallExpression(c) => self.lower_call(c),
+            Expression::CallExpression(c) => {
+                self.call_exp = exp.cloned();
+                self.lower_call(c)
+            }
             Expression::NewExpression(n) => self.lower_new(n, exp),
             Expression::ObjectExpression(o) => self.lower_object(o, exp, None),
             Expression::ArrayExpression(a) => self.lower_array_lit(a, exp),
@@ -338,6 +341,18 @@ impl<'a> Lowerer<'a> {
                                     .position(|d| d.name == "StyleValue")
                                     .ok_or(e)?;
                                 Ty::Obj(sv)
+                            }
+                            // `t.plain ? t.text : <Span/>`: nodes of different kinds make a
+                            // `ReactNode`.
+                            None if [a.ty.strip(), b.ty.strip()].iter().all(|t| {
+                                matches!(t, Ty::Str | Ty::Lit | Ty::Num | Ty::Null)
+                                    || matches!(t, Ty::Handle(h) if h == "UiElement")
+                                    || **t == Ty::Arr(Box::new(Ty::Handle("UiElement".into())))
+                            }) && [a.ty.strip(), b.ty.strip()]
+                                .iter()
+                                .any(|t| matches!(t, Ty::Handle(_) | Ty::Arr(_))) =>
+                            {
+                                Ty::Arr(Box::new(Ty::Handle("UiElement".into())))
                             }
                             None => return Err(e),
                         },
@@ -651,10 +666,33 @@ impl<'a> Lowerer<'a> {
             }
             bail!("cannot index an object by {}", key.ty)
         }
-        arr = self.match_view(arr);
+        // `re.exec(s)?.[0]`: the null test comes before reading the match's groups.
         if m.optional {
             arr = self.chain_guard(arr)?;
+            if Some(arr.ty.strip()) == self.match_sid().map(Ty::Obj).as_ref()
+                && arr.ty.is_nullable()
+            {
+                let t = arr.ty.strip().clone();
+                arr = mk(ExprKind::Cast(Box::new(arr)), t);
+            }
         }
+        arr = self.match_view(arr);
+        // The guarded object goes into a local first, so the null test (which leaves the chain)
+        // runs as a statement before the index is read.
+        if m.optional {
+            let tmp = self.new_local(arr.ty.clone());
+            let read = self.lower_index_of(self.var_expr(tmp), m)?;
+            let ty = read.ty.clone();
+            return Ok(mk(
+                ExprKind::Seq(vec![Stmt::Assign(tmp, arr)], Box::new(read)),
+                ty,
+            ));
+        }
+        self.lower_index_of(arr, m)
+    }
+
+    /// `arr[i]` / `s[i]` once the object is lowered (and a match array is its list).
+    fn lower_index_of(&mut self, arr: Expr, m: &'a ComputedMemberExpression<'a>) -> R<Expr> {
         // `s[i]`: the character, or undefined past the ends.
         let arr = self.widen_lit(arr);
         if arr.ty.strip() == &Ty::Str {
@@ -1241,6 +1279,9 @@ impl<'a> Lowerer<'a> {
         if ns == "Ui" && name == "runEffect" {
             return self.lower_ui_run_effect(c);
         }
+        if ns == "Ui" && name == "ref" {
+            return self.lower_ui_ref(c);
+        }
         if ns == "Ui" && (name == "styleObj" || name == "attrObj") {
             return self.lower_ui_fields(name == "attrObj", c);
         }
@@ -1424,7 +1465,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// The version of a boundary function whose parameters take the (lowered) argument types.
-    fn pick_overload(
+    pub(crate) fn pick_overload(
         &mut self,
         ns: &str,
         name: &str,
@@ -1488,8 +1529,23 @@ impl<'a> Lowerer<'a> {
             Ty::Bool => ("ts_ui_load_bool", ExtTy::Bool),
             Ty::Handle(n) => ("ts_ui_load_num", ExtTy::Handle(n.clone())),
             other if other.is_ptr() => ("ts_ui_load_ptr", ExtTy::Ptr),
+            // A string-literal union is stored as its text (`Ui.stateNew` widens it).
+            Ty::Lit => ("ts_ui_load_ptr", ExtTy::Ptr),
             other => bail!("{at}: Ui.load<{other}> is not supported"),
         };
+        if *t.strip() == Ty::Lit {
+            let f = ExternFn {
+                rest: false,
+                optional_from: usize::MAX,
+                defaults: Vec::new(),
+                symbol: symbol.into(),
+                params: vec![("slot".into(), ExtTy::F64)],
+                ret,
+            };
+            let mut s = self.emit_extern(&f, vec![slot]);
+            s.ty = Ty::Str;
+            return Ok(mk(ExprKind::StrTag(Box::new(s)), Ty::Lit));
+        }
         let f = ExternFn {
             rest: false,
             optional_from: usize::MAX,
@@ -1661,6 +1717,10 @@ impl<'a> Lowerer<'a> {
                 .get(&("Ui".to_string(), fname.to_string()))
                 .cloned()
                 .unwrap_or_default();
+            // `{lists.map(..)}` of `ReactNode[]`: lists in lists are flattened, as React does.
+            if fname == "child" && Self::is_nested_node_list(&ve.ty) {
+                return self.ui_child_lists(he, ve, &cands, &at).map(Some);
+            }
             let vals = vec![he, self.widen_lit(ve)];
             return self.pick_overload("Ui", fname, &cands, vals, &at).map(Some);
         }
@@ -1691,6 +1751,39 @@ impl<'a> Lowerer<'a> {
         let result = self.var_expr(th);
         let ty = result.ty.clone();
         Ok(Some(mk(ExprKind::Seq(stmts, Box::new(result)), ty)))
+    }
+
+    /// A list of lists of elements (`ReactNode[]`, any depth).
+    fn is_nested_node_list(t: &Ty) -> bool {
+        match t.strip() {
+            Ty::Arr(inner) => match inner.strip() {
+                Ty::Arr(e) => {
+                    matches!(e.strip(), Ty::Handle(h) if h == "UiElement")
+                        || Self::is_nested_node_list(inner)
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// `Ui.child(h, lists)`: each inner list added in turn.
+    fn ui_child_lists(&mut self, he: Expr, lists: Expr, cands: &[ExternFn], at: &str) -> R<Expr> {
+        let th = self.new_local(he.ty.clone());
+        let mut stmts = vec![Stmt::Assign(th, he)];
+        let it = self.begin_iter(lists)?;
+        stmts.extend(it.pre.clone());
+        let mut body = it.head.clone();
+        let inner = self.var_expr(it.elem);
+        let added = if Self::is_nested_node_list(&inner.ty) {
+            self.ui_child_lists(self.var_expr(th), inner, cands, at)?
+        } else {
+            self.pick_overload("Ui", "child", cands, vec![self.var_expr(th), inner], at)?
+        };
+        body.push(Stmt::Assign(th, added));
+        stmts.push(Stmt::Loop(it.label, body));
+        let ty = self.cur.locals[th as usize].clone();
+        Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(th))), ty))
     }
 
     /// `Ui.style(h, key, v)` / `Ui.attr(h, key, v)` whose value has no version of its own: a
@@ -1734,6 +1827,40 @@ impl<'a> Lowerer<'a> {
     }
 
     /// `Ui.runEffect(f)`: calls an effect function; a function it returns is its cleanup.
+    /// `Ui.ref(h, r)`: a ref object (`useRef`) gets the node written into `current`; a function
+    /// (`ref={(el) => ..}`, React's callback ref) is called with the node and with null.
+    fn lower_ui_ref(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
+        let at = self.loc(c.span.start);
+        let [h, v] = c.arguments.as_slice() else {
+            bail!("{at}: Ui.ref(h, ref)")
+        };
+        let (Some(h), Some(v)) = (h.as_expression(), v.as_expression()) else {
+            bail!("{at}: Ui.ref(h, ref)")
+        };
+        let he = self.lower_expr(h, None)?;
+        let node = Ty::Nullable(Box::new(Ty::Handle("UiNode".into())));
+        let hint = matches!(
+            v.get_inner_expression(),
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+        )
+        .then(|| {
+            Ty::Fn(Box::new(FnTy {
+                params: vec![node],
+                ret: Ty::Void,
+            }))
+        });
+        let ve = self.lower_expr(v, hint.as_ref())?;
+        let name = if matches!(ve.ty.strip(), Ty::Fn(_)) {
+            "refFn"
+        } else {
+            "ref"
+        };
+        let Some(f) = self.manifest.namespaces["Ui"].get(name).cloned() else {
+            bail!("{at}: the Ui manifest has no `{name}`")
+        };
+        Ok(self.emit_extern(&f, vec![he, ve]))
+    }
+
     fn lower_ui_run_effect(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
         let at = self.loc(c.span.start);
         let Some(arg) = c.arguments.first().and_then(|a| a.as_expression()) else {
@@ -2953,6 +3080,43 @@ impl<'a> Lowerer<'a> {
                 } else {
                     self.lower_expr(&l.right, Some(&want))?
                 };
+                // `arg("--steps") ?? 1`: a string or a number, a union of the two.
+                let scalar = |t: &Ty| matches!(t, Ty::Str | Ty::Lit | Ty::Num | Ty::Bool);
+                if scalar(&want)
+                    && scalar(b.ty.strip())
+                    && want != *b.ty.strip()
+                    && !matches!(
+                        (&want, b.ty.strip()),
+                        (Ty::Str, Ty::Lit) | (Ty::Lit, Ty::Str)
+                    )
+                    && exp.is_none_or(|t| t.strip() != &want)
+                {
+                    let wa = if want == Ty::Lit {
+                        Ty::Str
+                    } else {
+                        want.clone()
+                    };
+                    let b = self.widen_lit(b);
+                    let ty = self.make_union(vec![wa.clone(), b.ty.strip().clone()]);
+                    let tmp = self.new_local(a.ty.clone());
+                    let t = self.var_expr(tmp);
+                    let plain = mk(ExprKind::Cast(Box::new(t.clone())), want.clone());
+                    let plain = self.widen_lit(plain);
+                    let kept = self.coerce(plain, &ty)?;
+                    let alt = self.coerce(b, &ty)?;
+                    let cond = mk(
+                        ExprKind::Cond(
+                            Box::new(mk(ExprKind::IsNull(Box::new(t)), Ty::Bool)),
+                            Box::new(alt),
+                            Box::new(kept),
+                        ),
+                        ty.clone(),
+                    );
+                    return Ok(mk(
+                        ExprKind::Seq(vec![Stmt::Assign(tmp, a)], Box::new(cond)),
+                        ty,
+                    ));
+                }
                 let ty = if b.ty.is_nullable() {
                     want.clone().nullable()
                 } else {
@@ -3045,6 +3209,26 @@ impl<'a> Lowerer<'a> {
                         nty,
                     ));
                 }
+                // `s.slice(i) || null`: the operand when it is truthy, else null.
+                if op == LogicalOperator::Or && bk == Ty::Null && ak != Ty::Bool && ak != Ty::Null {
+                    let a = if ak == Ty::Lit { self.widen_lit(a) } else { a };
+                    let nty = a.ty.strip().clone().nullable();
+                    let tmp = self.new_local(a.ty.clone());
+                    let test = self.bool_of(self.var_expr(tmp));
+                    let t = self.var_expr(tmp);
+                    let yes = self.coerce(t, &nty)?;
+                    let no = mk(ExprKind::Null, nty.clone());
+                    return Ok(mk(
+                        ExprKind::Seq(
+                            vec![Stmt::Assign(tmp, a)],
+                            Box::new(mk(
+                                ExprKind::Cond(Box::new(test), Box::new(yes), Box::new(no)),
+                                nty.clone(),
+                            )),
+                        ),
+                        nty,
+                    ));
+                }
                 let (a, b) = (self.bool_of(a), self.bool_of(b));
                 let k = if op == LogicalOperator::And {
                     ExprKind::And(Box::new(a), Box::new(b))
@@ -3057,6 +3241,21 @@ impl<'a> Lowerer<'a> {
     }
 
     // ---- objects and arrays ----
+
+    /// The string literal an object literal gives its property `tag` (`kind: "quote"`).
+    fn literal_tag(o: &ObjectExpression<'_>, tag: &str) -> Option<String> {
+        o.properties.iter().find_map(|p| match p {
+            ObjectPropertyKind::ObjectProperty(p)
+                if matches!(&p.key, PropertyKey::StaticIdentifier(k) if k.name == tag) =>
+            {
+                match &p.value {
+                    Expression::StringLiteral(s) => Some(s.value.to_string()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+    }
 
     pub(crate) fn lower_object(
         &mut self,
@@ -3201,6 +3400,25 @@ impl<'a> Lowerer<'a> {
                             .field(&name)
                             .map(|i| self.m.structs[s].fields[i].ty.clone()),
                         None => record.cloned(),
+                    };
+                    // `{ kind: "quote", children: [..] }` where a discriminated union with
+                    // per-variant field types goes: the literal's tag says which type it has.
+                    let want = match want_sid.and_then(|s| self.discs.get(&s).cloned()) {
+                        Some(d) => match Self::literal_tag(o, &d.tag) {
+                            Some(tag) => d
+                                .fields
+                                .iter()
+                                .find(|(f, _)| *f == name)
+                                .and_then(|(_, per)| {
+                                    let v = d.variants.iter().position(|t| t.contains(&tag))?;
+                                    let k = per[v]?;
+                                    let members = self.union_members(want.as_ref()?)?;
+                                    members.get(k).cloned()
+                                })
+                                .or(want),
+                            None => want,
+                        },
+                        None => want,
                     };
                     let mut v = self.lower_expr(&p.value, want.as_ref())?;
                     // A property of a fresh object is a `string`, not the literal it was written as.
@@ -5238,6 +5456,7 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_call(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
+        let call_exp = self.call_exp.take();
         match &c.callee {
             // `obj[Symbol.iterator]()`.
             Expression::ComputedMemberExpression(m)
@@ -5546,6 +5765,7 @@ impl<'a> Lowerer<'a> {
                     let callee = self.member_of(recv, method)?;
                     return self.call_closure_value(callee, c);
                 }
+                self.method_exp = call_exp;
                 self.lower_method(recv, method, c)
             }
             // Anything else that is a function value: `f()()`, `(() => 1)()`, `fs[0](x)`.

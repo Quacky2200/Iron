@@ -1,5 +1,6 @@
 //! Annotation -> IR type resolution, struct layouts and coercions.
 
+use super::expr::mk;
 use super::*;
 
 /// Can `a` stand for `g` because the caller's extra arguments are ignored, or because `g` returns
@@ -10,7 +11,18 @@ use super::*;
 fn fn_ignores_extra(a: &FnTy, g: &FnTy) -> bool {
     a.params.len() <= g.params.len()
         && (a.ret == g.ret || g.ret == Ty::Void)
-        && a.params.iter().zip(&g.params).all(|(x, y)| x == y)
+        && a.params
+            .iter()
+            .zip(&g.params)
+            .all(|(x, y)| x == y || accepts_same_word(x, y))
+}
+
+/// A parameter of type `x` takes an argument of type `y` unchanged: `x` is `y` or null, held in
+/// the same word (`(i = index) => ..` where `(i: number) => void` goes: a number, or the null NaN;
+/// a pointer, or null; a tag, or the null tag). Not booleans, whose nullable form is another word.
+fn accepts_same_word(x: &Ty, y: &Ty) -> bool {
+    matches!(x, Ty::Nullable(inner) if **inner == *y)
+        && (matches!(y, Ty::Num | Ty::Lit) || y.is_ptr() || matches!(y, Ty::Handle(_)))
 }
 
 fn b_strip_owned(t: &Ty) -> Ty {
@@ -113,6 +125,12 @@ impl<'a> Lowerer<'a> {
                 }
                 TSLiteral::NumericLiteral(_) => Ty::Num,
                 TSLiteral::BooleanLiteral(_) => Ty::Bool,
+                // `-1 | 1`
+                TSLiteral::UnaryExpression(u)
+                    if matches!(u.argument, Expression::NumericLiteral(_)) =>
+                {
+                    Ty::Num
+                }
                 _ => bail!("unsupported literal type"),
             },
             // `[number, number]`: a tuple of one element type is an array of it.
@@ -141,6 +159,51 @@ impl<'a> Lowerer<'a> {
                 }
             }
             TSType::TSUnionType(u) => self.union(&u.types, hint)?,
+            // `A & { extra: T }`: one struct with the fields of every part (a part that is a
+            // discriminated union brings all its variants' fields, as the union's struct has them).
+            TSType::TSIntersectionType(x) => {
+                let mut fields: Vec<Field> = Vec::new();
+                let mut disc = None;
+                for part in &x.types {
+                    let pt = self.ty(part, hint)?;
+                    let Ty::Obj(sid) = pt.strip() else {
+                        bail!(
+                            "{}: an intersection of object types only (got {pt})",
+                            self.loc(x.span.start)
+                        )
+                    };
+                    if let Some(d) = self.discs.get(sid) {
+                        disc = Some(d.clone());
+                    }
+                    // Accessor thunks (`_p_..`) are added again by `anon_struct`.
+                    let part_fields: Vec<Field> = self.m.structs[*sid]
+                        .fields
+                        .iter()
+                        .filter(|f| !f.name.starts_with("_p_"))
+                        .cloned()
+                        .collect();
+                    for f in part_fields {
+                        match fields.iter().position(|o| o.name == f.name) {
+                            None => fields.push(f),
+                            Some(i) if fields[i].ty == f.ty => {
+                                // Required in either part: required in both.
+                                fields[i].optional &= f.optional;
+                            }
+                            Some(i) => bail!(
+                                "intersection {hint}: field {} has two different types ({} and {})",
+                                f.name,
+                                fields[i].ty,
+                                f.ty
+                            ),
+                        }
+                    }
+                }
+                let sid = self.anon_struct(hint, fields);
+                if let Some(d) = disc {
+                    self.discs.insert(sid, d);
+                }
+                Ty::Obj(sid)
+            }
             TSType::TSTypeLiteral(l) => {
                 // `{ [key: string]: V }` is a dictionary, like `Record<string, V>`.
                 if let [TSSignature::TSIndexSignature(ix)] = l.members.as_slice()
@@ -754,8 +817,59 @@ impl<'a> Lowerer<'a> {
                 .any(|w| self.tenv.contains_key(w))
     }
 
+    /// The properties of an object type literal typed as string literals (`kind: "a"`,
+    /// `kind: "strong" | "em"`): each name and its values.
+    fn literal_tags(members: &[TSSignature<'_>]) -> Vec<(String, Vec<String>)> {
+        let lit = |t: &TSType<'_>| match t {
+            TSType::TSLiteralType(l) => match &l.literal {
+                TSLiteral::StringLiteral(s) => Some(s.value.to_string()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let mut out = Vec::new();
+        for m in members {
+            let TSSignature::TSPropertySignature(p) = m else {
+                continue;
+            };
+            let (PropertyKey::StaticIdentifier(k), Some(a)) = (&p.key, &p.type_annotation) else {
+                continue;
+            };
+            let values: Option<Vec<String>> = match &a.type_annotation {
+                TSType::TSUnionType(u) => u.types.iter().map(lit).collect(),
+                t => lit(t).map(|v| vec![v]),
+            };
+            if let Some(v) = values {
+                out.push((k.name.to_string(), v));
+            }
+        }
+        out
+    }
+
+    /// An object type literal (not a `{ [key: string]: V }` dictionary), a union of them, or an
+    /// intersection: an alias of one is a struct that may name itself.
+    fn object_shaped(t: &TSType<'_>) -> bool {
+        match t {
+            TSType::TSTypeLiteral(l) => {
+                !matches!(l.members.as_slice(), [TSSignature::TSIndexSignature(_)])
+            }
+            TSType::TSUnionType(u) => {
+                u.types.len() > 1
+                    && u.types
+                        .iter()
+                        .all(|t| matches!(t, TSType::TSTypeLiteral(_)))
+            }
+            TSType::TSIntersectionType(_) => true,
+            TSType::TSParenthesizedType(p) => Self::object_shaped(&p.type_annotation),
+            _ => false,
+        }
+    }
+
     pub(crate) fn named_type(&mut self, name: &str) -> R<Ty> {
         if let Some(t) = self.named.get(name) {
+            if self.alias_resolving.contains(name) {
+                self.alias_hits.insert(name.to_string());
+            }
             return Ok(t.clone());
         }
         // The program's own declarations shadow the engine's names (`class Scene extends Component`).
@@ -788,6 +902,40 @@ impl<'a> Lowerer<'a> {
             return Ok(Ty::Obj(id));
         }
         if let Some(a) = self.aliases.get(name).copied() {
+            // An object-shaped alias may name itself (`type Block = .. { children: Block[] }`):
+            // its struct exists before its fields are worked out, as an interface's does.
+            if Self::object_shaped(&a.type_annotation) {
+                let id = self.new_struct(name, vec![]);
+                self.named.insert(name.to_string(), Ty::Obj(id));
+                self.alias_resolving.insert(name.to_string());
+                let t = self.ty(&a.type_annotation, name);
+                self.alias_resolving.remove(name);
+                let recursive = self.alias_hits.remove(name);
+                let t = t?;
+                let Ty::Obj(sid) = t.strip().clone() else {
+                    self.named.insert(name.to_string(), t.clone());
+                    return Ok(t);
+                };
+                // Not recursive after all: the shape's own struct, shared with the same
+                // inline type elsewhere (the placeholder stays unused).
+                if !recursive {
+                    // The placeholder must not pass for the type (layouts are found by name).
+                    self.m.structs[id].name = format!("__unused_{name}");
+                    self.named.insert(name.to_string(), t.clone());
+                    return Ok(t);
+                }
+                self.m.structs[id].fields = self.m.structs[sid].fields.clone();
+                if let Some(d) = self.discs.get(&sid).cloned() {
+                    self.discs.insert(id, d);
+                }
+                let t = if matches!(t, Ty::Nullable(_)) {
+                    Ty::Obj(id).nullable()
+                } else {
+                    Ty::Obj(id)
+                };
+                self.named.insert(name.to_string(), t.clone());
+                return Ok(t);
+            }
             let t = self.ty(&a.type_annotation, name)?;
             self.named.insert(name.to_string(), t.clone());
             return Ok(t);
@@ -806,25 +954,112 @@ impl<'a> Lowerer<'a> {
         }
         let ty = if rest.iter().all(|t| matches!(t, TSType::TSTypeLiteral(_))) && rest.len() > 1 {
             // A discriminated union of object types: one struct holding every variant's fields.
-            let mut fields: Vec<Field> = Vec::new();
+            // A field whose type differs between variants (`children: Inline[]` in one,
+            // `Block[]` in another) is a tagged union of those types; a test of the tag field
+            // (`b.kind === "quote"`, a `switch`) narrows it (`Disc`, `tagged.rs`).
+            let mut variants: Vec<Vec<Field>> = Vec::new();
+            let mut tags: Vec<Vec<(String, Vec<String>)>> = Vec::new();
             for t in &rest {
                 let TSType::TSTypeLiteral(l) = t else {
                     unreachable!()
                 };
-                for f in self.members(&l.members, hint)? {
+                variants.push(self.members(&l.members, hint)?);
+                tags.push(Self::literal_tags(&l.members));
+            }
+            let mut fields: Vec<Field> = Vec::new();
+            // Per field with differing types: its distinct types, and each variant's.
+            let mut differing: Vec<(String, Vec<Ty>, Vec<Option<usize>>)> = Vec::new();
+            for (v, vf) in variants.iter().enumerate() {
+                for f in vf {
                     match fields.iter().position(|o| o.name == f.name) {
-                        None => fields.push(f),
+                        None => fields.push(f.clone()),
                         Some(i) if fields[i].ty == f.ty => {}
-                        Some(i) => bail!(
-                            "union {hint}: field {} has two different types ({} and {})",
-                            f.name,
-                            fields[i].ty,
-                            f.ty
-                        ),
+                        Some(i) => {
+                            let d = match differing.iter().position(|d| d.0 == f.name) {
+                                Some(d) => d,
+                                None => {
+                                    // Every variant before this one that has it had the first type.
+                                    let mut per = vec![None; variants.len()];
+                                    for (w, wf) in variants[..v].iter().enumerate() {
+                                        if wf.iter().any(|g| g.name == f.name) {
+                                            per[w] = Some(0);
+                                        }
+                                    }
+                                    differing.push((
+                                        f.name.clone(),
+                                        vec![fields[i].ty.clone()],
+                                        per,
+                                    ));
+                                    differing.len() - 1
+                                }
+                            };
+                            let _ = i;
+                            let d = &mut differing[d];
+                            let k = match d.1.iter().position(|t| *t == f.ty) {
+                                Some(k) => k,
+                                None => {
+                                    d.1.push(f.ty.clone());
+                                    d.1.len() - 1
+                                }
+                            };
+                            d.2[v] = Some(k);
+                        }
+                    }
+                }
+                // A variant after the first difference that has the first type again.
+                for d in &mut differing {
+                    if d.2[v].is_none()
+                        && let Some(f) = vf.iter().find(|f| f.name == d.0)
+                    {
+                        d.2[v] = d.1.iter().position(|t| *t == f.ty);
                     }
                 }
             }
-            Ty::Obj(self.anon_struct(hint, fields))
+            let mut disc = None;
+            if !differing.is_empty() {
+                // The tag: a field every variant gives string literal values.
+                let tag = tags.first().and_then(|first| {
+                    first
+                        .iter()
+                        .map(|(n, _)| n.clone())
+                        .find(|n| tags.iter().all(|t| t.iter().any(|(m, _)| m == n)))
+                });
+                let Some(tag) = tag else {
+                    let (name, tys, _) = &differing[0];
+                    bail!(
+                        "union {hint}: field {name} has two different types ({} and {}) and the variants have no tag field to tell them apart",
+                        tys[0],
+                        tys[1]
+                    )
+                };
+                let mut out_fields = Vec::new();
+                for (name, tys, per) in differing {
+                    let u = self.make_union(tys);
+                    if let Some(f) = fields.iter_mut().find(|f| f.name == name) {
+                        f.ty = u;
+                    }
+                    out_fields.push((name, per));
+                }
+                let variant_tags = tags
+                    .iter()
+                    .map(|t| {
+                        t.iter()
+                            .find(|(n, _)| *n == tag)
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                disc = Some(super::Disc {
+                    tag,
+                    variants: variant_tags,
+                    fields: out_fields,
+                });
+            }
+            let sid = self.anon_struct(hint, fields);
+            if let Some(d) = disc {
+                self.discs.insert(sid, d);
+            }
+            Ty::Obj(sid)
         } else {
             let mut tys = Vec::new();
             for t in &rest {
@@ -881,6 +1116,8 @@ impl<'a> Lowerer<'a> {
         Ok(match (a, b) {
             (Ty::Null, t) | (t, Ty::Null) => t.clone().nullable(),
             (Ty::Lit, Ty::Str) | (Ty::Str, Ty::Lit) => Ty::Str,
+            // `m ? m[0] : "none"`: a string that may be missing beside a literal.
+            (Ty::Lit, t) | (t, Ty::Lit) if t.strip() == &Ty::Str => t.clone(),
             _ if a.strip() == b.strip() => a.strip().clone().nullable(),
             // Two classes of one family: the base class.
             _ if self.assignable(a, b) => b.strip().clone().nullable(),
@@ -899,9 +1136,126 @@ impl<'a> Lowerer<'a> {
         })
     }
 
+    /// `e` as a `ReactNode` (compiled as `UiElement[]`) when `to` is one and `e` is a single node:
+    /// an element is a list of it, text and numbers a fragment holding them, `null`, `undefined`
+    /// and booleans nothing (as React renders them).
+    fn react_node_of(&mut self, e: &Expr, to: &Ty) -> R<Option<Expr>> {
+        let node = Ty::Handle("UiElement".into());
+        // Text or a number where one element goes (`["x", <b/>]` as a `ReactNode`): a fragment
+        // holding it.
+        if *to.strip() == node
+            && matches!(e.ty, Ty::Str | Ty::Lit | Ty::Num)
+            && let Some(frag) = self
+                .manifest
+                .namespaces
+                .get("Ui")
+                .and_then(|n| n.get("fragment"))
+                .cloned()
+        {
+            let frag = self.emit_extern(&frag, vec![]);
+            let v = self.widen_lit(e.clone());
+            let cands = self
+                .manifest
+                .overloads
+                .get(&("Ui".to_string(), "child".to_string()))
+                .cloned()
+                .unwrap_or_default();
+            return self
+                .pick_overload("Ui", "child", &cands, vec![frag, v], "ReactNode")
+                .map(Some);
+        }
+        // A component returning a `ReactNode` where an element goes: a fragment of the nodes.
+        if *to.strip() == node && *e.ty.strip() == Ty::Arr(Box::new(node.clone())) {
+            let Some(frag) = self
+                .manifest
+                .namespaces
+                .get("Ui")
+                .and_then(|n| n.get("fragment"))
+                .cloned()
+            else {
+                return Ok(None);
+            };
+            let frag = self.emit_extern(&frag, vec![]);
+            let cands = self
+                .manifest
+                .overloads
+                .get(&("Ui".to_string(), "child".to_string()))
+                .cloned()
+                .unwrap_or_default();
+            let list = if e.ty.is_nullable() {
+                mk_expr_cast(e.clone(), e.ty.strip().clone())
+            } else {
+                e.clone()
+            };
+            return self
+                .pick_overload("Ui", "child", &cands, vec![frag, list], "ReactNode")
+                .map(Some);
+        }
+        if *to.strip() != Ty::Arr(Box::new(node.clone())) {
+            return Ok(None);
+        }
+        let arr = to.strip().clone();
+        let new_list = |n: usize| {
+            mk(
+                ExprKind::Rt(RtFn::ArrNew, vec![super::expr::num(n as f64)]),
+                arr.clone(),
+            )
+        };
+        let one = match e.ty.strip() {
+            Ty::Handle(h) if h == "UiElement" => e.clone(),
+            Ty::Str | Ty::Lit | Ty::Num if !e.ty.is_nullable() => {
+                let Some(frag) = self
+                    .manifest
+                    .namespaces
+                    .get("Ui")
+                    .and_then(|n| n.get("fragment"))
+                    .cloned()
+                else {
+                    return Ok(None);
+                };
+                let frag = self.emit_extern(&frag, vec![]);
+                let v = self.widen_lit(e.clone());
+                let cands = self
+                    .manifest
+                    .overloads
+                    .get(&("Ui".to_string(), "child".to_string()))
+                    .cloned()
+                    .unwrap_or_default();
+                self.pick_overload("Ui", "child", &cands, vec![frag, v], "ReactNode")?
+            }
+            Ty::Null | Ty::Void | Ty::Bool => {
+                let mut stmts = Vec::new();
+                if !matches!(e.ty, Ty::Null | Ty::Void) {
+                    stmts.push(Stmt::Eval(e.clone()));
+                }
+                return Ok(Some(mk(ExprKind::Seq(stmts, Box::new(new_list(0))), arr)));
+            }
+            _ => return Ok(None),
+        };
+        if e.ty.is_nullable() {
+            return Ok(None);
+        }
+        let t = self.new_local(arr.clone());
+        let stmts = vec![
+            Stmt::Assign(t, new_list(1)),
+            Stmt::Eval(mk(
+                ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(t), one]),
+                Ty::Void,
+            )),
+        ];
+        Ok(Some(mk(
+            ExprKind::Seq(stmts, Box::new(self.var_expr(t))),
+            arr,
+        )))
+    }
+
     pub(crate) fn coerce(&mut self, e: Expr, to: &Ty) -> R<Expr> {
         if e.ty == *to {
             return Ok(e);
+        }
+        // Where a `ReactNode` (`UiElement[]`) goes: an element, text, a number or nothing.
+        if let Some(n) = self.react_node_of(&e, to)? {
+            return Ok(n);
         }
         // A member where its union goes, and a union where one of its members goes
         // (`tagged.rs`).
@@ -933,21 +1287,37 @@ impl<'a> Lowerer<'a> {
         }
         // A plain object where a type with some of its fields (or `Partial`s of them) goes:
         // a copy. (Writes through the copy do not reach the original.)
-        if let (Ty::Obj(a), Ty::Obj(b)) = (&e.ty, to.strip())
+        if let (Ty::Obj(a), Ty::Obj(b)) = (e.ty.strip(), to.strip())
             && a != b
+            && (e.ty.is_nullable() <= to.is_nullable())
             && !self.assignable(&e.ty, to)
             && self.can_copy_fields(*a, *b)
         {
             let (a, b) = (*a, *b);
-            let copy = self.copy_fields(e, a, b);
-            return Ok(if to.is_nullable() {
-                Expr {
-                    kind: ExprKind::Cast(Box::new(copy)),
-                    ty: to.clone(),
-                }
-            } else {
-                copy
-            });
+            if !to.is_nullable() {
+                return Ok(self.copy_fields(e, a, b));
+            }
+            // Where `T | null` goes, null stays null (also behind a `!`, which tests nothing).
+            let tmp = self.new_local(e.ty.clone());
+            let t = self.var_expr(tmp);
+            let is_null = mk(ExprKind::IsNull(Box::new(t.clone())), Ty::Bool);
+            let plain = mk(ExprKind::Cast(Box::new(t)), Ty::Obj(a));
+            let copy = self.copy_fields(plain, a, b);
+            let copy = mk(ExprKind::Cast(Box::new(copy)), to.clone());
+            return Ok(mk(
+                ExprKind::Seq(
+                    vec![Stmt::Assign(tmp, e)],
+                    Box::new(mk(
+                        ExprKind::Cond(
+                            Box::new(is_null),
+                            Box::new(mk(ExprKind::Null, to.clone())),
+                            Box::new(copy),
+                        ),
+                        to.clone(),
+                    )),
+                ),
+                to.clone(),
+            ));
         }
         // A record (`Record<"a" | "b", V>`, an object of one type) where a `Record<string, V>` goes:
         // a map with its entries (a copy).
@@ -1099,6 +1469,67 @@ impl<'a> Lowerer<'a> {
                 } else {
                     Ok(tag)
                 }
+            }
+            // Text that may be missing where a union member goes (`style: forced` after
+            // `forced ? ..`): the member with that text, or null.
+            (Ty::Nullable(inner), t) if **inner == Ty::Str && t.strip() == &Ty::Lit => {
+                let tmp = self.new_local(e.ty.clone());
+                let v = self.var_expr(tmp);
+                let is_null = mk(ExprKind::IsNull(Box::new(v.clone())), Ty::Bool);
+                let tag = mk(
+                    ExprKind::StrTag(Box::new(mk(ExprKind::Cast(Box::new(v)), Ty::Str))),
+                    Ty::Lit,
+                );
+                let none = if to.is_nullable() {
+                    mk(ExprKind::Null, to.clone())
+                } else {
+                    // TypeScript narrowed it to a string; an unknown text is no member either.
+                    mk(ExprKind::StrTag(Box::new(self.str_lit(""))), Ty::Lit)
+                };
+                let tag = if to.is_nullable() {
+                    mk(ExprKind::Cast(Box::new(tag)), to.clone())
+                } else {
+                    tag
+                };
+                Ok(mk(
+                    ExprKind::Seq(
+                        vec![Stmt::Assign(tmp, e)],
+                        Box::new(mk(
+                            ExprKind::Cond(Box::new(is_null), Box::new(none), Box::new(tag)),
+                            to.clone(),
+                        )),
+                    ),
+                    to.clone(),
+                ))
+            }
+            // A union member that may be missing where a `string` goes: its text, or null (a
+            // test before it narrowed it in TypeScript when the target is a plain `string`).
+            (Ty::Nullable(inner), t) if **inner == Ty::Lit && t.strip() == &Ty::Str => {
+                let tmp = self.new_local(e.ty.clone());
+                let v = self.var_expr(tmp);
+                let is_null = mk(ExprKind::IsNull(Box::new(v.clone())), Ty::Bool);
+                let text = mk(
+                    ExprKind::TagStr(Box::new(mk(ExprKind::Cast(Box::new(v)), Ty::Lit))),
+                    Ty::Str,
+                );
+                let (text, none) = if to.is_nullable() {
+                    (
+                        mk(ExprKind::Cast(Box::new(text)), to.clone()),
+                        mk(ExprKind::Null, to.clone()),
+                    )
+                } else {
+                    (text, self.str_lit(""))
+                };
+                Ok(mk(
+                    ExprKind::Seq(
+                        vec![Stmt::Assign(tmp, e)],
+                        Box::new(mk(
+                            ExprKind::Cond(Box::new(is_null), Box::new(none), Box::new(text)),
+                            to.clone(),
+                        )),
+                    ),
+                    to.clone(),
+                ))
             }
             // A union member where a `string` is expected.
             (Ty::Lit, t) if t.strip() == &Ty::Str => {

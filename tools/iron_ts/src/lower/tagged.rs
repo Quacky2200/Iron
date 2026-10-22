@@ -247,6 +247,54 @@ impl<'a> Lowerer<'a> {
         )
     }
 
+    /// `f` of whichever member a (non-null) union value holds, as one value of type `ty`
+    /// (`Number(s ?? 1)` on a `string | number`).
+    pub(crate) fn union_map(
+        &mut self,
+        u: Expr,
+        ty: Ty,
+        mut f: impl FnMut(&mut Self, Expr) -> R<Expr>,
+    ) -> R<Expr> {
+        let members = self.union_members(&u.ty).unwrap_or_default();
+        let Ty::Obj(sid) = u.ty.strip().clone() else {
+            return f(self, u);
+        };
+        let tmp = self.new_local(u.ty.clone());
+        let t = self.var_expr(tmp);
+        let plain = mk(ExprKind::Cast(Box::new(t)), Ty::Obj(sid));
+        let tag_of = mk(ExprKind::Field(Box::new(plain.clone()), sid, 0), Ty::Num);
+        let mut chain: Option<Expr> = None;
+        for i in (0..members.len()).rev() {
+            let v = self.project_union(plain.clone(), i);
+            let r = f(self, v)?;
+            chain = Some(match chain {
+                None => r,
+                Some(rest) => mk(
+                    ExprKind::Cond(
+                        Box::new(mk(
+                            ExprKind::Cmp(
+                                CmpOp::Eq,
+                                Box::new(tag_of.clone()),
+                                Box::new(num(i as f64)),
+                            ),
+                            Ty::Bool,
+                        )),
+                        Box::new(r),
+                        Box::new(rest),
+                    ),
+                    ty.clone(),
+                ),
+            });
+        }
+        let Some(chain) = chain else {
+            bail!("an empty union")
+        };
+        Ok(mk(
+            ExprKind::Seq(vec![Stmt::Assign(tmp, u)], Box::new(chain)),
+            ty,
+        ))
+    }
+
     /// Is the union value one of the members `keep` accepts? (False for null.)
     pub(crate) fn union_is_member(&mut self, u: Expr, keep: impl Fn(&Ty) -> bool) -> Expr {
         let members = self.union_members(&u.ty).unwrap_or_default();
@@ -466,6 +514,29 @@ impl<'a> Lowerer<'a> {
                 out.extend(self.narrowings(&l.right, positive));
                 out
             }
+            // `P.kind === "quote"` on a discriminated union with per-variant field types.
+            Expression::BinaryExpression(b)
+                if matches!(
+                    b.operator,
+                    BinaryOperator::StrictEquality
+                        | BinaryOperator::StrictInequality
+                        | BinaryOperator::Equality
+                        | BinaryOperator::Inequality
+                ) && let Some((m, s)) = match (&b.left, &b.right) {
+                    (Expression::StaticMemberExpression(m), Expression::StringLiteral(s))
+                    | (Expression::StringLiteral(s), Expression::StaticMemberExpression(m)) => {
+                        Some((m, s))
+                    }
+                    _ => None,
+                } && self.disc_of(&m.object, m.property.name.as_str()).is_some() =>
+            {
+                let eq = matches!(
+                    b.operator,
+                    BinaryOperator::StrictEquality | BinaryOperator::Equality
+                );
+                let lit = s.value.to_string();
+                self.disc_narrowings(&m.object, m.property.name.as_str(), &[lit], positive == eq)
+            }
             // `typeof P === "number"`
             Expression::BinaryExpression(b)
                 if matches!(
@@ -572,6 +643,63 @@ impl<'a> Lowerer<'a> {
             }
             _ => vec![],
         }
+    }
+
+    /// The discriminated union `obj` is, when `tag` is its tag field.
+    pub(crate) fn disc_of(&mut self, obj: &'a Expression<'a>, tag: &str) -> Option<super::Disc> {
+        self.path_text(obj)?;
+        let mark = self.cur.locals.len();
+        let saved = std::mem::take(&mut self.cur.narrowed);
+        let v = self.lower_expr(obj, None);
+        self.cur.narrowed = saved;
+        self.cur.locals.truncate(mark);
+        let Ty::Obj(sid) = v.ok()?.ty.strip().clone() else {
+            return None;
+        };
+        self.discs.get(&sid).filter(|d| d.tag == tag).cloned()
+    }
+
+    /// What testing `obj.tag` against `lits` narrows: when it matched (`matched`), the fields of
+    /// the variants with one of those tags; when it did not, of the variants with other tags too.
+    pub(crate) fn disc_narrowings(
+        &mut self,
+        obj: &'a Expression<'a>,
+        tag: &str,
+        lits: &[String],
+        matched: bool,
+    ) -> Vec<(String, Vec<usize>)> {
+        let (Some(path), Some(d)) = (self.path_text(obj), self.disc_of(obj, tag)) else {
+            return vec![];
+        };
+        let keep: Vec<bool> = d
+            .variants
+            .iter()
+            .map(|vals| {
+                if matched {
+                    vals.iter().any(|v| lits.contains(v))
+                } else {
+                    // A variant is ruled out only when every tag value it can have was tested.
+                    !vals.iter().all(|v| lits.contains(v))
+                }
+            })
+            .collect();
+        let mut out = Vec::new();
+        for (field, per) in &d.fields {
+            let mut idxs: Vec<usize> = Vec::new();
+            for (v, k) in per.iter().enumerate() {
+                if let (true, Some(k)) = (keep[v], k)
+                    && !idxs.contains(k)
+                {
+                    idxs.push(*k);
+                }
+            }
+            let members = per.iter().flatten().max().map_or(0, |m| m + 1);
+            if !idxs.is_empty() && idxs.len() < members {
+                idxs.sort_unstable();
+                out.push((format!("{path}.{field}"), idxs));
+            }
+        }
+        out
     }
 
     /// The path `p`, narrowed to the members of its union that (do not) satisfy `keep`.

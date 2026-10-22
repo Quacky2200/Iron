@@ -579,3 +579,115 @@ function Scroller(): UiElement {
 export function scrollApp(): UiElement {
   return <Scroller />;
 }
+
+// The DOM's scroll calls on a ref, positional and with option objects.
+function ScrollCalls(): UiElement {
+  const r = useRef<UiNode | null>(null);
+  useEffect(() => {
+    const n = r.current;
+    if (n !== null) {
+      n.scrollIntoView({ block: "center", behavior: "smooth" });
+      n.scrollIntoView();
+      n.scrollTo({ top: 80 });
+      n.scrollTo(1, 2);
+      n.scrollBy({ left: 5, behavior: "instant" });
+      n.scrollBy(0, -10);
+    }
+  }, []);
+  return <box ref={r} />;
+}
+
+export function scrollCallsApp(): UiElement {
+  return <ScrollCalls />;
+}
+
+// ---- What the md-reader and launcher examples use ----
+
+// A callback ref: called with the element, and with null when it goes (or the function changes).
+function CallbackRef(): UiElement {
+  const [n, setN] = useState(0);
+  return (
+    <box onClick={() => setN(n + 1)}>
+      {n < 2 ? (
+        <box
+          ref={(el: UiNode | null) => {
+            note(el === null ? "ref:null" : "ref:el");
+          }}
+        />
+      ) : null}
+    </box>
+  );
+}
+
+export function callbackRefApp(): UiElement {
+  return <CallbackRef />;
+}
+
+// `<Fragment key>` around siblings of a list, and components that return any node.
+function Word({ w }: { w: string }): ReactNode {
+  if (w === "") return null;
+  if (w === "list") return ["x", <text>y</text>];
+  return w;
+}
+
+function Tree({ depth }: { depth: number }) {
+  return depth > 0 ? (
+    <box>
+      <Tree depth={depth - 1} />
+    </box>
+  ) : (
+    <text>leaf</text>
+  );
+}
+
+const Shown = memo(function Shown({ n }: { n: number }) {
+  return <text>{n}</text>;
+});
+
+export function nodesApp(): UiElement {
+  return (
+    <box>
+      {["a", "b"].map((s) => (
+        <Fragment key={s}>
+          <text>{s}</text>
+          <text>!</text>
+        </Fragment>
+      ))}
+      <Word w="hi" />
+      <Word w="" />
+      <Word w="list" />
+      <Tree depth={2} />
+      <Shown n={7} />
+    </box>
+  );
+}
+
+// `useSyncExternalStore` over a module store, and `useState` of a string-literal union.
+type Theme = "dark" | "light";
+let theme: Theme = "dark";
+const themeListeners = new Set<() => void>();
+
+export function setTheme(light: boolean): void {
+  theme = light ? "light" : "dark";
+  for (const f of themeListeners) f();
+}
+
+function Themed(): UiElement {
+  const t = useSyncExternalStore(
+    (f) => {
+      themeListeners.add(f);
+      return () => themeListeners.delete(f);
+    },
+    () => theme,
+  );
+  const [mode, setMode] = useState<"browse" | "details">("browse");
+  return (
+    <box onClick={() => setMode(mode === "browse" ? "details" : "browse")}>
+      <text>{`${t}/${mode}`}</text>
+    </box>
+  );
+}
+
+export function themedApp(): UiElement {
+  return <Themed />;
+}

@@ -31,6 +31,7 @@ mod iter;
 mod json;
 mod jsx;
 mod keyed;
+mod literals;
 pub use jsx::UI_MANIFEST;
 mod maps;
 mod messages;
@@ -264,6 +265,20 @@ pub(crate) struct FnCtx {
     pub const_nums: HashMap<VarId, f64>,
 }
 
+/// A discriminated union's struct (`type B = { kind: "a"; xs: A[] } | { kind: "b"; xs: B[] }`)
+/// where a field has a different type per variant: that field is a tagged union, and a test of
+/// the tag narrows it to the member of the variants the test lets through.
+#[derive(Clone, Debug)]
+pub(crate) struct Disc {
+    /// The tag field (`kind`).
+    pub tag: String,
+    /// Each variant's tag values.
+    pub variants: Vec<Vec<String>>,
+    /// The differing fields, and the member of the field's union each variant has (`None`: the
+    /// variant has no such field).
+    pub fields: Vec<(String, Vec<Option<usize>>)>,
+}
+
 pub struct Lowerer<'a> {
     pub(crate) src: &'a str,
     pub(crate) m: Module,
@@ -271,6 +286,10 @@ pub struct Lowerer<'a> {
     pub(crate) ifaces: HashMap<String, &'a TSInterfaceDeclaration<'a>>,
     pub(crate) named: HashMap<String, Ty>,
     pub(crate) shapes: HashMap<String, StructId>,
+    /// Object-shaped aliases being worked out (`types.rs` `named_type`), and those of them
+    /// that named themselves meanwhile (recursive ones keep their placeholder struct).
+    pub(crate) alias_resolving: HashSet<String>,
+    pub(crate) alias_hits: HashSet<String>,
     pub(crate) tag_ids: HashMap<String, u32>,
     pub(crate) fsrc: HashMap<String, FnSrc<'a>>,
     pub(crate) fids: HashMap<String, FuncId>,
@@ -311,6 +330,10 @@ pub struct Lowerer<'a> {
     /// The expected type is an array of string-literal members: the next `.map` keeps its
     /// callback's literals instead of making strings.
     pub(crate) map_keeps_lit: bool,
+    /// The type expected of the call being lowered (`lower_call`), and of a method call on an
+    /// array (`xs.map(..)` where a `ReactNode[]` is expected: the callback's result type).
+    pub(crate) call_exp: Option<Ty>,
+    pub(crate) method_exp: Option<Ty>,
     /// `Array.from(xs, fn)` lowers as `xs.map(fn)` with the callback one argument further.
     pub(crate) cb_skip: usize,
     /// The type parameters of the specialisation being lowered (`generics.rs`).
@@ -336,6 +359,8 @@ pub struct Lowerer<'a> {
     pub(crate) accessor_names: HashSet<String>,
     /// Unions of different types (`tagged.rs`): the struct and its member types.
     pub(crate) unions: HashMap<StructId, Vec<Ty>>,
+    /// Discriminated unions whose variants give a field different types: how the tag picks them.
+    pub(crate) discs: HashMap<StructId, Disc>,
     /// While a function body is lowered early (`ReturnType<typeof f>` in a field type), classes
     /// it instantiates are collected and laid out at once.
     pub(crate) eager_classes: bool,
@@ -533,6 +558,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         ifaces: HashMap::new(),
         named: HashMap::new(),
         shapes: HashMap::new(),
+        alias_resolving: HashSet::new(),
+        alias_hits: HashSet::new(),
         tag_ids: HashMap::new(),
         fsrc: HashMap::new(),
         fids: HashMap::new(),
@@ -558,6 +585,8 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         const_inits: HashMap::new(),
         cb_skip: 0,
         map_keeps_lit: false,
+        call_exp: None,
+        method_exp: None,
         tenv: Default::default(),
         generic_fns: HashMap::new(),
         generic_classes: HashMap::new(),
@@ -571,6 +600,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         accessor_names: HashSet::new(),
         setter_names: HashSet::new(),
         unions: HashMap::new(),
+        discs: HashMap::new(),
         eager_classes: false,
         laid_out: HashSet::new(),
         generic_itables: Vec::new(),
@@ -1049,6 +1079,22 @@ impl<'a> Lowerer<'a> {
             2 => return Ok(()),
             1 => {
                 if self.fsig[id].1.is_none() {
+                    // `const sort = (f) => { ..; f.kids.forEach(sort); }`: no `return value`, so
+                    // it returns nothing, as TypeScript infers.
+                    if let FnBody::Block(b) = self.fsrc[name].body
+                        && !stmt::returns_a_value(b)
+                    {
+                        self.fsig[id].1 = Some(Ty::Void);
+                        return Ok(());
+                    }
+                    // A component that renders itself (`<FileTree>` in `FileTree`): what a JSX
+                    // element is, `UiElement` (TypeScript's `JSX.Element`).
+                    if name.starts_with(|c: char| c.is_ascii_uppercase())
+                        && self.class_decls.contains_key("StyleEntry")
+                    {
+                        self.fsig[id].1 = Some(Ty::Handle("UiElement".into()));
+                        return Ok(());
+                    }
                     bail!("{name}: recursive function needs a return type annotation");
                 }
                 return Ok(());

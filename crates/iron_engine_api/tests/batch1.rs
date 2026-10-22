@@ -276,7 +276,7 @@ fn application_reads_the_manifest_and_returns_script_writes() {
             app::Request::TargetFrameRate(60),
             app::Request::RunInBackground(true),
             app::Request::TargetFrameRate(-1),
-            app::Request::Quit
+            app::Request::Quit(0)
         ]
     );
     let c = app::set_focus(false, true);

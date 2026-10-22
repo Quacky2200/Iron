@@ -79,13 +79,13 @@ pub const BUILTINS: &[Builtin] = &[
     ),
     top(
         "clearTimeout",
-        "declare function clearTimeout(id: number): void;",
-        "Cancels a `setTimeout`.",
+        "declare function clearTimeout(id: number | undefined): void;",
+        "Cancels a `setTimeout` (`undefined` does nothing).",
     ),
     top(
         "clearInterval",
-        "declare function clearInterval(id: number): void;",
-        "Cancels a `setInterval`.",
+        "declare function clearInterval(id: number | undefined): void;",
+        "Cancels a `setInterval` (`undefined` does nothing).",
     ),
     top(
         "queueMicrotask",

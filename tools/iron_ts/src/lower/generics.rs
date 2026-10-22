@@ -380,7 +380,25 @@ impl<'a> Lowerer<'a> {
                 let saved = std::mem::replace(&mut self.tenv, partial);
                 let again = self.closure_param_types(ann, what);
                 self.tenv = saved;
-                let Some(params_ty) = again else { continue };
+                let Some(params_ty) = again else {
+                    // `useCallback<F>(f: F)`: the closure's own type (its parameters written
+                    // in it, its result read from its body) is `F`.
+                    if let TSType::TSTypeReference(r) = ann
+                        && r.type_arguments.is_none()
+                        && let TSTypeName::IdentifierReference(id) = &r.type_name
+                        && names.iter().any(|n| n == id.name.as_str())
+                        && !found.contains_key(id.name.as_str())
+                    {
+                        let mark = self.cur.locals.len();
+                        let saved_infer = std::mem::replace(&mut self.infer_ret, true);
+                        let v = self.lower_expr(e, None);
+                        self.infer_ret = saved_infer;
+                        self.cur.locals.truncate(mark);
+                        let v = v?;
+                        self.unify_ann(ann, &v.ty, &names, &mut found, what)?;
+                    }
+                    continue;
+                };
                 let expect = Ty::Fn(Box::new(FnTy {
                     params: params_ty,
                     ret: Ty::Void,

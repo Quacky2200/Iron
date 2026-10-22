@@ -208,6 +208,11 @@ impl<'s> Finder<'s> {
             }
             _ => (name, is_component),
         };
+        // `<Fragment key={k}>`: a fragment with a key (React's `Fragment`), unless the program
+        // declares its own `Fragment`.
+        if is_component && name == "Fragment" && !self.declared.contains("Fragment") {
+            return self.keyed_fragment_text(e);
+        }
         if is_component {
             return self.component_text(&name, e);
         }
@@ -513,6 +518,27 @@ impl<'s> Finder<'s> {
         let mut out = format!("Ui.provider({ctx}.id, {value})");
         if let Some(k) = key {
             out = format!("Ui.key({out}, {k})");
+        }
+        self.children_text(&mut out, &e.children, at);
+        out
+    }
+
+    /// `<Fragment key={k}>children</Fragment>`: it takes `key` and nothing else.
+    fn keyed_fragment_text(&mut self, e: &JSXElement<'_>) -> String {
+        let at = e.opening_element.span.start;
+        let mut out = String::from("Ui.fragment()");
+        for item in &e.opening_element.attributes {
+            match item {
+                JSXAttributeItem::Attribute(a) if matches!(&a.name, JSXAttributeName::Identifier(n) if n.name == "key") =>
+                {
+                    let v = self.attr_value(&a.value, at);
+                    out = format!("Ui.key({out}, {v})");
+                }
+                _ => self.fail(format!(
+                    "line {}: a Fragment takes only `key`",
+                    self.line(at)
+                )),
+            }
         }
         self.children_text(&mut out, &e.children, at);
         out
@@ -835,6 +861,9 @@ fn desugar_passes(src: &str) -> R<Option<String>> {
             // Otherwise it is a JSX error: report the TSX parser's, with its line in the user's
             // source (the passes keep the line count).
             let d = &ret.diagnostics[0];
+            if std::env::var_os("IRON_TS_DUMP_SRC").is_some() {
+                eprintln!("{cur}");
+            }
             return Err(match d.labels.first() {
                 Some(l) => {
                     let line = cur[..(l.offset() as usize).min(cur.len())]
@@ -940,6 +969,46 @@ fn prepass(src: &str) -> R<(String, HashMap<String, String>, HashSet<String>)> {
                     start: span.start as usize,
                     end: span.end as usize,
                     text: blank,
+                });
+            }
+            // `const Fast = memo(function Fast(props) { .. })` (or an arrow): the function is
+            // declared under a name of its own and remembered like `memo(Slow)`.
+            (
+                "memo",
+                Some(
+                    arg @ (Expression::ArrowFunctionExpression(_)
+                    | Expression::FunctionExpression(_)),
+                ),
+            ) => {
+                let (params, ret_ty, body) = match arg {
+                    Expression::ArrowFunctionExpression(a) => {
+                        let body = match &a.body {
+                            ArrowFunctionBody::FunctionBody(b) => slice(b.span).to_string(),
+                            other => match other.as_expression() {
+                                Some(e) => format!("{{ return {}; }}", slice(e.span())),
+                                None => return Err("memo: an empty arrow body".into()),
+                            },
+                        };
+                        (&a.params, a.return_type.as_ref(), body)
+                    }
+                    Expression::FunctionExpression(f) => {
+                        let Some(b) = &f.body else {
+                            return Err("memo: a function without a body".into());
+                        };
+                        (&f.params, f.return_type.as_ref(), slice(b.span).to_string())
+                    }
+                    _ => unreachable!("matched above"),
+                };
+                let inner = format!("__memo_{name}");
+                let plist: Vec<&str> = params.items.iter().map(|p| slice(p.span)).collect();
+                let ret = ret_ty.map_or(String::new(), |r| {
+                    format!(": {}", slice(r.type_annotation.span()))
+                });
+                memo.insert(name, inner.clone());
+                edits.push(Edit {
+                    start: span.start as usize,
+                    end: span.end as usize,
+                    text: format!("function {inner}({}){ret} {body}", plist.join(", ")),
                 });
             }
             ("forwardRef", Some(arg)) => {

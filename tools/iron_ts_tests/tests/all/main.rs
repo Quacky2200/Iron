@@ -72,6 +72,7 @@ mod promises;
 mod promises2;
 mod props;
 mod random;
+mod readers;
 mod regexp;
 mod regexp2;
 mod render_native;

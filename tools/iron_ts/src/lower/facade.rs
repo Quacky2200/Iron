@@ -10,13 +10,19 @@ use super::*;
 /// `old` as a whole word (not part of a longer name).
 fn replace_word(src: &str, old: &str, new: &str) -> String {
     let word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    // Strings and comments keep what they say.
+    let literals = super::literals::literal_spans(src);
     let mut out = String::with_capacity(src.len());
     let mut rest = src;
     while let Some(i) = rest.find(old) {
+        let at = src.len() - rest.len() + i;
         let before = rest[..i].chars().next_back();
         let after = rest[i + old.len()..].chars().next();
         out.push_str(&rest[..i]);
-        if before.is_some_and(word) || after.is_some_and(word) {
+        if before.is_some_and(word)
+            || after.is_some_and(word)
+            || super::literals::in_spans(&literals, at)
+        {
             out.push_str(old);
         } else {
             out.push_str(new);

@@ -196,6 +196,10 @@ impl<'a> Lowerer<'a> {
 
     /// JavaScript's ToString for the values `+` and template literals join.
     pub(crate) fn stringify(&mut self, e: Expr) -> R<Expr> {
+        // `${b.line ?? "-"}`: whichever member it holds.
+        if self.union_members(&e.ty).is_some() && !e.ty.is_nullable() {
+            return self.union_map(e, Ty::Str, |s, m| s.stringify(m));
+        }
         match e.ty.clone() {
             Ty::Str => Ok(e),
             Ty::Lit => Ok(self.tag_to_str(e)),
@@ -556,6 +560,43 @@ impl<'a> Lowerer<'a> {
         ))
     }
 
+    /// `Number(v)` of a value that is not a union.
+    fn number_of(&mut self, v: Expr, at: &str) -> R<Expr> {
+        // A string that may be missing (`Number(arg("--n"))`): NaN for it, as for `undefined`
+        // (null and undefined are one value in compiled code).
+        if matches!(&v.ty, Ty::Nullable(i) if matches!(**i, Ty::Str | Ty::Lit)) {
+            let inner = v.ty.strip().clone();
+            let tmp = self.new_local(v.ty.clone());
+            let t = self.var_expr(tmp);
+            let is_null = mk(ExprKind::IsNull(Box::new(t.clone())), Ty::Bool);
+            let plain = mk(ExprKind::Cast(Box::new(t)), inner);
+            let n = self.number_of(plain, at)?;
+            return Ok(mk(
+                ExprKind::Seq(
+                    vec![Stmt::Assign(tmp, v)],
+                    Box::new(mk(
+                        ExprKind::Cond(Box::new(is_null), Box::new(num(f64::NAN)), Box::new(n)),
+                        Ty::Num,
+                    )),
+                ),
+                Ty::Num,
+            ));
+        }
+        if v.ty == Ty::Null {
+            return Ok(num(f64::NAN));
+        }
+        Ok(match v.ty.strip() {
+            Ty::Num => v,
+            Ty::BigInt => self.bigint_to_number(v),
+            Ty::Bool => self.bool_as_num(v),
+            Ty::Str | Ty::Lit => {
+                let s = self.widen_lit(v);
+                self.rt_str("ts_rt_str_to_number", vec![s], Ty::Num)
+            }
+            t => bail!("{at}: Number({t}) is not supported"),
+        })
+    }
+
     /// `String(x)`, `Number(x)`, `parseInt(s, radix)`, `parseFloat(s)`, `isNaN(x)`, `isFinite(x)`.
     pub(crate) fn lower_string_global(
         &mut self,
@@ -830,6 +871,14 @@ impl<'a> Lowerer<'a> {
                     Ty::Bool,
                 )
             }
+            // `Boolean(x)`: its truthiness.
+            "Boolean" => {
+                if c.arguments.is_empty() {
+                    return Ok(Some(mk(ExprKind::Bool(false), Ty::Bool)));
+                }
+                let v = first(self)?;
+                self.bool_of(v)
+            }
             "String" => {
                 if c.arguments.is_empty() {
                     return Ok(Some(self.str_lit("")));
@@ -843,15 +892,11 @@ impl<'a> Lowerer<'a> {
                 }
                 let v = first(self)?;
                 let v = self.date_value(v);
-                match v.ty.strip() {
-                    Ty::Num => v,
-                    Ty::BigInt => self.bigint_to_number(v),
-                    Ty::Bool => self.bool_as_num(v),
-                    Ty::Str | Ty::Lit => {
-                        let s = self.widen_lit(v);
-                        self.rt_str("ts_rt_str_to_number", vec![s], Ty::Num)
-                    }
-                    t => bail!("{at}: Number({t}) is not supported"),
+                if self.union_members(&v.ty).is_some() && !v.ty.is_nullable() {
+                    let at = at.clone();
+                    self.union_map(v, Ty::Num, move |s, m| s.number_of(m, &at))?
+                } else {
+                    self.number_of(v, &at)?
                 }
             }
             "encodeURI" | "encodeURIComponent" | "decodeURI" | "decodeURIComponent" | "escape"

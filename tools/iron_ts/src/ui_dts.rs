@@ -59,30 +59,65 @@ fn element_interface() -> String {
         .as_array()
         .and_then(|cs| cs.iter().find(|c| c["name"] == "UiNode"))
         .expect("the Ui manifest has UiNode");
+    // A parameter's TypeScript type: its `ts` text (a literal union named in `aliases`), else
+    // the manifest type's.
+    let ts = |p: &serde_json::Value| {
+        p["ts"].as_str().map_or_else(
+            || crate::types_dts::manifest_ts_type(p["type"].as_str().unwrap_or("void")),
+            str::to_owned,
+        )
+    };
+    let mut head = String::new();
+    for a in m["aliases"].as_array().into_iter().flatten() {
+        head += &format!(
+            "type {} = {};\n",
+            a["name"].as_str().unwrap_or("_"),
+            a["ts"].as_str().unwrap_or("never")
+        );
+    }
+    let mut options_done: Vec<&str> = Vec::new();
     let mut s = String::from("interface IronElement {\n");
     for f in class["functions"].as_array().into_iter().flatten() {
-        let params: Vec<String> = f["params"]
+        let name = f["name"].as_str().unwrap_or("_");
+        let returns = crate::types_dts::manifest_ts_type(f["returns"].as_str().unwrap_or("void"));
+        let params: Vec<&serde_json::Value> = f["params"]
             .as_array()
             .into_iter()
             .flatten()
             .filter(|p| p["name"] != "this")
-            .map(|p| {
-                format!(
-                    "{}: {}",
-                    p["name"].as_str().unwrap_or("_"),
-                    crate::types_dts::manifest_ts_type(p["type"].as_str().unwrap_or("void"))
-                )
-            })
             .collect();
-        s += &format!(
-            "  {}({}): {};\n",
-            f["name"].as_str().unwrap_or("_"),
-            params.join(", "),
-            crate::types_dts::manifest_ts_type(f["returns"].as_str().unwrap_or("void"))
-        );
+        // An options bag (`scrollIntoView({ block })`): its interface, the options form, and
+        // unless `optionsOnly` the positional numbers (`scrollTo(left, top)`).
+        if let Some(options) = f["optionsName"].as_str() {
+            if !options_done.contains(&options) {
+                options_done.push(options);
+                head += &format!("interface {options} {{\n");
+                for p in &params {
+                    head += &format!("  {}?: {};\n", p["name"].as_str().unwrap_or("_"), ts(p));
+                }
+                head += "}\n";
+            }
+            if f["optionsOnly"].as_bool() != Some(true) {
+                let numbers: Vec<String> = params
+                    .iter()
+                    .filter(|p| p["type"] == "f64")
+                    .map(|p| format!("{}: {}", p["name"].as_str().unwrap_or("_"), ts(p)))
+                    .collect();
+                s += &format!("  {name}({}): {returns};\n", numbers.join(", "));
+                s += &format!("  {name}(options: {options}): {returns};\n");
+            } else {
+                s += &format!("  {name}(options?: {options}): {returns};\n");
+            }
+            continue;
+        }
+        let params: Vec<String> = params
+            .iter()
+            .map(|p| format!("{}: {}", p["name"].as_str().unwrap_or("_"), ts(p)))
+            .collect();
+        s += &format!("  {name}({}): {returns};\n", params.join(", "));
     }
     s += "}\n";
-    s
+    head + &s
 }
 
 fn style_interface() -> String {
@@ -152,7 +187,7 @@ fn props_interface() -> String {
 
 fn jsx_namespace() -> String {
     let mut s = String::from(
-        "declare namespace JSX {\n  type Element = ReactElementLike;\n  interface ElementChildrenAttribute {\n    children: {};\n  }\n  interface IntrinsicAttributes {\n    key?: string | number;\n  }\n  interface IntrinsicElements {\n",
+        "declare namespace JSX {\n  type Element = ReactElementLike;\n  // A component may return any node (text, a list, null), as React's types allow (TS 5.1).\n  type ElementType = string | ((props: any) => ReactNode);\n  interface ElementChildrenAttribute {\n    children: {};\n  }\n  interface IntrinsicAttributes {\n    key?: string | number;\n  }\n  interface IntrinsicElements {\n",
     );
     for e in ELEMENTS {
         s += &format!("    {}: IronProps;\n", e.tag);
@@ -564,7 +599,13 @@ mod tests {
         ));
         assert!(t.contains("type BorderStyle =\n  | \"none\"\n"));
         // `ref` receives what the Ui manifest's `UiNode` offers.
-        assert!(t.contains("interface IronElement {\n  focus(): void;\n  blur(): void;\n  scrollTo(x: number, y: number): void;\n}"), "{t}");
+        assert!(t.contains("interface IronElement {\n  focus(): void;\n  blur(): void;\n  scrollTo(left: number, top: number): void;\n  scrollTo(options: ScrollToOptions): void;\n  scrollBy(left: number, top: number): void;\n  scrollBy(options: ScrollToOptions): void;\n  scrollIntoView(options?: ScrollIntoViewOptions): void;\n}"), "{t}");
+        // The DOM's scroll options (M3-EVT-08 / 09 in compiled games).
+        assert!(t.contains("interface ScrollIntoViewOptions {\n  block?: ScrollLogicalPosition;\n  inline?: ScrollLogicalPosition;\n  behavior?: ScrollBehavior;\n}"), "{t}");
+        assert!(
+            t.contains("type ScrollBehavior = \"auto\" | \"instant\" | \"smooth\";"),
+            "{t}"
+        );
         // Docs travel with the properties.
         assert!(t.contains("/** `contents` drops the box: children join the parent's layout. */"));
     }

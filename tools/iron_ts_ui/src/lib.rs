@@ -49,6 +49,16 @@ impl Rooted {
         check_exception();
     }
 
+    /// Calls a closure that takes a handle (`(el: IronElement | null) => void`; 0 is null).
+    fn call_with_handle(&self, h: u64) {
+        // SAFETY: as `call_void`, for a closure taking one 64-bit handle.
+        unsafe {
+            let f: unsafe extern "C" fn(*mut u8, u64) = std::mem::transmute((*self.ptr).func);
+            f((*self.ptr).env, h);
+        }
+        check_exception();
+    }
+
     fn call_u64(&self) -> u64 {
         // SAFETY: as `call_void`, for a closure returning a handle.
         let r = unsafe {
@@ -557,6 +567,24 @@ pub extern "C" fn ts_ui_ref(h: u64, obj: u64) -> u64 {
     h
 }
 
+/// `ref={(el) => ..}`: a callback ref, called with the node when the element attaches and with
+/// null (0) when it detaches, as React does.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_ref_fn(h: u64, f: *mut Closure) -> u64 {
+    if !f.is_null() {
+        let rc = Rooted::new(f);
+        let node_ref = NodeRef::with_callback(move |n| {
+            rc.call_with_handle(n.map_or(0, |n| u64::from(n.raw()) + 1))
+        });
+        with_built(h, |b| {
+            if let Built::Host { props, .. } = b {
+                props.node_ref = Some(node_ref);
+            }
+        });
+    }
+    h
+}
+
 /// A `UiNode` handle as the node id.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_node_id(n: u64) -> f64 {
@@ -569,8 +597,17 @@ pub extern "C" fn ts_ui_node_id(n: u64) -> f64 {
 pub enum NodeCommand {
     Focus(u32),
     Blur(u32),
-    /// Scroll the node's content to this offset.
-    ScrollTo(u32, f64, f64),
+    /// Scroll the node's content to this offset (NaN: that axis stays), as the behaviour says.
+    ScrollTo(u32, f64, f64, iron_ui::ScrollBehavior),
+    /// Scroll the node's content by this much.
+    ScrollBy(u32, f64, f64, iron_ui::ScrollBehavior),
+    /// `scrollIntoView({ block, inline, behavior })`.
+    ScrollIntoView {
+        id: u32,
+        block: iron_ui::ScrollAlign,
+        inline: iron_ui::ScrollAlign,
+        behavior: iron_ui::ScrollBehavior,
+    },
     /// `dataTransfer.setDragImage(element, x, y)`: the element to show under the pointer (0 for
     /// none) and where it is held.
     DragImage(u32, f64, f64),
@@ -601,9 +638,47 @@ pub extern "C" fn ts_ui_node_blur(n: u64) {
     node_command(n, NodeCommand::Blur);
 }
 
+/// A `behavior` argument: `"auto"`, `"instant"` or `"smooth"` (left out or unknown: auto).
+fn behavior(b: *const u8) -> iron_ui::ScrollBehavior {
+    iron_ui::ScrollBehavior::parse(&text(b)).unwrap_or_default()
+}
+
+/// `scrollTo(x, y)` or `scrollTo({ left, top, behavior })`: a left-out axis (NaN) stays.
 #[unsafe(no_mangle)]
-pub extern "C" fn ts_ui_node_scroll_to(n: u64, x: f64, y: f64) {
-    node_command(n, |id| NodeCommand::ScrollTo(id, x, y));
+pub extern "C" fn ts_ui_node_scroll_to(n: u64, x: f64, y: f64, b: *const u8) {
+    let b = behavior(b);
+    node_command(n, |id| NodeCommand::ScrollTo(id, x, y, b));
+}
+
+/// `scrollBy(dx, dy)` or `scrollBy({ left, top, behavior })`: a left-out axis is 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_scroll_by(n: u64, dx: f64, dy: f64, b: *const u8) {
+    let b = behavior(b);
+    let or0 = |v: f64| if v.is_nan() { 0.0 } else { v };
+    node_command(n, |id| NodeCommand::ScrollBy(id, or0(dx), or0(dy), b));
+}
+
+/// `scrollIntoView({ block, inline, behavior })` with the DOM's defaults (`block: "start"`,
+/// `inline: "nearest"`, `behavior: "auto"`) for keys left out.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_scroll_into_view(
+    n: u64,
+    block: *const u8,
+    inline: *const u8,
+    b: *const u8,
+) {
+    let align = |s: *const u8, default| iron_ui::ScrollAlign::parse(&text(s)).unwrap_or(default);
+    let (block, inline) = (
+        align(block, iron_ui::ScrollAlign::Start),
+        align(inline, iron_ui::ScrollAlign::Nearest),
+    );
+    let behavior = behavior(b);
+    node_command(n, |id| NodeCommand::ScrollIntoView {
+        id,
+        block,
+        inline,
+        behavior,
+    });
 }
 
 /// `dataTransfer.setDragImage`: `id` 0 shows no drag image.
@@ -885,8 +960,11 @@ pub fn link_anchor() -> usize {
         ts_ui_key_num as *const () as usize,
         ts_ui_child_bool as *const () as usize,
         ts_ui_node_focus as *const () as usize,
+        ts_ui_ref_fn as *const () as usize,
         ts_ui_node_blur as *const () as usize,
         ts_ui_node_scroll_to as *const () as usize,
+        ts_ui_node_scroll_by as *const () as usize,
+        ts_ui_node_scroll_into_view as *const () as usize,
         ts_ui_state_slot as *const () as usize,
         ts_ui_state_empty as *const () as usize,
         ts_ui_on as *const () as usize,
@@ -1009,6 +1087,13 @@ pub fn manifest_json() -> String {
         f("child", "ts_ui_child_arr", &[("h", el), ("items", els)], el),
         f("child", "ts_ui_child_bool", &[("h", el), ("b", "bool")], el),
         f("ref", "ts_ui_ref", &[("h", el), ("r", "ptr")], el),
+        // `Ui.ref` with a function: the lowering picks it by the value's type.
+        f(
+            "refFn",
+            "ts_ui_ref_fn",
+            &[("h", el), ("f", "fn(handle:UiNode):void")],
+            el,
+        ),
         f("nodeId", "ts_ui_node_id", &[("n", "handle:UiNode")], "f64"),
         f(
             "provider",
@@ -1105,15 +1190,58 @@ pub fn manifest_json() -> String {
         v["kind"] = json!("method");
         v
     };
+    // Parameters from `from` on may be left out (NaN, an empty string); the string ones are
+    // literal unions in the declarations (`ts`, see `aliases`).
+    let optional = |v: &mut Value, from: usize| {
+        for p in v["params"].as_array_mut().into_iter().flatten().skip(from) {
+            p["optional"] = json!(true);
+            match p["name"].as_str() {
+                Some("behavior") => p["ts"] = json!("ScrollBehavior"),
+                Some("block" | "inline") => p["ts"] = json!("ScrollLogicalPosition"),
+                _ => {}
+            }
+        }
+    };
+    // `scrollTo(x, y)` / `scrollTo({ left, top, behavior })`, also `scrollBy`.
+    let scroll = |name: &str, symbol: &str, options: &str| {
+        let mut v = node(
+            name,
+            symbol,
+            &[("left", "f64"), ("top", "f64"), ("behavior", "string")],
+        );
+        optional(&mut v, 1);
+        v["optionsName"] = json!(options);
+        v
+    };
+    let mut into_view = node(
+        "scrollIntoView",
+        "ts_ui_node_scroll_into_view",
+        &[
+            ("block", "string"),
+            ("inline", "string"),
+            ("behavior", "string"),
+        ],
+    );
+    optional(&mut into_view, 1);
+    into_view["optionsName"] = json!("ScrollIntoViewOptions");
+    into_view["optionsOnly"] = json!(true);
     let classes = vec![json!({
         "name": "UiNode",
         "functions": [
             node("focus", "ts_ui_node_focus", &[]),
             node("blur", "ts_ui_node_blur", &[]),
-            node("scrollTo", "ts_ui_node_scroll_to", &[("x", "f64"), ("y", "f64")]),
+            scroll("scrollTo", "ts_ui_node_scroll_to", "ScrollToOptions"),
+            scroll("scrollBy", "ts_ui_node_scroll_by", "ScrollToOptions"),
+            into_view,
         ],
     })];
-    json!({ "namespace": "Ui", "functions": functions, "classes": classes }).to_string()
+    // The DOM's names for the scroll options' strings.
+    let aliases = json!([
+        { "name": "ScrollBehavior", "ts": "\"auto\" | \"instant\" | \"smooth\"" },
+        { "name": "ScrollLogicalPosition", "ts": "\"start\" | \"center\" | \"end\" | \"nearest\"" },
+    ]);
+    json!({ "namespace": "Ui", "functions": functions, "classes": classes, "aliases": aliases })
+        .to_string()
 }
 
 include!(concat!(env!("OUT_DIR"), "/symbols.rs"));

@@ -146,7 +146,10 @@ impl<'a> Lowerer<'a> {
                 if self.cur.ret_inferred
                     && self.cur.ret == Some(Ty::Null)
                     && v.ty != Ty::Null
-                    && (v.ty.is_ptr() || matches!(v.ty, Ty::Handle(_)))
+                    && v.ty != Ty::Void
+                    && (v.ty.is_nullable()
+                        || v.ty.is_ptr()
+                        || matches!(v.ty, Ty::Handle(_) | Ty::Num | Ty::Bool))
                 {
                     self.cur.ret = Some(v.ty.clone().nullable());
                 }
@@ -275,6 +278,24 @@ impl<'a> Lowerer<'a> {
         kind: RetKind,
         res: Option<VarId>,
     ) -> R<Stmt> {
+        // `xs.filter(Boolean)`: the element's truthiness.
+        if let Expression::Identifier(id) = cb
+            && id.name == "Boolean"
+            && self.lookup("Boolean").is_none()
+            && !self.fids.contains_key("Boolean")
+        {
+            let v = self.var_expr(params[0]);
+            let b = self.bool_of(v);
+            return Ok(match (kind, res) {
+                (RetKind::Pred | RetKind::Val, Some(r)) => {
+                    if self.cur.locals[r as usize] == Ty::Void {
+                        self.cur.locals[r as usize] = Ty::Bool;
+                    }
+                    Stmt::Assign(r, b)
+                }
+                _ => Stmt::Eval(b),
+            });
+        }
         let callee = self.lower_expr(cb, None)?;
         let Ty::Fn(sig) = callee.ty.strip().clone() else {
             bail!("an array method callback must be a function")
@@ -661,6 +682,7 @@ impl<'a> Lowerer<'a> {
         m: &str,
         c: &'a CallExpression<'a>,
     ) -> R<Expr> {
+        let method_exp = self.method_exp.take();
         let rty = recv.ty.strip().clone();
         if let Ty::Obj(sid) = &rty {
             let sid = *sid;
@@ -919,7 +941,7 @@ impl<'a> Lowerer<'a> {
                                 mk(ExprKind::Seq(stmts, Box::new(ov)), ty)
                             }
                             "find" | "findLast" => {
-                                if !(el.is_ptr() || el == Ty::Num) {
+                                if !(el.is_ptr() || el == Ty::Num || el == Ty::Lit) {
                                     bail!("find over {el} elements");
                                 }
                                 let ty = el.clone().nullable();
@@ -957,8 +979,15 @@ impl<'a> Lowerer<'a> {
                         }
                     }
                     _ => {
-                        // map: the element type is whatever the callback returns.
+                        // map: the element type is whatever the callback returns, or what the
+                        // call's context expects (`ReactNode[]`).
                         let r = self.new_local(Ty::Void);
+                        if let Some(Ty::Arr(want)) = method_exp.as_ref().map(|t| t.strip())
+                            && **want != Ty::Void
+                            && !matches!(cb, Expression::ArrowFunctionExpression(f) if f.return_type.is_some())
+                        {
+                            self.cur.locals[r as usize] = (**want).clone();
+                        }
                         body.push(self.inline_cb(cb, &params, RetKind::Val, Some(r))?);
                         let rty = self.cur.locals[r as usize].clone();
                         // A callback that returns string literals (`v ? "1" : "0"`) makes strings.

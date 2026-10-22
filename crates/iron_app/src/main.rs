@@ -1805,13 +1805,36 @@ impl App {
             let (id, input) = match c {
                 NodeCommand::Focus(id) => (id, Input::Focus(iron_core::NodeId(id))),
                 NodeCommand::Blur(id) => (id, Input::Blur(iron_core::NodeId(id))),
-                NodeCommand::ScrollTo(id, x, y) => (
+                NodeCommand::ScrollTo(id, x, y, behavior) => (
                     id,
                     Input::ScrollTo {
                         id: iron_core::NodeId(id),
                         x: x as f32,
                         y: y as f32,
-                        behavior: ScrollBehavior::Auto,
+                        behavior,
+                    },
+                ),
+                NodeCommand::ScrollBy(id, dx, dy, behavior) => (
+                    id,
+                    Input::ScrollBy {
+                        id: iron_core::NodeId(id),
+                        dx: dx as f32,
+                        dy: dy as f32,
+                        behavior,
+                    },
+                ),
+                NodeCommand::ScrollIntoView {
+                    id,
+                    block,
+                    inline,
+                    behavior,
+                } => (
+                    id,
+                    Input::ScrollIntoView {
+                        id: iron_core::NodeId(id),
+                        block,
+                        inline,
+                        behavior,
                     },
                 ),
                 NodeCommand::DragImage(..) => unreachable!("handled above"),

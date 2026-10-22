@@ -95,6 +95,8 @@ class RegExpMatchArray {
   input: string = "";
   groups: Map<string, string | null> | null = null;
 }
+// What `exec` returns, by lib.es5's name.
+type RegExpExecArray = RegExpMatchArray;
 "#;
 
 /// The `Date` class: its one field is the time value (see `lower/date.rs`).
@@ -362,8 +364,10 @@ pub fn weak_refs(src: &str) -> String {
     if !src.contains("WeakRef") || src.contains("class WeakRef") {
         return String::new();
     }
+    // Classes declared in code, not the word in a string.
+    let code = super::literals::code_only(src);
     let mut out = String::new();
-    let mut rest = src;
+    let mut rest = code.as_str();
     while let Some(i) = rest.find("class ") {
         rest = &rest[i + 6..];
         let name: String = rest
@@ -410,8 +414,9 @@ pub const TIMERS: &str = r#"function __uncaught(e: Error): void { console.error(
 function queueMicrotask(callback: () => void): void { __queueMicrotask(() => { try { callback(); } catch (e) { __uncaught(e as Error); } }); }
 function setTimeout(callback: (arg?: number) => void, ms: number = 0): number { return __timerAdd(() => { try { callback(undefined); } catch (e) { __uncaught(e as Error); } }, ms, false); }
 function setInterval(callback: (arg?: number) => void, ms: number = 0): number { return __timerAdd(() => { try { callback(undefined); } catch (e) { __uncaught(e as Error); } }, ms, true); }
-function clearTimeout(id: number): void { __timerClear(id); }
-function clearInterval(id: number): void { __timerClear(id); }
+// `number | undefined`, as the DOM's: a timer variable that was never set is fine.
+function clearTimeout(id: number | undefined): void { if (id !== undefined) { __timerClear(id); } }
+function clearInterval(id: number | undefined): void { if (id !== undefined) { __timerClear(id); } }
 "#;
 
 /// Does the program use timers or microtasks (and not define them itself)?

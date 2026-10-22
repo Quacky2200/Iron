@@ -36,18 +36,48 @@ pub struct PadState {
     pub axes: Vec<(String, f64)>,
 }
 
-/// What a `gamepadconnected` / `gamepaddisconnected` listener gets.
+/// What an `input.on` listener gets: the fields of its kind (`js/engine`'s `InputEvents`), the
+/// others empty (a key event's `gamepad` is no pad, id -1).
 #[derive(Clone, Debug, PartialEq)]
-pub struct PadEvent {
+pub struct InputEvent {
     pub gamepad: PadState,
+    /// `gamepadbuttondown` / `up`: the button's name (`South`).
+    pub button: String,
+    /// `gamepadaxis`: the axis (`LeftStickX`) and its value (-1 to 1).
+    pub axis: String,
+    pub value: f64,
+    /// `keydown` / `keyup`: the physical key (`KeyW`), what it means in the layout (`w`), and
+    /// whether it is the OS's auto-repeat.
+    pub code: String,
+    pub key: String,
+    pub repeat: bool,
 }
 
-/// Which gamepad event `input.on` listens to.
+impl InputEvent {
+    fn of_pad(gamepad: PadState) -> Self {
+        InputEvent {
+            gamepad,
+            button: String::new(),
+            axis: String::new(),
+            value: 0.0,
+            code: String::new(),
+            key: String::new(),
+            repeat: false,
+        }
+    }
+}
+
+/// Which event `input.on` listens to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum PadEventType {
+pub enum InputEventType {
     #[default]
+    KeyDown,
+    KeyUp,
     Connected,
     Disconnected,
+    ButtonDown,
+    ButtonUp,
+    Axis,
 }
 
 const STANDARD_BUTTONS: &[&str] = &[
@@ -125,6 +155,8 @@ struct State {
     delta: (f64, f64),
     wheel: (f64, f64),
     pads: Vec<Pad>,
+    /// The layout's text for the key event being delivered (`input.on`'s `key`).
+    key_text: String,
     on_key_down: Listeners<(String, bool)>,
     on_key_up: Listeners<(String,)>,
     on_pad_connected: Listeners<(f64,)>,
@@ -252,8 +284,14 @@ pub fn key_down_event(code: &str) {
 
 /// A key went down; `repeat` is the OS auto-repeat.
 pub fn key_down(code: &str, repeat: bool) {
+    key_down_with_text(code, "", repeat);
+}
+
+/// [`key_down`] with what the key means in the layout (`w` for `KeyW`), for `input.on`'s `key`.
+pub fn key_down_with_text(code: &str, key: &str, repeat: bool) {
     let cbs = STATE.with(|s| {
         let mut s = s.borrow_mut();
+        s.key_text = key.to_string();
         if !repeat && !s.keys.contains(code) {
             s.pressed_pending.insert(code.to_string());
         }
@@ -264,8 +302,14 @@ pub fn key_down(code: &str, repeat: bool) {
 }
 
 pub fn key_up_event(code: &str) {
+    key_up_with_text(code, "");
+}
+
+/// [`key_up_event`] with the layout's text for the key.
+pub fn key_up_with_text(code: &str, key: &str) {
     let cbs = STATE.with(|s| {
         let mut s = s.borrow_mut();
+        s.key_text = key.to_string();
         if s.keys.remove(code) {
             s.released_pending.insert(code.to_string());
         }
@@ -462,8 +506,16 @@ const MOUSE_SENSITIVITY: f64 = 0.1;
     namespace = "input", quickjs,
     values(Vector2 = V2 [x: f64, y: f64]),
     enums(
-        /// The gamepad events `input.on` listens to.
-        GamepadEventType = PadEventType [Connected = "gamepadconnected", Disconnected = "gamepaddisconnected"]
+        /// The events `input.on` listens to (`js/engine`'s `keyof InputEvents`).
+        InputEventType = InputEventType [
+            KeyDown = "keydown",
+            KeyUp = "keyup",
+            Connected = "gamepadconnected",
+            Disconnected = "gamepaddisconnected",
+            ButtonDown = "gamepadbuttondown",
+            ButtonUp = "gamepadbuttonup",
+            Axis = "gamepadaxis"
+        ]
     ),
     records(
         /// A gamepad: its buttons (0 to 1) and axes (-1 to 1) by name; a standard name it does not report is 0.
@@ -474,13 +526,22 @@ const MOUSE_SENSITIVITY: f64 = 0.1;
             buttons: dict,
             axes: dict
         ],
-        /// What a `gamepadconnected` or `gamepaddisconnected` listener gets.
-        GamepadChange = PadEvent [gamepad: Gamepad]
+        /// What an `input.on` listener gets: the fields of its kind (`code`, `key` and `repeat` for
+        /// keys; `gamepad`, and `button` or `axis` and `value`, for pads), the others empty.
+        InputEvent = InputEvent [
+            gamepad: Gamepad,
+            button: string,
+            axis: string,
+            value: f64,
+            code: string,
+            key: string,
+            repeat: bool
+        ]
     )
 )]
 pub mod input_api {
     use super::{
-        MOUSE_SENSITIVITY, PadEvent, PadEventType, PadState, STATE, axis_def, button_def,
+        InputEvent, InputEventType, MOUSE_SENSITIVITY, PadState, STATE, axis_def, button_def,
         mouse_code, pad_state, value_of,
     };
     use iron_api::Callback;
@@ -498,21 +559,71 @@ pub mod input_api {
         })
     }
 
-    /// Calls `fn({ gamepad })` when a gamepad connects (`gamepadconnected`) or disconnects
-    /// (`gamepaddisconnected`); returns a function that stops listening. The callback gets the
+    /// Listens for an input event, as `js/engine`'s `input.on`: `keydown` / `keyup` (`{ code, key,
+    /// repeat }`, mouse buttons too as `MouseLeft` ...), `gamepadconnected` / `gamepaddisconnected`
+    /// (`{ gamepad }`), `gamepadbuttondown` / `up` (`{ gamepad, button }`) and `gamepadaxis`
+    /// (`{ gamepad, axis, value }`); returns a function that stops listening. The callback gets the
     /// event as JSON text, which the compiler parses.
-    #[subscription(off = "off", json = "GamepadChange")]
-    pub fn on(kind: PadEventType, f: Callback<(String,)>) -> u32 {
-        let wrap = move |(id,): (f64,)| {
-            let state = STATE.with(|s| pad_state(&s.borrow(), id as i64));
-            let event = PadEvent { gamepad: state };
-            f.call((__to_json_GamepadChange(&event).to_string(),));
-        };
+    #[subscription(off = "off", json = "InputEvent")]
+    pub fn on(kind: InputEventType, f: Callback<(String,)>) -> u32 {
+        let send = move |e: InputEvent| f.call((__to_json_InputEvent(&e).to_string(),));
+        let pad = |id: f64| STATE.with(|s| pad_state(&s.borrow(), id as i64));
+        let key_text = || STATE.with(|s| s.borrow().key_text.clone());
         STATE.with(|s| {
             let mut s = s.borrow_mut();
             match kind {
-                PadEventType::Connected => s.on_pad_connected.add(Callback::from_fn(wrap)),
-                PadEventType::Disconnected => s.on_pad_disconnected.add(Callback::from_fn(wrap)),
+                InputEventType::KeyDown => {
+                    s.on_key_down
+                        .add(Callback::from_fn(move |(code, repeat): (String, bool)| {
+                            send(InputEvent {
+                                code,
+                                key: key_text(),
+                                repeat,
+                                ..InputEvent::of_pad(pad(-1.0))
+                            })
+                        }))
+                }
+                InputEventType::KeyUp => {
+                    s.on_key_up
+                        .add(Callback::from_fn(move |(code,): (String,)| {
+                            send(InputEvent {
+                                code,
+                                key: key_text(),
+                                ..InputEvent::of_pad(pad(-1.0))
+                            })
+                        }))
+                }
+                InputEventType::Connected | InputEventType::Disconnected => {
+                    let cb =
+                        Callback::from_fn(move |(id,): (f64,)| send(InputEvent::of_pad(pad(id))));
+                    if kind == InputEventType::Connected {
+                        s.on_pad_connected.add(cb)
+                    } else {
+                        s.on_pad_disconnected.add(cb)
+                    }
+                }
+                InputEventType::ButtonDown | InputEventType::ButtonUp => {
+                    let cb = Callback::from_fn(move |(id, button): (f64, String)| {
+                        send(InputEvent {
+                            button,
+                            ..InputEvent::of_pad(pad(id))
+                        })
+                    });
+                    if kind == InputEventType::ButtonDown {
+                        s.on_pad_button_down.add(cb)
+                    } else {
+                        s.on_pad_button_up.add(cb)
+                    }
+                }
+                InputEventType::Axis => s.on_pad_axis.add(Callback::from_fn(
+                    move |(id, axis, value): (f64, String, f64)| {
+                        send(InputEvent {
+                            axis,
+                            value,
+                            ..InputEvent::of_pad(pad(id))
+                        })
+                    },
+                )),
             }
         })
     }

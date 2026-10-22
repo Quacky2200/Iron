@@ -21,6 +21,8 @@ pub struct AppInfo {
     pub run_in_background: bool,
     /// The manifest's frame rate, or -1.
     pub target_frame_rate: i32,
+    /// The command line's arguments after `--` (`iron game -- --level 2`).
+    pub args: Vec<String>,
 }
 
 impl Default for AppInfo {
@@ -35,6 +37,7 @@ impl Default for AppInfo {
             is_editor: false,
             run_in_background: false,
             target_frame_rate: -1,
+            args: Vec::new(),
         }
     }
 }
@@ -101,7 +104,8 @@ pub enum Request {
     /// `Application.targetFrameRate = n` (-1: as fast as presenting allows).
     TargetFrameRate(i32),
     RunInBackground(bool),
-    Quit,
+    /// `Application.quit(exitCode)`: the process's exit code (0 by default).
+    Quit(i32),
 }
 
 /// What changed in [`set_focus`], so the host can run `onApplicationPause` / `onApplicationFocus`.
@@ -310,9 +314,24 @@ pub mod application_api {
         STATE.with(|s| s.borrow_mut().focus_listeners.remove(token))
     }
 
-    /// Closes the game after this frame.
-    pub fn quit() {
-        STATE.with(|s| s.borrow_mut().requests.push(Request::Quit));
+    /// The command line's arguments for the game: everything after `--`
+    /// (`iron examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`. A copy
+    /// each read.
+    #[property]
+    pub fn args() -> Vec<String> {
+        app(|a| a.args.clone())
+    }
+
+    /// Closes the game after this frame; `iron` exits with `exit_code` (0, success, by default;
+    /// a fraction is cut off, as `Math.trunc`).
+    #[optional(exit_code = 0.0)]
+    pub fn quit(exit_code: f64) {
+        let code = if exit_code.is_finite() {
+            exit_code.trunc() as i32
+        } else {
+            0
+        };
+        STATE.with(|s| s.borrow_mut().requests.push(Request::Quit(code)));
     }
 }
 

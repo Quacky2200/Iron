@@ -13,16 +13,21 @@ pub fn rewrite(src: &str) -> Option<String> {
     if !src.contains("Temporal.") {
         return None;
     }
+    // A string that says `Temporal.PlainDate` keeps saying it.
+    let literals = super::literals::literal_spans(src);
     let b = src.as_bytes();
     let mut out = String::with_capacity(src.len());
     let mut i = 0;
+    let mut any = false;
     while i < src.len() {
         if src[i..].starts_with("Temporal.")
+            && !super::literals::in_spans(&literals, i)
             && (i == 0
                 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_' || b[i - 1] == b'.'))
             && b.get(i + 9).is_some_and(|c| c.is_ascii_uppercase())
         {
             out.push_str("Temporal_");
+            any = true;
             i += 9;
         } else {
             let ch = src[i..].chars().next().expect("in range");
@@ -30,7 +35,7 @@ pub fn rewrite(src: &str) -> Option<String> {
             i += ch.len_utf8();
         }
     }
-    Some(out)
+    any.then_some(out)
 }
 
 /// The parse function for a Temporal class name.

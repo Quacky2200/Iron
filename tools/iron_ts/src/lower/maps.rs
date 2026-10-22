@@ -124,6 +124,71 @@ impl<'a> Lowerer<'a> {
                 source = Some(a);
             }
         }
+        // `new Set(other)` / `new Map(other)`: a copy of a collection of the same kind.
+        if let Some(e) = arg {
+            let a = match source.take() {
+                Some(a) => a,
+                None => {
+                    let mark = self.cur.locals.len();
+                    let probe = self.lower_expr(e, ty.as_ref());
+                    self.cur.locals.truncate(mark);
+                    match probe {
+                        Ok(p) if matches!(p.ty.strip(), Ty::Set(_) | Ty::Map(..)) => {
+                            self.lower_expr(e, ty.as_ref())?
+                        }
+                        _ => {
+                            return self.lower_new_collection_from(name, n, ty, None, at);
+                        }
+                    }
+                }
+            };
+            if let (true, Ty::Set(_)) | (false, Ty::Map(..)) = (is_set, a.ty.strip()) {
+                let cty = ty.clone().unwrap_or_else(|| a.ty.strip().clone());
+                let (k, v, _) = Self::parts(&cty).expect("a map or set type");
+                let m = self.new_local(cty.clone());
+                let mut stmts = vec![Stmt::Assign(m, self.new_collection(&cty)?)];
+                let it = self.begin_coll_iter(a)?;
+                stmts.extend(it.pre.clone());
+                let mut body = it.head.clone();
+                let kw = self.key_word(self.var_expr(it.key), &k)?;
+                let vw = if is_set {
+                    self.bits(num(0.0))
+                } else {
+                    self.val_word(self.var_expr(it.val), &v)?
+                };
+                body.push(Stmt::Eval(self.rt_map(
+                    "ts_rt_map_set",
+                    vec![self.var_expr(m), kw, vw],
+                    Ty::Void,
+                )));
+                stmts.push(Stmt::Loop(it.label, body));
+                return Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(m))), cty));
+            }
+            return self.lower_new_collection_from(name, n, ty, Some(a), at);
+        }
+        self.lower_new_collection_from(name, n, ty, source, at)
+    }
+
+    /// The rest of [`Self::lower_new_collection`]: the type is known (or an error) and `source` is
+    /// the argument already lowered, if it was.
+    fn lower_new_collection_from(
+        &mut self,
+        name: &str,
+        n: &'a NewExpression<'a>,
+        ty: Option<Ty>,
+        source: Option<Expr>,
+        at: String,
+    ) -> R<Expr> {
+        let is_set = name.ends_with("Set");
+        let arg = n.arguments.first().and_then(|a| a.as_expression());
+        let mut ty = ty;
+        if ty.is_none()
+            && is_set
+            && let Some(a) = &source
+            && let Ty::Arr(el) = a.ty.strip().clone()
+        {
+            ty = Some(Ty::Set(Box::new(map_key_ty(*el))));
+        }
         let Some(ty) = ty else {
             bail!(
                 "{at}: `new {name}` needs a type: `new {name}<{}>()` or an annotation",

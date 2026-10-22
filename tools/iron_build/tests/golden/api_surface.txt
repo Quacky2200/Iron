@@ -1672,6 +1672,7 @@ declare class WorldPanel :: width: number;
 declare const AnimatorController: typeof AnimationController;
 declare const console: { log(...args: unknown[]): void; info(...args: unknown[]): void; debug(...args: unknown[]): void; warn(...args: unknown[]): void; error(...args: unknown[]): void; };
 declare function Dialog(props: IronProps): ReactElementLike;
+declare function Fragment(props: { children?: ReactNode }): ReactElementLike;
 declare function Image(props: IronProps): ReactElementLike;
 declare function Input(props: IronProps): ReactElementLike;
 declare function List(props: IronProps): ReactElementLike;
@@ -1679,8 +1680,8 @@ declare function Span(props: IronProps): ReactElementLike;
 declare function Text(props: IronProps): ReactElementLike;
 declare function TextArea(props: IronProps): ReactElementLike;
 declare function addStyleSheet(css: string): number;
-declare function clearInterval(id: number): void;
-declare function clearTimeout(id: number): void;
+declare function clearInterval(id: number | undefined): void;
+declare function clearTimeout(id: number | undefined): void;
 declare function createContext<T>(def: T): { Provider: (props: { value: T; children?: ReactNode }) => ReactElementLike };
 declare function createRoot(target?: WorldPanel | Window | number): { render(node: ReactNode): void; unmount(): void };
 declare function forwardRef<P, T>(f: (props: P, ref: Ref<T>) => ReactElementLike | null): (props: P & { ref?: Ref<T> }) => ReactElementLike | null;
@@ -1701,6 +1702,7 @@ declare function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): [S, (a: 
 declare function useRef<T>(init: T): Ref<T>;
 declare function useRef<T>(init: null): Ref<T | null>;
 declare function useState<T>(init: T | (() => T)): [T, (v: T | ((prev: T) => T)) => void];
+declare function useSyncExternalStore<T>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => T): T;
 declare interface AnimatorStateInfo
 declare interface AnimatorStateInfo :: length: number;
 declare interface AnimatorStateInfo :: name: string;
@@ -1758,12 +1760,18 @@ declare interface Gamepad :: buttons: Record<string, number>;
 declare interface Gamepad :: connected: boolean;
 declare interface Gamepad :: id: number;
 declare interface Gamepad :: name: string;
-declare interface GamepadChange
-declare interface GamepadChange :: gamepad: Gamepad;
 declare interface HeightFogSettings
 declare interface HeightFogSettings :: baseHeight: number;
 declare interface HeightFogSettings :: density: number;
 declare interface HeightFogSettings :: falloff: number;
+declare interface InputEvent
+declare interface InputEvent :: axis: string;
+declare interface InputEvent :: button: string;
+declare interface InputEvent :: code: string;
+declare interface InputEvent :: gamepad: Gamepad;
+declare interface InputEvent :: key: string;
+declare interface InputEvent :: repeat: boolean;
+declare interface InputEvent :: value: number;
 declare interface LodLevel
 declare interface LodLevel :: renderers: MeshRenderer[];
 declare interface LodLevel :: screenRelativeTransitionHeight: number;
@@ -1941,13 +1949,13 @@ declare module "@iron/engine" :: export import FullScreenMode = globalThis.FullS
 declare module "@iron/engine" :: export import GameObject = globalThis.GameObject;
 declare module "@iron/engine" :: export import GameObjectOptions = globalThis.GameObjectOptions;
 declare module "@iron/engine" :: export import Gamepad = globalThis.Gamepad;
-declare module "@iron/engine" :: export import GamepadChange = globalThis.GamepadChange;
-declare module "@iron/engine" :: export import GamepadEventType = globalThis.GamepadEventType;
 declare module "@iron/engine" :: export import Gizmos = globalThis.Gizmos;
 declare module "@iron/engine" :: export import GraphicsSettings = globalThis.GraphicsSettings;
 declare module "@iron/engine" :: export import HeightFogSettings = globalThis.HeightFogSettings;
 declare module "@iron/engine" :: export import HideFlags = globalThis.HideFlags;
 declare module "@iron/engine" :: export import HingeJoint = globalThis.HingeJoint;
+declare module "@iron/engine" :: export import InputEvent = globalThis.InputEvent;
+declare module "@iron/engine" :: export import InputEventType = globalThis.InputEventType;
 declare module "@iron/engine" :: export import InstantiateObjectOptions = globalThis.InstantiateObjectOptions;
 declare module "@iron/engine" :: export import Keyframe = globalThis.Keyframe;
 declare module "@iron/engine" :: export import LODGroup = globalThis.LODGroup;
@@ -2095,6 +2103,7 @@ declare module "@iron/react" :: export import Text = globalThis.Text;
 declare module "@iron/react" :: export import TextArea = globalThis.TextArea;
 declare module "@iron/react" :: export import createRoot = globalThis.createRoot;
 declare module "react"
+declare module "react" :: export import Fragment = globalThis.Fragment;
 declare module "react" :: export import ReactNode = globalThis.ReactNode;
 declare module "react" :: export import createContext = globalThis.createContext;
 declare module "react" :: export import forwardRef = globalThis.forwardRef;
@@ -2107,10 +2116,12 @@ declare module "react" :: export import useMemo = globalThis.useMemo;
 declare module "react" :: export import useReducer = globalThis.useReducer;
 declare module "react" :: export import useRef = globalThis.useRef;
 declare module "react" :: export import useState = globalThis.useState;
+declare module "react" :: export import useSyncExternalStore = globalThis.useSyncExternalStore;
 declare namespace Animations
 declare namespace Animations :: function takeEvents(): string;
 declare namespace Animations :: function updateAll(dt: number): void;
 declare namespace Application
+declare namespace Application :: const args: string[];
 declare namespace Application :: const companyName: string;
 declare namespace Application :: const engineVersion: string;
 declare namespace Application :: const identifier: string;
@@ -2125,7 +2136,8 @@ declare namespace Application :: const systemLanguage: string;
 declare namespace Application :: const version: string;
 declare namespace Application :: function offFocusChanged(token: number): boolean;
 declare namespace Application :: function onFocusChanged(f: (a0: boolean) => void): () => void;
-declare namespace Application :: function quit(): void;
+declare namespace Application :: function quit(exitCode?: number): void;
+declare namespace Application :: function quit(options?: { exitCode?: number }): void;
 declare namespace Application :: let runInBackground: boolean;
 declare namespace Application :: let targetFrameRate: number;
 declare namespace Assets
@@ -2208,9 +2220,6 @@ declare namespace ForceMode :: const VelocityChange: number;
 declare namespace FullScreenMode
 declare namespace FullScreenMode :: function name(index: number): FullScreenMode;
 declare namespace FullScreenMode :: function parse(name: string): number;
-declare namespace GamepadEventType
-declare namespace GamepadEventType :: function name(index: number): GamepadEventType;
-declare namespace GamepadEventType :: function parse(name: string): number;
 declare namespace Gizmos
 declare namespace Gizmos :: const lineCount: number;
 declare namespace Gizmos :: function clear(): void;
@@ -2235,11 +2244,15 @@ declare namespace HideFlags :: const HideInHierarchy: number;
 declare namespace HideFlags :: const HideInInspector: number;
 declare namespace HideFlags :: const None: number;
 declare namespace HideFlags :: const NotEditable: number;
+declare namespace InputEventType
+declare namespace InputEventType :: function name(index: number): InputEventType;
+declare namespace InputEventType :: function parse(name: string): number;
 declare namespace JSX
 declare namespace JSX :: interface ElementChildrenAttribute { children: {}; }
 declare namespace JSX :: interface IntrinsicAttributes { key?: string | number; }
 declare namespace JSX :: interface IntrinsicElements { box: IronProps; text: IronProps; span: IronProps; input: IronProps; textarea: IronProps; image: IronProps; list: IronProps; dialog: IronProps; svg: IronProps; [tag: string]: IronProps; }
 declare namespace JSX :: type Element = ReactElementLike;
+declare namespace JSX :: type ElementType = string | ((props: any) => ReactNode);
 declare namespace Keyframe
 declare namespace Keyframe :: function create(time: number, value: number, inTangent?: number, outTangent?: number): Keyframe;
 declare namespace Keyframe :: function create(time: number, value: number, options?: { inTangent?: number; outTangent?: number }): Keyframe;
@@ -2736,7 +2749,7 @@ declare namespace input :: function getMouseButtonUp(button: number): boolean;
 declare namespace input :: function isButtonDown(button: string): boolean;
 declare namespace input :: function isKeyDown(code: string): boolean;
 declare namespace input :: function off(token: number): boolean;
-declare namespace input :: function on(kind: GamepadEventType, f: (e: GamepadChange) => void): () => void;
+declare namespace input :: function on(kind: InputEventType, f: (e: InputEvent) => void): () => void;
 declare namespace input :: function onGamepadAxis(f: (a0: number, a1: string, a2: number) => void): number;
 declare namespace input :: function onGamepadButtonDown(f: (a0: number, a1: string) => void): number;
 declare namespace input :: function onGamepadButtonUp(f: (a0: number, a1: string) => void): number;
@@ -2749,7 +2762,7 @@ declare type ExposureMetering = "average" | "centerWeighted" | "spot";
 declare type FilterMode = "point" | "bilinear" | "trilinear";
 declare type FogMode = "linear" | "exponential" | "exponentialSquared";
 declare type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
-declare type GamepadEventType = "gamepadconnected" | "gamepaddisconnected";
+declare type InputEventType = "keydown" | "keyup" | "gamepadconnected" | "gamepaddisconnected" | "gamepadbuttondown" | "gamepadbuttonup" | "gamepadaxis";
 declare type LoadSceneMode = "single" | "additive";
 declare type PrimitiveMesh = PrimitiveType;
 declare type PrimitiveType = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
@@ -2792,7 +2805,11 @@ interface IronDroppedFile :: readonly path: string;
 interface IronElement
 interface IronElement :: blur(): void;
 interface IronElement :: focus(): void;
-interface IronElement :: scrollTo(x: number, y: number): void;
+interface IronElement :: scrollBy(left: number, top: number): void;
+interface IronElement :: scrollBy(options: ScrollToOptions): void;
+interface IronElement :: scrollIntoView(options?: ScrollIntoViewOptions): void;
+interface IronElement :: scrollTo(left: number, top: number): void;
+interface IronElement :: scrollTo(options: ScrollToOptions): void;
 interface IronEvent
 interface IronEvent :: preventDefault(): void;
 interface IronEvent :: readonly target: { readonly id: number; readonly value: string; readonly type: string };
@@ -2831,15 +2848,15 @@ interface IronProps :: className?: string;
 interface IronProps :: clipPath?: string;
 interface IronProps :: closedBy?: "any" | "closerequest" | "none";
 interface IronProps :: cols?: number;
-interface IronProps :: cx?: number;
-interface IronProps :: cy?: number;
+interface IronProps :: cx?: number | string;
+interface IronProps :: cy?: number | string;
 interface IronProps :: d?: string;
 interface IronProps :: defaultValue?: string;
 interface IronProps :: dir?: string;
 interface IronProps :: disabled?: boolean;
 interface IronProps :: draggable?: boolean;
 interface IronProps :: fill?: string;
-interface IronProps :: height?: number;
+interface IronProps :: height?: number | string;
 interface IronProps :: id?: string;
 interface IronProps :: key?: string | number;
 interface IronProps :: modal?: boolean;
@@ -2883,21 +2900,21 @@ interface IronProps :: onTransitionEnd?: (e: IronTransitionEvent) => void;
 interface IronProps :: onTransitionRun?: (e: IronTransitionEvent) => void;
 interface IronProps :: onTransitionStart?: (e: IronTransitionEvent) => void;
 interface IronProps :: onWheel?: (e: IronWheelEvent) => void;
-interface IronProps :: opacity?: number;
+interface IronProps :: opacity?: number | string;
 interface IronProps :: open?: boolean;
 interface IronProps :: placeholder?: string;
 interface IronProps :: points?: string;
-interface IronProps :: r?: number;
+interface IronProps :: r?: number | string;
 interface IronProps :: readOnly?: boolean;
-interface IronProps :: ref?: Ref<IronElement | null>;
+interface IronProps :: ref?: Ref<IronElement | null> | ((el: IronElement | null) => void);
 interface IronProps :: rows?: number;
-interface IronProps :: rx?: number;
-interface IronProps :: ry?: number;
+interface IronProps :: rx?: number | string;
+interface IronProps :: ry?: number | string;
 interface IronProps :: src?: string;
 interface IronProps :: stroke?: string;
 interface IronProps :: strokeLinecap?: string;
 interface IronProps :: strokeLinejoin?: string;
-interface IronProps :: strokeWidth?: number;
+interface IronProps :: strokeWidth?: number | string;
 interface IronProps :: style?: IronStyle;
 interface IronProps :: tabIndex?: number;
 interface IronProps :: title?: string;
@@ -2905,13 +2922,13 @@ interface IronProps :: transform?: string;
 interface IronProps :: type?: string;
 interface IronProps :: value?: string;
 interface IronProps :: viewBox?: string;
-interface IronProps :: width?: number;
-interface IronProps :: x1?: number;
-interface IronProps :: x2?: number;
-interface IronProps :: x?: number;
-interface IronProps :: y1?: number;
-interface IronProps :: y2?: number;
-interface IronProps :: y?: number;
+interface IronProps :: width?: number | string;
+interface IronProps :: x1?: number | string;
+interface IronProps :: x2?: number | string;
+interface IronProps :: x?: number | string;
+interface IronProps :: y1?: number | string;
+interface IronProps :: y2?: number | string;
+interface IronProps :: y?: number | string;
 interface IronScrollEvent extends IronEvent
 interface IronScrollEvent extends IronEvent :: readonly clientHeight: number;
 interface IronScrollEvent extends IronEvent :: readonly clientWidth: number;
@@ -3198,6 +3215,14 @@ interface ReactElementLike
 interface ReactElementLike :: readonly __element: never;
 interface Ref<T>
 interface Ref<T> :: current: T;
+interface ScrollIntoViewOptions
+interface ScrollIntoViewOptions :: behavior?: ScrollBehavior;
+interface ScrollIntoViewOptions :: block?: ScrollLogicalPosition;
+interface ScrollIntoViewOptions :: inline?: ScrollLogicalPosition;
+interface ScrollToOptions
+interface ScrollToOptions :: behavior?: ScrollBehavior;
+interface ScrollToOptions :: left?: number;
+interface ScrollToOptions :: top?: number;
 type BlendMode = | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "color-dodge" | "color-burn" | "hard-light" | "soft-light" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 type BorderStyle = | "none" | "hidden" | "solid" | "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset";
 type ClassOf<T> = { prototype: T };
@@ -3208,5 +3233,7 @@ type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array 
 type Overflow = "visible" | "hidden" | "clip" | "scroll" | "auto";
 type QuaternionLike = { x: number; y: number; z: number; w: number };
 type ReactNode = ReactElementLike | string | number | boolean | null | undefined | ReactNode[];
+type ScrollBehavior = "auto" | "instant" | "smooth";
+type ScrollLogicalPosition = "start" | "center" | "end" | "nearest";
 type Vector2Like = { x: number; y: number };
 type Vector3Like = { x: number; y: number; z: number };

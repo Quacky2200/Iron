@@ -189,7 +189,16 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
             .map(|a| a as *const u8)
     }));
     let mut jit = JITModule::new(builder);
-    let exports = codegen::generate(&mut jit, &module)?;
+    // Code generation recurses over expressions as lowering does (a big JSX tree nests calls a few
+    // hundred deep): it gets a big stack too, not the host's main thread.
+    let exports = std::thread::scope(|s| {
+        std::thread::Builder::new()
+            .stack_size(64 << 20)
+            .spawn_scoped(s, || codegen::generate(&mut jit, &module))
+            .map_err(|e| e.to_string())?
+            .join()
+            .map_err(|_| "code generation panicked".to_string())?
+    })?;
     jit.finalize_definitions().map_err(|e| e.to_string())?;
     let funcs: HashMap<String, usize> = exports
         .into_iter()

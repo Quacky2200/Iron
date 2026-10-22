@@ -25,7 +25,35 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_stmts_in(&mut self, stmts: &'a [Statement<'a>], out: &mut Vec<Stmt>) -> R<()> {
+        // Function declarations inside a body are hoisted, as in JavaScript: each becomes a closure
+        // made as soon as the variables it uses from this block are declared (at the top when it
+        // uses none), so a call above the declaration finds it.
+        let mut hoisted: Vec<(usize, &'a Function<'a>)> = Vec::new();
         for s in stmts {
+            if let Statement::FunctionDeclaration(f) = s
+                && f.id.is_some()
+                && f.body.is_some()
+            {
+                let free = self
+                    .closure_free
+                    .get(&f.span.start)
+                    .cloned()
+                    .unwrap_or_default();
+                let at = stmts
+                    .iter()
+                    .rposition(|d| declares_any(d, &free))
+                    .map_or(0, |j| j + 1);
+                hoisted.push((at, f));
+            }
+        }
+        for (j, s) in stmts.iter().enumerate() {
+            for (_, f) in hoisted.iter().filter(|(at, _)| *at == j) {
+                self.lower_fn_decl_here(f, out)?;
+            }
+            if matches!(s, Statement::FunctionDeclaration(f) if hoisted.iter().any(|(_, h)| std::ptr::eq(*h, &**f)))
+            {
+                continue;
+            }
             // A message without a line gets the statement's (the innermost one wins).
             self.lower_stmt(s, out).map_err(|e| {
                 if e.contains("line ") {
@@ -35,6 +63,21 @@ impl<'a> Lowerer<'a> {
                 }
             })?;
         }
+        for (_, f) in hoisted.iter().filter(|(at, _)| *at == stmts.len()) {
+            self.lower_fn_decl_here(f, out)?;
+        }
+        Ok(())
+    }
+
+    /// `function name(..) { .. }` inside a body: a closure bound to `name` in this scope.
+    fn lower_fn_decl_here(&mut self, f: &'a Function<'a>, out: &mut Vec<Stmt>) -> R<()> {
+        let Some(id) = &f.id else {
+            bail!("a function declaration without a name")
+        };
+        let v = self.lower_closure(super::closure::ClosureNode::Func(f), None)?;
+        let tmp = self.new_local(v.ty.clone());
+        out.push(Stmt::Assign(tmp, v));
+        self.bind_var(id.name.as_str(), tmp, out);
         Ok(())
     }
 
@@ -176,7 +219,15 @@ impl<'a> Lowerer<'a> {
             Statement::ReturnStatement(r) => {
                 let v = match &r.argument {
                     Some(e) => {
-                        let exp = self.cur.ret.clone();
+                        // Inside an inlined callback, its result's type (`(c): Align => ..`), not
+                        // the enclosing function's.
+                        let exp = match self.cur.rets.last() {
+                            Some(rt) => rt.var.and_then(|v| {
+                                let t = self.cur.locals[v as usize].clone();
+                                (t != Ty::Void && matches!(rt.kind, RetKind::Val)).then_some(t)
+                            }),
+                            None => self.cur.ret.clone(),
+                        };
                         Some(self.lower_expr(e, exp.as_ref())?)
                     }
                     None => None,
@@ -254,6 +305,10 @@ impl<'a> Lowerer<'a> {
                 out.push(Stmt::Throw(v));
             }
             Statement::TryStatement(t) => self.lower_try(t, out)?,
+            // Alone (`if (x) function f() {}`): bound where it stands.
+            Statement::FunctionDeclaration(f) if f.body.is_some() => {
+                self.lower_fn_decl_here(f, out)?
+            }
             other => bail!(
                 "{}: unsupported statement",
                 self.loc(oxc_span::GetSpan::span(other).start)
@@ -610,7 +665,11 @@ impl<'a> Lowerer<'a> {
         let mut failed = None;
         for (k, c) in sw.cases.iter().enumerate() {
             let mut body = Vec::new();
-            if let Err(e) = self.lower_stmts(&c.consequent, &mut body) {
+            // `switch (b.kind)` over a discriminated union: a case's body sees the variants of
+            // its tag and of the empty cases right before it (`case "a": case "b":`).
+            let narrowed = self.case_narrowings(sw, k);
+            let r = self.with_narrowed(narrowed, |s| s.lower_stmts(&c.consequent, &mut body));
+            if let Err(e) = r {
                 failed = Some(e);
                 break;
             }
@@ -631,6 +690,50 @@ impl<'a> Lowerer<'a> {
         }
         out.push(Stmt::Block(brk, bodies));
         Ok(())
+    }
+
+    /// What reaching case `k` of `sw` says about a discriminated union `sw` tests the tag of.
+    fn case_narrowings(
+        &mut self,
+        sw: &'a SwitchStatement<'a>,
+        k: usize,
+    ) -> Vec<(String, Vec<usize>)> {
+        let Expression::StaticMemberExpression(m) = sw.discriminant.get_inner_expression() else {
+            return vec![];
+        };
+        let mut lits = Vec::new();
+        let mut j = k;
+        loop {
+            let c = &sw.cases[j];
+            match &c.test {
+                Some(Expression::StringLiteral(s)) => lits.push(s.value.to_string()),
+                // The default case, or a test that is not a literal: no narrowing.
+                _ => return vec![],
+            }
+            if j == 0 {
+                break;
+            }
+            let prev = &sw.cases[j - 1];
+            if prev.consequent.is_empty() {
+                j -= 1;
+                continue;
+            }
+            // A body before that can fall through lets its variants in too.
+            let ends = matches!(
+                prev.consequent.last(),
+                Some(
+                    Statement::BreakStatement(_)
+                        | Statement::ReturnStatement(_)
+                        | Statement::ThrowStatement(_)
+                        | Statement::ContinueStatement(_)
+                )
+            );
+            if !ends {
+                return vec![];
+            }
+            break;
+        }
+        self.disc_narrowings(&m.object, m.property.name.as_str(), &lits, true)
     }
 
     /// The entry for a loop being lowered; it takes a pending source label.
@@ -788,6 +891,12 @@ impl<'a> Lowerer<'a> {
             BindingPattern::AssignmentPattern(a) => {
                 if !value.ty.is_nullable() {
                     // Never null: the default cannot be used.
+                    return self.bind_pattern(&a.left, value, out);
+                }
+                // `anchor = null`: a missing value is null either way; the binding stays nullable.
+                if matches!(&a.right, Expression::NullLiteral(_))
+                    || matches!(&a.right, Expression::Identifier(i) if i.name == "undefined")
+                {
                     return self.bind_pattern(&a.left, value, out);
                 }
                 let base = value.ty.strip().clone();
@@ -1071,7 +1180,14 @@ impl<'a> Lowerer<'a> {
 }
 
 /// Does a function body `return value;` (not counting the functions inside it)?
-struct ValueReturns(bool);
+pub(crate) struct ValueReturns(pub bool);
+
+/// Does this body `return value;` anywhere (not counting the functions inside it)?
+pub(crate) fn returns_a_value(body: &FunctionBody<'_>) -> bool {
+    let mut scan = ValueReturns(false);
+    oxc_ast_visit::Visit::visit_function_body(&mut scan, body);
+    scan.0
+}
 
 impl<'a> oxc_ast_visit::Visit<'a> for ValueReturns {
     fn visit_return_statement(&mut self, r: &ReturnStatement<'a>) {
@@ -1081,4 +1197,25 @@ impl<'a> oxc_ast_visit::Visit<'a> for ValueReturns {
     }
     fn visit_function(&mut self, _: &Function<'a>, _: oxc_syntax::scope::ScopeFlags) {}
     fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+}
+
+/// Does statement `s` declare (with `const`, `let`, `var`, at its own level) one of `names`?
+fn declares_any(s: &Statement<'_>, names: &[String]) -> bool {
+    struct Names<'n>(&'n [String], bool);
+    impl<'a> oxc_ast_visit::Visit<'a> for Names<'_> {
+        fn visit_binding_identifier(&mut self, b: &BindingIdentifier<'a>) {
+            if self.0.iter().any(|n| n == b.name.as_str()) {
+                self.1 = true;
+            }
+        }
+        fn visit_expression(&mut self, _: &Expression<'a>) {}
+    }
+    let Statement::VariableDeclaration(d) = s else {
+        return false;
+    };
+    let mut v = Names(names, false);
+    for decl in &d.declarations {
+        oxc_ast_visit::Visit::visit_binding_pattern(&mut v, &decl.id);
+    }
+    v.1
 }

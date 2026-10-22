@@ -48,6 +48,10 @@ pub const HOOKS: &[Func] = &[
         "<F extends (...args: any[]) => any>(f: F, deps: readonly unknown[]): F",
     ),
     r(
+        "useSyncExternalStore",
+        "<T>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => T): T",
+    ),
+    r(
         "useReducer",
         "<S, A>(reducer: (s: S, a: A) => S, init: S): [S, (a: A) => void]",
     ),
@@ -66,6 +70,11 @@ pub const HOOKS: &[Func] = &[
     r(
         "forwardRef",
         "<P, T>(f: (props: P, ref: Ref<T>) => ReactElementLike | null): (props: P & { ref?: Ref<T> }) => ReactElementLike | null",
+    ),
+    // `<Fragment key={k}>`: a fragment that takes a key (`lower/jsx.rs`).
+    r(
+        "Fragment",
+        "(props: { children?: ReactNode }): ReactElementLike",
     ),
 ];
 

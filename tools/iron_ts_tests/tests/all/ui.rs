@@ -719,3 +719,107 @@ fn mouse_aliases_and_non_bubbling_events_follow_the_dom() {
         assert_eq!(ui.notes(), "scroll:50");
     });
 }
+
+// M9-TS-3380
+//
+// A callback ref (`ref={(el) => ..}`) is called with the element when it mounts; a re-render
+// with a new function calls the old one with null and the new one with the element, as React
+// does; removing the element calls it with null.
+#[test]
+fn a_callback_ref_hears_the_element_and_null() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_callbackRefApp() });
+        assert_eq!(ui.notes(), "ref:el");
+        let outer = ui.tree.children(ROOT)[0];
+        ui.click(outer);
+        no_errors(ui.rt.settle(&mut ui.tree));
+        assert_eq!(ui.notes(), "ref:null ref:el");
+        ui.click(outer);
+        no_errors(ui.rt.settle(&mut ui.tree));
+        assert_eq!(ui.notes(), "ref:null");
+    });
+}
+
+// M9-TS-3381
+//
+// `<Fragment key={s}>` siblings in a list, components returning text, nothing or a list
+// (`ReactNode`), a component that renders itself without a written return type, and
+// `memo(function Name(..) {..})`.
+#[test]
+fn fragments_with_keys_and_components_returning_any_node() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_nodesApp() });
+        assert_eq!(
+            ui.dump(),
+            "root(box(text(text:a),text(text:!),text(text:b),text(text:!),text:hi,text:x,text(text:y),box(box(text(text:leaf))),text(text:7)))"
+        );
+    });
+}
+
+// M9-TS-3382
+//
+// `useSyncExternalStore` re-renders when the store says it changed, and `useState` holds a
+// string-literal union.
+#[test]
+fn an_external_store_and_a_literal_union_state_re_render() {
+    in_every_gc_mode(|| {
+        unsafe { ts_uic_setTheme(false) };
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_themedApp() });
+        let b = ui.tree.children(ROOT)[0];
+        let text = |ui: &Ui| ui.dump();
+        assert!(text(&ui).contains("text:dark/browse"), "{}", text(&ui));
+        ui.click(b);
+        no_errors(ui.rt.settle(&mut ui.tree));
+        assert!(text(&ui).contains("text:dark/details"), "{}", text(&ui));
+        unsafe { ts_uic_setTheme(true) };
+        no_errors(ui.rt.settle(&mut ui.tree));
+        assert!(text(&ui).contains("text:light/details"), "{}", text(&ui));
+    });
+}
+
+// M9-TS-3362
+//
+// `scrollIntoView`, `scrollTo` and `scrollBy` on a ref in compiled code, positional and with the
+// DOM's option objects: the commands the host applies, with the DOM's defaults for keys left out
+// (`block: "start"`, `inline: "nearest"`, `behavior: "auto"`; `scrollTo` keeps a missing axis).
+#[test]
+fn scroll_calls_on_a_ref_take_the_doms_option_objects() {
+    use iron_ts_ui::NodeCommand;
+    use iron_ui::{ScrollAlign as A, ScrollBehavior as B};
+    in_every_gc_mode(|| {
+        let _ = iron_ts_ui::take_node_commands();
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_scrollCallsApp() });
+        let id = ui.tree.children(ROOT)[0].0;
+        let got = iron_ts_ui::take_node_commands();
+        let into = |block, behavior| NodeCommand::ScrollIntoView {
+            id,
+            block,
+            inline: A::Nearest,
+            behavior,
+        };
+        assert_eq!(
+            &got[..2],
+            &[into(A::Center, B::Smooth), into(A::Start, B::Auto)]
+        );
+        match got[2] {
+            NodeCommand::ScrollTo(i, x, y, B::Auto) => {
+                assert_eq!(i, id);
+                assert!(x.is_nan(), "a left-out axis stays: {x}");
+                assert_eq!(y, 80.0);
+            }
+            ref c => panic!("{c:?}"),
+        }
+        assert_eq!(
+            &got[3..],
+            &[
+                NodeCommand::ScrollTo(id, 1.0, 2.0, B::Auto),
+                NodeCommand::ScrollBy(id, 5.0, 0.0, B::Instant),
+                NodeCommand::ScrollBy(id, 0.0, -10.0, B::Auto),
+            ]
+        );
+    });
+}

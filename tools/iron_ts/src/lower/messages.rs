@@ -174,6 +174,9 @@ fn names(src: &str, triggers: &str) -> bool {
 /// The functions a program that sends or listens for window messages needs (none for one that
 /// does not name them).
 pub fn glue(src: &str) -> String {
+    // Only code counts: a string that mentions `.request<..>(` is no call.
+    let code = super::literals::code_only(src);
+    let src = code.as_str();
     let mut s = String::new();
     if names(
         src,

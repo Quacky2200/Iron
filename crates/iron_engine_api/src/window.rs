@@ -2200,7 +2200,7 @@ pub mod window_api {
         pub fn close(self) {
             if self == MAIN {
                 if with(|s| s.may_change(self)) {
-                    crate::app::application_api::quit();
+                    crate::app::application_api::quit(0.0);
                 }
                 return;
             }

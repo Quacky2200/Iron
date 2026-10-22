@@ -1,0 +1,17 @@
+{
+ "intersection_with_a_recursive_union": "para:3:0 quote:3:-",
+ "a_tag_test_narrows_a_field_of_another_type": "2 branch of 2 x",
+ "filter_boolean_and_boolean_calls": "a,b,c|1,2,3|falsetruefalsetrue",
+ "function_declarations_inside_a_body_are_hoisted": "2,4,6@3 8@1",
+ "or_null_and_a_string_or_a_number": "true 4 1 true",
+ "closures_infer_results_and_default_parameter_types": "b null 30 10",
+ "negative_number_literal_types": "4 6",
+ "sets_and_maps_copied_from_others": "2 3 xyz 1 1 2",
+ "find_over_a_tuple_of_literals": "playstation true playstation",
+ "optional_index_of_a_match": "2 null 12 true",
+ "strings_that_mention_code_keep_their_text": "Use `Temporal.PlainDate` or `win.request<{ n: number }>(1)`; class Foo is in a string. 1",
+ "literal_unions_from_and_to_strings_that_may_be_missing": "details none details null true",
+ "a_generic_function_infers_a_closure_type": "42 abab",
+ "a_copy_where_a_nullable_type_goes_keeps_null": "none at1 1",
+ "clear_timeout_takes_undefined": "ok"
+}

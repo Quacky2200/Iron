@@ -20,6 +20,7 @@ fn reset() {
         is_editor: false,
         run_in_background: false,
         target_frame_rate: 144,
+        args: Vec::new(),
     });
     app::set_system(SystemInfo {
         operating_system: "Windows 11 Pro".into(),
@@ -104,4 +105,94 @@ fn settable_matches_the_original() {
     in_every_gc_mode(|| unsafe {
         check_str("settable", ts_apc_settable());
     });
+}
+
+// M9-TS-3361
+#[test]
+fn application_args_and_quit_with_an_exit_code_are_native() {
+    use iron_engine_api::app::{self, AppInfo, Request};
+    let src = "export function t(): string {
+  const a = Application.args;
+  a.push(\"changed\");
+  Application.quit();
+  Application.quit(2.7);
+  return Application.args.join(\"|\") + \" \" + a.length;
+}";
+    let manifests = [app::application_api::MANIFEST.to_json()];
+    let _ = app::take_requests();
+    app::set_app(AppInfo {
+        args: vec!["--goto".into(), "a.md#b".into()],
+        ..Default::default()
+    });
+    let got = crate::cases::run_with(src, "apq_", 2_320_000, &manifests).unwrap();
+    assert_eq!(got, "--goto|a.md#b 3");
+    // Three GC modes, two quits each: the default code and a truncated one.
+    let quits: Vec<Request> = app::take_requests();
+    assert_eq!(quits.len(), 6, "{quits:?}");
+    assert_eq!(&quits[..2], &[Request::Quit(0), Request::Quit(2)]);
+    app::reset();
+    app::set_app(AppInfo::default());
+    let dts = app::application_api::MANIFEST.to_dts();
+    assert!(dts.contains("args: string[]"), "{dts}");
+    assert!(
+        dts.contains("function quit(exitCode?: number): void;"),
+        "{dts}"
+    );
+}
+
+// M9-TS-3364
+//
+// `input.on` with every kind `js/engine`'s `InputEvents` has, in compiled code: key events carry
+// `code`, `key` and `repeat`, pad events `gamepad` and `button` or `axis` and `value`; the
+// returned function stops the listener.
+#[test]
+fn input_on_hears_keys_buttons_and_axes_with_their_fields() {
+    use iron_engine_api::input;
+    let _serial = iron_ts_tests::serial();
+    assert_ne!(link_anchor(), 0);
+    let src = "const log: string[] = [];
+let stopKeys: () => void = () => {};
+export function setup(): void {
+  stopKeys = input.on(\"keydown\", (e) => { log.push(`down:${e.code}:${e.key}:${e.repeat}`); });
+  input.on(\"keyup\", (e) => { log.push(`up:${e.code}`); });
+  input.on(\"gamepadbuttondown\", (e) => { log.push(`btn:${e.button}:${e.gamepad.name}`); });
+  input.on(\"gamepadaxis\", (e) => { log.push(`axis:${e.axis}:${e.value}`); });
+}
+export function stop(): void { stopKeys(); }
+export function result(): string { return log.join(\" \"); }";
+    let mut manifests = iron_engine_api::iron_math::manifests();
+    manifests.extend(iron_engine_api::manifests());
+    let game = iron_ts::jit::compile_and_load(
+        src,
+        &iron_ts::jit::JitOptions {
+            prefix: "inq_",
+            struct_base: 2_330_000,
+            manifests: &manifests,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    game.init().unwrap();
+    let call = |name: &str| {
+        let f: unsafe extern "C" fn() =
+            unsafe { std::mem::transmute(game.function(name).unwrap()) };
+        unsafe { f() };
+    };
+    call("setup");
+    input::gamepad_connected(3, "Pad");
+    input::key_down_with_text("KeyW", "w", false);
+    input::key_down_with_text("KeyW", "w", true);
+    input::key_up_with_text("KeyW", "w");
+    input::gamepad_button(3, "South", 1.0);
+    input::gamepad_axis(3, "LeftStickX", -0.5);
+    call("stop");
+    input::key_down_with_text("KeyA", "a", false);
+    let r: unsafe extern "C" fn() -> *mut u8 =
+        unsafe { std::mem::transmute(game.function("result").unwrap()) };
+    let got = String::from_utf16_lossy(&unsafe { Str::from_raw(r() as *const Str) }.to_utf16());
+    assert_eq!(
+        got,
+        "down:KeyW:w:false down:KeyW:w:true up:KeyW btn:South:Pad axis:LeftStickX:-0.5"
+    );
+    input::reset();
 }

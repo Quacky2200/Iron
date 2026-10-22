@@ -616,7 +616,7 @@ fn closing_the_main_window_from_script_asks_to_quit() {
     let _ = app::take_requests();
     MAIN.close();
     assert!(window::take_requests().is_empty(), "no Close(MAIN) request");
-    assert!(app::take_requests().contains(&app::Request::Quit));
+    assert!(app::take_requests().contains(&app::Request::Quit(0)));
     assert!(MAIN.is_open(), "the host ends the game");
     let _ = window_api::MANIFEST;
 }

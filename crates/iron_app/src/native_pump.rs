@@ -71,7 +71,10 @@ impl App {
         }
         for r in iron_engine_api::app::take_requests() {
             match r {
-                Request::Quit => self.done = true,
+                Request::Quit(code) => {
+                    super::EXIT_CODE.store(code, std::sync::atomic::Ordering::Relaxed);
+                    self.done = true;
+                }
                 Request::TargetFrameRate(fps) => self.target_frame_rate = fps,
                 Request::RunInBackground(on) => {
                     self.lifecycle.run_in_background = on;
@@ -129,6 +132,12 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
         is_editor: false,
         run_in_background: manifest.run_in_background,
         target_frame_rate: -1,
+        args: info.0["app"]["args"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|a| Some(a.as_str()?.to_owned()))
+            .collect(),
     });
     iron_render_api::set_physical_light_units(manifest.physical_units);
     seed_asset_index(info);
