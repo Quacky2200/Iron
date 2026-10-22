@@ -65,8 +65,10 @@ set when any selector uses it. Only then does removing a node by script keep it:
 
 - The node moves to `leaving` with `outro` set; the restyle applies the `:outro` rules, which start
   transitions or animations.
-- `remove_finished_outros` deletes it once the motion begun *since the exit started* is done, or at once
-  if none started. An infinite animation that was already running does not hold removal.
+- `remove_finished_outros` deletes it once the motion begun *since the exit started* (transitions and
+  animations alike, by `start_ms >= since`) is done, or at once if none started. An infinite animation or a
+  transition already running (an element removed mid fade-in) does not hold removal; an `:outro` that
+  redirects a running transition restarts it, so that one does (`M3-ANI-05`).
 - `is_leaving` (the node or an ancestor) hides it from hit testing, focus, Tab stops and modal
   trapping, and it is not displayed as a normal child.
 - Without any `:outro` rule removal is immediate, as before.

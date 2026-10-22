@@ -344,7 +344,7 @@ flowchart LR
 `Connected { name }`, `Disconnected`, `ButtonDown(name)`, `ButtonUp(name)`, `ButtonValue(name, 0..1)`
 (analog triggers) and `Axis(name, -1..1)`. `Platform::poll_gamepads` announces pads already plugged in
 at its first poll (some `gilrs` backends send no `Connected` for them); `announce_once` drops a repeat
-`Connected` for a known pad and forgets pads on `Disconnected` (`M3-PAD-02`). Names are fixed strings so scripts do not depend on
+`Connected` for a known pad and forgets pads on `Disconnected` (`M3-PAD-02`). Pads present at startup and newly connected ones are logged at info level (`log_pad`: name, vendor/product id, uuid hex). gilrs warns "No mapping found for UUID 0000..." for pads from Windows' gaming input (WGI) backend, such as Xbox controllers, which report an all-zero UUID; it is harmless, the driver provides the layout (`mapping_source()` is `Driver`). Names are fixed strings so scripts do not depend on
 `gilrs`:
 
 - Buttons (`button_name`): `South` (A), `East` (B), `West` (X), `North` (Y), `LeftBumper`,
