@@ -57,8 +57,31 @@
 .top {
   flex-direction: row;
   align-items: flex-end;
-  padding: 26px 40px 0;
+  padding: 22px 40px 14px 28px;
   gap: 10px;
+}
+.icon-button {
+  width: 38px;
+  height: 34px;
+  margin-right: 6px;
+  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.icon-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.burger {
+  flex-direction: column;
+  gap: 4px;
+}
+.burger > box {
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text);
 }
 .logo {
   font-size: 26px;
@@ -131,6 +154,9 @@
 
 /* --- Grid ----------------------------------------------------------------------------- */
 
+/* Tiles fade out under the header and above the hints instead of being cut off. Extra
+   stops ease the fade: Iron composites in linear light, where a straight alpha ramp looks
+   abrupt (docs/differences.md). */
 .grid-scroll {
   flex-grow: 1;
   min-height: 0;
@@ -138,13 +164,27 @@
   align-items: flex-start;
   justify-content: center;
   flex-direction: row;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.15) 3%,
+    rgba(0, 0, 0, 0.55) 6%,
+    #000 9%,
+    #000 91%,
+    rgba(0, 0, 0, 0.55) 94%,
+    rgba(0, 0, 0, 0.15) 97%,
+    transparent 100%
+  );
 }
 .grid {
   flex-direction: row;
   flex-wrap: wrap;
   column-gap: 24px;
-  row-gap: 22px;
-  padding: 26px 0 30px;
+  padding: 18px 0 24px;
+}
+/* Room above and below for the lifted tile, so scrolling it into view shows it whole. */
+.cell {
+  padding: 18px 0 8px;
 }
 .tile {
   width: 210px;
@@ -580,4 +620,160 @@
   font-family: Consolas, "Cascadia Mono", monospace;
   color: var(--accent);
   margin-bottom: 6px;
+}
+
+/* --- Favourites ------------------------------------------------------------------------ */
+
+.fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  align-items: center;
+  justify-content: center;
+  color: #ffd25a;
+  background: rgba(0, 0, 0, 0.55);
+}
+.fav.inline {
+  position: relative;
+  top: 0;
+  right: 0;
+  margin-left: 10px;
+}
+.details-head {
+  flex-direction: row;
+  align-items: center;
+}
+.button.square {
+  padding: 11px 14px;
+}
+
+/* --- Sidebar and context menu ---------------------------------------------------------- */
+
+.side-scrim,
+.context-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 450;
+  background: rgba(3, 5, 8, 0.6);
+  transition: opacity 250ms ease;
+}
+@starting-style {
+  .side-scrim,
+  .context-scrim {
+    opacity: 0;
+  }
+}
+.sidebar {
+  width: 300px;
+  height: 100%;
+  flex-direction: column;
+  padding: 24px 16px 22px;
+  gap: 18px;
+  background: #10141b;
+  border-right: 1px solid var(--line);
+  box-shadow: 18px 0 50px rgba(0, 0, 0, 0.6);
+  transition: transform 380ms var(--ease);
+}
+@starting-style {
+  .sidebar {
+    transform: translateX(-320px);
+  }
+}
+.sidebar-head {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.sidebar-foot {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 12px;
+}
+.menu-items {
+  flex-direction: column;
+  gap: 4px;
+}
+.menu-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 14px;
+  border-radius: 9px;
+  font-size: 15px;
+  color: #c3cad6;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, transform 200ms var(--ease);
+}
+.menu-item.focused {
+  color: var(--text);
+  background: rgba(124, 196, 255, 0.14);
+  border-left-color: var(--accent);
+  transform: translateX(4px);
+}
+.menu-item.danger.focused {
+  color: #ff9a8a;
+  background: rgba(255, 110, 90, 0.14);
+  border-left-color: #ff7a66;
+}
+
+.context-scrim {
+  align-items: center;
+  justify-content: center;
+}
+.context {
+  width: 320px;
+  flex-direction: column;
+  padding: 14px 10px 10px;
+  gap: 10px;
+  border-radius: 14px;
+  background: #151a23;
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.75);
+  transition: transform 300ms cubic-bezier(0.3, 1.4, 0.5, 1), opacity 180ms ease;
+}
+@starting-style {
+  .context {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+.context-head {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 0 6px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.context-thumb {
+  width: 64px;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.context-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* --- More glyphs ----------------------------------------------------------------------- */
+
+.glyph.face.small {
+  width: 22px;
+  height: 22px;
+}
+.glyph.stick {
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  font-size: 9px;
+  font-weight: 800;
+  background: radial-gradient(circle, #3a404b, #1d2128);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
 }

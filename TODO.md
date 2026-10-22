@@ -1693,6 +1693,16 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
     icons from its name; Nintendo pads confirm with A, the right-hand button)
   - [x] Engine fix found on the way: minified function lists (`translateY(0)scale(1)`) didn't
     parse; stylesheet values now get a space after a `)` that runs into a word (`M3-CSS-13`)
+  - [x] Pads count as the input device as soon as they're plugged in (and the keyboard again
+    when the last one goes); pads plugged in before Iron started are announced on the first
+    poll (`M3-PAD-02`)
+  - [x] A sidebar menu (Menu / Esc / the ☰ button: library, view, settings, Exit) and a
+    context menu on a game (Y / C / right-click: Play, Details, favourites, Show in folder);
+    the view toggle moved to R3 / G. Favourites are kept in `PlayerPrefs`
+  - [x] Engine: smooth scrolling (`behavior: "smooth"`, `scroll-behavior: smooth`), eased over
+    250 to 500 ms (`M3-EVT-09`); the grid keeps its selection in view with it, and fades out
+    at its top and bottom edges under the header
+  - [ ] Engine: gradients draw only 8 stops and warn every frame about the rest; warn once
   - [ ] Actually launch a game (start `iron <folder>` as a child process, or switch games in
     place) and return to the launcher when it quits
 - [~] `examples/md-reader`: a Markdown reader for Iron's own docs, drawn by Iron's UI. Its own

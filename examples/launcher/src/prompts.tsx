@@ -1,7 +1,8 @@
-// Button prompts that follow the last input device, as most PC games do: the first key or
-// mouse move shows keyboard keys (and the cursor), the first pad button or stick push shows
-// that pad's buttons (and hides the cursor). The pad's icons come from its name (Xbox,
-// PlayStation, Nintendo), else from the platform.
+// Button prompts that follow the last input device, as most PC games do: a key or mouse move
+// shows keyboard keys (and the cursor); plugging in a pad, or its first button or stick push,
+// shows that pad's buttons (and hides the cursor), and unplugging the last pad goes back to
+// the keyboard. The pad's icons come from its name (Xbox, PlayStation, Nintendo), else from
+// the platform.
 import { Application, Cursor, input } from "@iron/engine";
 import { Text } from "@iron/react";
 import { type ReactNode, useSyncExternalStore } from "react";
@@ -31,6 +32,8 @@ let device: Device = forced ? { kind: "gamepad", style: forced } : { kind: "keyb
 const listeners = new Set<() => void>();
 
 function use(next: Device) {
+  // `--pad` holds its icons, so a stray mouse move can't change a screenshot.
+  if (forced) return;
   if (next.kind === device.kind && (next.kind === "keyboard" || (device.kind === "gamepad" && next.style === device.style))) return;
   device = next;
   Cursor.visible = next.kind === "keyboard";
@@ -48,6 +51,11 @@ input.on("gamepadaxis", (e) => {
   // Past the stick's drift, not every tiny reading.
   if (Math.abs(e.value) > 0.5) use({ kind: "gamepad", style: padStyle(e.gamepad.name) });
 });
+input.on("gamepadconnected", (e) => use({ kind: "gamepad", style: padStyle(e.gamepad.name) }));
+input.on("gamepaddisconnected", () => {
+  const left = input.gamepads()[0];
+  use(left ? { kind: "gamepad", style: padStyle(left.name) } : { kind: "keyboard" });
+});
 if (device.kind === "gamepad") Cursor.visible = false;
 
 export function useDevice(): Device {
@@ -62,7 +70,7 @@ export function useDevice(): Device {
 
 // --- Icons -----------------------------------------------------------------------------
 
-export type Action = "browse" | "move" | "ok" | "back" | "view";
+export type Action = "browse" | "move" | "ok" | "back" | "view" | "options" | "menu";
 
 const MAC = Application.platform === "MacOSX";
 
@@ -138,6 +146,37 @@ function Bumper({ label }: { label: string }) {
   );
 }
 
+/** A stick click (R3): the stick seen from above, labelled. */
+function StickClick({ label }: { label: string }) {
+  return (
+    <box className="glyph stick">
+      <Text>{label}</Text>
+    </box>
+  );
+}
+
+/** The menu button: Xbox's three lines, PlayStation's Options, Nintendo's plus. */
+function MenuButton({ style }: { style: PadStyle }) {
+  if (style === "playstation") {
+    return (
+      <box className="glyph bumper">
+        <Text>OPTIONS</Text>
+      </box>
+    );
+  }
+  return (
+    <box className="glyph face small">
+      <svg viewBox="0 0 16 16" style={{ width: 12, height: 12 }}>
+        {style === "nintendo" ? (
+          <path d="M8 3 V13 M3 8 H13" stroke="white" strokeWidth={2.2} strokeLinecap="round" />
+        ) : (
+          <path d="M3.5 4.5 H12.5 M3.5 8 H12.5 M3.5 11.5 H12.5" stroke="white" strokeWidth={1.8} strokeLinecap="round" />
+        )}
+      </svg>
+    </box>
+  );
+}
+
 /** The d-pad, with the directions in use lit. */
 function DPad({ lit }: { lit: "horizontal" | "all" }) {
   const on = "#ffffff";
@@ -190,6 +229,10 @@ export function Glyphs({ action, device }: { action: Action; device: Device }) {
         return <Key>Esc</Key>;
       case "view":
         return <Key>G</Key>;
+      case "options":
+        return <Key>C</Key>;
+      case "menu":
+        return <Key>Esc</Key>;
     }
   }
   const s = device.style;
@@ -209,7 +252,11 @@ export function Glyphs({ action, device }: { action: Action; device: Device }) {
     case "back":
       return <FaceButton button={backButton(s)} style={s} />;
     case "view":
+      return <StickClick label={s === "playstation" ? "R3" : "RS"} />;
+    case "options":
       return <FaceButton button="North" style={s} />;
+    case "menu":
+      return <MenuButton style={s} />;
   }
 }
 
