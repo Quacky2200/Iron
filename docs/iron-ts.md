@@ -773,7 +773,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   console as an unhandled promise rejection that names the module (the host adds its own message, see "Components for the host"). **Not the same as ECMAScript:** an import cycle through
   a late module treats the cyclic edge as already finished; an importer waits for its late dependencies in import order, not all at
   once (the result is the same unless two of them reject).
-- **Declared types.** `gen_components.py` marks the handle-valued properties of generated components (`Texture`, `Mesh`, `Material`,
+- **Declared types.** `gen/components.rs` marks the handle-valued properties of generated components (`Texture`, `Mesh`, `Material`,
   `Sprite`, `GameObject`) `#[nullable]` (`Texture | null`, as in the QuickJS declarations) and the name-valued ones (`Light.type`,
   `LineRenderer2D.fillRule`, `TextMesh.alignment`, ..) `#[ts_type]`; `QualitySettings.shadows`, `softShadowQuality` and
   `anisotropicFiltering` too (`docs/iron-api.md`). Spreading into function values / `new C(...xs)` / `f(a, ...xs)` is built:

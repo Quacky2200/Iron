@@ -445,8 +445,8 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   built-in meshes by name), `Material` (`new Material({ color, metallic, ... })` or `Material.create({ .. })`, `copy()`, `withColor(c)`),
   `Sprite`. The host takes `take_commands()` (`Texture(t)` upload, `Mesh(m)`, ... removals), reads `texture_info(t)` / `mesh_info(m)`
   and reports file loads with `texture_loaded(t, w, h)`.
-- **Generated code.** `gen/gen_components.py` writes `src/generated.rs` from field tables (type, default, doc, hooks); run it after
-  editing the tables. Hand-written parts are `resources.rs`.
+- **Generated code.** `build.rs` writes `generated.rs` (into `OUT_DIR`) from the field tables in `gen/components.rs` (type, default, doc, hooks); it runs with every build, so
+  there is nothing to regenerate. Hand-written parts are `resources.rs`.
 - **Scene files.** `iron_kinds::AssetKind` (shared kinds go into the file's `assets` table as `{"$asset":"texture1"}`, inline kinds
   such as `Material` / `Sprite` are `{"$type":"Material",..}`); components save assets as `{"$handle":"Texture","id":N}` placeholders
   and the saver / loader (`iron_scenes::data`) translate, one handle per table entry. `instantiate` and in-memory prefabs keep the
@@ -714,7 +714,7 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
 `js/engine`'s `LineRenderer2D` fills, `TextMesh`, `Shapes`, `Spline` / `SplineAnimate` and `Camera.screenToWorldPoint` work in compiled
 games too. The renderer-side parts send the same ops as the QuickJS classes (`render.stroke`, `render.text`), so the pictures match.
 
-- **`LineRenderer2D`** (generated, `gen_components.py`): besides `points`, `width`, `color`, `loop` it has `fillRule`
+- **`LineRenderer2D`** (generated, `gen/components.rs`): besides `points`, `width`, `color`, `loop` it has `fillRule`
   (`evenodd` | `nonzero`), `sortingOrder` and `fillColor`. `fillColor` is a native `Option<Rgba>` (`Color | null`; the generator's `color?` field type): a `Color` fills the (closed) shape, `null` takes the fill away. Scene files
   save `fillColor` as a colour or `null`. `render_sync.rs` sends `stroke id object width color loop points fill rule order`; the
   renderer keeps a shape's triangles while its points and rule are unchanged (a native game sends every shape every frame).
