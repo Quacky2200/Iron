@@ -42,6 +42,7 @@ impl<'a> Lowerer<'a> {
 
     /// A struct for an inline `{ x: number; y: number }` type or a literal: one per shape.
     pub(crate) fn anon_struct(&mut self, name: &str, fields: Vec<Field>) -> StructId {
+        let fields = self.with_thunks(fields);
         let key = fields
             .iter()
             .map(|f| format!("{}:{}{}", f.name, f.ty, if f.optional { "?" } else { "" }))
@@ -72,6 +73,12 @@ impl<'a> Lowerer<'a> {
                 let TSTypeQueryExprName::IdentifierReference(id) = &q.expr_name else {
                     bail!("typeof of a qualified name")
                 };
+                // A local of the function being lowered: its type.
+                match self.lookup(id.name.as_str()) {
+                    Some(Binding::Direct(v)) => return Ok(self.cur.locals[v as usize].clone()),
+                    Some(Binding::Boxed(_, ty)) => return Ok(ty),
+                    None => {}
+                }
                 let Some(init) = self.const_inits.get(id.name.as_str()).copied() else {
                     bail!("typeof {}: only a top-level constant with a value", id.name)
                 };
@@ -127,23 +134,10 @@ impl<'a> Lowerer<'a> {
                     };
                     tys.push(self.ty(et, hint)?);
                 }
-                match tys.first() {
-                    Some(first) if optional_from.is_none() && tys.iter().all(|t| t == first) => {
-                        Ty::Arr(Box::new(first.clone()))
-                    }
-                    // Mixed element types: an object with fields `0`, `1`, ..
-                    _ => {
-                        let fields = tys
-                            .iter()
-                            .enumerate()
-                            .map(|(i, t)| Field {
-                                name: i.to_string(),
-                                ty: t.clone(),
-                                optional: false,
-                            })
-                            .collect();
-                        Ty::Obj(self.anon_struct("Tuple", fields))
-                    }
+                if optional_from.is_some() {
+                    self.tuple_ty_fields(tys)
+                } else {
+                    self.tuple_ty(tys)
                 }
             }
             TSType::TSUnionType(u) => self.union(&u.types, hint)?,
@@ -267,6 +261,9 @@ impl<'a> Lowerer<'a> {
                     }
                     return self.generic_type(id.name.as_str(), targs);
                 }
+                if let Some(t) = self.alias_utility(id.name.as_str(), &args, hint)? {
+                    return Ok(t);
+                }
                 match id.name.as_str() {
                     "Partial" | "Required" | "Readonly" | "Pick" | "Omit"
                         if !args.is_empty() && !self.class_decls.contains_key(id.name.as_str()) =>
@@ -348,6 +345,10 @@ impl<'a> Lowerer<'a> {
                             )
                         };
                         let vt = self.ty(args[1], hint)?;
+                        // Too many keys for a struct (it holds at most 64 fields): a dictionary.
+                        if keys.len() > 48 {
+                            return Ok(Ty::Map(Box::new(Ty::Str), Box::new(vt)));
+                        }
                         let fields = keys
                             .into_iter()
                             .map(|name| Field {
@@ -390,6 +391,27 @@ impl<'a> Lowerer<'a> {
                 )
             }
         })
+    }
+
+    /// A tuple of these element types: an array when they agree, else an object with fields `0`, `1`, ..
+    pub(crate) fn tuple_ty(&mut self, tys: Vec<Ty>) -> Ty {
+        match tys.first() {
+            Some(first) if tys.iter().all(|t| t == first) => Ty::Arr(Box::new(first.clone())),
+            _ => self.tuple_ty_fields(tys),
+        }
+    }
+
+    fn tuple_ty_fields(&mut self, tys: Vec<Ty>) -> Ty {
+        let fields = tys
+            .iter()
+            .enumerate()
+            .map(|(i, t)| Field {
+                name: i.to_string(),
+                ty: t.clone(),
+                optional: false,
+            })
+            .collect();
+        Ty::Obj(self.anon_struct("Tuple", fields))
     }
 
     pub(crate) fn members(&mut self, members: &'a [TSSignature<'a>], hint: &str) -> R<Vec<Field>> {
@@ -745,6 +767,7 @@ impl<'a> Lowerer<'a> {
                 self.iface_sids.insert(id, name.to_string());
             }
             let fields = self.iface_fields(name)?;
+            let fields = self.with_thunks(fields);
             self.m.structs[id].fields = fields;
             return Ok(Ty::Obj(id));
         }
@@ -802,10 +825,21 @@ impl<'a> Lowerer<'a> {
                 // `number | string`: the prelude's `StyleValue` (CSS lengths and keywords).
                 self.named_type("StyleValue")?
             } else {
-                bail!(
-                    "unsupported union of {:?}",
-                    tys.iter().map(|t| t.to_string()).collect::<Vec<_>>()
-                )
+                // Different types: a tagged union (`tagged.rs`). A string literal beside a
+                // `string` is a `string`.
+                let has_str = tys.contains(&Ty::Str);
+                let mut members: Vec<Ty> = Vec::new();
+                for t in tys {
+                    let t = if t == Ty::Lit && has_str { Ty::Str } else { t };
+                    if !members.contains(&t) {
+                        members.push(t);
+                    }
+                }
+                if members.len() == 1 {
+                    members.remove(0)
+                } else {
+                    self.make_union(members)
+                }
             }
         };
         Ok(if nullable { ty.nullable() } else { ty })
@@ -852,6 +886,34 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn coerce(&mut self, e: Expr, to: &Ty) -> R<Expr> {
         if e.ty == *to {
             return Ok(e);
+        }
+        // A member where its union goes, and a union where one of its members goes
+        // (`tagged.rs`).
+        if !self.unions.is_empty() {
+            if let Some(members) = self.union_members(to)
+                && self.union_members(&e.ty).is_none()
+                && !matches!(e.ty, Ty::Null)
+                && let Some(idx) = self.member_index(&members, &e.ty)
+            {
+                let w = self.wrap_in_union(e, to, idx)?;
+                return Ok(if to.is_nullable() && !w.ty.is_nullable() {
+                    mk_expr_cast(w, to.clone())
+                } else {
+                    w
+                });
+            }
+            if let Some(members) = self.union_members(&e.ty)
+                && self.union_members(to).is_none()
+                && !matches!(to.strip(), Ty::Void)
+                && let Some(idx) = members.iter().position(|m| m.strip() == to.strip())
+            {
+                let p = self.project_union(e, idx);
+                return Ok(if p.ty == *to {
+                    p
+                } else {
+                    mk_expr_cast(p, to.clone())
+                });
+            }
         }
         // A plain object where a type with some of its fields (or `Partial`s of them) goes:
         // a copy. (Writes through the copy do not reach the original.)
@@ -960,6 +1022,22 @@ impl<'a> Lowerer<'a> {
                 kind: ExprKind::Cast(Box::new(e)),
                 ty: to.clone(),
             }),
+            // Text from outside (an engine property, a map's keys) where a union member is
+            // expected: the member with that text (none when no union of the program has it).
+            (Ty::Str, t) if t.strip() == &Ty::Lit => {
+                let tag = Expr {
+                    kind: ExprKind::StrTag(Box::new(e)),
+                    ty: Ty::Lit,
+                };
+                if to.is_nullable() {
+                    Ok(Expr {
+                        kind: ExprKind::Cast(Box::new(tag)),
+                        ty: to.clone(),
+                    })
+                } else {
+                    Ok(tag)
+                }
+            }
             // A union member where a `string` is expected.
             (Ty::Lit, t) if t.strip() == &Ty::Str => {
                 let s = Expr {
@@ -1057,5 +1135,12 @@ impl<'a> Lowerer<'a> {
             }
             _ => ex(ExprKind::Bool(true)),
         }
+    }
+}
+
+fn mk_expr_cast(e: Expr, ty: Ty) -> Expr {
+    Expr {
+        kind: ExprKind::Cast(Box::new(e)),
+        ty,
     }
 }

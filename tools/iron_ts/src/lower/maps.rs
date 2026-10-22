@@ -288,7 +288,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn map_get_value(&mut self, recv: Expr, key: Expr, what: &str) -> R<Expr> {
         let (k, v, _) = Self::parts(&recv.ty).expect("a map");
         let ty = recv.ty.strip().clone();
-        if !(v.is_ptr() || v == Ty::Num || v == Ty::Lit) {
+        if !(v.is_ptr() || v == Ty::Num || v == Ty::Lit || matches!(v, Ty::Handle(_))) {
             bail!(
                 "{what} over {v} values is not supported (the result could not be told from a missing key); use has() first"
             )

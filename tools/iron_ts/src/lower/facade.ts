@@ -745,10 +745,10 @@ function __xp_RenderSettings_fixedExposure(): number | null {
 
 //# when createFlat|setFlat
 function __xt_Mesh_createFlat<D>(data: D): Mesh {
-  return Mesh.createFlatArrays(data.positions, data.triangles, data.normals, data.uv);
+  return Mesh.createFlatArrays(data.positions, data.triangles, "normals" in data ? (data.normals ?? []) : [], "uv" in data ? (data.uv ?? []) : []);
 }
 function __xm_Mesh_setFlat<D>(self: Mesh, data: D): void {
-  self.setFlatArrays(data.positions, data.triangles, data.normals, data.uv);
+  self.setFlatArrays(data.positions, data.triangles, "normals" in data ? (data.normals ?? []) : [], "uv" in data ? (data.uv ?? []) : []);
 }
 
 //# when Random.pick

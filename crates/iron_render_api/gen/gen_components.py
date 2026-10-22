@@ -245,6 +245,12 @@ COMPONENTS = [
         extra_load='"points" => v.as_array().and_then(|a| a.iter().map(v2_of).collect::<Option<Vec<V2>>>()).map(|p| d.points = p), "fillColor" => { if v.is_null() { d.has_fill = false; Some(()) } else { color_of(v).map(|c| { d.has_fill = true; d.fill_value = c; }) } }',
         extra_value_types=["v2"],
         api="""
+        /// The points (on the object's XY plane): a copy, so write a new array to change them.
+        #[property]
+        pub fn points(self) -> Vec<V2> {
+            with_line_renderer2d(self, |d| d.points.clone()).unwrap_or_default()
+        }
+
         /// Replaces the points (on the object's XY plane); a new array redraws it.
         pub fn set_points(self, points: &[V2]) {
             with_line_renderer2d(self, |d| d.points = points.to_vec());
@@ -683,6 +689,12 @@ pub fn late_update_camera_orbits(dt: f64) {
         remove_hook="line_removed(r);",
         awake_hook="line_redraw(r);",
         api="""
+        /// The points it goes through (world space): a copy, so write a new array to change them.
+        #[property]
+        pub fn positions(self) -> Vec<V3> {
+            with_line_renderer(self, |d| d.positions.clone()).unwrap_or_default()
+        }
+
         /// Replaces the points (world space); a new array redraws the tube.
         pub fn set_positions(self, points: &[V3]) {
             with_line_renderer(self, |d| d.positions = points.to_vec());

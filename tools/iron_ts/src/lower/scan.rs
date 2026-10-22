@@ -118,3 +118,13 @@ impl<'a> Visit<'a> for Scan {
         self.closure(it.span.start, |s| walk::walk_function(s, it, flags));
     }
 }
+
+impl Scan {
+    /// The free names of the closures in an object literal.
+    pub fn of_expression_object(o: &ObjectExpression<'_>) -> Scan {
+        let mut s = Scan::default();
+        s.frames.push(Frame::default());
+        s.visit_object_expression(o);
+        s
+    }
+}

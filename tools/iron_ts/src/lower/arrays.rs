@@ -232,6 +232,15 @@ impl<'a> Lowerer<'a> {
         for (p, var) in f.params.items.iter().zip(params) {
             self.bind_param(&p.pattern, *var, &mut body)?;
         }
+        // `(..): Star => ({ .. })`: the written return type is the callback's result type.
+        let mut declared = None;
+        if let (Some(rt), RetKind::Val, Some(var)) = (&f.return_type, kind.clone(), res)
+            && self.cur.locals[var as usize] == Ty::Void
+        {
+            let t = self.ty(&rt.type_annotation, "callback")?;
+            self.cur.locals[var as usize] = t.clone();
+            declared = Some(t);
+        }
         let label = self.new_label();
         let saved_loops = std::mem::take(&mut self.cur.loops);
         // A `try ... finally` around the call is not left by a `break` inside the callback.
@@ -245,7 +254,7 @@ impl<'a> Lowerer<'a> {
             ArrowFunctionBody::FunctionBody(b) => self.lower_stmts(&b.statements, &mut body),
             other => match other.as_expression() {
                 Some(e) => self
-                    .lower_expr(e, None)
+                    .lower_expr(e, declared.as_ref())
                     .and_then(|v| self.emit_return(Some(v), &mut body)),
                 None => Err("arrow body".to_string()),
             },
@@ -304,6 +313,9 @@ impl<'a> Lowerer<'a> {
             "isArray" => {
                 let e = arg(0).ok_or("Array.isArray needs an argument")?;
                 let v = self.lower_expr(e, None)?;
+                if self.union_members(&v.ty).is_some() {
+                    return Ok(self.union_is_array(v));
+                }
                 let is = matches!(v.ty.strip(), Ty::Arr(_) | Ty::Typed(_));
                 Ok(mk(
                     ExprKind::Seq(
@@ -497,7 +509,7 @@ impl<'a> Lowerer<'a> {
 
     /// The type of an element read that may be past the end: null for pointers and numbers.
     fn nullable_elem(&self, el: &Ty, method: &str) -> R<Ty> {
-        if el.is_ptr() || *el == Ty::Num {
+        if el.is_ptr() || *el == Ty::Num || matches!(el.strip(), Ty::Handle(_)) {
             Ok(el.clone().nullable())
         } else {
             bail!("`{method}` over {el} elements is not supported")

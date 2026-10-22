@@ -292,6 +292,9 @@ pub enum ExprKind {
     Blob(u32),
     /// A union member (a `Tag`) as a `string`: a lookup in the table of the tags' texts.
     TagStr(Box<Expr>),
+    /// A `string` as a union member: the index of the tag with that text, 0 (no tag) when there
+    /// is none. For text that comes from outside (an engine property, a map's keys).
+    StrTag(Box<Expr>),
     /// `null`: a zero pointer or the null NaN, depending on `ty`.
     Null,
     Var(VarId),
@@ -640,6 +643,7 @@ fn ex(e: &Expr) -> String {
         ExprKind::Bits(a) => format!("bits({})", ex(a)),
         ExprKind::Unbits(a) => format!("unbits({})", ex(a)),
         ExprKind::TagStr(a) => format!("tagstr({})", ex(a)),
+        ExprKind::StrTag(a) => format!("strtag({})", ex(a)),
         ExprKind::Null => "null".into(),
         ExprKind::Var(v) => format!("v{v}"),
         ExprKind::Global(g) => format!("g{g}"),

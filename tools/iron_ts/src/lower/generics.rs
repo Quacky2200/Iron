@@ -182,6 +182,16 @@ impl<'a> Lowerer<'a> {
                         self.unify_ann(&a.type_annotation, t, tps, out, what)?;
                     }
                 }
+                // A closure that returns nothing fixes `T = void` (`under(root, () => this.build())`).
+                if matches!(sig.ret, Ty::Void)
+                    && let TSType::TSTypeReference(r) = &f.return_type.type_annotation
+                    && let TSTypeName::IdentifierReference(id) = &r.type_name
+                    && r.type_arguments.is_none()
+                    && tps.iter().any(|t| t == id.name.as_str())
+                {
+                    out.entry(id.name.to_string()).or_insert(Ty::Void);
+                    return Ok(());
+                }
                 self.unify_ann(&f.return_type.type_annotation, &sig.ret, tps, out, what)
             }
             TSType::TSTypeReference(r) => {
@@ -196,7 +206,6 @@ impl<'a> Lowerer<'a> {
                     .unwrap_or_default();
                 if args.is_empty() && tps.iter().any(|t| t == n) {
                     let t = match actual {
-                        Ty::Lit => Ty::Str,
                         Ty::Null | Ty::Void => return Ok(()),
                         t => t.clone(),
                     };
@@ -332,7 +341,11 @@ impl<'a> Lowerer<'a> {
             let mark = self.cur.locals.len();
             let v = self.lower_expr(e, None);
             self.cur.locals.truncate(mark);
-            let v = v?;
+            let mut v = v?;
+            // A string written in the call is a `string`; a union-typed value keeps its union.
+            if Self::is_fresh_literal(e) {
+                v = self.widen_lit(v);
+            }
             self.unify_ann(ann, &v.ty, &names, &mut found, what)?;
         }
         // Pass 2: closures, whose parameter types the first pass may have fixed. Their result
@@ -525,7 +538,7 @@ impl<'a> Lowerer<'a> {
             self.targs_of_struct.insert(sid, (base.to_string(), targs));
         }
         self.pending_collect.push(name.clone());
-        if self.classes_ready {
+        if self.classes_ready || self.eager_classes {
             self.flush_pending_classes()?;
         }
         Ok(name)
@@ -541,7 +554,7 @@ impl<'a> Lowerer<'a> {
             self.collect_class_as(c, &name)?;
             done.push(name);
         }
-        if self.classes_ready && !done.is_empty() {
+        if (self.classes_ready || self.eager_classes) && !done.is_empty() {
             self.finalize_some(&done)?;
         }
         Ok(())

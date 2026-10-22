@@ -176,6 +176,7 @@ fn children(e: &Expr) -> Vec<&Expr> {
         | ExprKind::Cast(a)
         | ExprKind::Truthy(a)
         | ExprKind::TagStr(a)
+        | ExprKind::StrTag(a)
         | ExprKind::Bits(a)
         | ExprKind::Unbits(a)
         | ExprKind::Field(a, ..)

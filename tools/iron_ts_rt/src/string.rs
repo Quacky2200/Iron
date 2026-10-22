@@ -826,6 +826,26 @@ pub extern "C" fn ts_rt_str_from_code_point_gc(cp: f64) -> *mut Str {
     alloc_gc(bytes)
 }
 
+/// The index of the tag (a string-literal union member) with the text `s`, in the table of the
+/// tags' texts `table[..count]`; 0 (no tag) when none matches or `s` is null.
+///
+/// # Safety
+/// `table` must point at `count` live strings; `s` is a live string or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rt_str_tag(table: *const *const Str, count: i64, s: *const Str) -> u32 {
+    if s.is_null() || table.is_null() {
+        return 0;
+    }
+    for i in 1..count.max(0) as usize {
+        // SAFETY: the table holds `count` string pointers.
+        let t = unsafe { *table.add(i) };
+        if unsafe { ts_rt_str_eq(t, s) } {
+            return i as u32;
+        }
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1723,3 +1723,19 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3171 | Integration | A prop typed `object` is a bag of style properties spread into `style` (`tools/iron_ts_tests/tests/all/ui.rs`). |
 | M9-TS-3172 | Integration | `Pick<Ctx, ..>` of an interface that reaches the pick through its own members (`Ctx.scene: Effects`, `Effects.host: Host`) (`tools/iron_ts_tests/tests/all/utility.rs`). |
 | M9-TS-3173 | Integration | A generic function with `T = void` (`under<void>(() => { n++; })`, `return f()` of a void call) (`tools/iron_ts_tests/tests/all/misc.rs`). |
+| M9-TS-3174 | Integration | A generic function whose type argument appears only as the result of a closure that returns nothing (`under(root, () => this.build())`) equals bun's (`tools/iron_ts_tests/tests/all/originals.rs`, `bench/originals_cases.ts`). |
+| M9-TS-3175 | Integration | Unions of different types: `number \| [number, number]`, `number \| string \| string[]`, narrowing by `typeof`, `Array.isArray`, `?:`, early `return`, and `typeof u` on a union equal bun's (`originals.rs`). |
+| M9-TS-3176 | Integration | A written return type on an array callback (`rows.map(([a, b]): Star => ({ .. }))`) with spreads of the result into a typed array literal (`originals.rs`). |
+| M9-TS-3177 | Integration | `ReturnType<typeof store<string>>`, `ReturnType<typeof f>`, `Parameters<typeof f>`, `Exclude`, `Extract`, `NonNullable<typeof local>`, `Awaited` equal bun's (`originals.rs`). |
+| M9-TS-3178 | Integration | `new (a.constructor as new (n: number) => T)(len)` for typed arrays and classes inside a generic arrow declared in a function equals bun's (`originals.rs`). |
+| M9-TS-3179 | Integration | A constant object whose methods call the constant (`sfx.play` calls `sfx.preload`) equals bun's (`originals.rs`). |
+| M9-TS-3180 | Integration | A getter in an object literal is evaluated on each read, also when the object it reads is set after the literal (`originals.rs`). |
+| M9-TS-3181 | Integration | `(name && lookup(name)) || fallback` with a string and an object equals bun's (`originals.rs`). |
+| M9-TS-3182 | Integration | `Partial<Record<Name, V>>` over a union of 53 names is a dictionary: reads, missing keys (`originals.rs`). |
+| M9-TS-3183 | Integration | A union-typed value keeps its union in an object literal (`indexOf(state.mode)`), `Map<Sfx, V>.keys()` feeds a function taking `Sfx`, a cycle through `MODES` equals bun's (`originals.rs`). |
+| M9-TS-3184 | Integration | `pop` / `shift` over an array of handles give a handle or `undefined` (`tools/iron_ts_tests/tests/all/originals_engine.rs`, `bench/originals_engine.ts`). |
+| M9-TS-3185 | Integration | `LineRenderer2D.points` reads and writes as a property (`originals_engine.rs`). |
+| M9-TS-3186 | Integration | `new Color(...rgba)` and `new Color(...rgb)` from arrays: a missing alpha is 1 (`originals_engine.rs`). |
+| M9-TS-3187 | Integration | `Mesh.createFlat` and `setFlat` with only some of the lists (`originals_engine.rs`). |
+| M9-TS-3188 | Integration | An engine enum string meets a program's literal union: `RenderSettings.fogMode` read into a `FogMode` variable, a table over `FogMode \| "off"`, `MODES.indexOf(state.mode)` (`originals_engine.rs`). |
+| M9-TS-3189 | Integration | Handles as `Map` values, `Map` keys and `Set` members (`originals_engine.rs`). |

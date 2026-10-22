@@ -449,6 +449,9 @@ impl<'a> Lowerer<'a> {
             }
             Err(e) => return Err(e),
         };
+        if self.union_members(&a.ty).is_some() {
+            return Ok(self.union_typeof(a));
+        }
         let symbol_sid = match self.named.get("Symbol_") {
             Some(Ty::Obj(s)) => Some(*s),
             _ => None,

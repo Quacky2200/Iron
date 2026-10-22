@@ -1350,3 +1350,15 @@ pub mod facade_t {
 pub mod outlines_t {
     include!(concat!(env!("OUT_DIR"), "/outlines_bindings.rs"));
 }
+
+/// `bench/originals_engine.ts`, prefix `ogn_`.
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    clippy::all,
+    unused_imports
+)]
+pub mod originals_engine_t {
+    include!(concat!(env!("OUT_DIR"), "/originals_engine_bindings.rs"));
+}

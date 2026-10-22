@@ -4,7 +4,27 @@ use super::expr::mk;
 use super::*;
 
 impl<'a> Lowerer<'a> {
+    /// Does the statement always leave its block (`return`, `throw`, `break`, `continue`)?
+    fn always_exits(s: &Statement<'_>) -> bool {
+        match s {
+            Statement::ReturnStatement(_)
+            | Statement::ThrowStatement(_)
+            | Statement::BreakStatement(_)
+            | Statement::ContinueStatement(_) => true,
+            Statement::BlockStatement(b) => b.body.last().is_some_and(Self::always_exits),
+            _ => false,
+        }
+    }
+
     pub(crate) fn lower_stmts(&mut self, stmts: &'a [Statement<'a>], out: &mut Vec<Stmt>) -> R<()> {
+        // Narrowings a block's early exits leave end with the block.
+        let narrowed_mark = self.narrowed.len();
+        let r = self.lower_stmts_in(stmts, out);
+        self.narrowed.truncate(narrowed_mark);
+        r
+    }
+
+    fn lower_stmts_in(&mut self, stmts: &'a [Statement<'a>], out: &mut Vec<Stmt>) -> R<()> {
         for s in stmts {
             // A message without a line gets the statement's (the innermost one wins).
             self.lower_stmt(s, out).map_err(|e| {
@@ -40,12 +60,24 @@ impl<'a> Lowerer<'a> {
             Statement::VariableDeclaration(v) => self.lower_var_decl(v, out)?,
             Statement::IfStatement(i) => {
                 let c = self.lower_cond(&i.test)?;
-                let then = self.scoped(&i.consequent)?;
+                let (yes, no) = if self.unions.is_empty() {
+                    (vec![], vec![])
+                } else {
+                    (
+                        self.narrowings(&i.test, true),
+                        self.narrowings(&i.test, false),
+                    )
+                };
+                let then = self.with_narrowed(yes, |s| s.scoped(&i.consequent))?;
                 let els = match &i.alternate {
-                    Some(a) => self.scoped(a)?,
+                    Some(a) => self.with_narrowed(no.clone(), |s| s.scoped(a))?,
                     None => vec![],
                 };
                 out.push(Stmt::If(c, then, els));
+                // `if (typeof x === "string") return ..;`: the rest of the block is the other case.
+                if i.alternate.is_none() && Self::always_exits(&i.consequent) {
+                    self.narrowed.extend(no);
+                }
             }
             Statement::WhileStatement(w) => {
                 let label = self.new_label();
@@ -880,6 +912,31 @@ impl<'a> Lowerer<'a> {
                 self.lower_destructuring(d, out)?;
                 continue;
             };
+            // `const more = <T extends Float32Array>(a: T): T => ..` inside a function: a generic
+            // function of its own (it cannot use the locals around it).
+            if let (Some(Expression::ArrowFunctionExpression(a)), None, true) = (
+                &d.init,
+                &d.type_annotation,
+                v_kind == VariableDeclarationKind::Const,
+            ) && a.type_parameters.is_some()
+            {
+                let body = match &a.body {
+                    ArrowFunctionBody::FunctionBody(b) => FnBody::Block(b),
+                    other => FnBody::Expr(other.as_expression().ok_or("arrow body")?),
+                };
+                let key = format!("{}@{}", id.name, a.span.start);
+                self.generic_fns.insert(
+                    key.clone(),
+                    generics::GenericFn {
+                        tparams: generics::tparam_list(a.type_parameters.as_deref()),
+                        params: &a.params,
+                        ret: a.return_type.as_ref().map(|r| &r.type_annotation),
+                        body,
+                    },
+                );
+                self.cur.local_generics.insert(id.name.to_string(), key);
+                continue;
+            }
             let ann = match &d.type_annotation {
                 Some(a) => Some(self.ty(&a.type_annotation, id.name.as_str())?),
                 None => None,

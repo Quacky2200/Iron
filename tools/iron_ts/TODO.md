@@ -375,16 +375,29 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [ ] `UiTarget.type` needs the host to set a resolver (`iron_ts_ui::set_target_kind_resolver`).
 - [ ] Scene-file keys for fog and exposure (QuickJS `scenes.ts` saves them; `iron_scenes` does not).
 - [ ] `Light.measureIlluminance` answers at once instead of after the next physics tick.
-- [ ] `Mesh.createFlat` needs all four lists (positions, triangles, normals, uv); allow a partial data object.
+- [x] `Mesh.createFlat` needs all four lists (positions, triangles, normals, uv); allow a partial data object (2026-10-22, `M9-TS-3187`).
 - [x] `answer` handlers (and raw `onRequest` handlers) may return a promise: the reply goes out when it resolves, a rejection fails the asker (`M9-TS-2894..2896`).
 - [ ] Facade chunk triggers for `.on(` / `.emit(` also pull the helpers into programs using those names on their own classes (generic, unused): tighten the triggers.
 - [x] A local typed as a string-literal union assigned from an optional field of the same type (`let mode: M = "auto"; if (o.mode !== undefined) mode = o.mode;`) panicked Cranelift (`declared type of variable .. doesn't match`); also with `as M` and with a `const` copy. Fixed 2026-10-22: `Nullable(Lit)` is an `i32` like `Lit` with tag 0 reserved as "no tag" (`M9-TS-3000..3012`); `as M` lowers literals as members; `Map.get` and `join` over members; `keyof typeof X` / `keyof Iface` are the key union; a non-member literal in a typed declaration is a compile error; `Spline.mode` is `TangentMode` again.
-- [x] `Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Readonly<T>` over interfaces, aliases, records, classes and engine classes, as option bags too (2026-10-22, `M9-TS-3120..3127`). [ ] `ReturnType<typeof f>`.
+- [x] `Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Readonly<T>` over interfaces, aliases, records, classes and engine classes, as option bags too (2026-10-22, `M9-TS-3120..3127`). [x] `ReturnType<typeof f>` / `typeof f<string>`, `Parameters`, `Awaited`, `NonNullable`, `Exclude`, `Extract` (`M9-TS-3177`).
 - [x] Classes assigned to an interface (`class C implements I`, `I[]` holding different classes, `extends` between interfaces): dispatch by the object's struct id through per-interface tables (2026-10-22, `M9-TS-3140..3147`, `docs/iron-ts.md` "Interfaces implemented by classes").
 - [ ] Object-literal accessors (`get scene() { .. }`), computed keys in object literals, spread call arguments for function values (`rnd(...range)` works for declared functions with fixed or rest parameters and for tuples). [x] Destructuring assignment (`[a, b] = [b, a]`, `M9-TS-3152/3153`).
-- [ ] `Map.get` / `Set` over engine handles as values (box them in a class); `.pop()` over handle arrays; `indexOf` over object arrays.
+- [x] `Map.get` / `Set` over engine handles as values; `.pop()` / `.shift()` / `.at()` over handle arrays (`M9-TS-3184`, `3189`). [ ] `indexOf` over object arrays.
 - [ ] Line numbers in errors from facade chunks and from code appended after the user's source point past the file.
 - [x] Facade chunk classes (`Spline`, `SplineAnimate`) were not `@property` aware (no scene saving): both are native now and `SplineAnimate` saves its fields and spline (2026-10-22).
+
+## The original example sources (2026-10-22)
+
+Goal: the sources on `main` compile as written (a later step restores them). Measured with `iron-build check` on a scratch copy:
+**38 of 40 build and pass `tsc`**; `physics` and `light-units` stay on the `Rigidbody` / `BoxCollider` form (their only `tsc` errors are
+the retired `physics` object API). Done for it (details: `docs/iron-ts.md` "The original example sources", `docs/research/iron-examples-on-iron-ts.md`
+section 12, tests `M9-TS-3174..3189`): inference of `T = void` from a closure, `ReturnType` / `Parameters` / `Awaited` / `NonNullable` / `Exclude` /
+`Extract` and instantiation expressions, unions of different types with narrowing by path, a written return type on an inlined callback,
+self-referring constant objects, object-literal getters, `x.constructor` construction, generic arrows in functions, big `Record<Union, V>`
+as dictionaries, strings to union members (`StrTag`), values of union type keep the union in literals, `a && b` string and object,
+`LineRenderer2D.points`, `playback.onEnded = f`, `new Color(...rgba)`, handle `Map` values and `pop`, partial `Mesh.createFlat`.
+Not done: narrowing for `in` / `instanceof` / number truthiness on tagged unions; getters only read (no setters in literals); a `Record<Union, V>`
+with up to 48 keys is still a struct.
 
 ## Promises audit (2026-10-22)
 

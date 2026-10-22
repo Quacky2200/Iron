@@ -651,6 +651,7 @@ impl<'a> Lowerer<'a> {
         }
         let sid = self.classes_sid(name);
         self.m.structs[sid].fields = fields;
+        self.laid_out.insert(name.to_string());
         done.insert(name.to_string());
         Ok(())
     }
@@ -1033,6 +1034,12 @@ impl<'a> Lowerer<'a> {
             }
         }
         let init = self.classes[class].ctor.clone();
+        if init.is_empty() || (!self.classes_ready && !self.laid_out.contains(class)) {
+            bail!(
+                "{}: `new {class}` before the class is laid out (a type that needs the function's body here, such as ReturnType<typeof f>, cannot construct it)",
+                self.loc(at)
+            )
+        }
         let this = self.var_expr(tmp);
         let call = self.call_declared(&init, args, Some(this))?;
         stmts.push(Stmt::Eval(call));
@@ -1192,7 +1199,10 @@ impl<'a> Lowerer<'a> {
         args: &'a [Argument<'a>],
         recv: Option<Expr>,
     ) -> R<Expr> {
-        let fid = self.fids[name];
+        let fid = *self
+            .fids
+            .get(name)
+            .ok_or_else(|| format!("internal: no declared function `{name}`"))?;
         self.call_target(name, Target::Direct(fid), args, recv)
     }
 
@@ -1322,5 +1332,99 @@ impl<'a> Lowerer<'a> {
     /// The type a property assignment through a setter takes.
     pub(crate) fn setter_value_ty(&mut self, t: &Target) -> Ty {
         self.fsig[Self::target_fid(t)].0[1].clone()
+    }
+}
+
+impl<'a> Lowerer<'a> {
+    /// Does a closure inside the object literal mention `name` (the constant it initialises)?
+    pub(crate) fn refers_to_itself(&self, o: &'a ObjectExpression<'a>, name: &str) -> bool {
+        let sc = scan::Scan::of_expression_object(o);
+        sc.free.values().any(|v| v.iter().any(|n| n == name))
+    }
+
+    /// The struct of an object literal whose properties are functions with written signatures (or
+    /// simple literals), without lowering any body: `None` when a property does not say its type.
+    pub(crate) fn object_shape(&mut self, o: &'a ObjectExpression<'a>) -> R<Option<StructId>> {
+        let mut fields: Vec<Field> = Vec::new();
+        for p in &o.properties {
+            let ObjectPropertyKind::ObjectProperty(p) = p else {
+                return Ok(None);
+            };
+            if p.computed || p.kind != PropertyKind::Init {
+                return Ok(None);
+            }
+            let name = self.key_name(&p.key)?;
+            let ty = match &p.value {
+                Expression::ArrowFunctionExpression(a) => {
+                    let ret = a.return_type.as_ref().map(|r| &r.type_annotation);
+                    match self.written_signature(&a.params, ret, a.span.start)? {
+                        Some(f) => f,
+                        None => return Ok(None),
+                    }
+                }
+                Expression::FunctionExpression(f) => {
+                    let ret = f.return_type.as_ref().map(|r| &r.type_annotation);
+                    match self.written_signature(&f.params, ret, f.span.start)? {
+                        Some(f) => f,
+                        None => return Ok(None),
+                    }
+                }
+                v => match v {
+                    Expression::NumericLiteral(_)
+                    | Expression::BooleanLiteral(_)
+                    | Expression::StringLiteral(_) => match self.guess_ty(v, 0)? {
+                        Some(t) => t,
+                        None => return Ok(None),
+                    },
+                    _ => return Ok(None),
+                },
+            };
+            match fields.iter_mut().find(|f| f.name == name) {
+                Some(f) => f.ty = ty,
+                None => fields.push(Field {
+                    name,
+                    ty,
+                    optional: false,
+                }),
+            }
+        }
+        Ok(Some(self.anon_struct("Anon", fields)))
+    }
+
+    /// A closure's type from its annotations alone (as `lower_closure` types its parameters).
+    fn written_signature(
+        &mut self,
+        params: &'a FormalParameters<'a>,
+        ret: Option<&'a TSType<'a>>,
+        _start: u32,
+    ) -> R<Option<Ty>> {
+        let Some(ret) = ret else { return Ok(None) };
+        let mut ptys = Vec::new();
+        for p in &params.items {
+            let ty = match &p.type_annotation {
+                Some(a) => self.ty(&a.type_annotation, "closure")?,
+                None => match p.initializer.as_deref() {
+                    Some(Expression::NumericLiteral(_)) => Ty::Num,
+                    Some(Expression::StringLiteral(_) | Expression::TemplateLiteral(_)) => Ty::Str,
+                    Some(Expression::BooleanLiteral(_)) => Ty::Bool,
+                    _ => return Ok(None),
+                },
+            };
+            let defaulted =
+                p.initializer.is_some() && (ty.is_ptr() || ty == Ty::Num || ty == Ty::Bool);
+            ptys.push(if (p.optional && p.initializer.is_none()) || defaulted {
+                ty.nullable()
+            } else {
+                ty
+            });
+        }
+        if let Some(r) = &params.rest {
+            let Some(a) = &r.type_annotation else {
+                return Ok(None);
+            };
+            ptys.push(self.ty(&a.type_annotation, "closure")?);
+        }
+        let ret = self.ty(ret, "closure")?;
+        Ok(Some(Ty::Fn(Box::new(FnTy { params: ptys, ret }))))
     }
 }

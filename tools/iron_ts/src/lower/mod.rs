@@ -8,6 +8,7 @@ macro_rules! bail {
     ($($t:tt)*) => { return Err(format!($($t)*)) };
 }
 
+mod accessors;
 mod arrays;
 mod asyncs;
 mod bigint;
@@ -38,6 +39,7 @@ mod regexp;
 mod scan;
 mod stmt;
 mod strings;
+mod tagged;
 mod temporal;
 mod typed;
 mod types;
@@ -193,6 +195,9 @@ pub(crate) struct FnCtx {
     /// Parameters written as a union of string literals (`key: "fog" | "lowRes"`): the members,
     /// so `state[key]` knows which fields the key can name.
     pub lit_sets: HashMap<String, Vec<String>>,
+    /// Generic arrow functions declared in this function (`const more = <T>(a: T) => ..`): the
+    /// name and the key of the generic function in `generic_fns`.
+    pub local_generics: HashMap<String, String>,
 }
 
 pub struct Lowerer<'a> {
@@ -256,6 +261,20 @@ pub struct Lowerer<'a> {
     pub(crate) pending_collect: Vec<String>,
     /// The program's own classes are laid out: later specialisations finish at once.
     pub(crate) classes_ready: bool,
+    /// The program's top-level function declarations, known before any is collected (for
+    /// `ReturnType<typeof f>` in a type met earlier).
+    pub(crate) top_fn_decls: HashMap<String, &'a Function<'a>>,
+    /// Names given a getter in an object literal (`accessors.rs`).
+    pub(crate) accessor_names: HashSet<String>,
+    /// Unions of different types (`tagged.rs`): the struct and its member types.
+    pub(crate) unions: HashMap<StructId, Vec<Ty>>,
+    /// Paths (`o.scale`) the tests around the expression narrowed to a member of their union.
+    pub(crate) narrowed: Vec<(String, Vec<usize>)>,
+    /// While a function body is lowered early (`ReturnType<typeof f>` in a field type), classes
+    /// it instantiates are collected and laid out at once.
+    pub(crate) eager_classes: bool,
+    /// Classes whose fields are laid out.
+    pub(crate) laid_out: HashSet<String>,
     /// `instanceof GenericClass` tables, filled in once every specialisation exists.
     pub(crate) generic_itables: Vec<(usize, String)>,
     /// `Partial<Class>` and friends met before the classes had fields: (struct, utility, class struct, keys).
@@ -483,6 +502,12 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         inst_names: HashMap::new(),
         pending_collect: Vec::new(),
         classes_ready: false,
+        top_fn_decls: HashMap::new(),
+        accessor_names: HashSet::new(),
+        unions: HashMap::new(),
+        narrowed: Vec::new(),
+        eager_classes: false,
+        laid_out: HashSet::new(),
         generic_itables: Vec::new(),
         pending_utility: Vec::new(),
         top_await,
@@ -530,6 +555,8 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_program(&mut self, program: &'a Program<'a>) -> R<()> {
+        self.scan_accessors(program);
+        self.register_top_functions(program);
         // Top-level constants whose type comes from their initialiser.
         for stmt in &program.body {
             let decl = match stmt {
@@ -1278,10 +1305,30 @@ impl<'a> Lowerer<'a> {
             return self.lower_top_destructure(d, is_const, init_body);
         };
         let name = id.name.to_string();
-        let exp = match &d.type_annotation {
+        let mut exp = match &d.type_annotation {
             Some(a) => Some(self.ty(&a.type_annotation, &name)?),
             None => None,
         };
+        // `const sfx = { play() { sfx.preload(); }, preload(): void {..} }`: the methods name the
+        // object they are in, so its type is made from their written signatures first.
+        let mut reserved: Option<GlobalId> = None;
+        if exp.is_none()
+            && is_const
+            && let Some(Expression::ObjectExpression(o)) = &d.init
+            && self.refers_to_itself(o, &name)
+            && let Some(sid) = self.object_shape(o)?
+        {
+            let ty = Ty::Obj(sid);
+            let g = self.m.globals.len();
+            self.m.globals.push(Global {
+                name: name.clone(),
+                ty: ty.clone(),
+            });
+            self.consts
+                .insert(name.clone(), ConstInfo::Global(g, ty.clone(), false));
+            reserved = Some(g);
+            exp = Some(ty);
+        }
         let e = match (&d.init, &exp) {
             (Some(init), _) => {
                 let mut e = self.lower_expr(init, exp.as_ref())?;
@@ -1309,6 +1356,10 @@ impl<'a> Lowerer<'a> {
         }
         if matches!(e.ty, Ty::Null) {
             bail!("{name}: a variable initialised with null needs a type annotation")
+        }
+        if let Some(g) = reserved {
+            init_body.push(Stmt::StoreGlobal(g, e));
+            return Ok(());
         }
         let g = self.m.globals.len();
         self.m.globals.push(Global {

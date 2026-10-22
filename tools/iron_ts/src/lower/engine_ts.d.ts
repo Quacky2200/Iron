@@ -462,7 +462,7 @@ interface MeshData {
 }
 declare namespace Mesh {
   function create(data: MeshData): Mesh;
-  /** A mesh from flat lists (see `FlatMeshData`). In compiled games give all four lists (`normals` and `uv` may be empty). */
+  /** A mesh from flat lists (see `FlatMeshData`); a list left out is empty. */
   function createFlat(data: FlatMeshData): Mesh;
 }
 interface Mesh {

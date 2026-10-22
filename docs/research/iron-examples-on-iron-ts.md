@@ -525,3 +525,21 @@ an optional field still panics Cranelift (`declared type of variable .. doesn't 
 *packaged* build would miss them (run from the folder, the assets are found); `Spline` / `SplineAnimate` keep their fields plain
 (not `@property`); `clock` and `fishtank` read time and the pointer as before. Only `shapes`, `clock` and `splines` were rendered
 frame by frame to compare faces; `emoji` is random per run, so the shots in `tests/output` show one cast member each.
+
+## 12. The original sources (2026-10-22)
+
+The sources of all examples as they are on `main` (QuickJS-era, with `@iron/engine` imports) are the target: a later step restores
+them in place of the rewrites. Built in a scratch copy with `iron-build check <copy>/examples --tsc` (the rewritten `project.json`
+and `tsconfig.json`, the `src/` of `main`; `windows` is new on this branch): **38 of the 40 build, 38 pass `tsc`.** The two that do
+not are `physics` and `light-units`, whose `tsc` errors are all the retired `physics` object API (`physics.addCollider`,
+`PhysicsBody.id`); they stay on the `Rigidbody` / `BoxCollider` form by decision.
+
+What the nine that failed first needed (details in `docs/iron-ts.md` "The original example sources"):
+
+| Example | First error | Fix |
+|---|---|---|
+| clock | `under<T>(root, () => this.build())`: cannot infer `T` | a closure that returns nothing fixes `T = void`; `pop` over handle arrays; `LineRenderer2D.points` as a property |
+| emoji | `ReturnType<typeof store<string>>` | instantiation expressions in `typeof`; then, in order: unions of different types (`number \| [number, number]`), a written return type on an inlined callback, self-referring constant objects (`sfx.play` calls `sfx.preload`), `Map<Sfx, Sound>` handle values, `x ?? []` over a set, `playback.onEnded = f`, `new Color(...rgba)`, a style spread of a plain object, `key={maybeString}`, `a && b` of a string and an object, `Record<Sfx, string>` with 80 keys, object-literal getters |
+| fog, fog-teapots | `MODES[...]!` assigned to a field: "str where tag is expected" | a value with a union type keeps it in an object literal (only a written string widens); a string becomes a union member through the tag table (`StrTag`) |
+| fog-blocks, fog-world | generic arrow with `new (a.constructor as new (n: number) => T)(..)` | generic arrows declared in a function; `x.constructor` for typed arrays and classes |
+| fog-park | `Mesh.createFlat` with three of its four lists | the facade tolerates missing lists (`"uv" in data ? .. : []`, a condition known at compile time lowers one arm) |

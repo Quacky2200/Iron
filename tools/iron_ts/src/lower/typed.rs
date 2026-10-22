@@ -14,7 +14,7 @@ impl<'a> Lowerer<'a> {
     }
 
     /// A typed array made from `src`: a length, a `number[]` or another typed array.
-    fn typed_from(&mut self, kind: TypedKind, src: Expr, at: &str) -> R<Expr> {
+    pub(crate) fn typed_from(&mut self, kind: TypedKind, src: Expr, at: &str) -> R<Expr> {
         let ty = Ty::Typed(kind);
         Ok(match src.ty.strip().clone() {
             Ty::Num => self.rt_str("ts_rt_typed_new_gc", vec![Self::kind_num(kind), src], ty),

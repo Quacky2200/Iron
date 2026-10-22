@@ -2193,6 +2193,12 @@ pub mod line_renderer2d_api {
             });
         }
 
+        /// The points (on the object's XY plane): a copy, so write a new array to change them.
+        #[property]
+        pub fn points(self) -> Vec<V2> {
+            with_line_renderer2d(self, |d| d.points.clone()).unwrap_or_default()
+        }
+
         /// Replaces the points (on the object's XY plane); a new array redraws it.
         pub fn set_points(self, points: &[V2]) {
             with_line_renderer2d(self, |d| d.points = points.to_vec());
@@ -5004,6 +5010,12 @@ pub mod line_renderer_api {
             with_line_renderer(self, |d| {
                 d.material = v.0;
             });
+        }
+
+        /// The points it goes through (world space): a copy, so write a new array to change them.
+        #[property]
+        pub fn positions(self) -> Vec<V3> {
+            with_line_renderer(self, |d| d.positions.clone()).unwrap_or_default()
         }
 
         /// Replaces the points (world space); a new array redraws the tube.

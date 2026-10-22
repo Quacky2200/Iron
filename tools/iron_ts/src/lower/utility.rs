@@ -20,6 +20,10 @@ impl<'a> Lowerer<'a> {
         if name == "Readonly" {
             return Ok(base);
         }
+        // A dictionary already has optional entries.
+        if matches!(base.strip(), Ty::Map(..)) && matches!(name, "Partial" | "Required") {
+            return Ok(base);
+        }
         let keys = if matches!(name, "Pick" | "Omit") {
             let Some(arg) = args.get(1) else {
                 bail!("{name}<T, K> needs its keys")
@@ -165,5 +169,172 @@ fn lower_first(s: &str) -> String {
     match c.next() {
         Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
         None => String::new(),
+    }
+}
+
+impl<'a> Lowerer<'a> {
+    /// The signature of the function a `typeof f` / `typeof f<string>` (an instantiation
+    /// expression) names: a top-level function, a generic one with its type arguments written, or
+    /// a constant closure. A return type that is inferred comes from lowering the body now.
+    fn fn_of_query(&mut self, q: &'a TSTypeQuery<'a>, hint: &str) -> R<FnTy> {
+        let TSTypeQueryExprName::IdentifierReference(id) = &q.expr_name else {
+            bail!("typeof of a qualified name")
+        };
+        let name = id.name.as_str();
+        let fname = if self.generic_fns.contains_key(name) {
+            let Some(targs) = &q.type_arguments else {
+                bail!(
+                    "typeof {name}: a generic function needs its type arguments (typeof {name}<T>)"
+                )
+            };
+            let mut tys = Vec::new();
+            for t in &targs.params {
+                tys.push(self.ty(t, hint)?);
+            }
+            if tys.len() != self.generic_fns[name].tparams.len() {
+                bail!("typeof {name}<..>: write every type argument")
+            }
+            let eager = std::mem::replace(&mut self.eager_classes, !self.classes_ready);
+            let r = self.instantiate_fn(name, tys);
+            self.eager_classes = eager;
+            r?
+        } else if self.fids.contains_key(name) {
+            name.to_string()
+        } else if let Some(f) = self.top_fn_decls.get(name).copied() {
+            // Not collected yet (a type met before the function): its written signature.
+            let mut params = Vec::new();
+            for p in &f.params.items {
+                let Some(a) = &p.type_annotation else {
+                    bail!("typeof {name}: its parameters need types")
+                };
+                let t = self.ty(&a.type_annotation, hint)?;
+                params.push(if p.optional { t.nullable() } else { t });
+            }
+            let Some(r) = &f.return_type else {
+                bail!("typeof {name}: write its return type")
+            };
+            let ret = self.ty(&r.type_annotation, hint)?;
+            return Ok(FnTy { params, ret });
+        } else {
+            bail!("typeof {name}: only a top-level function here")
+        };
+        let fid = self.fids[&fname];
+        if self.fsig[fid].1.is_none() {
+            let eager = std::mem::replace(&mut self.eager_classes, !self.classes_ready);
+            let r = self.ensure_lowered(&fname);
+            self.eager_classes = eager;
+            r?;
+        }
+        let (params, ret) = self.fsig[fid].clone();
+        let Some(ret) = ret else {
+            bail!("typeof {name}: its return type is not known yet; write it")
+        };
+        Ok(FnTy { params, ret })
+    }
+
+    /// The function type `ReturnType<F>` / `Parameters<F>` look into: `typeof f` or a function type.
+    fn fn_type_of(&mut self, t: &'a TSType<'a>, what: &str, hint: &str) -> R<FnTy> {
+        match t {
+            TSType::TSParenthesizedType(p) => self.fn_type_of(&p.type_annotation, what, hint),
+            TSType::TSTypeQuery(q) => self.fn_of_query(q, hint),
+            other => match self.ty(other, hint)? {
+                Ty::Fn(f) => Ok(*f),
+                t => bail!("{what}<F>: F must be a function type, not {t}"),
+            },
+        }
+    }
+
+    /// `ReturnType<F>`, `Parameters<F>`, `Awaited<T>`, `NonNullable<T>`, `Exclude<T, U>`,
+    /// `Extract<T, U>`; `None` for any other name.
+    pub(crate) fn alias_utility(
+        &mut self,
+        name: &str,
+        args: &[&'a TSType<'a>],
+        hint: &str,
+    ) -> R<Option<Ty>> {
+        let arity = match name {
+            "ReturnType" | "Parameters" | "Awaited" | "NonNullable" => 1,
+            "Exclude" | "Extract" => 2,
+            _ => return Ok(None),
+        };
+        if args.len() != arity {
+            return Ok(None);
+        }
+        Ok(Some(match name {
+            "ReturnType" => self.fn_type_of(args[0], name, hint)?.ret,
+            "Parameters" => {
+                let f = self.fn_type_of(args[0], name, hint)?;
+                self.tuple_ty(f.params)
+            }
+            "Awaited" => {
+                let t = self.ty(args[0], hint)?;
+                match self.promise_of(&t) {
+                    Some((_, value)) => value,
+                    None => t,
+                }
+            }
+            "NonNullable" => self.ty(args[0], hint)?.strip().clone(),
+            _ => {
+                // `Exclude<"a" | "b", "a">`: the members left (or kept); a union with `null`:
+                // that part left out (or kept).
+                let keep = name == "Extract";
+                if let (Some(all), Some(some)) =
+                    (self.lit_members(args[0]), self.lit_members(args[1]))
+                {
+                    let members: Vec<String> = all
+                        .into_iter()
+                        .filter(|m| some.contains(m) == keep)
+                        .collect();
+                    for m in &members {
+                        self.tag(m);
+                    }
+                    return Ok(Some(Ty::Lit));
+                }
+                let t = self.ty(args[0], hint)?;
+                let u = self.ty(args[1], hint)?;
+                if matches!(u, Ty::Null | Ty::Void) {
+                    if keep { u } else { t.strip().clone() }
+                } else if t.strip() == u.strip() {
+                    if keep { t } else { Ty::Void }
+                } else if keep {
+                    bail!("Extract<T, U>: only unions of string literals are supported")
+                } else {
+                    t
+                }
+            }
+        }))
+    }
+}
+
+impl<'a> Lowerer<'a> {
+    /// Notes every top-level function declaration, and registers the generic ones (a type may name
+    /// `typeof f<T>` before `f` is collected).
+    pub(crate) fn register_top_functions(&mut self, program: &'a Program<'a>) {
+        for stmt in &program.body {
+            let f = match stmt {
+                Statement::FunctionDeclaration(f) => Some(&**f),
+                Statement::ExportDeclaration(x) => match &x.declaration {
+                    Declaration::FunctionDeclaration(f) => Some(&**f),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let Some(f) = f else { continue };
+            let (Some(id), Some(body)) = (&f.id, &f.body) else {
+                continue;
+            };
+            self.top_fn_decls.insert(id.name.to_string(), f);
+            if f.type_parameters.is_some() {
+                self.generic_fns.insert(
+                    id.name.to_string(),
+                    generics::GenericFn {
+                        tparams: generics::tparam_list(f.type_parameters.as_deref()),
+                        params: &f.params,
+                        ret: f.return_type.as_ref().map(|r| &r.type_annotation),
+                        body: FnBody::Block(body),
+                    },
+                );
+            }
+        }
     }
 }

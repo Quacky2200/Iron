@@ -166,6 +166,7 @@ impl<'a> Lowerer<'a> {
         self.fstate.push(2);
 
         let saved = std::mem::take(&mut self.cur);
+        self.cur.local_generics = saved.local_generics.clone();
         self.cur.ret = ret_exp;
         self.cur.widen_ret = infer;
         self.cur.scopes.push(HashMap::new());

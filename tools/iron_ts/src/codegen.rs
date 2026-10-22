@@ -911,6 +911,20 @@ impl<M: ClifModule> Cg<'_, '_, M> {
                     _ => v,
                 }
             }
+            ExprKind::StrTag(a) => {
+                let s = self.expr(a)?;
+                let table = self.tagtab.ok_or("a tag was used before any tag exists")?;
+                let gv = self.module.declare_data_in_func(table, self.b.func);
+                let base = self.b.ins().symbol_value(types::I64, gv);
+                let count = self.b.ins().iconst(types::I64, self.m.tags.len() as i64);
+                self.rt(
+                    "ts_rt_str_tag",
+                    &[types::I64, types::I64, types::I64],
+                    Some(types::I32),
+                    &[base, count, s],
+                )
+                .unwrap()
+            }
             ExprKind::TagStr(a) => {
                 let tag = self.expr(a)?;
                 let table = self.tagtab.ok_or("a tag was used before any tag exists")?;

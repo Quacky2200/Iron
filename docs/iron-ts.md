@@ -147,6 +147,8 @@ bytes, bindings text, IR dump and the time of each phase.
 | [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
 | [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray`, `Date`, `Intl_Collator`, `Intl_NumberFormat`, `Intl_DateTimeFormat`, `Intl_PluralRules`, `Intl_ListFormat` and `Intl_RelativeTimeFormat`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them), `Date`, `Intl` or bigints (each `Intl` class only when the program mentions it) |
 | [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
+| [lower/tagged.rs](../tools/iron_ts/src/lower/tagged.rs) | Unions of different types (`number \| [number, number]`): the tagged struct, wrapping, projecting, `typeof` / `Array.isArray` on a union and narrowing by path |
+| [lower/accessors.rs](../tools/iron_ts/src/lower/accessors.rs) | Getters in object literals (`get scene() { .. }`): the hidden closure field and the read through it |
 | [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
 | [lower/iter.rs](../tools/iron_ts/src/lower/iter.rs) | Well-known symbol member names (`symbol_key`, `well_known`) and the iterator protocol over classes with `@@iterator` |
 | [lower/generators.rs](../tools/iron_ts/src/lower/generators.rs) | `desugar` (generators by source rewriting, before parsing), the generated `Generator$K` classes, the `__co*` intrinsics; `Coroutine` is a prelude handle class |
@@ -786,8 +788,46 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   `undefined`. An array of nothing but `null` (`Array.from({ length }, () => null)`) goes where `(T | null)[]` is expected.
 - A `Pick`/`Partial` of an interface that is still being laid out (reached again through its own members) is filled in at the end.
 - **Not built:** `["a", "b"] as const` is still a `string[]` (the engine's enums are strings too, so the two meet as strings);
-  `ReturnType<typeof f>` of a generic function with an inferred result; generic arrows that build `new (a.constructor as ..)(n)`;
-  `Mesh.createFlat` with some of its lists; a tuple type as a rest parameter; `flat(depth)` with a depth that is not a literal.
+  a tuple type as a rest parameter; `flat(depth)` with a depth that is not a literal.
+
+## The original example sources ([lower/tagged.rs](../tools/iron_ts/src/lower/tagged.rs), [lower/accessors.rs](../tools/iron_ts/src/lower/accessors.rs))
+
+What the QuickJS-era sources of the examples (`git show main:examples/<name>/src/..`) needed, tested by
+`tools/iron_ts_tests/tests/all/originals.rs` (against bun, `M9-TS-3174..3183`) and `originals_engine.rs` (`M9-TS-3184..3189`):
+
+- **Generic inference.** A closure that returns nothing fixes `T = void` (`under(root, () => this.build())`). A written return type
+  on an inlined array callback is the callback's result type (`rows.map(([a, b]): Star => ({ .. }))` gives `Star[]`). A string
+  literal argument is a `string`; a value that has a union type keeps it (`pick(star.poses)` is `PoseName`).
+- **Utility types** (`utility.rs`): `ReturnType<F>` and `Parameters<F>` over `typeof f`, `typeof f<string>` (an instantiation
+  expression: the generic function is instantiated and, when its result is inferred, lowered at once, with the classes it needs
+  collected and laid out on the spot: `eager_classes`) or a function type; `Awaited<T>`, `NonNullable<T>`, `Exclude<T, U>` and
+  `Extract<T, U>` over unions of string literals (or `null`). `typeof local` is the type of a local. Top-level functions are noted
+  before anything is collected (`register_top_functions`), so a type met early may name them.
+- **Unions of different types** (`tagged.rs`): `number | [number, number]`, `string | string[] | number`, .. A struct with a tag and a
+  slot per member (`unions`). A member goes where the union is expected (`coerce` wraps it), a union goes where a member is
+  expected (it is projected), `typeof u` and `Array.isArray(u)` read the tag. Narrowing is by path: a test of the form
+  `typeof P === "number"`, `Array.isArray(P)`, `!`, `&&`, `||`, written in an `if`, a `?:` or the left of `&&` / `||`, narrows the
+  path `P` (`o.scale`) to the members that pass in the branch it guards (and, after an `if` that always leaves, in the rest of the
+  block); reading a path that is narrowed to one member gives that member (`narrowed`). Not narrowed: `in`, `instanceof`, a
+  truthiness test of a number member.
+- **Strings and literal unions.** A text from outside (an engine property, a map's keys) goes where a union member is expected through
+  the tag table (`StrTag`, `ts_rt_str_tag`; text with no tag gives "no tag"). A value of a union type keeps it in an object or array
+  literal (`{ mode: MODES[0]! }`); only a string written there widens to `string` (`is_fresh_literal`).
+- **Objects.** A constant object whose methods name the constant (`const sfx = { play() { sfx.preload(); } }`) gets its type from
+  the methods' written signatures first (`object_shape`). A getter in an object literal (`get scene() { return self.effects; }`)
+  is a hidden closure field `_p_get_<name>` in every plain struct that has a field of that name; a read calls it when it is set
+  (`accessors.rs`). `new (a.constructor as new (n: number) => T)(len)` makes another typed array (or an object of a class of the
+  program) like `a`. A generic arrow declared in a function (`const more = <T extends Float32Array>(a: T): T => ..`) is a generic
+  function of its own (it cannot use the locals around it). `Record<Union, V>` with more than 48 keys is a dictionary
+  (`Map<string, V>`: a struct holds 64 fields), and `Partial<Record<..>>` of a dictionary is the dictionary.
+- **Expressions.** `s && obj` (a string, number or boolean and an object) is the object or null; `collection.get(k) ?? []` over a
+  set, map or typed array is an empty one; `cond ? a : b` with a condition known at compile time (`"uv" in data`) lowers only the
+  arm taken; `new Color(...rgba)` reads the fields from an array or tuple (a missing alpha is 1); `{ ...base, opacity }` in a
+  style takes an entry per field of a plain object.
+- **Engine API.** `LineRenderer2D.points` and `LineRenderer.positions` read as a property (a copy; write a new array to change
+  them). `playback.onEnded = f` is the call `playback.onEnded(f)` (any method whose one parameter is a closure). `Map` values may
+  be handles (`map.get(k)` is the handle or null; handles are never 0). `pop` / `shift` / `at` over handle arrays. `Mesh.createFlat`
+  takes an object with only some of its lists (the others are empty). `key={s}` with a string that may be undefined leaves the key out.
 
 ## Symbol, iterators and generators
 
