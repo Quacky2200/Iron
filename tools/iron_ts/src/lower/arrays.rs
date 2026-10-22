@@ -481,6 +481,44 @@ impl<'a> Lowerer<'a> {
         if rty == Ty::Num {
             return self.lower_num_method(recv, m, c);
         }
+        // `kinds.join(",")` over string-literal union members: a loop over the tags.
+        if let Ty::Arr(el) = &rty
+            && **el == Ty::Lit
+            && m == "join"
+        {
+            let sep = match c.arguments.first().and_then(|a| a.as_expression()) {
+                Some(e) => self.str_arg(e)?,
+                None => self.str_lit(","),
+            };
+            let (sepv, acc) = (self.new_local(Ty::Str), self.new_local(Ty::Str));
+            let it = self.begin_iter(recv)?;
+            let mut stmts = it.pre.clone();
+            stmts.push(Stmt::Assign(sepv, sep));
+            let empty = self.str_lit("");
+            stmts.push(Stmt::Assign(acc, empty));
+            let mut body = it.head.clone();
+            let past_first = mk(
+                ExprKind::Cmp(
+                    CmpOp::Gt,
+                    Box::new(self.var_expr(it.idx)),
+                    Box::new(num(0.0)),
+                ),
+                Ty::Bool,
+            );
+            let with_sep = self.str_concat(self.var_expr(acc), self.var_expr(sepv))?;
+            body.push(Stmt::If(
+                past_first,
+                vec![Stmt::Assign(acc, with_sep)],
+                vec![],
+            ));
+            let with_item = self.str_concat(self.var_expr(acc), self.var_expr(it.elem))?;
+            body.push(Stmt::Assign(acc, with_item));
+            stmts.push(Stmt::Loop(it.label, body));
+            return Ok(mk(
+                ExprKind::Seq(stmts, Box::new(self.var_expr(acc))),
+                Ty::Str,
+            ));
+        }
         if let Ty::Arr(el) = &rty
             && (**el == Ty::Str
                 || **el == Ty::Str.nullable()

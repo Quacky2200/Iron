@@ -1,0 +1,14 @@
+{
+ "from_optional_field": "aba",
+ "from_optional_field_with_as": "aa-|bbb",
+ "from_nullish_coalescing": "upleftleft",
+ "argument_and_return": "<down><left><left><up>nonedown",
+ "fields_arrays_maps": "xyzxzx,y_211zdfltzxzz",
+ "narrowing_switch": "7roundboxypointytrinone",
+ "compare_and_indexof": "false,true,true,true,true,true,true|1,3,0",
+ "string_interop": "gG1gxg-gbg!g",
+ "keyof_literals": "6:2",
+ "loop_with_optional_state": "auto;on;auto;off;on",
+ "json_and_gc_churn": "[{\"name\":\"x\"},{\"name\":\"y\",\"mode\":\"b\"}]67,66c-",
+ "switch_on_optional_and_returns": "idle>run>stop>stop>stop5stop"
+}

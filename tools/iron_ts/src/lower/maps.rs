@@ -303,7 +303,7 @@ impl<'a> Lowerer<'a> {
         let tv = self.var_expr(t);
         match (m, is_set) {
             ("get", false) => {
-                if !(v.is_ptr() || v == Ty::Num) {
+                if !(v.is_ptr() || v == Ty::Num || v == Ty::Lit) {
                     bail!(
                         "{at}: Map.get over {v} values is not supported (the result could not be told from a missing key); use has() first"
                     )

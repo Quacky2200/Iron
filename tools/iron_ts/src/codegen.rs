@@ -27,7 +27,9 @@ pub fn clif_ty(t: &Ty) -> ir::Type {
         Ty::Num => types::F64,
         Ty::Nullable(i) if **i == Ty::Num => types::F64,
         Ty::Bool => types::I8,
+        // A union member is a tag id; 0 is no tag, which is how `Nullable` holds undefined.
         Ty::Lit => types::I32,
+        Ty::Nullable(i) if **i == Ty::Lit => types::I32,
         _ => types::I64,
     }
 }

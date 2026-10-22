@@ -63,7 +63,7 @@ bytes, bindings text, IR dump and the time of each phase.
   up, pushing the expected type into literals. The program must already pass `tsc --strict`; narrowing
   is trusted, not proved.
 - **The IR** is structured (blocks, loops, labelled `Break`/`Continue`, no CFG) and every expression
-  carries its type. Numbers are `f64`, bools `i8`, string-literal union members `i32` (`Ty::Lit`),
+  carries its type. Numbers are `f64`, bools `i8`, string-literal union members `i32` (`Ty::Lit`; `M | undefined` is the same `i32`, tag 0 is reserved for "no tag"),
   everything else a 64-bit pointer. `T | null` is the pointer with 0 as null; `number | null` is an
   `f64` with one reserved NaN payload (`NULL_NUM_BITS`).
 - **Strings.** `string` is a pointer to the runtime's `Str` (`Ty::Str`). A literal is a `Ty::Lit` tag
@@ -159,7 +159,7 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | Feature | Lowering |
 |---|---|
-| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags, `T \| null`, `T[]`, the typed arrays (see "Typed arrays"), `bigint` (see "BigInt"), `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `RegExp` and `Date` (see "Standard library tier 3"), `Record<string, V>` after `satisfies`, function types |
+| Types | `number`, `boolean`, `string`, interfaces and type aliases as structs, discriminated unions as one struct with every variant's fields, string-literal unions as tags (also `keyof typeof OBJ` / `keyof Iface`; a literal outside the declared union in a typed declaration is a compile error), `T \| null`, `T[]`, the typed arrays (see "Typed arrays"), `bigint` (see "BigInt"), `Map<K, V>`, `Set<T>`, `WeakMap`, `WeakSet` (see "Standard library tier 2"), `RegExp` and `Date` (see "Standard library tier 3"), `Record<string, V>` after `satisfies`, function types |
 | Functions | `function` and arrow declarations; return types inferred; calls are direct |
 | Default, optional, rest parameters | The caller fills in defaults (lowered in a scope of the earlier parameters), a missing optional is null, the rest array is built at the call site |
 | Closures | Captured variables live in heap cells; the closure is `{func, env}` with `env` an array of cells; called as `func(env, args...)`. A top-level function used as a value gets a wrapper |

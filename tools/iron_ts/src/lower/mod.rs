@@ -488,6 +488,10 @@ impl<'a> Lowerer<'a> {
         if let Some(t) = self.tag_ids.get(name) {
             return *t;
         }
+        // Tag 0 is reserved: it is the "no tag" of a `"a" | "b" | undefined` slot (zeroed memory).
+        if self.m.tags.is_empty() {
+            self.m.tags.push(String::new());
+        }
         let id = self.m.tags.len() as u32;
         self.m.tags.push(name.to_string());
         self.tag_ids.insert(name.to_string(), id);

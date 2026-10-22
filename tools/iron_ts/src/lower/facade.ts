@@ -1019,8 +1019,7 @@ class Shapes {
 }
 
 //# when Spline @ Vector3
-// A plain string here: a local of a string-literal union assigned from an optional field panics codegen.
-type TangentMode = string;
+type TangentMode = "auto" | "bezier" | "linear";
 interface SplineKnot {
   position: Vector3;
   tangentIn: Vector3;

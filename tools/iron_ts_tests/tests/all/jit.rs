@@ -25,8 +25,8 @@ fn fnv(bytes: &[u8]) -> u64 {
 #[test]
 fn the_object_writer_output_is_unchanged_by_the_generic_codegen() {
     for (file, len, hash) in [
-        ("sine.ts", 5797, 0xecf0_6a7f_a936_0f7c),
-        ("strings.ts", 30284, 0xf748_7f33_a239_453d),
+        ("sine.ts", 5883, 0x3099_e46c_3c15_8c75),
+        ("strings.ts", 30382, 0x9d2c_25ed_f66d_b2ff),
         ("classes.ts", 16441, 0xac99_c71c_2bad_5f21),
     ] {
         let out = iron_ts::compile_source(&bench(file), "speed").unwrap();

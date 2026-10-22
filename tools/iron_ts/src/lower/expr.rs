@@ -126,6 +126,18 @@ impl<'a> Lowerer<'a> {
                     let ty = self.ty(&a.type_annotation, "JSON")?;
                     return self.lower_json_parse(c, Some(&ty));
                 }
+                // `"on" as Mode | undefined`, `o.mode as Mode`: a union of string literals is a
+                // real type here, so the literal is lowered as a member and nullability follows
+                // the asserted type.
+                if let Ok(to) = self.ty(&a.type_annotation, "as")
+                    && to.strip() == &Ty::Lit
+                {
+                    let v = self.lower_expr(&a.expression, Some(&to))?;
+                    if v.ty.strip() == &Ty::Lit {
+                        return self.coerce(v, &to);
+                    }
+                    return Ok(v);
+                }
                 let v = self.lower_expr(&a.expression, exp)?;
                 // `x as Sub` for classes: the same pointer, seen as the subclass.
                 if let Ok(Ty::Obj(t)) = self.ty(&a.type_annotation, "as")

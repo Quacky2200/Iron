@@ -289,7 +289,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn str_arg(&mut self, e: &'a Expression<'a>) -> R<Expr> {
+    pub(crate) fn str_arg(&mut self, e: &'a Expression<'a>) -> R<Expr> {
         let v = self.lower_expr(e, Some(&Ty::Str))?;
         let v = self.widen_lit(v);
         self.coerce(v, &Ty::Str)

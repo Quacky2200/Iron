@@ -121,7 +121,7 @@ mod tests {
         let ev = m.structs.iter().find(|s| s.name == "Ev").unwrap();
         let names: Vec<_> = ev.fields.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, ["kind", "x", "y"]);
-        assert_eq!(m.tags, ["a", "b"]);
+        assert_eq!(m.tags, ["", "a", "b"]);
     }
 
     // M9-TS-15

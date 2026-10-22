@@ -65,7 +65,18 @@ impl<'a> Lowerer<'a> {
             TSType::TSVoidKeyword(_) | TSType::TSUndefinedKeyword(_) => Ty::Void,
             TSType::TSNullKeyword(_) => Ty::Null,
             TSType::TSParenthesizedType(p) => self.ty(&p.type_annotation, hint)?,
-            TSType::TSTypeOperatorType(o) => self.ty(&o.type_annotation, hint)?,
+            TSType::TSTypeOperatorType(o) => {
+                // `keyof typeof TABLE`, `keyof Iface`: the union of the property names.
+                if o.operator == TSTypeOperatorOperator::Keyof
+                    && let Some(keys) = self.keyof_names(&o.type_annotation)
+                {
+                    for k in &keys {
+                        self.tag(k);
+                    }
+                    return Ok(Ty::Lit);
+                }
+                self.ty(&o.type_annotation, hint)?
+            }
             TSType::TSArrayType(a) => Ty::Arr(Box::new(self.ty(&a.element_type, hint)?)),
             TSType::TSLiteralType(l) => match &l.literal {
                 TSLiteral::StringLiteral(s) => {
@@ -354,6 +365,108 @@ impl<'a> Lowerer<'a> {
             });
         }
         Ok(fields)
+    }
+
+    /// The property names of `typeof NAME` (a top-level object literal), an interface or a type
+    /// literal; `None` when they are not known here.
+    fn keyof_names(&mut self, t: &'a TSType<'a>) -> Option<Vec<String>> {
+        match t {
+            TSType::TSParenthesizedType(p) => self.keyof_names(&p.type_annotation),
+            TSType::TSTypeQuery(q) => {
+                let TSTypeQueryExprName::IdentifierReference(id) = &q.expr_name else {
+                    return None;
+                };
+                let mut init = *self.const_inits.get(id.name.as_str())?;
+                loop {
+                    match init {
+                        Expression::TSAsExpression(a) => init = &a.expression,
+                        Expression::TSSatisfiesExpression(a) => init = &a.expression,
+                        Expression::ParenthesizedExpression(p) => init = &p.expression,
+                        _ => break,
+                    }
+                }
+                let Expression::ObjectExpression(o) = init else {
+                    return None;
+                };
+                let mut out = Vec::new();
+                for p in &o.properties {
+                    let ObjectPropertyKind::ObjectProperty(p) = p else {
+                        return None;
+                    };
+                    out.push(self.key_name(&p.key).ok()?);
+                }
+                Some(out)
+            }
+            TSType::TSTypeLiteral(l) => self.member_names(&l.members),
+            TSType::TSTypeReference(r) => {
+                let TSTypeName::IdentifierReference(id) = &r.type_name else {
+                    return None;
+                };
+                if let Some(i) = self.ifaces.get(id.name.as_str()).copied() {
+                    if !i.extends.is_empty() {
+                        return None;
+                    }
+                    return self.member_names(&i.body.body);
+                }
+                let a = self.aliases.get(id.name.as_str()).copied()?;
+                self.keyof_names(&a.type_annotation)
+            }
+            _ => None,
+        }
+    }
+
+    fn member_names(&mut self, members: &'a [TSSignature<'a>]) -> Option<Vec<String>> {
+        let mut out = Vec::new();
+        for m in members {
+            let TSSignature::TSPropertySignature(p) = m else {
+                return None;
+            };
+            out.push(self.key_name(&p.key).ok()?);
+        }
+        Some(out)
+    }
+
+    /// Like `lit_members`, ignoring `null` / `undefined` members of the union.
+    pub(crate) fn lit_members_opt(&self, t: &'a TSType<'a>) -> Option<Vec<String>> {
+        match t {
+            TSType::TSParenthesizedType(p) => self.lit_members_opt(&p.type_annotation),
+            TSType::TSUnionType(u) => {
+                let mut out = Vec::new();
+                for m in &u.types {
+                    if matches!(m, TSType::TSNullKeyword(_) | TSType::TSUndefinedKeyword(_)) {
+                        continue;
+                    }
+                    out.extend(self.lit_members_opt(m)?);
+                }
+                Some(out)
+            }
+            t => self.lit_members(t),
+        }
+    }
+
+    /// A string literal that is not a member of the string-literal union it is written for
+    /// (`const m: "a" | "b" = "c"`) is an error, as it is in `tsc`.
+    pub(crate) fn check_lit_member(&self, ann: &'a TSType<'a>, e: &Expression<'a>) -> R<()> {
+        let Some(members) = self.lit_members_opt(ann) else {
+            return Ok(());
+        };
+        match e {
+            Expression::ParenthesizedExpression(p) => self.check_lit_member(ann, &p.expression),
+            Expression::ConditionalExpression(c) => {
+                self.check_lit_member(ann, &c.consequent)?;
+                self.check_lit_member(ann, &c.alternate)
+            }
+            Expression::StringLiteral(s) if !members.iter().any(|m| m == s.value.as_str()) => {
+                let all: Vec<String> = members.iter().map(|m| format!("\"{m}\"")).collect();
+                bail!(
+                    "{}: type \"{}\" is not assignable to type {}",
+                    self.loc(s.span.start),
+                    s.value,
+                    all.join(" | ")
+                )
+            }
+            _ => Ok(()),
+        }
     }
 
     /// The members of a union of string literals (through aliases), or `None` for any other type.

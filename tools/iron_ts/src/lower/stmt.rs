@@ -904,6 +904,9 @@ impl<'a> Lowerer<'a> {
             }
             let init = match &d.init {
                 Some(e) => {
+                    if let Some(a) = &d.type_annotation {
+                        self.check_lit_member(&a.type_annotation, e)?;
+                    }
                     let v = self.lower_expr(e, ann.as_ref())?;
                     Some(match &ann {
                         Some(t) => self.coerce(v, t)?,
