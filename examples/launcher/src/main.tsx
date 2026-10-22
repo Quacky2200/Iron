@@ -145,6 +145,17 @@ const ICONS = {
   folder: "M2.5 5 H8 L9.5 7 H17.5 V16 H2.5 Z",
 };
 
+/** "More options": three dots (the UI font has no "⋯"). */
+function MoreDots() {
+  return (
+    <svg viewBox="0 0 20 20" style={{ width: 18, height: 18 }}>
+      <circle cx={4} cy={10} r={1.9} fill="currentColor" />
+      <circle cx={10} cy={10} r={1.9} fill="currentColor" />
+      <circle cx={16} cy={10} r={1.9} fill="currentColor" />
+    </svg>
+  );
+}
+
 function Spinner() {
   return (
     <svg className="spinner" viewBox="0 0 48 48">
@@ -684,7 +695,7 @@ function App() {
                   <Text>Back</Text>
                 </box>
                 <box className="button square" onClick={() => openContext()}>
-                  {pad ? <FaceButton button="North" style={pad} /> : <Text>⋯</Text>}
+                  {pad ? <FaceButton button="North" style={pad} /> : <MoreDots />}
                 </box>
               </box>
             </box>
