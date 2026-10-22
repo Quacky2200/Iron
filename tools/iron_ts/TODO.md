@@ -384,7 +384,7 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [ ] Object-literal accessors (`get scene() { .. }`), computed keys, spread call arguments (`rnd(...range)`), destructuring assignment (`[a, b] = [b, a]`).
 - [ ] `Map.get` / `Set` over engine handles as values (box them in a class); `.pop()` over handle arrays; `indexOf` over object arrays.
 - [ ] Line numbers in errors from facade chunks and from code appended after the user's source point past the file.
-- [ ] Facade chunk classes (`Spline`, `SplineAnimate`) are not `@property` aware (no scene saving, no hot-reload state).
+- [x] Facade chunk classes (`Spline`, `SplineAnimate`) were not `@property` aware (no scene saving): both are native now and `SplineAnimate` saves its fields and spline (2026-10-22).
 
 ## Promises audit (2026-10-22)
 
@@ -430,6 +430,6 @@ Behaviours checked 2026-10-22 (all with GC stress where it applies):
 - [x] P0: ratchet over the hand-written `.d.ts`, `facade.ts` chunks and Python (`M9-TS-3100`), no name declared twice (`M9-TS-3101`), API surface snapshot with `IRON_BLESS=1` (`M9-TS-3102`).
 - [x] P1a: native `Shapes` (`iron_math::outlines`); `#[iron_api]` enums, records, list results, `#[rest]`, `#[options(after = ..)]`, `like`, `#[nullable]` and doc comments (manifest JSON and `types_dts.rs`); `Shapes` facade chunk and its `engine_ts.d.ts` lines deleted; `iron_native::install` in the app's QuickJS runtime (`M9-API-1600..1602`, `1610..1614`, `M9-TS-3103`, `3110`, `3111`).
 - [x] P1b: native `Spline` (`iron_math::spline`, `iron_engine_api::spline`; the `Spline` facade chunk and its `engine_ts.d.ts` lines deleted; `M9-API-1603..1605`, `M9-TS-3112`, `3114`).
-- [ ] P1c: native `SplineAnimate` component (kind, scene files, host update).
+- [x] P1c: native `SplineAnimate` component (`iron_engine_api::spline`: kind with every field saved, the `Spline` inline asset in scene files, host `update` next to `animation::update`; the last facade chunk and its `engine_ts.d.ts` lines deleted; the QuickJS component is a thin script component over `SplineAnimate.pose` / `progress` / `facing`; `M9-API-1606`, `1607`, `M9-TS-3113`, `3115`, `3116`).
 - [ ] P2 enums and nullables, records and option bags, lists, subscriptions and promises, remaining logic; P3 built-ins; P4 UI tables; P5 delete `engine_ts.d.ts` and `ambient.d.ts` and make the ratchet strict.
 - Found while porting: the old compiled `Shapes.bezier(.., 0)` answered (0, 0) where JavaScript (and the native one) gives NaN, and a NaN spline index read 0 from a `Float64Array` where JavaScript reads `undefined`; both are edge cases outside any example.

@@ -1,4 +1,4 @@
-//! `Spline` from QuickJS: the same native code compiled games call (the numbers
+//! `Spline` and `SplineAnimate` from QuickJS: the same native code compiled games call (the numbers
 //! are compared with the old TypeScript in `tools/iron_ts_tests/tests/all/outlines.rs`). IDs are in
 //! TESTS.md (M9-API-16xx).
 mod common;
@@ -97,15 +97,88 @@ fn enums_are_strings_with_name_and_parse_and_unknown_names_throw() {
             const s = new Spline([new Vector3(0, 0, 0), new Vector3(1, 0, 0)]);
             JSON.stringify([TangentMode.name(0), TangentMode.name(2), TangentMode.name(3) === undefined,
               TangentMode.parse('bezier'), TangentMode.parse('nope'),
-              s.knots[0].mode, new Spline([new Vector3(0, 0, 0)], { mode: 'linear' }).knots[0].mode])
+              s.knots[0].mode, new Spline([new Vector3(0, 0, 0)], { mode: 'linear' }).knots[0].mode,
+              SplineLoopMode.parse('pingPong'), SplineAlignment.name(1)])
             "#,
         );
-        assert_eq!(out, r#"["auto","linear",true,1,-1,"auto","linear"]"#);
+        assert_eq!(
+            out,
+            r#"["auto","linear",true,1,-1,"auto","linear",1,"path"]"#
+        );
         assert!(throws(ctx, "new Spline([], { mode: 'wavy' })").starts_with("TypeError"));
         assert!(
             throws(ctx, "new Spline().addKnot(new Vector3(0, 0, 0), 'wavy')")
                 .starts_with("TypeError")
         );
         assert!(throws(ctx, "new Spline().setMode(0, 5)").starts_with("TypeError"));
+    });
+}
+
+// M9-API-1606
+#[test]
+fn the_script_helpers_of_spline_animate_give_the_path_progress_and_facing() {
+    with_world(|ctx| {
+        let out: String = js(
+            ctx,
+            r#"
+            const path = new Spline([new Vector3(0, 0, 0), new Vector3(4, 0, 0), new Vector3(4, 4, 0)], { mode: 'linear' });
+            const a = SplineAnimate.pose(path, 1, 4, 'loop');
+            const back = SplineAnimate.pose(path, 5, 4, 'pingPong');
+            const f = SplineAnimate.facing(new Vector3(0, 1, 0));
+            const r = f.rotate(Vector3.right);
+            const r3 = (n) => Math.round(n * 1000) / 1000;
+            JSON.stringify([
+              [a.position.x, a.position.y].map(r3), [a.direction.x, a.direction.y].map(r3),
+              [back.position.x, back.position.y].map(r3), [back.direction.x, back.direction.y].map(r3),
+              SplineAnimate.progress(9, 4, 'once'), SplineAnimate.progress(5, 4, 'pingPong'), SplineAnimate.progress(4.5, 4, 'loop'),
+              [r.x, r.y].map(r3),
+            ])
+            "#,
+        );
+        assert_eq!(out, "[[2,0],[1,0],[4,2],[0,-1],1,0.75,0.125,[0,1]]");
+    });
+}
+
+// M9-API-1607
+//
+// A SplineAnimate saved in a scene file: the spline goes inline, the loop mode and alignment as
+// names, the container as an object reference; loading makes them again.
+#[test]
+fn a_spline_animate_and_its_spline_survive_a_scene_file() {
+    with_world(|ctx| {
+        iron_scenes::register_engine_kinds();
+        let out: String = js(
+            ctx,
+            r#"
+            const track = GameObject.create();
+            track.name = 'track';
+            const car = GameObject.create();
+            car.name = 'car';
+            const a = SplineAnimate.attach(car);
+            a.spline = new Spline([new Vector3(0, 0, 0), new Vector3(4, 0, 0)], { closed: false, tension: 0.25, mode: 'linear' });
+            a.container = track;
+            a.duration = 3;
+            a.loopMode = 'pingPong';
+            a.alignment = 'none';
+            a.playing = false;
+            a.elapsed = 1.5;
+            const level = SceneManager.createScene('level');
+            SceneManager.moveGameObjectToScene(track, level);
+            SceneManager.moveGameObjectToScene(car, level);
+            const text = level.serialize();
+            const loaded = SceneManager.loadScene(text, 'additive');
+            let copy = null;
+            for (let i = 0; i < loaded.rootCount; i++) if (loaded.rootAt(i).name === 'car') copy = loaded.rootAt(i);
+            const b = SplineAnimate.findOn(copy);
+            JSON.stringify([text.includes('"SplineAnimate"'), text.includes('"pingPong"'), text.includes('"Spline"'),
+              b !== null, b.duration, b.loopMode, b.alignment, b.playing, b.elapsed,
+              b.spline.count, b.spline.tension, b.spline.knots[0].mode, b.spline === a.spline,
+              b.container !== null && b.container.name])
+            "#,
+        );
+        assert_eq!(
+            out,
+            r#"[true,true,true,true,3,"pingPong","none",false,1.5,2,0.25,"linear",false,"track"]"#
+        );
     });
 }

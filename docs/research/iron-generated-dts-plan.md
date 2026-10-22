@@ -1,6 +1,6 @@
 # Every declaration generated from Rust
 
-Status: **plan for review, no code** (written 2026-10-22). Nothing here is built yet.
+Status: written 2026-10-22; **phases P0 and P1 are built** (see "Progress" at the end), the rest is the plan.
 
 **The rule (from the user):** no hand-written `.d.ts` anywhere. Everything `tsc` sees for an Iron game is **generated**:
 from the `#[iron_api]` manifests (`crates/iron_api_macros` -> `Namespace::to_json` -> `tools/iron_ts/src/manifest.rs` and
@@ -653,3 +653,27 @@ and `screenToWorldPoint` into re-exports of the native globals.
 6. Enums travel as numeric indexes for speed (constant string literals are converted to indexes at compile time). Add converters in both directions: a native name-to-index and index-to-name pair per enum (for example `FogMode.name(i)` and `FogMode.parse("linear")`), usable from compiled code and QuickJS, so dynamic values can be converted.
 7. `generated_dts_only` covers `tools/` only (the legacy bun / QuickJS path is out of its scope).
 8. `gen_components.py` (Rust generation) is replaced later by a Rust build script or macro. Not part of the first pass.
+
+## 7. Progress (2026-10-22)
+
+**P0 done** (`tools/iron_build/tests/generated_dts.rs`): `M9-TS-3100` ratchet (hand-written `.d.ts` files, `include_str!` of them,
+`facade.ts` chunks, Python under `tools/iron_ts`), `M9-TS-3101` no name declared by both the manifests and a hand-written file beyond
+a listed set, `M9-TS-3102` API surface snapshot (`tests/golden/api_surface.txt`, `IRON_BLESS=1`). IDs used: `M9-TS-3100..3103`,
+`3110..3116` and `M9-API-1600..1614` (another agent took `M9-TS-3000..3034`).
+
+**P1 done**: `Shapes` (`iron_math::outlines`), `Spline` (`iron_math::spline`, `iron_engine_api::spline`) and `SplineAnimate` (a component
+kind with scene-file save / load, the `Spline` inline asset, host `update`) are native; their facade chunks (3 of 50) and the
+hand-written declarations (66 lines of `engine_ts.d.ts`) are deleted; the declarations are generated. QuickJS installs
+`iron_native` (decision 3). Oracles are the old compiled TypeScript kept renamed in `tools/iron_ts_tests/bench/outlines.ts` (a
+differential test, bit for bit, in every GC mode), instead of captured JSON. What the P1 extensions turned out to be:
+
+- **F-ENUM**: `enums(TangentMode = Tangent [Auto, Bezier, Linear])` on the attribute; `i32` index on the wire; constant strings are
+  folded at compile time, anything else goes through the generated `iron_<Enum>_parse`; results through `iron_<Enum>_name`;
+  `TangentMode.name(i)` / `.parse(s)` exist as globals in both backends.
+- **F-REC / F-LIST (results only)**: `records(..)` and `-> Vec<V | Record>` come back through a per-thread number buffer read with
+  `iron_api_result(i)`; records as parameters are not built (P2b).
+- **F-CTOR**: `#[options(after = p)]` (manifest `optionsAfter`; the constructor line `(points?, options?)`).
+- **F-DOC**: module, class, function, enum, record and field docs reach the JSON and the `.d.ts`.
+- **F-EXT not needed**: `SplineAnimate` is a handle class like `Camera` (no `extends Component`); `like` (value parameters
+  as `Vector3Like`), `#[nullable]` (`T | null`) and `#[rest]` were added instead.
+- **Not done**: F-UNION, F-NULL as a general `Option<T>`, records as parameters, F-SUB, F-PROMISE, F-JSON (P2 and later).

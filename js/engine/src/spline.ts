@@ -1,9 +1,11 @@
 // Splines (Unity's Splines package, the core of it): a path through knots, smooth unless told
 // otherwise. The maths is native (`iron_math::spline`, the same code compiled games call); the
-// app installs `Spline` as a global class. This file types it for bundled games and has the
-// `SplineAnimate` component.
+// app installs `Spline` as a global class. This file types it for bundled games and adds the
+// `SplineAnimate` component, which stays a script component (a bundled game's `GameObject` is
+// the op-based one in `scene.ts`, so the native component cannot be attached to it) but leaves
+// the path maths to the native `SplineAnimate.pose` / `progress` / `facing`.
 
-import { Quaternion, Vector3, type Vector3Like } from "./math.ts";
+import type { Quaternion, Vector3, Vector3Like } from "./math.ts";
 import { property } from "./property.ts";
 import { Component, type GameObject } from "./scene.ts";
 
@@ -55,6 +57,17 @@ export const Spline: {
   new (points?: readonly Vector3Like[], options?: { closed?: boolean; tension?: number; mode?: TangentMode }): Spline;
 } = (globalThis as unknown as { Spline: never }).Spline;
 
+type LoopMode = "loop" | "pingPong" | "once";
+
+/** The native half of `SplineAnimate` (the class of that name, installed by the app). */
+interface NativeSplineAnimate {
+  pose(spline: Spline, elapsed: number, duration: number, loopMode: LoopMode): { position: Vector3; direction: Vector3 };
+  progress(elapsed: number, duration: number, loopMode: LoopMode): number;
+  facing(direction: Vector3): Quaternion;
+}
+
+const native = (globalThis as unknown as { SplineAnimate: NativeSplineAnimate }).SplineAnimate;
+
 /**
  * Moves its object along a spline (Unity's `SplineAnimate`): the whole path in `duration`
  * seconds at a steady speed, looping, back and forth, or once. `alignment: "path"` turns the
@@ -66,7 +79,7 @@ export class SplineAnimate extends Component {
   spline: Spline | null = null;
   @property container: GameObject | null = null;
   @property duration = 5;
-  @property loopMode: "loop" | "pingPong" | "once" = "loop";
+  @property loopMode: LoopMode = "loop";
   @property alignment: "none" | "path" = "path";
   @property playing = true;
   /** Seconds played so far (set it to jump). */
@@ -74,14 +87,7 @@ export class SplineAnimate extends Component {
 
   /** How far along the path it is now (0 to 1, by distance). */
   get t(): number {
-    const d = Math.max(1e-6, this.duration);
-    const x = this.elapsed / d;
-    if (this.loopMode === "once") return Math.max(0, Math.min(1, x));
-    if (this.loopMode === "pingPong") {
-      const m = ((x % 2) + 2) % 2;
-      return m > 1 ? 2 - m : m;
-    }
-    return ((x % 1) + 1) % 1;
+    return native.progress(this.elapsed, this.duration, this.loopMode);
   }
 
   override onUpdate(dt: number): void {
@@ -93,16 +99,10 @@ export class SplineAnimate extends Component {
   place(): void {
     const s = this.spline;
     if (!s || s.count === 0) return;
-    const t = this.t;
-    const at = s.evaluate(t);
-    let dir = s.tangent(t);
-    // Going back along a ping-pong, face the other way.
-    if (this.loopMode === "pingPong" && ((this.elapsed / Math.max(1e-6, this.duration)) % 2 + 2) % 2 > 1) dir = dir.scale(-1);
+    const { position, direction } = native.pose(s, this.elapsed, this.duration, this.loopMode);
     const c = this.container?.transform;
-    this.transform.position = c ? c.transformPoint(at) : at;
-    if (this.alignment !== "path" || dir.magnitude < 1e-9) return;
-    const d = c ? c.transformDirection(dir) : dir;
-    this.transform.rotation =
-      Math.abs(d.z) < 1e-6 ? Quaternion.euler(0, 0, (Math.atan2(d.y, d.x) * 180) / Math.PI) : Quaternion.lookRotation(d, Vector3.up);
+    this.transform.position = c ? c.transformPoint(position) : position;
+    if (this.alignment !== "path" || direction.magnitude < 1e-9) return;
+    this.transform.rotation = native.facing(c ? c.transformDirection(direction) : direction);
   }
 }

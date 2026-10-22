@@ -100,6 +100,8 @@ impl App {
             // `Animation` and `Animator` components pose their objects (events are not
             // delivered to components yet).
             iron_engine_api::animation::update(dt, None);
+            // `SplineAnimate` components put their objects on their paths.
+            iron_engine_api::spline::update(dt);
             iron_render_api::late_update_camera_follows(dt);
             iron_render_api::late_update_camera_orbits(dt);
         }

@@ -22,6 +22,22 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | World panel input | Screen UI takes the pointer wherever it has an element; full-screen layout boxes need `pointerEvents: none` to let the pointer through to world panels | Unity: only graphics marked as raycast targets block; s&box: similar to Iron | The CSS way, no extra flags |
 | Transform setters | Each set sends an op; world values are worked out in JS from the parent chain (shear from non-uniform scale under rotation is dropped) | Native | Rust owns the world; scripts mirror locals |
 
+## Native Shapes, Spline and SplineAnimate (2026-10-22)
+
+They were TypeScript (`js/engine`, and a compiled copy in `facade.ts`); they are native Rust now, called by compiled code and QuickJS alike.
+
+| Area | Iron | Before | Why |
+|---|---|---|---|
+| `Spline.knots` | A read-only snapshot: a fresh array of fresh `{ position, tangentIn, tangentOut, mode }` each time (edit through `setPosition`, `setTangents`, `setMode`, `insertKnot`, `removeKnot`) | The live array of the spline's own knot objects | A native spline is data in Rust |
+| `Spline.version`, `destroy()` | `version` is read-only; a `Spline` is a handle number nothing frees by itself, `destroy()` frees it | A plain field; garbage collected | Handles are numbers |
+| Knot indexes | A whole number in range; anything else is ignored (the old code threw on `1.5`) | Any number | Typed API |
+| `TangentMode`, `SplineLoopMode`, `SplineAlignment` | Strings in scripts, indexes on the wire; `TangentMode.parse(s)` / `.name(i)` convert; a compiled call with a name that is not one reads the first value, QuickJS throws a `TypeError` | Literal unions | Enums travel as indexes (plan decision 6) |
+| `SplineAnimate` update | Once a frame after the scripts' `onUpdate`s (next to `animation::update`); only for an object active in the hierarchy | In component order with the other `onUpdate`s | A native component; a game that moves the spline in its own `onUpdate` sees the object placed the same frame |
+| `SplineAnimate` in scene files | All fields saved, `spline` as an inline `Spline` asset | `spline` not saved | Decision 4 of the plan |
+| `SplineAnimate` base | A handle class like `Camera` (no `extends Component`); the QuickJS one stays a script component over native helpers | A `Component` subclass | A bundled game's `GameObject` is not native yet |
+| `Shapes` | The namespace `Shapes`; `polygon(...points)` takes any number of points or one `...array` | A class of statics | Plan decision 5 |
+| `NaN` arguments | `Shapes.bezier(.., 0)` and a `NaN` `t` give NaN points, as in JavaScript | The compiled copy answered 0 for these (a typed-array read out of range is 0) | Edge cases outside every example |
+
 ## Intl backends (compiled TypeScript)
 
 | Area | Browser / bun | Iron today | Notes |

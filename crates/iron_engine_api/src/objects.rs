@@ -12,6 +12,7 @@ pub fn process_destroyed() -> Vec<ObjectId> {
     for o in &list {
         crate::camera::remove_on(*o);
         crate::audio_components::remove_on(*o);
+        crate::spline::remove_on(*o);
     }
     list
 }

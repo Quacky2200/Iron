@@ -715,9 +715,8 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
 - **`Shapes`** (`rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
   `bezier`, `curve`, `closedCurve`) is native Rust now (`iron_math::outlines`, see "Enums, records, lists, rest parameters and
   docs"). **`Spline`** (knots, tangent modes, `evaluate` / `tangent` by distance, `segmentPoint`,
-  `sample`, `nearest`, `version`) is native Rust too (the next paragraph). **`SplineAnimate`** is still TypeScript, ported from
-  `js/engine/src/spline.ts` into `facade.ts` and compiled into every game that names it: its fields are plain fields, not
-  `@property`s (no scene-file saving, not kept across a hot reload).
+  `sample`, `nearest`, `version`) and **`SplineAnimate`** are native Rust too (see "Enums, records, lists, rest parameters and
+  docs"); the TypeScript copies in `facade.ts` are gone.
 - **`Camera.screenToWorldPoint(p)`** is a facade method (frustum maths over `rect`, `Screen.width` / `height`, `fieldOfView` or
   `orthographicSize` and the transform). The other `viewportTo...` / `screenPointToRay` members are not there yet.
 - **Facade chunk requirements.** A chunk header may end with `@ Name ..`: `//# when Spline @ Vector3`. The chunk is added only
@@ -793,3 +792,30 @@ out-of-range one was) and a `NaN` `t` gives NaN points. The oracle is the old co
 with every mutator and compares every number (`count`, `length`, handles, `segmentPoint`, `segmentDerivative`, `locate`,
 `evaluate`, `tangent`, `sample`, `nearest`, the knots) bit for bit. In QuickJS `Spline` is the same global class
 (`js/engine/src/spline.ts` types it; its bun tests became the QuickJS tests `M9-API-1603`..`1605`).
+
+**SplineAnimate** is a native component (`iron_engine_api::spline`, the `SplineAnimate` handle class, kind `SplineAnimate`). Its
+fields (`spline`, `container`, `duration`, `loopMode`, `alignment`, `playing`, `elapsed`) are data in the registry; `t` and `place()` are
+methods; `SplineAnimate.attach(go)` / `findOn(go)` are what `go.addComponent(SplineAnimate, { duration: 2 })` and
+`go.getComponent(SplineAnimate)` compile to. `loopMode` is the enum `SplineLoopMode` (`"loop" | "pingPong" | "once"`) and `alignment`
+`SplineAlignment` (`"none" | "path"`). The host calls `iron_engine_api::spline::update(dt)` once a frame next to
+`animation::update` (`native_render.rs::sync_native_render`); it advances every playing component whose object is active in the
+hierarchy and puts the object on the path (`place`: the point and the direction from the spline, through the container's
+`transformPoint` / `transformDirection` when there is one, then `Quaternion.euler(0, 0, atan2)` on a flat path or `lookRotation`).
+Components of destroyed objects go with them (`objects::process_destroyed`).
+
+**Scene files.** The kind saves every field: `loopMode` and `alignment` as names, `container` as an object reference, `spline` as the
+inline asset `{"$type":"Spline","closed":..,"tension":..,"knots":[{"position","tangentIn","tangentOut","mode"}]}` (asset kind
+`Spline`, `register_kinds()`); loading makes a new spline (`M9-API-1607`). `iron_scenes::register_engine_kinds` registers both.
+
+**QuickJS.** A bundled game's `GameObject` is the op-based one in `js/engine/src/scene.ts`, so the native component cannot be attached
+to it. `js/engine/src/spline.ts` keeps `SplineAnimate` as a thin script component that leaves the path maths to three native statics of
+the same class: `SplineAnimate.pose(spline, elapsed, duration, loopMode)` (a `{ position, direction }` record),
+`SplineAnimate.progress(..)` (`t`) and `SplineAnimate.facing(direction)` (the rotation); the loop, ping-pong and alignment logic
+exists once, in Rust (`M9-API-1606`). Its container handling is the script `Transform`'s.
+
+Differences from the TypeScript component: the update runs once a frame after the scripts' `onUpdate`s (in the old version in
+component order), so a game that moves the spline in its own `onUpdate` sees the object placed in the same frame; a destroyed or
+inactive object is skipped; `SplineAnimate` does not `extends Component` in the declarations (it is a handle class like `Camera`).
+Tests: `M9-TS-3113` (`SplineAnimate.pose` equals the old component's `t` and direction for every loop mode, duration and elapsed time
+in the oracle), `M9-TS-3115` (added with options, found again, the host update moves the object and pings back), `M9-TS-3116` (the
+old `js/engine` test: positions, facing, loop modes, a container), `M9-API-1606`, `M9-API-1607`.

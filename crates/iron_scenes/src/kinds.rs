@@ -153,6 +153,7 @@ fn bare(
 pub fn register_engine_kinds() {
     iron_kinds::register(camera_kind());
     iron_engine_api::audio_components::register_kinds();
+    iron_engine_api::spline::register_kinds();
     iron_render_api::register_kinds();
     iron_kinds::register(bare(
         "Animation",

@@ -731,6 +731,35 @@ export function splineMatch(): string {
   return "";
 }
 
+/** `SplineAnimate.pose` against the old component's `t` and direction, for every loop mode. */
+export function animatePoseMatches(): string {
+  const s = new Spline(spts.slice(0, 5));
+  const r = new RefSpline(spts.slice(0, 5));
+  const modes: SplineLoopMode[] = ["loop", "pingPong", "once"];
+  for (const mode of modes) {
+    for (const duration of [5, 2, 0, -1, 0.3]) {
+      for (const elapsed of [0, 0.1, 1, 2.5, 4.99, 5, 7.5, 10, 12.5, 99.9, -1, -6]) {
+        // The old component: `t`, then the point and the direction (turned round on the way back).
+        const d = Math.max(1e-6, duration);
+        const x = elapsed / d;
+        let t: number;
+        if (mode === "once") t = Math.max(0, Math.min(1, x));
+        else if (mode === "pingPong") {
+          const m = ((x % 2) + 2) % 2;
+          t = m > 1 ? 2 - m : m;
+        } else t = ((x % 1) + 1) % 1;
+        const at = r.evaluate(t);
+        let dir = r.tangent(t);
+        if (mode === "pingPong" && (((elapsed / Math.max(1e-6, duration)) % 2) + 2) % 2 > 1) dir = dir.scale(-1);
+        const pose = SplineAnimate.pose(s, elapsed, duration, mode);
+        const diff = sameV3(`pose ${mode} ${duration} ${elapsed} position`, pose.position, at) + sameV3(`pose ${mode} ${duration} ${elapsed} direction`, pose.direction, dir);
+        if (diff !== "") return diff;
+      }
+    }
+  }
+  return "";
+}
+
 /** A spline made, read back through its snapshot and used as a plain object. */
 export function splineSnapshotsAreObjects(): string {
   const s = new Spline([new Vector3(0, 0, 0), new Vector3(2, 0, 0)], { closed: false, tension: 0.25, mode: "linear" });
@@ -742,4 +771,62 @@ export function splineSnapshotsAreObjects(): string {
   const name = TangentMode.name(2);
   s.setMode(0, mode === "linear" ? "bezier" : "auto");
   return `${k.length}|${mode}|${k[1]!.position.x}|${Math.round(hit.u * 100)}|${hit.segment}|${Math.round(near.distance * 100)}|${parsed}|${name}|${s.knots[0]!.mode}|${TangentMode.parse("nope")}|${s.tension}`;
+}
+
+let car: GameObject | null = null;
+let anim: SplineAnimate | null = null;
+
+/** A `SplineAnimate` added with options, found again, given a spline; the Rust test then runs the host update. */
+export function animateSetup(): string {
+  car = new GameObject("car");
+  anim = car.addComponent(SplineAnimate, { duration: 2, loopMode: "pingPong", alignment: "none" });
+  anim.spline = new Spline([new Vector3(0, 0, 0), new Vector3(4, 0, 0)], { mode: "linear" });
+  return `${car.getComponent(SplineAnimate) !== undefined}|${anim.duration}|${anim.loopMode}|${anim.alignment}|${anim.playing}|${anim.container === null}`;
+}
+
+export function animateWhere(): string {
+  const p = car!.transform.position;
+  return `${Math.round(p.x * 1000) / 1000}|${Math.round(anim!.t * 1000) / 1000}|${Math.round(anim!.elapsed * 100) / 100}`;
+}
+
+/** What `js/engine`'s `SplineAnimate` test checked: positions on the path, facing, loop modes, a container. */
+export function animateBehaviour(): string {
+  const path = new Spline([new Vector3(0, 0, 0), new Vector3(4, 0, 0), new Vector3(4, 4, 0)], { mode: "linear" });
+  const go = new GameObject("car2");
+  const a = go.addComponent(SplineAnimate, { duration: 4 });
+  a.spline = path;
+  const r = (v: number): number => Math.round(v * 1000) / 1000;
+  const at = (): string => {
+    const p = go.transform.position;
+    return `${r(p.x)},${r(p.y)}`;
+  };
+  const face = (): string => {
+    const d = go.transform.rotation.rotate(Vector3.right);
+    return `${r(d.x)},${r(d.y)}`;
+  };
+  const out: string[] = [];
+  a.elapsed = 1;
+  a.place();
+  out.push(at(), face());
+  a.elapsed = 3.5;
+  a.place();
+  out.push(at(), face());
+  a.elapsed = 4.5;
+  a.place();
+  out.push(at());
+  a.loopMode = "pingPong";
+  a.elapsed = 5;
+  a.place();
+  out.push(at());
+  a.loopMode = "once";
+  a.elapsed = 9;
+  a.place();
+  out.push(at());
+  const container = new GameObject("track", { position: new Vector3(10, 0, 0) });
+  a.container = container;
+  a.elapsed = 0;
+  a.loopMode = "loop";
+  a.place();
+  out.push(at());
+  return out.join("|");
 }

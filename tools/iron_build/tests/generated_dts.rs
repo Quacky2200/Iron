@@ -56,7 +56,7 @@ const ALLOWED_D_TS: &[(&str, &str)] = &[
 
 /// Hand-written TypeScript compiled into games (the facade) and the Python that wrote the ambient
 /// declarations. The facade may only lose `//# when` chunks.
-const MAX_FACADE_CHUNKS: usize = 48;
+const MAX_FACADE_CHUNKS: usize = 47;
 const ALLOWED_PY: &[&str] = &["tools/iron_ts/scripts/gen_ambient.py"];
 
 // M9-TS-3100

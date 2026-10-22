@@ -255,19 +255,6 @@ interface LineRenderer2D {
   fillColor: Color | null;
 }
 
-/** Moves its object along a spline (Unity's `SplineAnimate`). */
-declare class SplineAnimate extends Component {
-  spline: Spline | null;
-  container: GameObject | null;
-  duration: number;
-  loopMode: "loop" | "pingPong" | "once";
-  alignment: "none" | "path";
-  playing: boolean;
-  elapsed: number;
-  readonly t: number;
-  place(): void;
-}
-
 declare namespace QualitySettings {
   let shadows: ShadowQualityMode;
   const names: string[];

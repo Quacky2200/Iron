@@ -82,6 +82,7 @@ pub fn manifests() -> Vec<String> {
         ui_resources::ui_resources_api::MANIFEST.to_json(),
         window::window_api::MANIFEST.to_json(),
         spline::spline_api::MANIFEST.to_json(),
+        spline::spline_animate_api::MANIFEST.to_json(),
     ]);
     all
 }
@@ -136,5 +137,6 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     cursor::cursor_lock_mode_api::register_quickjs(ctx)?;
     window::register_quickjs(ctx)?;
     spline::spline_api::register_quickjs(ctx)?;
+    spline::spline_animate_api::register_quickjs(ctx)?;
     Ok(())
 }

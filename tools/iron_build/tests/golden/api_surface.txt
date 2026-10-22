@@ -1178,16 +1178,24 @@ declare class Spline :: static create(options?: { points?: readonly Vector3Like[
 declare class Spline :: static create(points?: readonly Vector3Like[], closed?: boolean, tension?: number, mode?: TangentMode): Spline;
 declare class Spline :: tangent(t: number): Vector3;
 declare class Spline :: tension: number;
-declare class SplineAnimate extends Component
-declare class SplineAnimate extends Component :: alignment: "none" | "path";
-declare class SplineAnimate extends Component :: container: GameObject | null;
-declare class SplineAnimate extends Component :: duration: number;
-declare class SplineAnimate extends Component :: elapsed: number;
-declare class SplineAnimate extends Component :: loopMode: "loop" | "pingPong" | "once";
-declare class SplineAnimate extends Component :: place(): void;
-declare class SplineAnimate extends Component :: playing: boolean;
-declare class SplineAnimate extends Component :: readonly t: number;
-declare class SplineAnimate extends Component :: spline: Spline | null;
+declare class SplineAnimate
+declare class SplineAnimate :: alignment: SplineAlignment;
+declare class SplineAnimate :: container: GameObject | null;
+declare class SplineAnimate :: duration: number;
+declare class SplineAnimate :: elapsed: number;
+declare class SplineAnimate :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class SplineAnimate :: loopMode: SplineLoopMode;
+declare class SplineAnimate :: place(): void;
+declare class SplineAnimate :: playing: boolean;
+declare class SplineAnimate :: readonly gameObject: GameObject;
+declare class SplineAnimate :: readonly t: number;
+declare class SplineAnimate :: readonly transform: Transform;
+declare class SplineAnimate :: spline: Spline | null;
+declare class SplineAnimate :: static attach(object: GameObject): SplineAnimate;
+declare class SplineAnimate :: static facing(direction: Vector3Like): Quaternion;
+declare class SplineAnimate :: static findOn(object: GameObject): SplineAnimate;
+declare class SplineAnimate :: static pose(spline: Spline, elapsed: number, duration: number, loopMode: SplineLoopMode): SplineAnimatePose;
+declare class SplineAnimate :: static progress(elapsed: number, duration: number, loopMode: SplineLoopMode): number;
 declare class SpringJoint
 declare class SpringJoint :: anchor: Vector3;
 declare class SpringJoint :: autoConfigureConnectedAnchor: boolean;
@@ -1515,6 +1523,9 @@ declare function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): [S, (a: 
 declare function useRef<T>(init: T): Ref<T>;
 declare function useRef<T>(init: null): Ref<T | null>;
 declare function useState<T>(init: T | (() => T)): [T, (v: T | ((prev: T) => T)) => void];
+declare interface SplineAnimatePose
+declare interface SplineAnimatePose :: direction: Vector3;
+declare interface SplineAnimatePose :: position: Vector3;
 declare interface SplineHit
 declare interface SplineHit :: segment: number;
 declare interface SplineHit :: u: number;
@@ -1669,9 +1680,12 @@ declare module "@iron/engine" :: export import SkinnedMeshRenderer = globalThis.
 declare module "@iron/engine" :: export import Sound = globalThis.Sound;
 declare module "@iron/engine" :: export import SphereCollider = globalThis.SphereCollider;
 declare module "@iron/engine" :: export import Spline = globalThis.Spline;
+declare module "@iron/engine" :: export import SplineAlignment = globalThis.SplineAlignment;
 declare module "@iron/engine" :: export import SplineAnimate = globalThis.SplineAnimate;
+declare module "@iron/engine" :: export import SplineAnimatePose = globalThis.SplineAnimatePose;
 declare module "@iron/engine" :: export import SplineHit = globalThis.SplineHit;
 declare module "@iron/engine" :: export import SplineKnot = globalThis.SplineKnot;
+declare module "@iron/engine" :: export import SplineLoopMode = globalThis.SplineLoopMode;
 declare module "@iron/engine" :: export import SplineNearest = globalThis.SplineNearest;
 declare module "@iron/engine" :: export import SpringJoint = globalThis.SpringJoint;
 declare module "@iron/engine" :: export import Sprite = globalThis.Sprite;
@@ -2224,6 +2238,12 @@ declare namespace Shapes :: function regularPolygon(center: Vector2Like, radius:
 declare namespace Shapes :: function roundedRectangle(x: number, y: number, width: number, height: number, radius: number, options?: { segments?: number }): Vector2[];
 declare namespace Shapes :: function roundedRectangle(x: number, y: number, width: number, height: number, radius: number, segments?: number): Vector2[];
 declare namespace Shapes :: function triangle(a: Vector2Like, b: Vector2Like, c: Vector2Like): Vector2[];
+declare namespace SplineAlignment
+declare namespace SplineAlignment :: function name(index: number): SplineAlignment;
+declare namespace SplineAlignment :: function parse(name: string): number;
+declare namespace SplineLoopMode
+declare namespace SplineLoopMode :: function name(index: number): SplineLoopMode;
+declare namespace SplineLoopMode :: function parse(name: string): number;
 declare namespace Sprite
 declare namespace Sprite :: function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
 declare namespace Sprite :: function grid(texture: Texture, columns: number, rows: number, pivot?: Vector2, pixelsPerUnit?: number): Sprite[];
@@ -2383,6 +2403,8 @@ declare namespace input :: function onGamepadConnected(f: (a0: number) => void):
 declare namespace input :: function onGamepadDisconnected(f: (a0: number) => void): number;
 declare namespace input :: function onKeyDown(f: (a0: string, a1: boolean) => void): number;
 declare namespace input :: function onKeyUp(f: (a0: string) => void): number;
+declare type SplineAlignment = "none" | "path";
+declare type SplineLoopMode = "loop" | "pingPong" | "once";
 declare type TangentMode = "auto" | "bezier" | "linear";
 interface AnimationController
 interface AnimationController :: addParameter(name: string, type: string, defaultValue?: number): AnimationController;
