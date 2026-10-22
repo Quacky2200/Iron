@@ -4,7 +4,7 @@ use iron_build::{Options, Tsc, assets, build, dev, package, types_dts};
 use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage:
-  iron-build build <game> [--no-tsc] [--aot] [--cook]   build <game>/dist
+  iron-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/dist
   iron-build types [<game>] [--out file]                write types/iron.d.ts (default <game>/types/iron.d.ts)
   iron-build assets <folder>... [--prune]               write .meta files
   iron-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.iron-reload)
@@ -20,6 +20,7 @@ fn options(args: &[String]) -> Options {
         aot: args.iter().any(|a| a == "--aot"),
         cook: args.iter().any(|a| a == "--cook"),
         no_compile: args.iter().any(|a| a == "--no-compile"),
+        no_prebuild: args.iter().any(|a| a == "--no-prebuild"),
     }
 }
 

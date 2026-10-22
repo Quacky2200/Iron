@@ -6,21 +6,22 @@ the repository's top-level `.md` files.
 
 ## Running it
 
-Build the example (this also bundles the docs), then run it. A release build scrolls and loads
-long pages much faster than a debug one.
+Build the example with `iron-build` (this also bundles the docs), then run it. A release build
+scrolls and loads long pages much faster than a debug one.
 
 ```bash
-cd examples/md-reader && bun run build
+cd tools && cargo run -p iron_build -- build ../examples/md-reader
 ```
 
 ```bash
 cargo run --release -p iron_app -- examples/md-reader
 ```
 
-The docs are bundled at build time by `gen-docs.ts`: every `.md` under `docs/` and in the
-repository root goes into `src/docs.gen.ts`, and the images they can show are copied into
-`content/` (both git-ignored). Run `bun run build` again after editing the docs, or use
-`bun run dev`, which rebuilds on every change and reloads the running window in place.
+The docs are bundled at build time by `gen-docs.ts`, which `project.json`'s `prebuild` runs with
+bun before each build: every `.md` under `docs/` and in the repository root goes into
+`src/docs.gen.ts`, and the images they can show are copied into `content/` (both git-ignored).
+Build again after editing the docs, or use `iron-build dev ../examples/md-reader`, which rebuilds
+on every change.
 
 ## Using it
 
@@ -65,14 +66,15 @@ cargo run --release -p iron_app -- examples/md-reader -- --goto "docs/ui-tree.md
   (`[see](ui-tree.md#L300)`). An unknown doc or anchor is reported in the status bar.
 - `--root <folder>`: reserved for reading another folder of docs. For now it stops with an
   error (exit code 2), because Iron's scripts can't read folders outside the game yet. Until
-  then, choose the folder when building, with `MD_READER_ROOT` (or
-  `bun gen-docs.ts --root <folder>`):
+  then, choose the folder when building, with `MD_READER_ROOT` (relative to
+  `examples/md-reader`, where the `prebuild` step runs), or run `bun gen-docs.ts --root <folder>`
+  there and build with `iron-build build --no-prebuild`:
 
   ```bash
-  cd examples/md-reader && MD_READER_ROOT=../../../my-project/docs bun run build
+  cd tools && MD_READER_ROOT=../../../my-project/docs cargo run -p iron_build -- build ../examples/md-reader
   ```
 
-  In PowerShell: `$env:MD_READER_ROOT = "..\..\..\my-project\docs"; bun run build`. Every
+  In PowerShell: `$env:MD_READER_ROOT = "..\..\..\my-project\docs"` before the build. Every
   `.md` under the folder is included (not `node_modules`, `.git`, `dist`, `target`), with paths
   relative to it, and the path bar starts with the folder's name.
 

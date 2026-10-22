@@ -13,9 +13,6 @@
 // a game (n games, 60 ms apart) at that time, for screenshot runs of the transitions.
 import "./launcher.css";
 
-import { Application, input, PlayerPrefs, Screen } from "@iron/engine";
-import { createRoot, Image, type IronElement, type IronWheelEvent, Text } from "@iron/react";
-import { useEffect, useRef, useState } from "react";
 
 import { type Game, GAMES, type Palette } from "./games.gen.ts";
 import {

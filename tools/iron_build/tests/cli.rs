@@ -70,3 +70,41 @@ fn build_and_package_warn_about_empty_fields_but_check_does_not() {
     assert!(!o.contains("is empty") && !e.contains("is empty"), "{o}{e}");
     let _ = std::fs::remove_dir_all(&games);
 }
+
+// M9-TS-3383
+#[test]
+fn prebuild_runs_in_the_game_folder_before_compiling_and_can_be_skipped() {
+    // The entry imports a file only the prebuild command writes.
+    let g = game(
+        "prebuild",
+        r#"{ "name": "g", "prebuild": "echo export const made = 1;> src/gen.ts" }"#,
+    );
+    std::fs::write(
+        g.join("src/main.ts"),
+        "import { made } from \"./gen.ts\";\nexport const a = made;",
+    )
+    .unwrap();
+    let parent = g.parent().unwrap().to_path_buf();
+    let b = run(&["build", g.to_str().unwrap(), "--no-tsc"], &parent);
+    assert!(b.status.success(), "{}", String::from_utf8_lossy(&b.stderr));
+    assert!(g.join("src/gen.ts").is_file());
+    // Skipped, a missing file is the build's error; a failing command stops it with its text.
+    std::fs::remove_file(g.join("src/gen.ts")).unwrap();
+    let s = run(
+        &["build", g.to_str().unwrap(), "--no-tsc", "--no-prebuild"],
+        &parent,
+    );
+    assert!(!s.status.success());
+    std::fs::write(
+        g.join("project.json"),
+        r#"{ "name": "g", "prebuild": "exit 3" }"#,
+    )
+    .unwrap();
+    let f = run(&["build", g.to_str().unwrap(), "--no-tsc"], &parent);
+    let err = String::from_utf8_lossy(&f.stderr).into_owned();
+    assert!(
+        !f.status.success() && err.contains("prebuild `exit 3` failed"),
+        "{err}"
+    );
+    let _ = std::fs::remove_dir_all(&g);
+}

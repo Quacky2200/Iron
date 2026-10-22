@@ -4,17 +4,6 @@
 // headings, tables, code, task lists and images. gen-docs.ts bundles the files at build time.
 import "./reader.css";
 
-import { Application, input, PlayerPrefs } from "@iron/engine";
-import {
-  createRoot,
-  Image,
-  type IronElement,
-  type IronPointerEvent,
-  type IronScrollEvent,
-  Span,
-  Text,
-} from "@iron/react";
-import { Fragment, memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DOCS, IMAGES, ROOT } from "./docs.gen.ts";
 import { highlight } from "./highlight.ts";

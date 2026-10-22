@@ -1,0 +1,10 @@
+{
+  "name": "md-reader",
+  "title": "Iron Docs",
+  "prebuild": "bun gen-docs.ts",
+  "include": ["content/**"],
+  "display": {
+    "width": 1280,
+    "height": 820
+  }
+}

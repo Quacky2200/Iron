@@ -1,5 +1,5 @@
 // Lists the examples for the launcher: each one's folder, title and description (from its
-// package.json) go into src/games.gen.ts, and its screenshot from `bun run screenshots`
+// project.json) go into src/games.gen.ts, and its screenshot from `bun run screenshots`
 // (tests/output/examples-<name>.png) is copied into content/shots/, where `image` elements
 // can load it, and its colours (palette.ts) give it a background gradient. Both outputs are
 // git-ignored; `bun run build` runs this.
@@ -32,7 +32,7 @@ mkdirSync(join(here, "content/shots"), { recursive: true });
 
 const games: Game[] = [];
 for (const name of readdirSync(examples).sort()) {
-  const manifest = join(examples, name, "package.json");
+  const manifest = join(examples, name, "project.json");
   if (name === basename(here) || !existsSync(manifest)) continue;
   const pkg = JSON.parse(readFileSync(manifest, "utf8"));
   const from = join(shots, `examples-${name}.png`);
@@ -45,7 +45,7 @@ for (const name of readdirSync(examples).sort()) {
   }
   games.push({
     name,
-    title: title(name, pkg.iron?.title),
+    title: title(name, pkg.title),
     description: pkg.description ?? "",
     shot,
     palette: colors ?? fallback(name),

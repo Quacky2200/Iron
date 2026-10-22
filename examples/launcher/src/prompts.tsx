@@ -3,9 +3,6 @@
 // shows that pad's buttons (and hides the cursor), and unplugging the last pad goes back to
 // the keyboard. The pad's icons come from its name (Xbox, PlayStation, Nintendo), else from
 // the platform.
-import { Application, Cursor, input } from "@iron/engine";
-import { Text } from "@iron/react";
-import { type ReactNode, useSyncExternalStore } from "react";
 
 export type PadStyle = "xbox" | "playstation" | "nintendo";
 export type Device = { kind: "keyboard" } | { kind: "gamepad"; style: PadStyle };

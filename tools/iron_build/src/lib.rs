@@ -38,9 +38,42 @@ pub struct GameConfig {
     pub pack_include: Option<Vec<String>>,
     pub pack_exclude: Option<Vec<String>>,
     pub start_scene: Option<String>,
+    /// `project.json` `prebuild`: a command run in the game folder before compiling.
+    pub prebuild: Option<String>,
     /// One warning per metadata field `project.json` leaves empty on purpose (`build` and
     /// `package` print them, `check` does not).
     pub empty_field_warnings: Vec<String>,
+}
+
+/// Runs `project.json`'s `prebuild` command in the game folder (through `cmd /C` on Windows,
+/// `sh -c` elsewhere); a failure stops the build with the command's output.
+pub fn run_prebuild(root: &Path, cmd: &str) -> Result<(), String> {
+    let mut c;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c = std::process::Command::new("cmd");
+        c.args(["/S", "/C"]).raw_arg(format!("\"{cmd}\""));
+    }
+    #[cfg(not(windows))]
+    {
+        c = std::process::Command::new("sh");
+        c.args(["-c", cmd]);
+    }
+    let out = c
+        .current_dir(root)
+        .output()
+        .map_err(|e| format!("prebuild `{cmd}`: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "prebuild `{cmd}` failed ({}):\n{}{}",
+            out.status,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ))
+    }
 }
 
 /// A folder is a game when it has a `project.json`. The deprecated fallback: a `package.json`
@@ -123,6 +156,7 @@ impl GameConfig {
             pack_include: project.include.clone(),
             pack_exclude: project.exclude.clone(),
             start_scene: project.start_scene.clone(),
+            prebuild: project.prebuild.clone(),
             empty_field_warnings,
         })
     }
@@ -214,6 +248,8 @@ pub struct Options {
     pub cook: bool,
     /// Skip compiling the bundle (module graph, CSS and assets only).
     pub no_compile: bool,
+    /// Skip `project.json`'s `prebuild` command (its output is already there).
+    pub no_prebuild: bool,
 }
 
 /// How `tsc` went.
@@ -400,6 +436,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let t0 = Instant::now();
     let config = GameConfig::load(root)?;
+    if let Some(cmd) = config.prebuild.as_ref().filter(|_| !opts.no_prebuild) {
+        run_prebuild(root, cmd).map_err(|e| format!("{}: {e}", config.name))?;
+    }
     let dist = root.join("dist");
     let entry = root.join(&config.entry);
     // The engine's global names stay the engine's: a module's own `class Random` is renamed.
@@ -1047,7 +1086,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
             assert_eq!(proj.license, "private");
             assert!(!proj.title.is_empty());
         }
-        assert_eq!(games, 41);
+        assert_eq!(games, 43);
     }
 
     // M9-TS-2307

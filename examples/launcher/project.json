@@ -1,0 +1,11 @@
+{
+  "name": "launcher",
+  "title": "Iron Launcher",
+  "description": "A game launcher mock-up: a carousel of the examples' screenshots, browsed with the mouse, keys or a gamepad.",
+  "prebuild": "bun gen-games.ts",
+  "include": ["content/**"],
+  "display": {
+    "width": 1280,
+    "height": 760
+  }
+}

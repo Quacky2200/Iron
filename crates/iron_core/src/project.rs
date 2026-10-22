@@ -280,6 +280,10 @@ pub struct Project {
     pub main: Option<String>,
     /// The data folder beside a packaged exe (`dataDir`).
     pub data_dir: Option<String>,
+    /// A command `iron-build` runs in the game folder before it compiles (`prebuild`, as written:
+    /// no `${..}` expansion, so a shell's own variables pass through), for sources a game generates
+    /// (the md-reader's bundled docs).
+    pub prebuild: Option<String>,
     /// Written by the packager: false when the exe runs without a data folder.
     pub data_required: Option<bool>,
     /// Files the packager takes: paths, folders or globs (`*`, `**`); default `["assets/**"]`.
@@ -356,6 +360,7 @@ const KNOWN_KEYS: &[&str] = &[
     "license",
     "licenseFile",
     "dataRequired",
+    "prebuild",
     "include",
     "exclude",
     "fps",
@@ -889,6 +894,7 @@ impl Project {
             ("startScene", &self.start_scene),
             ("main", &self.main),
             ("dataDir", &self.data_dir),
+            ("prebuild", &self.prebuild),
         ] {
             if let Some(v) = v {
                 m.insert(k.into(), v.clone().into());
@@ -1111,6 +1117,11 @@ fn build(
         main,
         data_dir,
         data_required: doc.get("dataRequired").and_then(Value::as_bool),
+        prebuild: doc
+            .get("prebuild")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_owned),
         include,
         exclude,
         fps: doc.get("fps").and_then(Value::as_bool),
