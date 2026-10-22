@@ -16,8 +16,6 @@ debug = false
 [profile.test]
 debug = false
 
-# The build script compiles TypeScript with Cranelift; unoptimised that is slow.
-[profile.dev.build-override]
-opt-level = 3
+# Cranelift unoptimised is slow (build scripts and JIT tests compile TypeScript with it).
 [profile.dev.package.cranelift-codegen]
 opt-level = 3
