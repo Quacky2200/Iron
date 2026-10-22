@@ -1744,6 +1744,10 @@ declare module "@iron/react"
 declare module "@iron/react" :: export import Dialog = globalThis.Dialog;
 declare module "@iron/react" :: export import Image = globalThis.Image;
 declare module "@iron/react" :: export import Input = globalThis.Input;
+declare module "@iron/react" :: export import IronAnimationEvent = globalThis.IronAnimationEvent;
+declare module "@iron/react" :: export import IronDataTransfer = globalThis.IronDataTransfer;
+declare module "@iron/react" :: export import IronDragEvent = globalThis.IronDragEvent;
+declare module "@iron/react" :: export import IronDroppedFile = globalThis.IronDroppedFile;
 declare module "@iron/react" :: export import IronElement = globalThis.IronElement;
 declare module "@iron/react" :: export import IronEvent = globalThis.IronEvent;
 declare module "@iron/react" :: export import IronFocusEvent = globalThis.IronFocusEvent;
@@ -1752,6 +1756,7 @@ declare module "@iron/react" :: export import IronKeyboardEvent = globalThis.Iro
 declare module "@iron/react" :: export import IronPointerEvent = globalThis.IronPointerEvent;
 declare module "@iron/react" :: export import IronScrollEvent = globalThis.IronScrollEvent;
 declare module "@iron/react" :: export import IronStyle = globalThis.IronStyle;
+declare module "@iron/react" :: export import IronTransitionEvent = globalThis.IronTransitionEvent;
 declare module "@iron/react" :: export import IronWheelEvent = globalThis.IronWheelEvent;
 declare module "@iron/react" :: export import List = globalThis.List;
 declare module "@iron/react" :: export import Span = globalThis.Span;
@@ -2528,6 +2533,25 @@ interface InstantiateObjectOptions
 interface InstantiateObjectOptions :: parent?: GameObject | null;
 interface InstantiateObjectOptions :: position?: Vector3Like;
 interface InstantiateObjectOptions :: rotation?: QuaternionLike;
+interface IronAnimationEvent extends IronEvent
+interface IronAnimationEvent extends IronEvent :: readonly animationName: string;
+interface IronAnimationEvent extends IronEvent :: readonly elapsedTime: number;
+interface IronAnimationEvent extends IronEvent :: readonly pseudoElement: string;
+interface IronDataTransfer
+interface IronDataTransfer :: clearData(format?: string): void;
+interface IronDataTransfer :: dropEffect: "none" | "copy" | "move" | "link";
+interface IronDataTransfer :: effectAllowed: "none" | "copy" | "move" | "link" | "copyMove" | "copyLink" | "linkMove" | "all" | "uninitialized";
+interface IronDataTransfer :: getData(format: string): string;
+interface IronDataTransfer :: readonly files: IronDroppedFile[];
+interface IronDataTransfer :: readonly types: string[];
+interface IronDataTransfer :: setData(format: string, data: string): void;
+interface IronDataTransfer :: setDragImage(element: { readonly id: number } | null, x?: number, y?: number): void;
+interface IronDragEvent extends IronPointerEvent
+interface IronDragEvent extends IronPointerEvent :: readonly dataTransfer: IronDataTransfer;
+interface IronDragEvent extends IronPointerEvent :: readonly dropped: boolean;
+interface IronDroppedFile
+interface IronDroppedFile :: readonly name: string;
+interface IronDroppedFile :: readonly path: string;
 interface IronElement
 interface IronElement :: blur(): void;
 interface IronElement :: focus(): void;
@@ -2538,6 +2562,7 @@ interface IronEvent :: readonly target: { readonly id: number; readonly value: s
 interface IronEvent :: readonly type: string;
 interface IronEvent :: stopPropagation(): void;
 interface IronFocusEvent extends IronEvent
+interface IronFocusEvent extends IronEvent :: readonly relatedTarget: { readonly id: number } | null;
 interface IronInputEvent extends IronEvent
 interface IronInputEvent extends IronEvent :: readonly value: string;
 interface IronKeyboardEvent extends IronEvent
@@ -2581,6 +2606,10 @@ interface IronProps :: height?: number;
 interface IronProps :: id?: string;
 interface IronProps :: key?: string | number;
 interface IronProps :: modal?: boolean;
+interface IronProps :: onAnimationCancel?: (e: IronAnimationEvent) => void;
+interface IronProps :: onAnimationEnd?: (e: IronAnimationEvent) => void;
+interface IronProps :: onAnimationIteration?: (e: IronAnimationEvent) => void;
+interface IronProps :: onAnimationStart?: (e: IronAnimationEvent) => void;
 interface IronProps :: onBlur?: (e: IronFocusEvent) => void;
 interface IronProps :: onCancel?: (e: IronEvent) => void;
 interface IronProps :: onChange?: (e: IronInputEvent) => void;
@@ -2588,6 +2617,13 @@ interface IronProps :: onClick?: (e: IronPointerEvent) => void;
 interface IronProps :: onClose?: (e: IronEvent) => void;
 interface IronProps :: onContextMenu?: (e: IronPointerEvent) => void;
 interface IronProps :: onDoubleClick?: (e: IronPointerEvent) => void;
+interface IronProps :: onDrag?: (e: IronDragEvent) => void;
+interface IronProps :: onDragEnd?: (e: IronDragEvent) => void;
+interface IronProps :: onDragEnter?: (e: IronDragEvent) => void;
+interface IronProps :: onDragLeave?: (e: IronDragEvent) => void;
+interface IronProps :: onDragOver?: (e: IronDragEvent) => void;
+interface IronProps :: onDragStart?: (e: IronDragEvent) => void;
+interface IronProps :: onDrop?: (e: IronDragEvent) => void;
 interface IronProps :: onFocus?: (e: IronFocusEvent) => void;
 interface IronProps :: onGotPointerCapture?: (e: IronPointerEvent) => void;
 interface IronProps :: onInput?: (e: IronInputEvent) => void;
@@ -2595,6 +2631,9 @@ interface IronProps :: onKeyDown?: (e: IronKeyboardEvent) => void;
 interface IronProps :: onKeyUp?: (e: IronKeyboardEvent) => void;
 interface IronProps :: onLostPointerCapture?: (e: IronPointerEvent) => void;
 interface IronProps :: onMouseDown?: (e: IronPointerEvent) => void;
+interface IronProps :: onMouseEnter?: (e: IronPointerEvent) => void;
+interface IronProps :: onMouseLeave?: (e: IronPointerEvent) => void;
+interface IronProps :: onMouseMove?: (e: IronPointerEvent) => void;
 interface IronProps :: onMouseUp?: (e: IronPointerEvent) => void;
 interface IronProps :: onPointerDown?: (e: IronPointerEvent) => void;
 interface IronProps :: onPointerEnter?: (e: IronPointerEvent) => void;
@@ -2602,6 +2641,10 @@ interface IronProps :: onPointerLeave?: (e: IronPointerEvent) => void;
 interface IronProps :: onPointerMove?: (e: IronPointerEvent) => void;
 interface IronProps :: onPointerUp?: (e: IronPointerEvent) => void;
 interface IronProps :: onScroll?: (e: IronScrollEvent) => void;
+interface IronProps :: onTransitionCancel?: (e: IronTransitionEvent) => void;
+interface IronProps :: onTransitionEnd?: (e: IronTransitionEvent) => void;
+interface IronProps :: onTransitionRun?: (e: IronTransitionEvent) => void;
+interface IronProps :: onTransitionStart?: (e: IronTransitionEvent) => void;
 interface IronProps :: onWheel?: (e: IronWheelEvent) => void;
 interface IronProps :: opacity?: number;
 interface IronProps :: open?: boolean;
@@ -2899,6 +2942,10 @@ interface IronStyle :: wordWrap?: "normal" | "anywhere" | "break-word";
 interface IronStyle :: x?: number | string;
 interface IronStyle :: y?: number | string;
 interface IronStyle :: zIndex?: number | "auto";
+interface IronTransitionEvent extends IronEvent
+interface IronTransitionEvent extends IronEvent :: readonly elapsedTime: number;
+interface IronTransitionEvent extends IronEvent :: readonly propertyName: string;
+interface IronTransitionEvent extends IronEvent :: readonly pseudoElement: string;
 interface IronWheelEvent extends IronPointerEvent
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaX: number;
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaY: number;

@@ -31,7 +31,7 @@ use iron_ts::jit::{Game, JitOptions, compile_and_load};
 use iron_ts_rt::{
     NativeHost, StartupState, startup_state, ts_rt_microtasks_run, ts_rt_timers_advance,
 };
-use iron_ui::{EventKind, UiEvent, UiTree};
+use iron_ui::{UiEvent, UiTree};
 use iron_ui_native::{Event, RootId, Runtime};
 use std::path::Path;
 
@@ -820,19 +820,7 @@ pub fn set_target_kind(kind: Option<String>) {
 
 /// A UI event of the interaction layer as the native reconciler's event.
 pub fn to_event(e: &UiEvent) -> Option<Event> {
-    let &target = e.path.first()?;
-    let mut ev = Event::new(e.kind.name(), target);
-    ev.bubbles = !matches!(e.kind, EventKind::PointerEnter | EventKind::PointerLeave);
-    ev.data = e.script_args().get(2).map_or_else(Vec::new, |v| match v {
-        iron_core::Value::Array(a) => a.iter().filter_map(iron_core::Value::as_f64).collect(),
-        _ => Vec::new(),
-    });
-    if matches!(e.kind, EventKind::KeyDown | EventKind::KeyUp) {
-        ev.strings = vec![e.key.clone(), e.code.clone()];
-    } else if let Some(v) = &e.value {
-        ev.strings = vec![v.clone()];
-    }
-    Some(ev)
+    iron_ui_native::event_of(e)
 }
 
 /// The program's `__uiSignatures()` text (`Name:ID:hook,hook;...`), empty when it has no UI.
@@ -865,8 +853,8 @@ fn parse_signatures(text: &str) -> std::collections::HashMap<u32, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_ui::ROOT;
     use iron_ui::events::Modifiers;
+    use iron_ui::{EventKind, ROOT};
 
     fn bundle(src: &str) -> Bundle {
         Bundle {

@@ -428,3 +428,154 @@ export function valueCallbacks(): string {
   runTwice(() => tapInfo());
   return tapLog.join("") + ":" + tapLog.length;
 }
+
+// ---- events from the interaction layer (M9-TS-3313..) ----
+
+const evLog: string[] = [];
+
+function note(s: string): void {
+  evLog.push(s);
+}
+
+/** The notes since the last call, space separated. */
+export function evLogText(): string {
+  const s = evLog.join(" ");
+  evLog.length = 0;
+  return s;
+}
+
+function relatedId(e: IronFocusEvent): number {
+  return e.relatedTarget === null ? 0 : e.relatedTarget.id;
+}
+
+function FocusForm(): UiElement {
+  return (
+    <box
+      onFocusCapture={(e: IronFocusEvent) => note("cap-focus:" + e.type)}
+      onBlurCapture={(e: IronFocusEvent) => note("cap-blur:" + e.type)}
+      onFocus={(e: IronFocusEvent) => note("form-focus:" + e.type)}
+      onBlur={(e: IronFocusEvent) => note("form-blur:" + e.type)}
+    >
+      <input
+        onFocus={(e: IronFocusEvent) => note("a-focus:" + relatedId(e))}
+        onBlur={(e: IronFocusEvent) => note("a-blur:" + relatedId(e))}
+      />
+      <input
+        onFocus={(e: IronFocusEvent) => note("b-focus:" + relatedId(e))}
+        onBlur={(e: IronFocusEvent) => note("b-blur:" + relatedId(e))}
+      />
+    </box>
+  );
+}
+
+export function focusApp(): UiElement {
+  return <FocusForm />;
+}
+
+function Fader(): UiElement {
+  const [on, setOn] = useState(false);
+  return (
+    <box
+      style={{ width: 50, height: 50, opacity: on ? 0 : 1, transition: "opacity 1s linear" }}
+      onClick={() => setOn(!on)}
+      onTransitionRun={(e: IronTransitionEvent) => note("run:" + e.propertyName + ":" + e.elapsedTime)}
+      onTransitionStart={(e: IronTransitionEvent) => note("start:" + e.propertyName)}
+      onTransitionEnd={(e: IronTransitionEvent) =>
+        note("end:" + e.propertyName + ":" + e.elapsedTime + ":" + e.pseudoElement.length)
+      }
+      onTransitionCancel={(e: IronTransitionEvent) => note("cancel:" + e.propertyName)}
+    />
+  );
+}
+
+export function fadeApp(): UiElement {
+  return <Fader />;
+}
+
+function Pulser(): UiElement {
+  return (
+    <box
+      className="pulse"
+      style={{ width: 50, height: 50 }}
+      onAnimationStart={(e: IronAnimationEvent) => note("astart:" + e.animationName)}
+      onAnimationIteration={(e: IronAnimationEvent) => note("aiter:" + e.animationName + ":" + e.elapsedTime)}
+      onAnimationEnd={(e: IronAnimationEvent) => note("aend:" + e.animationName + ":" + e.elapsedTime)}
+      onAnimationCancel={(e: IronAnimationEvent) => note("acancel:" + e.animationName)}
+    />
+  );
+}
+
+export function pulseApp(): UiElement {
+  return <Pulser />;
+}
+
+function Dragger(): UiElement {
+  return (
+    <box>
+      <box
+        draggable
+        style={{ position: "absolute", left: 0, top: 0, width: 50, height: 50 }}
+        onDragStart={(e: IronDragEvent) => {
+          e.dataTransfer.setData("Text/Plain", "hello");
+          e.dataTransfer.effectAllowed = "move";
+          note("dragstart:" + e.dataTransfer.types.join(","));
+        }}
+        onDragEnd={(e: IronDragEvent) =>
+          note("dragend:" + e.dropped + ":" + e.dataTransfer.getData("text/plain") + ":" + e.dataTransfer.dropEffect)
+        }
+      />
+      <box
+        style={{ position: "absolute", left: 100, top: 0, width: 50, height: 50 }}
+        onDragEnter={(e: IronDragEvent) => note("enter:" + e.dataTransfer.getData("text/plain"))}
+        onDragOver={(e: IronDragEvent) => {
+          e.dataTransfer.dropEffect = "move";
+          e.preventDefault();
+        }}
+        onDragLeave={(e: IronDragEvent) => note("leave")}
+        onDrop={(e: IronDragEvent) => {
+          const names: string[] = [];
+          for (let i = 0; i < e.dataTransfer.files.length; i++) names.push(e.dataTransfer.files[i].name);
+          note("drop:" + e.dataTransfer.getData("text/plain") + ":" + names.join("+") + ":" + e.dataTransfer.types.join(","));
+        }}
+      />
+    </box>
+  );
+}
+
+export function dragApp(): UiElement {
+  return <Dragger />;
+}
+
+function Hover(): UiElement {
+  return (
+    <box
+      style={{ width: 50, height: 50 }}
+      onMouseEnter={(e: IronPointerEvent) => note("menter")}
+      onMouseLeave={(e: IronPointerEvent) => note("mleave")}
+      onMouseMove={(e: IronPointerEvent) => note("mmove")}
+    >
+      <box style={{ width: 20, height: 20 }} />
+    </box>
+  );
+}
+
+export function hoverApp(): UiElement {
+  return <Hover />;
+}
+
+function Scroller(): UiElement {
+  return (
+    <box onScroll={(e: IronScrollEvent) => note("outer-scroll")}>
+      <box
+        style={{ width: 100, height: 100, overflow: "scroll" }}
+        onScroll={(e: IronScrollEvent) => note("scroll:" + e.scrollTop)}
+      >
+        <box style={{ width: 100, height: 400 }} />
+      </box>
+    </box>
+  );
+}
+
+export function scrollApp(): UiElement {
+  return <Scroller />;
+}

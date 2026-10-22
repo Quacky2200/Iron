@@ -592,3 +592,91 @@ fn a_controlled_field_keeps_its_value_prop() {
     rt.dispatch(&mut typed("xyz", node), &mut tree);
     assert_eq!(value(&tree), Some("XYZ".to_string()));
 }
+
+// M9-TS-3332
+//
+// Focus through the interaction layer: `focusin` / `focusout` bubble to the form (capture first),
+// `event_of` carries `relatedTarget` in number 9, and a non-bubbling `scroll` stays on its element
+// while its own handler still runs.
+#[test]
+fn focus_events_from_the_interaction_layer_reach_handlers_and_scroll_does_not_bubble() {
+    use iron_ui::{Input, Interaction};
+    let mut tree = tree();
+    let mut rt = Runtime::new(FIRST);
+    let root = rt.create_root(ROOT);
+    let log: Rc<RefCell<Vec<String>>> = Rc::default();
+    let note = |name: &'static str| -> iron_ui_native::Handler {
+        let log = log.clone();
+        Rc::new(move |e: &mut Event| {
+            let related = e.data.get(9).copied().unwrap_or(0.0);
+            log.borrow_mut().push(format!("{name}:{related}"));
+        })
+    };
+    let field = |tag: &'static str| {
+        Element::host(
+            "input",
+            HostProps {
+                handlers: vec![
+                    (
+                        "focusin".into(),
+                        note(if tag == "a" { "a-in" } else { "b-in" }),
+                    ),
+                    (
+                        "focusout".into(),
+                        note(if tag == "a" { "a-out" } else { "b-out" }),
+                    ),
+                ],
+                ..HostProps::default()
+            },
+            vec![],
+        )
+    };
+    let form = Element::host(
+        "box",
+        HostProps {
+            handlers: vec![
+                ("focusin:capture".into(), note("cap-in")),
+                ("focusin".into(), note("form-in")),
+                ("focusout".into(), note("form-out")),
+                ("scroll".into(), note("form-scroll")),
+            ],
+            ..HostProps::default()
+        },
+        vec![field("a"), field("b")],
+    );
+    ok(rt.render(root, form, &mut tree));
+    let form_id = tree.children(ROOT)[0];
+    let (a, b) = (tree.children(form_id)[0], tree.children(form_id)[1]);
+    let mut ui = Interaction::new();
+    let mut send = |ui: &mut Interaction, tree: &mut UiTree, input: Input| {
+        ui.handle(tree, input, &mut |e| match iron_ui_native::event_of(e) {
+            Some(mut ev) => rt.dispatch_handlers(&mut ev),
+            None => false,
+        });
+    };
+    send(&mut ui, &mut tree, Input::Focus(a));
+    assert_eq!(*log.borrow(), ["cap-in:0", "a-in:0", "form-in:0"]);
+    log.borrow_mut().clear();
+    send(&mut ui, &mut tree, Input::Focus(b));
+    assert_eq!(
+        *log.borrow(),
+        [
+            format!("a-out:{}", b.0),
+            format!("form-out:{}", b.0),
+            "cap-in:".to_string() + &a.0.to_string(),
+            format!("b-in:{}", a.0),
+            format!("form-in:{}", a.0),
+        ]
+    );
+    // A scroll event of the field does not reach the form's `onScroll`.
+    log.borrow_mut().clear();
+    let scroll = iron_ui::UiEvent::new(
+        iron_ui::EventKind::Scroll,
+        tree.event_path(b),
+        iron_ui::events::Modifiers::default(),
+    );
+    let mut ev = iron_ui_native::event_of(&scroll).unwrap();
+    assert!(!ev.bubbles);
+    rt.dispatch_handlers(&mut ev);
+    assert!(log.borrow().is_empty(), "{:?}", log.borrow());
+}

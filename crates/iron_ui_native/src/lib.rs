@@ -25,6 +25,26 @@ use std::rc::Rc;
 /// Updates a flush may chain before it gives up (an effect that always sets state).
 const MAX_PASSES: usize = 100;
 
+/// A UI event of the interaction layer as the reconciler's event: the same numbers and strings
+/// `UiEvent::script_args` gives `__iron_ui_event` (so a compiled handler reads what a QuickJS one
+/// does), bubbling unless the event type does not (`tables::events::NON_BUBBLING`).
+pub fn event_of(e: &iron_ui::UiEvent) -> Option<Event> {
+    let &target = e.path.first()?;
+    let mut ev = Event::new(e.kind.name(), target);
+    ev.bubbles = !iron_ui::tables::events::NON_BUBBLING.contains(&e.kind.name());
+    let args = e.script_args();
+    if let Some(Value::Array(a)) = args.get(2) {
+        ev.data = a.iter().filter_map(Value::as_f64).collect();
+    }
+    if let Some(Value::Array(a)) = args.get(3) {
+        ev.strings = a
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect();
+    }
+    Some(ev)
+}
+
 /// A mounted root: a container node of a `UiTree` and the element rendered into it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RootId(usize);
@@ -312,9 +332,11 @@ impl Runtime {
                     break 'phases;
                 }
             }
-            if event.bubbles {
+            // The target's own handlers run for every event; the ancestors' only when it bubbles.
+            {
                 let name = event.kind.clone();
-                for &i in &chain {
+                let last = if event.bubbles { chain.len() } else { 1 };
+                for &i in chain.iter().take(last) {
                     for h in handlers(self, i, &name) {
                         h(event);
                     }

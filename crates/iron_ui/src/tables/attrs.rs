@@ -11,7 +11,7 @@ pub enum Scope {
     /// Inline SVG: `Attrs::set_svg` stores it on SVG elements (and `text` inside an `svg`).
     Svg,
     /// Declared for familiarity but not implemented: `Attrs::set` rejects it on non-SVG elements
-    /// (a logged problem), SVG elements store it.
+    /// (a logged problem), SVG elements store it. No attribute uses it at the moment.
     Compat,
 }
 
@@ -140,23 +140,23 @@ pub const ATTRS: &[Attr] = &[
     a(
         "title",
         "string",
-        Compat,
+        Html,
         &[],
-        "Accepted by the types; the UI has no tooltips yet.",
+        "Advisory text, kept on the element (no tooltip is drawn yet).",
     ),
     a(
         "cols",
         "number",
-        Compat,
+        Html,
         &["textarea"],
-        "Accepted by the types; a text area's width comes from CSS.",
+        "Width in characters (8 logical pixels each) when CSS sets none.",
     ),
     a(
         "type",
         "string",
-        Compat,
+        Html,
         &["input"],
-        "Accepted by the types; every `input` is a text field.",
+        "Kept lower-cased for `input[type=\"password\"]` selectors; every `input` is a text field.",
     ),
     // Inline SVG (`<svg>` and the shapes inside it): attributes as React names them.
     a("viewBox", "string", Svg, &["svg"], ""),

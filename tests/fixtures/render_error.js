@@ -13213,6 +13213,7 @@ ${err.stack}` : ""}`);
   }
   // ../../js/engine/src/assets.ts
   var listeners3 = new Set;
+  var native = () => globalThis.Assets ?? {};
   var entries = () => globalThis.__iron_info?.assets ?? [];
   var clean = (path) => path.replace(/\\/g, "/").replace(/^\.\//, "");
   var Assets = {
@@ -13229,6 +13230,15 @@ ${err.stack}` : ""}`);
     importer(path) {
       const p = clean(Assets.resolve(path));
       return entries().find((e) => e.path === p)?.importer ?? {};
+    },
+    exists(path) {
+      return native().exists?.(path) ?? false;
+    },
+    list(glob) {
+      return native().list?.(glob) ?? [];
+    },
+    packOf(path) {
+      return native().packOf?.(path) ?? "";
     },
     resolve(src) {
       if (!src.startsWith("guid:"))
@@ -16506,9 +16516,10 @@ ${err.stack}` : ""}`);
     reset
   });
   // ../../js/engine/src/shapes.ts
-  var DEG2 = Math.PI / 180;
+  var Shapes = globalThis.Shapes;
   // ../../js/engine/src/spline.ts
-  var scratch = new Float64Array(3);
+  var Spline = globalThis.Spline;
+  var native2 = globalThis.SplineAnimate;
   var _init40, _base40, _dec193, _dec194, _dec195, _dec196, _dec197, _dec198;
 
   class SplineAnimate extends (_base40 = Component) {
@@ -16546,15 +16557,7 @@ ${err.stack}` : ""}`);
       property
     ], "elapsed")] = (__runInitializers(_init40, 27, this), __runInitializers(_init40, 28, this, 0));
     get t() {
-      const d = Math.max(0.000001, this.duration);
-      const x = this.elapsed / d;
-      if (this.loopMode === "once")
-        return Math.max(0, Math.min(1, x));
-      if (this.loopMode === "pingPong") {
-        const m = (x % 2 + 2) % 2;
-        return m > 1 ? 2 - m : m;
-      }
-      return (x % 1 + 1) % 1;
+      return native2.progress(this.elapsed, this.duration, this.loopMode);
     }
     onUpdate(dt) {
       if (this.playing)
@@ -16565,17 +16568,12 @@ ${err.stack}` : ""}`);
       const s = this.spline;
       if (!s || s.count === 0)
         return;
-      const t = this.t;
-      const at = s.evaluate(t);
-      let dir = s.tangent(t);
-      if (this.loopMode === "pingPong" && (this.elapsed / Math.max(0.000001, this.duration) % 2 + 2) % 2 > 1)
-        dir = dir.scale(-1);
+      const { position, direction } = native2.pose(s, this.elapsed, this.duration, this.loopMode);
       const c = this.container?.transform;
-      this.transform.position = c ? c.transformPoint(at) : at;
-      if (this.alignment !== "path" || dir.magnitude < 0.000000001)
+      this.transform.position = c ? c.transformPoint(position) : position;
+      if (this.alignment !== "path" || direction.magnitude < 0.000000001)
         return;
-      const d = c ? c.transformDirection(dir) : dir;
-      this.transform.rotation = Math.abs(d.z) < 0.000001 ? Quaternion.euler(0, 0, Math.atan2(d.y, d.x) * 180 / Math.PI) : Quaternion.lookRotation(d, Vector3.up);
+      this.transform.rotation = native2.facing(c ? c.transformDirection(direction) : direction);
     }
   }
   // ../../js/engine/src/text-mesh.ts
@@ -16947,7 +16945,7 @@ ${err.stack}` : ""}`);
   }
   var shared = new Rng;
   // ../../js/engine/src/gizmos.ts
-  var DEG3 = Math.PI / 180;
+  var DEG2 = Math.PI / 180;
   var CIRCLE = 48;
   var lines = [];
   function push(a, b) {
@@ -17000,7 +16998,7 @@ ${err.stack}` : ""}`);
     },
     drawFrustum(center, fov, maxRange, minRange, aspect) {
       const c = Vector3.from(center);
-      const t = Math.tan(fov / 2 * DEG3);
+      const t = Math.tan(fov / 2 * DEG2);
       const rect = (d) => {
         const h = d * t;
         const w = h * aspect;
@@ -17579,6 +17577,7 @@ ${err.stack}` : ""}`);
   class IronTransitionEvent extends IronEvent {
     propertyName;
     elapsedTime;
+    pseudoElement = "";
     constructor(type, target, data, strings) {
       super(type, target, true);
       this.propertyName = strings[0] ?? "";
@@ -17589,6 +17588,7 @@ ${err.stack}` : ""}`);
   class IronAnimationEvent extends IronEvent {
     animationName;
     elapsedTime;
+    pseudoElement = "";
     constructor(type, target, data, strings) {
       super(type, target, true);
       this.animationName = strings[0] ?? "";

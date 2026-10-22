@@ -205,6 +205,8 @@ export class IronInputEvent extends IronEvent {
 export class IronTransitionEvent extends IronEvent {
   readonly propertyName: string;
   readonly elapsedTime: number;
+  /** Always empty: transitions of `::before` / `::after` are reported on their element. */
+  readonly pseudoElement = "";
 
   constructor(type: string, target: Instance, data: readonly number[], strings: readonly string[]) {
     super(type, target, true);
@@ -217,6 +219,8 @@ export class IronTransitionEvent extends IronEvent {
 export class IronAnimationEvent extends IronEvent {
   readonly animationName: string;
   readonly elapsedTime: number;
+  /** Always empty: animations of `::before` / `::after` are reported on their element. */
+  readonly pseudoElement = "";
 
   constructor(type: string, target: Instance, data: readonly number[], strings: readonly string[]) {
     super(type, target, true);

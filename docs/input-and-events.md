@@ -189,7 +189,9 @@ Focus details:
 - `set_focus` updates `ElementState.focus/focus_visible` and sends `focusout` (with `related` = the
   new target) to the old element, then `focusin` (with `related` = the old one). Both bubble, so
   `onFocus`/`onBlur` on a parent see descendants gaining/losing focus; `:focus-within` is handled
-  by the cascade scanning descendants (`Deps.focus_within`).
+  by the cascade scanning descendants (`Deps.focus_within`). Compiled games and the native
+  reconciler get the same events (`iron_ui_native::event_of`), also `relatedTarget` (`data[9]`);
+  `onFocus`/`onBlur` listen to `focusin`/`focusout`, not `focus`/`blur`, which are never sent.
 - Key events with no focused element are not dispatched to UI handlers; gameplay code gets keys
   through the `input` API instead (see [Gamepads and game input](#gamepads-and-game-input-m3c-step-6)).
 
@@ -459,6 +461,9 @@ Dropped paths are also given to `EditorHost::allow_sources` (see [editor.md](edi
 is one JS object from `dragstart` to `dragend` (`setData`/`getData`/`clearData`/`types`,
 `dropEffect`, `effectAllowed`, `setDragImage`); for system files a transfer is made from the
 paths, with `files: { path, name }[]` and `"Files"` in `types`. The data never crosses to Rust.
+Compiled games read the same fields from the prelude class `UiDataTransfer` (see
+[ui-native.md](ui-native.md)); `IronDragEvent` is in the generated declarations with `IronDataTransfer`
+and `IronDroppedFile`.
 
 ## UI scale (M3d step 9b)
 

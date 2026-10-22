@@ -138,6 +138,46 @@ fn fields_size_from_the_font_unless_sized() {
     assert_eq!(f.tree.rect(f.id).unwrap().width, 80.0);
 }
 
+// M9-TS-3333
+#[test]
+fn cols_size_a_textarea_and_title_and_type_are_kept_and_selectable() {
+    let top = || ("alignSelf", Value::from("flex-start"));
+    let f = Field::new("textarea", &[top()], &[("cols", px(10.0))]);
+    assert_eq!(
+        f.tree.rect(f.id).unwrap().width,
+        80.0,
+        "10 characters of 8px"
+    );
+    let f = Field::new(
+        "textarea",
+        &[top(), ("width", px(100.0))],
+        &[("cols", px(10.0))],
+    );
+    assert_eq!(f.tree.rect(f.id).unwrap().width, 100.0, "CSS wins");
+
+    let mut f = Field::new(
+        "input",
+        &[top()],
+        &[("type", "Password".into()), ("title", "secret".into())],
+    );
+    let attrs = f.tree.attrs(f.id).unwrap();
+    assert_eq!(attrs.get("type"), Some("password"), "lower-cased");
+    assert_eq!(attrs.title.as_deref(), Some("secret"));
+    // `input[type=password]` rules apply and follow a change of the attribute.
+    f.tree
+        .add_stylesheet("input { width: 100px } input[type=password] { width: 50px } [title=secret] { height: 30px }");
+    f.tree.layout_if_needed();
+    let r = f.tree.rect(f.id).unwrap();
+    assert_eq!((r.width, r.height), (50.0, 30.0));
+    let id = f.id.0;
+    let errors = f.tree.apply_commit(&Commit {
+        ops: vec![op(SET_ATTRS, &[n(id), "type".into(), "text".into()])],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    f.tree.layout_if_needed();
+    assert_eq!(f.tree.rect(f.id).unwrap().width, 100.0);
+}
+
 // M3-INP-01
 #[test]
 fn typing_and_editing_keys_change_the_text_and_send_input_events() {

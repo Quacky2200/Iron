@@ -9,7 +9,9 @@ use iron_core::Value;
 use iron_ui::events::Modifiers;
 use iron_ui::tables::attrs::{ATTRS, Scope};
 use iron_ui::tables::elements::{ELEMENTS, SVG_KINDS, tag_of_component};
-use iron_ui::tables::events::{EVENT_FIELDS, EVENT_INTERFACES, EVENT_PROPS, Init, kind_of_prop};
+use iron_ui::tables::events::{
+    EVENT_FIELDS, EVENT_INTERFACES, EVENT_PROPS, Init, NON_BUBBLING, NOT_EXPOSED, kind_of_prop,
+};
 use iron_ui::tables::style::{
     CURSORS, LENGTH_UNITS, NAMED_TYPES, SHORTHANDS, STYLE_PROPS, StyleProp,
 };
@@ -443,20 +445,181 @@ fn event_props_name_real_event_types_and_interfaces_use_declared_fields() {
             assert!(ifaces.contains(b), "{} extends {b}", i.name);
         }
     }
-    // Event types without a prop yet: transitions, animations and drag and drop need their own
-    // payloads (the property or animation name, the dropped files).
+    // Every event type has an `on*` prop or is listed as not exposed, with the reason.
     let typed: BTreeSet<&str> = EVENT_PROPS.iter().map(|p| p.kind).collect();
+    let hidden: BTreeSet<&str> = NOT_EXPOSED
+        .iter()
+        .map(|(k, why)| {
+            assert!(!why.is_empty(), "NOT_EXPOSED `{k}` needs a reason");
+            *k
+        })
+        .collect();
+    for k in &hidden {
+        assert!(kinds.contains(k), "NOT_EXPOSED lists unknown `{k}`");
+        assert!(
+            !typed.contains(k),
+            "`{k}` has a prop and is listed as not exposed"
+        );
+    }
     let untyped: Vec<_> = kinds
         .iter()
-        .filter(|k| !typed.contains(**k))
-        .filter(|k| {
-            !(k.starts_with("transition") || k.starts_with("animation") || k.starts_with("drag"))
-                && **k != "drag"
-                && **k != "drop"
-        })
+        .filter(|k| !typed.contains(**k) && !hidden.contains(**k))
         .collect();
     assert!(
         untyped.is_empty(),
-        "event types without an on* prop: {untyped:?}"
+        "event types without an on* prop (add one, or list them in NOT_EXPOSED with a reason): {untyped:?}"
     );
+    for k in NON_BUBBLING {
+        assert!(kinds.contains(k), "NON_BUBBLING lists unknown `{k}`");
+    }
+}
+
+// M9-TS-3329
+//
+// `EventKind::ALL` lists every event type: the exhaustive `match` below stops compiling when a
+// type is added, and then `ALL` must have grown with it.
+#[test]
+fn every_event_kind_is_in_the_all_list() {
+    fn index(k: EventKind) -> usize {
+        match k {
+            EventKind::PointerMove => 0,
+            EventKind::PointerDown => 1,
+            EventKind::PointerUp => 2,
+            EventKind::PointerEnter => 3,
+            EventKind::PointerLeave => 4,
+            EventKind::Click => 5,
+            EventKind::DblClick => 6,
+            EventKind::ContextMenu => 7,
+            EventKind::Wheel => 8,
+            EventKind::KeyDown => 9,
+            EventKind::KeyUp => 10,
+            EventKind::FocusIn => 11,
+            EventKind::FocusOut => 12,
+            EventKind::Scroll => 13,
+            EventKind::Input => 14,
+            EventKind::Cancel => 15,
+            EventKind::Close => 16,
+            EventKind::TransitionRun => 17,
+            EventKind::TransitionStart => 18,
+            EventKind::TransitionEnd => 19,
+            EventKind::TransitionCancel => 20,
+            EventKind::AnimationStart => 21,
+            EventKind::AnimationIteration => 22,
+            EventKind::AnimationEnd => 23,
+            EventKind::AnimationCancel => 24,
+            EventKind::GotPointerCapture => 25,
+            EventKind::LostPointerCapture => 26,
+            EventKind::DragStart => 27,
+            EventKind::Drag => 28,
+            EventKind::DragEnter => 29,
+            EventKind::DragOver => 30,
+            EventKind::DragLeave => 31,
+            EventKind::Drop => 32,
+            EventKind::DragEnd => 33,
+        }
+    }
+    const COUNT: usize = 34;
+    let mut seen = [false; COUNT];
+    for k in EventKind::ALL {
+        seen[index(*k)] = true;
+    }
+    assert!(
+        seen.iter().all(|s| *s) && EventKind::ALL.len() == COUNT,
+        "EventKind::ALL is missing a type (or the list in this test is out of date)"
+    );
+}
+
+// M9-TS-3330
+//
+// The `on*` props of the tables are the ones `@iron/react` runs for the same event types
+// (`HANDLERS` in `js/react/src/events.ts`), so a game reads the same names on both backends; the
+// non-bubbling types are the same in both.
+#[test]
+fn event_props_match_the_quickjs_dispatcher() {
+    let src = include_str!("../../../js/react/src/events.ts");
+    let block =
+        &src[src.find("const HANDLERS").unwrap()..src.find("// `scroll` doesn't bubble").unwrap()];
+    let mut js: BTreeSet<(String, String)> = BTreeSet::new();
+    for line in block.lines() {
+        let t = line.trim();
+        let Some((kind, rest)) = t.split_once(": [") else {
+            continue;
+        };
+        if kind.contains(' ') || !rest.ends_with("],") {
+            continue;
+        }
+        for prop in rest.trim_end_matches("],").split(',') {
+            js.insert((kind.to_string(), prop.trim().trim_matches('"').to_string()));
+        }
+    }
+    let table: BTreeSet<(String, String)> = EVENT_PROPS
+        .iter()
+        .map(|p| (p.kind.to_string(), p.prop.to_string()))
+        .collect();
+    assert_eq!(js, table, "js/react HANDLERS and EVENT_PROPS differ");
+    let nb = &src[src.find("const NON_BUBBLING").unwrap()..];
+    let nb = &nb[..nb.find(");").unwrap()];
+    for k in NON_BUBBLING {
+        assert!(nb.contains(&format!("\"{k}\"")), "{k} bubbles in js/react");
+    }
+    assert_eq!(nb.matches('"').count() / 2, NON_BUBBLING.len());
+}
+
+// M9-TS-3331
+//
+// The slots of the transition, animation, focus and drag fields read what the events carry: the
+// property or animation name in string 0, the elapsed seconds in number 5, the related element
+// in number 9, the dragged files as the strings and `dragend`'s `detail` for `dropped`.
+#[test]
+fn motion_focus_and_drag_fields_read_their_slots() {
+    let slot = |name: &str| EVENT_FIELDS.iter().find(|f| f.name == name).unwrap().init;
+    let mut t = UiEvent::new(
+        EventKind::TransitionEnd,
+        vec![iron_core::NodeId(1)],
+        Modifiers::default(),
+    );
+    t.value = Some("background-color".into());
+    t.delta_x = 1.5;
+    let args = t.script_args();
+    let (Value::Array(data), Value::Array(strs)) = (&args[2], &args[3]) else {
+        panic!()
+    };
+    for name in ["propertyName", "animationName"] {
+        let Init::Str(i) = slot(name) else { panic!() };
+        assert_eq!(strs[i].as_str(), Some("background-color"));
+    }
+    let Init::Num(i) = slot("elapsedTime") else {
+        panic!()
+    };
+    assert_eq!(data[i].as_f64(), Some(1.5));
+    let mut f = UiEvent::new(
+        EventKind::FocusIn,
+        vec![iron_core::NodeId(1)],
+        Modifiers::default(),
+    );
+    f.related = Some(iron_core::NodeId(9));
+    assert!(matches!(slot("relatedTarget"), Init::Related));
+    let Value::Array(data) = &f.script_args()[2] else {
+        panic!()
+    };
+    assert_eq!(data[9].as_f64(), Some(9.0), "relatedTarget reads data[9]");
+    let mut d = UiEvent::new(
+        EventKind::DragEnd,
+        vec![iron_core::NodeId(1)],
+        Modifiers::default(),
+    );
+    d.detail = 1;
+    d.files = vec!["a.png".into()];
+    let args = d.script_args();
+    assert!(matches!(slot("dropped"), Init::Dropped));
+    assert!(matches!(slot("dataTransfer"), Init::Transfer));
+    let (Value::Array(data), Value::Array(strs)) = (&args[2], &args[3]) else {
+        panic!()
+    };
+    assert_eq!(
+        data[4].as_f64(),
+        Some(1.0),
+        "dropped reads detail (data[4])"
+    );
+    assert_eq!(strs[0].as_str(), Some("a.png"), "the files are the strings");
 }

@@ -357,7 +357,7 @@ describe("@iron/react events", () => {
     const log: string[] = [];
     createRoot().render(
       <box data-name="page" onTransitionEnd={(e) => log.push(`page ${e.propertyName}`)}>
-        <box data-name="card" onTransitionEnd={(e) => log.push(`card ${e.propertyName} ${e.elapsedTime}`)} />
+        <box data-name="card" onTransitionEnd={(e) => log.push(`card ${e.propertyName} ${e.elapsedTime}${e.pseudoElement}`)} />
       </box>,
     );
     const data = [0, 0, 0, 0, 0, 0.25, 0, 0];
@@ -367,7 +367,7 @@ describe("@iron/react events", () => {
   // M3-ANI-03
   test("onAnimationEnd gets the animation name", () => {
     let name = "";
-    createRoot().render(<box data-name="card" onAnimationEnd={(e) => (name = e.animationName)} />);
+    createRoot().render(<box data-name="card" onAnimationEnd={(e) => (name = e.animationName + e.pseudoElement)} />);
     dispatchUiEvent("animationend", path("card"), [0, 0, 0, 0, 0, 1, 0, 0], ["spin"]);
     expect(name).toBe("spin");
   });

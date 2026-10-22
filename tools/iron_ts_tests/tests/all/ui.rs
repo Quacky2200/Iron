@@ -5,7 +5,7 @@
 use iron_core::NodeId;
 use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
 use iron_ts_tests::uic::*;
-use iron_ui::{ROOT, UiTree};
+use iron_ui::{Input, Interaction, ROOT, UiTree};
 use iron_ui_native::{Event, Runtime};
 use std::sync::Mutex;
 
@@ -52,6 +52,7 @@ struct Ui {
     tree: UiTree,
     rt: Runtime,
     root: iron_ui_native::RootId,
+    inter: Interaction,
 }
 
 impl Ui {
@@ -62,6 +63,7 @@ impl Ui {
             tree: UiTree::new(300.0, 300.0),
             rt,
             root,
+            inter: Interaction::new(),
         }
     }
 
@@ -78,6 +80,32 @@ impl Ui {
 
     fn dump(&self) -> String {
         dump(&self.tree, ROOT)
+    }
+
+    /// One input through the interaction layer, its events running the compiled handlers like the
+    /// app does (`iron_ui_native::event_of`). Returns the event types it sent, in order.
+    fn input(&mut self, input: Input) -> Vec<&'static str> {
+        let rt = &mut self.rt;
+        let mut sent = Vec::new();
+        self.inter.handle(&mut self.tree, input, &mut |e| {
+            sent.push(e.kind.name());
+            match iron_ui_native::event_of(e) {
+                Some(mut ev) => rt.dispatch_handlers(&mut ev),
+                None => false,
+            }
+        });
+        no_errors(self.rt.settle(&mut self.tree));
+        sent
+    }
+
+    /// The compiled app's notes since the last call.
+    fn notes(&self) -> String {
+        text(unsafe { ts_uic_evLogText() })
+    }
+
+    fn at(&mut self, ms: f64) {
+        self.tree.set_time(ms);
+        self.tree.layout_if_needed();
     }
 }
 
@@ -500,5 +528,194 @@ fn a_function_that_returns_a_value_is_a_void_callback() {
     in_every_gc_mode(|| {
         let s = text(unsafe { ts_uic_valueCallbacks() });
         assert_eq!(s, "nnssmmooeemmoo:14");
+    });
+}
+
+fn key(name: &str) -> Input {
+    Input::KeyDown {
+        key: name.into(),
+        code: name.into(),
+        repeat: false,
+        text: None,
+    }
+}
+
+fn mv(x: f32, y: f32) -> Input {
+    Input::PointerMove { x, y }
+}
+
+fn press() -> Input {
+    Input::PointerDown {
+        button: 0,
+        time_ms: 0.0,
+    }
+}
+
+// M9-TS-3324
+//
+// `onFocus` / `onBlur` and their capture twins in a compiled game: the interaction layer sends
+// `focusin` / `focusout` (on Tab, `Input::Focus` and `Input::Blur`), they bubble from the input to
+// the form, capture runs outside-in first, and `relatedTarget` names the element focus came from
+// or went to.
+#[test]
+fn focus_and_blur_handlers_run_with_capture_bubbling_and_related_targets() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_focusApp() });
+        let form = ui.tree.children(ROOT)[0];
+        let (a, b) = (ui.tree.children(form)[0], ui.tree.children(form)[1]);
+        ui.notes();
+        assert_eq!(ui.input(Input::Focus(a)), ["focusin"]);
+        assert_eq!(ui.notes(), "cap-focus:focusin a-focus:0 form-focus:focusin");
+        assert_eq!(ui.input(Input::Focus(b)), ["focusout", "focusin"]);
+        assert_eq!(
+            ui.notes(),
+            format!(
+                "cap-blur:focusout a-blur:{} form-blur:focusout cap-focus:focusin b-focus:{} form-focus:focusin",
+                b.0, a.0
+            )
+        );
+        assert_eq!(ui.input(Input::Blur(b)), ["focusout"]);
+        assert_eq!(ui.notes(), "cap-blur:focusout b-blur:0 form-blur:focusout");
+        // Tab starts at the first field, then moves on.
+        assert_eq!(
+            ui.input(key("Tab")),
+            ["focusin"],
+            "no focus, no keydown target"
+        );
+        assert_eq!(ui.notes(), "cap-focus:focusin a-focus:0 form-focus:focusin");
+        assert_eq!(ui.input(key("Tab")), ["keydown", "focusout", "focusin"]);
+        assert_eq!(ui.inter.focused(), Some(b));
+        ui.notes();
+    });
+}
+
+// M9-TS-3325
+//
+// `onTransitionRun` / `Start` / `End` / `Cancel` with `propertyName` (kebab-case), `elapsedTime`
+// (seconds) and `pseudoElement` (empty), from the transitions the interaction layer reports.
+#[test]
+fn transition_handlers_get_the_property_and_the_elapsed_time() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_fadeApp() });
+        let boxn = ui.tree.children(ROOT)[0];
+        ui.at(0.0);
+        ui.input(Input::Refresh);
+        ui.notes();
+        ui.click(boxn);
+        ui.at(0.0);
+        let kinds = ui.input(Input::Refresh);
+        assert!(kinds.contains(&"transitionrun"), "{kinds:?}");
+        assert!(ui.notes().starts_with("run:opacity:0"));
+        ui.at(1000.0);
+        let kinds = ui.input(Input::Refresh);
+        assert!(kinds.contains(&"transitionend"), "{kinds:?}");
+        assert!(ui.notes().ends_with("end:opacity:1:0"));
+        // Reversed half way: the running transition is cancelled.
+        ui.click(boxn);
+        ui.at(1000.0);
+        ui.input(Input::Refresh);
+        ui.notes();
+        ui.at(1500.0);
+        ui.click(boxn);
+        ui.at(1500.0);
+        let kinds = ui.input(Input::Refresh);
+        assert!(kinds.contains(&"transitioncancel"), "{kinds:?}");
+        assert!(ui.notes().contains("cancel:opacity"));
+    });
+}
+
+// M9-TS-3326
+//
+// `onAnimationStart` / `Iteration` / `End` with `animationName` and `elapsedTime`.
+#[test]
+fn animation_handlers_get_the_name_and_the_elapsed_time() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.tree.add_stylesheet(
+            ".pulse { animation: glow 1s linear 2 } @keyframes glow { from { opacity: 1 } to { opacity: 0.5 } }",
+        );
+        ui.show(unsafe { ts_uic_pulseApp() });
+        ui.at(0.0);
+        assert_eq!(ui.input(Input::Refresh), ["animationstart"]);
+        assert_eq!(ui.notes(), "astart:glow");
+        ui.at(1100.0);
+        assert_eq!(ui.input(Input::Refresh), ["animationiteration"]);
+        assert_eq!(ui.notes(), "aiter:glow:1");
+        ui.at(2100.0);
+        assert_eq!(ui.input(Input::Refresh), ["animationend"]);
+        assert_eq!(ui.notes(), "aend:glow:2");
+    });
+}
+
+// M9-TS-3327
+//
+// Drag and drop in a compiled game: `dataTransfer` is one object from `dragstart` to `dragend`
+// (`setData` in the first, `getData` in the others), a drop is accepted by preventing `dragover`,
+// `dropped` says so on `dragend`; files dragged in from the system arrive as `dataTransfer.files`.
+#[test]
+fn drag_handlers_share_one_data_transfer_and_files_arrive_in_it() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_dragApp() });
+        ui.tree.layout_if_needed();
+        ui.input(mv(10.0, 10.0));
+        ui.input(press());
+        ui.notes();
+        let kinds = ui.input(mv(30.0, 10.0));
+        assert_eq!(kinds, ["dragstart", "drag", "dragenter", "dragover"]);
+        assert_eq!(ui.notes(), "dragstart:text/plain");
+        ui.input(mv(110.0, 10.0));
+        assert_eq!(ui.notes(), "enter:hello");
+        let kinds = ui.input(Input::PointerUp { button: 0 });
+        assert_eq!(&kinds[..2], ["drop", "dragend"]);
+        assert_eq!(ui.notes(), "drop:hello::text/plain dragend:true:hello:move");
+        // A drag nobody accepts ends with `dropped` false and the effect reset.
+        ui.input(mv(10.0, 10.0));
+        ui.input(press());
+        ui.input(mv(30.0, 10.0));
+        ui.input(mv(250.0, 200.0));
+        ui.notes();
+        ui.input(Input::PointerUp { button: 0 });
+        assert_eq!(ui.notes(), "dragend:false:hello:none");
+        // Files from the system.
+        let files: Vec<String> = vec!["C:\\games\\a.png".into(), "/tmp/dir/b.txt/".into()];
+        ui.input(Input::FileDragEnter {
+            files: files.clone(),
+            x: 110.0,
+            y: 10.0,
+        });
+        ui.notes();
+        let kinds = ui.input(Input::FileDrop { files });
+        assert!(kinds.contains(&"drop"), "{kinds:?}");
+        assert_eq!(ui.notes(), "drop::a.png+b.txt:Files");
+    });
+}
+
+// M9-TS-3328
+//
+// `onMouseEnter` / `onMouseLeave` / `onMouseMove` (the pointer events under React's mouse names);
+// `scroll` does not bubble to the outer `onScroll`.
+#[test]
+fn mouse_aliases_and_non_bubbling_events_follow_the_dom() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_hoverApp() });
+        ui.tree.layout_if_needed();
+        ui.input(mv(10.0, 10.0));
+        let notes = ui.notes();
+        assert!(
+            notes.contains("menter") && notes.contains("mmove"),
+            "{notes}"
+        );
+        ui.input(mv(150.0, 150.0));
+        assert_eq!(ui.notes(), "mleave");
+        ui.show(unsafe { ts_uic_scrollApp() });
+        ui.tree.layout_if_needed();
+        ui.input(mv(10.0, 10.0));
+        ui.notes();
+        ui.input(Input::Wheel { dx: 0.0, dy: 50.0 });
+        assert_eq!(ui.notes(), "scroll:50");
     });
 }

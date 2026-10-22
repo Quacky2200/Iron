@@ -23,6 +23,13 @@ pub enum Init {
     Str(usize),
     /// A constant (TypeScript expression text).
     Const(&'static str),
+    /// The element that lost or gained focus (`data[9]`, 0 for none) as `{ id }`, or null.
+    Related,
+    /// The drag's `IronDataTransfer` (one object from `dragstart` to `dragend`; the dragged files
+    /// are the event's strings).
+    Transfer,
+    /// `dragend` of a drag that was dropped somewhere that accepted it (`detail` is 1).
+    Dropped,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,6 +78,13 @@ pub const EVENT_FIELDS: &[EventField] = &[
     f("key", "string", Str(0)),
     f("code", "string", Str(1)),
     f("value", "string", Str(0)),
+    f("relatedTarget", "{ readonly id: number } | null", Related),
+    f("propertyName", "string", Str(0)),
+    f("animationName", "string", Str(0)),
+    f("elapsedTime", "number", Num(5)),
+    f("pseudoElement", "string", Const("\"\"")),
+    f("dataTransfer", "IronDataTransfer", Transfer),
+    f("dropped", "boolean", Dropped),
 ];
 
 /// The methods every event has, with the `Ui` call the compiled class makes.
@@ -131,7 +145,22 @@ pub const EVENT_INTERFACES: &[EventInterface] = &[
     EventInterface {
         name: "IronFocusEvent",
         extends: Some("IronEvent"),
-        fields: &[],
+        fields: &["relatedTarget"],
+    },
+    EventInterface {
+        name: "IronTransitionEvent",
+        extends: Some("IronEvent"),
+        fields: &["propertyName", "elapsedTime", "pseudoElement"],
+    },
+    EventInterface {
+        name: "IronAnimationEvent",
+        extends: Some("IronEvent"),
+        fields: &["animationName", "elapsedTime", "pseudoElement"],
+    },
+    EventInterface {
+        name: "IronDragEvent",
+        extends: Some("IronPointerEvent"),
+        fields: &["dataTransfer", "dropped"],
     },
     EventInterface {
         name: "IronScrollEvent",
@@ -187,6 +216,9 @@ pub const EVENT_PROPS: &[EventProp] = &[
     ),
     ep("onMouseDown", "pointerdown", "IronPointerEvent"),
     ep("onMouseUp", "pointerup", "IronPointerEvent"),
+    ep("onMouseMove", "pointermove", "IronPointerEvent"),
+    ep("onMouseEnter", "pointerenter", "IronPointerEvent"),
+    ep("onMouseLeave", "pointerleave", "IronPointerEvent"),
     ep("onWheel", "wheel", "IronWheelEvent"),
     ep("onKeyDown", "keydown", "IronKeyboardEvent"),
     ep("onKeyUp", "keyup", "IronKeyboardEvent"),
@@ -197,7 +229,66 @@ pub const EVENT_PROPS: &[EventProp] = &[
     ep("onScroll", "scroll", "IronScrollEvent"),
     ep("onCancel", "cancel", "IronEvent"),
     ep("onClose", "close", "IronEvent"),
+    ep("onTransitionRun", "transitionrun", "IronTransitionEvent"),
+    ep(
+        "onTransitionStart",
+        "transitionstart",
+        "IronTransitionEvent",
+    ),
+    ep("onTransitionEnd", "transitionend", "IronTransitionEvent"),
+    ep(
+        "onTransitionCancel",
+        "transitioncancel",
+        "IronTransitionEvent",
+    ),
+    ep("onAnimationStart", "animationstart", "IronAnimationEvent"),
+    ep(
+        "onAnimationIteration",
+        "animationiteration",
+        "IronAnimationEvent",
+    ),
+    ep("onAnimationEnd", "animationend", "IronAnimationEvent"),
+    ep("onAnimationCancel", "animationcancel", "IronAnimationEvent"),
+    ep("onDragStart", "dragstart", "IronDragEvent"),
+    ep("onDrag", "drag", "IronDragEvent"),
+    ep("onDragEnter", "dragenter", "IronDragEvent"),
+    ep("onDragOver", "dragover", "IronDragEvent"),
+    ep("onDragLeave", "dragleave", "IronDragEvent"),
+    ep("onDrop", "drop", "IronDragEvent"),
+    ep("onDragEnd", "dragend", "IronDragEvent"),
 ];
+
+/// Event types that bubble in the DOM (and in React): the others reach only their target (and the
+/// capture phase above it).
+pub const NON_BUBBLING: &[&str] = &["pointerenter", "pointerleave", "scroll", "cancel", "close"];
+
+/// Event types an engine can send that have no `on*` prop, with the reason.
+pub const NOT_EXPOSED: &[(&str, &str)] = &[];
+
+/// What `dataTransfer` of a drag event is: declared next to the event interfaces and written as the
+/// compiled `UiDataTransfer` class by `tools/iron_ts` (`ui_dts.rs`).
+pub const DATA_TRANSFER_TS: &str = "interface IronDroppedFile {
+  /** The full path on this machine. */
+  readonly path: string;
+  /** The file (or folder) name. */
+  readonly name: string;
+}
+
+/** What a drag carries, like the DOM's `DataTransfer`. */
+interface IronDataTransfer {
+  /** Set in `dragover` to say what a drop would do. */
+  dropEffect: \"none\" | \"copy\" | \"move\" | \"link\";
+  effectAllowed: \"none\" | \"copy\" | \"move\" | \"link\" | \"copyMove\" | \"copyLink\" | \"linkMove\" | \"all\" | \"uninitialized\";
+  /** Files dragged in from the system. */
+  readonly files: IronDroppedFile[];
+  readonly types: string[];
+  setData(format: string, data: string): void;
+  getData(format: string): string;
+  clearData(format?: string): void;
+  /** Shows `element` under the pointer while dragging, held at (x, y) inside it; null shows none. */
+  setDragImage(element: { readonly id: number } | null, x?: number, y?: number): void;
+}
+";
 
 /// The event type and capture flag of an `on*` prop name (`onClickCapture` listens to `click` while
 /// capturing).

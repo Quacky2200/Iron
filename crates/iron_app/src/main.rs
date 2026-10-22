@@ -1673,6 +1673,14 @@ impl App {
     fn apply_node_commands(&mut self) {
         use iron_ts_ui::NodeCommand;
         for c in iron_ts_ui::take_node_commands() {
+            if let NodeCommand::DragImage(id, x, y) = c {
+                // id 0: no drag image (the screen's interaction holds the drag).
+                let node = (id > 0).then_some(iron_core::NodeId(id));
+                let surface = node.map_or(Surface::Screen, |n| self.surface_of(n));
+                let (x, y) = (x as f32, y as f32);
+                self.handle_on(surface, Input::SetDragImage { id: node, x, y });
+                continue;
+            }
             let (id, input) = match c {
                 NodeCommand::Focus(id) => (id, Input::Focus(iron_core::NodeId(id))),
                 NodeCommand::Blur(id) => (id, Input::Blur(iron_core::NodeId(id))),
@@ -1684,6 +1692,7 @@ impl App {
                         y: y as f32,
                     },
                 ),
+                NodeCommand::DragImage(..) => unreachable!("handled above"),
             };
             let surface = self.surface_of(iron_core::NodeId(id));
             if matches!(c, NodeCommand::Focus(_)) && !matches!(surface, Surface::Window(_)) {

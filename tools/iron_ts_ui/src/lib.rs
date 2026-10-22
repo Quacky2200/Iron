@@ -571,6 +571,9 @@ pub enum NodeCommand {
     Blur(u32),
     /// Scroll the node's content to this offset.
     ScrollTo(u32, f64, f64),
+    /// `dataTransfer.setDragImage(element, x, y)`: the element to show under the pointer (0 for
+    /// none) and where it is held.
+    DragImage(u32, f64, f64),
 }
 
 thread_local! {
@@ -601,6 +604,12 @@ pub extern "C" fn ts_ui_node_blur(n: u64) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_node_scroll_to(n: u64, x: f64, y: f64) {
     node_command(n, |id| NodeCommand::ScrollTo(id, x, y));
+}
+
+/// `dataTransfer.setDragImage`: `id` 0 shows no drag image.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_drag_image(id: f64, x: f64, y: f64) {
+    NODE_COMMANDS.with(|c| c.borrow_mut().push(NodeCommand::DragImage(id as u32, x, y)));
 }
 
 // ---- context ----
@@ -811,6 +820,12 @@ pub unsafe extern "C" fn ts_ui_ev_str(i: f64, out_len: *mut i64) -> *const u8 {
     unsafe { return_string(s, out_len) }
 }
 
+/// How many strings the event carries (the dragged files of a drag event).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_ev_str_count() -> f64 {
+    with_event(|e| e.strings.len() as f64, 0.0)
+}
+
 /// # Safety
 /// `out_len` is a valid pointer.
 #[unsafe(no_mangle)]
@@ -911,6 +926,8 @@ pub fn link_anchor() -> usize {
         ts_ui_context_id as *const () as usize,
         ts_ui_ev_num as *const () as usize,
         ts_ui_ev_str as *const () as usize,
+        ts_ui_ev_str_count as *const () as usize,
+        ts_ui_drag_image as *const () as usize,
         ts_ui_ev_kind as *const () as usize,
         ts_ui_ev_target as *const () as usize,
         ts_ui_ev_target_kind as *const () as usize,
@@ -1051,7 +1068,14 @@ pub fn manifest_json() -> String {
         f("effect", "ts_ui_effect", &[("f", "fn:void")], "void"),
         f("evNum", "ts_ui_ev_num", &[("i", "f64")], "f64"),
         f("evStr", "ts_ui_ev_str", &[("i", "f64")], "string"),
+        f("evStrCount", "ts_ui_ev_str_count", &[], "f64"),
         f("evKind", "ts_ui_ev_kind", &[], "string"),
+        f(
+            "dragImage",
+            "ts_ui_drag_image",
+            &[("id", "f64"), ("x", "f64"), ("y", "f64")],
+            "void",
+        ),
         f("evTarget", "ts_ui_ev_target", &[], "f64"),
         f("evTargetKind", "ts_ui_ev_target_kind", &[], "string"),
         f("evStop", "ts_ui_ev_stop", &[], "void"),

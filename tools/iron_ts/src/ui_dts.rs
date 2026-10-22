@@ -11,7 +11,7 @@
 use iron_ui::tables::attrs::ATTRS;
 use iron_ui::tables::elements::ELEMENTS;
 use iron_ui::tables::events::{
-    EVENT_FIELDS, EVENT_INTERFACES, EVENT_METHODS, EVENT_PROPS, EventField, Init,
+    DATA_TRANSFER_TS, EVENT_FIELDS, EVENT_INTERFACES, EVENT_METHODS, EVENT_PROPS, EventField, Init,
 };
 use iron_ui::tables::react::{CREATE_ROOT, HOOKS, IRON_REACT_TYPES, Module, REACT_TYPES};
 use iron_ui::tables::style::{NAMED_TYPES, STYLE_PROPS, ts_type};
@@ -127,6 +127,7 @@ fn event_interfaces() -> String {
         }
         s += "}\n";
     }
+    s += DATA_TRANSFER_TS;
     s
 }
 
@@ -281,6 +282,7 @@ pub fn iron_react_exports() -> Vec<String> {
             .iter()
             .map(|s| s.to_string())
             .chain(EVENT_INTERFACES.iter().map(|i| i.name.to_string()))
+            .chain(["IronDataTransfer", "IronDroppedFile"].map(String::from))
             .chain([CREATE_ROOT.name.to_string()])
             .chain(
                 ELEMENTS
@@ -379,15 +381,128 @@ fn field_init(f: &EventField) -> String {
         Init::One(i) => format!("Ui.evNum({i}) === 1"),
         Init::Str(i) => format!("Ui.evStr({i})"),
         Init::Const(c) => c.into(),
+        Init::Related => "Ui.evNum(9) === 0 ? null : new UiRelated()".into(),
+        Init::Transfer => "__ui_transfer()".into(),
+        Init::Dropped => "Ui.evKind() === \"dragend\" && Ui.evNum(4) === 1".into(),
     }
 }
 
+/// The compiled `dataTransfer` of a drag event (`IronDataTransfer` of the tables): one object from
+/// `dragstart` to `dragend` for an element drag, one per set of files dragged in from the system.
+/// `Ui.evStr` holds the dragged files' paths.
+const DATA_TRANSFER_PRELUDE: &str = "class UiRelated {
+  id: number = Ui.evNum(9);
+}
+
+class UiDroppedFile {
+  path: string;
+  name: string;
+  constructor(path: string) {
+    this.path = path;
+    let end = path.length;
+    while (end > 0 && (path.charCodeAt(end - 1) === 47 || path.charCodeAt(end - 1) === 92)) end--;
+    let cut = end;
+    while (cut > 0 && path.charCodeAt(cut - 1) !== 47 && path.charCodeAt(cut - 1) !== 92) cut--;
+    this.name = end === 0 ? path : path.slice(cut, end);
+  }
+}
+
+class UiDataTransfer {
+  dropEffect: string = \"none\";
+  effectAllowed: string = \"uninitialized\";
+  files: UiDroppedFile[] = [];
+  keys: string[] = [];
+  values: string[] = [];
+  get types(): string[] {
+    const r: string[] = [];
+    for (let i = 0; i < this.keys.length; i++) r.push(this.keys[i]);
+    if (this.files.length > 0) r.push(\"Files\");
+    return r;
+  }
+  setData(format: string, data: string): void {
+    const k = format.toLowerCase();
+    const i = this.keys.indexOf(k);
+    if (i >= 0) {
+      this.values[i] = data;
+    } else {
+      this.keys.push(k);
+      this.values.push(data);
+    }
+  }
+  getData(format: string): string {
+    const i = this.keys.indexOf(format.toLowerCase());
+    return i >= 0 ? this.values[i] : \"\";
+  }
+  clearData(format?: string): void {
+    if (format === undefined) {
+      this.keys = [];
+      this.values = [];
+      return;
+    }
+    const i = this.keys.indexOf(format.toLowerCase());
+    if (i >= 0) {
+      this.keys.splice(i, 1);
+      this.values.splice(i, 1);
+    }
+  }
+  setDragImage(element: UiTarget | null, x: number = 0, y: number = 0): void {
+    Ui.dragImage(element === null ? 0 : element.id, x, y);
+  }
+}
+
+let __ui_drag: UiDataTransfer | null = null;
+let __ui_file_drag: UiDataTransfer | null = null;
+let __ui_file_key: string = \"\";
+let __ui_no_drag: UiDataTransfer | null = null;
+
+function __ui_transfer(): UiDataTransfer {
+  const kind = Ui.evKind();
+  if (kind.indexOf(\"drag\") !== 0 && kind !== \"drop\") {
+    let none = __ui_no_drag;
+    if (none === null) {
+      none = new UiDataTransfer();
+      __ui_no_drag = none;
+    }
+    return none;
+  }
+  const n = Ui.evStrCount();
+  if (n > 0) {
+    const paths: string[] = [];
+    for (let i = 0; i < n; i++) paths.push(Ui.evStr(i));
+    const key = paths.join(\"|\");
+    let files = __ui_file_drag;
+    if (files === null || __ui_file_key !== key) {
+      files = new UiDataTransfer();
+      for (let i = 0; i < n; i++) files.files.push(new UiDroppedFile(paths[i]));
+      __ui_file_drag = files;
+      __ui_file_key = key;
+    }
+    return files;
+  }
+  let t = __ui_drag;
+  if (kind === \"dragstart\" || t === null) {
+    t = new UiDataTransfer();
+    __ui_drag = t;
+  }
+  if (kind === \"dragend\") {
+    if (Ui.evNum(4) !== 1) t.dropEffect = \"none\";
+    __ui_drag = null;
+  }
+  return t;
+}
+
+";
+
 fn ui_event_class() -> String {
-    let mut s = String::from(
-        "class UiTarget {\n  id: number = Ui.evTarget();\n  type: string = Ui.evTargetKind();\n  value: string = Ui.evStr(0);\n}\n\nclass UiEvent {\n",
-    );
+    let mut s = String::from(DATA_TRANSFER_PRELUDE);
+    s += "class UiTarget {\n  id: number = Ui.evTarget();\n  type: string = Ui.evTargetKind();\n  value: string = Ui.evStr(0);\n}\n\nclass UiEvent {\n";
     for f in EVENT_FIELDS {
-        let ty = if f.name == "target" { "UiTarget" } else { f.ts };
+        let ty = match f.name {
+            "target" => "UiTarget",
+            "relatedTarget" => "UiRelated | null",
+            "dataTransfer" => "UiDataTransfer",
+            _ => f.ts,
+        };
         s += &format!("  {}: {} = {};\n", f.name, ty, field_init(f));
     }
     for (m, call) in EVENT_METHODS {
@@ -406,6 +521,9 @@ pub fn prelude() -> &'static str {
         for i in EVENT_INTERFACES {
             s += &format!("type {} = UiEvent;\n", i.name);
         }
+        s += "type IronDataTransfer = UiDataTransfer;
+type IronDroppedFile = UiDroppedFile;
+";
         s += "type FullScreenMode = \"ExclusiveFullScreen\" | \"FullScreenWindow\" | \"MaximizedWindow\" | \"Windowed\";\n";
         s += "interface Gamepad {\n  id: number;\n  name: string;\n  connected: boolean;\n  buttons: Record<string, number>;\n  axes: Record<string, number>;\n}\n";
         s += STYLE_ENTRIES;
@@ -476,6 +594,39 @@ mod tests {
         assert!(t.contains("interface IronElement {\n  focus(): void;\n  blur(): void;\n  scrollTo(x: number, y: number): void;\n}"), "{t}");
         // Docs travel with the properties.
         assert!(t.contains("/** `contents` drops the box: children join the parent's layout. */"));
+    }
+
+    // M9-TS-3334
+    #[test]
+    fn the_compiled_data_transfer_has_every_member_of_the_declared_interface() {
+        let p = prelude();
+        let class = &p[p.find("class UiDataTransfer").unwrap()..p.find("let __ui_drag").unwrap()];
+        let decl =
+            &DATA_TRANSFER_TS[DATA_TRANSFER_TS.find("interface IronDataTransfer").unwrap()..];
+        let mut members = 0;
+        for line in decl.lines().skip(1) {
+            let t = line.trim_start();
+            if t.starts_with("/**") || t.starts_with('}') || t.is_empty() {
+                continue;
+            }
+            let name: String = t
+                .trim_start_matches("readonly ")
+                .chars()
+                .take_while(|c| c.is_alphanumeric())
+                .collect();
+            let is_method = t.contains('(');
+            assert!(
+                class.contains(&format!("{}{name}", if is_method { "  " } else { "" }))
+                    && (class.contains(&format!("  {name}("))
+                        || class.contains(&format!("  {name}:"))
+                        || class.contains(&format!("get {name}("))),
+                "UiDataTransfer lacks `{name}`"
+            );
+            members += 1;
+        }
+        assert_eq!(members, 8);
+        assert!(declarations().contains("interface IronDataTransfer {"));
+        assert!(p.contains("type IronDataTransfer = UiDataTransfer;"));
     }
 
     // M9-TS-3310

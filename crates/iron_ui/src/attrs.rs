@@ -24,6 +24,13 @@ pub struct Attrs {
     pub placeholder: Option<String>,
     pub read_only: bool,
     pub rows: Option<u32>,
+    /// `cols`: a textarea's width in average characters (`CHAR_WIDTH` each) when CSS sets none.
+    pub cols: Option<u32>,
+    /// `title`: advisory text (a tooltip in browsers; kept on the element, no tooltip is drawn).
+    pub title: Option<String>,
+    /// `type` of an `input`, lower-cased. Selectors see it (`input[type="password"]`); it does not
+    /// change how the field behaves (every `input` is a text field).
+    pub input_type: Option<String>,
     /// Images: `src`, a path inside the game folder or a `data:` URL.
     pub src: Option<String>,
     /// Dialogs: `open`, `modal` (in the top layer, with a `::backdrop`) and `closedBy`.
@@ -104,6 +111,19 @@ impl Attrs {
                     }
                 }
             }
+            "title" => self.title = text().filter(|s| !s.is_empty()),
+            "type" => {
+                self.input_type = text()
+                    .map(|s| s.trim().to_ascii_lowercase())
+                    .filter(|s| !s.is_empty())
+            }
+            "cols" => {
+                self.cols = match value {
+                    Value::Null => None,
+                    Value::Number(n) if *n >= 1.0 => Some(*n as u32),
+                    _ => return Err(format!("invalid cols {value:?}")),
+                }
+            }
             "rows" => {
                 self.rows = match value {
                     Value::Null => None,
@@ -149,6 +169,8 @@ impl Attrs {
                 Direction::Ltr => "ltr",
                 Direction::Rtl => "rtl",
             }),
+            "title" => self.title.as_deref(),
+            "type" => self.input_type.as_deref(),
             "open" => self.open.then_some(""),
             "modal" => self.modal.then_some(""),
             n => self

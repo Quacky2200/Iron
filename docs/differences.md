@@ -281,6 +281,19 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `dragenter` | Doesn't need to be prevented | Must be prevented (with `dragover`) to accept | Fewer handlers for the same result |
 | System drags | Files only (paths); on Windows the position comes from `GetCursorPos`, elsewhere the last pointer position | Files, text, URLs, live position | winit 0.30 reports files without positions |
 
+## Events and attributes of elements
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| `pseudoElement` of transition and animation events | Always `""`; the event goes to the element | The pseudo-element's name (`::before`) | Generated boxes are not event targets |
+| `animationiteration` / `animationend` `elapsedTime` | `n * duration` and the active duration, as in the spec | Same | — |
+| `onFocus` / `onBlur` | Listen to `focusin` / `focusout` (they bubble); `focus` / `blur` are never sent | Same in React; the DOM has both | React semantics |
+| `relatedTarget` | `{ id }` of the other element (QuickJS: its instance) | The element | Scripts hold ids, not elements |
+| `title` | Stored on the element (`[title]` selectors work) | Shows a tooltip | No tooltip UI yet |
+| `cols` | A textarea is `cols` x 8 logical pixels wide when CSS sets no width | `cols` average characters of the font | Fixed character width, like the default sizes of fields |
+| `type` on `input` | Stored lower-cased (`input[type="password"]` selectors work); every input is a text field | Changes the control (masking, numbers, checkboxes) | Only text editing exists |
+| `dataTransfer` | See "Drag and drop" | | |
+
 ## Layout (M3d group 2)
 
 | Area | Iron | Browsers / spec | Why |

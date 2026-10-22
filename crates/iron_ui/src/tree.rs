@@ -1900,7 +1900,7 @@ impl<L: LayoutEngine> UiTree<L> {
             let elapsed = ((a.paused_at.unwrap_or(now) - a.start_ms - spec.delay_ms).max(0.0)
                 / 1000.0)
                 .min(spec.duration_ms * spec.iterations / 1000.0);
-            let mut event = |kind| {
+            let mut event = |kind, elapsed: f64| {
                 events.push(MotionEvent {
                     kind,
                     target: id,
@@ -1912,20 +1912,24 @@ impl<L: LayoutEngine> UiTree<L> {
                 Phase::Active(iteration, _) => {
                     if !a.started {
                         a.started = true;
-                        event(EventKind::AnimationStart);
+                        event(EventKind::AnimationStart, elapsed);
                     }
                     if iteration > a.iteration {
                         a.iteration = iteration;
-                        event(EventKind::AnimationIteration);
+                        // The DOM reports the time the iteration starts at, not when it was noticed.
+                        event(
+                            EventKind::AnimationIteration,
+                            iteration as f64 * spec.duration_ms / 1000.0,
+                        );
                     }
                 }
                 Phase::After if !a.ended => {
                     if !a.started {
                         a.started = true;
-                        event(EventKind::AnimationStart);
+                        event(EventKind::AnimationStart, elapsed);
                     }
                     a.ended = true;
-                    event(EventKind::AnimationEnd);
+                    event(EventKind::AnimationEnd, elapsed);
                 }
                 _ => {}
             }
@@ -2602,6 +2606,7 @@ impl<L: LayoutEngine> UiTree<L> {
                     }
                     editor.set_placeholder(attrs.placeholder.as_deref());
                     editor.rows = attrs.rows.unwrap_or(TEXTAREA_ROWS);
+                    editor.cols = attrs.cols;
                     self.layout.mark_dirty(id);
                     self.needs_layout = true;
                 }
@@ -4778,6 +4783,12 @@ fn attr_keys_changed(before: &Attrs, after: &Attrs) -> Vec<Key> {
     }
     if before.dir != after.dir {
         keys.push(Key::Attr("dir".into()));
+    }
+    if before.input_type != after.input_type {
+        keys.push(Key::Attr("type".into()));
+    }
+    if before.title != after.title {
+        keys.push(Key::Attr("title".into()));
     }
     if before.open != after.open {
         keys.push(Key::Attr("open".into()));

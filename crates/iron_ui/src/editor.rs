@@ -17,6 +17,8 @@ use crate::tree::PseudoStyle;
 pub const INPUT_WIDTH: f32 = 160.0;
 /// Default width of a `<textarea>` without one.
 pub const TEXTAREA_WIDTH: f32 = 240.0;
+/// Width of one character for `cols`, so that 20 characters make an [`INPUT_WIDTH`].
+pub const CHAR_WIDTH: f32 = 8.0;
 /// Visible rows of a `<textarea>` without `rows`.
 pub const TEXTAREA_ROWS: u32 = 2;
 /// The caret blinks on and off this often (ms); typing restarts it.
@@ -64,6 +66,8 @@ pub(crate) struct Editor {
     pub(crate) multiline: bool,
     /// Visible rows of a textarea (`rows`).
     pub(crate) rows: u32,
+    /// Width of a textarea in characters (`cols`).
+    pub(crate) cols: Option<u32>,
     /// The style the editor was last given, to restyle only on change.
     style: Option<ComputedText>,
     /// The placeholder text and its laid-out form (dimmed text colour).
@@ -86,6 +90,7 @@ impl Editor {
             editor: PlainEditor::new(16.0),
             multiline,
             rows: TEXTAREA_ROWS,
+            cols: None,
             style: None,
             placeholder: None,
             placeholder_style: None,
@@ -100,7 +105,10 @@ impl Editor {
     /// (or `rows` lines) of height.
     pub(crate) fn intrinsic_size(&self, known_width: Option<f32>) -> (f32, f32) {
         let (width, lines) = if self.multiline {
-            (TEXTAREA_WIDTH, self.rows)
+            (
+                self.cols.map_or(TEXTAREA_WIDTH, |c| c as f32 * CHAR_WIDTH),
+                self.rows,
+            )
         } else {
             (INPUT_WIDTH, 1)
         };
