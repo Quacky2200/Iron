@@ -171,7 +171,7 @@ container, LZ4 block codec, writer, reader, `Vfs` with `DirSource`/`PackSource`;
 unreferenced assets, both forms for code-literal textures, one shared pack, the cooker's RGBA8 fallback; encryption is out of scope.
 Differences to keep in mind:
 
-- [ ] Release builds read assets only from packs: dynamic asset paths built at run time need `resources/` or `iron.pack.include`.
+- [x] Dynamic asset paths built at run time (virtual file system plan, phase 0, 2026-10-22): `include` / `exclude` take globs (default `assets/**`), the build infers `assets/sfx/*.*` from template literals and `+` chains (`iron_ts::assetpaths`), reports what each reached, and `dist/assets.plan` makes the dev app warn about a loaded file a packaged build would miss (`M9-TS-2550..2553`, `M9-API-1143`). Packaged `emoji` checked in a screenshot run.
 - [ ] A cooked texture's GUID differs from its source's (`Assets.pathToGuid` answers the source GUID).
 - [ ] Packs hold `IRTX` v1 (largest mip first) until step 12; no mip streaming before that.
 - [ ] `iron-build pack` needs a built `iron_app` for cooking until `crates/iron_cook` (step 15).

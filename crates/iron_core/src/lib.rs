@@ -8,13 +8,14 @@ pub use glam;
 pub const WINDOW_TARGET: u32 = 0x4000_0000;
 
 mod assets;
+pub mod glob;
 mod ids;
 mod ops;
 pub mod payload;
 pub mod project;
 mod value;
 
-pub use assets::{decode_data_url, resolve_asset};
+pub use assets::{decode_data_url, plan_warning, resolve_asset, set_pack_plan};
 pub use ids::{ComponentId, EntityId, NodeId};
 pub use ops::{Commit, Op, OpBuffer};
 pub use value::Value;

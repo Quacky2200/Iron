@@ -3,7 +3,7 @@
 //! game's code (bundle, CSS, metadata, icon) as a payload at its end (`iron_core::payload`). The
 //! assets are copied to a `data/` folder beside it, never embedded. See `docs/iron-build.md`.
 
-use crate::{Options, build, icon, pe};
+use crate::{Options, build, icon, include, pe};
 use iron_core::payload::{self, Archive};
 use iron_core::project::{FixedUser, LoadOptions, Platform, Project, SystemUser, UserInfo};
 use serde_json::Value;
@@ -214,6 +214,8 @@ pub struct Collected {
     /// Everything for `data/`, including the files also embedded as essentials.
     pub data: Vec<DataFile>,
     pub info: DataInfo,
+    /// Problems with what was selected (an `include` that matches nothing).
+    pub warnings: Vec<String>,
 }
 
 /// `dir` is one plain folder name (no separators, not hidden).
@@ -261,7 +263,7 @@ pub fn copy_data(files: &[DataFile], dir: &Path) -> Result<u64, String> {
 /// at most [`ESSENTIALS_LIMIT`] (256 KiB); past it none is embedded, a large file never is.
 ///
 /// The **data** files are everything the game may read: every asset the bundle names, the scene
-/// `iron.startScene`, every path of `iron.include` (files or folders; default `["assets"]`), each
+/// `iron.startScene`, everything `include` selects (paths, folders, globs; default `["assets/**"]`, minus `exclude`) and the matches of the dynamic path patterns the build found, each
 /// with its `.meta`, and the other files of `dist/` (what the CSS references). Not `game.o`,
 /// `game_bindings.rs`, `*.exe`, `game.js`, source maps, dot files, copies of assets in `dist/` or
 /// anything under `exclude` (the output's own data folder).
@@ -289,22 +291,36 @@ pub fn collect_files(
     let mut wanted = named.clone();
     wanted.extend(project.start_scene.clone());
     // The build finds assets by the string literals of the program; a path built at run time
-    // (`"assets/" + name`) or inside CSS text is missed, so the `assets` folder goes in whole
-    // unless `iron.include` says what to take instead.
-    let include = project
-        .include
-        .clone()
-        .unwrap_or_else(|| vec!["assets".to_owned()]);
-    for inc in &include {
-        let rel = inc.trim_end_matches('/');
+    // (`"assets/" + name`) is a pattern (`assets/*.png`, from the bundle's `patterns`), and
+    // CSS text is not seen at all, so the `assets` folder goes in whole unless `include` says
+    // what to take instead. `include` and `exclude` hold paths, folders and globs.
+    let mut warnings = Vec::new();
+    let all = include::game_files(game);
+    for inc in project.include.iter().flatten() {
+        let rel = inc.trim_start_matches("./").trim_end_matches('/');
         if !payload::safe_path(rel) {
             return Err(format!("include: unsafe path {rel:?}"));
         }
-        let p = game.join(rel);
-        if p.is_dir() {
-            walk(game, &p, &mut wanted)?;
-        } else {
-            wanted.push(rel.to_owned());
+    }
+    let selected = include::select(&all, project.include.as_deref(), project.exclude.as_deref());
+    for u in &selected.unmatched {
+        warnings.push(format!("include {u:?} matches no file"));
+    }
+    wanted.extend(selected.files);
+    let excluded = |f: &str| {
+        project
+            .exclude
+            .iter()
+            .flatten()
+            .any(|x| iron_core::glob::include_match(x, f))
+    };
+    for p in bundle["patterns"].as_array().into_iter().flatten() {
+        if let Some(glob) = p["glob"].as_str() {
+            wanted.extend(
+                include::match_pattern(&all, glob)
+                    .into_iter()
+                    .filter(|f| !excluded(f)),
+            );
         }
     }
     let mut paths: Vec<String> = Vec::new();
@@ -394,6 +410,7 @@ pub fn collect_files(
         payload: files,
         data,
         info,
+        warnings,
     })
 }
 
@@ -604,6 +621,11 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         &data_dir,
         &[abs(&data_path)],
     )?;
+    for w in &collected.warnings {
+        if !warnings.contains(w) {
+            warnings.push(w.clone());
+        }
+    }
     if is_pe {
         let ico = match &icon {
             Some((_, data)) => Some(icon::to_ico(data)?),
@@ -948,6 +970,66 @@ mod tests {
         )
         .unwrap();
         assert!(!c.data.iter().any(|f| f.rel.starts_with("dist/")));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2552
+    #[test]
+    fn globs_in_include_work_patterns_add_their_files_and_nothing_drops_silently() {
+        let d = game_folder("globs");
+        for f in [
+            "assets/sfx/a.wav",
+            "assets/sfx/b.wav",
+            "assets/sfx/c.mp3",
+            "assets/wip/w.psd",
+            "assets/wip/v.png",
+        ] {
+            std::fs::create_dir_all(d.join(f).parent().unwrap()).unwrap();
+            std::fs::write(d.join(f), f).unwrap();
+        }
+        std::fs::write(
+            d.join("dist/game.irbundle"),
+            r#"{"format":1,"assets":["assets/a.png"],"patterns":[{"glob":"assets/sfx/*.*"}]}"#,
+        )
+        .unwrap();
+        let mut p = pkg();
+        p["iron"]["include"] = json!(["extra/*.txt", "assets/nope/*.png"]);
+        p["iron"]["exclude"] = json!(["assets/sfx/b.wav"]);
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
+        let data: Vec<&str> = c.data.iter().map(|f| f.rel.as_str()).collect();
+        // The glob, the pattern's matches (minus exclude) and the named asset are taken.
+        for want in [
+            "extra/x.txt",
+            "assets/sfx/a.wav",
+            "assets/sfx/c.mp3",
+            "assets/a.png",
+        ] {
+            assert!(data.contains(&want), "{want} missing from {data:?}");
+        }
+        for not in [
+            "extra/sub/y.txt",
+            "assets/sfx/b.wav",
+            "assets/wip/v.png",
+            "assets/unused.png",
+        ] {
+            assert!(!data.contains(&not), "{not} should be left out");
+        }
+        // A pattern that reaches nothing is said, not dropped.
+        assert!(
+            c.warnings.iter().any(|w| w.contains("assets/nope/*.png")),
+            "{:?}",
+            c.warnings
+        );
+        // `exclude` also trims the default include.
+        p["iron"].as_object_mut().unwrap().remove("include");
+        p["iron"]["exclude"] = json!(["**/*.psd", "assets/wip"]);
+        let c =
+            collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
+        let data: Vec<&str> = c.data.iter().map(|f| f.rel.as_str()).collect();
+        assert!(data.contains(&"assets/sfx/b.wav") && data.contains(&"assets/unused.png"));
+        assert!(!data.iter().any(|f| f.starts_with("assets/wip")));
+        assert!(c.warnings.is_empty());
         let _ = std::fs::remove_dir_all(&d);
     }
 

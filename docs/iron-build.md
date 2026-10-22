@@ -70,7 +70,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
 | `startScene` | none | scene loaded at start |
 | `layers`, `quality`, `display` | none | layer names, quality levels and default, window mode and size (as before in `iron`) |
 | `fps`, `runInBackground` | on / false | FPS counter, `Application.runInBackground` |
-| `dataDir`, `include` | `data`, `["assets"]` | data folder name beside the exe; files or folders also copied to it |
+| `dataDir`, `include`, `exclude` | `data`, `["assets/**"]`, none | data folder name beside the exe; what `package` copies to it: paths, folders or globs (`*` inside one path part, `**` across parts, `?`; case-sensitive; a plain folder means `folder/**`), minus the `exclude` globs. An `include` entry that matches no file is a warning |
 | `windows`, `macos`, `linux`, `android`, `ios` | none | an object whose keys replace the top-level ones when building for that platform |
 
 Unknown keys are kept as they are. `package` picks the platform from the host executable (PE: windows, ELF: linux, Mach-O: macos);
@@ -141,6 +141,21 @@ as the templates resolve now:
    runs `iron <game> --cook` (the engine's cooker) when `target/{release,debug}/iron_app` is found.
 7. **`dist/game.irbundle`**, written atomically (temporary file and rename).
 
+## Dynamic asset paths and `dist/assets.plan`
+
+The build also reads the code's template literals and `+` chains with a literal folder first
+(`iron_ts::assetpaths`, an oxc visitor). Each hole becomes `*` (one path part): `` `assets/sfx/${n}.${ext}` `` is `assets/sfx/*.*`,
+`"assets/" + name + ".png"` is `assets/*.png`. A pattern needs a literal folder before the first hole and a file name with a dot
+that ends in `*` or an asset extension. `iron-build build` prints one `note:` per pattern (`src/sfx.ts:60: dynamic path
+assets/sfx/*.* reaches 79 file(s): ...`), warns about a pattern that reaches no asset file and about a whole asset-looking
+literal (`"assets/a.png"`) that names no file, and records the patterns and their matches in `game.irbundle` as `patterns`
+(`glob`, `at`, `matches`). `package` copies the matches too, so a narrowed `include` still ships what the code builds.
+
+`dist/assets.plan` lists, one per line, the files a packaged build would hold (include minus exclude, named assets, `startScene`,
+pattern matches, `dist/` copies from CSS). In the dev loop `iron_app` reads it and `iron_core::resolve_asset` logs once per path
+`asset "assets/x.wav" loaded, but a packaged build would not include it (add it to "include" in project.json)` for a file that
+exists but is not in the plan.
+
 ## `game.irbundle`
 
 JSON, `format` 1:
@@ -148,7 +163,8 @@ JSON, `format` 1:
 ```json
 { "format": 1, "title": "...", "company": "...", "identifier": "...", "entry": "src/main.tsx",
   "source": "<one TypeScript/TSX text>", "files": ["src/tween.ts", "src/main.tsx"],
-  "css": "game.css", "assets": ["assets/coin.png"] }
+  "css": "game.css", "assets": ["assets/coin.png"],
+  "patterns": [{ "glob": "assets/sfx/*.*", "at": "src/sfx.ts:60", "matches": ["assets/sfx/a.wav"] }] }
 ```
 
 `source` has no `@iron/*` or `react` imports: the host compiles it with the engine manifests and the `Ui` manifest. A host reads
@@ -360,10 +376,11 @@ a table with an unsafe path is refused. **What goes in** (paths relative to the 
 Everything else is **not** in the exe: textures, models, sounds, fonts, scene files, `.meta` files. Those are the **data files**,
 copied to `data/` with the same relative paths:
 
-- every asset the bundle names, `startScene`, and everything under `include` (a list of files or folders; **default
-  `["assets"]`**, the whole folder, because the build finds assets only by string literals and misses paths built at run time or
-  named inside CSS text; `include` still means "also copy these"), each with its `.meta`. The game folder's copy is used, not
-  `dist/`'s;
+- every asset the bundle names, `startScene`, everything `include` selects (paths, folders, globs; **default
+  `["assets/**"]`**, the whole folder, referenced or not, because the build finds assets only by string literals and misses paths
+  built at run time or named inside CSS text) minus `exclude`, and the files the code's dynamic paths reach (below), each with its
+  `.meta`. `exclude` trims `include` and the dynamic matches, never an asset the code names by a whole literal. The game
+  folder's copy is used, not `dist/`'s;
 - the other files of `dist/` (hashed fonts and images the CSS references), as `data/dist/...`. Not `game.o`,
   `game_bindings.rs`, `*.exe`, `game.js`, `vendor.js`, source maps, dot files or the output's own data folder.
 

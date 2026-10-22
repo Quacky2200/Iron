@@ -1361,6 +1361,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2421 | Unit | A non-square image is centred on a square; an `.ico` passes through unchanged; garbage is an error. |
 | M9-TS-2430 | Unit | Version info (ProductName, CompanyName, FileDescription, LegalCopyright, FileVersion, ProductVersion, OriginalFilename, 1.2.3.0 numbers) and the four icon sizes written into a PE file read back, and a payload appended after the edit is found (Windows; `iron_build/src/pe.rs`). |
 | M9-TS-2440 | Manual | `cargo test -p iron_build -- --ignored standalone` (needs a built `iron_app`, GPU): packages `examples/hello`, deletes the game folder and runs the exe from another folder with `--screenshot out.png --frames 5`. Checked by eye for hello (a log-only game, background colour) and boxes (the stripes image from `assets/` shows). |
+| M9-TS-2550 | Unit | Globs (`iron_core::glob`): `*` stays inside one path part, `**` crosses parts, `?`, case-sensitive; a plain path in `include` means the folder below it. |
+| M9-TS-2551 | Unit | Dynamic path inference (`iron_ts::assetpaths`): templates and `+` chains become globs, one `*` per hole (nested holes too); prefix-less paths, paths without a file name, URLs and text with spaces are refused; whole literals and lines are reported. |
+| M9-TS-2552 | Unit | `include` / `exclude` selection (`iron_build::include`) and `collect_files`: globs work, a pattern's matches are copied under a narrowed `include`, `exclude` removes files, an unmatched `include` is a warning not a silent drop. |
+| M9-TS-2553 | Manual | `iron-build package examples/emoji --host target/debug/iron_app.exe --out <dir>/emoji.exe`, then `emoji.exe --screenshot out.png --frames 150` from that folder with `IRON_LOG_FILE`: no `not found`, the sounds decode and the SVG emoji are drawn (checked 2026-10-22). |
 | M9-TS-2600 | Unit | The payload holds `dist/game.irbundle`, `dist/game.css`, `package.json`, the icon and the bundle-named assets only while those total at most 256 KiB (exactly at the limit: embedded, one byte over: none); `.meta`, unnamed assets and CSS files are never embedded. |
 | M9-TS-2601 | Unit | `iron.dataRequired` is false for a game without assets and for one whose only assets are embedded essentials (a `.meta` does not count); an unnamed file in `assets/` makes it true. |
 | M9-TS-2602 | Unit | `--data-dir` accepts one plain folder name and refuses empty, `.`, `..`, separators, drive letters and dot names. |
@@ -1431,6 +1435,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1110 | Unit | The VFS answers from the last mounted source, a patch tombstone hides an asset, `guid:` and `data:` sources work, unmounting restores the old answer (`vfs.rs`). |
 | M9-API-1111 | Unit | A game folder (`DirSource`, `.meta` GUIDs) and a pack answer the same calls with the same bytes, info and GUIDs; paths outside the game are refused. |
 | M9-API-1112 | Unit | A path's cooked form is found beside its source form. |
+| M9-API-1143 | Unit | A loaded file outside `dist/assets.plan` gets a warning that names it and `include`; `.meta`, `dist/` and listed files get none (`iron_core::plan_warning`). |
 
 ## M9.b — Windows API (`docs/research/iron-windows-plan.md`)
 

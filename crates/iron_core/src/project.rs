@@ -282,7 +282,10 @@ pub struct Project {
     pub data_dir: Option<String>,
     /// Written by the packager: false when the exe runs without a data folder.
     pub data_required: Option<bool>,
+    /// Files the packager takes: paths, folders or globs (`*`, `**`); default `["assets/**"]`.
     pub include: Option<Vec<String>>,
+    /// Globs removed from what `include` and the inferred patterns matched.
+    pub exclude: Option<Vec<String>>,
     pub fps: Option<bool>,
     pub run_in_background: bool,
     pub layers: Value,
@@ -354,6 +357,7 @@ const KNOWN_KEYS: &[&str] = &[
     "licenseFile",
     "dataRequired",
     "include",
+    "exclude",
     "fps",
     "runInBackground",
     "layers",
@@ -896,6 +900,9 @@ impl Project {
         if let Some(i) = &self.include {
             m.insert("include".into(), i.clone().into());
         }
+        if let Some(i) = &self.exclude {
+            m.insert("exclude".into(), i.clone().into());
+        }
         if let Some(f) = self.fps {
             m.insert("fps".into(), f.into());
         }
@@ -1072,14 +1079,16 @@ fn build(
     let layers = passthrough(&mut r, "layers")?;
     let quality = passthrough(&mut r, "quality")?;
     let display = passthrough(&mut r, "display")?;
-    let include = match passthrough(&mut r, "include")? {
+    let strings = |v: Value| match v {
         Value::Array(a) => Some(
             a.iter()
                 .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect(),
+                .collect::<Vec<_>>(),
         ),
         _ => None,
     };
+    let include = strings(passthrough(&mut r, "include")?);
+    let exclude = strings(passthrough(&mut r, "exclude")?);
     let mut extra = Map::new();
     for (k, v) in &doc {
         if !KNOWN_KEYS.contains(&k.as_str()) {
@@ -1103,6 +1112,7 @@ fn build(
         data_dir,
         data_required: doc.get("dataRequired").and_then(Value::as_bool),
         include,
+        exclude,
         fps: doc.get("fps").and_then(Value::as_bool),
         run_in_background: doc
             .get("runInBackground")
@@ -1437,7 +1447,7 @@ mod tests {
         let p = load_ok(
             "rt",
             r#"{ "// c": 1, "name": "g", "title": "$${raw} ${firstName}", "startScene": "a.scene.json",
-                 "layers": {"8": "X${username}"}, "include": ["assets", "extra"], "future": {"k": "${username}"},
+                 "layers": {"8": "X${username}"}, "include": ["assets", "extra"], "exclude": ["**/*.psd"], "future": {"k": "${username}"},
                  "windows": {"fps": false} }"#,
         );
         assert_eq!(p.title, "${raw} Matthew");
@@ -1456,6 +1466,7 @@ mod tests {
             q.include,
             Some(vec!["assets".to_owned(), "extra".to_owned()])
         );
+        assert_eq!(q.exclude, Some(vec!["**/*.psd".to_owned()]));
         assert_eq!(q.to_json(), j);
     }
 

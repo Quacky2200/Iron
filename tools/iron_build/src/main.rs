@@ -65,6 +65,18 @@ fn main() {
                         Tsc::Ok => println!("tsc: ok"),
                         _ => {}
                     }
+                    for p in &r.patterns {
+                        let shown: Vec<&str> =
+                            p.matches.iter().take(3).map(String::as_str).collect();
+                        println!(
+                            "note: {}: dynamic path {} reaches {} file(s){}{}",
+                            p.at,
+                            p.glob,
+                            p.matches.len(),
+                            if shown.is_empty() { "" } else { ": " },
+                            shown.join(", ") + if p.matches.len() > 3 { ", ..." } else { "" }
+                        );
+                    }
                     for w in r.warnings {
                         eprintln!("warning: {w}");
                     }

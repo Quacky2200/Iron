@@ -11,6 +11,7 @@ pub mod assets;
 pub mod css;
 pub mod dev;
 pub mod icon;
+pub mod include;
 pub mod init;
 pub mod package;
 pub mod pe;
@@ -32,6 +33,10 @@ pub struct GameConfig {
     pub include: Vec<String>,
     pub jsx: Option<String>,
     pub has_tsconfig: bool,
+    /// `project.json` `include` / `exclude` (files, folders, globs) and `startScene`.
+    pub pack_include: Option<Vec<String>>,
+    pub pack_exclude: Option<Vec<String>>,
+    pub start_scene: Option<String>,
     /// One warning per metadata field `project.json` leaves empty on purpose (`build` and
     /// `package` print them, `check` does not).
     pub empty_field_warnings: Vec<String>,
@@ -114,6 +119,9 @@ impl GameConfig {
             include,
             jsx: ts["compilerOptions"]["jsx"].as_str().map(String::from),
             has_tsconfig: ts_path.exists(),
+            pack_include: project.include.clone(),
+            pack_exclude: project.exclude.clone(),
+            start_scene: project.start_scene.clone(),
             empty_field_warnings,
         })
     }
@@ -222,6 +230,8 @@ pub struct Report {
     pub files: Vec<String>,
     pub css_files: Vec<String>,
     pub assets: Vec<String>,
+    /// The dynamic path families the code builds and what each reaches.
+    pub patterns: Vec<include::PatternMatch>,
     pub tsc: Tsc,
     pub warnings: Vec<String>,
     pub object_bytes: usize,
@@ -448,6 +458,74 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
         }
     }
 
+    // Paths built at run time (`assets/sfx/${n}.wav` is `assets/sfx/*.*`): which files they reach.
+    let all_files = include::game_files(root);
+    let found = iron_ts::assetpaths::asset_paths(&bundle.source);
+    let at = |line: usize| {
+        bundle
+            .locate(line)
+            .map_or_else(|| format!("line {line}"), |(f, l)| format!("{f}:{l}"))
+    };
+    let mut patterns = Vec::new();
+    for (glob, line) in &found.patterns {
+        if !include::asset_looking_glob(glob) {
+            continue;
+        }
+        let matches = include::match_pattern(&all_files, glob);
+        if matches.is_empty() {
+            warnings.push(format!(
+                "{}: the dynamic path {glob:?} matches no asset file",
+                at(*line)
+            ));
+        }
+        patterns.push(include::PatternMatch {
+            glob: glob.clone(),
+            at: at(*line),
+            matches,
+        });
+    }
+    for (lit, line) in &found.literals {
+        if include::asset_looking_literal(lit)
+            && iron_core::resolve_asset(root, lit).is_some_and(|p| !p.is_file())
+        {
+            warnings.push(format!("{}: {lit:?} names no file", at(*line)));
+        }
+    }
+    let selected = include::select(
+        &all_files,
+        config.pack_include.as_deref(),
+        config.pack_exclude.as_deref(),
+    );
+    for u in &selected.unmatched {
+        warnings.push(format!("project.json include {u:?} matches no file"));
+    }
+    // What a packaged build would hold (the dev app warns about a loaded file outside it).
+    let excluded = |f: &str| {
+        config
+            .pack_exclude
+            .iter()
+            .flatten()
+            .any(|x| iron_core::glob::include_match(x, f))
+    };
+    let mut plan: Vec<String> = selected.files;
+    plan.extend(names.iter().cloned());
+    plan.extend(config.start_scene.iter().cloned());
+    for p in &patterns {
+        plan.extend(p.matches.iter().filter(|f| !excluded(f)).cloned());
+    }
+    plan.extend(copied.iter().map(|c| format!("dist/{c}")));
+    plan.sort();
+    plan.dedup();
+    write_atomic(
+        &dist.join("assets.plan"),
+        plan.join(
+            "
+",
+        )
+        .as_bytes(),
+    )
+    .map_err(|e| e.to_string())?;
+
     let irbundle = serde_json::json!({
         "format": 1,
         "title": config.title,
@@ -458,6 +536,9 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
         "files": bundle.files,
         "css": css_name,
         "assets": names,
+        "patterns": patterns.iter().map(|p| serde_json::json!({
+            "glob": p.glob, "at": p.at, "matches": p.matches,
+        })).collect::<Vec<_>>(),
     });
     let text = serde_json::to_string_pretty(&irbundle).map_err(|e| e.to_string())?;
     write_atomic(&dist.join("game.irbundle"), text.as_bytes()).map_err(|e| e.to_string())?;
@@ -477,12 +558,12 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
                 .push("--cook: the `iron` binary was not found (cargo build -p iron_app)".into()),
         }
     }
-    let _ = copied;
     Ok(Report {
         config,
         files: bundle.files,
         css_files: bundle.css,
         assets: names,
+        patterns,
         tsc,
         warnings,
         object_bytes,

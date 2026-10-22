@@ -209,6 +209,11 @@ fn run() -> Result<()> {
     )
     .path()
     .to_path_buf();
+    // Dev loop: `iron-build build` lists what a packaged build would hold; loading a file outside
+    // it logs a warning (a packaged game would not find it).
+    if let Ok(plan) = std::fs::read_to_string(code_root.join("dist/assets.plan")) {
+        iron_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
+    }
     // A compiled (native) game is JIT-compiled below; there is no JavaScript to read.
     let native_bundle = if native::is_native(&bundle_path) {
         Some(native::Bundle::read(&bundle_path)?)
