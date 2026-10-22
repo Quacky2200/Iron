@@ -143,6 +143,11 @@ export function FaceButton({ button, style }: { button: "South" | "East" | "West
   );
 }
 
+/** LT (0) or RT (1) as this pad labels it. */
+export function Trigger({ side, style }: { side: 0 | 1; style: PadStyle }) {
+  return <Bumper label={TRIGGERS[style][side]} />;
+}
+
 function Bumper({ label }: { label: string }) {
   return (
     <box className="glyph bumper">

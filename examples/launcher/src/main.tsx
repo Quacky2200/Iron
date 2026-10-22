@@ -26,6 +26,7 @@ import {
   Glyphs,
   Hint,
   noteMouse,
+  Trigger,
   okButton,
   padStyle,
   useDevice,
@@ -45,7 +46,9 @@ const MARGIN = 48;
 type Mode = "browse" | "details" | "loading" | "alert" | "menu" | "context";
 type View = "carousel" | "grid";
 type Category = "all" | "favourites";
-type Act = "left" | "right" | "up" | "down" | "ok" | "back" | "view" | "options" | "menu" | "escape" | "category";
+/** In tab order, left to right. */
+const CATEGORIES: Category[] = ["all", "favourites"];
+type Act = "left" | "right" | "up" | "down" | "ok" | "back" | "view" | "options" | "menu" | "escape" | "prevCategory" | "nextCategory";
 interface Alert {
   title: string;
   body: string;
@@ -415,8 +418,10 @@ function App() {
   const handler = useRef<(a: Act) => void>(() => {});
   handler.current = (act: Act) => {
     const a = act === "escape" ? (mode === "browse" ? "menu" : "back") : act;
-    if (a === "category" && (mode === "browse" || mode === "menu")) {
-      setCategory(category === "favourites" ? "all" : "favourites");
+    if ((a === "prevCategory" || a === "nextCategory") && (mode === "browse" || mode === "menu")) {
+      // The ends stop: LT on the first tab (or RT on the last) does nothing.
+      const next = CATEGORIES[CATEGORIES.indexOf(category) + (a === "prevCategory" ? -1 : 1)];
+      if (next) setCategory(next);
       setMode("browse");
     } else if (mode === "browse") {
       if (a === "menu") show("menu");
@@ -463,7 +468,6 @@ function App() {
       KeyG: "view",
       KeyC: "options",
       ContextMenu: "options",
-      Tab: "category",
     };
     const PAD: Record<string, Act> = {
       DPadLeft: "left",
@@ -475,12 +479,14 @@ function App() {
       North: "options",
       RightStick: "view",
       Start: "menu",
-      LeftTrigger: "category",
-      RightTrigger: "category",
+      LeftTrigger: "prevCategory",
+      RightTrigger: "nextCategory",
     };
     const STEPS = new Set<Act>(["left", "right", "up", "down"]);
     const offKeys = input.on("keydown", (e) => {
-      const a = KEYS[e.code];
+      // Tab and Shift+Tab step through the categories, like the triggers.
+      const shift = input.getKey("ShiftLeft") || input.getKey("ShiftRight");
+      const a = e.code === "Tab" ? (shift ? "prevCategory" : "nextCategory") : KEYS[e.code];
       // Held arrows repeat; the rest act once per press.
       if (a && (!e.repeat || STEPS.has(a))) act(a);
     });
@@ -542,7 +548,7 @@ function App() {
         <Text className="logo">IRON</Text>
         <Text className="logo-sub">examples</Text>
         <box className="tabs">
-          {pad ? <Glyphs action="category" device={device} /> : null}
+          {pad ? <Trigger side={0} style={pad} /> : null}
           <box className={category === "all" ? "tab on" : "tab"} onClick={() => setCategory("all")}>
             <Text>All games</Text>
             <Text className="tab-count">{String(GAMES.length)}</Text>
@@ -552,6 +558,7 @@ function App() {
             <Text>Favourites</Text>
             <Text className="tab-count">{String(favourites.size)}</Text>
           </box>
+          {pad ? <Trigger side={1} style={pad} /> : null}
         </box>
         <box className="grow" />
         <Text key={deviceName(device)} className="device">
