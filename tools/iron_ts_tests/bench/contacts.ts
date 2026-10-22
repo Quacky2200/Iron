@@ -126,6 +126,14 @@ export function buildComponents2D(floor: GameObject, thing: GameObject, zone: Ga
   thing.addComponent(Rigidbody2D);
 }
 
+/** The concrete 2D colliders name their body `attachedRigidbody`, as the `Collider2D` base does. */
+export function attached2D(floor: GameObject, thing: GameObject): string {
+  const c = thing.getComponent(CircleCollider2D)!;
+  const f = floor.getComponent(BoxCollider2D)!;
+  const own = c.attachedRigidbody === thing.getComponent(Rigidbody2D);
+  return `${own}|${c.attachedRigidbody.gameObject.name}|${f.attachedRigidbody ? "rb" : "none"}`;
+}
+
 export function logText(): string {
   return log;
 }

@@ -43,7 +43,6 @@ physics). What is left out or differs:
 | `relativeVelocity` | The other side's velocity minus this one's: going into the contact for Enter, as the bodies move for Stay and Exit | The velocity at the contact | Read from the bodies when the hook runs |
 | Contact points | Halfway between the two surfaces; points within rapier's prediction distance count (`separation` may be a little above 0); none in Exit or trigger hooks | PhysX: on the surface, within `contactOffset` | rapier's manifolds |
 | Trigger hooks | Get the other `Collider` / `Collider2D`; one whose parameter is typed `Collision` gets a `Collision` (no contact points) | Always the `Collider` | Older Iron games typed it that way |
-| The concrete 2D collider classes | Still name it `attachedRigidbody2d` (the base `Collider2D` has `attachedRigidbody`) | `attachedRigidbody` | Kept so existing games build |
 
 ## Native Shapes, Spline and SplineAnimate (2026-10-22)
 

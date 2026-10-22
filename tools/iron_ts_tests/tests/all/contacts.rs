@@ -300,3 +300,22 @@ fn a_2d_collision_hook_sees_unity_collision2d_members() {
         assert!((num(&f, "ny") + 1.0).abs() < 1e-3, "{l}");
     });
 }
+
+// M9-TS-1006
+//
+// The concrete 2D colliders name their body `attachedRigidbody`, as `Collider2D` and Unity do: the
+// ball's CircleCollider2D gives its own Rigidbody2D, the floor's BoxCollider2D none.
+#[test]
+fn concrete_2d_colliders_have_attached_rigidbody() {
+    in_every_gc_mode(|| unsafe {
+        let mut scene = Scene::new();
+        let _scope = iron_scene::api::enter(&mut scene);
+        let floor = named("floor");
+        let ball = named("ball");
+        let zone = named("zone");
+        ts_cnt_buildComponents2D(floor.to_raw(), ball.to_raw(), zone.to_raw());
+        let p = ts_cnt_attached2D(floor.to_raw(), ball.to_raw());
+        let s = String::from_utf16_lossy(&Str::from_raw(p as *const Str).to_utf16());
+        assert_eq!(s, "true|ball|none");
+    });
+}

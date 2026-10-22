@@ -520,9 +520,9 @@ pub mod physics2d_api {
             comp::col_set_material(self.0, None, Some(b));
         }
 
-        /// The Rigidbody2D moving it, if any.
+        /// The Rigidbody2D moving this collider, if any.
         #[property]
-        pub fn attached_rigidbody_2d(self) -> Rigidbody2DRef {
+        pub fn attached_rigidbody(self) -> Rigidbody2DRef {
             Rigidbody2DRef(comp::attached_rigidbody(self.0, true))
         }
 
@@ -603,9 +603,9 @@ pub mod physics2d_api {
             comp::col_set_material(self.0, None, Some(b));
         }
 
-        /// The Rigidbody2D moving it, if any.
+        /// The Rigidbody2D moving this collider, if any.
         #[property]
-        pub fn attached_rigidbody_2d(self) -> Rigidbody2DRef {
+        pub fn attached_rigidbody(self) -> Rigidbody2DRef {
             Rigidbody2DRef(comp::attached_rigidbody(self.0, true))
         }
 
@@ -692,9 +692,9 @@ pub mod physics2d_api {
             comp::col_set_material(self.0, None, Some(b));
         }
 
-        /// The Rigidbody2D moving it, if any.
+        /// The Rigidbody2D moving this collider, if any.
         #[property]
-        pub fn attached_rigidbody_2d(self) -> Rigidbody2DRef {
+        pub fn attached_rigidbody(self) -> Rigidbody2DRef {
             Rigidbody2DRef(comp::attached_rigidbody(self.0, true))
         }
 
@@ -807,9 +807,9 @@ pub mod physics2d_api {
             comp::col_set_material(self.0, None, Some(b));
         }
 
-        /// The Rigidbody2D moving it, if any.
+        /// The Rigidbody2D moving this collider, if any.
         #[property]
-        pub fn attached_rigidbody_2d(self) -> Rigidbody2DRef {
+        pub fn attached_rigidbody(self) -> Rigidbody2DRef {
             Rigidbody2DRef(comp::attached_rigidbody(self.0, true))
         }
 
@@ -905,9 +905,9 @@ pub mod physics2d_api {
             comp::col_set_material(self.0, None, Some(b));
         }
 
-        /// The Rigidbody2D moving it, if any.
+        /// The Rigidbody2D moving this collider, if any.
         #[property]
-        pub fn attached_rigidbody_2d(self) -> Rigidbody2DRef {
+        pub fn attached_rigidbody(self) -> Rigidbody2DRef {
             Rigidbody2DRef(comp::attached_rigidbody(self.0, true))
         }
 
