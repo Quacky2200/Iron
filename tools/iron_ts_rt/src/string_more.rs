@@ -485,9 +485,13 @@ pub extern "C" fn ts_rt_set_console(hook: Option<ConsoleHook>) {
 /// `msg` must be a live string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ts_rt_console(level: f64, msg: *const Str) {
-    let text = st(msg).to_string_lossy();
+    console_write(level as i32, &st(msg).to_string_lossy());
+}
+
+/// Writes a line to this thread's console (the runtime's own reports use it).
+pub(crate) fn console_write(level: i32, text: &str) {
     match CONSOLE.with(|c| c.get()) {
-        Some(hook) => hook(level as i32, text.as_ptr(), text.len()),
+        Some(hook) => hook(level, text.as_ptr(), text.len()),
         None => eprintln!("{text}"),
     }
 }

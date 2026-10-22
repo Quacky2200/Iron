@@ -145,9 +145,18 @@ fn a_rejected_top_level_await_fails_the_startup_naming_the_module() {
         },
     )
     .unwrap();
+    thread_local! {
+        static LOG: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    extern "C" fn hook(level: i32, text: *const u8, len: usize) {
+        let s = String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(text, len) });
+        LOG.with(|l| l.borrow_mut().push(format!("{level}:{s}")));
+    }
+    iron_ts_rt::ts_rt_set_console(Some(hook));
     game.init().unwrap();
     assert!(matches!(startup_state(), StartupState::Pending(_)));
     ts_rt_run_loop();
+    iron_ts_rt::ts_rt_set_console(None);
     match startup_state() {
         StartupState::Failed { module, message } => {
             assert_eq!(module, "bad.ts");
@@ -155,6 +164,18 @@ fn a_rejected_top_level_await_fails_the_startup_naming_the_module() {
         }
         other => panic!("{other:?}"),
     }
+    // Reported once, as an unhandled rejection that names the module (not once per importer).
+    let log = LOG.with(|l| l.borrow().clone());
+    let reports: Vec<_> = log
+        .iter()
+        .filter(|l| l.contains("Unhandled promise rejection"))
+        .collect();
+    assert_eq!(reports.len(), 1, "{log:?}");
+    assert!(
+        reports[0].starts_with("4:")
+            && reports[0].contains("bad.ts")
+            && reports[0].contains("no network")
+    );
 }
 
 // M9-TS-3210

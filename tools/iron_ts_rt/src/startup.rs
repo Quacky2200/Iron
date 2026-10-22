@@ -86,6 +86,13 @@ pub unsafe extern "C" fn ts_rt_startup(kind: f64, name: *const Str, message: *co
             _ => {
                 s.pending.retain(|n| *n != name);
                 if s.failed.is_none() {
+                    // The rejection of a top-level `await` is reported like any unhandled one.
+                    crate::string_more::console_write(
+                        4,
+                        &format!(
+                            "Unhandled promise rejection: {message} (the top-level await of module {name} was rejected)"
+                        ),
+                    );
                     s.failed = Some((name, message));
                 }
             }

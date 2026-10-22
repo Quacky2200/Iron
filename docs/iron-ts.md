@@ -769,8 +769,8 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   promise settles, i.e. when the host drains microtasks and timers (`ts_rt_run_loop`).
   **Startup state.** Each late module reports to the runtime (`__modWatch`, the prelude in `asyncs.rs`; `startup.rs` in `iron_ts_rt`):
   `startup_state()` is `Done`, `Pending(modules still evaluating, in start order)` or `Failed { module, message }`. A rejected
-  top-level `await` fails the module and every module that imports it; the first failure is the one kept and it is not also logged as
-  an unhandled rejection (the host reports it, see "Components for the host"). **Not the same as ECMAScript:** an import cycle through
+  top-level `await` fails the module and every module that imports it; the first failure is the one kept and is logged once through the
+  console as an unhandled promise rejection that names the module (the host adds its own message, see "Components for the host"). **Not the same as ECMAScript:** an import cycle through
   a late module treats the cyclic edge as already finished; an importer waits for its late dependencies in import order, not all at
   once (the result is the same unless two of them reject).
 - **Declared types.** `gen_components.py` marks the handle-valued properties of generated components (`Texture`, `Mesh`, `Material`,
