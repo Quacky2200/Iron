@@ -463,6 +463,8 @@ pub struct PackageOptions {
     /// Write the data as packs (`data/assets.dat`, `data/scene-<slug>.dat`, `data/index.json`)
     /// instead of loose files. Opt-in: `iron_app` does not read packs yet.
     pub packs: bool,
+    /// The codec of the packs (`--codec`, default LZ4).
+    pub codec: Option<iron_pack::Codec>,
     /// List every file of every pack in the report.
     pub report: bool,
 }
@@ -703,7 +705,11 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         0
     } else if opts.packs {
         let plan = packs::plan(game, &collected.data)?;
-        let report = packs::write(&plan, &data_path)?;
+        let report = packs::write(
+            &plan,
+            &data_path,
+            opts.codec.unwrap_or(iron_pack::Codec::Lz4),
+        )?;
         let bytes = report.bytes();
         pack_report = Some(report);
         bytes
@@ -763,7 +769,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
 
 const USAGE: &str = "usage: iron-build package <game> [--host iron_app.exe] [--out file] [--no-build] [--no-tsc]
        [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d] [--icon file.png|ico]
-       [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--report]]";
+       [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--codec lz4|zstd] [--report]]";
 
 /// The `package` command: `args` are the ones after the word `package`. Returns the exit code.
 pub fn run_cli(args: &[String]) -> i32 {
@@ -788,6 +794,17 @@ pub fn run_cli(args: &[String]) -> i32 {
             "--data-dir" => opts.data_dir = value(&mut it),
             "--no-data" => opts.no_data = true,
             "--packs" => opts.packs = true,
+            "--codec" => match value(&mut it).map(|c| packs::parse_codec(&c)) {
+                Some(Ok(c)) => opts.codec = Some(c),
+                Some(Err(e)) => {
+                    eprintln!("error: {e}");
+                    return 2;
+                }
+                None => {
+                    eprintln!("{USAGE}");
+                    return 2;
+                }
+            },
             "--report" => opts.report = true,
             s if !s.starts_with("--") && game.is_none() => game = Some(PathBuf::from(s)),
             _ => {

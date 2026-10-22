@@ -334,7 +334,7 @@ folder (or `--data` / `$IRON_DATA`). Nothing is deleted from an existing data fo
 
 ### `--packs`: assets in packs (opt-in, phase 1 of `docs/research/iron-virtual-fs-plan.md`)
 
-`iron-build package <game> --packs` writes the data files as `.irpk` packs (`crates/iron_pack`, LZ4) instead of loose files:
+`iron-build package <game> --packs` writes the data files as `.irpk` packs (`crates/iron_pack`, LZ4 by default; `--codec zstd` uses the `zstd` crate, one frame per 256 KiB chunk so ranges still read per chunk; `iron-build pack-info` shows the codec of every entry, `index.json` the pack set's) instead of loose files:
 
 ```
 data/

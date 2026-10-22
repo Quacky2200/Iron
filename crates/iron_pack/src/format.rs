@@ -56,6 +56,8 @@ pub enum Codec {
     Lz4 = 1,
     /// Raw deflate (RFC 1951) through `miniz_oxide`: smaller, slower to read.
     Deflate = 2,
+    /// Zstandard (the `zstd` crate): each chunk is its own frame, so ranges still read per chunk.
+    Zstd = 3,
 }
 
 impl Codec {
@@ -64,7 +66,7 @@ impl Codec {
             0 => Codec::None,
             1 => Codec::Lz4,
             2 => Codec::Deflate,
-            // 3 is kept for zstd (not built: it needs a new dependency).
+            3 => Codec::Zstd,
             _ => return None,
         })
     }

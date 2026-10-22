@@ -1369,6 +1369,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2556 | Unit | Two builds of the same files write identical bytes and remove an old pack; two keys that differ only in case are an error. |
 | M9-TS-2558 | Unit | A pack written by the build reads back byte-identical through `iron_pack::Pack` and `Vfs` (GUIDs and importer text from `.meta`, LZ4 for text, mp3 stored, `verify`), and `pack-info` lists it. |
 | M9-TS-2559 | Unit | `find_host` picks the most recently built `iron_app` among the candidates (a stale release build does not beat a fresh debug one); `package` prints which host it used (`iron_build::package::newest_host`). |
+| M9-TS-2560 | Unit | `--codec zstd`: `parse_codec`, a pack written with zstd reads back (whole and across a chunk boundary), `index.json` names the codec, `pack-info` lists `zstd`. |
 | M9-TS-2600 | Unit | The payload holds `dist/game.irbundle`, `dist/game.css`, `package.json`, the icon and the bundle-named assets only while those total at most 256 KiB (exactly at the limit: embedded, one byte over: none); `.meta`, unnamed assets and CSS files are never embedded. |
 | M9-TS-2601 | Unit | `iron.dataRequired` is false for a game without assets and for one whose only assets are embedded essentials (a `.meta` does not count); an unnamed file in `assets/` makes it true. |
 | M9-TS-2602 | Unit | `--data-dir` accepts one plain folder name and refuses empty, `.`, `..`, separators, drive letters and dot names. |
@@ -1433,6 +1434,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1104 | Unit | Range reads return exactly the requested bytes across chunk edges, for compressed and stored entries. |
 | M9-API-1105 | Unit | Identical bytes share chunks; building the same entries twice gives byte-identical packs; the pack id follows the content. |
 | M9-API-1106 | Unit | Truncated packs, flipped TOC bytes and flipped data bytes are errors (format or checksum), never panics, over a sweep of damage. |
+| M9-API-1144 | Unit | Zstd chunks round-trip whole, in ranges across chunk boundaries and under `verify`; incompressible data stays stored (`iron_pack`). |
 | M9-API-1107 | Unit | Stored, LZ4 and deflate packs read back the same bytes; compressed text shrinks over 4x. |
 | M9-API-1108 | Unit | A pack inside a larger file (an APK asset) opens at its offset, mapped and read. |
 | M9-API-1109 | Unit | The writer refuses a repeated GUID, a repeated path of the same form, and paths outside the game. |

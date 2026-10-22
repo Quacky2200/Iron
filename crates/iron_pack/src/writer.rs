@@ -22,7 +22,7 @@ pub struct WriteOptions {
     pub chunk_log2: u8,
     /// Entries at least this big start on this boundary (12: 4 KiB, a page).
     pub align_log2: u8,
-    /// Deflate level (1..=9) when `codec` is deflate.
+    /// Compression level when `codec` is deflate (1..=9) or zstd (1..=22).
     pub level: u8,
 }
 
@@ -237,6 +237,7 @@ impl<W: Write + Seek> PackWriter<W> {
             Codec::None => return None,
             Codec::Lz4 => crate::lz4::compress(raw),
             Codec::Deflate => miniz_oxide::deflate::compress_to_vec(raw, self.opts.level),
+            Codec::Zstd => zstd::bulk::compress(raw, i32::from(self.opts.level)).ok()?,
         };
         (packed.len() + raw.len() / 16 <= raw.len()).then_some((self.opts.codec, packed))
     }

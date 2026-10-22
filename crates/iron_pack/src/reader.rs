@@ -526,6 +526,14 @@ impl Pack {
                     }
                     out.extend_from_slice(raw.get(lo..hi).ok_or_else(short)?);
                 }
+                Codec::Zstd => {
+                    let raw = zstd::bulk::decompress(bytes, c.raw_size as usize)
+                        .map_err(|m| Error::Corrupt(format!("{}: zstd {m}", e.path)))?;
+                    if raw.len() != c.raw_size as usize {
+                        return Err(Error::Corrupt(format!("{}: chunk {k} size", e.path)));
+                    }
+                    out.extend_from_slice(raw.get(lo..hi).ok_or_else(short)?);
+                }
             }
         }
         Ok(Bytes::from(out))
@@ -768,7 +776,7 @@ mod tests {
     #[test]
     fn deflate_and_stored_packs_read_back_the_same_bytes() {
         let text = "deflate me ".repeat(3000);
-        for codec in [Codec::None, Codec::Lz4, Codec::Deflate] {
+        for codec in [Codec::None, Codec::Lz4, Codec::Deflate, Codec::Zstd] {
             let opts = WriteOptions {
                 codec,
                 chunk_log2: 12,
@@ -783,6 +791,40 @@ mod tests {
                 assert!(bytes.len() < text.len() / 4, "{codec:?}: {}", bytes.len());
             }
         }
+    }
+
+    // M9-API-1144
+    #[test]
+    fn zstd_chunks_round_trip_ranges_and_the_codec_is_recorded() {
+        let data: Vec<u8> = (0..10_000u32).map(|i| (i % 251) as u8).collect();
+        let mut a = EntrySpec::new("a.bin", &data);
+        a.guid = Guid([1; 16]);
+        let raw = noise(3000, 5);
+        let mut b = EntrySpec::new("b.mp3", &raw);
+        b.compress = false;
+        let opts = WriteOptions {
+            codec: Codec::Zstd,
+            chunk_log2: 10,
+            ..WriteOptions::default()
+        };
+        let pack = Pack::from_bytes(build(opts, &[a, b])).unwrap();
+        let e = pack.find_guid(&Guid([1; 16])).unwrap();
+        assert_eq!(e.chunk_count(), 10);
+        assert!(
+            pack.chunks_of(&e)
+                .iter()
+                .all(|(c, stored, raw)| *c == Some(Codec::Zstd) && stored < raw)
+        );
+        assert_eq!(&*pack.read(&e).unwrap(), &data[..]);
+        for (off, len) in [(0, 10), (1000, 2000), (1023, 2), (9990, 100), (0, 10_000)] {
+            let got = pack.read_range(&e, off, len).unwrap();
+            let hi = (off as usize + len as usize).min(data.len());
+            assert_eq!(&*got, &data[off as usize..hi], "{off} {len}");
+        }
+        // Data that does not shrink stays stored.
+        let m = pack.find_path("b.mp3", false).unwrap();
+        assert!(m.is_contiguous());
+        assert_eq!(pack.verify().unwrap(), 2);
     }
 
     // M9-API-1108

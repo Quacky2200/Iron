@@ -316,6 +316,24 @@ pub fn plan(game: &Path, data: &[DataFile]) -> Result<PackPlan, String> {
     Ok(PackPlan { packs })
 }
 
+/// The name of a codec on the command line and in `index.json`.
+pub fn codec_name(c: Codec) -> &'static str {
+    match c {
+        Codec::None => "none",
+        Codec::Lz4 => "lz4",
+        Codec::Deflate => "deflate",
+        Codec::Zstd => "zstd",
+    }
+}
+
+/// `--codec lz4|zstd|deflate|none`.
+pub fn parse_codec(s: &str) -> Result<Codec, String> {
+    [Codec::Lz4, Codec::Zstd, Codec::Deflate, Codec::None]
+        .into_iter()
+        .find(|c| codec_name(*c) == s)
+        .ok_or_else(|| format!("--codec {s}: expected lz4, zstd, deflate or none"))
+}
+
 /// One pack that was written.
 #[derive(Debug, Clone)]
 pub struct WrittenPack {
@@ -392,7 +410,7 @@ impl PackReport {
 }
 
 /// Writes the packs of `plan` and `index.json` into `dir`. Files are read one at a time.
-pub fn write(plan: &PackPlan, dir: &Path) -> Result<PackReport, String> {
+pub fn write(plan: &PackPlan, dir: &Path, codec: Codec) -> Result<PackReport, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     // Old output of an earlier run must not linger beside the new packs.
     if let Ok(rd) = std::fs::read_dir(dir) {
@@ -410,31 +428,39 @@ pub fn write(plan: &PackPlan, dir: &Path) -> Result<PackReport, String> {
     let mut index = Vec::new();
     for pack in &plan.packs {
         let path = dir.join(&pack.file);
-        let summary = PackWriter::write_file(&path, WriteOptions::default(), |w| {
-            for e in &pack.entries {
-                let data = std::fs::read(&e.src).map_err(|err| {
-                    iron_pack::Error::Invalid(format!("{}: {err}", e.src.display()))
-                })?;
-                let meta_text = std::fs::read_to_string(format!("{}.meta", e.src.display())).ok();
-                let meta_json = meta_text
-                    .as_deref()
-                    .and_then(|t| serde_json::from_str::<Value>(t).ok());
-                let importer = meta_json
-                    .as_ref()
-                    .map(|v| v["importer"].clone())
-                    .filter(|v| !v.is_null())
-                    .map(|v| v.to_string())
-                    .unwrap_or_default();
-                let mut spec = EntrySpec::new(&e.key, &data);
-                if let Some(g) = meta_text.as_deref().and_then(meta_guid) {
-                    spec.guid = g;
+        let summary = PackWriter::write_file(
+            &path,
+            WriteOptions {
+                codec,
+                ..WriteOptions::default()
+            },
+            |w| {
+                for e in &pack.entries {
+                    let data = std::fs::read(&e.src).map_err(|err| {
+                        iron_pack::Error::Invalid(format!("{}: {err}", e.src.display()))
+                    })?;
+                    let meta_text =
+                        std::fs::read_to_string(format!("{}.meta", e.src.display())).ok();
+                    let meta_json = meta_text
+                        .as_deref()
+                        .and_then(|t| serde_json::from_str::<Value>(t).ok());
+                    let importer = meta_json
+                        .as_ref()
+                        .map(|v| v["importer"].clone())
+                        .filter(|v| !v.is_null())
+                        .map(|v| v.to_string())
+                        .unwrap_or_default();
+                    let mut spec = EntrySpec::new(&e.key, &data);
+                    if let Some(g) = meta_text.as_deref().and_then(meta_guid) {
+                        spec.guid = g;
+                    }
+                    spec.meta = &importer;
+                    spec.compress = !precompressed(&e.key);
+                    w.add(&spec)?;
                 }
-                spec.meta = &importer;
-                spec.compress = !precompressed(&e.key);
-                w.add(&spec)?;
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .map_err(|err| format!("{}: {err}", pack.file))?;
         let mut item = serde_json::json!({
             "name": pack.name,
@@ -454,7 +480,7 @@ pub fn write(plan: &PackPlan, dir: &Path) -> Result<PackReport, String> {
             summary,
         });
     }
-    let json = serde_json::json!({ "format": 1, "packs": index });
+    let json = serde_json::json!({ "format": 1, "codec": codec_name(codec), "packs": index });
     std::fs::write(
         dir.join("index.json"),
         serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?,
@@ -502,6 +528,7 @@ pub fn info(path: &Path) -> Result<String, String> {
                 Some(Codec::None) => "raw".to_owned(),
                 Some(Codec::Lz4) => "lz4".to_owned(),
                 Some(Codec::Deflate) => "deflate".to_owned(),
+                Some(Codec::Zstd) => "zstd".to_owned(),
                 None => "?".to_owned(),
             })
             .collect();
@@ -725,7 +752,7 @@ mod tests {
             ],
         );
         let out = d.join("out");
-        let report = write(&plan(&d, &files).unwrap(), &out).unwrap();
+        let report = write(&plan(&d, &files).unwrap(), &out, Codec::Lz4).unwrap();
         assert_eq!(report.packs.len(), 2);
         assert!(out.join("index.json").is_file());
 
@@ -811,8 +838,8 @@ mod tests {
         let (o1, o2) = (d.join("o1"), d.join("o2"));
         std::fs::create_dir_all(&o2).unwrap();
         std::fs::write(o2.join("scene-gone.dat"), b"old").unwrap();
-        write(&p, &o1).unwrap();
-        write(&p, &o2).unwrap();
+        write(&p, &o1, Codec::Lz4).unwrap();
+        write(&p, &o2, Codec::Lz4).unwrap();
         assert!(!o2.join("scene-gone.dat").exists());
         for f in ["assets.dat", "scene-x.dat", "index.json"] {
             assert_eq!(
@@ -821,6 +848,53 @@ mod tests {
                 "{f}"
             );
         }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // M9-TS-2560
+    #[test]
+    fn the_zstd_codec_is_chosen_by_name_written_read_back_and_shown_by_pack_info() {
+        assert_eq!(parse_codec("zstd").unwrap(), Codec::Zstd);
+        assert_eq!(parse_codec("lz4").unwrap(), Codec::Lz4);
+        assert!(parse_codec("rar").is_err());
+        let big: String = (0..20000)
+            .map(|i| {
+                format!(
+                    "line {i} of some text
+"
+                )
+            })
+            .collect();
+        let d = game(
+            "zstd",
+            &[("assets/big.txt", &big), ("assets/s.mp3", "ID3-not-really")],
+        );
+        let files = data(
+            &d,
+            &[
+                ("assets/big.txt", Reason::Include),
+                ("assets/s.mp3", Reason::Include),
+            ],
+        );
+        let out = d.join("out");
+        write(&plan(&d, &files).unwrap(), &out, Codec::Zstd).unwrap();
+        let index = std::fs::read_to_string(out.join("index.json")).unwrap();
+        assert!(index.contains("\"codec\": \"zstd\""), "{index}");
+        let pack = Pack::open(&out.join("assets.dat")).unwrap();
+        let big_entry = pack.find_path("assets/big.txt", false).unwrap();
+        assert!(
+            pack.chunks_of(&big_entry)
+                .iter()
+                .all(|c| c.0 == Some(Codec::Zstd))
+        );
+        assert_eq!(&*pack.read(&big_entry).unwrap(), big.as_bytes());
+        // A range across a chunk boundary (chunks are 256 KiB).
+        let at = (1u64 << 18) - 5;
+        let got = pack.read_range(&big_entry, at, 10).unwrap();
+        assert_eq!(&*got, &big.as_bytes()[at as usize..at as usize + 10]);
+        assert_eq!(pack.verify().unwrap(), pack.len());
+        let text = info(&out.join("assets.dat")).unwrap();
+        assert!(text.contains("zstd") && text.contains("raw"), "{text}");
         let _ = std::fs::remove_dir_all(&d);
     }
 }
