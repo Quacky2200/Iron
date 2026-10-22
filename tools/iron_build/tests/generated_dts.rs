@@ -169,7 +169,7 @@ fn declared_names(src: &str) -> BTreeSet<String> {
 /// of the supplement that adds members to a generated class, a `type` next to a handle). The
 /// plan removes them phase by phase; a new one fails the test, and one that goes must be taken
 /// off this list.
-const KNOWN_OVERLAPS: &[&str] = &["Window", "AudioSource", "MeshRenderer", "GameObject"];
+const KNOWN_OVERLAPS: &[&str] = &[];
 
 // M9-TS-3101
 #[test]

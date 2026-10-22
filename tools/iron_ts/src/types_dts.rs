@@ -902,6 +902,10 @@ impl Decls {
             .into_iter()
             .flatten()
             .filter(|(n, _)| !hidden.is_some_and(|h| h.contains(n)))
+            // A built-in member of the same name declares it otherwise.
+            .filter(|(n, _)| {
+                !crate::builtins::members(name).any(|b| crate::builtins::member_name(b.sig) == n)
+            })
             .map(|(n, t)| format!("{n}?: {t}"))
             .collect();
         format!("{{ {} }}", props.join("; "))
@@ -910,6 +914,12 @@ impl Decls {
     /// The constructor lines of a class: the supplement's, else the value class's fields, else
     /// the handle class's `create` (and the options form the compiler also accepts).
     fn ctor_lines(&self, name: &str, sup: &Supplement) -> Vec<String> {
+        let built: Vec<String> = crate::builtins::ctors(name)
+            .map(|b| b.sig.to_string())
+            .collect();
+        if !built.is_empty() {
+            return built;
+        }
         if let Some(c) = sup.ctors.get(name) {
             let opts = self.options_type(name, sup);
             return c.iter().map(|l| l.replace("$OPTIONS", &opts)).collect();
@@ -1075,16 +1085,25 @@ impl Decls {
                     continue;
                 }
                 // A compiler built-in of the same name replaces it.
-                if m.starts_with("static ")
-                    && crate::builtins::statics(name)
-                        .any(|b| crate::builtins::member_name(b.sig) == member_name(m))
-                {
+                let same = |b: &crate::builtins::Builtin| {
+                    crate::builtins::member_name(b.sig) == member_name(m)
+                };
+                let hit = if m.starts_with("static ") {
+                    crate::builtins::statics(name).any(same)
+                } else {
+                    crate::builtins::members(name).any(same)
+                };
+                if hit {
                     continue;
                 }
                 if let Some(d) = self.docs.get(&(name.clone(), m.clone())) {
                     s += &jsdoc(d, &format!("{indent}  "));
                 }
                 s += &format!("{indent}  {m}\n");
+            }
+            for b in crate::builtins::members(name) {
+                s += &jsdoc(b.doc, &format!("{indent}  "));
+                s += &format!("{indent}  {}\n", b.sig);
             }
             for b in crate::builtins::statics(name) {
                 s += &jsdoc(b.doc, &format!("{indent}  "));
@@ -1163,6 +1182,15 @@ impl Decls {
     }
 }
 
+/// Whether `text` names `word` (not as part of a longer name).
+fn contains_word(text: &str, word: &str) -> bool {
+    let is_name = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    text.match_indices(word).any(|(i, _)| {
+        !text[..i].chars().next_back().is_some_and(is_name)
+            && !text[i + word.len()..].chars().next().is_some_and(is_name)
+    })
+}
+
 fn reexports(module: &str, names: &[String]) -> String {
     let mut s = format!("declare module \"{module}\" {{\n");
     for n in names {
@@ -1211,6 +1239,19 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     out += "
 ";
     out += &crate::ui_dts::declarations();
+    out += "\n// What the compiler gives a program (`builtins.rs`).\n";
+    out += &crate::builtins::top_level();
+    // The structural `<Value>Like` types (a plain `{ x, y, z }` object does) that the declarations
+    // name.
+    let mut likes: Vec<String> = Vec::new();
+    for (name, fields) in &d.values {
+        let like = format!("{name}Like");
+        if contains_word(&out, &like) || contains_word(supplement, &like) {
+            let fs: Vec<String> = fields.iter().map(|f| format!("{f}: number")).collect();
+            out += &format!("type {like} = {{ {} }};\n", fs.join("; "));
+            likes.push(like);
+        }
+    }
     if !supplement.trim().is_empty() {
         out += "\n";
         out += supplement;
@@ -1228,6 +1269,8 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     engine.extend(d.namespaces.keys().filter(|n| !n.is_empty()).cloned());
     engine.extend(d.globals.keys().cloned());
     engine.extend(sup.names.iter().cloned());
+    engine.extend(likes);
+    engine.extend(crate::builtins::top_names().into_iter().map(String::from));
     engine.extend(FIXED_NAMES.iter().map(|s| (*s).to_string()));
     out += "\n";
     out += &reexports("@iron/engine", &engine.into_iter().collect::<Vec<_>>());

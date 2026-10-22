@@ -30,6 +30,18 @@ pub const HOOKS: [&str; 9] = [
     "onApplicationPause",
 ];
 
+/// What a frame hook's thunk passes it (the host gives every thunk `dt`) and the parameter it
+/// declares: the frame hooks get the frame length, the focus and pause hooks a flag, the rest
+/// nothing.
+pub fn hook_param(hook: &str) -> Option<(&'static str, &'static str)> {
+    match hook {
+        "onUpdate" | "onLateUpdate" | "onFixedUpdate" => Some(("dt", "dt: number")),
+        "onApplicationFocus" => Some(("dt !== 0", "hasFocus: boolean")),
+        "onApplicationPause" => Some(("dt !== 0", "paused: boolean")),
+        _ => None,
+    }
+}
+
 /// The contact hooks, called by name when the physics step reports a contact. Each takes a
 /// `Collision` (the other side; a record of `iron_physics_api`). Their thunks take the pieces, the
 /// host passes plain numbers.
@@ -378,14 +390,7 @@ pub fn desugar(src: &str, has_game_object: bool, has_contacts: bool) -> R<Option
         }
         for h in HOOKS {
             if have.contains(&h) {
-                // The frame hooks get the frame length; the focus and pause hooks a flag.
-                let call = if matches!(h, "onUpdate" | "onLateUpdate" | "onFixedUpdate") {
-                    "dt"
-                } else if matches!(h, "onApplicationFocus" | "onApplicationPause") {
-                    "dt !== 0"
-                } else {
-                    ""
-                };
+                let call = hook_param(h).map_or("", |(arg, _)| arg);
                 tail += &format!(
                     "export function iron_hook_{name}_{h}(c: {name}, dt: number): void {{ c.{h}({call}); }}\n"
                 );

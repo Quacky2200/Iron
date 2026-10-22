@@ -221,6 +221,7 @@ declare class AudioSource :: pause(): void;
 declare class AudioSource :: pitch: number;
 declare class AudioSource :: play(): void;
 declare class AudioSource :: playOnAwake: boolean;
+declare class AudioSource :: playOneShot(clip: Sound | string, volumeScale?: number): void;
 declare class AudioSource :: playOneShotPath(clip: string, options?: { volumeScale?: number }): void;
 declare class AudioSource :: playOneShotPath(clip: string, volumeScale?: number): void;
 declare class AudioSource :: readonly gameObject: GameObject;
@@ -538,28 +539,41 @@ declare class FogVolume :: size: Vector3;
 declare class FogVolume :: static attach(object: GameObject): FogVolume;
 declare class FogVolume :: static findOn(object: GameObject): FogVolume;
 declare class GameObject
+declare class GameObject :: addComponent<T>(cls: ClassOf<T>, props?: Partial<T>): T;
 declare class GameObject :: childAt(index: number): GameObject;
 declare class GameObject :: constructor(name?: string, options?: GameObjectOptions);
 declare class GameObject :: destroy(): void;
 declare class GameObject :: enabled: boolean;
 declare class GameObject :: exists(): boolean;
 declare class GameObject :: findChild(name: string): GameObject;
+declare class GameObject :: getComponent<T>(cls: ClassOf<T>): T | undefined;
+declare class GameObject :: getComponentInChildren<T>(cls: ClassOf<T>): T | undefined;
+declare class GameObject :: getComponents<T>(cls: ClassOf<T>): T[];
 declare class GameObject :: hideFlags: number;
 declare class GameObject :: layer: number;
 declare class GameObject :: name: string;
 declare class GameObject :: readonly activeInHierarchy: boolean;
 declare class GameObject :: readonly childCount: number;
+declare class GameObject :: readonly children: GameObject[];
+declare class GameObject :: readonly components: Component[];
 declare class GameObject :: readonly destroyed: boolean;
 declare class GameObject :: readonly id: number;
 declare class GameObject :: readonly parent: GameObject;
 declare class GameObject :: readonly root: GameObject;
+declare class GameObject :: readonly scene: Scene;
 declare class GameObject :: readonly transform: Transform;
+declare class GameObject :: removeComponent(component: Component): void;
 declare class GameObject :: setParent(parent: GameObject, keepWorld?: boolean): void;
 declare class GameObject :: setParent(parent: GameObject, options?: { keepWorld?: boolean }): void;
 declare class GameObject :: static byId(id: number): GameObject;
 declare class GameObject :: static create(): GameObject;
 declare class GameObject :: static create(options: { name?: string; enabled?: boolean; layer?: number; hideFlags?: number }): GameObject;
+declare class GameObject :: static createPrimitive(type: PrimitiveType, options?: GameObjectOptions & { name?: string }): GameObject;
+declare class GameObject :: static dontDestroyOnLoad(go: GameObject): void;
 declare class GameObject :: static find(name: string): GameObject;
+declare class GameObject :: static findObjectOfType<T>(cls: ClassOf<T>): T | undefined;
+declare class GameObject :: static instantiate(original: GameObject | Prefab, options?: InstantiateObjectOptions): GameObject;
+declare class GameObject :: static readonly roots: readonly GameObject[];
 declare class GameObject :: static rootAt(index: number): GameObject;
 declare class GameObject :: static rootCount(): number;
 declare class HingeJoint
@@ -760,6 +774,7 @@ declare class MeshRenderer
 declare class MeshRenderer :: get shadowCastingMode(): "on" | "off";
 declare class MeshRenderer :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class MeshRenderer :: material: Material | null;
+declare class MeshRenderer :: mesh: Mesh | PrimitiveType;
 declare class MeshRenderer :: readonly gameObject: GameObject;
 declare class MeshRenderer :: readonly transform: Transform;
 declare class MeshRenderer :: set shadowCastingMode(v: string);
@@ -1488,6 +1503,8 @@ declare class Vector4 :: y: number;
 declare class Vector4 :: z: number;
 declare class Window
 declare class Window :: alwaysOnTop: boolean;
+declare class Window :: answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;
+declare class Window :: ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;
 declare class Window :: askJson(name: string, payload: string, timeoutMs: number): Promise<string>;
 declare class Window :: cancelClose(): void;
 declare class Window :: center(): void;
@@ -1496,6 +1513,7 @@ declare class Window :: closable: boolean;
 declare class Window :: close(): void;
 declare class Window :: constructor(title?: string, width?: number, height?: number, x?: number, y?: number, minWidth?: number, minHeight?: number, style?: WindowStyle, parent?: Window, resizable?: boolean, minimizable?: boolean, maximizable?: boolean, closable?: boolean, alwaysOnTop?: boolean, visible?: boolean, focus?: boolean, key?: string, runInBackground?: boolean);
 declare class Window :: constructor(title?: string, width?: number, height?: number, x?: number, y?: number, minWidth?: number, minHeight?: number, style?: WindowStyle, parent?: Window, resizable?: boolean, minimizable?: boolean, maximizable?: boolean, closable?: boolean, alwaysOnTop?: boolean, visible?: boolean, focus?: boolean, key?: string, runInBackground?: boolean, options?: { title?: string; style?: WindowStyle; resizable?: boolean; minimizable?: boolean; maximizable?: boolean; closable?: boolean; alwaysOnTop?: boolean; visible?: boolean; x?: number; y?: number; width?: number; height?: number; minimized?: boolean; maximized?: boolean });
+declare class Window :: emit(name: string, payload?: unknown): boolean;
 declare class Window :: emitJson(name: string, payload: string): boolean;
 declare class Window :: focus(): void;
 declare class Window :: height: number;
@@ -1504,18 +1522,22 @@ declare class Window :: maximized: boolean;
 declare class Window :: minimizable: boolean;
 declare class Window :: minimized: boolean;
 declare class Window :: off(token: number): boolean;
+declare class Window :: on<T = unknown>(name: string, f: (payload: T, from: Window) => void): number;
 declare class Window :: onAnswerJson(name: string, f: (a0: Window, a1: string, a2: number) => void): number;
 declare class Window :: onCloseRequested(f: () => void): number;
 declare class Window :: onClosed(f: () => void): number;
 declare class Window :: onEventJson(name: string, f: (a0: Window, a1: string) => void): number;
 declare class Window :: onFocusChanged(f: (a0: boolean) => void): number;
+declare class Window :: onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
 declare class Window :: onMessageJson(f: (a0: Window, a1: string) => void): number;
 declare class Window :: onMoved(f: (a0: number, a1: number) => void): number;
 declare class Window :: onOpenFailed(f: (a0: string) => void): number;
 declare class Window :: onOpened(f: (a0: number, a1: number, a2: number) => void): number;
+declare class Window :: onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
 declare class Window :: onRequestJson(f: (a0: Window, a1: string, a2: number) => void): number;
 declare class Window :: onResized(f: (a0: number, a1: number) => void): number;
 declare class Window :: onScaleChanged(f: (a0: number) => void): number;
+declare class Window :: postMessage(data: unknown): boolean;
 declare class Window :: postMessageJson(text: string): boolean;
 declare class Window :: postRequestJson(text: string, timeoutMs: number): number;
 declare class Window :: readonly childCount: number;
@@ -1534,22 +1556,27 @@ declare class Window :: readonly parent: Window | undefined;
 declare class Window :: readonly platform: string;
 declare class Window :: readonly root: Window;
 declare class Window :: readonly scale: number;
+declare class Window :: request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
 declare class Window :: requestJson(text: string, timeoutMs: number): Promise<string>;
 declare class Window :: resizable: boolean;
 declare class Window :: run(f: () => void): boolean;
 declare class Window :: setPosition(x: number, y: number): void;
 declare class Window :: setSize(width: number, height: number): void;
 declare class Window :: static at(index: number): Window | undefined;
+declare class Window :: static broadcast(data: unknown): number;
 declare class Window :: static broadcastJson(text: string): number;
 declare class Window :: static byHandle(handle: number): Window | undefined;
 declare class Window :: static create(options?: WindowOptions): Window;
+declare class Window :: static emitAll(name: string, payload?: unknown): number;
 declare class Window :: static emitAllJson(name: string, payload: string): number;
 declare class Window :: static eventNameError(name: string): string;
 declare class Window :: static find(key: string): Window | undefined;
 declare class Window :: static off(token: number): boolean;
 declare class Window :: static onDomainFocusChanged(f: (a0: boolean, a1: boolean) => void): number;
+declare class Window :: static onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
 declare class Window :: static onMessageJson(f: (a0: Window, a1: string) => void): number;
 declare class Window :: static onReplyJson(f: (a0: number, a1: string, a2: string) => void): number;
+declare class Window :: static onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
 declare class Window :: static onRequestJson(f: (a0: Window, a1: string, a2: number) => void): number;
 declare class Window :: static readonly count: number;
 declare class Window :: static readonly current: Window;
@@ -1589,6 +1616,7 @@ declare function Span(props: IronProps): ReactElementLike;
 declare function Text(props: IronProps): ReactElementLike;
 declare function TextArea(props: IronProps): ReactElementLike;
 declare function addStyleSheet(css: string): number;
+declare function clearInterval(id: number): void;
 declare function clearTimeout(id: number): void;
 declare function createContext<T>(def: T): { Provider: (props: { value: T; children?: ReactNode }) => ReactElementLike };
 declare function createRoot(target?: WorldPanel | Window | number): { render(node: ReactNode): void; unmount(): void };
@@ -1596,9 +1624,11 @@ declare function forwardRef<P, T>(f: (props: P, ref: Ref<T>) => ReactElementLike
 declare function loadFont(data: FontFace): void;
 declare function memo<P>(c: (props: P) => ReactElementLike | null): (props: P) => ReactElementLike | null;
 declare function property(value: unknown, context: ClassFieldDecoratorContext | ClassGetterDecoratorContext): void;
+declare function queueMicrotask(callback: () => void): void;
 declare function register(components: Record<string, ComponentClass>, options?: { spawn?: boolean }): void;
 declare function removeStyleSheet(id: number): void;
-declare function setTimeout(fn: () => void, ms?: number): number;
+declare function setInterval(callback: (arg?: number) => void, ms?: number): number;
+declare function setTimeout(callback: (arg?: number) => void, ms?: number): number;
 declare function useCallback<F extends (...args: any[]) => any>(f: F, deps: readonly unknown[]): F;
 declare function useContext<T>(c: { Provider: unknown } & { __t?: T }): T;
 declare function useEffect(f: () => void | (() => void), deps?: readonly unknown[]): void;
@@ -1973,12 +2003,15 @@ declare module "@iron/engine" :: export import WindowStyle = globalThis.WindowSt
 declare module "@iron/engine" :: export import WorldPanel = globalThis.WorldPanel;
 declare module "@iron/engine" :: export import addStyleSheet = globalThis.addStyleSheet;
 declare module "@iron/engine" :: export import audio = globalThis.audio;
+declare module "@iron/engine" :: export import clearInterval = globalThis.clearInterval;
 declare module "@iron/engine" :: export import clearTimeout = globalThis.clearTimeout;
 declare module "@iron/engine" :: export import input = globalThis.input;
 declare module "@iron/engine" :: export import loadFont = globalThis.loadFont;
 declare module "@iron/engine" :: export import property = globalThis.property;
+declare module "@iron/engine" :: export import queueMicrotask = globalThis.queueMicrotask;
 declare module "@iron/engine" :: export import register = globalThis.register;
 declare module "@iron/engine" :: export import removeStyleSheet = globalThis.removeStyleSheet;
+declare module "@iron/engine" :: export import setInterval = globalThis.setInterval;
 declare module "@iron/engine" :: export import setTimeout = globalThis.setTimeout;
 declare module "@iron/react"
 declare module "@iron/react" :: export import Dialog = globalThis.Dialog;
@@ -2117,12 +2150,6 @@ declare namespace ForceMode :: const VelocityChange: number;
 declare namespace FullScreenMode
 declare namespace FullScreenMode :: function name(index: number): FullScreenMode;
 declare namespace FullScreenMode :: function parse(name: string): number;
-declare namespace GameObject
-declare namespace GameObject :: const roots: readonly GameObject[];
-declare namespace GameObject :: function createPrimitive(type: PrimitiveType, options?: GameObjectOptions & { name?: string }): GameObject;
-declare namespace GameObject :: function dontDestroyOnLoad(go: GameObject): void;
-declare namespace GameObject :: function findObjectOfType<T>(cls: ClassOf<T>): T | undefined;
-declare namespace GameObject :: function instantiate(original: GameObject | Prefab, options?: InstantiateObjectOptions): GameObject;
 declare namespace GamepadEventType
 declare namespace GamepadEventType :: function name(index: number): GamepadEventType;
 declare namespace GamepadEventType :: function parse(name: string): number;
@@ -2611,11 +2638,6 @@ declare namespace VolumeDenoising :: function parse(name: string): number;
 declare namespace VolumeDetail
 declare namespace VolumeDetail :: function name(index: number): VolumeDetail;
 declare namespace VolumeDetail :: function parse(name: string): number;
-declare namespace Window
-declare namespace Window :: function broadcast(data: unknown): number;
-declare namespace Window :: function emitAll(name: string, payload?: unknown): number;
-declare namespace Window :: function onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
-declare namespace Window :: function onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
 declare namespace WindowStyle
 declare namespace WindowStyle :: function name(index: number): WindowStyle;
 declare namespace WindowStyle :: function parse(name: string): number;
@@ -2682,17 +2704,6 @@ declare type TextureWrapMode = "repeat" | "clamp" | "mirror";
 declare type VolumeDenoising = "none" | "reprojection" | "gaussian" | "both";
 declare type VolumeDetail = "low" | "medium" | "high" | "ultra";
 declare type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";
-interface AudioSource
-interface AudioSource :: playOneShot(clip: Sound | string, volumeScale?: number): void;
-interface GameObject
-interface GameObject :: addComponent<T>(cls: ClassOf<T>, props?: Partial<T>): T;
-interface GameObject :: getComponent<T>(cls: ClassOf<T>): T | undefined;
-interface GameObject :: getComponentInChildren<T>(cls: ClassOf<T>): T | undefined;
-interface GameObject :: getComponents<T>(cls: ClassOf<T>): T[];
-interface GameObject :: readonly children: GameObject[];
-interface GameObject :: readonly components: Component[];
-interface GameObject :: readonly scene: Scene;
-interface GameObject :: removeComponent(component: Component): void;
 interface GameObjectOptions
 interface GameObjectOptions :: parent?: GameObject | null;
 interface GameObjectOptions :: position?: Vector3Like;
@@ -3118,21 +3129,10 @@ interface IronTransitionEvent extends IronEvent :: readonly pseudoElement: strin
 interface IronWheelEvent extends IronPointerEvent
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaX: number;
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaY: number;
-interface MeshRenderer
-interface MeshRenderer :: mesh: Mesh | PrimitiveType;
 interface ReactElementLike
 interface ReactElementLike :: readonly __element: never;
 interface Ref<T>
 interface Ref<T> :: current: T;
-interface Window
-interface Window :: answer<T = unknown, R = unknown>(name: string, f: (payload: T, from: Window) => R): number;
-interface Window :: ask<R = unknown>(name: string, payload?: unknown, timeoutMs?: number): Promise<R>;
-interface Window :: emit(name: string, payload?: unknown): boolean;
-interface Window :: on<T = unknown>(name: string, f: (payload: T, from: Window) => void): number;
-interface Window :: onMessage<T = unknown>(f: (from: Window, data: T) => void): number;
-interface Window :: onRequest<T = unknown, R = unknown>(f: (from: Window, data: T, reply: (answer: R) => void) => void): number;
-interface Window :: postMessage(data: unknown): boolean;
-interface Window :: request<R = unknown>(data: unknown, timeoutMs?: number): Promise<R>;
 type BlendMode = | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "color-dodge" | "color-burn" | "hard-light" | "soft-light" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 type BorderStyle = | "none" | "hidden" | "solid" | "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset";
 type ClassOf<T> = { prototype: T };
