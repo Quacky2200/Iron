@@ -223,7 +223,7 @@ fn assets_exists_list_and_pack_of_answer_from_the_index() {
             .unwrap();
         assert_eq!(
             s,
-            r#"[true,true,false,true,true,false,"assets/sfx/a.wav\nassets/sfx/b.wav","assets/sfx/a.wav\nassets/sfx/b.wav\nassets/sfx/loud/c.wav","assets/sfx/a.mp3\nassets/sfx/a.wav\nassets/sfx/b.wav\nassets/sfx/loud/c.wav","","","scene-level1","assets","","","assets"]"#
+            r#"[true,true,false,true,true,false,["assets/sfx/a.wav","assets/sfx/b.wav"],["assets/sfx/a.wav","assets/sfx/b.wav","assets/sfx/loud/c.wav"],["assets/sfx/a.mp3","assets/sfx/a.wav","assets/sfx/b.wav","assets/sfx/loud/c.wav"],[],[],"scene-level1","assets","","","assets"]"#
         );
     });
     // Without an index nothing exists.
@@ -232,7 +232,7 @@ fn assets_exists_list_and_pack_of_answer_from_the_index() {
         let s: String = ctx
             .eval(r#"JSON.stringify([Assets.exists("a.png"), Assets.list("**"), Assets.packOf("a.png")])"#)
             .unwrap();
-        assert_eq!(s, r#"[false,"",""]"#);
+        assert_eq!(s, r#"[false,[],""]"#);
     });
 }
 

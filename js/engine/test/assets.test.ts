@@ -21,6 +21,28 @@ test("Assets.onChanged hears changed files until stopped; a throwing listener do
   expect(heard).toEqual([["assets/crate.png"]]);
 });
 
+// M9-API-1619
+test("Assets.exists / list / packOf hand over to the engine's Assets namespace, and answer as an empty game without it", () => {
+  const g = globalThis as { Assets?: unknown };
+  const before = g.Assets;
+  try {
+    delete g.Assets;
+    expect([Assets.exists("a.png"), Assets.list("**"), Assets.packOf("a.png")]).toEqual([false, [], ""]);
+    g.Assets = {
+      exists: (p: string) => p === "assets/a.png",
+      list: (glob: string) => (glob === "assets/*" ? ["assets/a.png", "assets/b.png"] : []),
+      packOf: () => "assets",
+    };
+    expect(Assets.exists("assets/a.png")).toBe(true);
+    expect(Assets.exists("nope")).toBe(false);
+    expect(Assets.list("assets/*")).toEqual(["assets/a.png", "assets/b.png"]);
+    expect(Assets.packOf("assets/a.png")).toBe("assets");
+  } finally {
+    if (before === undefined) delete g.Assets;
+    else g.Assets = before;
+  }
+});
+
 // M5-AST-05
 test("GUIDs stand in for paths, importers give texture defaults, and scenes find renamed files by GUID", () => {
   const ops: unknown[][] = [];

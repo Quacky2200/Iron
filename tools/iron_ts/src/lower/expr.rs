@@ -1945,7 +1945,7 @@ impl<'a> Lowerer<'a> {
             }
             ExtTy::Enum(_) => (ExtTy::I32, None),
             ExtTy::Record(_) => (ExtTy::Void, None),
-            ExtTy::ValueList(_) | ExtTy::RecordList(_) => (ExtTy::U32, None),
+            ExtTy::ValueList(_) | ExtTy::RecordList(_) | ExtTy::StrList => (ExtTy::U32, None),
             other => (other.clone(), None),
         };
         let decl = ExternDecl {
@@ -1992,6 +1992,57 @@ impl<'a> Lowerer<'a> {
                 let obj = self.read_flat_object(&f.ret, &zero, &mut pre);
                 let ty = obj.ty.clone();
                 return mk(ExprKind::Seq(pre, Box::new(obj)), ty);
+            }
+            // A list of strings: the call returns the count; each string is copied out of the
+            // engine's list into a new script string and pushed.
+            ExtTy::StrList => {
+                let arr_ty = self.ext_ir(&f.ret);
+                let count = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(
+                    count,
+                    mk(ExprKind::CallExtern(idx, args), Ty::Num),
+                ));
+                let arr = self.new_local(arr_ty.clone());
+                pre.push(Stmt::Assign(
+                    arr,
+                    mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), arr_ty.clone()),
+                ));
+                let i = self.new_local(Ty::Num);
+                pre.push(Stmt::Assign(i, num(0.0)));
+                let label = self.new_label();
+                let iv = self.var_expr(i);
+                let done = mk(
+                    ExprKind::Cmp(
+                        CmpOp::Ge,
+                        Box::new(iv.clone()),
+                        Box::new(self.var_expr(count)),
+                    ),
+                    Ty::Bool,
+                );
+                let mut body = vec![Stmt::If(done, vec![Stmt::Break(label)], vec![])];
+                let item = ExternFn {
+                    rest: false,
+                    optional_from: usize::MAX,
+                    defaults: Vec::new(),
+                    symbol: "iron_api_result_str".into(),
+                    params: vec![("i".into(), ExtTy::U32)],
+                    ret: ExtTy::Str,
+                };
+                let text = self.emit_extern(&item, vec![iv.clone()]);
+                body.push(Stmt::Eval(mk(
+                    ExprKind::Rt(RtFn::ArrPush, vec![self.var_expr(arr), text]),
+                    Ty::Void,
+                )));
+                body.push(Stmt::Assign(
+                    i,
+                    mk(
+                        ExprKind::Bin(BinOp::Add, Box::new(iv), Box::new(num(1.0))),
+                        Ty::Num,
+                    ),
+                ));
+                pre.push(Stmt::Loop(label, body));
+                let result = self.var_expr(arr);
+                return mk(ExprKind::Seq(pre, Box::new(result)), arr_ty);
             }
             // A list: the call returns the count; read element after element into an array.
             ExtTy::ValueList(_) | ExtTy::RecordList(_) => {

@@ -140,6 +140,8 @@ fn ext_ty(s: &str) -> Result<ExtTy, String> {
                 ExtTy::Enum(name.to_string())
             } else if let Some(name) = other.strip_prefix("record:") {
                 ExtTy::Record(name.to_string())
+            } else if other == "list:string" {
+                ExtTy::StrList
             } else if let Some(name) = other.strip_prefix("list:value:") {
                 ExtTy::ValueList(name.to_string())
             } else if let Some(name) = other.strip_prefix("list:record:") {

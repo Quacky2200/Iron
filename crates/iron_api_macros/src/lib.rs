@@ -292,7 +292,7 @@ enum Kind {
     Enum(usize),
     /// A declared record (index into `Args::records`), a result.
     Record(usize),
-    /// `Vec<V>` of a value type or a record, a result.
+    /// `Vec<V>` of a value type or a record, or `Vec<String>`: a result.
     List(Box<Kind>),
 }
 
@@ -335,10 +335,10 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
         && let Some(syn::GenericArgument::Type(inner)) = ab.args.first()
     {
         let k = classify(inner, args)?;
-        if !matches!(k, Kind::Value(_) | Kind::Record(_)) {
+        if !matches!(k, Kind::Value(_) | Kind::Record(_) | Kind::Str(true)) {
             return Err(syn::Error::new(
                 inner.span(),
-                "a `Vec` result holds a type declared in `values(..)` or `records(..)`",
+                "a `Vec` result holds a `String` or a type declared in `values(..)` or `records(..)`",
             ));
         }
         return Ok(Kind::List(Box::new(k)));
@@ -511,7 +511,8 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
                     format!("record:{}", args.records[*i].ts),
                     args.records[*i].ts.clone(),
                 ),
-                _ => unreachable!("classify only builds lists of values and records"),
+                Kind::Str(_) => ("string".to_string(), "string".to_string()),
+                _ => unreachable!("classify only builds lists of strings, values and records"),
             };
             let arr = format!("{ts}[]");
             quote!(::iron_api::Ty::List(#name, #arr))
@@ -806,7 +807,8 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
                     let build = format_ident!("__js_rec_{}", args.records[*i].ts);
                     quote!(#build(&ctx, item)?)
                 }
-                _ => unreachable!("classify only builds lists of values and records"),
+                Kind::Str(_) => quote!(item.as_str()),
+                _ => unreachable!("classify only builds lists of strings, values and records"),
             };
             quote! {
                 let items = #call;
@@ -1559,6 +1561,32 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     let mut out = ::std::vec::Vec::new();
                     #flat(&r, &mut out);
                     ::iron_api::return_flat(out);
+                }
+            });
+        } else if let Kind::List(inner) = &a.ret
+            && matches!(**inner, Kind::Str(_))
+        {
+            // A list of strings: the strings stay in `iron_api`'s per-thread list and the caller
+            // reads them with `iron_api_result_str(i)`; the shim returns how many there are.
+            let unsafe_kw = if a.params.iter().any(|(_, k)| {
+                matches!(
+                    k,
+                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Values(_)
+                )
+            }) {
+                quote!(unsafe)
+            } else {
+                quote!()
+            };
+            shims.push(quote! {
+                /// # Safety
+                /// Array and string arguments are live script objects (or null).
+                #[unsafe(no_mangle)]
+                pub #unsafe_kw extern "C" fn #symbol_ident( #( #abi_params ),* ) -> u32 {
+                    let items: ::std::vec::Vec<::std::string::String> = #call;
+                    let count = items.len() as u32;
+                    ::iron_api::return_strings(items);
+                    count
                 }
             });
         } else if let Kind::List(inner) = &a.ret {

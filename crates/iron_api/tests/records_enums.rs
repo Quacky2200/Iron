@@ -69,6 +69,14 @@ impl Handle for Thing {
 pub mod rec_api {
     use super::*;
 
+    /// Words that start with a prefix, short ones first.
+    pub fn words(prefix: &str) -> Vec<String> {
+        ["a", "bb", "ccc"]
+            .iter()
+            .map(|w| format!("{prefix}{w}"))
+            .collect()
+    }
+
     /// Two spots per point.
     pub fn spots(points: &[P2]) -> Vec<Spot> {
         points
@@ -324,4 +332,41 @@ fn creating_with_an_options_object_reads_the_parameters_after_the_named_one() {
     // 2 points, weight 3, `dotted` (index 2): 200 + 30 + 2.
     assert_eq!(at(&two, 3.0, 2), 232);
     assert_eq!(at(&two[..1], 1.5, 0), 115);
+}
+
+// M9-API-1620
+#[test]
+fn a_vec_of_strings_comes_back_through_the_string_list_and_as_a_quickjs_array() {
+    use iron_api::rquickjs;
+    // The ABI: the count (a null prefix is an empty one), then the strings one by one.
+    let n = unsafe { rec_api::iron_Rec_words(std::ptr::null()) };
+    assert_eq!(n, 3);
+    let mut len = 0i64;
+    let mut got = Vec::new();
+    for i in 0..4 {
+        let p = unsafe { iron_api::iron_api_result_str(i, &mut len) };
+        got.push(
+            String::from_utf8(unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec())
+                .unwrap(),
+        );
+    }
+    assert_eq!(
+        got,
+        ["a", "bb", "ccc", ""],
+        "an index past the end is empty"
+    );
+    // The manifest says `list:string`.
+    let json = rec_api::MANIFEST.to_json();
+    assert!(json.contains(r#""returns":"list:string""#), "{json}");
+    assert!(iron_api::symbol("iron_api_result_str").is_some());
+    // QuickJS: an array of JS strings.
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        rec_api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(r#"JSON.stringify([Rec.words("x"), Array.isArray(Rec.words("")), Rec.words("q").length])"#)
+            .unwrap();
+        assert_eq!(out, r#"[["xa","xbb","xccc"],true,3]"#);
+    });
 }

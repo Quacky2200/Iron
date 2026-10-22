@@ -434,6 +434,9 @@ pub enum ExtTy {
     ValueList(String),
     /// A result `Vec` of records.
     RecordList(String),
+    /// A result `Vec<String>`: the call returns the count and keeps the strings; the lowering
+    /// reads them with `iron_api_result_str`.
+    StrList,
 }
 
 impl ExtTy {
@@ -458,6 +461,7 @@ impl ExtTy {
             // The structs are made by the lowering (it knows the struct ids).
             ExtTy::Value(_) | ExtTy::Record(_) => Ty::Void,
             ExtTy::ValueList(_) | ExtTy::RecordList(_) => Ty::JsValue,
+            ExtTy::StrList => Ty::Arr(Box::new(Ty::Str)),
         }
     }
 }

@@ -186,8 +186,9 @@ Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` a
   file with that name). Orphaned metas are only reported, and deleted with `--prune`.
 - The app reads the metas at start-up with `asset_db::scan` ([asset_db.rs](../crates/iron_app/src/asset_db.rs))
   and puts `[{ path, guid, importer }]` in `__iron_info.assets`. Unreadable metas are skipped with a warning.
-- Compiled and native-API programs also have `Assets.exists(path)`, `list(glob)` (newline-separated) and `packOf(path)` over every
-  loadable asset, not only the ones with a `.meta` (`docs/iron-api.md`).
+- Compiled and native-API programs also have `Assets.exists(path)`, `list(glob)` (a `string[]`) and `packOf(path)` over every
+  loadable asset, not only the ones with a `.meta` (`docs/iron-api.md`). Bundled QuickJS games get the same three from
+  `@iron/engine`'s `Assets` (it hands them to the engine's namespace).
 - In scripts: `Assets.all`, `guidToPath(guid)`, `pathToGuid(path)`, `importer(path)` and `resolve(src)`
   ([assets.ts](../js/engine/src/assets.ts)). `Texture.load`, `Model.load` and `new Sound` accept
   `"guid:<guid>"` sources. `Texture.load` takes unset options from the importer, and a `Sound` streams when

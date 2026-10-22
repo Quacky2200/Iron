@@ -316,9 +316,8 @@ the TypeScript, all because a call has fixed typed parameters:
 - `getMask` takes up to four names; a left-out lookup (`guidToPath`) returns `""` instead of `undefined`;
 - `Assets` has `count()` / `pathAt(i)` / `guidAt(i)` / `importer(path)` as JSON text / `takeChanges()` (a
   newline-separated string to poll) instead of `all`, an object and `onChanged(fn)`. It also has `exists(path)`,
-  `list(glob)` (the sorted paths matching a glob, `*` / `?` inside one folder name, `**` across folders, case-sensitive,
-  **one per line as a string**: the API has no string-array results yet, so a script writes `list(g).split("
-")`) and
+  `list(glob)` (a `string[]` of the sorted paths matching a glob, `*` / `?` inside one folder name, `**` across folders,
+  case-sensitive; a `Vec<String>` result of the macro, table below) and
   `packOf(path)` (`assets`, `scene-level1`, `""` for a loose file). They answer from the index the host fills with
   `iron_engine_api::assets::set_asset_index` (every path of the mounted packs or game folder, `asset_db::index`), so they see assets
   without a `.meta`;
@@ -755,6 +754,7 @@ Part of making every declaration generated from Rust (plan: [iron-generated-dts-
 | `enums(TangentMode = Tangent [Auto, Bezier, Linear])` on the attribute, a Rust enum `Tangent` | the string union `"auto" \| "bezier" \| "linear"` (variant names with a lower-case first letter), plus the global `TangentMode.name(i)` / `TangentMode.parse(s)` | the index, `i32` (-1: not a name; the engine reads it as the first value) |
 | `records(SplineHit = SplineHit [segment: f64, u: f64])`, a Rust struct with those public fields (`f64`, `bool`, a declared value class or enum) | a plain object `{ segment, u }` (an `interface` in the d.ts) | a result only: the numbers go to `iron_api`'s per-thread buffer (`return_flat`), the compiled call reads them with `iron_api_result(i)` and builds the object |
 | `-> Vec<V>` / `-> Vec<Record>` | `V[]` / `Record[]` | the shim returns the element count; the numbers of every element are in the same buffer |
+| `-> Vec<String>` | `string[]` | the shim returns the count and keeps the strings in `iron_api`'s per-thread list (`return_strings`); the compiled call copies them out with `iron_api_result_str(i)`, one new script string each (manifest `list:string`; QuickJS gets an array of strings; `Assets.list`, `M9-API-1620`) |
 | `#[rest(points)]` on a function whose last parameter is `&[V]` | `...points: V[]` (QuickJS: every remaining argument; compiled: the arguments packed into an array, or one `...array`) | the array pointer, as for `&[V]` |
 | `#[options(after = points)]` with `#[optional(points, closed = false, ..)]` | `new Spline(points?, { closed?, tension? })`: the object after `points` gives the parameters after it | the positional shim |
 | `like` on the attribute | value *parameters* are declared `Vector3Like` (a plain `{ x, y, z }` does) | - |
@@ -770,7 +770,7 @@ returns the strings and throws a `TypeError` for an unknown name (a left-out opt
 
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;
-parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`. `tools/iron_ts/src/types_dts.rs` reads them
+parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string`. `tools/iron_ts/src/types_dts.rs` reads them
 (`enum` becomes `type X = ..` and `namespace X { name, parse }`, `record` an `interface`).
 
 **Guard tests** (`tools/iron_build/tests/generated_dts.rs`): `M9-TS-3100` a ratchet over the hand-written `.d.ts` files and

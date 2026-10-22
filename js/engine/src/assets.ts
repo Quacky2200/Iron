@@ -21,6 +21,21 @@ export interface AssetEntry {
   importer: Record<string, unknown>;
 }
 
+/**
+ * The members the engine itself gives the global `Assets` (`#[iron_api(namespace = "Assets")]`,
+ * crates/iron_engine_api/src/assets.rs; `Assets.exists` / `list` / `packOf` there are the typed
+ * declarations of the generated `types/iron.d.ts`). This module's `Assets` below adds the asset
+ * database and hot reload and hands these three to the native namespace, which answers from the
+ * index the host fills (packs or the game folder, also assets without a `.meta`). Without the
+ * engine (unit tests) they answer as an empty game would.
+ */
+interface NativeAssets {
+  exists(path: string): boolean;
+  list(glob: string): string[];
+  packOf(path: string): string;
+}
+const native = (): Partial<NativeAssets> => (globalThis as { Assets?: Partial<NativeAssets> }).Assets ?? {};
+
 const entries = (): AssetEntry[] => ((globalThis.__iron_info as { assets?: AssetEntry[] } | undefined)?.assets ?? []);
 const clean = (path: string) => path.replace(/\\/g, "/").replace(/^\.\//, "");
 
@@ -45,6 +60,27 @@ export const Assets = {
   importer(path: string): Record<string, unknown> {
     const p = clean(Assets.resolve(path));
     return entries().find((e) => e.path === p)?.importer ?? {};
+  },
+
+  /**
+   * Whether the game can load this path: a file of a pack or of the game folder, a `data:` URL,
+   * or a `guid:` source of a known asset.
+   */
+  exists(path: string): boolean {
+    return native().exists?.(path) ?? false;
+  },
+
+  /**
+   * The paths of every asset matching a glob (`*` and `?` inside one folder name, `**` across
+   * folders, case-sensitive; a plain folder matches everything below it), sorted.
+   */
+  list(glob: string): string[] {
+    return native().list?.(glob) ?? [];
+  },
+
+  /** The pack that holds the asset at this path (`""` for a loose file or an unknown path). */
+  packOf(path: string): string {
+    return native().packOf?.(path) ?? "";
   },
 
   /** A path for `"guid:<guid>"` sources (others unchanged). Unknown GUIDs stay as given. */

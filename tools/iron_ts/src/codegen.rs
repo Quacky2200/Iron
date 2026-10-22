@@ -46,6 +46,7 @@ fn ext_clif(t: &ExtTy) -> ir::Type {
         | ExtTy::Record(_)
         | ExtTy::ValueList(_)
         | ExtTy::RecordList(_)
+        | ExtTy::StrList
         | ExtTy::Void
         | ExtTy::Str
         | ExtTy::Fn(..)

@@ -248,6 +248,9 @@ pub fn symbol(name: &str) -> Option<usize> {
     if name == "iron_api_result" {
         return Some(iron_api_result as *const () as usize);
     }
+    if name == "iron_api_result_str" {
+        return Some(iron_api_result_str as *const () as usize);
+    }
     let r = symbol_registry().lock().unwrap_or_else(|e| e.into_inner());
     r.get(name).copied()
 }
@@ -473,6 +476,33 @@ thread_local! {
 /// another engine call.
 pub fn return_flat(flat: Vec<f64>) {
     FLAT.with(|f| *f.borrow_mut() = flat);
+}
+
+thread_local! {
+    static STRINGS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Hands a `Vec<String>` result to compiled code: the strings are kept here (per thread) and the
+/// compiled call reads them one by one with `iron_api_result_str(i, ..)` straight after the call,
+/// before it makes another engine call.
+pub fn return_strings(strings: Vec<String>) {
+    STRINGS.with(|s| *s.borrow_mut() = strings);
+}
+
+/// The `i`-th string of the last [`return_strings`] (empty past the end): its bytes, with the
+/// length written to `out_len`. The caller copies them into a script string at once.
+///
+/// # Safety
+/// `out_len` must be valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn iron_api_result_str(i: u32, out_len: *mut i64) -> *const u8 {
+    STRINGS.with(|s| {
+        let s = s.borrow();
+        let text = s.get(i as usize).map_or("", String::as_str);
+        // SAFETY: by contract.
+        unsafe { *out_len = text.len() as i64 };
+        text.as_ptr()
+    })
 }
 
 /// The `i`-th number of the last [`return_flat`] (0 past the end).

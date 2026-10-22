@@ -184,17 +184,15 @@ pub mod assets_api {
     }
 
     /// The paths of every asset matching a glob (`*` and `?` inside one folder name, `**` across
-    /// folders, case-sensitive; a plain folder matches everything below it), sorted, one per
-    /// line. A script splits the text: `Assets.list("assets/sfx/*.wav").split("\n")`.
-    pub fn list(glob: &str) -> String {
+    /// folders, case-sensitive; a plain folder matches everything below it), sorted.
+    pub fn list(glob: &str) -> Vec<String> {
         STATE.with(|s| {
             s.borrow()
                 .index
                 .iter()
                 .filter(|(k, _)| iron_core::glob::include_match(glob.trim(), k))
-                .map(|(k, _)| k.as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
+                .map(|(k, _)| k.clone())
+                .collect()
         })
     }
 

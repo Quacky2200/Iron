@@ -1369,7 +1369,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2556 | Unit | Two builds of the same files write identical bytes and remove an old pack; two keys that differ only in case are an error. |
 | M9-TS-2558 | Unit | A pack written by the build reads back byte-identical through `iron_pack::Pack` and `Vfs` (GUIDs and importer text from `.meta`, LZ4 for text, mp3 stored, `verify`), and `pack-info` lists it. |
 | M9-TS-2559 | Unit | `find_host` picks the most recently built `iron_app` among the candidates (a stale release build does not beat a fresh debug one); `package` prints which host it used (`iron_build::package::newest_host`). |
-| M9-TS-2557 | Integration | A compiled program calls `Assets.list("assets/sfx/*.wav")` and gets the sorted keys, with `exists` and `packOf`, in every GC mode (`tools/iron_ts_tests/tests/all/assets_native.rs`). |
+| M9-TS-2557 | Integration | A compiled program calls `Assets.list("assets/sfx/*.wav")` and gets the sorted keys as a `string[]`, with `exists` and `packOf`, in every GC mode (`tools/iron_ts_tests/tests/all/assets_native.rs`). |
 | M9-TS-2560 | Unit | `--codec zstd`: `parse_codec`, a pack written with zstd reads back (whole and across a chunk boundary), `index.json` names the codec, `pack-info` lists `zstd`. |
 | M9-TS-2600 | Unit | The payload holds `dist/game.irbundle`, `dist/game.css`, `package.json`, the icon and the bundle-named assets only while those total at most 256 KiB (exactly at the limit: embedded, one byte over: none); `.meta`, unnamed assets and CSS files are never embedded. |
 | M9-TS-2601 | Unit | `iron.dataRequired` is false for a game without assets and for one whose only assets are embedded essentials (a `.meta` does not count); an unnamed file in `assets/` makes it true. |
@@ -1681,6 +1681,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1616 | Integration | A rejected top-level `await` stops the startup: `startup_error()` names the module and the error and nothing spawns (`native.rs`). |
 | M9-API-1617 | Integration | A scene that names a component class no `register` call named gets a warning naming the class and saying it never registered (`native.rs`). |
 | M9-API-1618 | Integration | A hot reload into a program that awaits restores the saved world and spawns the new class once its startup has finished (`native.rs`). |
+| M9-API-1619 | Unit | `@iron/engine`'s `Assets.exists` / `list` / `packOf` hand over to the engine's `Assets` namespace (QuickJS parity) and answer as an empty game without it (`js/engine/test/assets.test.ts`). |
+| M9-API-1620 | Integration | A `Vec<String>` result of `#[iron_api]`: the shim returns the count, `iron_api_result_str(i)` gives the strings (empty past the end), the manifest says `list:string`, QuickJS gets an array of strings (`crates/iron_api/tests/records_enums.rs`). |
 | M9-TS-3103 | Unit | Enums, records, lists, rest, docs, `like` and `options_after` become declarations (`tools/iron_ts/src/types_dts.rs`). |
 | M9-TS-3110 | Integration | Every point of every `Shapes` function on edge cases equals the old compiled TypeScript (`RefShapes`) bit for bit, in normal, stress GC and collection-off modes (`tools/iron_ts_tests/tests/all/outlines.rs`, `bench/outlines.ts`). |
 | M9-TS-3111 | Integration | Shape points are `Vector2` objects; object literals pass where points go (`tools/iron_ts_tests/tests/all/outlines.rs`). |
