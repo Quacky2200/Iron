@@ -9,3 +9,5 @@ tests/output/
 .iron/
 # Generated type declarations (`iron-build types`).
 examples/*/types/
+# Asset import settings and GUIDs (`iron-build assets`/`dev`): a build-host detail, rebuilt on demand.
+*.meta
