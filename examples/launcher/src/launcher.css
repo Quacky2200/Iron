@@ -185,6 +185,9 @@
     0 0,
     100% 0;
   mask-repeat: no-repeat;
+  /* Selected tiles scroll into view clear of the fades (9% at each end), with the cells'
+     own padding on top. */
+  scroll-padding: 44px 0 48px;
 }
 .grid {
   flex-direction: row;
