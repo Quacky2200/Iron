@@ -287,6 +287,7 @@ declare class Camera :: fieldOfView: number;
 declare class Camera :: fog: boolean;
 declare class Camera :: get layerCullDistances(): number[];
 declare class Camera :: getComponent<T>(cls: { prototype: T }): T | undefined;
+declare class Camera :: horizontalFieldOfView: number;
 declare class Camera :: iso: number;
 declare class Camera :: layerCullSpherical: boolean;
 declare class Camera :: nearClipPlane: number;
@@ -301,8 +302,10 @@ declare class Camera :: readonly rectX: number;
 declare class Camera :: readonly rectY: number;
 declare class Camera :: readonly sceneBrightness: number;
 declare class Camera :: readonly transform: Transform;
+declare class Camera :: rect: Rect;
 declare class Camera :: resetExposure(): void;
 declare class Camera :: sceneGrid: boolean;
+declare class Camera :: screenToWorldPoint(p: Vector3Like): Vector3;
 declare class Camera :: set layerCullDistances(v: readonly number[]);
 declare class Camera :: setRect(x: number, y: number, width: number, height: number): void;
 declare class Camera :: shutterSpeed: number;
@@ -681,6 +684,7 @@ declare class Material :: static create(): Material;
 declare class Material :: static create(options: { color?: Color; emission?: Color; smoothness?: number; unlit?: boolean; mainTexture?: Texture | null; mainTextureScale?: Vector2; mainTextureOffset?: Vector2; metallic?: number; normalMap?: Texture | null; normalScale?: number; metallicGlossMap?: Texture | null; hasSpecularColor?: boolean; specularColor?: Color; occlusionMap?: Texture | null; occlusionStrength?: number; emissionMap?: Texture | null; detailAlbedoMap?: Texture | null; detailAlbedoMapScale?: Vector2; detailAlbedoMapOffset?: Vector2; renderingMode?: string; alphaCutoff?: number; doubleSided?: boolean; gltfPacking?: boolean }): Material;
 declare class Material :: unlit: boolean;
 declare class Material :: withColor(color: Color): Material;
+declare class Material :: withTexture(texture: Texture): Material;
 declare class Matrix4x4
 declare class Matrix4x4 :: constructor(m0: number, m1: number, m2: number, m3: number, m4: number, m5: number, m6: number, m7: number, m8: number, m9: number, m10: number, m11: number, m12: number, m13: number, m14: number, m15: number);
 declare class Matrix4x4 :: get(row: number, col: number): number;
@@ -2599,10 +2603,6 @@ interface BlendChild :: timeScale?: number;
 interface BlendSpec
 interface BlendSpec :: blendParameter: string;
 interface BlendSpec :: children: BlendChild[];
-interface Camera
-interface Camera :: readonly horizontalFieldOfView: number;
-interface Camera :: rect: Rect;
-interface Camera :: screenToWorldPoint(p: Vector3Like): Vector3;
 interface Collider
 interface Collider :: readonly gameObject: GameObject;
 interface Collision
@@ -3065,8 +3065,6 @@ interface IronTransitionEvent extends IronEvent :: readonly pseudoElement: strin
 interface IronWheelEvent extends IronPointerEvent
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaX: number;
 interface IronWheelEvent extends IronPointerEvent :: readonly deltaY: number;
-interface Material
-interface Material :: withTexture(texture: Texture): Material;
 interface Mesh
 interface Mesh :: setFlat(data: FlatMeshData): void;
 interface MeshData

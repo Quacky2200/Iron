@@ -2295,6 +2295,13 @@ pub struct ClothBox {
             with_material(copy, |d| d.color = color);
             copy
         }
+
+        /// A copy with another main texture.
+        pub fn with_texture(self, texture: TextureRef) -> MaterialRef {
+            let copy = self.copy();
+            with_material(copy, |d| d.main_texture = texture.0);
+            copy
+        }
 "#,
         ),
         remove_hook: None,

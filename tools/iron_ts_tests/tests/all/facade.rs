@@ -417,3 +417,19 @@ fn record_lists_with_handles_and_optional_keys_cross_as_json() {
         assert_eq!(text(ts_fac_recordLists()), "2|2|1|2|2|1|0.5|1|0.5|box|2|25");
     });
 }
+
+// M9-TS-3353
+//
+// `Camera.screenToWorldPoint`, `horizontalFieldOfView` (read and write) and `rect` are native
+// maths: an 800x600 window, a 90 degree camera at (1, 2, 3) looking down -z (setting the horizontal 90 gives a vertical 74).
+#[test]
+fn camera_screen_maths_is_native() {
+    in_every_gc_mode(|| unsafe {
+        iron_engine_api::screen::set_size(800, 600);
+        // mid: (1, 2, -2); corner: x = 1 - 5 * 4/3, y = 2 + 5, z = -2; horizontal fov of a 4:3 window.
+        assert_eq!(
+            text(ts_fac_cameraMaths()),
+            "1000|2000|-2000|-5667|7000|106|74|100"
+        );
+    });
+}

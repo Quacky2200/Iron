@@ -101,15 +101,7 @@ interface Scene {
 
 // ---- Rendering ---------------------------------------------------------------------------------
 
-interface Camera {
-  readonly horizontalFieldOfView: number;
-  /** The world point at a screen point (UI pixels from the top-left), `z` units in front of the camera. */
-  screenToWorldPoint(p: Vector3Like): Vector3;
-}
 
-interface Material {
-  withTexture(texture: Texture): Material;
-}
 declare namespace Sprite {
   function create(texture: Texture, rect?: Rect | null, pivot?: Vector2, pixelsPerUnit?: number): Sprite;
 }
@@ -250,9 +242,6 @@ declare namespace Light {
   function illuminanceAt(point: Vector3Like, normal?: Vector3Like): number;
   /** A light meter that counts shadows: each light only if a physics ray from `point` reaches it (walls need colliders). */
   function measureIlluminance(point: Vector3Like, normal?: Vector3Like): Promise<number>;
-}
-interface Camera {
-  rect: Rect;
 }
 interface ParticleSystem {
   /** A number, or `[min, max]`. */

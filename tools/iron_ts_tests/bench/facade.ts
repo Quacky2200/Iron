@@ -506,3 +506,15 @@ export function recordLists(): string {
   const s = ps.shape;
   return `${lod.lodCount}|${lod.lodRendererCount(0)}|${lod.lodRendererCount(1)}|${same.lodCount}|${b.length}|${b[0]!.cycles}|${b[1]!.interval}|${c[0]!.color.r}|${ps.sizeOverLifetime[1]!.value}|${s!.type}|${s!.size!.y}|${s!.angle}`;
 }
+
+export function cameraMaths(): string {
+  const go = new GameObject("c");
+  go.transform.position = new Vector3(1, 2, 3);
+  const cam = go.addComponent(Camera, { fieldOfView: 90 });
+  const mid = cam.screenToWorldPoint({ x: Screen.width / 2, y: Screen.height / 2, z: 5 });
+  const corner = cam.screenToWorldPoint(new Vector3(0, 0, 5));
+  const h = cam.horizontalFieldOfView;
+  cam.horizontalFieldOfView = 90;
+  const r = Math.round;
+  return `${r(mid.x * 1000)}|${r(mid.y * 1000)}|${r(mid.z * 1000)}|${r(corner.x * 1000)}|${r(corner.y * 1000)}|${r(h)}|${r(cam.fieldOfView)}|${r(cam.rect.width * 100)}`;
+}

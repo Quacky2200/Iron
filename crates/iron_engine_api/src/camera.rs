@@ -140,6 +140,12 @@ pub fn reset() {
     CAMERAS.with(|c| c.borrow_mut().clear());
 }
 
+/// Width over height of the camera's part of the window.
+fn pixel_aspect(c: CameraRef) -> f64 {
+    let rect = with(c, |d| d.rect).unwrap_or([0.0, 0.0, 1.0, 1.0]);
+    crate::screen::screen_api::aspect() * (rect[2] / rect[3])
+}
+
 fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
     CAMERAS.with(|v| {
         let mut v = v.borrow_mut();
@@ -151,11 +157,16 @@ fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
     namespace = "Cameras",
     quickjs,
     handles(GameObject = ObjectId, Camera = CameraRef, Texture = TextureRef),
-    values(Color = Rgba [r: f64, g: f64, b: f64, a: f64])
+    values(
+        Color = Rgba [r: f64, g: f64, b: f64, a: f64],
+        Vector3 = V3 [x: f64, y: f64, z: f64],
+        Rect = Rect [x: f64, y: f64, width: f64, height: f64]
+    )
 )]
 pub mod camera_api {
-    use super::{CAMERAS, CameraData, CameraRef, TextureRef, with};
+    use super::{CAMERAS, CameraData, CameraRef, TextureRef, pixel_aspect, with};
     use crate::color::Rgba;
+    use iron_math::{Rect, V3};
     use iron_scene::ObjectId;
 
     /// How many cameras exist.
@@ -315,8 +326,96 @@ pub mod camera_api {
         }
 
         /// The part of the screen it draws into, from the top-left, 0 to 1.
-        pub fn set_rect(self, x: f64, y: f64, width: f64, height: f64) {
+        #[property]
+        pub fn rect(self) -> Rect {
+            with(self, |d| Rect {
+                x: d.rect[0],
+                y: d.rect[1],
+                width: d.rect[2],
+                height: d.rect[3],
+            })
+            .unwrap_or(Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            })
+        }
+
+        pub fn set_rect(self, r: Rect) {
+            with(self, |d| d.rect = [r.x, r.y, r.width, r.height]);
+        }
+
+        /// `rect` as four numbers.
+        #[js_name = "setRect"]
+        pub fn set_rect_parts(self, x: f64, y: f64, width: f64, height: f64) {
             with(self, |d| d.rect = [x, y, width, height]);
+        }
+
+        /// The field of view across the camera's part of the window, in degrees (`fieldOfView` is
+        /// the vertical one); setting it changes `fieldOfView`.
+        #[property]
+        pub fn horizontal_field_of_view(self) -> f64 {
+            let aspect = pixel_aspect(self);
+            (((f64::from(self.field_of_view()) * std::f64::consts::PI / 360.0).tan() * aspect)
+                .atan()
+                * 360.0)
+                / std::f64::consts::PI
+        }
+
+        pub fn set_horizontal_field_of_view(self, v: f64) {
+            let aspect = pixel_aspect(self);
+            let vertical = (((v * std::f64::consts::PI / 360.0).tan() / aspect).atan() * 360.0)
+                / std::f64::consts::PI;
+            self.set_field_of_view(vertical as f32);
+        }
+
+        /// The world point at a screen point (UI pixels from the top-left), `z` units in front of
+        /// the camera.
+        #[like]
+        pub fn screen_to_world_point(self, p: V3) -> V3 {
+            use iron_scene::api::scene_api as scene;
+            let Some((object, rect, orthographic, size, fov)) = with(self, |d| {
+                (
+                    d.object,
+                    d.rect,
+                    d.orthographic,
+                    f64::from(d.orthographic_size),
+                    f64::from(d.fov),
+                )
+            }) else {
+                return V3::ZERO;
+            };
+            let (screen_w, screen_h) = (
+                f64::from(crate::screen::screen_api::width()),
+                f64::from(crate::screen::screen_api::height()),
+            );
+            // The camera's area of the screen in UI pixels, then the point across it in -1..1 (y up).
+            let w = (rect[2] * screen_w).max(1e-6);
+            let h = (rect[3] * screen_h).max(1e-6);
+            let nx = ((p.x - rect[0] * screen_w) / w) * 2.0 - 1.0;
+            let ny = 1.0 - ((p.y - rect[1] * screen_h) / h) * 2.0;
+            let aspect = w / h;
+            let pos = scene::position(object);
+            let rot = scene::rotation(object);
+            let f = rot.rotate(V3 {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+            });
+            let r = rot.rotate(V3::RIGHT);
+            let u = rot.rotate(V3::UP);
+            let half_h = if orthographic {
+                size
+            } else {
+                (fov * std::f64::consts::PI / 360.0).tan() * p.z
+            };
+            let half_w = half_h * aspect;
+            V3 {
+                x: pos.x + f.x * p.z + r.x * nx * half_w + u.x * ny * half_h,
+                y: pos.y + f.y * p.z + r.y * nx * half_w + u.y * ny * half_h,
+                z: pos.z + f.z * p.z + r.z * nx * half_w + u.z * ny * half_h,
+            }
         }
 
         #[property]

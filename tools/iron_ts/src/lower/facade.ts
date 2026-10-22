@@ -6,24 +6,6 @@
 // `engine_ts.d.ts`. Keep module-level state out of a chunk: a top-level initialiser of the
 // program may run a chunk's code before the chunk's own `const`s are set.
 
-//# when .rect|rect:
-function __xg_Camera_rect(self: Camera): Rect {
-  return new Rect(self.rectX, self.rectY, self.rectWidth, self.rectHeight);
-}
-function __xs_Camera_rect(self: Camera, r: Rect): void {
-  self.setRect(r.x, r.y, r.width, r.height);
-}
-
-//# when horizontalFieldOfView
-function __xg_Camera_horizontalFieldOfView(self: Camera): number {
-  const aspect = Screen.aspect * (self.rectWidth / self.rectHeight);
-  return (Math.atan(Math.tan((self.fieldOfView * Math.PI) / 360) * aspect) * 360) / Math.PI;
-}
-function __xs_Camera_horizontalFieldOfView(self: Camera, v: number): void {
-  const aspect = Screen.aspect * (self.rectWidth / self.rectHeight);
-  self.fieldOfView = (Math.atan(Math.tan((v * Math.PI) / 360) / aspect) * 360) / Math.PI;
-}
-
 //# when new Material(
 function __xn_Material(
   color: Color = Color.white,
@@ -44,13 +26,6 @@ function __xn_Material(
   m.unlit = unlit;
   if (mainTexture !== null) m.mainTexture = mainTexture;
   m.metallic = metallic;
-  return m;
-}
-
-//# when withTexture
-function __xm_Material_withTexture(self: Material, texture: Texture): Material {
-  const m = self.copy();
-  m.mainTexture = texture;
   return m;
 }
 
@@ -458,26 +433,3 @@ function __xt_Light_measureIlluminance(point: Vector3, normal?: Vector3): Promis
     });
   });
 }
-
-//# when screenToWorldPoint @ Camera Screen
-function __xm_Camera_screenToWorldPoint(self: Camera, p: Vector3): Vector3 {
-  // The camera's area of the screen in UI pixels, then the point across it in -1..1 (y up).
-  const w = Math.max(1e-6, self.rectWidth * Screen.width);
-  const h = Math.max(1e-6, self.rectHeight * Screen.height);
-  const nx = ((p.x - self.rectX * Screen.width) / w) * 2 - 1;
-  const ny = 1 - ((p.y - self.rectY * Screen.height) / h) * 2;
-  const aspect = w / h;
-  const t = self.gameObject.transform;
-  const pos = t.position;
-  const f = t.forward;
-  const r = t.right;
-  const u = t.up;
-  const halfH = self.orthographic ? self.orthographicSize : Math.tan((self.fieldOfView * Math.PI) / 360) * p.z;
-  const halfW = halfH * aspect;
-  return new Vector3(
-    pos.x + f.x * p.z + r.x * nx * halfW + u.x * ny * halfH,
-    pos.y + f.y * p.z + r.y * nx * halfW + u.y * ny * halfH,
-    pos.z + f.z * p.z + r.z * nx * halfW + u.z * ny * halfH,
-  );
-}
-
