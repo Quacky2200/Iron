@@ -1280,6 +1280,7 @@ dependencies = [
  "image",
  "iron_core",
  "iron_engine_api",
+ "iron_pack",
  "iron_physics_api",
  "iron_render_api",
  "iron_scene",
@@ -1338,6 +1339,17 @@ name = "iron_math"
 version = "0.1.0"
 dependencies = [
  "iron_api",
+]
+
+[[package]]
+name = "iron_pack"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "iron_core",
+ "memmap2",
+ "miniz_oxide 0.9.1",
+ "siphasher",
 ]
 
 [[package]]

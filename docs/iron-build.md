@@ -310,6 +310,7 @@ bundle is untouched). Hot reload keeps state the way the QuickJS reload does (sc
 iron-build package <game> [--host iron_app.exe] [--out file] [--no-build] [--no-tsc]
     [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d]
     [--icon file.png|.ico] [--sign-cmd "signtool sign /fd sha256 ... {exe}"] [--data-dir name] [--no-data]
+    [--packs [--report]]
 ```
 
 It builds the game (unless `--no-build`), then writes `<game>/dist/<exe>.exe` (no extension on other systems): a copy of the
@@ -330,6 +331,36 @@ The command prints the exe size, the number and size of the embedded files, and 
 files. `--data-dir <name>` is one plain folder name (no separators, not hidden); the exe is told the name (`dataDir` in its
 payload's `project.json`). `--no-data` is for a build that packs the assets itself: nothing is copied, the exe still looks for the
 folder (or `--data` / `$IRON_DATA`). Nothing is deleted from an existing data folder; files with the same path are overwritten.
+
+### `--packs`: assets in packs (opt-in, phase 1 of `docs/research/iron-virtual-fs-plan.md`)
+
+`iron-build package <game> --packs` writes the data files as `.irpk` packs (`crates/iron_pack`, LZ4) instead of loose files:
+
+```
+data/
+  index.json               the packs in mount order (name, file, role, id, entries, bytes, scene)
+  assets.dat               what the code may load at any time (named by the code, reached by a dynamic path, selected by
+                           `include`, `dist/` copies) and the assets two or more scenes share
+  scene-<slug>.dat         one scene file (the first entry) and the assets only that scene uses
+```
+
+Placement (plan section 2.5): a file taken for any reason other than being named by a scene goes to `assets.dat`; the assets a scene
+JSON names (any string that is an existing game file, a `guid:` source found through the `.meta` files, prefabs followed) go to that
+scene's pack when it is the only user and to `assets.dat` when two or more scenes use them; a scene file always has its own pack, even
+when `include` selects it. Scene references outside `include` are packed too. A `.meta` with `"importer": {"pack": false}` keeps a
+file out (unless the code names it). The `.meta` files themselves are not entries: the GUID and the importer settings go into the
+entry. Pack keys are exact-case; two keys that differ only in case are an error. mp3, ogg, png, jpg, flac and woff2 are stored raw.
+
+The build prints, per pack, the entries by reason (`assets.dat: 157 entries (code 7, include 1, patterns 149), ...`) and the first
+files of each reason; `--report` lists every file. The output is deterministic (the same files give the same bytes) and an old
+`assets.dat`, `scene-*.dat` or `index.json` in the folder is removed first. Textures and models stay in **source form** for now (no
+cooker in the build; a note says so); both cooked and source forms is the decision for later, with a note to revisit cooked only.
+`iron-build pack-info <file.dat>` lists a pack: version, id, entries, codec totals and one row per entry (kind, size, stored size,
+codec, GUID, path).
+
+**Not usable by a running game yet:** `iron_app` still reads a loose `data/` folder (phase 2 mounts `index.json` through `Vfs`), so
+a `--packs` exe needs that later step. The default stays loose; flipping it is a TODO (`tools/iron_ts/TODO.md`, asset packs).
+`emoji` with `--packs`: one `assets.dat`, 157 entries, 6.41 MB raw, 5.93 MB on disk.
 
 **The host** is `--host`, else `$IRON_HOST`, else the newest of `iron_app` next to `iron-build` and `target/{release,debug}/iron_app`
 found going up from the game folder and the current folder (release first). A host that already carries a payload is stripped first, so
@@ -451,7 +482,7 @@ Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--a
 a certificate table), `M9-API-1010..1011` the runtime side (`iron_app/src/payload.rs`), `M9-TS-2400..2402` metadata, `2410..2412` file
 collection and a full package with the sign hook, `2420..2421` icon conversion, `2430` the PE resource round trip, `2440` (ignored
 unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built host and a GPU) the standalone run,
-`M9-API-1200..1204` the asset root (`iron_app/src/asset_root.rs`), `M9-TS-2600..2603` the payload/data split, the data-folder name and
+`M9-API-1200..1204` the asset root (`iron_app/src/asset_root.rs`), `M9-TS-2550..2553` globs, dynamic path inference, include/exclude and the packaged emoji run, `2554..2559` the pack build (placement, determinism, byte-identical read back, case), `M9-API-1143` the dev `assets.plan` warning, `M9-TS-2600..2603` the payload/data split, the data-folder name and
 `--data-dir` / `--no-data`, `2610` (ignored, `-- --ignored standalone_data`) a packaged game reading `data/` and the missing-folder error.
 
 `M9-API-1300..1318` the project loader (`iron_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license, required `name`, silent defaults, empty fields: `1321..1322`), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples (found by `project.json`, none has a `package.json`), `2722` and `2724` the empty-field warnings (build, package; not check), `2723` package default warnings, `2725` game discovery.

@@ -3,7 +3,7 @@
 //! game's code (bundle, CSS, metadata, icon) as a payload at its end (`iron_core::payload`). The
 //! assets are copied to a `data/` folder beside it, never embedded. See `docs/iron-build.md`.
 
-use crate::{Options, build, icon, include, pe};
+use crate::{Options, build, icon, include, packs, pe};
 use iron_core::payload::{self, Archive};
 use iron_core::project::{FixedUser, LoadOptions, Platform, Project, SystemUser, UserInfo};
 use serde_json::Value;
@@ -204,6 +204,8 @@ pub struct DataFile {
     pub rel: String,
     pub src: PathBuf,
     pub size: u64,
+    /// Why the file is taken (a pack build places files by it).
+    pub reason: include::Reason,
 }
 
 /// What a game is made of: the small payload and the files for the data folder.
@@ -290,6 +292,12 @@ pub fn collect_files(
     }
     let mut wanted = named.clone();
     wanted.extend(project.start_scene.clone());
+    // Why each file is taken, strongest first: named by the code, reached by a dynamic path, `include`.
+    let mut reasons: std::collections::HashMap<String, include::Reason> =
+        std::collections::HashMap::new();
+    for f in &wanted {
+        reasons.entry(f.clone()).or_insert(include::Reason::Code);
+    }
     // The build finds assets by the string literals of the program; a path built at run time
     // (`"assets/" + name`) is a pattern (`assets/*.png`, from the bundle's `patterns`), and
     // CSS text is not seen at all, so the `assets` folder goes in whole unless `include` says
@@ -306,7 +314,7 @@ pub fn collect_files(
     for u in &selected.unmatched {
         warnings.push(format!("include {u:?} matches no file"));
     }
-    wanted.extend(selected.files);
+    let included = selected.files;
     let excluded = |f: &str| {
         project
             .exclude
@@ -316,12 +324,18 @@ pub fn collect_files(
     };
     for p in bundle["patterns"].as_array().into_iter().flatten() {
         if let Some(glob) = p["glob"].as_str() {
-            wanted.extend(
-                include::match_pattern(&all, glob)
-                    .into_iter()
-                    .filter(|f| !excluded(f)),
-            );
+            for f in include::match_pattern(&all, glob)
+                .into_iter()
+                .filter(|f| !excluded(f))
+            {
+                reasons.entry(f.clone()).or_insert(include::Reason::Pattern);
+                wanted.push(f);
+            }
         }
+    }
+    for f in included {
+        reasons.entry(f.clone()).or_insert(include::Reason::Include);
+        wanted.push(f);
     }
     let mut paths: Vec<String> = Vec::new();
     for rel in wanted {
@@ -343,7 +357,13 @@ pub fn collect_files(
         let inner = rel.strip_prefix("dist/").unwrap_or(&rel);
         let skip = matches!(
             inner,
-            "game.irbundle" | "game.css" | "game.o" | "game_bindings.rs" | "game.js" | "vendor.js"
+            "game.irbundle"
+                | "game.css"
+                | "game.o"
+                | "game_bindings.rs"
+                | "game.js"
+                | "vendor.js"
+                | "assets.plan"
         ) || inner.ends_with(".map")
             || inner.ends_with(".exe")
             || paths.iter().any(|p| p == inner)
@@ -357,7 +377,14 @@ pub fn collect_files(
     for rel in paths {
         let src = game.join(&rel);
         let size = std::fs::metadata(&src).map_err(|e| io(&src, e))?.len();
-        data.push(DataFile { rel, src, size });
+        let base = rel.strip_suffix(".meta").unwrap_or(&rel);
+        let reason = reasons.get(base).copied().unwrap_or(include::Reason::Code);
+        data.push(DataFile {
+            rel,
+            src,
+            size,
+            reason,
+        });
     }
 
     let mut files = Vec::new();
@@ -433,6 +460,11 @@ pub struct PackageOptions {
     pub no_data: bool,
     /// The person the templates of `project.json` see (default: the system's user).
     pub user: Option<FixedUser>,
+    /// Write the data as packs (`data/assets.dat`, `data/scene-<slug>.dat`, `data/index.json`)
+    /// instead of loose files. Opt-in: `iron_app` does not read packs yet.
+    pub packs: bool,
+    /// List every file of every pack in the report.
+    pub report: bool,
 }
 
 #[derive(Debug)]
@@ -446,6 +478,8 @@ pub struct Packaged {
     pub data_files: usize,
     pub data_bytes: u64,
     pub info: DataInfo,
+    /// The packs written instead of loose data files (`--packs`).
+    pub pack_report: Option<packs::PackReport>,
     /// The names of the embedded files.
     pub embedded: Vec<String>,
     pub meta: Metadata,
@@ -647,8 +681,15 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
     }
     std::fs::rename(&tmp, &out).map_err(|e| io(&out, e))?;
     // The assets stay files beside the exe.
+    let mut pack_report = None;
     let data_bytes = if opts.no_data || collected.data.is_empty() {
         0
+    } else if opts.packs {
+        let plan = packs::plan(game, &collected.data)?;
+        let report = packs::write(&plan, &data_path)?;
+        let bytes = report.bytes();
+        pack_report = Some(report);
+        bytes
     } else {
         copy_data(&collected.data, &data_path)?
     };
@@ -686,9 +727,14 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         payload_size,
         files: check.entries.len(),
         data_path: copied.then_some(data_path),
-        data_files: if copied { collected.data.len() } else { 0 },
+        data_files: match (&pack_report, copied) {
+            (Some(r), _) => r.entries(),
+            (None, true) => collected.data.len(),
+            (None, false) => 0,
+        },
         data_bytes,
         info: collected.info,
+        pack_report,
         embedded: check.entries.iter().map(|e| e.path.clone()).collect(),
         meta,
         license_files,
@@ -699,7 +745,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
 
 const USAGE: &str = "usage: iron-build package <game> [--host iron_app.exe] [--out file] [--no-build] [--no-tsc]
        [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d] [--icon file.png|ico]
-       [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data]";
+       [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--report]]";
 
 /// The `package` command: `args` are the ones after the word `package`. Returns the exit code.
 pub fn run_cli(args: &[String]) -> i32 {
@@ -723,6 +769,8 @@ pub fn run_cli(args: &[String]) -> i32 {
             "--sign-cmd" => opts.sign_cmd = value(&mut it),
             "--data-dir" => opts.data_dir = value(&mut it),
             "--no-data" => opts.no_data = true,
+            "--packs" => opts.packs = true,
+            "--report" => opts.report = true,
             s if !s.starts_with("--") && game.is_none() => game = Some(PathBuf::from(s)),
             _ => {
                 eprintln!("{USAGE}");
@@ -745,12 +793,23 @@ pub fn run_cli(args: &[String]) -> i32 {
                     ""
                 }
             );
+            if let Some(r) = &p.pack_report {
+                print!("{}", r.listing(opts.report, 40));
+                for n in &r.notes {
+                    println!("note: {n}");
+                }
+            }
             match &p.data_path {
                 Some(d) => println!(
-                    "{}: {} asset file(s), {} bytes copied{}",
+                    "{}: {} asset file(s), {} bytes {}{}",
                     d.display(),
                     p.data_files,
                     p.data_bytes,
+                    if p.pack_report.is_some() {
+                        "in packs"
+                    } else {
+                        "copied"
+                    },
                     if p.info.required {
                         " (the exe needs this folder beside it)"
                     } else {

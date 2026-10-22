@@ -172,6 +172,10 @@ unreferenced assets, both forms for code-literal textures, one shared pack, the 
 Differences to keep in mind:
 
 - [x] Dynamic asset paths built at run time (virtual file system plan, phase 0, 2026-10-22): `include` / `exclude` take globs (default `assets/**`), the build infers `assets/sfx/*.*` from template literals and `+` chains (`iron_ts::assetpaths`), reports what each reached, and `dist/assets.plan` makes the dev app warn about a loaded file a packaged build would miss (`M9-TS-2550..2553`, `M9-API-1143`). Packaged `emoji` checked in a screenshot run.
+- [x] Pack build, phase 1 (2026-10-22): `iron-build package --packs` writes `data/assets.dat` + `scene-<slug>.dat` + `index.json` with the reference-counting rule, `iron-build pack-info`; deterministic; source forms only (`M9-TS-2554..2559`). The runtime does not read them yet (phase 2: mount through `Vfs`).
+- [ ] **Flip `iron-build package` to write packs by default** (and add `--loose` for debugging and modding) once packs have been exercised on real games (decision 8 of the virtual-fs plan).
+- [ ] Revisit: textures named in code are stored in source form only for now; the cooked form, and both, come with the cooker move (decision 5: both forms for now, consider cooked only to cut bloat).
+- [ ] zstd as the second codec (approved, crate not added yet); DirectStorage and `CODEC-1` come later.
 - [ ] A cooked texture's GUID differs from its source's (`Assets.pathToGuid` answers the source GUID).
 - [ ] Packs hold `IRTX` v1 (largest mip first) until step 12; no mip streaming before that.
 - [ ] `iron-build pack` needs a built `iron_app` for cooking until `crates/iron_cook` (step 15).

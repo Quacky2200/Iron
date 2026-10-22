@@ -381,6 +381,17 @@ impl Pack {
         }
     }
 
+    /// How an entry's chunks are stored: (codec, stored bytes, raw bytes) per chunk (for
+    /// inspection tools; a chunk of an unknown codec is reported as `None`).
+    pub fn chunks_of(&self, e: &Entry) -> Vec<(Option<Codec>, u32, u32)> {
+        (e.first_chunk..e.first_chunk + e.chunk_count)
+            .map(|i| {
+                let c = self.chunk(i as usize);
+                (Codec::from_u8(c.codec), c.stored_size, c.raw_size)
+            })
+            .collect()
+    }
+
     pub fn entries(&self) -> impl Iterator<Item = Entry> + '_ {
         (0..self.len()).map(|i| self.entry(i))
     }

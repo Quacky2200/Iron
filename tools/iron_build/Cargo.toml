@@ -18,6 +18,7 @@ iron_physics_api = { path = "../../crates/iron_physics_api" }
 iron_render_api = { path = "../../crates/iron_render_api" }
 serde_json = "1"
 iron_core = { path = "../../crates/iron_core" }
+iron_pack = { path = "../../crates/iron_pack" }
 base64 = "0.23.1"
 editpe = "0.2.4"
 image = { version = "0.25.10", default-features = false, features = ["png", "ico"] }

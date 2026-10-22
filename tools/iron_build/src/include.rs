@@ -7,6 +7,17 @@ use crate::assets;
 use iron_core::glob::{glob_match, include_match, is_glob};
 use std::path::Path;
 
+/// Why a file is taken into a packaged build, strongest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Reason {
+    /// Named by the code (a whole literal, a CSS `url()`), or the start scene.
+    Code,
+    /// Reached by a dynamic path the code builds.
+    Pattern,
+    /// Selected by `include` (the default is `assets/**`).
+    Include,
+}
+
 /// The default `include`: the whole assets folder.
 pub const DEFAULT_INCLUDE: &str = "assets/**";
 

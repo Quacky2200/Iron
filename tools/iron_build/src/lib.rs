@@ -14,6 +14,7 @@ pub mod icon;
 pub mod include;
 pub mod init;
 pub mod package;
+pub mod packs;
 pub mod pe;
 
 use std::path::{Path, PathBuf};
