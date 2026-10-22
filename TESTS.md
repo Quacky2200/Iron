@@ -226,6 +226,7 @@ layout pass):
 | M3-EVT-05 | Integration + Golden | `overflow: hidden` clips children (including rounded clips); `overflow: scroll` scrolls with the wheel and keeps hit testing consistent with what's drawn. |
 | M3-EVT-07 | Integration | A span inside text is the target over its own characters (and in event paths, under its text); elsewhere, and over a `pointerEvents: none` span, the text element is hit. |
 | M3-EVT-08 | Integration + JS unit | `scrollIntoView` puts an element at the start, centre or end of each scroll container, or (`nearest`) scrolls only as far as needed and not at all when it's visible, clamped to the scroll range; `ref.scrollIntoView()` takes the DOM's arguments and defaults (`block: "start"`, `inline: "nearest"`; `false` is the end). |
+| M3-EVT-09 | Integration + JS unit | Smooth scrolling: `behavior: "smooth"` (or `auto` under `scroll-behavior: smooth`) on `scrollTo` / `scrollBy` / `scrollIntoView` eases in and out over 250 to 500 ms by distance, sends `scroll` events as it moves, stops when something scrolls it directly, and `scrollBy` steps add up from where it is heading; refs take the DOM's option objects (`{ left, top, behavior }`). |
 | M3-IME-01 | Integration | IME composition (pre-edit) text shows in a text field and the committed text is inserted; the candidate window is positioned at the caret. |
 | M3-BG-01 | Unit + Golden | `conic-gradient` (start angle, centre, angle/percentage stops, two-position stops) and the `repeating-` gradients parse, and render as a pie, repeating stripes and a rotated off-centre conic. |
 | M3-BG-02 | Unit + Golden | Background layer lists (images, clips, repeats, positions, `position-x/-y`) parse; `round`/`space` fit whole tiles; a content-box-clipped colour, two clipped layers, spaced tiles and gradient text (`background-clip: text`) render. |
@@ -273,6 +274,7 @@ layout pass):
 | M3-INP-01 | Integration | A controlled `<input>`: typing calls `onChange`, the value round-trips, selection with mouse and Shift+arrows works, copy/paste uses the clipboard. |
 | M3-INP-02 | Integration | Text-field shortcuts (Ctrl/Cmd+A/C/X/V) follow the physical key `code` when the layout's `key` isn't a Latin letter (Russian layout: `key` "ф", `code` "KeyA" selects all); AltGr (Ctrl+Alt) still types. |
 | M3-PAD-01 | Integration | Gamepad button events from `gilrs` reach scripts (using a simulated device where possible). |
+| M3-PAD-02 | Unit | Each pad connection reaches scripts once: pads already plugged in are announced on the first poll, a repeated `Connected` for a known pad is dropped, and one that disconnects and comes back is announced again. |
 | M3-MAN-01 | Manual | `iron examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
 
 ---

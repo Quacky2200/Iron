@@ -91,7 +91,7 @@ need no `image`. A rejected image is logged and skipped.
 - After each `handle_ui`, `Interaction::take_clipboard()` is serviced and `update_ime` runs (see
   [Text fields](#text-fields-m3c-step-5)); `frame()` also calls `UiTree::set_time(now_ms)` (caret
   blink) and `update_ime` (the caret may have moved with layout).
-- Script ops `focus`, `blur` (and `scrollTo`, `scrollBy`, `scrollIntoView`, which map to `Input::ScrollTo/ScrollBy/ScrollIntoView`) are
+- Script ops `focus`, `blur` (and `scrollTo`, `scrollBy`, `scrollIntoView`, which take a behavior string as 4th arg and map to `Input::ScrollTo/ScrollBy/ScrollIntoView`) are
   turned into `Input` values in `App::tick`. At the end of each tick the app sends `Input::Refresh`.
 
 ## Hit testing ([tree.rs](../crates/iron_ui/src/tree.rs) `hit_test`)
@@ -256,10 +256,12 @@ refreshes hover (content moved under the pointer).
 |---|---|
 | `wheel` not prevented | `scroll_chain`: the first element on the path (innermost first) that can still move by the delta scrolls; otherwise the next ancestor takes over, unless the element that could not move has `overscroll-behavior: contain` (or `none`) on that axis (`UiTree::contains_overscroll`), which ends the chain. With Shift held and no `dx`, a vertical wheel scrolls horizontally |
 | Keys (`key_scroll`, after `keydown` is not prevented) | Arrows scroll `SCROLL_LINE` (40 px), Page Up/Down and Space (Shift+Space up) scroll `SCROLL_PAGE` (0.875) of the visible height, Home/End jump. Origin is the focused element, else the hovered one; the first container on its path that moves wins, and `overscroll-behavior` stops the walk the same way |
-| Tab / `ref.focus()` | `scroll_into_view` with `ScrollAlign::Nearest` on both axes: each scrolling ancestor scrolls just enough to show the element, keeping its start edge visible if it is larger than the viewport |
+| Tab / `ref.focus()` | instant (never smooth) `scroll_into_view` with `ScrollAlign::Nearest` on both axes: each scrolling ancestor scrolls just enough to show the element, keeping its start edge visible if it is larger than the viewport |
 | Scrollbar press (primary button, checked **before** the page sees `pointerdown`) | `press_scrollbar` via `UiTree::scrollbar_at`: on the thumb it starts a drag (remembering the grab offset), on the track it pages toward the press |
 | Pointer move while dragging | `drag_scrollbar` maps the thumb position back to an offset; `PointerUp` ends the drag |
-| Scripts | `ScrollTo`, `ScrollBy`, `ScrollIntoView { block, inline }` inputs (`by_user = false`, so they also scroll `overflow: hidden`). `ScrollAlign` per axis, as the DOM's `ScrollLogicalPosition`: `Start` / `End` line up that edge with the container's, `Center` centres, `Nearest` is the focus behaviour above; each container is scrolled innermost first and clamped to its range (`M3-EVT-08`) |
+| Scripts | `ScrollTo`, `ScrollBy`, `ScrollIntoView { block, inline }` inputs (`by_user = false`, so they also scroll `overflow: hidden`). `ScrollAlign` per axis, as the DOM's `ScrollLogicalPosition`: `Start` / `End` line up that edge with the container's, `Center` centres, `Nearest` is the focus behaviour above; each container is scrolled innermost first and clamped to its range (`M3-EVT-08`); `ScrollTo` treats NaN as "keep that axis", `ScrollBy` adds to `scroll_goal`. Each carries a `behavior` (`ScrollBehavior`: `Auto` follows the container's `scroll-behavior`, `Instant`, `Smooth`); smooth ones call `UiTree::smooth_scroll_to` instead (`scroll_into_view` allows for inner smooth scrolls not having moved yet) (`M3-EVT-09`) |
+
+`Input::Refresh` dispatches `scroll` events for the containers `take_smooth_scrolled` lists, since smooth scrolls move on `set_time`, not on an input. Wheel, scrollbar drag and keys are instant: they go through `scroll_to`, which cancels a running smooth scroll.
 
 User scrolling needs `overflow: scroll` or `auto` on that axis; `hidden` scrolls only from scripts;
 `clip` and `visible` never scroll. The `scroll` event does not bubble and carries `ScrollInfo`
@@ -340,7 +342,9 @@ flowchart LR
 [gamepad.rs](../crates/iron_platform/src/gamepad.rs) turns `gilrs` events into
 `InputEvent::Gamepad { id, event }`; `id` is stable while the pad is connected. `GamepadEvent` is
 `Connected { name }`, `Disconnected`, `ButtonDown(name)`, `ButtonUp(name)`, `ButtonValue(name, 0..1)`
-(analog triggers) and `Axis(name, -1..1)`. Names are fixed strings so scripts do not depend on
+(analog triggers) and `Axis(name, -1..1)`. `Platform::poll_gamepads` announces pads already plugged in
+at its first poll (some `gilrs` backends send no `Connected` for them); `announce_once` drops a repeat
+`Connected` for a known pad and forgets pads on `Disconnected` (`M3-PAD-02`). Names are fixed strings so scripts do not depend on
 `gilrs`:
 
 - Buttons (`button_name`): `South` (A), `East` (B), `West` (X), `North` (Y), `LeftBumper`,

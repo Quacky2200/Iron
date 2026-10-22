@@ -500,7 +500,14 @@ them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin
   `scroll_axes(id, by_user)` (user: `scroll`/`auto`; scripts also `hidden`) and
   `scroll_to(id, x, y, by_user)`, which clamps to `0..=scroll_max` per scrollable axis, sets
   `needs_layout` and returns whether the offset changed. Taffy's layout is cached; only the
-  absolute rects are recomputed.
+  absolute rects are recomputed. It cancels a running smooth scroll on that node; the old body is
+  private `set_scroll`.
+- **Smooth scrolling** (`M3-EVT-09`): `smooth_scroll_to(id, x, y, by_user)` starts an eased scroll
+  (cubic-bezier(.42,0,.58,1); retargeting mid-flight eases out from the current position; duration
+  `200 + distance * 0.25` ms, clamped to 250..500) and returns the clamped goal. `set_time` advances
+  them (`step_smooth_scrolls`), `is_animating` includes them, `take_smooth_scrolled` lists containers
+  moved, `scroll_goal` is where one is heading. `scrollBehavior: smooth` (`Visual.scroll_smooth`;
+  `smooth_by_default`) makes script scrolls with `Auto` behavior smooth.
 - **Applied in `layout_if_needed`**: while building `rects`, an element's offset is first clamped
   to the current `scroll_max` (content may have shrunk), then subtracted from the origin passed to
   its children. Hit testing and drawing both read these shifted rects, and the `overflow` clip is
