@@ -1686,6 +1686,13 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   with the mouse (arrows, clicks, wheel), keys or a gamepad (d-pad, bumpers, left stick); a
   details panel (title, folder, `package.json` description) with Play, a loading spinner, then
   an alert that launching isn't implemented.
+  - [x] A grid view (G / pad Y, remembered in `PlayerPrefs`): tiles rise in row by row, the
+    selected one lifts; arrows / d-pad / stick move in 2D and keep it scrolled into view
+  - [x] Button prompts follow the last device used, as PC games do (keys and mouse show
+    keycaps and the cursor; a pad hides the cursor and shows Xbox, PlayStation or Nintendo
+    icons from its name; Nintendo pads confirm with A, the right-hand button)
+  - [x] Engine fix found on the way: minified function lists (`translateY(0)scale(1)`) didn't
+    parse; stylesheet values now get a space after a `)` that runs into a word (`M3-CSS-13`)
   - [ ] Actually launch a game (start `iron <folder>` as a child process, or switch games in
     place) and return to the launcher when it quits
 - [~] `examples/md-reader`: a Markdown reader for Iron's own docs, drawn by Iron's UI. Its own
