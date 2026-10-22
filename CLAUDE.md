@@ -130,7 +130,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
 ## Gotchas
 - **No engine imports in games:** engine and UI names (`Vector3`, `GameObject`, `Component`, `useState`, `createRoot`, ...) are TypeScript globals declared in the generated `types/iron.d.ts` (`iron-build types`; `iron-build build` passes it to `tsc` by itself). Examples import only relative files and `.css`. Old `import { .. } from "@iron/engine"` forms still compile. When an API the examples use changes shape, update `tools/iron_ts/src/lower/engine_ts.d.ts` (see `docs/iron-build.md`).
 - **Modules:** a bare import (`from "foo"`) is a file of `src/modules/` (next to the entry); there is no `node_modules` resolution, so a TypeScript package is used by copying its `.ts` source in (`docs/iron-build.md`, "Modules and packages"). A module may not capture engine global names (it is renamed internally); unreferenced top-level functions are not compiled.
-- **Shell edits:** bash heredocs mangle apostrophes and backslashes on this machine. For multi-line edits use the Edit/Write tools, or a Python script written to the scratchpad.
+- **Shell edits:** never create or change files with bash heredocs, `echo`/`cat` redirects or `python -c` strings, even though the tools are installed: they mangle apostrophes and backslashes on this machine. Always use the Edit/Write tools, or a Python script saved as a file (written with Write, then run).
 - **Interrupted builds:** if cargo was killed mid-build, delete the corrupt `.pdb` files under `target/` before rebuilding.
 - **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/iron_app.exe`.
   Run `cargo build -p iron_app` before any manual check in the window. A running window locks the
