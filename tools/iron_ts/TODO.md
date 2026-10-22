@@ -486,15 +486,29 @@ two examples needed (M9-TS-3361..3382), `b7730d0` the examples as iron-build gam
   `Number(x)` of a missing string is NaN, as for `undefined`); a copy where an object of another shape goes is still a copy
   (Ref<T> became `{ current: T }` so refs are shared); errors in lazily lowered functions can carry the caller's line.
 
-## Resume point (2026-10-22, generated declarations: phases 1-5 done)
+## Resume point (2026-10-22, test speed-up)
 
-**Done (commits, newest first):** `0fdee4c` engine_ts.d.ts and the supplement mechanism deleted, ratchet strict; `12658ae` the built-ins table (`src/builtins.rs`) declares what engine_ts.d.ts did;
-`b69eee3` `Collision` / `Collider` / `Collision2D` are physics-manifest records; `36838d0` window messaging on Rust natives (`emitJson`, `#[promise] requestJson` / `askJson`, `Window.eventNameError`), `lower/messages.rs`, facade.ts deleted;
-`95a0373` native light meter (`iron_render_api/src/light_meter.rs`); `b82d098` `Random.pick` lowerer intrinsic. Docs: `793369d` (plan section 14 has the details).
-Green after the last commit: root fmt / clippy / `cargo test --workspace`; tools fmt / clippy / `cargo test --workspace`, `IRON_TS_GC=stress` (998), examples `--tsc` 41/0; `bun run typecheck`; `bun test` 224.
+**Done (commits, newest first):** `25164f1` docs: tuples are supported, `tools/err.txt` gone; `080c779` the one `all` test
+binary split into five by area (`tests/{lang,stdlib,engine,engine_api,ui}/`, `tests/common/cases.rs` shared by `#[path]`);
+`fd46498` `iron_ts_tests/build.rs` caches each program's object in OUT_DIR (key: bundled source, prefix, base, manifests and
+the build script's own exe, which cargo relinks whenever `iron_ts` changes), compiles stale ones in parallel, and build
+scripts are no longer `opt-level = 3` (`[profile.dev.build-override]` removed: it built iron_ts a second time, 31 s);
+`b29c3aa` the concrete 2D colliders' `attachedRigidbody2d` is `attachedRigidbody` (`M9-TS-1006`). Earlier: generated
+declarations phases 1-5 (see "Every declaration generated from Rust" and git log).
+Timings (`--no-run`, debug): a compiler edit 44-55 s -> ~20 s; a bench edit 11 s -> 7 s; a test edit ~5 s -> 4-5 s.
+Green after the last commit: root fmt / clippy / `cargo test --workspace` (1042); tools fmt / clippy / `cargo test
+--workspace` (1208, of which the five groups 1022), `IRON_TS_GC=stress` over the five groups; examples `--tsc` 43/0;
+`bun run typecheck`; `bun test` 225.
 
-**Left (separate later steps, not started):** P4b, the `ui.ts` hook helpers as IR lowering; `temporal.ts` in Rust (decision 2). Both are on `ALLOWED_TS` in `generated_dts.rs`.
-Optional: a `Builtin::lowering` tag that a test reaches; `MeshRenderer.mesh` / `AudioSource.playOneShot` could become native versions (`#[setter(mesh)]` with `PrimitiveType`, `#[js_name = "playOneShot"]` on the path form) instead of built-in signatures.
-Known limits: QuickJS keeps the first of several versions of a setter/function and passes json callbacks as text; natives cannot throw (the typed window calls throw the text of `Window.eventNameError`); record fields print without `readonly` (`Collision`'s were readonly); a `#[promise]` with optional parameters also gets an options-object declaration that the compiled promise wrapper does not take (pre-existing pattern, now also `Light.measureIlluminance`).
+**Run:** one area `cargo test -p iron_ts_tests --test <lang|stdlib|engine|engine_api|ui> [filter]`; all of them
+`cargo test -p iron_ts_tests`. Keep one command shape: `-p iron_ts_tests` and `--workspace` unify features differently
+(`simd-adler32` / `miniz_oxide` via iron_build), so switching rebuilds iron_ts_tests and relinks its 11 binaries (~3-5 s);
+a different `CARGO_INCREMENTAL` rebuilds every path crate.
 
-**Verify:** the list above; re-bless with `IRON_BLESS=1 cargo test -p iron_build --test generated_dts`. Some files are CRLF (animator.rs, input.rs, iron_build/src/lib.rs, this file): use the Edit tool.
+**Left:** P4b, the `ui.ts` hook helpers as IR lowering; `temporal.ts` in Rust (decision 2); both on `ALLOWED_TS` in
+`generated_dts.rs`. A handle of a subclass does not convert to its base class's type (`const c: Collider2D =
+go.getComponent(BoxCollider2D)!` is "type mismatch"). Ideas not done: rust-lld for the tools workspace (~1 s per test link),
+`required-features` on the five bins so test builds stop linking them.
+
+**Verify:** the list above; re-bless with `IRON_BLESS=1 cargo test -p iron_build --test generated_dts`. Some files are CRLF
+(animator.rs, input.rs, iron_build/src/lib.rs, this file): use the Edit tool.
