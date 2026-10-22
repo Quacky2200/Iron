@@ -1691,9 +1691,21 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   - [ ] Scrolling lays out again on every wheel tick: move the scrolled subtree's rects instead
   - [x] Extra command-line arguments passed to scripts: `iron <game> -- ...` is `Application.args`
     (`M5-APP-11`)
-  - [ ] Reading a folder outside the game while running (the reader's `--root`): M6 plans only
-    the `game` and `data` roots, so this needs a decision (a read-only folder the user names on
-    the command line?)
+  - [ ] Reading a folder outside the game while running (the reader's `--root`, which exits with
+    an error for now): M6 plans only the `game` and `data` roots, so this needs a decision (a
+    read-only folder the user names on the command line?)
+  - [x] `scrollIntoView` takes the DOM's `{ block, inline }` (`start` / `center` / `end` /
+    `nearest`, default `start` / `nearest`; `M3-EVT-08`); the reader no longer scrolls to the
+    bottom first to put a heading at the top
+  - [x] `Application.quit(exitCode)`: `iron` exits with it (`M5-APP-12`)
+  - [ ] Review: a `setTimeout(fn, 0)` set while timers run fires in the same frame (the
+    prelude's loop takes any timer due by `now`, and new ones are due at once), so "wait a
+    frame" needs a 1 ms delay. Browsers run it in a later task. Decide whether timers created
+    during the timer pass should wait for the next tick (and whether a `requestAnimationFrame`
+    belongs in the prelude)
+  - [ ] Review: symbols missing from Inter (☰ ▸ ▾ ☑ ☐) drew as empty boxes instead of falling
+    back to a system symbol font (Segoe UI Symbol on Windows); the reader draws its icons with
+    CSS and SVG instead. Check fontique's fallback for symbol characters in `TextEngine`
 - [ ] GIF images in `iron_ui`: `image` elements and `background-image` only decode PNG, JPEG and
   SVG today (`The image format Gif is not supported`). Decode GIFs (the `image` crate's `gif`
   feature in `iron_render`), then play animated ones with their frame timings (frames in the

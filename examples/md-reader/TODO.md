@@ -38,9 +38,10 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
   - [x] `--goto "<doc>#<anchor>"`: a doc relative to the root, at a heading id or `#L<line>`
     (the block or list item holding the line); the target is highlighted, then fades. Links in
     the docs take the same anchors
-  - [~] `--root <folder>`: chosen when building (`MD_READER_ROOT` / `gen-docs.ts --root`); at
-    run time `--root` is only checked against the bundled folder. Reading a folder while running
-    needs a decision on Iron's file access (M6 plans only the game and data folders)
+  - [~] `--root <folder>`: parsed, but exits with an error (code 2) for now: reading a folder
+    while running needs a decision on Iron's file access (M6 plans only the game and data
+    folders). A folder can be bundled when building instead (`MD_READER_ROOT` /
+    `gen-docs.ts --root`)
   - [ ] Ranges: `#L10-L20` highlights the whole range (today it goes to line 10)
 - [ ] An "on this page" outline, selectable / copyable text and code
 - [ ] Open external links in the system browser (needs an app shell op)

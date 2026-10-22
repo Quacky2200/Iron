@@ -63,8 +63,10 @@ cargo run --release -p iron_app -- examples/md-reader -- --goto "docs/ui-tree.md
 
   The target is highlighted, then fades. Links inside the docs take the same anchors
   (`[see](ui-tree.md#L300)`). An unknown doc or anchor is reported in the status bar.
-- `--root <folder>`: which docs to read. The docs are bundled when the reader is built, so the
-  folder is chosen then, with `MD_READER_ROOT` (or `bun gen-docs.ts --root <folder>`):
+- `--root <folder>`: reserved for reading another folder of docs. For now it stops with an
+  error (exit code 2), because Iron's scripts can't read folders outside the game yet. Until
+  then, choose the folder when building, with `MD_READER_ROOT` (or
+  `bun gen-docs.ts --root <folder>`):
 
   ```bash
   cd examples/md-reader && MD_READER_ROOT=../../../my-project/docs bun run build
@@ -72,9 +74,7 @@ cargo run --release -p iron_app -- examples/md-reader -- --goto "docs/ui-tree.md
 
   In PowerShell: `$env:MD_READER_ROOT = "..\..\..\my-project\docs"; bun run build`. Every
   `.md` under the folder is included (not `node_modules`, `.git`, `dist`, `target`), with paths
-  relative to it, and the path bar starts with the folder's name. Passing `--root` when running
-  only checks it against the bundled folder and says how to rebuild if they differ: reading a
-  folder while running needs Iron's file access for scripts, which isn't there yet.
+  relative to it, and the path bar starts with the folder's name.
 
 ## Files
 

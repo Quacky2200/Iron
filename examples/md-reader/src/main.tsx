@@ -628,19 +628,23 @@ const clean = (path: string) => path.replaceAll("\\", "/").replace(/^\.\//, "").
 /** The first history entry and any message about the command line. */
 function startAt(): { entry: Entry; status: string } {
   const { goto, root } = commandLine();
-  let status = "";
-  // Runtime folders need Iron's file access (M6); the folder is chosen when building.
-  if (root && !(ROOT.path && (ROOT.path === clean(root) || ROOT.path.endsWith(`/${clean(root)}`)))) {
-    status = `--root ${root}: this build reads ${ROOT.path ?? "Iron's docs"}. Rebuild with MD_READER_ROOT=${root} bun run build`;
+  if (root !== null) {
+    // Reading a folder while running needs file access Iron's scripts don't have yet (M6
+    // plans the game and data folders only), so the option exists but stops here.
+    console.error(
+      `md-reader: --root ${root}: not supported yet (scripts can't read folders outside the game). ` +
+        "Build with MD_READER_ROOT=<folder> bun run build instead.",
+    );
+    Application.quit(2);
   }
-  if (!goto) return { entry: { path: HOME, anchor: null, scroll: 0 }, status };
+  if (!goto) return { entry: { path: HOME, anchor: null, scroll: 0 }, status: "" };
   const hash = goto.indexOf("#");
   const path = clean(hash < 0 ? goto : goto.slice(0, hash));
   const anchor = hash < 0 ? null : goto.slice(hash + 1) || null;
   if (path && DOCS[path] === undefined && !isFolder(path)) {
     return { entry: { path: HOME, anchor: null, scroll: 0 }, status: `--goto: no doc ${path} in ${ROOT.name}` };
   }
-  return { entry: { path: path || HOME, anchor, scroll: 0 }, status };
+  return { entry: { path: path || HOME, anchor, scroll: 0 }, status: "" };
 }
 
 const START = startAt();
@@ -720,10 +724,7 @@ function App() {
     if (!el) return;
     const target = entry.anchor ? markRef.current : null;
     if (target) {
-      // Scrolling into view goes the shortest way; from the bottom, that puts the
-      // target at the top.
-      el.scrollTo(0, 1e9);
-      target.scrollIntoView();
+      target.scrollIntoView({ block: "start" });
     } else {
       el.scrollTo(0, entry.scroll);
       if (entry.anchor) setStatus((s) => s || `No #${entry.anchor} in ${entry.path}`);
