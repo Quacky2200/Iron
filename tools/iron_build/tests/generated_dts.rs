@@ -49,14 +49,9 @@ const ALLOWED_D_TS: &[(&str, &str)] = &[(
     "TypeScript-side engine shapes (records, enums, promises, overloads) the manifests cannot carry yet:      plan phase 2 (F-REC, F-ENUM, F-UNION, F-PROMISE) moves them into #[iron_api]; phase 5 deletes the file",
 )];
 
-/// Hand-written TypeScript compiled into games, each with why it is not Rust yet. The facade may
-/// only lose `//# when` chunks.
-const MAX_FACADE_CHUNKS: usize = 2;
+/// Hand-written TypeScript compiled into games, each with why it is not Rust yet. (`facade.ts`, the
+/// engine adapters, is gone: the compiler writes those functions from the manifests.)
 const ALLOWED_TS: &[(&str, &str)] = &[
-    (
-        "tools/iron_ts/src/lower/facade.ts",
-        "engine adapters and logic that wait for native APIs (plan phases 2 and 3)",
-    ),
     (
         "tools/iron_ts/src/lower/ui.ts",
         "the hook helpers (useState, useReducer, useRef, useMemo, useContext, ...): generic over the program's own types, so they are          monomorphised per use by the compiler and cannot be one native function; TODO: lower them in Rust (jsx.rs) as IR          over the native slots of iron_ts_ui once the compiler can emit generic calls into a native library",
@@ -110,20 +105,6 @@ fn no_new_hand_written_declaration_files_appear() {
     assert!(
         included.is_subset(&known),
         "include_str! of an unlisted declaration file: {included:?}"
-    );
-    // The facade and the Python generator only shrink.
-    let facade = std::fs::read_to_string(repo().join("tools/iron_ts/src/lower/facade.ts")).unwrap();
-    let chunks = facade
-        .lines()
-        .filter(|l| l.starts_with("//# when "))
-        .count();
-    assert!(
-        chunks <= MAX_FACADE_CHUNKS,
-        "facade.ts has {chunks} chunks, at most {MAX_FACADE_CHUNKS}: lower the limit when you remove one"
-    );
-    assert_eq!(
-        chunks, MAX_FACADE_CHUNKS,
-        "facade.ts lost a chunk: lower MAX_FACADE_CHUNKS to {chunks}"
     );
     let ts: BTreeSet<String> = files
         .iter()

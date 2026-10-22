@@ -245,7 +245,51 @@ struct PendingRequest {
     sender_domain: DomainId,
     /// A reply (or a failure) is on its way.
     replied: bool,
+    /// The promise of `requestJson` / `askJson` to settle (else the domain's `onReplyJson`
+    /// listeners get the answer).
+    settle: Option<Settle>,
 }
+
+/// The resolve (reply text) and reject (error text) callbacks of a request's promise.
+type Settle = (Callback<(String,)>, Callback<(String,)>);
+
+/// Settles a request: its promise, or the domain's `onReplyJson` listeners.
+fn settle(d: DomainId, id: u64, settle: Option<Settle>, text: String, error: String) {
+    match settle {
+        Some((resolve, _)) if error.is_empty() => resolve.call((text,)),
+        Some((_, reject)) => reject.call((error,)),
+        None => {
+            let cbs = with(|s| {
+                s.domain_listeners
+                    .get(&d)
+                    .map(|l| l.reply.snapshot())
+                    .unwrap_or_default()
+            });
+            emit(&cbs, (id as f64, text, error));
+        }
+    }
+}
+
+/// The wire form of a named event: `{"$e":<name>}` without a payload (`payload` is ""),
+/// `{"$e":<name>,"d":<payload>}` with one (see [`parse_event`]).
+pub fn event_text(name: &str, payload: &str) -> String {
+    let head = format!(
+        "{{\"$e\":{}",
+        serde_json::to_string(name).unwrap_or_default()
+    );
+    if payload.is_empty() {
+        head + "}"
+    } else {
+        format!("{head},\"d\":{payload}}}")
+    }
+}
+
+/// What a script is told when it names an event "" (thrown by the typed `emit` / `on` / `ask` /
+/// `answer`).
+pub const EMPTY_EVENT_NAME: &str = "Window event names must not be empty";
+
+/// What a request's promise rejects with when it could not be sent.
+const REQUEST_REFUSED: &str = "request refused: the window is closed or the message is over 1 MiB";
 
 /// Listeners of a domain (`Window.onMessage` and friends).
 #[derive(Default)]
@@ -841,21 +885,12 @@ pub fn deliver(d: DomainId, now_ms: f64) {
         deliver_one(d, m);
     }
     for m in replies {
-        let cbs = with(|s| {
-            s.pending.remove(&m.reply_to)?;
-            Some(
-                s.domain_listeners
-                    .get(&d)
-                    .map(|l| l.reply.snapshot())
-                    .unwrap_or_default(),
-            )
-        });
-        if let Some(cbs) = cbs {
-            emit(&cbs, (m.reply_to as f64, m.text, m.error));
+        if let Some(p) = with(|s| s.pending.remove(&m.reply_to)) {
+            settle(d, m.reply_to, p.settle, m.text, m.error);
         }
     }
     // Requests of this domain that ran out of time or lost their target.
-    let failed: Vec<(u64, &'static str)> = with(|s| {
+    let failed: Vec<(u64, &'static str, Option<Settle>)> = with(|s| {
         let now = s.now_ms;
         let mut out = Vec::new();
         for (id, p) in &s.pending {
@@ -868,21 +903,12 @@ pub fn deliver(d: DomainId, now_ms: f64) {
                 out.push((*id, "window closed"));
             }
         }
-        for (id, _) in &out {
-            s.pending.remove(id);
-        }
-        out
+        out.into_iter()
+            .map(|(id, err)| (id, err, s.pending.remove(&id).and_then(|p| p.settle)))
+            .collect()
     });
-    if !failed.is_empty() {
-        let cbs = with(|s| {
-            s.domain_listeners
-                .get(&d)
-                .map(|l| l.reply.snapshot())
-                .unwrap_or_default()
-        });
-        for (id, err) in failed {
-            emit(&cbs, (id as f64, String::new(), err.to_string()));
-        }
+    for (id, err, promise) in failed {
+        settle(d, id, promise, String::new(), err.to_string());
     }
 }
 
@@ -1143,6 +1169,7 @@ fn post(to: WindowRef, text: &str, request_timeout: Option<f64>) -> Option<u64> 
                     deadline_ms,
                     sender_domain,
                     replied: false,
+                    settle: None,
                 },
             );
         }
@@ -1156,6 +1183,34 @@ fn post(to: WindowRef, text: &str, request_timeout: Option<f64>) -> Option<u64> 
         });
         Some(request)
     })
+}
+
+/// A request's timeout: `timeout_ms` when it is a positive number, else the default.
+fn request_timeout(timeout_ms: f64) -> f64 {
+    if timeout_ms.is_finite() && timeout_ms > 0.0 {
+        timeout_ms
+    } else {
+        DEFAULT_REQUEST_TIMEOUT_MS
+    }
+}
+
+/// Posts `text` as a request whose reply settles a promise (`requestJson`, `askJson`); refused at
+/// once when it cannot be sent.
+fn request_promise(
+    to: WindowRef,
+    text: &str,
+    timeout_ms: f64,
+    resolve: Callback<(String,)>,
+    reject: Callback<(String,)>,
+) {
+    match post(to, text, Some(request_timeout(timeout_ms))) {
+        Some(id) => with(|s| {
+            if let Some(p) = s.pending.get_mut(&id) {
+                p.settle = Some((resolve, reject));
+            }
+        }),
+        None => reject.call((REQUEST_REFUSED.to_string(),)),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1358,7 +1413,7 @@ fn add_listener<A: Clone + 'static>(
 /// `onMessage`, `onRequest`, the named events (`emit`, `on`, `ask`, `answer`, `Window.emitAll`) and `Window.broadcast` / `Window.onMessage` / `Window.onRequest`. The wire
 /// form is JSON text: `JSON.stringify` with a replacer that throws a `TypeError` for functions and engine
 /// handle objects (`__iron_is_handle`), `JSON.parse` on the way in. Compiled code lowers the same calls
-/// onto the same natives (`tools/iron_ts/src/lower/facade.ts`), with the types checked at compile time.
+/// onto the same natives (`tools/iron_ts/src/lower/messages.rs`), with the types checked at compile time.
 pub const QUICKJS_PRELUDE: &str = r#"
 (function () {
   const W = globalThis.Window;
@@ -1403,28 +1458,29 @@ pub const QUICKJS_PRELUDE: &str = r#"
   def(W, 'onRequest', function (f) { return W.onRequestJson(requestListener(f)); });
   def(W, 'broadcast', function (data) { return W.broadcastJson(toJson(data)); });
 
-  // Named events: sugar over the raw messages. The wire form is `{"$e":<name>,"d":<payload>}` (no `d`
-  // without a payload), the same text the compiled code writes. The host routes envelopes to the
-  // `on` / `answer` listeners of their name only (raw listeners never see them).
-  const eventHead = (name) => {
-    if (typeof name !== 'string' || name === '') {
-      throw new TypeError('Window event names must not be empty');
-    }
-    return '{"$e":' + JSON.stringify(name);
+  // Named events: sugar over the raw messages. The natives write the envelope (`emitJson`,
+  // `askJson`); the host routes it to the `on` / `answer` listeners of its name only (raw listeners
+  // never see them).
+  const checkName = (name) => {
+    const bad = typeof name !== 'string' ? W.eventNameError('') : W.eventNameError(name);
+    if (bad !== '') throw new TypeError(bad);
   };
-  const eventText = (name, payload) => {
-    const head = eventHead(name);
-    return payload === undefined ? head + '}' : head + ',"d":' + toJson(payload) + '}';
-  };
+  const payloadText = (payload) => (payload === undefined ? '' : toJson(payload));
   const decode = (body) => (body === '' ? undefined : JSON.parse(body));
-  def(W.prototype, 'emit', function (name, payload) { return this.postMessageJson(eventText(name, payload)); });
-  def(W, 'emitAll', function (name, payload) { return W.broadcastJson(eventText(name, payload)); });
+  def(W.prototype, 'emit', function (name, payload) {
+    checkName(name);
+    return this.emitJson(name, payloadText(payload));
+  });
+  def(W, 'emitAll', function (name, payload) {
+    checkName(name);
+    return W.emitAllJson(name, payloadText(payload));
+  });
   def(W.prototype, 'on', function (name, f) {
-    eventHead(name);
+    checkName(name);
     return this.onEventJson(name, (from, body) => f(decode(body), from));
   });
   def(W.prototype, 'answer', function (name, f) {
-    eventHead(name);
+    checkName(name);
     return this.onAnswerJson(name, (from, body, id) => {
       const answer = f(decode(body), from);
       // An async handler replies when its promise resolves; a rejection fails the asker's promise.
@@ -1439,44 +1495,14 @@ pub const QUICKJS_PRELUDE: &str = r#"
     });
   });
 
-  // `request`: a promise settled by the domain's `onReplyJson` listener (one per domain).
-  const pending = new Map();
-  const listening = new Set();
-  const listen = () => {
-    const d = W.current.domain;
-    if (listening.has(d)) return;
-    listening.add(d);
-    W.onReplyJson((id, text, error) => {
-      const p = pending.get(id);
-      if (p === undefined) return;
-      pending.delete(id);
-      if (error !== '') {
-        p.reject(new Error(error));
-        return;
-      }
-      try {
-        p.resolve(JSON.parse(text));
-      } catch (e) {
-        p.reject(e);
-      }
-    });
-  };
-  const requestText = (win, text, timeoutMs) => {
-    listen();
-    return new Promise((resolve, reject) => {
-      const id = win.postRequestJson(text, timeoutMs === undefined ? NaN : timeoutMs);
-      if (id === 0) {
-        reject(new Error('request refused: the window is closed or the message is over 1 MiB'));
-      } else {
-        pending.set(id, { resolve, reject });
-      }
-    });
-  };
+  // `request` / `ask`: the natives' promises of the reply text, parsed.
+  const timeout = (ms) => (ms === undefined ? NaN : ms);
   def(W.prototype, 'request', function (data, timeoutMs) {
-    return requestText(this, toJson(data), timeoutMs);
+    return this.requestJson(toJson(data), timeout(timeoutMs)).then((text) => JSON.parse(text));
   });
   def(W.prototype, 'ask', function (name, payload, timeoutMs) {
-    return requestText(this, eventText(name, payload), timeoutMs);
+    checkName(name);
+    return this.askJson(name, payloadText(payload), timeout(timeoutMs)).then((text) => JSON.parse(text));
   });
 })();
 "#;
@@ -1894,6 +1920,24 @@ pub mod window_api {
             })
         }
 
+        /// `broadcast` of event `name` with a payload's JSON text ("": none) (`Window.emitAll`).
+        pub fn emit_all_json(name: &str, payload: &str) -> u32 {
+            if name.is_empty() {
+                return 0;
+            }
+            WindowRef::broadcast_json(&event_text(name, payload))
+        }
+
+        /// Why `name` cannot name an event (`""`: it can). The typed `emit`, `on`, `ask` and
+        /// `answer` throw an `Error` with it.
+        pub fn event_name_error(name: &str) -> String {
+            if name.is_empty() {
+                EMPTY_EVENT_NAME.to_string()
+            } else {
+                String::new()
+            }
+        }
+
         /// Removes a static listener by token.
         #[js_name = "off"]
         pub fn off_static(token: f64) -> bool {
@@ -2282,12 +2326,52 @@ pub mod window_api {
         /// Posts `text` as a request and returns its id (0: refused). The reply, a failure or the
         /// timeout (default 10000 ms) arrives through `Window.onReplyJson` in the sender's domain.
         pub fn post_request_json(self, text: &str, timeout_ms: f64) -> f64 {
-            let timeout = if timeout_ms.is_finite() && timeout_ms > 0.0 {
-                timeout_ms
-            } else {
-                DEFAULT_REQUEST_TIMEOUT_MS
-            };
-            post(self, text, Some(timeout)).map_or(0.0, |id| id as f64)
+            post(self, text, Some(request_timeout(timeout_ms))).map_or(0.0, |id| id as f64)
+        }
+
+        /// Posts JSON text as a request; the promise resolves with the reply's JSON text, or
+        /// rejects with the reason (`request refused: ..`, `window closed`, `timed out`, `no
+        /// request listener`, or the handler's error). The typed `request<R>` wraps this.
+        #[promise]
+        pub fn request_json(
+            self,
+            text: &str,
+            timeout_ms: f64,
+            resolve: Callback<(String,)>,
+            reject: Callback<(String,)>,
+        ) {
+            request_promise(self, text, timeout_ms, resolve, reject);
+        }
+
+        /// Sends event `name` with a payload's JSON text ("": none) to this window (`emit`). False
+        /// when refused (an empty name, over 1 MiB, a closed window).
+        pub fn emit_json(self, name: &str, payload: &str) -> bool {
+            !name.is_empty() && post(self, &event_text(name, payload), None).is_some()
+        }
+
+        /// Asks event `name` with a payload's JSON text ("": none) (`ask`); the promise resolves
+        /// with the answer's JSON text, or rejects as `requestJson`'s does, or with `no answer
+        /// for "<name>"`.
+        #[promise]
+        pub fn ask_json(
+            self,
+            name: &str,
+            payload: &str,
+            timeout_ms: f64,
+            resolve: Callback<(String,)>,
+            reject: Callback<(String,)>,
+        ) {
+            if name.is_empty() {
+                reject.call((EMPTY_EVENT_NAME.to_string(),));
+                return;
+            }
+            request_promise(
+                self,
+                &event_text(name, payload),
+                timeout_ms,
+                resolve,
+                reject,
+            );
         }
 
         /// Removes any of the listeners above by token.

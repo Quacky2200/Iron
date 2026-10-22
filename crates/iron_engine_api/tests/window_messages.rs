@@ -353,3 +353,84 @@ fn parse_event_reads_the_envelope_and_nothing_else() {
         assert_eq!(parse_event(not), None, "{not}");
     }
 }
+
+/// Promise callbacks that log `ok:text` / `err:reason`.
+fn settle_log(log: &Log) -> (Callback<(String,)>, Callback<(String,)>) {
+    let (a, b) = (log.clone(), log.clone());
+    (
+        Callback::from_fn(move |(t,): (String,)| a.borrow_mut().push(format!("ok:{t}"))),
+        Callback::from_fn(move |(e,): (String,)| b.borrow_mut().push(format!("err:{e}"))),
+    )
+}
+
+// M9-API-1646
+#[test]
+fn the_engine_writes_event_envelopes_and_settles_request_promises_itself() {
+    use iron_engine_api::window::event_text;
+    assert_eq!(event_text("a\"b", ""), "{\"$e\":\"a\\\"b\"}");
+    assert_eq!(event_text("x", "[1]"), "{\"$e\":\"x\",\"d\":[1]}");
+    fresh();
+    let w = make("normal", WindowRef::NONE);
+    let wd = DomainId(w.0);
+    let events: Log = Rc::default();
+    w.on_event_json("hi", logger(&events, "hi"));
+    w.on_answer_json(
+        "double",
+        Callback::from_fn(|(_, body, id): (HandleArg<WindowRef>, String, f64)| {
+            let n: f64 = body.parse().unwrap();
+            WindowRef::reply_json(id, &(n * 2.0).to_string());
+        }),
+    );
+    w.on_request_json(Callback::from_fn(
+        |(_, text, id): (HandleArg<WindowRef>, String, f64)| {
+            WindowRef::reply_json(id, &format!("[{text}]"));
+        },
+    ));
+    // `onReplyJson` listeners never see what a promise settles.
+    let replies: Log = Rc::default();
+    reply_log(&replies);
+    let settled: Log = Rc::default();
+    assert!(w.emit_json("hi", "1") && w.emit_json("hi", ""));
+    assert!(!w.emit_json("", "1"), "an empty name is refused");
+    let (ok, err) = settle_log(&settled);
+    w.ask_json("double", "21", f64::NAN, ok, err);
+    let (ok, err) = settle_log(&settled);
+    w.ask_json("nobody", "", f64::NAN, ok, err);
+    let (ok, err) = settle_log(&settled);
+    w.request_json("5", f64::NAN, ok, err);
+    let (ok, err) = settle_log(&settled);
+    w.ask_json("", "", f64::NAN, ok, err);
+    let (ok, err) = settle_log(&settled);
+    w.request_json(&"x".repeat(MAX_MESSAGE_BYTES + 1), f64::NAN, ok, err);
+    // Refusals settle at once.
+    assert_eq!(
+        *settled.borrow(),
+        [
+            "err:Window event names must not be empty",
+            "err:request refused: the window is closed or the message is over 1 MiB"
+        ]
+    );
+    settled.borrow_mut().clear();
+    window::deliver(wd, 0.0);
+    window::deliver(DomainId::MAIN, 1.0);
+    assert_eq!(*events.borrow(), ["hi:1:1", "hi:1:"]);
+    assert_eq!(
+        *settled.borrow(),
+        ["ok:42", "err:no answer for \"nobody\"", "ok:[5]"]
+    );
+    assert!(replies.borrow().is_empty());
+    // A request nobody answers times out in the sender's domain.
+    settled.borrow_mut().clear();
+    let quiet = make("normal", WindowRef::NONE);
+    let (ok, err) = settle_log(&settled);
+    quiet.ask_json("x", "", 50.0, ok, err);
+    window::deliver(DomainId::MAIN, 100.0);
+    assert_eq!(*settled.borrow(), ["err:timed out"]);
+    assert_eq!(WindowRef::emit_all_json("theme", "true"), 2);
+    assert_eq!(WindowRef::emit_all_json("", "true"), 0);
+    assert_eq!(
+        WindowRef::event_name_error(""),
+        window::EMPTY_EVENT_NAME.to_string()
+    );
+    assert_eq!(WindowRef::event_name_error("x"), "");
+}

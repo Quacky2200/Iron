@@ -33,6 +33,7 @@ mod jsx;
 mod keyed;
 pub use jsx::UI_MANIFEST;
 mod maps;
+mod messages;
 mod object;
 mod prelude;
 mod promise;
@@ -371,7 +372,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     for m in manifests {
         manifest.add_json(m)?;
     }
-    // Members of the TypeScript engine API that are written over the native one (`facade.ts`).
+    // Members of the TypeScript engine API that the compiler writes over the native one (`facade.rs`).
     let with_facade = facade::extend_source(src, &manifest);
     let src = with_facade.as_deref().unwrap_or(src);
     // JSX and hooks become calls of the `Ui` namespace (first: the other rewrites parse plain TS).
@@ -479,9 +480,6 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if wants_components {
         head += &components::prelude(has_go, has_collider);
-    }
-    if src.contains("__win_listen_replies(") {
-        head += prelude::WINDOW_REPLIES;
     }
     if wants_ui {
         head += jsx::UI_PRELUDE;

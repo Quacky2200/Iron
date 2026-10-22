@@ -1,11 +1,11 @@
-//! The TypeScript `@iron/engine` shapes that the native API holds differently, written over the
-//! engine API (`facade.ts`, chunks appended to a program that names them) or expanded at compile
-//! time (windows, `createPrimitive`).
+//! The TypeScript `@iron/engine` shapes that the native API holds differently: functions the
+//! compiler writes from the manifests (subscriptions, promises, globals, object arguments) and the
+//! typed window messages (`messages.rs`), appended to a program that names them, or calls expanded
+//! at compile time (`createPrimitive`, `Random.pick`).
 
 use super::expr::{mk, num};
+use super::messages::request_key;
 use super::*;
-
-const FACADE_TS: &str = include_str!("facade.ts");
 
 /// `old` as a whole word (not part of a longer name).
 fn replace_word(src: &str, old: &str, new: &str) -> String {
@@ -49,102 +49,6 @@ fn zero_param_closure(c: &CallExpression<'_>, i: usize) -> bool {
     }
 }
 
-/// Hash of a type's written text without its spaces: names the `request<R>` facade of that type.
-pub(crate) fn request_key(text: &str) -> String {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for b in text.bytes().filter(|b| !b.is_ascii_whitespace()) {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x100000001b3);
-    }
-    format!("{h:016x}")
-}
-
-/// The reply types written in `.request<R>(` / `.ask<R>(` calls of `src` (`call` is the text up to `<`) (the text between the angle brackets).
-fn request_types(src: &str, call: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut rest = src;
-    while let Some(i) = rest.find(call) {
-        let after = &rest[i + call.len()..];
-        let bytes = after.as_bytes();
-        let (mut depth, mut end) = (1usize, None);
-        for (j, &c) in bytes.iter().enumerate() {
-            match c {
-                b'<' => depth += 1,
-                // `=>` is not a closing bracket.
-                b'>' if j > 0 && bytes[j - 1] == b'=' => {}
-                b'>' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(j);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let Some(end) = end else { break };
-        let ty = after[..end].trim().to_string();
-        if !ty.is_empty() && !out.contains(&ty) {
-            out.push(ty);
-        }
-        rest = &after[end..];
-    }
-    out
-}
-
-/// `request<R>` resolves with the reply parsed as `R`. A promise class exists per written type, so
-/// the function is written per reply type (`@R@` is the text, `@K@` its key).
-const REQUEST_TEMPLATE: &str = r#"
-function __xm_Window_request_@K@<T>(self: Window, data: T, timeoutMs?: number): Promise<@R@> {
-  __win_listen_replies();
-  return new Promise<@R@>((resolve, reject) => {
-    const id = self.postRequestJson(JSON.stringify(data), timeoutMs ?? NaN);
-    if (id === 0) {
-      reject(new Error("request refused: the window is closed or the message is over 1 MiB"));
-      return;
-    }
-    __win_pending.set(id, (text: string, error: string) => {
-      if (error !== "") {
-        reject(new Error(error));
-      } else {
-        const value: @R@ = JSON.parse(text);
-        resolve(value);
-      }
-    });
-  });
-}
-"#;
-
-/// `ask<R>` is `request<R>` of a named event (see the named events chunk of `facade.ts`): the text
-/// function holds the promise, the two generic ones build the event text (`ask0` has no payload;
-/// its type parameter is a dummy the lowerer fills in).
-const ASK_TEMPLATE: &str = r#"
-function __xm_Window_asktext_@K@(self: Window, text: string, timeoutMs?: number): Promise<@R@> {
-  __win_listen_replies();
-  return new Promise<@R@>((resolve, reject) => {
-    const id = self.postRequestJson(text, timeoutMs ?? NaN);
-    if (id === 0) {
-      reject(new Error("request refused: the window is closed or the message is over 1 MiB"));
-      return;
-    }
-    __win_pending.set(id, (reply: string, error: string) => {
-      if (error !== "") {
-        reject(new Error(error));
-      } else {
-        const value: @R@ = JSON.parse(reply);
-        resolve(value);
-      }
-    });
-  });
-}
-function __xm_Window_ask_@K@<T>(self: Window, name: string, payload: T, timeoutMs?: number): Promise<@R@> {
-  return __xm_Window_asktext_@K@(self, __win_event_text(name, JSON.stringify(payload)), timeoutMs);
-}
-function __xm_Window_ask0_@K@<U>(self: Window, name: string, timeoutMs?: number): Promise<@R@> {
-  return __xm_Window_asktext_@K@(self, __win_event_text(name, null), timeoutMs);
-}
-"#;
-
 /// The TypeScript type of a callback parameter at the engine boundary.
 fn ext_ts(t: &crate::ir::ExtTy) -> String {
     use crate::ir::ExtTy;
@@ -168,27 +72,8 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
             out = replace_word(&out, alias, target);
         }
     }
-    // The chunks the program names: only when the engine API has the classes they are written over.
-    let mut extra = String::new();
-    for chunk in FACADE_TS.split("//# when ").skip(1) {
-        let (header, body) = chunk.split_once('\n').unwrap_or((chunk, ""));
-        // `//# when a|b @ Vector3 GameObject`: only for programs whose engine API has the names
-        // after `@` (a comment that mentions a trigger does not pull a chunk in).
-        let (triggers, needs) = header.split_once(" @ ").unwrap_or((header, ""));
-        let have = |n: &str| {
-            manifest.classes.contains_key(n)
-                || manifest.values.contains_key(n)
-                || manifest.handles.contains(n)
-                || manifest.namespaces.contains_key(n)
-        };
-        if needs.split_whitespace().all(have)
-            && triggers
-                .split('|')
-                .any(|t| t.split('&').all(|p| src.contains(p.trim_end())))
-        {
-            extra.push_str(body);
-        }
-    }
+    // The typed window messages over the JSON natives.
+    let mut extra = super::messages::glue(src);
     // `#[subscription(off = ..)]` functions: the call returns a function that stops the listener,
     // written over the token-returning native (`Screen.onChange$n`) and the stopping function.
     let mut subs: Vec<(&(String, String), &String)> = manifest.subscriptions.iter().collect();
@@ -442,20 +327,6 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
             ));
         }
     }
-    for r in request_types(src, ".request<") {
-        extra.push_str(
-            &REQUEST_TEMPLATE
-                .replace("@K@", &request_key(&r))
-                .replace("@R@", &r),
-        );
-    }
-    for r in request_types(src, ".ask<") {
-        extra.push_str(
-            &ASK_TEMPLATE
-                .replace("@K@", &request_key(&r))
-                .replace("@R@", &r),
-        );
-    }
     if !extra.is_empty() {
         out.push('\n');
         out.push_str(&extra);
@@ -464,7 +335,7 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
 }
 
 // The facade: members of the TypeScript `@iron/engine` that the native API has in another shape
-// are written once in TypeScript (`facade.ts`, appended to a program that names them) as
+// are written by the compiler (`extend_source`, appended to a program that names them) as
 // functions called `__x<kind>_<Class>_<member>`:
 //
 //   __xm_  method          `__xm_Cloth_foo(self: Cloth, a: number)`      for `cloth.foo(a)`
