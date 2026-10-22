@@ -8,5 +8,6 @@
  "object_assign_a_dictionary_into_an_object": "1/20/30 true 7/20/0.5 4/4/4",
  "spread_a_dictionary_into_an_object_type_and_into_a_dictionary": "0,5 3 5 6 12 4",
  "object_keys_values_and_entries_of_objects": "w,h,d 2,3,4 w=2;h=3;d=4; 24",
- "object_assign_a_dictionary_value_of_the_wrong_type": 9
+ "object_assign_a_dictionary_value_of_the_wrong_type": 9,
+ "string_arrays_into_a_host_function": "alpha++gamma 2 |0 alpha! 41 one2"
 }

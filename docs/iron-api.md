@@ -174,6 +174,7 @@ generic; `self` is allowed only in a handle class's `impl`, by value.
 
 | `&str` / `String` | `string` | a parameter: `*const u8` to the script string object; a result: `*const u8` plus a trailing `out_len: *mut i64` | a JS string |
 | `&[f64]` / `&[V]` | `number[]` / `Vector3[]` | `*const u8` to the script array | a JS array (elements: instances, objects or arrays) |
+| `&[String]` / `Vec<String>` | `string[]` | `*const u8` to the script array of strings; the shim copies them (`iron_api::script_strs`), so the function may keep them | a JS array of strings |
 
 Any other type is a compile error that lists the supported ones. Names follow `snake_case` to
 `camelCase` (`set_time_scale` is `setTimeScale`), done by `camel` in both crates.
@@ -540,7 +541,7 @@ value classes) is encoded normally.
 - **Value classes.** Each QuickJS value class has `toJSON()` (the compact array of numbers, as compiled code stringifies) and a static
   `X.fromJSON(v)` taking that array (exactly the fields' count) or the object form (left-out fields 0, `a` 1). A function
   parameter of a value type accepts an instance, the object form (all fields) or the array.
-- **Arrays.** `&[f64]` reads a JS array of numbers; `&[V]` an array of value instances, objects or arrays. Typed arrays and array
+- **Arrays.** `&[String]` (or `Vec<String>`, owned) reads a JS array of strings (manifest type `strings`, `ExtTy::StrArr` in the compiled lowering; an optional one left out is empty; `M9-API-1621`, `M9-TS-3323`); `&[f64]` reads a JS array of numbers; `&[V]` an array of value instances, objects or arrays. Typed arrays and array
   results are not built.
 - Code: `crates/iron_api/src/qjs.rs`, the macro's `handle_class` branch. Tests `M9-API-100..113`.
 
@@ -770,7 +771,7 @@ returns the strings and throws a `TypeError` for an unknown name (a left-out opt
 
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;
-parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string`. `tools/iron_ts/src/types_dts.rs` reads them
+parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string` (a result) and `strings` (a parameter). `tools/iron_ts/src/types_dts.rs` reads them
 (`enum` becomes `type X = ..` and `namespace X { name, parse }`, `record` an `interface`).
 
 **Guard tests** (`tools/iron_build/tests/generated_dts.rs`): `M9-TS-3100` a ratchet over the hand-written `.d.ts` files and

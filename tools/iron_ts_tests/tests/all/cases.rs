@@ -19,6 +19,16 @@ pub fn case(cases: &'static str, name: &str) -> &'static str {
 
 /// Compiles `src` and runs `t()` in the three GC modes; all must agree.
 pub fn run(src: &str, prefix: &'static str, struct_base: u32) -> Result<String, String> {
+    run_with(src, prefix, struct_base, &[])
+}
+
+/// Like `run`, with engine API manifests (JSON) the program may call.
+pub fn run_with(
+    src: &str,
+    prefix: &'static str,
+    struct_base: u32,
+    manifests: &[String],
+) -> Result<String, String> {
     let _serial = iron_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let game = compile_and_load(
@@ -26,6 +36,7 @@ pub fn run(src: &str, prefix: &'static str, struct_base: u32) -> Result<String, 
         &JitOptions {
             prefix,
             struct_base,
+            manifests,
             ..Default::default()
         },
     )?;

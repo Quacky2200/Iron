@@ -3,7 +3,8 @@
 //! parameters of host functions. The programs of `bench/lang3_cases.ts` run in the normal, stress
 //! GC and collection-off modes and are compared with bun (`bench/gen_cases_expected.ts`). IDs are
 //! in TESTS.md (M9-TS-3313..).
-use crate::cases::{case, run};
+use crate::cases::{case, run, run_with};
+use iron_api::iron_api;
 use serde_json::Value;
 
 const CASES: &str = include_str!("../../bench/lang3_cases.ts");
@@ -73,5 +74,45 @@ fn object_assign_of_a_dictionary_value_of_the_wrong_type_throws_naming_the_key()
     assert!(
         got.starts_with("threw:") && got.contains("`title`") && got.contains("Named"),
         "{got}"
+    );
+}
+
+/// A small host API with string array parameters (`&[String]` and `Vec<String>`).
+#[iron_api(namespace = "Words")]
+pub mod words_api {
+    /// The words with a separator between them.
+    pub fn join(words: &[String], sep: &str) -> String {
+        words.join(sep)
+    }
+
+    /// How many words are not empty (the function owns the list).
+    pub fn count(words: Vec<String>) -> u32 {
+        words.into_iter().filter(|w| !w.is_empty()).count() as u32
+    }
+
+    /// The longest word (the first one on a tie).
+    pub fn longest(words: &[String]) -> String {
+        let mut best = String::new();
+        for w in words {
+            if w.chars().count() > best.chars().count() {
+                best = w.clone();
+            }
+        }
+        best
+    }
+}
+
+// M9-TS-3323
+#[test]
+fn a_compiled_program_passes_string_arrays_to_a_host_function() {
+    let name = "string_arrays_into_a_host_function";
+    let manifests = [words_api::MANIFEST.to_json()];
+    let got = run_with(case(CASES, name), "mb_", 2_310_000, &manifests)
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+    assert_eq!(got, expected(name), "{name}");
+    let dts = words_api::MANIFEST.to_dts();
+    assert!(
+        dts.contains("function join(words: string[], sep: string): string;"),
+        "{dts}"
     );
 }

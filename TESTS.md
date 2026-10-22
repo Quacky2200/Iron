@@ -1834,3 +1834,5 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3320 | Integration | `{ x: 0, y: 0, ...dict }` into an object type copies by key; `{ ...dict, z: 1 }` and `{ ...copy, ...{ q: 2 } }` into a `Record<string, number>` make dictionaries, equal to bun (`lang3.rs`). |
 | M9-TS-3321 | Integration | `Object.keys` / `values` / `entries` of an object and `b[k as keyof Box]` over the keys equal bun (`lang3.rs`). |
 | M9-TS-3322 | Integration | A dictionary value assigned into a field of another type throws a `TypeError` naming the key and the struct (`lang3.rs`; no bun comparison). |
+| M9-API-1621 | Integration | `&[String]` and `Vec<String>` parameters: the shim reads a script array of strings (null is empty), the manifest type is `strings`, the declaration `string[]`, QuickJS passes an array of JS strings (`crates/iron_api/tests/records_enums.rs`). |
+| M9-TS-3323 | Integration | A compiled program passes `string[]` (also empty, with non-ASCII text, a mapped array) to `&[String]` / `Vec<String>` parameters of a host function, equal to bun with a JS stand-in (`lang3.rs`, `bench/lang3_prelude.js`). |

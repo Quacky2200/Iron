@@ -44,6 +44,9 @@ pub enum Ty {
     Str,
     /// `number[]`, passed as the script array.
     F64s,
+    /// `string[]`, passed as the script array of strings (read with [`script_strs`]). The Rust
+    /// types are `&[String]` and `Vec<String>`.
+    Strs,
     /// An array of a value class (its TypeScript name, and that name with `[]`).
     Values(&'static str, &'static str),
     /// A closure the engine keeps and calls later: the manifest signature (`fn(f64,string):void`)
@@ -70,6 +73,7 @@ impl Ty {
             Ty::Handle(name) | Ty::Value(name) => name,
             Ty::Str => "string",
             Ty::F64s => "number[]",
+            Ty::Strs => "string[]",
             Ty::Values(_, arr) => arr,
             Ty::Callback(_, ts) => ts,
             Ty::Enum(name) | Ty::Record(name) => name,
@@ -90,6 +94,7 @@ impl Ty {
             Ty::Value(n) => format!("value:{n}"),
             Ty::Str => "string".into(),
             Ty::F64s => "f64s".into(),
+            Ty::Strs => "strings".into(),
             Ty::Values(n, _) => format!("values:{n}"),
             Ty::Callback(sig, _) => (*sig).into(),
             Ty::Enum(n) => format!("enum:{n}"),
@@ -361,6 +366,28 @@ pub unsafe fn script_f64s<'a>(p: *const u8) -> &'a [f64] {
             return &[];
         }
         std::slice::from_raw_parts(a.data as *const f64, a.len as usize)
+    }
+}
+
+/// The strings of a script `string[]`, copied. A null array is empty.
+///
+/// # Safety
+/// `p` must be null or a live script array of strings (or nulls) that stays alive and unchanged
+/// while this runs.
+pub unsafe fn script_strs(p: *const u8) -> Vec<String> {
+    if p.is_null() {
+        return Vec::new();
+    }
+    // SAFETY: by contract: header, length, capacity, then the data pointer of 8-byte slots
+    // holding string pointers.
+    unsafe {
+        let a = &*(p as *const ScriptArray);
+        if a.len <= 0 || a.data.is_null() {
+            return Vec::new();
+        }
+        (0..a.len as usize)
+            .map(|i| script_str(*(a.data as *const *const u8).add(i)).into_owned())
+            .collect()
     }
 }
 

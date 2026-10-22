@@ -283,6 +283,8 @@ enum Kind {
     Str(bool),
     /// `&[f64]`: a script `number[]`, read in place.
     F64s,
+    /// `&[String]` (false) or `Vec<String>` (true): a script `string[]`, copied.
+    Strs(bool),
     /// `&[V]` for a declared value type (index into `Args::values`): a script `Vector3[]`.
     Values(usize),
     /// `Callback<(A, B)>`: a script closure the engine keeps. The elements are scalar kinds,
@@ -316,6 +318,9 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
         if elem.as_deref() == Some("f64") {
             return Ok(Kind::F64s);
         }
+        if elem.as_deref() == Some("String") {
+            return Ok(Kind::Strs(false));
+        }
         if let Some(i) = args
             .values
             .iter()
@@ -325,7 +330,7 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
         }
         return Err(syn::Error::new(
             ty.span(),
-            "a slice parameter is `&[f64]` or `&[V]` for a type declared in `values(..)`",
+            "a slice parameter is `&[f64]`, `&[String]` or `&[V]` for a type declared in `values(..)`",
         ));
     }
     if let Type::Path(p) = ty
@@ -461,6 +466,7 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
             quote!(::iron_api::Ty::Value(#ts))
         }
         Kind::F64s => quote!(::iron_api::Ty::F64s),
+        Kind::Strs(_) => quote!(::iron_api::Ty::Strs),
         Kind::Callback(ks) => {
             let names: Vec<String> = ks
                 .iter()
@@ -533,7 +539,7 @@ fn abi_ty(k: &Kind) -> TokenStream2 {
         Kind::I32 => quote!(i32),
         Kind::U32 => quote!(u32),
         Kind::Handle(..) => quote!(u64),
-        Kind::Str(_) | Kind::F64s | Kind::Values(_) => quote!(*const u8),
+        Kind::Str(_) | Kind::F64s | Kind::Strs(_) | Kind::Values(_) => quote!(*const u8),
     }
 }
 
@@ -559,6 +565,7 @@ fn js_param_ty(k: &Kind) -> TokenStream2 {
         Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String),
         Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
         Kind::F64s => quote!(::std::vec::Vec<f64>),
+        Kind::Strs(_) => quote!(::std::vec::Vec<::std::string::String>),
         Kind::Callback(_) => quote!(::iron_api::rquickjs::Function<'js>),
         Kind::Values(_) => quote!(::std::vec::Vec<::iron_api::rquickjs::Object<'js>>),
         other => js_ty(other),
@@ -626,7 +633,7 @@ fn js_default(k: &Kind) -> TokenStream2 {
         Kind::F32 => quote!(f32::NAN),
         Kind::I32 | Kind::U32 => quote!(0),
         Kind::Handle(..) => quote!(::iron_api::rquickjs::Value::new_null(ctx.clone())),
-        Kind::F64s | Kind::Values(_) => quote!(::std::vec::Vec::new()),
+        Kind::F64s | Kind::Strs(_) | Kind::Values(_) => quote!(::std::vec::Vec::new()),
         Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String::new()),
         _ => quote!(compile_error!("this parameter type cannot be optional")),
     }
@@ -736,6 +743,8 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
             }
         }
         Kind::F64s => quote!(&#x),
+        Kind::Strs(false) => quote!(&#x),
+        Kind::Strs(true) => x,
         Kind::Values(i) => {
             let v = &args.values[*i];
             let n = v.fields.len();
@@ -1012,7 +1021,12 @@ fn api_of(
                         "a plain parameter name is expected",
                     ));
                 };
-                params.push((id.ident.clone(), classify(&pt.ty, args)?));
+                let k = match classify(&pt.ty, args)? {
+                    // `Vec<String>` as a parameter is a `string[]` the function owns.
+                    Kind::List(inner) if matches!(*inner, Kind::Str(true)) => Kind::Strs(true),
+                    k => k,
+                };
+                params.push((id.ident.clone(), k));
             }
         }
     }
@@ -1232,6 +1246,13 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             vec![quote!(#name: *const u8)],
             quote!(unsafe { ::iron_api::script_f64s(#name) }),
         ),
+        Kind::Strs(owned) => {
+            let read = quote!(unsafe { ::iron_api::script_strs(#name) });
+            (
+                vec![quote!(#name: *const u8)],
+                if *owned { read } else { quote!(&#read) },
+            )
+        }
         Kind::Values(i) => {
             let v = &args.values[*i];
             let n = v.fields.len();
@@ -1571,7 +1592,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             let unsafe_kw = if a.params.iter().any(|(_, k)| {
                 matches!(
                     k,
-                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Values(_)
+                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Strs(_) | Kind::Values(_)
                 )
             }) {
                 quote!(unsafe)
@@ -1608,7 +1629,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             let unsafe_kw = if a.params.iter().any(|(_, k)| {
                 matches!(
                     k,
-                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Values(_)
+                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Strs(_) | Kind::Values(_)
                 )
             }) {
                 quote!(unsafe)
@@ -1647,7 +1668,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             if a.params.iter().any(|(_, k)| {
                 matches!(
                     k,
-                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Values(_)
+                    Kind::Str(_) | Kind::Callback(_) | Kind::F64s | Kind::Strs(_) | Kind::Values(_)
                 )
             }) {
                 shims.push(quote! {

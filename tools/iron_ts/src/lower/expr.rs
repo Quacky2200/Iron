@@ -1199,6 +1199,7 @@ impl<'a> Lowerer<'a> {
                 ExtTy::HandleArr(n.clone())
             }
             Ty::Arr(e) if **e == Ty::Num => ExtTy::F64Arr,
+            Ty::Arr(e) if matches!(e.strip(), Ty::Str) => ExtTy::StrArr,
             Ty::Arr(e)
                 if matches!(&**e, Ty::Obj(sid)
                     if self.manifest.values.contains_key(&self.m.structs[*sid].name)) =>
@@ -1275,9 +1276,13 @@ impl<'a> Lowerer<'a> {
         let loose: Vec<Option<ExtTy>> = classes
             .iter()
             .map(|c| match c {
-                Some(ExtTy::Str | ExtTy::HandleArr(_) | ExtTy::F64Arr | ExtTy::ValueArr(_)) => {
-                    Some(ExtTy::Ptr)
-                }
+                Some(
+                    ExtTy::Str
+                    | ExtTy::HandleArr(_)
+                    | ExtTy::F64Arr
+                    | ExtTy::StrArr
+                    | ExtTy::ValueArr(_),
+                ) => Some(ExtTy::Ptr),
                 other => other.clone(),
             })
             .collect();
@@ -1773,7 +1778,9 @@ impl<'a> Lowerer<'a> {
                         mk(ExprKind::Seq(stmts, Box::new(self.var_expr(tmp))), ty)
                     }
                     // An optional array is empty.
-                    ExtTy::F64Arr | ExtTy::ValueArr(_) | ExtTy::HandleArr(_) if i >= opt_from => {
+                    ExtTy::F64Arr | ExtTy::StrArr | ExtTy::ValueArr(_) | ExtTy::HandleArr(_)
+                        if i >= opt_from =>
+                    {
                         let ty = self.ext_ir(pt);
                         mk(ExprKind::Rt(RtFn::ArrNew, vec![num(0.0)]), ty)
                     }

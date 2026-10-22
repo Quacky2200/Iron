@@ -420,6 +420,8 @@ pub enum ExtTy {
     HandleArr(String),
     /// A `number[]`, read in place by the engine.
     F64Arr,
+    /// A `string[]`: the engine copies the strings.
+    StrArr,
     /// An array of a value class (`Vector3[]`): the engine reads each element's fields.
     ValueArr(String),
     /// An enum (`TangentMode`): a string to scripts, the index of the name (`i32`, -1 for none) on
@@ -451,6 +453,7 @@ impl ExtTy {
             ExtTy::Ptr => Ty::JsValue,
             ExtTy::HandleArr(n) => Ty::Arr(Box::new(Ty::Handle(n.clone()))),
             ExtTy::F64Arr => Ty::Arr(Box::new(Ty::Num)),
+            ExtTy::StrArr => Ty::Arr(Box::new(Ty::Str)),
             // The element struct is made by the lowering (it knows the struct ids).
             ExtTy::ValueArr(_) => Ty::JsValue,
             ExtTy::Fn(ps, r) => Ty::Fn(Box::new(FnTy {

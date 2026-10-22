@@ -69,6 +69,16 @@ impl Handle for Thing {
 pub mod rec_api {
     use super::*;
 
+    /// The words, one after the other with a separator between them.
+    pub fn join_words(words: &[String], sep: &str) -> String {
+        words.join(sep)
+    }
+
+    /// How many words there are (the function owns the list).
+    pub fn count_words(words: Vec<String>) -> u32 {
+        words.into_iter().filter(|w| !w.is_empty()).count() as u32
+    }
+
     /// Words that start with a prefix, short ones first.
     pub fn words(prefix: &str) -> Vec<String> {
         ["a", "bb", "ccc"]
@@ -368,5 +378,66 @@ fn a_vec_of_strings_comes_back_through_the_string_list_and_as_a_quickjs_array() 
             .eval(r#"JSON.stringify([Rec.words("x"), Array.isArray(Rec.words("")), Rec.words("q").length])"#)
             .unwrap();
         assert_eq!(out, r#"[["xa","xbb","xccc"],true,3]"#);
+    });
+}
+
+/// A script string object as the compiled code makes them: a 48 byte header, then the bytes.
+fn script_string(text: &str) -> Vec<u8> {
+    let mut v = Vec::new();
+    v.extend_from_slice(&0xA11A_0003u64.to_le_bytes());
+    v.extend_from_slice(&(text.len() as i64).to_le_bytes());
+    v.extend_from_slice(&0i64.to_le_bytes());
+    v.extend_from_slice(&2u64.to_le_bytes()); // well formed
+    v.extend_from_slice(&[0u8; 16]);
+    v.extend_from_slice(text.as_bytes());
+    v
+}
+
+// M9-API-1621
+#[test]
+fn string_arrays_come_in_as_script_arrays_of_strings_and_as_quickjs_arrays() {
+    use iron_api::rquickjs;
+    // The ABI: a script array is a header, a length, a capacity and a pointer to string pointers.
+    let strings: Vec<Vec<u8>> = ["héllo", "", "wörld"]
+        .iter()
+        .map(|w| script_string(w))
+        .collect();
+    let slots: Vec<*const u8> = strings.iter().map(|s| s.as_ptr()).collect();
+    let mut array = Vec::new();
+    array.extend_from_slice(&0xA11A_0001u64.to_le_bytes());
+    array.extend_from_slice(&(slots.len() as i64).to_le_bytes());
+    array.extend_from_slice(&(slots.len() as i64).to_le_bytes());
+    array.extend_from_slice(&(slots.as_ptr() as usize as u64).to_le_bytes());
+    let sep = script_string(", ");
+    let mut len = 0i64;
+    let p = unsafe { rec_api::iron_Rec_joinWords(array.as_ptr(), sep.as_ptr(), &mut len) };
+    let out = unsafe { std::slice::from_raw_parts(p, len as usize) };
+    assert_eq!(std::str::from_utf8(out).unwrap(), "héllo, , wörld");
+    assert_eq!(unsafe { rec_api::iron_Rec_countWords(array.as_ptr()) }, 2);
+    // A null array is an empty list.
+    assert_eq!(unsafe { rec_api::iron_Rec_countWords(std::ptr::null()) }, 0);
+    let p = unsafe { rec_api::iron_Rec_joinWords(std::ptr::null(), sep.as_ptr(), &mut len) };
+    assert_eq!(unsafe { std::slice::from_raw_parts(p, len as usize) }, b"");
+    // The manifest says `strings`; the declarations say `string[]`.
+    let json = rec_api::MANIFEST.to_json();
+    assert!(json.contains(r#""type":"strings""#), "{json}");
+    let dts = rec_api::MANIFEST.to_dts();
+    assert!(
+        dts.contains("function joinWords(words: string[], sep: string): string;"),
+        "{dts}"
+    );
+    assert!(
+        dts.contains("function countWords(words: string[]): number;"),
+        "{dts}"
+    );
+    // QuickJS: an array of JS strings.
+    let rt = rquickjs::Runtime::new().unwrap();
+    let ctx = rquickjs::Context::full(&rt).unwrap();
+    ctx.with(|ctx| {
+        rec_api::register_quickjs(&ctx).unwrap();
+        let out: String = ctx
+            .eval(r#"JSON.stringify([Rec.joinWords(["a", "b", "c"], "-"), Rec.countWords(["x", "", "y"]), Rec.countWords([])])"#)
+            .unwrap();
+        assert_eq!(out, r#"["a-b-c",2,0]"#);
     });
 }

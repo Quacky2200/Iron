@@ -363,6 +363,7 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [x] Computed property access with a literal-union key: `state[key] = !state[key]` where `key: keyof typeof state` or a union of some names (`M9-TS-3165`, `3169`).
 - [x] `Record<string, V>` (a `Map<string, V>`) and `Record<Union, V>` as dictionaries, indexed by any string (`M9-TS-3167`, `3168`).
 - [x] Tables indexed by a tag/enum-like string (`TINTS[state.tint]`, `(typeof TINTS)[Tint]`, `(typeof NAMES)[number]`, `M9-TS-3166`, `3170`).
+- [x] `string[]` parameters of `#[iron_api]` functions (`&[String]` / `Vec<String>`): macro, manifest type `strings`, `ExtTy::StrArr`, `string[]` declarations, QuickJS arrays, test API `Words` (2026-10-22, `M9-API-1621`, `M9-TS-3323`). No function of `iron_engine_api` takes a joined or newline string today, so nothing was converted (`AnimationClip.curveAt` returns a `|`-joined triple, a result, not an input list).
 - [x] `Object.assign` / `{ ...dict }` into an object by key at run time (dictionary sources, type check, once-per-site warning for a key that is no field), several sources, `Object.keys/entries` of objects verified (2026-10-22, `M9-TS-3319..3322`).
 - [x] `this` in object literal methods and accessors is the literal's object (2026-10-22, `M9-TS-3317/3318`); only a detached method keeps its binding.
 - [x] `flat(depth)` with a run-time depth flattens exactly that deep, as JavaScript; the result is an array of a union of the nesting levels (2026-10-22, `M9-TS-3313..3316`).

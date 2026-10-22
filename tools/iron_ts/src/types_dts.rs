@@ -36,6 +36,7 @@ fn ts_type(t: &str) -> String {
         "f64" | "f32" | "i32" | "u32" => "number".into(),
         "string" => "string".into(),
         "f64s" => "number[]".into(),
+        "strings" => "string[]".into(),
         "list:string" => "string[]".into(),
         "ptr" => "unknown".into(),
         other => {

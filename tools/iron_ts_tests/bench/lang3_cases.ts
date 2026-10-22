@@ -229,3 +229,18 @@ function t(): string {
   }
   return o.title;
 }
+//## string_arrays_into_a_host_function
+function t(): string {
+  const words = ["alpha", "", "gamma"];
+  const parts: string[] = [];
+  parts.push(Words.join(words, "+"));
+  parts.push(Words.count(words) + "");
+  parts.push(Words.join([], "+") + "|" + Words.count([]));
+  parts.push(Words.longest(words.map((w) => w + "!")));
+  let extra = "";
+  for (let i = 0; i < 40; i++) extra += "é";
+  const many = [extra, extra + "ü", "x" + extra];
+  parts.push(Words.longest(many).length + "");
+  parts.push(Words.join(["one"], ",") + Words.count(["a", "b"]));
+  return parts.join(" ");
+}
