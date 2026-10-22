@@ -8,6 +8,7 @@ publish.workspace = true
 wuff = "0.2.9"
 cssparser = "0.38"
 iron_core = { version = "0.1.0", path = "../iron_core" }
+iron_ui_tables = { path = "../iron_ui_tables" }
 # complex-scripts: dictionary word and line breaks for CJK, Thai, Lao, Khmer and Burmese.
 parley ={ version = "0.12.0", features = ["complex-scripts"] }
 precomputed-hash = "0.1.1"

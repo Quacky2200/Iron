@@ -1240,14 +1240,14 @@ when `cond` is false.
 - **Lazy state, node methods.** `useState(() => init)` and `useState(read)` (an arrow, or a top-level function) compute the first
   value once (`useStateLazy`); state may be an array of numbers. `ref.current?.focus()`, `.blur()`, `.scrollTo(x, y)` queue a
   `NodeCommand` that the host applies to its tree (`iron_ts_ui::take_node_commands`); `useRef<T>(null)` is `useRef<T | null>(null)`.
-- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, `ambient.d.ts` and the hand-written `engine_ts.d.ts`; see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
-- **Ambient types** ([ambient.ts](../tools/iron_ts/src/lower/ambient.ts) prelude, written with
-  [gen_ambient.py](../tools/iron_ts/scripts/gen_ambient.py) together with [ambient.d.ts](../tools/iron_ts/src/lower/ambient.d.ts)):
+- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, the UI tables (`iron_ui_tables`, written by `ui_dts.rs`) and the hand-written `engine_ts.d.ts`; see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
+- **Ambient types** (the prelude and the `.d.ts` are both written by [ui_dts.rs](../tools/iron_ts/src/ui_dts.rs) from the tables of
+  `crates/iron_ui_tables`; the hook helpers stay in [ui.ts](../tools/iron_ts/src/lower/ui.ts)):
   `ReactNode`, `React.ReactNode`, `IronElement`, `IronKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,
   `Collision2D` (= `Collision`) and `IronStyle`. `number | string` is the class `StyleValue` (a number or a string converts where it
   is expected). `IronStyle` is a list of entries: `const card: IronStyle = { width: 100, padding: "4px" }` builds it,
   `{ ...card, ...style, flexGrow: 1 }` concatenates (a later entry wins, `undefined` values apply nothing) and `style={card}` applies
-  it. The `.d.ts` (`iron_ts::lower::AMBIENT_DTS`) declares the same names, the `react` and `@iron/react` modules and `JSX` for `tsc`.
+  it. The `.d.ts` (`iron_ts::ui_dts::declarations`) declares the same names, the `react` and `@iron/react` modules and `JSX` for `tsc`.
 - **Tuples and records.** A tuple whose elements share one type (`[number, number]`) is an array of it; `Record<Weather, V>` over a numeric enum is an array indexed by the enum value (`{ [Weather.Rain]: v }` builds it); `Record<string, unknown>` is an `IronStyle` when the ambient types are there. `createRoot(t).render(el)` is `UiRoot.mount(t, el)` (a `WorldPanel` target uses `ts_ui_mount_panel`); top-level expression statements run in `init` in source order. A `const` arrow with annotated parameters and no value return may call itself; a top-level `let f = () => ..` is a variable.
 - **Language.** Parameter types come from their defaults (`phase = 0`); a program class or interface shadows an engine name
   (`class Scene`); `static get x()` reads as `Class.x`; a function with fewer parameters passes for one with more.

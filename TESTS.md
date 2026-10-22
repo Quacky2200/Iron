@@ -1801,3 +1801,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3223 | Integration | `!v` / `if (v)` on unions (`number \| string \| number[] \| null`, `string \| Pt`, `number \| number[]`) test the member held (0, "" and null are false) and the falsy branch narrows to the members that can be falsy, equal to bun (`lang2.rs`). |
 | M9-TS-3224 | Integration | `flat(depth)` with a depth variable that reaches the full flattening (2, 10, `Infinity`) equals bun (`lang2.rs`). |
 | M9-TS-3225 | Integration | `flat(depth)` with a run-time depth smaller than the nesting throws a `RangeError` that names `flat` (documented difference; `lang2.rs`). |
+| M9-TS-3301 | Integration | Every style property of the `iron_ui_tables` table is applied by `apply_style` (each keyword of its type, a number where the type takes one, a free string where it takes one) and resetting it is accepted (`crates/iron_ui/tests/ui_tables.rs`). |
+| M9-TS-3302 | Integration | Every `"camelCase" =>` name `apply_style` matches in `style.rs`, `text_style.rs` and `paint.rs` is in the style table (`ui_tables.rs`). |
+| M9-TS-3303 | Integration | Style names are unique, named unions exist, and every cursor keyword applies (`ui_tables.rs`). |
+| M9-TS-3304 | Integration | Lengths take every unit of `LENGTH_UNITS` (resolved by the tree) and each shorthand of `SHORTHANDS` applies together with its longhands (`ui_tables.rs`). |
+| M9-TS-3305 | Integration | Attributes are handled as their scope says: `Html` by `Attrs::set`, `Svg` by SVG elements only, `Core` and `Compat` rejected by `Attrs::set`; every name `Attrs::set` matches is declared (`ui_tables.rs`). |
+| M9-TS-3306 | Integration | Every element of `ELEMENTS` and `SVG_KINDS` can be created; components map to their tags (`ui_tables.rs`). |
+| M9-TS-3307 | Integration | Every event field reads the slot (or flag, or string) `UiEvent::script_args` fills (`ui_tables.rs`). |
+| M9-TS-3308 | Integration | Every `on*` prop names a real `EventKind`, capture variants resolve, `onGotPointerCapture` is not a capture prop, and every event type without a prop is a transition, animation or drag one (`ui_tables.rs`). |
+| M9-TS-3309 | Unit | The generated UI declarations parse as a `.d.ts` and list every style property, attribute, event prop, element, component and hook of the tables, with docs and the formatter's union layout (`tools/iron_ts/src/ui_dts.rs`). |
+| M9-TS-3310 | Unit | The compiled prelude has a `UiEvent` field per event field with the slot expressions, an alias per event interface, and the module export lists come from the tables (`ui_dts.rs`). |
+| M9-TS-3311 | Unit | `onFocus` / `onBlur` / `onBlurCapture` / `onChange` / `onGotPointerCapture` lower to `focusin` / `focusout` / `focusout:capture` / `input` / `gotpointercapture` handlers (`tools/iron_ts/src/lower/jsx.rs`). |
+| M9-TS-3312 | Unit | Capitalised components stand for the tags of the element table (`jsx.rs`). |

@@ -677,3 +677,9 @@ differential test, bit for bit, in every GC mode), instead of captured JSON. Wha
 - **F-EXT not needed**: `SplineAnimate` is a handle class like `Camera` (no `extends Component`); `like` (value parameters
   as `Vector3Like`), `#[nullable]` (`T | null`) and `#[rest]` were added instead.
 - **Not done**: F-UNION, F-NULL as a general `Option<T>`, records as parameters, F-SUB, F-PROMISE, F-JSON (P2 and later).
+
+## 8. Progress, P4 (2026-10-22)
+
+**P4a done:** `crates/iron_ui_tables` (no dependencies) holds the UI tables: `STYLE_PROPS` (name, parts of the TypeScript type, doc, group), `NAMED_TYPES`, `SHORTHANDS`, `LENGTH_UNITS`, `ATTRS` (scope Core / Html / Svg / Compat, elements), `ELEMENTS` and `SVG_KINDS`, `EVENT_FIELDS` (slot or flag of each field), `EVENT_INTERFACES`, `EVENT_PROPS` (prop, event type, interface), and the React `HOOKS` / `CREATE_ROOT` signatures. `iron_ui` takes `CURSORS` and `SVG_KINDS` from it; `crates/iron_ui/tests/ui_tables.rs` (`M9-TS-3301..3308`) checks the tables against the implementation in both directions. `tools/iron_ts/src/ui_dts.rs` writes the UI `.d.ts` and the compiled prelude; `gen_ambient.py`, `ambient.d.ts` and `ambient.ts` are gone. The API surface is unchanged except the deliberate additions listed in `tools/iron_ts/TODO.md`.
+
+**Not done (P4b):** moving the hook helpers of `ui.ts` into Rust. They are generic TypeScript compiled per use (a `useState<T>` over a `number`, a `string`, an object), calling the type-specific `Ui.load` / `Ui.store` natives; a native Rust function cannot be generic over the compiled program's types, so this needs the compiler to lower the hooks as IR (`jsx.rs`) rather than as TypeScript text. It is listed in the `ALLOWED_TS` ratchet with that reason.

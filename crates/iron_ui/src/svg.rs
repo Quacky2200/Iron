@@ -4,28 +4,7 @@
 //! when drawing. The renderer rasterizes that markup at the drawn size (resvg).
 
 /// SVG element types (besides `text`, which is SVG text inside an `svg`).
-pub const SVG_KINDS: &[&str] = &[
-    "svg",
-    "g",
-    "rect",
-    "circle",
-    "ellipse",
-    "line",
-    "polyline",
-    "polygon",
-    "path",
-    "tspan",
-    "defs",
-    "use",
-    "symbol",
-    "linearGradient",
-    "radialGradient",
-    "stop",
-    "clipPath",
-    "mask",
-    "pattern",
-    "title",
-];
+pub const SVG_KINDS: &[&str] = iron_ui_tables::elements::SVG_KINDS;
 
 pub fn is_svg_kind(kind: &str) -> bool {
     SVG_KINDS.contains(&kind)

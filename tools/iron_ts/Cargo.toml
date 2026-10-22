@@ -7,6 +7,7 @@ publish.workspace = true
 [dependencies]
 iron_ts_rt = { path = "../iron_ts_rt" }
 iron_api = { path = "../../crates/iron_api", default-features = false }
+iron_ui_tables = { path = "../../crates/iron_ui_tables" }
 cranelift-codegen = "0.136.3"
 cranelift-frontend = "0.136.3"
 cranelift-module = "0.136.3"

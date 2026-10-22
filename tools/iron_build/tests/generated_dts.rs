@@ -41,23 +41,31 @@ fn rel(p: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// The hand-written declaration files still allowed, each with the plan phase that deletes it.
-/// Lower this list, never raise it: a new `.d.ts` under `tools/` fails the test.
-const ALLOWED_D_TS: &[(&str, &str)] = &[
+/// The hand-written declaration files still allowed, each with why and what removes it. Lower this
+/// list, never raise it: a new `.d.ts` under `tools/` fails the test. The UI declarations
+/// (`ambient.d.ts`) are generated from `iron_ui_tables` now (`tools/iron_ts/src/ui_dts.rs`).
+const ALLOWED_D_TS: &[(&str, &str)] = &[(
+    "tools/iron_ts/src/lower/engine_ts.d.ts",
+    "TypeScript-side engine shapes (records, enums, promises, overloads) the manifests cannot carry yet:      plan phase 2 (F-REC, F-ENUM, F-UNION, F-PROMISE) moves them into #[iron_api]; phase 5 deletes the file",
+)];
+
+/// Hand-written TypeScript compiled into games, each with why it is not Rust yet. The facade may
+/// only lose `//# when` chunks.
+const MAX_FACADE_CHUNKS: usize = 47;
+const ALLOWED_TS: &[(&str, &str)] = &[
     (
-        "tools/iron_ts/src/lower/engine_ts.d.ts",
-        "phase 2/3 (5 deletes it)",
+        "tools/iron_ts/src/lower/facade.ts",
+        "engine adapters and logic that wait for native APIs (plan phases 2 and 3)",
     ),
     (
-        "tools/iron_ts/src/lower/ambient.d.ts",
-        "phase 4 (UI tables)",
+        "tools/iron_ts/src/lower/ui.ts",
+        "the hook helpers (useState, useReducer, useRef, useMemo, useContext, ...): generic over the program's own types, so they are          monomorphised per use by the compiler and cannot be one native function; TODO: lower them in Rust (jsx.rs) as IR          over the native slots of iron_ts_ui once the compiler can emit generic calls into a native library",
+    ),
+    (
+        "tools/iron_ts/src/lower/temporal.ts",
+        "the Temporal runtime library (decision 2: moved to Rust long term, not in this pass)",
     ),
 ];
-
-/// Hand-written TypeScript compiled into games (the facade) and the Python that wrote the ambient
-/// declarations. The facade may only lose `//# when` chunks.
-const MAX_FACADE_CHUNKS: usize = 47;
-const ALLOWED_PY: &[&str] = &["tools/iron_ts/scripts/gen_ambient.py"];
 
 // M9-TS-3100
 #[test]
@@ -117,13 +125,24 @@ fn no_new_hand_written_declaration_files_appear() {
         chunks, MAX_FACADE_CHUNKS,
         "facade.ts lost a chunk: lower MAX_FACADE_CHUNKS to {chunks}"
     );
+    let ts: BTreeSet<String> = files
+        .iter()
+        .map(|p| rel(p))
+        .filter(|r| {
+            r.starts_with("tools/iron_ts/src/lower/") && r.ends_with(".ts") && !r.ends_with(".d.ts")
+        })
+        .collect();
+    let allowed_ts: BTreeSet<String> = ALLOWED_TS.iter().map(|(p, _)| p.to_string()).collect();
+    assert_eq!(
+        ts, allowed_ts,
+        "TypeScript compiled into games: list it in ALLOWED_TS with a reason and a TODO, or move it to Rust"
+    );
     let py: BTreeSet<String> = files
         .iter()
         .map(|p| rel(p))
         .filter(|r| r.ends_with(".py") && r.starts_with("tools/iron_ts/"))
         .collect();
-    let allowed_py: BTreeSet<String> = ALLOWED_PY.iter().map(|s| s.to_string()).collect();
-    assert_eq!(py, allowed_py, "Python under tools/iron_ts");
+    assert!(py.is_empty(), "no Python step under tools/iron_ts: {py:?}");
 }
 
 /// Reads a top-level name out of a declaration line (`declare class X {`, `interface X {`,
@@ -201,7 +220,6 @@ const KNOWN_OVERLAPS: &[&str] = &[
     "Random",
     "Screen",
     "input",
-    "Cursor",
     "PrimitiveType",
 ];
 
@@ -212,11 +230,10 @@ fn nothing_is_declared_by_both_the_manifests_and_a_hand_written_file() {
         .into_iter()
         .filter(|m| !m.contains("\"namespace\":\"Ui\""))
         .collect();
-    let generated = iron_ts::types_dts::generate(&ms, "", "").unwrap();
+    let generated = iron_ts::types_dts::generate(&ms, "").unwrap();
     // The `declare module` re-export blocks are not declarations of their own.
     let gen_names = declared_names(&generated);
-    let mut hand = declared_names(iron_ts::types_dts::ENGINE_TS_DTS);
-    hand.extend(declared_names(iron_ts::types_dts::AMBIENT_DTS));
+    let hand = declared_names(iron_ts::types_dts::ENGINE_TS_DTS);
     let overlap: BTreeSet<String> = gen_names.intersection(&hand).cloned().collect();
     let known: BTreeSet<String> = KNOWN_OVERLAPS.iter().map(|s| s.to_string()).collect();
     let new: Vec<_> = overlap.difference(&known).collect();

@@ -46,10 +46,6 @@ mod typed;
 mod types;
 mod utility;
 
-/// The `.d.ts` text of the ambient React/Iron types (`ReactNode`, `IronStyle`, `JSX`, the
-/// `react` and `@iron/react` modules), for a type check without `node_modules`.
-pub use jsx::AMBIENT_DTS;
-
 use crate::ir::*;
 use classes::Which;
 use oxc_allocator::Allocator;
@@ -487,7 +483,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     if wants_ui {
         head += jsx::UI_PRELUDE;
-        head += jsx::AMBIENT_PRELUDE;
+        head += crate::ui_dts::prelude();
     }
     if wants_temporal {
         head += temporal::TEMPORAL;

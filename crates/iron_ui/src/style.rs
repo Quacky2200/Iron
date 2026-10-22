@@ -246,45 +246,9 @@ fn parse_cursor(value: &str) -> Option<(&'static str, Vec<CursorImage>)> {
     Some((keyword, images))
 }
 
-/// CSS `cursor` keywords. `auto` is the text cursor over text and the arrow elsewhere.
-pub const CURSORS: &[&str] = &[
-    "auto",
-    "default",
-    "none",
-    "context-menu",
-    "help",
-    "pointer",
-    "progress",
-    "wait",
-    "cell",
-    "crosshair",
-    "text",
-    "vertical-text",
-    "alias",
-    "copy",
-    "move",
-    "no-drop",
-    "not-allowed",
-    "grab",
-    "grabbing",
-    "all-scroll",
-    "col-resize",
-    "row-resize",
-    "n-resize",
-    "e-resize",
-    "s-resize",
-    "w-resize",
-    "ne-resize",
-    "nw-resize",
-    "se-resize",
-    "sw-resize",
-    "ew-resize",
-    "ns-resize",
-    "nesw-resize",
-    "nwse-resize",
-    "zoom-in",
-    "zoom-out",
-];
+/// CSS `cursor` keywords (the table in `iron_ui_tables`). `auto` is the text cursor over text and the
+/// arrow elsewhere.
+pub const CURSORS: &[&str] = iron_ui_tables::style::CURSORS;
 
 /// `scrollbarWidth`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -833,7 +797,19 @@ fn apply_property(
         | "transformStyle"
         | "backfaceVisibility"
         | "WebkitBackfaceVisibility" => {
-            let s = kw()?;
+            // `scale: 1.5` and `perspective: 800` (pixels) take numbers, as `IronStyle` declares.
+            let text;
+            let s = match (prop, value) {
+                ("scale", Value::Number(n)) => {
+                    text = n.to_string();
+                    text.as_str()
+                }
+                ("perspective", Value::Number(n)) => {
+                    text = format!("{n}px");
+                    text.as_str()
+                }
+                _ => kw()?,
+            };
             let t = Arc::make_mut(visual.transform.get_or_insert_with(Default::default));
             match prop {
                 "transform" => {

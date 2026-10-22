@@ -69,6 +69,44 @@ pub enum EventKind {
 }
 
 impl EventKind {
+    /// Every event type (a test keeps the list complete).
+    pub const ALL: &'static [EventKind] = &[
+        EventKind::PointerMove,
+        EventKind::PointerDown,
+        EventKind::PointerUp,
+        EventKind::PointerEnter,
+        EventKind::PointerLeave,
+        EventKind::Click,
+        EventKind::DblClick,
+        EventKind::ContextMenu,
+        EventKind::Wheel,
+        EventKind::KeyDown,
+        EventKind::KeyUp,
+        EventKind::FocusIn,
+        EventKind::FocusOut,
+        EventKind::Scroll,
+        EventKind::Input,
+        EventKind::Cancel,
+        EventKind::Close,
+        EventKind::TransitionRun,
+        EventKind::TransitionStart,
+        EventKind::TransitionEnd,
+        EventKind::TransitionCancel,
+        EventKind::AnimationStart,
+        EventKind::AnimationIteration,
+        EventKind::AnimationEnd,
+        EventKind::AnimationCancel,
+        EventKind::GotPointerCapture,
+        EventKind::LostPointerCapture,
+        EventKind::DragStart,
+        EventKind::Drag,
+        EventKind::DragEnter,
+        EventKind::DragOver,
+        EventKind::DragLeave,
+        EventKind::Drop,
+        EventKind::DragEnd,
+    ];
+
     /// The DOM event type.
     pub fn name(self) -> &'static str {
         match self {
