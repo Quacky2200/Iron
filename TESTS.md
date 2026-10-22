@@ -1746,3 +1746,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3194 | Integration | `xs.flat(depth)` with a depth that is a variable or a constant equals bun's (`leftovers.rs`). |
 | M9-TS-3195 | Integration | `function f(...args: [string, number])` and `[number, string?]`: calls with arguments and with a spread tuple equal bun's (`leftovers.rs`). |
 | M9-TS-3196 | Integration | A generic function given `["a", "b"] as const` and a `string` (`next(MODES, current)`): `T` is `string`, the array is converted, a union-typed result is a member (`leftovers.rs`). |
+| M9-TS-3197 | Unit | The window helpers of the facade (`.on(`, `.emit(`, `broadcast`) are added only for a program that names `Window` (`tools/iron_ts/src/lower/facade.rs`). |
+| M9-TS-3198 | Integration | `input.gamepads()` gives pads with `buttons` and `axes` by name; `input.on("gamepadconnected", e => ..)` gets `{ gamepad }` (`tools/iron_ts_tests/tests/all/originals_engine.rs`). |
+| M9-TS-3199 | Integration | `Light.measureIlluminance` stays pending until a physics step, then equals `Light.illuminanceAt` without colliders (`originals_engine.rs`). |
+| M9-TS-3200 | Integration | A closure given to `Physics.afterNextStep` runs once, after the next step (`originals_engine.rs`). |
+| M9-TS-3201 | Integration | The fog keys of a scene file's `renderSettings` apply (with defaults for missing keys) and are saved, as `scenes.ts` has them (`tools/iron_ts_tests/tests/all/render_native.rs`). |

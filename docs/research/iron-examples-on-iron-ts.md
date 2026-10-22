@@ -475,9 +475,9 @@ shafts and exposure in native games"): `RenderSettings` fog / height fog / volum
 Compiler fixes made for it: `props.on === false` on an optional boolean, an optional `rotation?: Quaternion` passed into
 `new GameObject(name, { rotation })`, a typed array where the engine takes `number[]`, and the facade static write (`__xw_`).
 
-**Not ported**: scene-file keys for fog and exposure (the QuickJS `scenes.ts` saves them; `iron_scenes` keeps the older keys),
-`Light.measureIlluminance` waiting for the next physics tick (it answers at once), and `Mesh.createFlat` taking a data object with only
-some of its lists (a compiled game gives all four).
+**Not ported** (all three done 2026-10-22, section 12): scene-file keys for fog (`scenes.ts` saves no exposure keys),
+`Light.measureIlluminance` waiting for the next physics tick (`Physics.afterNextStep`), and `Mesh.createFlat` taking a data object with only
+some of its lists.
 
 ## 11. The 2D drawing, text and spline family (2026-10-22)
 
@@ -543,3 +543,7 @@ What the nine that failed first needed (details in `docs/iron-ts.md` "The origin
 | fog, fog-teapots | `MODES[...]!` assigned to a field: "str where tag is expected" | a value with a union type keeps it in an object literal (only a written string widens); a string becomes a union member through the tag table (`StrTag`) |
 | fog-blocks, fog-world | generic arrow with `new (a.constructor as new (n: number) => T)(..)` | generic arrows declared in a function; `x.constructor` for typed arrays and classes |
 | fog-park | `Mesh.createFlat` with three of its four lists | the facade tolerates missing lists (`"uv" in data ? .. : []`, a condition known at compile time lowers one arm) |
+
+Library gaps closed with it: `input.gamepads()` pads have `buttons` / `axes` and `input.on("gamepadconnected", e => ..)` gets `{ gamepad }`;
+`UiTarget.type` (the app sets the resolver before every event); fog keys in scene files; `Light.measureIlluminance` resolves after the next
+physics step; the window facade chunks need `Window` in the program.

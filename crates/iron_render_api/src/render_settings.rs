@@ -277,12 +277,41 @@ pub fn save_render_settings() -> Value {
         Value::Null,
         |b| json!({ "threshold": b.threshold, "intensity": b.intensity, "scatter": b.scatter }),
     );
+    let height = s.fog.height.as_ref().map_or(
+        Value::Null,
+        |h| json!({ "density": h.density, "baseHeight": h.base_height, "falloff": h.falloff }),
+    );
+    let volumetric = s.fog.volumetric.as_ref().map_or(Value::Null, |v| {
+        json!({
+            "intensity": v.intensity,
+            "anisotropy": v.anisotropy,
+            "steps": v.steps,
+            "distance": v.distance,
+            "albedo": color_json(v.albedo),
+            "sharpDistance": v.sharp_distance,
+            "sharpSamples": v.sharp_samples,
+            "resolution": v.resolution,
+            "denoising": v.denoising,
+            "historyWeight": v.history_weight,
+            "samples": v.samples,
+            "motionSamples": v.motion_samples,
+        })
+    });
     json!({
         "ambientLight": color_json(s.ambient_light),
         "ambientMode": s.ambient_mode,
         "reflectionIntensity": s.reflection_intensity,
         "skybox": sky,
         "bloom": bloom,
+        "fog": s.fog.enabled,
+        "fogMode": s.fog.mode,
+        "fogColor": color_json(s.fog.color),
+        "fogDensity": s.fog.density,
+        "fogStartDistance": s.fog.start,
+        "fogEndDistance": s.fog.end,
+        "heightFog": height,
+        "volumetricFog": volumetric,
+        "fogCulling": s.fog.culling,
     })
 }
 
@@ -344,6 +373,80 @@ pub fn apply_render_settings(saved: &Value) {
                 });
             }
             _ => {}
+        }
+        // The fog's settings (the switch last, as the TypeScript applies them).
+        if let Some(m) = saved.get("fogMode").and_then(Value::as_str)
+            && ["linear", "exponential", "exponentialSquared"].contains(&m)
+        {
+            s.fog.mode = m.to_string();
+        }
+        if let Some(c) = saved.get("fogColor").and_then(color_of) {
+            s.fog.color = c;
+        }
+        if let Some(d) = saved.get("fogDensity").and_then(Value::as_f64) {
+            s.fog.density = d;
+        }
+        if let Some(d) = saved.get("fogStartDistance").and_then(Value::as_f64) {
+            s.fog.start = d;
+        }
+        if let Some(d) = saved.get("fogEndDistance").and_then(Value::as_f64) {
+            s.fog.end = d;
+        }
+        match saved.get("heightFog") {
+            Some(Value::Null) => s.fog.height = None,
+            Some(h) if h.is_object() => {
+                let d = HeightFog::default();
+                let n = |k: &str, d: f64| h.get(k).and_then(Value::as_f64).unwrap_or(d);
+                s.fog.height = Some(HeightFog {
+                    density: n("density", d.density),
+                    base_height: n("baseHeight", d.base_height),
+                    falloff: n("falloff", d.falloff),
+                });
+            }
+            _ => {}
+        }
+        match saved.get("volumetricFog") {
+            Some(Value::Null) => s.fog.volumetric = None,
+            Some(v) if v.is_object() => {
+                let d = Volumetric::default();
+                let n = |k: &str, d: f64| v.get(k).and_then(Value::as_f64).unwrap_or(d);
+                let pick = |k: &str, names: &[&str], d: &str| {
+                    v.get(k)
+                        .and_then(Value::as_str)
+                        .filter(|s| names.contains(s))
+                        .unwrap_or(d)
+                        .to_string()
+                };
+                s.fog.volumetric = Some(Volumetric {
+                    intensity: n("intensity", d.intensity),
+                    anisotropy: n("anisotropy", d.anisotropy),
+                    steps: n("steps", d.steps),
+                    distance: n("distance", d.distance),
+                    albedo: v.get("albedo").and_then(color_of).unwrap_or(d.albedo),
+                    sharp_distance: n("sharpDistance", d.sharp_distance),
+                    sharp_samples: n("sharpSamples", d.sharp_samples),
+                    resolution: pick(
+                        "resolution",
+                        &["low", "medium", "high", "ultra"],
+                        &d.resolution,
+                    ),
+                    denoising: pick(
+                        "denoising",
+                        &["none", "reprojection", "gaussian", "both"],
+                        &d.denoising,
+                    ),
+                    history_weight: n("historyWeight", d.history_weight),
+                    samples: n("samples", d.samples),
+                    motion_samples: n("motionSamples", d.motion_samples),
+                });
+            }
+            _ => {}
+        }
+        if let Some(b) = saved.get("fogCulling").and_then(Value::as_bool) {
+            s.fog.culling = b;
+        }
+        if let Some(b) = saved.get("fog").and_then(Value::as_bool) {
+            s.fog.enabled = b;
         }
     });
 }

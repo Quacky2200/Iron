@@ -303,15 +303,8 @@ export function f(): number { return 1; }";
     fn object_and_console_helpers_without_a_static_answer_are_errors_with_a_reason() {
         let pre = "interface P { a: number; b: string } const p: P = { a: 1, b: \"x\" };";
         for (body, want) in [
-            (
-                "return Object.entries(p).length;",
-                "Object.entries is supported as",
-            ),
+            ("return Object.entries(p).length;", "different types"),
             ("return Object.values(p).length;", "different types"),
-            (
-                "const k = \"a\" + \"b\"; return k in p ? 1 : 0;",
-                "string literal key",
-            ),
             ("console.log(p); return 1;", "console.log of an object"),
         ] {
             let e = lower::lower_source(&format!("{pre} export function f(): number {{ {body} }}"))

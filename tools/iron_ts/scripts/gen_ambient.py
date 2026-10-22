@@ -114,6 +114,8 @@ interface Gamepad {{
   id: number;
   name: string;
   connected: boolean;
+  buttons: Record<string, number>;
+  axes: Record<string, number>;
 }}
 {iron_style_ts}
 """

@@ -199,6 +199,9 @@ pub(crate) struct FnCtx {
     /// Generic arrow functions declared in this function (`const more = <T>(a: T) => ..`): the
     /// name and the key of the generic function in `generic_fns`.
     pub local_generics: HashMap<String, String>,
+    /// Paths (`o.scale`) the tests around the expression narrowed to members of their union
+    /// (`tagged.rs`); a function or closure body starts with none.
+    pub narrowed: Vec<(String, Vec<usize>)>,
 }
 
 pub struct Lowerer<'a> {
@@ -269,8 +272,6 @@ pub struct Lowerer<'a> {
     pub(crate) accessor_names: HashSet<String>,
     /// Unions of different types (`tagged.rs`): the struct and its member types.
     pub(crate) unions: HashMap<StructId, Vec<Ty>>,
-    /// Paths (`o.scale`) the tests around the expression narrowed to a member of their union.
-    pub(crate) narrowed: Vec<(String, Vec<usize>)>,
     /// While a function body is lowered early (`ReturnType<typeof f>` in a field type), classes
     /// it instantiates are collected and laid out at once.
     pub(crate) eager_classes: bool,
@@ -506,7 +507,6 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         top_fn_decls: HashMap::new(),
         accessor_names: HashSet::new(),
         unions: HashMap::new(),
-        narrowed: Vec::new(),
         eager_classes: false,
         laid_out: HashSet::new(),
         generic_itables: Vec::new(),

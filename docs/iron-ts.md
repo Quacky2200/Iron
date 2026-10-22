@@ -803,6 +803,9 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   declared type goes (the deepest type TypeScript gives it) after evaluating the depth expression.
 - **A tuple as a rest parameter.** `function f(...args: [string, number?])`: the arguments from there on make the tuple (a missing
   optional element is undefined); `f(...pair)` with a tuple of that type passes it as it is. Not for function values.
+- **Facade chunks need the thing they are written for.** A `//# when a|b&c` header triggers on `a`, or on `b` and `c` both; the
+  window helpers (`.on(`, `.emit(`, `.request(`, `broadcast`, ..) need the program to name `Window`, so a class with its own `on` or
+  `emit` method does not pull them in (`M9-TS-3197`).
 - **`register(Class)`** stays a statement at the top level of a module: the host starts the registered classes before any code
   runs, so a registration that depends on a condition cannot be made lazily (the error says so).
 

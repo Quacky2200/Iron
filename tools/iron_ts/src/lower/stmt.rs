@@ -18,9 +18,9 @@ impl<'a> Lowerer<'a> {
 
     pub(crate) fn lower_stmts(&mut self, stmts: &'a [Statement<'a>], out: &mut Vec<Stmt>) -> R<()> {
         // Narrowings a block's early exits leave end with the block.
-        let narrowed_mark = self.narrowed.len();
+        let narrowed_mark = self.cur.narrowed.len();
         let r = self.lower_stmts_in(stmts, out);
-        self.narrowed.truncate(narrowed_mark);
+        self.cur.narrowed.truncate(narrowed_mark);
         r
     }
 
@@ -76,7 +76,7 @@ impl<'a> Lowerer<'a> {
                 out.push(Stmt::If(c, then, els));
                 // `if (typeof x === "string") return ..;`: the rest of the block is the other case.
                 if i.alternate.is_none() && Self::always_exits(&i.consequent) {
-                    self.narrowed.extend(no);
+                    self.cur.narrowed.extend(no);
                 }
             }
             Statement::WhileStatement(w) => {

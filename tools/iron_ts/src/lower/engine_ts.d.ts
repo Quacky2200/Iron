@@ -367,7 +367,7 @@ declare namespace Window {
  */
 declare namespace input {
   function gamepads(): Gamepad[];
-  function on(type: "gamepadconnected" | "gamepaddisconnected", fn: () => void): () => void;
+  function on(type: "gamepadconnected" | "gamepaddisconnected", fn: (e: { gamepad: Gamepad }) => void): () => void;
 }
 declare namespace Assets {
   function onChanged(fn: (path: string) => void): () => void;

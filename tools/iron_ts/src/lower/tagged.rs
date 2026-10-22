@@ -265,7 +265,7 @@ impl<'a> Lowerer<'a> {
 
     /// Reading a path a test narrowed to a member of its union gives that member.
     pub(crate) fn narrow_value(&mut self, e: &'a Expression<'a>, v: Expr) -> Expr {
-        if self.narrowed.is_empty()
+        if self.cur.narrowed.is_empty()
             || !self.unions.contains_key(match v.ty.strip() {
                 Ty::Obj(s) => s,
                 _ => return v,
@@ -278,7 +278,7 @@ impl<'a> Lowerer<'a> {
         };
         // Every test around narrowed the path further: the members all of them allow.
         let mut allowed: Option<Vec<usize>> = None;
-        for (p, idxs) in &self.narrowed {
+        for (p, idxs) in &self.cur.narrowed {
             if *p == path {
                 allowed = Some(match allowed {
                     None => idxs.clone(),
@@ -392,9 +392,9 @@ impl<'a> Lowerer<'a> {
             return vec![];
         };
         let mark = self.cur.locals.len();
-        let saved = std::mem::take(&mut self.narrowed);
+        let saved = std::mem::take(&mut self.cur.narrowed);
         let v = self.lower_expr(p, None);
-        self.narrowed = saved;
+        self.cur.narrowed = saved;
         self.cur.locals.truncate(mark);
         let Ok(v) = v else { return vec![] };
         let Some(members) = self.union_members(&v.ty) else {
@@ -419,10 +419,10 @@ impl<'a> Lowerer<'a> {
         n: Vec<(String, Vec<usize>)>,
         f: impl FnOnce(&mut Self) -> R<T>,
     ) -> R<T> {
-        let mark = self.narrowed.len();
-        self.narrowed.extend(n);
+        let mark = self.cur.narrowed.len();
+        self.cur.narrowed.extend(n);
         let r = f(self);
-        self.narrowed.truncate(mark);
+        self.cur.narrowed.truncate(mark);
         r
     }
 

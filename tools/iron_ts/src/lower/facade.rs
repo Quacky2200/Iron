@@ -177,7 +177,9 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
                 || manifest.namespaces.contains_key(n)
         };
         if needs.split_whitespace().all(have)
-            && triggers.split('|').any(|t| src.contains(t.trim_end()))
+            && triggers
+                .split('|')
+                .any(|t| t.split('&').all(|p| src.contains(p.trim_end())))
         {
             extra.push_str(body);
         }
@@ -858,5 +860,26 @@ impl<'a> Lowerer<'a> {
             }
             _ => bail!("{at}: {ns}.{prop} takes an object literal or null"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // M9-TS-3197
+    #[test]
+    fn window_helpers_come_with_programs_that_name_a_window() {
+        let manifest = crate::manifest::Manifest::default();
+        let own = "class Bus { on(f: () => void) {} emit(x: number) {} }\nconst b = new Bus(); b.on(() => {}); b.emit(1);";
+        assert!(extend_source(own, &manifest).is_none_or(|s| !s.contains("__xm_Window_on")));
+        let win = "const w = Window.main; w.on(\"x\", () => {}); w.emit(\"y\", 1);";
+        let out = extend_source(win, &manifest).expect("the window chunks are added");
+        assert!(out.contains("__xm_Window_on") && out.contains("__xm_Window_emit"));
+        let broadcast = "function broadcast() {}\nbroadcast();";
+        assert!(
+            extend_source(broadcast, &manifest)
+                .is_none_or(|s| !s.contains("__xt_Window_broadcast"))
+        );
     }
 }

@@ -81,3 +81,54 @@ export function handlesInMaps(): string {
   for (const o of sets) names += o.name;
   return `${got !== undefined && got.name}|${missing === undefined}|${keyed.get(a)! + keyed.get(b)!}|${sets.size}|${names}`;
 }
+
+let lastPad = "none";
+
+export function watchPads(): number {
+  input.on("gamepadconnected", (e) => {
+    lastPad = `${e.gamepad.name}:${e.gamepad.id}:${e.gamepad.buttons["South"]}`;
+  });
+  return 1;
+}
+
+export function gamepadList(): string {
+  const pads = input.gamepads();
+  const p = pads[0]!;
+  return `${pads.length}|${p.name}|${p.buttons["South"]}|${p.axes["LeftStickX"]}|${p.buttons["North"]}|${p.connected}`;
+}
+
+export function lastPadSeen(): string {
+  return lastPad;
+}
+
+let measured = -1;
+
+export function startMeasure(): number {
+  const go = new GameObject("sun");
+  go.addComponent(Light, { type: "directional", intensity: 2 });
+  Light.measureIlluminance(new Vector3(0, 0, 0)).then((lux) => {
+    measured = lux;
+  });
+  return measured;
+}
+
+export function measuredLux(): number {
+  return measured;
+}
+
+export function expectedLux(): number {
+  return Light.illuminanceAt(new Vector3(0, 0, 0));
+}
+
+let ticks = 0;
+
+export function afterStepTwice(): number {
+  Physics.afterNextStep(() => {
+    ticks++;
+  });
+  return ticks;
+}
+
+export function stepsSeen(): number {
+  return ticks;
+}

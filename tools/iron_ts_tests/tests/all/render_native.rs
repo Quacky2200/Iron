@@ -678,3 +678,63 @@ fn the_assets_table_loads_shared_textures_and_meshes_and_saves_them_again() {
     );
     reset();
 }
+
+// M9-TS-3201
+//
+// Fog in the `renderSettings` of a scene file: the keys the TypeScript `scenes.ts` saves.
+#[test]
+fn scene_files_apply_and_save_fog() {
+    let _serial = iron_ts_tests::serial();
+    reset();
+    let mut scene = Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let text = r#"{"format":"iron.scene","version":1,"name":"Mist","objects":[],
+      "renderSettings":{"fog":true,"fogMode":"linear","fogColor":{"$type":"Color","value":[0.2,0.3,0.4,1]},
+        "fogDensity":0.02,"fogStartDistance":5,"fogEndDistance":80,"fogCulling":false,
+        "heightFog":{"density":0.3,"baseHeight":1.5},
+        "volumetricFog":{"intensity":2,"resolution":"ultra","denoising":"none","samples":4}}}"#;
+    let handle = iron_scenes::load_scene(text, false).expect("loads");
+    let f = render::settings().fog;
+    assert!(f.enabled && !f.culling);
+    assert_eq!(
+        (f.mode.as_str(), f.color.g, f.density, f.start, f.end),
+        ("linear", 0.3, 0.02, 5.0, 80.0)
+    );
+    let h = f.height.expect("height fog");
+    assert_eq!(
+        (h.density, h.base_height, h.falloff),
+        (0.3, 1.5, 0.2),
+        "falloff keeps its default"
+    );
+    let v = f.volumetric.expect("light shafts");
+    assert_eq!(
+        (
+            v.intensity,
+            v.resolution.as_str(),
+            v.denoising.as_str(),
+            v.samples
+        ),
+        (2.0, "ultra", "none", 4.0)
+    );
+    assert_eq!(v.steps, 4.0, "a missing key keeps its default");
+    let saved: serde_json::Value =
+        serde_json::from_str(&iron_scenes::serialize(handle).unwrap()).unwrap();
+    let r = &saved["renderSettings"];
+    assert_eq!(r["fog"], true);
+    assert_eq!(r["fogMode"], "linear");
+    assert_eq!(r["fogEndDistance"], 80.0);
+    assert_eq!(r["fogCulling"], false);
+    assert_eq!(r["heightFog"]["baseHeight"], 1.5);
+    assert_eq!(r["volumetricFog"]["resolution"], "ultra");
+    assert_eq!(r["volumetricFog"]["albedo"]["$type"], "Color");
+    // Turning fog off and a null shaft setting round-trip as null.
+    let off = r#"{"format":"iron.scene","version":1,"name":"Clear","objects":[],
+      "renderSettings":{"fog":false,"heightFog":null,"volumetricFog":null}}"#;
+    let handle = iron_scenes::load_scene(off, false).expect("loads");
+    let f = render::settings().fog;
+    assert!(!f.enabled && f.height.is_none() && f.volumetric.is_none());
+    let saved: serde_json::Value =
+        serde_json::from_str(&iron_scenes::serialize(handle).unwrap()).unwrap();
+    assert!(saved["renderSettings"]["heightFog"].is_null());
+    reset();
+}

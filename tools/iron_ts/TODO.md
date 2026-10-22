@@ -370,14 +370,14 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [x] `Texture | null` vs `Texture | undefined` and `string | undefined` from indexing: handle properties are `T | null`, name-valued properties read as the union (`#[nullable]`, `#[ts_type]`, `M9-TS-3164`).
 
 **Library / API gaps that forced rewrites**
-- [ ] `input.gamepads()` / `input.on("gamepadconnected", ..)` as in QuickJS (form uses `gamepadCount()` / `gamepadName(i)` instead).
+- [x] `input.gamepads()` / `input.on("gamepadconnected" | "gamepaddisconnected", ..)` as in QuickJS: `{ id, name, connected, buttons, axes }` and the event `{ gamepad }` (`M9-TS-3198`; `buttons` / `axes` are built by the facade over the native per-name readers, not a native record: `iron_api` has no dictionary results). `form` already used `input.gamepads()`.
 - [x] `await SceneManager.loadSceneAsync(..)` returns a promise (a facade over the native token form `loadSceneAsync$n`; it was there since the facade work but never rejected and hung because `Scene.path` was set after `onSceneLoaded` ran; fixed 2026-10-22, `M9-API-1512/1513`). `Prefab.load(path)` too (`M9-API-1517`).
-- [ ] `UiTarget.type` needs the host to set a resolver (`iron_ts_ui::set_target_kind_resolver`).
-- [ ] Scene-file keys for fog and exposure (QuickJS `scenes.ts` saves them; `iron_scenes` does not).
-- [ ] `Light.measureIlluminance` answers at once instead of after the next physics tick.
+- [x] `UiTarget.type` needs the host to set a resolver (`iron_ts_ui::set_target_kind_resolver`): `iron_app` does it before every event (`native::set_target_kind`, commit `e8b3847`, test `native.rs`), so `examples/form` Enter-to-save works.
+- [x] Scene-file keys for fog (QuickJS `scenes.ts` saves them; `iron_render_api` now does, `M9-TS-3201`); `scenes.ts` saves no exposure keys, so there are none to match.
+- [x] `Light.measureIlluminance` resolves after the next physics step (`Physics.afterNextStep(f)`, `M9-TS-3199`, `3200`).
 - [x] `Mesh.createFlat` needs all four lists (positions, triangles, normals, uv); allow a partial data object (2026-10-22, `M9-TS-3187`).
 - [x] `answer` handlers (and raw `onRequest` handlers) may return a promise: the reply goes out when it resolves, a rejection fails the asker (`M9-TS-2894..2896`).
-- [ ] Facade chunk triggers for `.on(` / `.emit(` also pull the helpers into programs using those names on their own classes (generic, unused): tighten the triggers.
+- [x] Facade chunk triggers for `.on(` / `.emit(`: the window chunks now also need `Window` in the program (`//# when a&Window|..`, `M9-TS-3197`).
 - [x] A local typed as a string-literal union assigned from an optional field of the same type (`let mode: M = "auto"; if (o.mode !== undefined) mode = o.mode;`) panicked Cranelift (`declared type of variable .. doesn't match`); also with `as M` and with a `const` copy. Fixed 2026-10-22: `Nullable(Lit)` is an `i32` like `Lit` with tag 0 reserved as "no tag" (`M9-TS-3000..3012`); `as M` lowers literals as members; `Map.get` and `join` over members; `keyof typeof X` / `keyof Iface` are the key union; a non-member literal in a typed declaration is a compile error; `Spline.mode` is `TangentMode` again.
 - [x] `Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Readonly<T>` over interfaces, aliases, records, classes and engine classes, as option bags too (2026-10-22, `M9-TS-3120..3127`). [x] `ReturnType<typeof f>` / `typeof f<string>`, `Parameters`, `Awaited`, `NonNullable`, `Exclude`, `Extract` (`M9-TS-3177`).
 - [x] Classes assigned to an interface (`class C implements I`, `I[]` holding different classes, `extends` between interfaces): dispatch by the object's struct id through per-interface tables (2026-10-22, `M9-TS-3140..3147`, `docs/iron-ts.md` "Interfaces implemented by classes").
@@ -419,7 +419,7 @@ callbacks in `tools/iron_ts/src/lower/facade.ts`.
 | `Texture.whenLoaded()`, `Model.whenLoaded()` | `textures.ts`, `models.ts` | Facade polling every frame, resolved also when loading failed | Rejects with an `Error` when failed (QuickJS rejects with the source in the message) |
 | `physics.raycast(origin, dir, max): Promise<RayHit \| null>` (after the next tick) | `physics.ts` | `Physics.raycast` answers at once (`HitRef`) | Unchanged on purpose: a different shape, no promise to return |
 | `Physics2D.raycast` (async) | `physics2d.ts` | sync like the 3D one | Unchanged (same) |
-| `Light.measureIlluminance(point, normal?): Promise<number>` | `rendering.ts` | Facade promise, answers at once | Unchanged (resolves in the next microtask; the QuickJS one waits for the physics tick) |
+| `Light.measureIlluminance(point, normal?): Promise<number>` | `rendering.ts` | Facade promise, answers at once | Resolves after the next physics step (`Physics.afterNextStep`); before: the next microtask (the QuickJS one waits for the physics tick) |
 | `Task.delay`, `delaySeconds`, `frame` | `clock.ts` | Prelude class over `setTimeout` | Unchanged |
 | `Window.request`, `Window.ask` | `window.ts` | Facade promise per reply type | Unchanged |
 | `Window.answer(name, f)`, `onRequest(f)` handlers | `window.ts` | A returned promise was serialised as JSON | An async handler replies when it resolves and rejects the asker on failure (`..P` facade, `Window.replyError`) |

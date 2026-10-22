@@ -137,6 +137,7 @@ pub(crate) fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
 /// A new empty world (a new game, tests).
 pub fn reset() {
     STATE.with(|s| *s.borrow_mut() = State::new());
+    AFTER_STEP.with(|a| a.borrow_mut().clear());
 }
 
 /// Runs a `physics.*` op; a bad one is reported and ignored (a script cannot do anything with it).
@@ -214,6 +215,19 @@ pub(crate) fn force_op(body: u32, what: &str, v: V3, point: Option<V3>) {
 /// Advances the world one fixed tick, moves the objects bodies are attached to, and keeps the
 /// contacts for [`take_contacts`].
 pub fn step() {
+    step_world();
+    // What was asked to run after the next step runs now, once.
+    let callbacks = AFTER_STEP.with(|a| std::mem::take(&mut *a.borrow_mut()));
+    iron_api::callback::emit(&callbacks, ());
+}
+
+thread_local! {
+    /// Closures `Physics.afterNextStep` was given, run once after the next step.
+    static AFTER_STEP: std::cell::RefCell<Vec<iron_api::Callback<()>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn step_world() {
     comp::start_pending();
     comp::sync_from_scene();
     let (moves, grounded_now, contacts) = st(|s| {
@@ -347,6 +361,7 @@ fn flat(points: &[V3]) -> Vec<f64> {
 )]
 pub mod physics_api {
     use super::*;
+    use iron_api::Callback;
 
     /// Gravity in m/s² (y up; default 0, -9.81, 0).
     #[property]
@@ -404,6 +419,12 @@ pub mod physics_api {
     /// Advances the world one fixed tick (the host does this once per tick).
     pub fn step() {
         super::step();
+    }
+
+    /// Calls `f` once, after the next physics step (the next fixed tick), then forgets it: what a
+    /// physics query that "resolves after the next tick" waits for.
+    pub fn after_next_step(f: Callback<()>) {
+        super::AFTER_STEP.with(|a| a.borrow_mut().push(f));
     }
 
     impl BodyRef {

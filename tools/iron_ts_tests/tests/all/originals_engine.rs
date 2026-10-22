@@ -86,3 +86,58 @@ fn handles_are_map_values_map_keys_and_set_members() {
         assert_eq!(text(ts_ogn_handlesInMaps()), "beta|true|3|2|alphabeta");
     });
 }
+
+// M9-TS-3198
+#[test]
+fn gamepads_have_buttons_and_axes_by_name_and_connect_events_carry_the_pad() {
+    use iron_engine_api::input;
+    in_every_gc_mode(|| unsafe {
+        input::reset();
+        input::gamepad_connected(3, "Pad");
+        input::gamepad_button(3, "South", 1.0);
+        input::gamepad_axis(3, "LeftStickX", 0.5);
+        assert_eq!(text(ts_ogn_gamepadList()), "1|Pad|1|0.5|0|true");
+        assert_eq!(ts_ogn_watchPads(), 1.0);
+        assert_eq!(text(ts_ogn_lastPadSeen()), "none");
+        input::gamepad_connected(4, "Two");
+        // The pad is connected before its buttons move: the event shows them at that time.
+        assert_eq!(text(ts_ogn_lastPadSeen()), "Two:4:0");
+        input::gamepad_disconnected(4);
+        input::gamepad_connected(5, "Three");
+        assert_eq!(text(ts_ogn_lastPadSeen()), "Three:5:0");
+        input::reset();
+    });
+}
+
+// M9-TS-3199
+#[test]
+fn measure_illuminance_resolves_after_the_next_physics_step() {
+    use iron_ts_rt::ts_rt_microtasks_run;
+    in_every_gc_mode(|| unsafe {
+        iron_physics_api::reset();
+        assert_eq!(ts_ogn_startMeasure(), -1.0);
+        ts_rt_microtasks_run();
+        assert_eq!(ts_ogn_measuredLux(), -1.0, "nothing before a step");
+        iron_physics_api::step();
+        ts_rt_microtasks_run();
+        let lux = ts_ogn_measuredLux();
+        assert!(lux > 0.0, "{lux}");
+        assert_eq!(lux, ts_ogn_expectedLux());
+        iron_physics_api::reset();
+    });
+}
+
+// M9-TS-3200
+#[test]
+fn a_closure_given_to_after_next_step_runs_once_after_a_step() {
+    in_every_gc_mode(|| unsafe {
+        iron_physics_api::reset();
+        let before = ts_ogn_stepsSeen();
+        assert_eq!(ts_ogn_afterStepTwice(), before);
+        iron_physics_api::step();
+        assert_eq!(ts_ogn_stepsSeen(), before + 1.0);
+        iron_physics_api::step();
+        assert_eq!(ts_ogn_stepsSeen(), before + 1.0, "once");
+        iron_physics_api::reset();
+    });
+}

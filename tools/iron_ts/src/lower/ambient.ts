@@ -30,6 +30,8 @@ interface Gamepad {
   id: number;
   name: string;
   connected: boolean;
+  buttons: Record<string, number>;
+  axes: Record<string, number>;
 }
 // A style is a list of property entries: `{ width: 10 }` typed `IronStyle` builds the entries,
 // `...other` concatenates, a later entry of a name wins when they are applied.

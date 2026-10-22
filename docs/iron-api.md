@@ -326,7 +326,9 @@ the TypeScript, all because a call has fixed typed parameters:
 - `input` follows `js/engine/src/input.ts`: events (`key_down`, `key_up_event`, `mouse_move`, `mouse_delta`, `wheel`,
   `gamepad_*`, `blur`) arrive as they happen and become "this frame" at `input::tick()`, which `time::advance` calls (the engine
   tick). Mouse buttons are keys (`MouseLeft`...). Gamepads are read by id (`gamepadCount`, `gamepadId(i)`, `gamepadName(id)`,
-  `gamepadButton(id, name)`, `gamepadAxis(id, name)`); `input.on(..)` listeners wait for closures.
+  `gamepadButton(id, name)`, `gamepadAxis(id, name)`); `input.gamepads()` gives `{ id, name, connected, buttons, axes }` (the standard
+  buttons and axes by name, `0` when not reported; written in TypeScript over the readers above by the facade) and
+  `input.on("gamepadconnected" | "gamepaddisconnected", fn)` calls `fn({ gamepad })` and returns the unsubscribe function.
 - `TimeSpan` (field `totalMilliseconds`) and `DateTime` (fields `epochMilliseconds`, `utc`; local time through the OS zone or
   `datetime::set_zone`) are value classes. A static `create` makes `new TimeSpan(ms)` and `new DateTime(y, m, ...)` round and
   carry as TypeScript does (compiled code and QuickJS both call it; the engine builds its own results with the fields).
@@ -394,7 +396,8 @@ puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
 - **Every property change reaches the rapier world at once.** A collider is remade when its shape changes.
 - **`step()`** (`Physics.step()`): builds pending joints and ropes (`start_pending`), moves bodies to where scripts put their
   objects (pose differs by more than 1e-4 m), remakes colliders whose object was scaled, steps the world, writes the moved
-  bodies back into the scene and keeps the contacts. Objects that are gone from the scene lose their physics.
+  bodies back into the scene and keeps the contacts. Objects that are gone from the scene lose their physics. Then it runs the
+  closures `Physics.afterNextStep(f)` was given, once each (what `Light.measureIlluminance` waits for).
 - **For the host:** `take_contacts()` (collider numbers, `speed`, `sensor`), `collider_info(collider)` (the object, the
   collider class name, its component handle, `two_d`, the Rigidbody component) to dispatch `onCollisionEnter` /
   `onTriggerEnter` (and the `2D` names), `object_destroyed(object)` for destroyed GameObjects, `register_kinds()`.
@@ -476,7 +479,7 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `skyboxEnabled` + `skyZenith` / `skyHorizon` / `skyGround` / `skySunDirection` / `skyHasSun` / `skySunColor` / `skySunSize`,
   `bloomEnabled` + `bloomThreshold` / `bloomIntensity` / `bloomScatter`, `tonemapping`, `postExposure`; the host reads
   `settings()` when `version()` changed). Scene files apply their `renderSettings` when the scene becomes active and the active scene
-  saves the current ones. `Cursor` (`visible`, `lockState`, `setCursor(path, { hotspotX, hotspotY })`, `clearCursor()`;
+  saves the current ones; the keys are the ones `scenes.ts` saves (`ambientLight`, `ambientMode`, `reflectionIntensity`, `skybox`, `bloom`, and the fog's `fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`, `fogEndDistance`, `heightFog`, `volumetricFog`, `fogCulling`; the TypeScript tier saves no exposure keys either). `Cursor` (`visible`, `lockState`, `setCursor(path, { hotspotX, hotspotY })`, `clearCursor()`;
   host: `iron_engine_api::cursor::state()`) with `CursorLockMode.None/Locked/Confined` strings. `CameraFollow` and `CameraOrbit` are
   components whose update the host runs: `late_update_camera_follows(dt)` and `late_update_camera_orbits(dt)` once a frame.
 - **Differences from the TypeScript.** `RenderSettings.skybox = { .. }` is the `sky...` properties; `Cursor.setCursor(texture)` takes a
@@ -683,21 +686,21 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
 - **`Camera`**: `fog` (show the fog, on), `exposure` / `sceneBrightness` (EV100, read back from the GPU a frame or two late, NaN
   before: the app calls `camera::set_exposure`), `resetExposure()`, `aperture` / `shutterSpeed` / `iso` and `physicalExposure`.
 - **`Light`**: `volumetricIntensity`, `spotShape` (`cone` | `pyramid`), `aspectRatio`; `Light.illuminanceAt(point, normal?)` and
-  `Light.measureIlluminance(point, normal?)` (a facade over `Light.count()` / `at(i)` and `Physics.raycast`; the promise is
-  resolved at once, the physics world answers rays synchronously). **`FogVolume`** is a component (`size`, `density`, `color`,
+  `Light.measureIlluminance(point, normal?)` (a facade over `Light.count()` / `at(i)` and `Physics.raycast`; the promise resolves
+  after the next physics step, through `Physics.afterNextStep`, as the TypeScript tier does). **`FogVolume`** is a component (`size`, `density`, `color`,
   `blendDistance`, `shape`).
 - **`QualitySettings`** also has `autoExposure`, `volumetricFog`, `hdr`, `additionalLights`, `additionalLightShadows` (per level in
   `project.json`'s `quality.levels`; Low has no light shafts) and `softShadowQuality` `medium`. `RenderStats` (meshes, culled
   meshes, quads, ..., `fogCulled`, `lights`, `shadowMaps`) is filled by the app after each frame; `GraphicsSettings.lightUnits` is
   `physical` when `project.json` says `"lightUnits": "physical"`.
 - **Meshes**: `Mesh.createFlat(data)` / `mesh.setFlat(data)` (positions, triangles, normals, uv: typed arrays are copied to
-  `number[]` at the boundary; a compiled game gives all four lists, empty for none) over `Mesh.createFlatArrays(..)`. Script meshes
+  `number[]` at the boundary; a list left out is empty) over `Mesh.createFlatArrays(..)`. Script meshes
   now flip the texture v coordinate on upload (Unity's bottom-up, as `js/engine`'s `Mesh.set` does). `Random.pick(list)`.
 - **Compiler**: an optional object-typed option (`new GameObject(name, { rotation })` with `rotation?: Quaternion`) is skipped when
   missing; `x === false` on an optional boolean is false for a missing value; a typed array is copied where the engine takes
   `number[]`.
-- **Not ported**: the scene file keys for fog and exposure (`scenes.ts` saves `fog...`; native scenes keep their old keys),
-  `Light.measureIlluminance` waiting for the next physics tick.
+- **Scene files** now save and apply the fog keys (`fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`,
+  `fogEndDistance`, `heightFog`, `volumetricFog`, `fogCulling`); `scenes.ts` saves no exposure keys, so neither do native scenes.
 
 ## 2D shapes, text in the world and splines in native games (2026-10-22)
 
