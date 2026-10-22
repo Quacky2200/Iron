@@ -39,4 +39,5 @@ bun_tests! {
     3136 empty_array_in_conditional "empty_array_in_conditional" "mi7_" 607000;
     3137 field_types_from_expressions "field_types_from_expressions" "mi8_" 608000;
     3162 top_level_destructuring "top_level_destructuring" "mi9_" 609000;
+    3163 spread_into_function_values_and_constructors "spread_into_function_values_and_constructors" "mi10_" 610000;
 }

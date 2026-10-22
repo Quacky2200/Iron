@@ -1712,3 +1712,5 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3160 | Integration | `const [a, b] = await Promise.all([p, q])` at the top level (`tla.rs`). |
 | M9-TS-3161 | Integration | Only the code before the first top-level `await` has run when `ts_init` returns (`tla.rs`). |
 | M9-TS-3162 | Integration | Top-level destructuring declarations: `const [a, b] = ..`, `const { p, q } = ..`, `let [m, s] = pair()`, `const [h, ...t] = ..` become module variables (`misc.rs`). |
+| M9-TS-3163 | Integration | `f(...xs)` / `f(a, ...xs)` for a function value (the elements feed the parameters, null past the end), `new C(...xs)` and `rnd(...tuple)` equal bun's (`tools/iron_ts_tests/tests/all/misc.rs`). |
+| M9-TS-3164 | Integration | The generated declarations are the ones games are written against: handle properties and options are `T \| null`, a property that is one of a few names reads as the union (`get type(): "directional" \| ..`, `set type(v: string)`), a namespace one is the union (`tools/iron_build/tests/generated_dts.rs`). |

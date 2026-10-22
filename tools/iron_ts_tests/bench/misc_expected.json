@@ -8,5 +8,6 @@
  "spread_strings": "5 h-é-l-l-o 3 2 ABC 4 5 3 13",
  "empty_array_in_conditional": "200 2 pq z",
  "field_types_from_expressions": "true -Infinity true true 4 -1,-1,-1 1 k 1 4",
- "top_level_destructuring": "12p4 8seven 10 20+30 27"
+ "top_level_destructuring": "12p4 8seven 10 20+30 27",
+ "spread_into_function_values_and_constructors": "12 6 123 107 6 25"
 }

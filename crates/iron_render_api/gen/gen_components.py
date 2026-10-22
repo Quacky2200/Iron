@@ -36,6 +36,8 @@ TYPES = {
     "object": ("Option<ObjectId>", "ObjectId", "d.F.unwrap_or_else(none_object)", "ObjectId", "d.F = (v.to_raw() != 0).then_some(v)", "d.F.map_or(Value::Null, |o| object_ref(o.to_raw()))", "object_of(v)", "none_object()"),
 }
 TYPES["enum"] = TYPES["string"]
+# Handle-valued properties may be none (`null`): the declared type says so (`Texture | null`).
+NULLABLE_HANDLES = ("texture", "mesh", "material", "sprite", "object")
 
 VALUES = {
     "color": "Color = Rgba [r: f64, g: f64, b: f64, a: f64]",
@@ -1133,6 +1135,12 @@ def gen(c):
         if doc:
             w("        /// %s" % doc)
         w("        #[property]")
+        if key == "enum":
+            allowed = t.split(":")[1].split("|")
+            tsu = " | ".join('\\"%s\\"' % a for a in allowed)
+            w('        #[ts_type = "%s"]' % tsu)
+        elif key in NULLABLE_HANDLES:
+            w("        #[nullable]")
         w("        pub fn %s(self) -> %s {" % (rs, gty))
         gx = gexp.replace("d.F", "d." + rs)
         w("            with_%s(self, |d| %s).unwrap_or_else(|| %s)" % (low, gx, fallback))
@@ -1141,12 +1149,15 @@ def gen(c):
         if key == "enum":
             allowed = t.split(":")[1].split("|")
             w("        /// A name other than %s is ignored." % ", ".join("`%s`" % a for a in allowed))
+            w('        #[ts_type = "%s"]' % tsu)
             w("        pub fn set_%s(self, v: &str) {" % rs_plain)
             w("            if [%s].contains(&v) {" % ", ".join('"%s"' % a for a in allowed))
             w("                with_%s(self, |d| d.%s = v.to_string());" % (low, rs))
             w("            }")
             w("        }")
         else:
+            if key in NULLABLE_HANDLES:
+                w("        #[nullable]")
             w("        pub fn set_%s(self, v: %s) {" % (rs_plain, sety))
             w("            with_%s(self, |d| { %s; %s });" % (low, setstmt.replace("d.F", "d." + rs), hook.get(ts, "")))
             w("        }")

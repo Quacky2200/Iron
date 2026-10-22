@@ -367,7 +367,7 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner.
 - [x] Arrays: an indexed write at `arr.length` (`arr[arr.length] = x`) has no bounds check and crashed a game with a segfault. Fixed 2026-10-22: it appends like JavaScript; a write further out (or negative / NaN) throws a `RangeError`.
 - [ ] A skipped (unreachable) function is only checked by `tsc`, never by our compiler: add an optional `--check-unused` that lowers everything.
-- [ ] `Texture | null` vs `Texture | undefined` and `string | undefined` from indexing: align the declared types with what `tsc` infers so examples need no edits.
+- [x] `Texture | null` vs `Texture | undefined` and `string | undefined` from indexing: handle properties are `T | null`, name-valued properties read as the union (`#[nullable]`, `#[ts_type]`, `M9-TS-3164`).
 
 **Library / API gaps that forced rewrites**
 - [ ] `input.gamepads()` / `input.on("gamepadconnected", ..)` as in QuickJS (form uses `gamepadCount()` / `gamepadName(i)` instead).

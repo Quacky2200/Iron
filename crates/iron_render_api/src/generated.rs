@@ -211,11 +211,13 @@ pub mod light_api {
 
         /// `directional`, `point` or `spot`.
         #[property]
+        #[ts_type = "\"directional\" | \"point\" | \"spot\""]
         pub fn r#type(self) -> String {
             with_light(self, |d| d.r#type.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `directional`, `point`, `spot` is ignored.
+        #[ts_type = "\"directional\" | \"point\" | \"spot\""]
         pub fn set_type(self, v: &str) {
             if ["directional", "point", "spot"].contains(&v) {
                 with_light(self, |d| d.r#type = v.to_string());
@@ -311,11 +313,13 @@ pub mod light_api {
 
         /// Shadows it casts (Unity's `LightShadows`).
         #[property]
+        #[ts_type = "\"none\" | \"hard\" | \"soft\""]
         pub fn shadows(self) -> String {
             with_light(self, |d| d.shadows.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `none`, `hard`, `soft` is ignored.
+        #[ts_type = "\"none\" | \"hard\" | \"soft\""]
         pub fn set_shadows(self, v: &str) {
             if ["none", "hard", "soft"].contains(&v) {
                 with_light(self, |d| d.shadows = v.to_string());
@@ -360,11 +364,13 @@ pub mod light_api {
 
         /// A spot light's shape (HDRP's): a `cone`, or a `pyramid` `spotAngle` high and `aspectRatio` times as wide (in tangent), its width along the object's x.
         #[property]
+        #[ts_type = "\"cone\" | \"pyramid\""]
         pub fn spot_shape(self) -> String {
             with_light(self, |d| d.spot_shape.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `cone`, `pyramid` is ignored.
+        #[ts_type = "\"cone\" | \"pyramid\""]
         pub fn set_spot_shape(self, v: &str) {
             if ["cone", "pyramid"].contains(&v) {
                 with_light(self, |d| d.spot_shape = v.to_string());
@@ -639,11 +645,13 @@ pub mod fog_volume_api {
 
         /// `box`, or `ellipsoid`: a soft round blob inside the box (mist over a pond).
         #[property]
+        #[ts_type = "\"box\" | \"ellipsoid\""]
         pub fn shape(self) -> String {
             with_fog_volume(self, |d| d.shape.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `box`, `ellipsoid` is ignored.
+        #[ts_type = "\"box\" | \"ellipsoid\""]
         pub fn set_shape(self, v: &str) {
             if ["box", "ellipsoid"].contains(&v) {
                 with_fog_volume(self, |d| d.shape = v.to_string());
@@ -1314,11 +1322,13 @@ pub mod reflection_probe_api {
 
         /// When it renders: once, every frame, or on `renderProbe()`.
         #[property]
+        #[ts_type = "\"onAwake\" | \"everyFrame\" | \"viaScripting\""]
         pub fn refresh_mode(self) -> String {
             with_reflection_probe(self, |d| d.refresh_mode.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `onAwake`, `everyFrame`, `viaScripting` is ignored.
+        #[ts_type = "\"onAwake\" | \"everyFrame\" | \"viaScripting\""]
         pub fn set_refresh_mode(self, v: &str) {
             if ["onAwake", "everyFrame", "viaScripting"].contains(&v) {
                 with_reflection_probe(self, |d| d.refresh_mode = v.to_string());
@@ -1801,10 +1811,12 @@ pub mod sprite_renderer_api {
         }
 
         #[property]
+        #[nullable]
         pub fn sprite(self) -> SpriteRef {
             with_sprite_renderer(self, |d| SpriteRef(d.sprite)).unwrap_or_else(|| SpriteRef(0))
         }
 
+        #[nullable]
         pub fn set_sprite(self, v: SpriteRef) {
             with_sprite_renderer(self, |d| {
                 d.sprite = v.0;
@@ -2156,11 +2168,13 @@ pub mod line_renderer2d_api {
 
         /// Where a self-crossing outline is inside: `evenodd` leaves a star's middle empty (GDI's `Alternate`), `nonzero` fills it (`Winding`).
         #[property]
+        #[ts_type = "\"evenodd\" | \"nonzero\""]
         pub fn fill_rule(self) -> String {
             with_line_renderer2d(self, |d| d.fill_rule.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `evenodd`, `nonzero` is ignored.
+        #[ts_type = "\"evenodd\" | \"nonzero\""]
         pub fn set_fill_rule(self, v: &str) {
             if ["evenodd", "nonzero"].contains(&v) {
                 with_line_renderer2d(self, |d| d.fill_rule = v.to_string());
@@ -2462,11 +2476,13 @@ pub mod text_mesh_api {
 
         /// How lines line up with each other.
         #[property]
+        #[ts_type = "\"left\" | \"center\" | \"right\""]
         pub fn alignment(self) -> String {
             with_text_mesh(self, |d| d.alignment.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `left`, `center`, `right` is ignored.
+        #[ts_type = "\"left\" | \"center\" | \"right\""]
         pub fn set_alignment(self, v: &str) {
             if ["left", "center", "right"].contains(&v) {
                 with_text_mesh(self, |d| d.alignment = v.to_string());
@@ -2685,10 +2701,12 @@ pub mod mesh_renderer_api {
 
         /// A built-in mesh by name (`mesh: "cube"`) or a script `Mesh`.
         #[property]
+        #[nullable]
         pub fn mesh(self) -> MeshRef {
             with_mesh_renderer(self, |d| MeshRef(d.mesh)).unwrap_or_else(|| MeshRef(0))
         }
 
+        #[nullable]
         pub fn set_mesh(self, v: MeshRef) {
             with_mesh_renderer(self, |d| {
                 d.mesh = v.0;
@@ -2696,10 +2714,12 @@ pub mod mesh_renderer_api {
         }
 
         #[property]
+        #[nullable]
         pub fn material(self) -> MaterialRef {
             with_mesh_renderer(self, |d| MaterialRef(d.material)).unwrap_or_else(|| MaterialRef(0))
         }
 
+        #[nullable]
         pub fn set_material(self, v: MaterialRef) {
             with_mesh_renderer(self, |d| {
                 d.material = v.0;
@@ -2708,12 +2728,14 @@ pub mod mesh_renderer_api {
 
         /// Whether it casts shadows (Unity's `shadowCastingMode`: `on` or `off`).
         #[property]
+        #[ts_type = "\"on\" | \"off\""]
         pub fn shadow_casting_mode(self) -> String {
             with_mesh_renderer(self, |d| d.shadow_casting_mode.clone())
                 .unwrap_or_else(|| String::new())
         }
 
         /// A name other than `on`, `off` is ignored.
+        #[ts_type = "\"on\" | \"off\""]
         pub fn set_shadow_casting_mode(self, v: &str) {
             if ["on", "off"].contains(&v) {
                 with_mesh_renderer(self, |d| d.shadow_casting_mode = v.to_string());
@@ -2921,10 +2943,12 @@ pub mod skinned_mesh_renderer_api {
 
         /// The mesh (with bone weights and bind poses).
         #[property]
+        #[nullable]
         pub fn mesh(self) -> MeshRef {
             with_skinned_mesh_renderer(self, |d| MeshRef(d.mesh)).unwrap_or_else(|| MeshRef(0))
         }
 
+        #[nullable]
         pub fn set_mesh(self, v: MeshRef) {
             with_skinned_mesh_renderer(self, |d| {
                 d.mesh = v.0;
@@ -2932,11 +2956,13 @@ pub mod skinned_mesh_renderer_api {
         }
 
         #[property]
+        #[nullable]
         pub fn material(self) -> MaterialRef {
             with_skinned_mesh_renderer(self, |d| MaterialRef(d.material))
                 .unwrap_or_else(|| MaterialRef(0))
         }
 
+        #[nullable]
         pub fn set_material(self, v: MaterialRef) {
             with_skinned_mesh_renderer(self, |d| {
                 d.material = v.0;
@@ -2945,12 +2971,14 @@ pub mod skinned_mesh_renderer_api {
 
         /// Whether it casts shadows.
         #[property]
+        #[ts_type = "\"on\" | \"off\""]
         pub fn shadow_casting_mode(self) -> String {
             with_skinned_mesh_renderer(self, |d| d.shadow_casting_mode.clone())
                 .unwrap_or_else(|| String::new())
         }
 
         /// A name other than `on`, `off` is ignored.
+        #[ts_type = "\"on\" | \"off\""]
         pub fn set_shadow_casting_mode(self, v: &str) {
             if ["on", "off"].contains(&v) {
                 with_skinned_mesh_renderer(self, |d| d.shadow_casting_mode = v.to_string());
@@ -2959,11 +2987,13 @@ pub mod skinned_mesh_renderer_api {
 
         /// The skeleton's top bone.
         #[property]
+        #[nullable]
         pub fn root_bone(self) -> ObjectId {
             with_skinned_mesh_renderer(self, |d| d.root_bone.unwrap_or_else(none_object))
                 .unwrap_or_else(|| none_object())
         }
 
+        #[nullable]
         pub fn set_root_bone(self, v: ObjectId) {
             with_skinned_mesh_renderer(self, |d| {
                 d.root_bone = (v.to_raw() != 0).then_some(v);
@@ -3503,11 +3533,13 @@ pub mod camera_follow_api {
 
         /// The object to follow.
         #[property]
+        #[nullable]
         pub fn target(self) -> ObjectId {
             with_camera_follow(self, |d| d.target.unwrap_or_else(none_object))
                 .unwrap_or_else(|| none_object())
         }
 
+        #[nullable]
         pub fn set_target(self, v: ObjectId) {
             with_camera_follow(self, |d| {
                 d.target = (v.to_raw() != 0).then_some(v);
@@ -3789,11 +3821,13 @@ pub mod camera_orbit_api {
 
         /// Orbits this object (or `center` when there is none).
         #[property]
+        #[nullable]
         pub fn target(self) -> ObjectId {
             with_camera_orbit(self, |d| d.target.unwrap_or_else(none_object))
                 .unwrap_or_else(|| none_object())
         }
 
+        #[nullable]
         pub fn set_target(self, v: ObjectId) {
             with_camera_orbit(self, |d| {
                 d.target = (v.to_raw() != 0).then_some(v);
@@ -4346,12 +4380,14 @@ pub mod particle_system_api {
 
         /// `world`: particles stay where they were emitted when the object moves.
         #[property]
+        #[ts_type = "\"local\" | \"world\""]
         pub fn simulation_space(self) -> String {
             with_particle_system(self, |d| d.simulation_space.clone())
                 .unwrap_or_else(|| String::new())
         }
 
         /// A name other than `local`, `world` is ignored.
+        #[ts_type = "\"local\" | \"world\""]
         pub fn set_simulation_space(self, v: &str) {
             if ["local", "world"].contains(&v) {
                 with_particle_system(self, |d| d.simulation_space = v.to_string());
@@ -4394,10 +4430,12 @@ pub mod particle_system_api {
 
         /// The particle image (a soft round spot by default).
         #[property]
+        #[nullable]
         pub fn texture(self) -> TextureRef {
             with_particle_system(self, |d| TextureRef(d.texture)).unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_texture(self, v: TextureRef) {
             with_particle_system(self, |d| {
                 d.texture = v.0;
@@ -4406,11 +4444,13 @@ pub mod particle_system_api {
 
         /// `additive` makes them glow.
         #[property]
+        #[ts_type = "\"alpha\" | \"additive\""]
         pub fn blend_mode(self) -> String {
             with_particle_system(self, |d| d.blend_mode.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `alpha`, `additive` is ignored.
+        #[ts_type = "\"alpha\" | \"additive\""]
         pub fn set_blend_mode(self, v: &str) {
             if ["alpha", "additive"].contains(&v) {
                 with_particle_system(self, |d| d.blend_mode = v.to_string());
@@ -4419,11 +4459,13 @@ pub mod particle_system_api {
 
         /// What happens once it has stopped and its particles are gone.
         #[property]
+        #[ts_type = "\"none\" | \"destroy\""]
         pub fn stop_action(self) -> String {
             with_particle_system(self, |d| d.stop_action.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `none`, `destroy` is ignored.
+        #[ts_type = "\"none\" | \"destroy\""]
         pub fn set_stop_action(self, v: &str) {
             if ["none", "destroy"].contains(&v) {
                 with_particle_system(self, |d| d.stop_action = v.to_string());
@@ -4432,11 +4474,13 @@ pub mod particle_system_api {
 
         /// Where particles start; they go along the object's up (+y).
         #[property]
+        #[ts_type = "\"point\" | \"sphere\" | \"hemisphere\" | \"cone\" | \"box\""]
         pub fn shape_type(self) -> String {
             with_particle_system(self, |d| d.shape_type.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `point`, `sphere`, `hemisphere`, `cone`, `box` is ignored.
+        #[ts_type = "\"point\" | \"sphere\" | \"hemisphere\" | \"cone\" | \"box\""]
         pub fn set_shape_type(self, v: &str) {
             if ["point", "sphere", "hemisphere", "cone", "box"].contains(&v) {
                 with_particle_system(self, |d| d.shape_type = v.to_string());
@@ -4950,10 +4994,12 @@ pub mod line_renderer_api {
         }
 
         #[property]
+        #[nullable]
         pub fn material(self) -> MaterialRef {
             with_line_renderer(self, |d| MaterialRef(d.material)).unwrap_or_else(|| MaterialRef(0))
         }
 
+        #[nullable]
         pub fn set_material(self, v: MaterialRef) {
             with_line_renderer(self, |d| {
                 d.material = v.0;
@@ -5379,10 +5425,12 @@ pub mod cloth_api {
 
         /// The mesh the simulation started from.
         #[property]
+        #[nullable]
         pub fn source_mesh(self) -> MeshRef {
             with_cloth(self, |d| MeshRef(d.source_mesh)).unwrap_or_else(|| MeshRef(0))
         }
 
+        #[nullable]
         pub fn set_source_mesh(self, v: MeshRef) {
             with_cloth(self, |d| {
                 d.source_mesh = v.0;
@@ -5391,10 +5439,12 @@ pub mod cloth_api {
 
         /// The mesh the engine fills in each step; the object's renderer draws it.
         #[property]
+        #[nullable]
         pub fn simulated_mesh(self) -> MeshRef {
             with_cloth(self, |d| MeshRef(d.simulated_mesh)).unwrap_or_else(|| MeshRef(0))
         }
 
+        #[nullable]
         pub fn set_simulated_mesh(self, v: MeshRef) {
             with_cloth(self, |d| {
                 d.simulated_mesh = v.0;
@@ -5822,10 +5872,12 @@ pub mod material_api {
 
         /// Multiplies the colour; its alpha counts when `color.a` < 1.
         #[property]
+        #[nullable]
         pub fn main_texture(self) -> TextureRef {
             with_material(self, |d| TextureRef(d.main_texture)).unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_main_texture(self, v: TextureRef) {
             with_material(self, |d| {
                 d.main_texture = v.0;
@@ -5870,10 +5922,12 @@ pub mod material_api {
 
         /// Bumps from a tangent-space normal map (load it with `linear`).
         #[property]
+        #[nullable]
         pub fn normal_map(self) -> TextureRef {
             with_material(self, |d| TextureRef(d.normal_map)).unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_normal_map(self, v: TextureRef) {
             with_material(self, |d| {
                 d.normal_map = v.0;
@@ -5894,11 +5948,13 @@ pub mod material_api {
 
         /// Metallic in red and smoothness in alpha.
         #[property]
+        #[nullable]
         pub fn metallic_gloss_map(self) -> TextureRef {
             with_material(self, |d| TextureRef(d.metallic_gloss_map))
                 .unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_metallic_gloss_map(self, v: TextureRef) {
             with_material(self, |d| {
                 d.metallic_gloss_map = v.0;
@@ -5937,10 +5993,12 @@ pub mod material_api {
 
         /// Ambient occlusion (green channel).
         #[property]
+        #[nullable]
         pub fn occlusion_map(self) -> TextureRef {
             with_material(self, |d| TextureRef(d.occlusion_map)).unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_occlusion_map(self, v: TextureRef) {
             with_material(self, |d| {
                 d.occlusion_map = v.0;
@@ -5960,10 +6018,12 @@ pub mod material_api {
 
         /// Multiplies `emission`.
         #[property]
+        #[nullable]
         pub fn emission_map(self) -> TextureRef {
             with_material(self, |d| TextureRef(d.emission_map)).unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_emission_map(self, v: TextureRef) {
             with_material(self, |d| {
                 d.emission_map = v.0;
@@ -5972,11 +6032,13 @@ pub mod material_api {
 
         /// Fine detail multiplied over the colour.
         #[property]
+        #[nullable]
         pub fn detail_albedo_map(self) -> TextureRef {
             with_material(self, |d| TextureRef(d.detail_albedo_map))
                 .unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_detail_albedo_map(self, v: TextureRef) {
             with_material(self, |d| {
                 d.detail_albedo_map = v.0;
@@ -6009,11 +6071,13 @@ pub mod material_api {
 
         /// `opaque`, `cutout` (holes where alpha < `alphaCutoff`), `fade` or `transparent` (glass).
         #[property]
+        #[ts_type = "\"opaque\" | \"cutout\" | \"fade\" | \"transparent\""]
         pub fn rendering_mode(self) -> String {
             with_material(self, |d| d.rendering_mode.clone()).unwrap_or_else(|| String::new())
         }
 
         /// A name other than `opaque`, `cutout`, `fade`, `transparent` is ignored.
+        #[ts_type = "\"opaque\" | \"cutout\" | \"fade\" | \"transparent\""]
         pub fn set_rendering_mode(self, v: &str) {
             if ["opaque", "cutout", "fade", "transparent"].contains(&v) {
                 with_material(self, |d| d.rendering_mode = v.to_string());
@@ -6246,10 +6310,12 @@ pub mod sprite_api {
 
         /// The texture it is cut from.
         #[property]
+        #[nullable]
         pub fn texture(self) -> TextureRef {
             with_sprite(self, |d| TextureRef(d.texture)).unwrap_or_else(|| TextureRef(0))
         }
 
+        #[nullable]
         pub fn set_texture(self, v: TextureRef) {
             with_sprite(self, |d| {
                 d.texture = v.0;

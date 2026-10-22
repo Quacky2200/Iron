@@ -3513,6 +3513,73 @@ impl<'a> Lowerer<'a> {
         params: &[Ty],
         what: &str,
     ) -> R<Vec<Expr>> {
+        // `f(a, ...xs)` for a function value: element `j` of the array (or tuple) feeds the
+        // parameter after the plain arguments; past its end a parameter reads as null.
+        if let Some(k) = args
+            .iter()
+            .position(|a| matches!(a, Argument::SpreadElement(_)))
+            && k + 1 == args.len()
+            && k <= params.len()
+        {
+            let mut out = Vec::new();
+            for (a, p) in args[..k].iter().zip(params) {
+                let Some(e) = a.as_expression() else {
+                    bail!("{what}: spread argument")
+                };
+                let v = self.lower_expr(e, Some(p))?;
+                out.push(self.coerce(v, p)?);
+            }
+            let Argument::SpreadElement(sp) = &args[k] else {
+                unreachable!("checked")
+            };
+            let arr = self.lower_expr(&sp.argument, None)?;
+            let n = params.len() - k;
+            let parts: Vec<Expr> = match arr.ty.strip().clone() {
+                Ty::Obj(sid) if self.is_tuple(sid) => {
+                    let mut parts = self.tuple_elements(arr, sid);
+                    parts.truncate(n);
+                    parts
+                }
+                Ty::Arr(el) => {
+                    let av = self.new_local(arr.ty.clone());
+                    let raw_ty = if el.is_ptr() || *el == Ty::Num {
+                        el.clone().nullable()
+                    } else {
+                        (*el).clone()
+                    };
+                    (0..n)
+                        .map(|j| {
+                            let read = mk(
+                                ExprKind::Index(
+                                    Box::new(self.var_expr(av)),
+                                    Box::new(num(j as f64)),
+                                ),
+                                raw_ty.clone(),
+                            );
+                            if j == 0 {
+                                mk(
+                                    ExprKind::Seq(
+                                        vec![Stmt::Assign(av, arr.clone())],
+                                        Box::new(read),
+                                    ),
+                                    raw_ty.clone(),
+                                )
+                            } else {
+                                read
+                            }
+                        })
+                        .collect()
+                }
+                t => bail!("{what}: cannot spread {t} into arguments"),
+            };
+            for (j, part) in parts.into_iter().enumerate() {
+                out.push(self.coerce(part, &params[k + j])?);
+            }
+            for p in &params[k + out.len() - k..] {
+                out.push(mk(ExprKind::Null, p.clone()));
+            }
+            return Ok(out);
+        }
         // A parameter that may be null (`x?: T`) can be left out.
         let optional_tail =
             params.len() > args.len() && params[args.len()..].iter().all(|p| p.is_nullable());
@@ -3843,6 +3910,12 @@ impl<'a> Lowerer<'a> {
                     return Ok(e);
                 }
                 let Some(&fid) = self.fids.get(name) else {
+                    if name == "register" {
+                        bail!(
+                            "{}: `register(Class)` must be a statement at the top level of a module (not inside an `if`, a loop or a function): the host starts the registered classes before any code runs",
+                            self.loc(c.span.start)
+                        )
+                    }
                     bail!(
                         "{}: call to unknown function `{name}`",
                         self.loc(c.span.start)

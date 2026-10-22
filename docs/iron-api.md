@@ -750,6 +750,7 @@ Part of making every declaration generated from Rust (plan: [iron-generated-dts-
 | `#[options(after = points)]` with `#[optional(points, closed = false, ..)]` | `new Spline(points?, { closed?, tension? })`: the object after `points` gives the parameters after it | the positional shim |
 | `like` on the attribute | value *parameters* are declared `Vector3Like` (a plain `{ x, y, z }` does) | - |
 | `#[nullable]` on a handle getter and its setter | `T \| null` in the declaration | a zero handle is `null` as before |
+| `#[ts_type = "\"low\" \| \"high\""]` on a `String` getter (and setter) | what the property reads as is that union; a class property is an accessor pair (`get x(): "low" \| "high"; set x(v: string)`: any string may still be written, an unknown name is ignored), a namespace property the union alone | - (manifest JSON `tsType`) |
 | `///` on the module, an `impl` block (the class), a function, and inside `enums(..)` / `records(..)` (also on record fields) | JSDoc in the generated `.d.ts` (manifest JSON `doc`) | - |
 
 **Enums on the wire.** A compiled call converts a string constant to its index at compile time and anything else with
@@ -759,7 +760,7 @@ generated next to the shims (`tangent_mode_name`, `_parse`, `_index`, `_from_ind
 returns the strings and throws a `TypeError` for an unknown name (a left-out optional enum is the first value in both).
 
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
-`records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`;
+`records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;
 parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`. `tools/iron_ts/src/types_dts.rs` reads them
 (`enum` becomes `type X = ..` and `namespace X { name, parse }`, `record` an `interface`).
 

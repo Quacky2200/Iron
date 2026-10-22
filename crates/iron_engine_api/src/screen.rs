@@ -726,10 +726,12 @@ pub mod quality_api {
 
     /// Which shadows are drawn: `disable`, `hardOnly` or `all`.
     #[property]
+    #[ts_type = "\"disable\" | \"hardOnly\" | \"all\""]
     pub fn shadows() -> String {
         st(|s| s.quality.current.shadows.clone())
     }
 
+    #[ts_type = "\"disable\" | \"hardOnly\" | \"all\""]
     pub fn set_shadows(mode: &str) {
         if ["disable", "hardOnly", "all"].contains(&mode) {
             change(|q| q.shadows = mode.to_string());
@@ -738,10 +740,12 @@ pub mod quality_api {
 
     /// Soft shadows' filter: `low` (3 x 3 samples), `medium` (5 x 5) or `high` (7 x 7).
     #[property]
+    #[ts_type = "\"low\" | \"medium\" | \"high\""]
     pub fn soft_shadow_quality() -> String {
         st(|s| s.quality.current.soft_shadow_quality.clone())
     }
 
+    #[ts_type = "\"low\" | \"medium\" | \"high\""]
     pub fn set_soft_shadow_quality(q: &str) {
         if ["low", "medium", "high"].contains(&q) {
             change(|c| c.soft_shadow_quality = q.to_string());
@@ -780,10 +784,12 @@ pub mod quality_api {
 
     /// Sharper textures at grazing angles: `disable`, `enable` or `forceEnable`.
     #[property]
+    #[ts_type = "\"disable\" | \"enable\" | \"forceEnable\""]
     pub fn anisotropic_filtering() -> String {
         st(|s| s.quality.current.anisotropic_filtering.clone())
     }
 
+    #[ts_type = "\"disable\" | \"enable\" | \"forceEnable\""]
     pub fn set_anisotropic_filtering(a: &str) {
         if ["disable", "enable", "forceEnable"].contains(&a) {
             change(|q| q.anisotropic_filtering = a.to_string());

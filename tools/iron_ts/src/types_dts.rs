@@ -88,6 +88,13 @@ fn funcs(v: &Value, like: bool) -> Vec<Func> {
     arr.iter()
         .map(|f| {
             let mut func = func_of(f, like);
+            // `#[ts_type = ".."]`: what a property reads as, a string-literal union where the Rust
+            // type is a `String`. Writing it still takes a `string` (an unknown name is ignored).
+            if let Some(t) = f["tsType"].as_str()
+                && func.kind == "get"
+            {
+                func.ret = t.to_string();
+            }
             // `#[nullable]`: a handle result, or the value a setter takes, may be `null`.
             if f["nullable"].as_bool() == Some(true) {
                 func.ret = format!("{} | null", func.ret);
@@ -499,9 +506,22 @@ impl Decls {
                         }
                     }
                     "get" => {
-                        let writable = fs
+                        let setter = fs
                             .iter()
-                            .any(|g| g.kind == "set" && g.name == f.name && g.params.len() > 1);
+                            .find(|g| g.kind == "set" && g.name == f.name && g.params.len() > 1);
+                        let writable = setter.is_some();
+                        // A property that reads as a narrower type than it takes: an accessor pair.
+                        if let Some(g) = setter
+                            && let Some((_, wide, _)) = g.params.last()
+                            && *wide != f.ret
+                            && !f.ret.ends_with("| null")
+                            && !members.iter().any(|m| member_name(m) == f.name)
+                        {
+                            props.push((f.name.clone(), wide.clone()));
+                            add(members, format!("get {}(): {};", f.name, f.ret), &f.doc);
+                            add(members, format!("set {}(v: {wide});", f.name), "");
+                            continue;
+                        }
                         let line = if writable {
                             props.push((f.name.clone(), f.ret.clone()));
                             format!("{}: {};", f.name, f.ret)

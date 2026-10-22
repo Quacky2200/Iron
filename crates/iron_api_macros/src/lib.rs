@@ -882,6 +882,7 @@ fn camel(s: &str) -> String {
 fn is_ours(a: &syn::Attribute) -> bool {
     [
         "property", "optional", "method", "getter", "js_name", "options", "rest", "nullable",
+        "ts_type",
     ]
     .iter()
     .any(|n| a.path().is_ident(n))
@@ -892,6 +893,22 @@ fn is_ours(a: &syn::Attribute) -> bool {
 fn js_name_attr(attrs: &[syn::Attribute]) -> Option<String> {
     attrs.iter().find_map(|a| {
         if a.path().is_ident("js_name")
+            && let Meta::NameValue(nv) = &a.meta
+            && let Expr::Lit(l) = &nv.value
+            && let Lit::Str(s) = &l.lit
+        {
+            Some(s.value())
+        } else {
+            None
+        }
+    })
+}
+
+/// `#[ts_type = "\"low\" | \"high\""]`: the TypeScript type of a property when the Rust type
+/// (`String`) is wider (a string-literal union).
+fn ts_type_attr(attrs: &[syn::Attribute]) -> Option<String> {
+    attrs.iter().find_map(|a| {
+        if a.path().is_ident("ts_type")
             && let Meta::NameValue(nv) = &a.meta
             && let Expr::Lit(l) = &nv.value
             && let Lit::Str(s) = &l.lit
@@ -956,6 +973,8 @@ struct Api {
     rest: Option<String>,
     /// `#[nullable]`: the TypeScript type of a handle result (or of the setter's value) is `T | null`.
     nullable: bool,
+    /// `#[ts_type = ".."]`: the declared TypeScript type of a property (a string-literal union).
+    ts_type: Option<String>,
     ret: Kind,
 }
 
@@ -1108,6 +1127,7 @@ fn api_of(
         options_after,
         rest,
         nullable: attrs.iter().any(|a| a.path().is_ident("nullable")),
+        ts_type: ts_type_attr(attrs),
         ret,
     })
 }
@@ -1448,6 +1468,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let ret_m = manifest_ty(&a.ret, &args);
         let kind = kind_tokens(a.tag);
         let nullable = a.nullable;
+        let ts_type = match &a.ts_type {
+            Some(t) => quote!(::std::option::Option::Some(#t)),
+            None => quote!(::std::option::Option::None),
+        };
         let options_after = match &a.options_after {
             Some(p) => {
                 let i = a
@@ -1470,6 +1494,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 ret: #ret_m,
                 options_after: #options_after,
                 nullable: #nullable,
+                ts_type: #ts_type,
             }
         };
         match &a.class {

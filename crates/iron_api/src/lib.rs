@@ -154,6 +154,9 @@ pub struct Function {
     pub options_after: Option<usize>,
     /// `#[nullable]`: a handle result (or the value a setter takes) may be `null`.
     pub nullable: bool,
+    /// `#[ts_type = ".."]`: the TypeScript type of a property, when it is narrower than the Rust
+    /// type (a string-literal union for a `String`).
+    pub ts_type: Option<&'static str>,
 }
 
 /// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
@@ -638,7 +641,7 @@ fn function_json(f: &Function) -> String {
         })
         .collect();
     format!(
-        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}}}",
+        "{{\"name\":{},\"symbol\":{},\"kind\":{},\"params\":[{}],\"returns\":{}{}{}{}{}}}",
         json_str(f.name),
         json_str(f.symbol),
         json_str(f.kind.name()),
@@ -651,7 +654,9 @@ fn function_json(f: &Function) -> String {
         },
         f.options_after
             .map_or(String::new(), |a| format!(",\"optionsAfter\":{a}")),
-        if f.nullable { ",\"nullable\":true" } else { "" }
+        if f.nullable { ",\"nullable\":true" } else { "" },
+        f.ts_type
+            .map_or(String::new(), |t| format!(",\"tsType\":{}", json_str(t)))
     )
 }
 

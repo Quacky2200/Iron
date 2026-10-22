@@ -760,6 +760,11 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   the initialisers, the classes' static fields in source order); everything after it continues when the awaited promise settles, i.e.
   when the host drains microtasks and timers (`ts_rt_run_loop`). A host function called in between sees the variables initialised so
   far (and zero / null for the later ones). An error thrown after an await is an unhandled promise rejection (logged once).
+- **Declared types.** `gen_components.py` marks the handle-valued properties of generated components (`Texture`, `Mesh`, `Material`,
+  `Sprite`, `GameObject`) `#[nullable]` (`Texture | null`, as in the QuickJS declarations) and the name-valued ones (`Light.type`,
+  `LineRenderer2D.fillRule`, `TextMesh.alignment`, ..) `#[ts_type]`; `QualitySettings.shadows`, `softShadowQuality` and
+  `anisotropicFiltering` too (`docs/iron-api.md`). Spreading into function values / `new C(...xs)` / `f(a, ...xs)` is built:
+  the elements of an array or tuple feed the parameters after the plain arguments (null past the end).
 - **Defaulted closure parameters of type `boolean`** may be left out at a call, like numbers and strings.
 
 ## Symbol, iterators and generators

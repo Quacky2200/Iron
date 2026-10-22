@@ -179,7 +179,7 @@ function Menu() {
 function softShadowName(q: string): string {
   return q === "low" ? "Low (3x3)" : q === "medium" ? "Medium (5x5)" : "High (7x7)";
 }
-function nextSoftShadows(q: string): string {
+function nextSoftShadows(q: string): "low" | "medium" | "high" {
   return q === "low" ? "medium" : q === "medium" ? "high" : "low";
 }
 

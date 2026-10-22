@@ -178,3 +178,31 @@ function t(): string {
   m += 1;
   return `${ta}${tb}${p}${q} ${m}${s} ${head} ${tail.join("+")} ${fromClosure()}`;
 }
+//## spread_into_function_values_and_constructors
+class P {
+  constructor(
+    public a: number,
+    public b: number,
+    public c: number = 100,
+  ) {}
+  sum(): number {
+    return this.a + this.b + this.c;
+  }
+}
+function apply(f: (a: number, b: number) => number, xs: number[]): number {
+  return f(...xs);
+}
+function apply3(f: (a: number, b: number, c: number) => string, head: number, rest: number[]): string {
+  return f(head, ...rest);
+}
+function rnd(min: number, max: number): number {
+  return min * 10 + max;
+}
+const range: [number, number] = [2, 5];
+function t(): string {
+  const ys = [3, 4];
+  const p = new P(...ys);
+  const q = new P(...[1, 2, 3]);
+  const mul = (a: number, b: number) => a * b;
+  return `${apply(mul, ys)} ${apply((a, b) => a - b, [10, 4])} ${apply3((a, b, c) => `${a}${b}${c}`, 1, [2, 3])} ${p.sum()} ${q.sum()} ${rnd(...range)}`;
+}
