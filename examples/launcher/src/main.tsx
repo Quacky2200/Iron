@@ -8,15 +8,16 @@
 // playing shows a loading spinner, then says launching isn't implemented yet.
 //
 // `iron examples/launcher -- --select <example> --show details|loading|alert|menu|context
-// --view grid --category favourites --favourites a,b --pad xbox|playstation|nintendo` starts on that game,
-// screen, view, category and pad icons (for screenshot runs).
+// --view grid --category favourites --favourites a,b --pad xbox|playstation|nintendo` starts
+// on that game, screen, view, category and pad icons, and `--step-at <ms> [--steps n]` moves on
+// a game (n games, 60 ms apart) at that time, for screenshot runs of the transitions.
 import "./launcher.css";
 
 import { Application, input, PlayerPrefs, Screen } from "@iron/engine";
 import { createRoot, Image, type IronElement, type IronWheelEvent, Text } from "@iron/react";
 import { useEffect, useRef, useState } from "react";
 
-import { type Game, GAMES } from "./games.gen.ts";
+import { type Game, GAMES, type Palette } from "./games.gen.ts";
 import {
   arg,
   backButton,
@@ -34,6 +35,10 @@ import {
 
 /** How long "loading" spins before the alert. */
 const LOADING_MS = 1100;
+/** How long a game stays selected before its picture fades in behind everything. */
+const DWELL_MS = 3000;
+/** The background's colours with no game selected (an empty category). */
+const NEUTRAL: Palette = { top: "#1b2433", bottom: "#10141c", glow: "124, 196, 255" };
 /** Left stick: past this it moves, repeating while held. */
 const STICK = 0.55;
 const REPEAT_FIRST_MS = 380;
@@ -403,6 +408,15 @@ function App() {
   ];
   const menuItems = mode === "menu" ? sidebarItems : mode === "context" ? contextItems : [];
 
+  useEffect(() => {
+    const at = Number(arg("--step-at"));
+    if (!at) return;
+    // `--steps n` steps n times, 60 ms apart (fast browsing).
+    const steps = Number(arg("--steps") ?? 1);
+    const timers = Array.from({ length: steps }, (_, k) => setTimeout(() => setIndex((i) => i + 1), at + k * 60));
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
   // Loading spins for a moment, then admits it can't start anything.
   useEffect(() => {
     if (mode !== "loading" || !game) return;
@@ -529,12 +543,26 @@ function App() {
     };
   }, []);
 
+  // The background: the game's colours at once, its picture once it has stayed selected.
+  const colors = game?.palette ?? NEUTRAL;
+  const [dwelt, setDwelt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!game) return;
+    const t = setTimeout(() => setDwelt(game.name), DWELL_MS);
+    return () => clearTimeout(t);
+  }, [game?.name]);
+
   const showDetails = mode === "details" || mode === "loading" || (mode === "alert" && alert?.then === "details") || (mode === "context" && contextFrom === "details");
 
   return (
     <box className={pad ? "app pad" : "app"} onPointerMove={noteMouse} onPointerDown={noteMouse}>
-      {/* The selected game's screenshot, large and dim, fading in on each change. */}
-      {game ? (
+      {/* The selected game's colours, easing from one game's to the next, with two slow glows. */}
+      <box className="ambient" style={{ background: `linear-gradient(160deg, ${colors.top} 0%, ${colors.bottom} 62%, #06080c 100%)` }}>
+        <box className="glow one" style={{ background: `radial-gradient(circle, rgba(${colors.glow}, 0.3), rgba(${colors.glow}, 0) 70%)` }} />
+        <box className="glow two" style={{ background: `radial-gradient(circle, rgba(${colors.glow}, 0.18), rgba(${colors.glow}, 0) 70%)` }} />
+      </box>
+      {/* After DWELL_MS on a game its own picture fades in; moving on fades it out (`:outro`). */}
+      {game && dwelt === game.name ? (
         <box key={game.name} className="backdrop">
           <Shot game={game} className="backdrop-shot" />
         </box>

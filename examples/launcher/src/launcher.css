@@ -26,19 +26,69 @@
 
 /* --- Backdrop ------------------------------------------------------------------------ */
 
+/* The game's colours (gen-games.ts reads them from its screenshot). The gradient's colours
+   blend from one game's to the next, so browsing shifts the mood without flicker. */
+.ambient {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transition: background 1000ms ease;
+}
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  transition: background 1000ms ease;
+}
+.glow.one {
+  width: 1000px;
+  height: 1000px;
+  left: -260px;
+  top: -420px;
+  animation: drift-one 19s ease-in-out infinite alternate;
+}
+.glow.two {
+  width: 900px;
+  height: 900px;
+  right: -300px;
+  bottom: -460px;
+  animation: drift-two 23s ease-in-out infinite alternate;
+}
+@keyframes drift-one {
+  from {
+    transform: translate(0px, 0px) scale(1);
+  }
+  to {
+    transform: translate(220px, 120px) scale(1.18);
+  }
+}
+@keyframes drift-two {
+  from {
+    transform: translate(0px, 0px) scale(1.1);
+  }
+  to {
+    transform: translate(-260px, -90px) scale(0.92);
+  }
+}
+
+/* The game's own picture, once it has stayed selected (DWELL_MS): it eases in, and fades
+   out over 1 s when the selection moves on. */
 .backdrop {
   flex-direction: column;
   position: absolute;
   inset: 0;
-  opacity: 0.32;
+  opacity: 0.4;
   transform: scale(1.08);
-  transition: opacity 600ms ease, transform 1200ms var(--ease);
+  transition: opacity 1600ms ease, transform 2400ms var(--ease);
 }
 @starting-style {
   .backdrop {
     opacity: 0;
     transform: scale(1.14);
   }
+}
+.backdrop:outro {
+  opacity: 0;
+  transition: opacity 1000ms ease;
 }
 .backdrop-shot {
   width: 100%;
@@ -49,7 +99,7 @@
 .shade {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse, rgba(7, 9, 13, 0.25), rgba(7, 9, 13, 0.92) 75%);
+  background: radial-gradient(ellipse, rgba(7, 9, 13, 0.1), rgba(7, 9, 13, 0.72) 80%);
 }
 
 /* --- Top bar ------------------------------------------------------------------------- */

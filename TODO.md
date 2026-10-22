@@ -1704,6 +1704,12 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
     at its top and bottom edges under the header
   - [x] A Favourites category for both views (tabs, LT / RT, Tab, the sidebar), with an
     empty state; the grid has room under its fades, and its scrollbar stays unfaded
+  - [x] A background in each game's colours (palette.ts reads them from its screenshot at
+    build time): a gradient with two drifting glows that eases between games; after 3 s on
+    a game its picture fades in, and fades out over 1 s when the selection moves on
+  - [x] Engine fix: with any `:outro` rule in use, an element removed mid-transition (a
+    caption replaced while browsing fast) stayed, in layout, until that transition ended;
+    only motion the exit starts holds it now (`M3-ANI-05`)
   - [ ] Engine: gradients draw only 8 stops and warn every frame about the rest; warn once
   - [ ] Actually launch a game (start `iron <folder>` as a child process, or switch games in
     place) and return to the launcher when it quits
