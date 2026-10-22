@@ -289,19 +289,25 @@ impl<'s> Finder<'s> {
                             self.fail(format!("line {}: spread in style", self.line(at)));
                             return out;
                         };
+                        let v = self.slice(p.value.span()).to_string();
                         let key = match &p.key {
-                            PropertyKey::StaticIdentifier(k) => k.name.to_string(),
-                            PropertyKey::StringLiteral(k) => k.value.to_string(),
+                            PropertyKey::StaticIdentifier(k) if !p.computed => {
+                                js_string(k.name.as_str())
+                            }
+                            PropertyKey::StringLiteral(k) => js_string(k.value.as_str()),
+                            // `[props.side]: 8`: the name is computed (a string or a union member).
+                            k if p.computed && k.as_expression().is_some() => {
+                                self.slice(k.span()).to_string()
+                            }
                             _ => {
                                 self.fail(format!(
-                                    "line {}: style keys must be plain names",
+                                    "line {}: style keys must be plain or computed names",
                                     self.line(at)
                                 ));
                                 return out;
                             }
                         };
-                        let v = self.slice(p.value.span()).to_string();
-                        out = format!("Ui.style({out}, {}, {v})", js_string(&key));
+                        out = format!("Ui.style({out}, {key}, {v})");
                     }
                 }
                 n if n.len() > 2 && n.starts_with("on") && n.as_bytes()[2].is_ascii_uppercase() => {

@@ -706,12 +706,37 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 - **Casts of empty literals.** `null as T | null`, `[] as T[]` and `{} as T` give the literal the asserted type (`{} as T` leaves
   its required fields zero: set them before reading).
 - **Field types** from `new Float32Array(n)`, `new Array<T>(n)`, `new Map<K, V>()`, `new Int8Array(n).fill(-1)`, `NaN`,
-  `-Infinity`, `Math.PI`, `Math.sqrt(..)`, `Date.now()`, `[] as T[]` and `null as T | null` (also inside an object literal).
+  `-Infinity`, `Math.PI`, `Math.sqrt(..)`, `Date.now()`, `LIST.map(() => new Turn())`, `new Other()`, `[] as T[]` and `null as T | null` (also inside an object literal).
 - **Assignment targets** may sit under `!` and casts: `x[i]! += d`, `m.get(k)![0]! *= 3`, `(x[i] as number) -= 1`.
 - **Strings iterate by code point**: `[...s]`, `Array.from(s)`, `Array.from(s, f)`, `for (const c of s)` (`ts_rt_str_chars_gc`).
 - **`Math.hypot(...xs)`** with any number of arguments (folded two at a time).
+- **Optional calls.** `o.cb?.(x)` on a function that may be missing does nothing when it is (`call_closure_value`).
+- **Computed style keys** in JSX: `style={{ [props.side]: 8 }}` (the key is a string or a union member).
 - **Conditional branches.** `ok ? [a, b] : []` (the empty array takes the other branch's type); an engine object's options can be
   `cond ? { position, parent } : { position }` (each branch sets its own properties).
+
+## Interfaces implemented by classes ([lower/ifaces.rs](../tools/iron_ts/src/lower/ifaces.rs))
+
+`interface Shape { area(): number }`, `class Circle implements Shape`, a `Shape[]` or a `Shape` parameter holding circles and squares,
+`shape.area()` (and `interface Animal extends Named`, which works for every interface now: the extended members come first).
+
+- **Which interfaces.** An interface named in a class's `implements` (and the ones it extends) is *dynamic*; other interfaces stay
+  plain structs. A value of a dynamic interface is a **pointer to the object itself** (a class instance or a plain object): no copy and
+  no wrapper, so `shape instanceof Circle`, identity and writes through the interface behave as in JavaScript. Every object starts with
+  the id of its struct, so a member access goes through a table indexed by that id (`CallVirtual`, the mechanism classes use for
+  overridden methods), one table per (interface, member, kind): **call** (`shape.area(..)`: the class method itself, or a wrapper that
+  calls an arrow-function field), **get** (`shape.name`, a method or optional method read as a value: the field read, the accessor, a
+  bound method, or null), **set** (`shape.level = v`: the field store or the setter).
+- **What goes in a table.** A struct counts once a value of it is assigned to the interface type (an assignment, an argument, an
+  array element, a return: `assignable`/`coerce` check that it has the required members and record it), with its subclasses and the
+  structs of the interfaces that extend it. The tables are filled after the whole program is lowered (`finish_ifaces`, repeated while
+  that lowers more code). An object literal expected to be the interface gets a struct of its own.
+- **Defaults.** A class method with default parameters called through an interface that makes the argument optional gets a wrapper that
+  fills the default in.
+- **Not supported.** Spreading an interface value, `JSON.stringify` of it and the like are a compile error naming the interface
+  (`check_iface_structs`); `Object.keys(x)` gives the interface's keys. A class used as the value of an interface that no class names
+  in `implements` is a "type mismatch" (name the interface in `implements`: that is what makes it dynamic). Generic interfaces
+  (`implements Comparable<T>`) are not dynamic.
 
 ## Symbol, iterators and generators
 

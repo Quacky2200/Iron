@@ -23,6 +23,7 @@ mod facade;
 mod fnvalue;
 mod generators;
 mod generics;
+mod ifaces;
 mod intl;
 mod iter;
 mod json;
@@ -255,6 +256,13 @@ pub struct Lowerer<'a> {
     /// `instanceof GenericClass` tables, filled in once every specialisation exists.
     pub(crate) generic_itables: Vec<(usize, String)>,
     /// `Partial<Class>` and friends met before the classes had fields: (struct, utility, class struct, keys).
+    /// Interfaces some class implements (and the ones those extend): see `ifaces.rs`.
+    pub(crate) dyn_ifaces: HashSet<String>,
+    /// The structs of those interfaces, by interface name.
+    pub(crate) iface_sids: HashMap<StructId, String>,
+    /// (interface struct, struct) pairs: values of the second were used as the first.
+    pub(crate) iface_impls: std::cell::RefCell<HashSet<(StructId, StructId)>>,
+    pub(crate) iface_tables: Vec<ifaces::IfaceTable>,
     pub(crate) pending_utility: Vec<(StructId, String, Ty, Option<Vec<String>>)>,
 }
 
@@ -467,6 +475,10 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         classes_ready: false,
         generic_itables: Vec::new(),
         pending_utility: Vec::new(),
+        dyn_ifaces: HashSet::new(),
+        iface_sids: HashMap::new(),
+        iface_impls: Default::default(),
+        iface_tables: Vec::new(),
     };
     l.lower_program(&program)?;
     let mut m = l.m;
@@ -559,6 +571,20 @@ impl<'a> Lowerer<'a> {
                 _ => {}
             }
         }
+        // Interfaces that classes implement are dispatched on at run time (`ifaces.rs`).
+        let mut class_nodes: Vec<&'a Class<'a>> = Vec::new();
+        for stmt in &program.body {
+            match stmt {
+                Statement::ClassDeclaration(c) => class_nodes.push(c),
+                Statement::ExportDeclaration(x) => {
+                    if let Declaration::ClassDeclaration(c) = &x.declaration {
+                        class_nodes.push(c);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.mark_dynamic_ifaces(&class_nodes);
         let mut vars: Vec<TopItem<'a>> = Vec::new();
         for stmt in &program.body {
             match stmt {
@@ -682,6 +708,11 @@ impl<'a> Lowerer<'a> {
                     .map(|(n, _)| n.clone())
                     .collect();
                 if names.is_empty() {
+                    // Interface tables take what the code lowered so far assigned to them; that can
+                    // lower and declare more.
+                    if self.finish_ifaces()? {
+                        continue;
+                    }
                     break;
                 }
             }
@@ -697,6 +728,8 @@ impl<'a> Lowerer<'a> {
             }
         }
         self.fixup_generic_itables();
+        self.fill_empty_tables()?;
+        self.check_iface_structs()?;
         Ok(())
     }
 

@@ -1689,3 +1689,12 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3136 | Integration | `ok ? [a, b] : []` and `[]` first: the empty array takes the other branch's type (`misc.rs`). |
 | M9-TS-3137 | Integration | Field types found from `NaN`, `-Infinity`, `Math.PI`, `Number.MAX_SAFE_INTEGER`, `Math.sqrt(..)`, `new Int8Array(n).fill(x)`, `new Map<K, V>()`, `[] as T[]` in an object literal (`misc.rs`). |
 | M9-TS-3138 | Integration | `new GameObject(name, cond ? { position, parent } : { position })` (`facade.rs`). |
+| M9-TS-3140 | Integration | `interface Shape { name; area(); scaled(k) }` implemented by two classes: arrays, variables and parameters of the interface type call and read through it, equal bun's (`tools/iron_ts_tests/tests/all/ifaces.rs`, `bench/ifaces_cases.ts`). |
+| M9-TS-3141 | Integration | A class, an object literal with methods and an arrow function property all go where one interface is expected (`ifaces.rs`). |
+| M9-TS-3142 | Integration | `interface Animal extends Named`; a subclass instance in an `Animal[]`, overriding, a value of the extended interface passed where its parent is expected (`ifaces.rs`). |
+| M9-TS-3143 | Integration | Optional interface members (`show?()`) read and called with `?.()`, and `face instanceof Fancy` narrowing an interface value to the class (`ifaces.rs`). |
+| M9-TS-3144 | Integration | Writes through an interface (`g.level += 3`) to a field, an accessor pair and an object literal, with optional data members (`ifaces.rs`). |
+| M9-TS-3145 | Integration | Interface values in a `Map`, in closures and filters, 40 objects built and collected in every GC mode (`ifaces.rs`). |
+| M9-TS-3146 | Integration | An abstract class implementing two interfaces, `this` and `super.m()`, a method with a default parameter called through an interface with the argument left out, arrays of the interface inside objects (`ifaces.rs`). |
+| M9-TS-3147 | Integration | Spread (and destructuring writes, JSON, `Object.keys`) of an interface implemented by classes is a compile error naming the interface (`ifaces.rs`). |
+| M9-TS-3148 | Integration | A computed key in a style object, `style={{ [side]: 8 }}` with `side` a string-literal union (`tools/iron_ts_tests/tests/all/ui.rs`). |

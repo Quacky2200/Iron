@@ -38,6 +38,7 @@ mod generators;
 mod generators2;
 mod generics;
 mod globals;
+mod ifaces;
 mod inherit;
 mod inputs;
 mod inputs2;

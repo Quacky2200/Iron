@@ -552,7 +552,36 @@ impl<'a> Lowerer<'a> {
         Ok(t)
     }
 
-    /// An interface or alias by name, resolved once.
+    /// The members of an interface, those of the interfaces it extends first.
+    pub(crate) fn iface_fields(&mut self, name: &str) -> R<Vec<Field>> {
+        let i = self.ifaces[name];
+        let mut fields: Vec<Field> = Vec::new();
+        for h in &i.extends {
+            let TSTypeName::IdentifierReference(id) = &h.type_name else {
+                bail!("interface {name}: extends a qualified name")
+            };
+            if h.type_arguments.is_some() || !self.ifaces.contains_key(id.name.as_str()) {
+                bail!(
+                    "interface {name}: extends {} (only interfaces of the program without type arguments)",
+                    id.name
+                )
+            }
+            for f in self.iface_fields(id.name.as_str())? {
+                match fields.iter().position(|o| o.name == f.name) {
+                    Some(k) => fields[k] = f,
+                    None => fields.push(f),
+                }
+            }
+        }
+        for f in self.members(&i.body.body, name)? {
+            match fields.iter().position(|o| o.name == f.name) {
+                Some(k) => fields[k] = f,
+                None => fields.push(f),
+            }
+        }
+        Ok(fields)
+    }
+
     /// Whether a written type names a type parameter of the specialisation being lowered.
     pub(crate) fn mentions_tparam(&self, text: &str) -> bool {
         !self.tenv.is_empty()
@@ -583,13 +612,13 @@ impl<'a> Lowerer<'a> {
         if !own && self.manifest.records.contains_key(name) {
             return Ok(Ty::Obj(self.record_struct(name)));
         }
-        if let Some(i) = self.ifaces.get(name).copied() {
-            if !i.extends.is_empty() {
-                bail!("interface {name}: extends is not supported");
-            }
+        if self.ifaces.contains_key(name) {
             let id = self.new_struct(name, vec![]);
             self.named.insert(name.to_string(), Ty::Obj(id));
-            let fields = self.members(&i.body.body, name)?;
+            if self.dyn_ifaces.contains(name) {
+                self.iface_sids.insert(id, name.to_string());
+            }
+            let fields = self.iface_fields(name)?;
             self.m.structs[id].fields = fields;
             return Ok(Ty::Obj(id));
         }
@@ -663,7 +692,7 @@ impl<'a> Lowerer<'a> {
     pub(crate) fn assignable(&self, from: &Ty, to: &Ty) -> bool {
         match (from.strip(), to.strip()) {
             (a, b) if a == b => true,
-            (Ty::Obj(x), Ty::Obj(y)) => self.is_subclass(*x, *y),
+            (Ty::Obj(x), Ty::Obj(y)) => self.is_subclass(*x, *y) || self.iface_accepts(*x, *y),
             (Ty::Arr(x), Ty::Arr(y)) => self.assignable(x, y),
             _ => false,
         }

@@ -244,6 +244,30 @@ impl<'a> Lowerer<'a> {
                     Some(self.lower_new_collection(&id.name, n, None)?.ty)
                 }
             }
+            // `LIST.map(() => new Turn())`: an array of what the callback returns.
+            Expression::CallExpression(c)
+                if matches!(&c.callee, Expression::StaticMemberExpression(m)
+                    if m.property.name == "map") =>
+            {
+                let Some(Expression::ArrowFunctionExpression(a)) =
+                    c.arguments.first().and_then(|a| a.as_expression())
+                else {
+                    return Ok(None);
+                };
+                let body: Option<&'a Expression<'a>> = match &a.body {
+                    ArrowFunctionBody::FunctionBody(b) => match b.statements.as_slice() {
+                        [Statement::ExpressionStatement(es)] => Some(&es.expression),
+                        _ => None,
+                    },
+                    other => other.as_expression(),
+                };
+                match body {
+                    Some(body) => self
+                        .guess_ty(body, depth + 1)?
+                        .map(|t| Ty::Arr(Box::new(t))),
+                    None => None,
+                }
+            }
             // `Number.NaN`, `Math.PI`, `Math.sqrt(2)`, `Date.now()`
             Expression::StaticMemberExpression(m)
                 if matches!(&m.object, Expression::Identifier(id)
@@ -297,6 +321,16 @@ impl<'a> Lowerer<'a> {
                     targs.push(self.ty(t, id.name.as_str())?);
                 }
                 Some(self.generic_type(id.name.as_str(), targs)?)
+            }
+            // `new Other()`
+            Expression::NewExpression(n)
+                if matches!(&n.callee, Expression::Identifier(id)
+                    if self.class_decls.contains_key(id.name.as_str())) =>
+            {
+                let Expression::Identifier(id) = &n.callee else {
+                    unreachable!("matched above")
+                };
+                Some(self.named_type(id.name.as_str())?)
             }
             // `new Vector3(..)` of the engine API.
             Expression::NewExpression(n)

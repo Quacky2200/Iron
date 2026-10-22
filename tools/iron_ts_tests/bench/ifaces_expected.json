@@ -1,0 +1,9 @@
+{
+ "basic_dispatch": "19 circle=3c2 square3=9s6 circle=3c2,square2=4s4,circle=12c4 3",
+ "object_literals_and_mixed": "2;4;2|105;110;5|7;7;1|",
+ "extends_and_subclasses": "<base>...<dog>woof<bird>tweet10woof<dog>",
+ "optional_members_and_instanceof": "p1-f1show21(1)f1show21(1)",
+ "writes_through_the_interface": "14tank,7_,8_,",
+ "closures_and_containers": "580 8 40 15",
+ "composite_abstract_and_this": "9 sum=9[  lit=2,  lit=5,  sum=2[    lit=1,    lit=1]] 3 lit+sum"
+}

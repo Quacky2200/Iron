@@ -506,6 +506,12 @@ impl<'a> Lowerer<'a> {
         let rty = recv.ty.strip().clone();
         if let Ty::Obj(sid) = &rty {
             let sid = *sid;
+            // `shape.area()` on an interface some class implements: through its table.
+            if self.is_dyn(sid)
+                && let Some(e) = self.iface_call(&recv, sid, m, c)?
+            {
+                return Ok(e);
+            }
             if matches!(m, "then" | "catch" | "finally")
                 && let Some((key, value)) = self.promise_of(&rty)
             {

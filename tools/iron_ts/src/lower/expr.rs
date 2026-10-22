@@ -468,6 +468,7 @@ impl<'a> Lowerer<'a> {
         // A string literal (or a constant of one) used as a `string`: `"abc".length`.
         let obj = self.widen_lit(obj);
         match obj.ty.strip().clone() {
+            Ty::Obj(sid) if self.is_dyn(sid) => self.iface_member(obj, sid, prop),
             Ty::Obj(sid) => {
                 let Some(i) = self.m.structs[sid].field(prop) else {
                     if Some(sid) == self.match_sid() && prop == "length" {
@@ -1688,7 +1689,7 @@ impl<'a> Lowerer<'a> {
     /// Every field of `to` is a field of `from` with the same type (or `from`'s type made
     /// nullable, for a `Partial`): a plain object can then be copied into a `to`.
     pub(crate) fn can_copy_fields(&self, from: StructId, to: StructId) -> bool {
-        if self.class_of_sid.contains_key(&to) {
+        if self.class_of_sid.contains_key(&to) || self.is_dyn(from) || self.is_dyn(to) {
             return false;
         }
         let (f, t) = (&self.m.structs[from], &self.m.structs[to]);
@@ -2217,6 +2218,10 @@ impl<'a> Lowerer<'a> {
             Some(Ty::Obj(s)) => Some(*s),
             _ => None,
         };
+        // An interface some class implements is only a type (`ifaces.rs`): the object gets a
+        // struct of its own, with the types of the interface for its values.
+        let want_sid = exp_sid;
+        let exp_sid = exp_sid.filter(|s| !self.is_dyn(*s));
         // `{ [Weather.Rain]: "Rain" }` where a `Record<Weather, string>` (an array) is expected.
         if let Some(Ty::Arr(el)) = exp.map(|t| t.strip())
             && o.properties
@@ -2266,7 +2271,7 @@ impl<'a> Lowerer<'a> {
                         );
                     }
                     let name = self.key_name(&p.key)?;
-                    let want = match exp_sid {
+                    let want = match want_sid {
                         Some(s) => self.m.structs[s]
                             .field(&name)
                             .map(|i| self.m.structs[s].fields[i].ty.clone()),
@@ -2277,6 +2282,7 @@ impl<'a> Lowerer<'a> {
                     // (`"y" as Kind` keeps the union it was asserted to.)
                     if exp_sid.is_none()
                         && record.is_none()
+                        && !(want_sid.is_some() && want.is_some())
                         && !matches!(&p.value, Expression::TSAsExpression(_))
                     {
                         v = self.widen_lit(v);
@@ -2894,6 +2900,14 @@ impl<'a> Lowerer<'a> {
 
     /// `obj.prop` as an assignment target: a field, or a property with a setter.
     fn field_place(&mut self, obj: Expr, prop: &str, pre: &mut Vec<Stmt>) -> R<Place> {
+        if let Ty::Obj(sid) = obj.ty.strip().clone()
+            && self.is_dyn(sid)
+        {
+            let tmp = self.new_local(obj.ty.clone());
+            pre.push(Stmt::Assign(tmp, obj));
+            let recv = self.var_expr(tmp);
+            return self.iface_place(recv, sid, prop);
+        }
         if let Ty::Handle(class) = obj.ty.strip().clone() {
             if let Some((fid, ty)) = self.ext_setter(&class, prop)? {
                 let getter = self.ext_getter(&class, prop, &obj)?;
@@ -3688,6 +3702,13 @@ impl<'a> Lowerer<'a> {
                 }
                 // A literal (or a constant of one) as the receiver of a string method.
                 let recv = self.widen_lit(recv);
+                // `shape.area()` on an interface some class implements: through its table.
+                if let Ty::Obj(sid) = recv.ty.strip()
+                    && self.is_dyn(*sid)
+                    && let Some(e) = self.iface_call(&recv, *sid, method, c)?
+                {
+                    return Ok(e);
+                }
                 // A function-typed field (`handlers.onHit(x)`) is called, not looked up as a method.
                 if let Ty::Obj(sid) = recv.ty.strip()
                     && let Some(i) = self.m.structs[*sid].field(method)
@@ -3717,6 +3738,14 @@ impl<'a> Lowerer<'a> {
                 "{}: call of a value that is not a function",
                 self.loc(c.span.start)
             )
+        };
+        // `o.cb?.(x)`: nothing happens when the function is missing.
+        let callee = if c.optional && callee.ty.is_nullable() {
+            let guarded = self.chain_guard(callee)?;
+            let plain = guarded.ty.strip().clone();
+            mk(ExprKind::Cast(Box::new(guarded)), plain)
+        } else {
+            callee
         };
         let args = self.lower_args(&c.arguments, &sig.params, "closure")?;
         Ok(mk(

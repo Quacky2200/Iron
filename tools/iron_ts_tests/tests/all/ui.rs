@@ -429,6 +429,26 @@ fn a_style_value_that_is_a_string_or_a_number_by_condition() {
     });
 }
 
+// M9-TS-3148
+//
+// A computed key in a style object (`[side]: 8`, the name a string-literal union member).
+#[test]
+fn a_style_key_can_be_computed() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_edgeApp(false) });
+        let b = ui.tree.children(ROOT)[0];
+        ui.tree.layout_if_needed();
+        let r = ui.tree.rect(b).unwrap();
+        assert_eq!((r.x, r.y), (8.0, 0.0));
+        ui.show(unsafe { ts_uic_edgeApp(true) });
+        let b = ui.tree.children(ROOT)[0];
+        ui.tree.layout_if_needed();
+        let r = ui.tree.rect(b).unwrap();
+        assert_eq!((r.x, r.y), (0.0, 8.0));
+    });
+}
+
 // M9-TS-2847
 //
 // A function that returns a number, a string, a class object, an object literal or an element is

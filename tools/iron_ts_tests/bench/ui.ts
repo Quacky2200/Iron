@@ -337,6 +337,11 @@ export function radiusApp(ball: boolean): UiElement {
   return <box style={{ width: 50, borderRadius: ball ? "50%" : 4 }} />;
 }
 
+export function edgeApp(top: boolean): UiElement {
+  const side: "left" | "top" = top ? "top" : "left";
+  return <box style={{ position: "absolute", width: 72, height: 30, [side]: 8 }} />;
+}
+
 // ---- functions that return a value where `() => void` is expected ----
 
 const tapLog: string[] = [];
