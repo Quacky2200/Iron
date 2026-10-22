@@ -584,6 +584,9 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
     };
     let types: Vec<(String, String)> = pass.types.into_iter().collect();
     let mut templates = String::from(COMMON);
+    if pass.top_await {
+        templates += MODULES;
+    }
     for (k, x) in &types {
         templates += &per_type(k, x, &wants);
     }
@@ -659,6 +662,17 @@ function __rejReport(): void {
   for (const r of list) {
     if (!r.handled) console.error("Unhandled promise rejection: " + r.text + " (await it in a try/catch or add .catch)");
   }
+}
+"#;
+
+/// The bookkeeping of the module closures (`lower_async_module`): the host starts the registered
+/// classes when every module has finished, and says which module it waits for or which failed.
+const MODULES: &str = r#"function __modWatch(name: string, p: Promise$number): void {
+  __startup(0, name, "");
+  __onSettled$number(p, () => {
+    if (p.state === 2) __startup(2, name, (p.reason as Error).toString());
+    else __startup(1, name, "");
+  });
 }
 "#;
 

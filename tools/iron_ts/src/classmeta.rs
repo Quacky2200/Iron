@@ -20,9 +20,6 @@ pub struct ClassMeta {
     pub contact_hooks: [Option<String>; 6],
     /// The `@property` table: name, byte offset, type name.
     pub props: Vec<(String, usize, String)>,
-    /// Named in a `register(..)` call: the host starts these; the others are only creatable
-    /// with `addComponent`.
-    pub registered: bool,
 }
 
 const HOOKS: [&str; 9] = [
@@ -91,10 +88,6 @@ pub fn class_meta(m: &Module) -> Vec<ClassMeta> {
             hooks,
             contact_hooks,
             props,
-            registered: !m
-                .funcs
-                .iter()
-                .any(|g| g.exported && g.name == format!("iron_noreg_{class}")),
         });
     }
     out

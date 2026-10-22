@@ -229,6 +229,8 @@ impl Game {
     /// thread that will run the game.
     pub fn init(&self) -> Result<(), String> {
         let a = self.function("init").ok_or("the program has no init")?;
+        // A new run of the top level starts with no registrations and no pending modules.
+        iron_ts_rt::startup_reset();
         // SAFETY: `init` takes nothing and returns nothing.
         unsafe { std::mem::transmute::<usize, unsafe extern "C" fn()>(a)() };
         Ok(())
@@ -289,7 +291,6 @@ impl Game {
                 hooks,
                 contact_hooks,
                 props: Box::leak(props.into_boxed_slice()),
-                registered: c.registered,
             });
         }
         Ok(out)

@@ -659,6 +659,31 @@ impl<'a> Lowerer<'a> {
                 let s = self.lower_expr(s, None)?;
                 self.rt_str("ts_rt_segments_gc", vec![id, s], Ty::Arr(Box::new(Ty::Num)))
             }
+            // `register(..)` (rewritten by `components.rs`) and the startup bookkeeping of the
+            // module wrappers (`modules.rs` markers, `asyncs.rs` prelude).
+            "__registerClass" | "__startup" => {
+                let args: Vec<&'a Expression<'a>> = c
+                    .arguments
+                    .iter()
+                    .filter_map(|a| a.as_expression())
+                    .collect();
+                if name == "__registerClass" {
+                    let [names, spawn] = args.as_slice() else {
+                        bail!("{at}: __registerClass(names, spawn)")
+                    };
+                    let names = self.str_expr(names)?;
+                    let spawn = self.num_arg(spawn)?;
+                    self.rt_str("ts_rt_register_class", vec![names, spawn], Ty::Void)
+                } else {
+                    let [kind, module, msg] = args.as_slice() else {
+                        bail!("{at}: __startup(kind, module, message)")
+                    };
+                    let kind = self.num_arg(kind)?;
+                    let module = self.str_expr(module)?;
+                    let msg = self.str_expr(msg)?;
+                    self.rt_str("ts_rt_startup", vec![kind, module, msg], Ty::Void)
+                }
+            }
             "__coNew" | "__coResume" | "__coYield" | "__coValue" | "__coError" | "__coFinish"
             | "__coInject" | "__coInjectSet" | "__coZero" | "__coCurrent" | "__queueMicrotask"
             | "__timerAdd" | "__timerClear" | "__afterMicrotasks" | "__dvGet" | "__dvSet"

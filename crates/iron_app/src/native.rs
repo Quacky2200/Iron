@@ -4,8 +4,12 @@
 //! A native game is `dist/game.irbundle` (JSON written by `iron-build`: the bundled TypeScript
 //! source plus the stylesheet and asset list) or a bare `.ts` / `.tsx` file. [`Native::load`]
 //! JIT-compiles the source with the manifests of every engine namespace, runs the program's top
-//! level (`register(..)`, `UiRoot.mount(..)`) and spawns the starting components. After that the
-//! app calls the `Native` methods where it called QuickJS before:
+//! level (`register(..)`, `UiRoot.mount(..)`) and spawns the starting components. A module with a
+//! top-level `await` keeps the program from starting: until every module has finished evaluating
+//! (`iron_ts_rt::startup_state`) the registered classes are not spawned, the start scene is not
+//! loaded and no component hook runs, while the timers, microtasks and the UI the top level
+//! mounted keep going. After that the app calls the `Native` methods where it called QuickJS
+//! before:
 //!
 //! | App event | Native call |
 //! |---|---|
@@ -24,7 +28,9 @@
 use anyhow::{Context, Result, anyhow, bail};
 use iron_scene::Scene;
 use iron_ts::jit::{Game, JitOptions, compile_and_load};
-use iron_ts_rt::{NativeHost, ts_rt_microtasks_run, ts_rt_timers_advance};
+use iron_ts_rt::{
+    NativeHost, StartupState, startup_state, ts_rt_microtasks_run, ts_rt_timers_advance,
+};
 use iron_ui::{EventKind, UiEvent, UiTree};
 use iron_ui_native::{Event, RootId, Runtime};
 use std::path::Path;
@@ -149,12 +155,30 @@ pub struct Native {
     /// Sets the engine state the program reads at start (`Application`, quality levels, layers):
     /// runs before the program's top level, at load and again after a reload's resets.
     env: Box<dyn Fn()>,
-    /// Classes registered with `{ spawn: false }`: no starting object.
-    no_spawn: Vec<String>,
+    /// Every module of the program has finished evaluating: the registered classes have started.
+    started: bool,
+    /// The message of a startup that failed (a rejected top-level `await`): the game never starts.
+    startup_failed: Option<String>,
+    /// When the startup began, for the warning about a module that stays pending.
+    startup_since: std::time::Instant,
+    startup_warned: bool,
+    /// How long a module may stay pending before the log says so (ten seconds).
+    warn_after: std::time::Duration,
+    /// A reload whose program is still starting: what is put back once it has started.
+    deferred_reload: Option<DeferredReload>,
+    /// The scene to load once the program has started (`iron.startScene`).
+    pending_start_scene: Option<String>,
     /// The game folder: scene files the program loads come from here.
     root: Option<std::path::PathBuf>,
     #[allow(dead_code)]
     pub bundle: Bundle,
+}
+
+/// What a hot reload puts back after the new program's startup finishes.
+struct DeferredReload {
+    saved: Vec<String>,
+    active: usize,
+    old_classes: Vec<&'static str>,
 }
 
 fn active(o: u64) -> bool {
@@ -214,10 +238,16 @@ impl Native {
             reload_closes: Vec::new(),
             env,
             root: None,
-            no_spawn: no_spawn_classes(&bundle.source),
+            started: false,
+            startup_failed: None,
+            startup_since: std::time::Instant::now(),
+            startup_warned: false,
+            warn_after: std::time::Duration::from_secs(10),
+            deferred_reload: None,
+            pending_start_scene: None,
             bundle,
         };
-        n.spawn_starting_components(scene);
+        // Spawns the starting components now when the program has nothing to wait for.
         n.after_script(scene, ui);
         tracing::info!(classes = ?n.host.class_names(), "compiled and started the game in {:.0} ms ({:.0} lower, {:.0} codegen)",
             (n.game.lower_time + n.game.codegen_time).as_secs_f64() * 1000.0,
@@ -241,14 +271,71 @@ impl Native {
         .map_err(|e| anyhow!("compiling the game: {e}"))
     }
 
-    fn spawn_starting_components(&mut self, scene: &mut Scene) {
-        let classes: Vec<&'static str> = self
-            .host
-            .registered_class_names()
-            .into_iter()
-            .filter(|c| !self.no_spawn.iter().any(|n| n == c))
-            .collect();
-        self.spawn_classes(scene, &classes);
+    /// Has every module finished evaluating, so the game runs?
+    #[allow(dead_code)]
+    pub fn started(&self) -> bool {
+        self.started
+    }
+
+    /// Why the game did not start: a module's top-level `await` was rejected.
+    #[allow(dead_code)]
+    pub fn startup_error(&self) -> Option<&str> {
+        self.startup_failed.as_deref()
+    }
+
+    /// Changes how long a module may stay pending before the log warns about it.
+    #[allow(dead_code)]
+    pub fn set_startup_warning(&mut self, after: std::time::Duration) {
+        self.warn_after = after;
+    }
+
+    /// Looks at how the program's startup stands and, when every module has finished, starts the
+    /// game: the registered classes get their objects (in the order of the `register(..)` calls)
+    /// and a reload puts the saved world back. A failed startup is logged once.
+    fn advance_startup(&mut self, scene: &mut Scene) {
+        if self.started || self.startup_failed.is_some() {
+            return;
+        }
+        match startup_state() {
+            StartupState::Done => {
+                self.started = true;
+                match self.deferred_reload.take() {
+                    Some(d) => self.restore_world(scene, d),
+                    None => {
+                        let classes: Vec<&'static str> = self
+                            .host
+                            .registered_class_names()
+                            .into_iter()
+                            .filter(|(_, spawn)| *spawn)
+                            .map(|(c, _)| c)
+                            .collect();
+                        self.spawn_classes(scene, &classes);
+                    }
+                }
+                if let Some(path) = self.pending_start_scene.take() {
+                    let _scope = iron_scene::api::enter(scene);
+                    iron_scenes::request_load(&path, false);
+                }
+            }
+            StartupState::Failed { module, message } => {
+                let text = format!(
+                    "the game did not start: module `{module}` failed while evaluating: {message}"
+                );
+                tracing::error!(target: "script", "{text}");
+                self.startup_failed = Some(text);
+            }
+            StartupState::Pending(modules) => {
+                if !self.startup_warned && self.startup_since.elapsed() >= self.warn_after {
+                    self.startup_warned = true;
+                    tracing::warn!(
+                        target: "script",
+                        "module `{}` is still evaluating after {:.0} s (a top-level await has not finished); the game has not started",
+                        modules[0],
+                        self.warn_after.as_secs_f64()
+                    );
+                }
+            }
+        }
     }
 
     fn spawn_classes(&mut self, scene: &mut Scene, classes: &[&'static str]) {
@@ -310,6 +397,11 @@ impl Native {
 
     /// Loads the manifest's `iron.startScene` (a single-mode load, like the scripts' own).
     pub fn start_scene(&mut self, scene: &mut Scene, ui: &mut UiTree, path: &str) {
+        if !self.started {
+            // After the last module has finished (`advance_startup`).
+            self.pending_start_scene = Some(path.to_string());
+            return;
+        }
         self.with_scene(scene, ui, || {
             iron_scenes::request_load(path, false);
         });
@@ -353,16 +445,27 @@ impl Native {
 
     /// What follows any call into the program: mounts, queued component work, microtasks.
     pub fn after_script(&mut self, scene: &mut Scene, ui: &mut UiTree) {
+        // A program with nothing to wait for starts here; one that waits starts when the microtasks
+        // (the continuation of an `await`) have finished its last module.
+        self.advance_startup(scene);
+        {
+            let _scope = iron_scene::api::enter(scene);
+            ts_rt_microtasks_run();
+        }
+        self.advance_startup(scene);
         let _scope = iron_scene::api::enter(scene);
-        ts_rt_microtasks_run();
-        log_faults(self.host.settle());
+        if self.started {
+            log_faults(self.host.settle());
+        }
         self.pump_destroyed();
         self.load_requested_scenes();
         // Scene events reach the program's listeners once the world is consistent.
         iron_scenes::dispatch();
         // A `loadSceneAsync` promise settled by that dispatch continues in this tick.
         ts_rt_microtasks_run();
-        log_faults(self.host.settle());
+        if self.started {
+            log_faults(self.host.settle());
+        }
         // `createRoot(win)`: the main window is the screen; other windows get their root from the app.
         let mut mounts: Vec<(u64, u64)> = iron_ts_ui::take_mounts();
         for (window, handle) in iron_ts_ui::take_window_mounts() {
@@ -405,7 +508,7 @@ impl Native {
     /// One fixed tick: `onFixedUpdate` for every component, then the physics world steps and
     /// contact hooks run.
     pub fn fixed_tick(&mut self, scene: &mut Scene, ui: &mut UiTree, dt: f64) {
-        {
+        if self.started {
             let _scope = iron_scene::api::enter(scene);
             log_faults(self.host.fixed_update(dt, &active));
             iron_physics_api::step();
@@ -421,7 +524,9 @@ impl Native {
             iron_engine_api::time::advance(dt);
             ts_rt_timers_advance(now_ms);
             ts_rt_microtasks_run();
-            log_faults(self.host.update(dt, &active));
+            if self.started {
+                log_faults(self.host.update(dt, &active));
+            }
         }
         self.after_script(scene, ui);
     }
@@ -430,7 +535,9 @@ impl Native {
     pub fn pre_render(&mut self, scene: &mut Scene, ui: &mut UiTree) {
         {
             let _scope = iron_scene::api::enter(scene);
-            log_faults(self.host.pre_render(&active));
+            if self.started {
+                log_faults(self.host.pre_render(&active));
+            }
             // Emitters and the listener follow their objects.
             iron_engine_api::audio_components::pre_render();
         }
@@ -502,10 +609,10 @@ impl Native {
         {
             let _scope = iron_scene::api::enter(scene);
             let change = iron_engine_api::app::set_focus(focused, paused);
-            if change.focus_changed {
+            if change.focus_changed && self.started {
                 log_faults(self.host.application_focus(focused, &active));
             }
-            if change.pause_changed {
+            if change.pause_changed && self.started {
                 log_faults(self.host.application_pause(paused, &active));
             }
         }
@@ -555,6 +662,50 @@ impl Native {
         self.host.class_names()
     }
 
+    /// Puts the saved scenes back after a reload and gives the classes the new program registered
+    /// that the old one did not their starting objects.
+    fn restore_world(&mut self, scene: &mut Scene, d: DeferredReload) {
+        let DeferredReload {
+            saved,
+            active,
+            old_classes,
+        } = d;
+        if !saved.is_empty() {
+            let mut gone = Vec::new();
+            for r in scene.roots().to_vec() {
+                gone.extend(scene.destroy(r));
+            }
+            let _scope = iron_scene::api::enter(scene);
+            {
+                self.objects_destroyed(&gone);
+                let mut handles = Vec::new();
+                for (i, text) in saved.iter().enumerate() {
+                    match iron_scenes::load_scene(text, i > 0) {
+                        Ok(h) => handles.push(h),
+                        Err(e) => {
+                            tracing::error!(target: "script", "reload: restoring a scene: {e}")
+                        }
+                    }
+                }
+                if let Some(h) = handles.get(active) {
+                    iron_scenes::set_active(*h);
+                }
+                for w in iron_scenes::take_warnings() {
+                    tracing::warn!(target: "script", "reload: {w}");
+                }
+            }
+        }
+        // Classes that are new in this program get their starting object.
+        let fresh: Vec<&'static str> = self
+            .host
+            .registered_class_names()
+            .into_iter()
+            .filter(|(c, spawn)| *spawn && !old_classes.contains(c))
+            .map(|(c, _)| c)
+            .collect();
+        self.spawn_classes(scene, &fresh);
+    }
+
     /// Replaces the game with a newly compiled one, keeping the world. Fails (and keeps running
     /// the old game) when the new source does not compile.
     ///
@@ -569,7 +720,12 @@ impl Native {
         // Nothing is touched until this works.
         let game = Self::compile(&bundle, generation)?;
         let old_sigs = parse_signatures(&signatures_of(&self.game));
-        let old_classes = self.host.registered_class_names();
+        let old_classes: Vec<&'static str> = self
+            .host
+            .registered_class_names()
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect();
         let (saved, active) = {
             let _scope = iron_scene::api::enter(scene);
             let n = iron_scenes::scene_count();
@@ -608,8 +764,12 @@ impl Native {
         *scene = Scene::new();
         self.game = game;
         self.generation = generation;
-        self.no_spawn = no_spawn_classes(&bundle.source);
         self.bundle = bundle;
+        self.started = false;
+        self.startup_failed = None;
+        self.startup_since = std::time::Instant::now();
+        self.startup_warned = false;
+        self.deferred_reload = None;
         {
             let _scope = iron_scene::api::enter(scene);
             iron_engine_api::time::reset();
@@ -619,40 +779,19 @@ impl Native {
             // The stand-in's `Drop` would wipe the registry the new host just filled.
             std::mem::forget(std::mem::replace(&mut self.host, host));
         }
-        // What the top level made is replaced by the saved world.
-        if !saved.is_empty() {
-            let mut gone = Vec::new();
-            for r in scene.roots().to_vec() {
-                gone.extend(scene.destroy(r));
-            }
-            let _scope = iron_scene::api::enter(scene);
-            {
-                self.objects_destroyed(&gone);
-                let mut handles = Vec::new();
-                for (i, text) in saved.iter().enumerate() {
-                    match iron_scenes::load_scene(text, i > 0) {
-                        Ok(h) => handles.push(h),
-                        Err(e) => {
-                            tracing::error!(target: "script", "reload: restoring a scene: {e}")
-                        }
-                    }
-                }
-                if let Some(h) = handles.get(active) {
-                    iron_scenes::set_active(*h);
-                }
-                for w in iron_scenes::take_warnings() {
-                    tracing::warn!(target: "script", "reload: {w}");
-                }
-            }
+        // What the top level made is replaced by the saved world, once every module of the new
+        // program has finished evaluating (its `register(..)` calls may come after an `await`).
+        let d = DeferredReload {
+            saved,
+            active,
+            old_classes,
+        };
+        if matches!(startup_state(), StartupState::Done) {
+            self.started = true;
+            self.restore_world(scene, d);
+        } else {
+            self.deferred_reload = Some(d);
         }
-        // Classes that are new in this program get their starting object.
-        let fresh: Vec<&'static str> = self
-            .host
-            .registered_class_names()
-            .into_iter()
-            .filter(|c| !old_classes.contains(c) && !self.no_spawn.iter().any(|n| n == c))
-            .collect();
-        self.spawn_classes(scene, &fresh);
         // Components of the UI whose hooks changed start over.
         let new_sigs = parse_signatures(&signatures_of(&self.game));
         self.remount = Some(
@@ -694,52 +833,6 @@ pub fn to_event(e: &UiEvent) -> Option<Event> {
         ev.strings = vec![v.clone()];
     }
     Some(ev)
-}
-
-/// Classes the program registers with `{ spawn: false }` (they get no starting object): the
-/// compiler erases `register(..)`, so the options are read from the source text.
-fn no_spawn_classes(source: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut at = 0;
-    while let Some(i) = source[at..].find("register(") {
-        let start = at + i + "register(".len();
-        at = start;
-        // The call ends at its matching parenthesis.
-        let mut depth = 1;
-        let mut end = start;
-        for (j, c) in source[start..].char_indices() {
-            match c {
-                '(' => depth += 1,
-                ')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = start + j;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let args = &source[start..end];
-        let compact: String = args.chars().filter(|c| !c.is_whitespace()).collect();
-        if !compact.contains("spawn:false") {
-            continue;
-        }
-        // `{ A, B }, { spawn: false }`: the names of the first object.
-        if args.trim_start().starts_with('{')
-            && let (Some(a), Some(b)) = (args.find('{'), args.find('}'))
-        {
-            for name in args[a + 1..b].split(',') {
-                let name = name.split(':').next().unwrap_or("").trim();
-                if !name.is_empty() {
-                    out.push(name.to_string());
-                }
-            }
-        } else if let Some(name) = args.split(',').next() {
-            out.push(name.trim().to_string());
-        }
-    }
-    out
 }
 
 /// The program's `__uiSignatures()` text (`Name:ID:hook,hook;...`), empty when it has no UI.
@@ -1108,14 +1201,127 @@ mod tests {
 
     // M9-API-805
     #[test]
-    fn spawn_false_is_read_from_the_register_calls() {
-        assert_eq!(
-            no_spawn_classes(
-                "register({ A, B }, { spawn: false });\nregister(C);\nregister(D, {spawn:false});"
-            ),
-            ["A", "B", "D"]
+    fn spawn_false_registers_without_a_starting_object_and_the_order_is_the_call_order() {
+        let (_n, scene, _ui) = start(
+            "class A extends Component {}\n\
+             class B extends Component {}\n\
+             class C extends Component {}\n\
+             register({ B, A }, { spawn: false });\n\
+             register(C);",
         );
-        assert!(no_spawn_classes("register(A);").is_empty());
+        assert!(scene.find("A").is_none() && scene.find("B").is_none());
+        assert!(scene.find("C").is_some());
+        assert_eq!(
+            iron_ts_rt::registered_classes(),
+            [
+                ("B".to_string(), false),
+                ("A".to_string(), false),
+                ("C".to_string(), true)
+            ]
+        );
+    }
+
+    // M9-API-1615
+    #[test]
+    fn a_pending_top_level_await_shows_the_loading_ui_and_holds_back_the_components() {
+        let (mut n, mut scene, mut ui) = start(
+            "class Boss extends Component {
+               onUpdate(dt: number): void {
+                 this.gameObject!.transform.localPosition = new Vector3(5, 0, 0);
+               }
+             }
+             UiRoot.mount(0, <text>loading</text>);
+             await new Promise<void>((r) => setTimeout(r, 50));
+             register(Boss);
+",
+        );
+        // The UI mounted before the `await` is on screen; nothing else has started.
+        assert_eq!(dump(&ui, ROOT), "root(text(text:loading))");
+        assert!(!n.started());
+        assert!(scene.find("Boss").is_none());
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        n.frame(&mut scene, &mut ui, 0.016, 32.0);
+        assert!(!n.started() && scene.find("Boss").is_none());
+        // The timer fires: the module finishes, the class is registered and spawned, and
+        // its first update runs on the following frame.
+        n.frame(&mut scene, &mut ui, 0.016, 60.0);
+        assert!(n.started());
+        let go = scene.find("Boss").expect("spawned after the startup");
+        n.frame(&mut scene, &mut ui, 0.016, 80.0);
+        assert_eq!(scene.local(go).unwrap().position.x, 5.0);
+    }
+
+    // M9-API-1616
+    #[test]
+    fn a_rejected_top_level_await_stops_the_startup_with_the_module_in_the_message() {
+        let (mut n, mut scene, mut ui) = start(
+            "class Boss extends Component {}
+             register(Boss);
+             await Promise.reject(new Error(\"no network\"));
+",
+        );
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        assert!(!n.started());
+        let e = n.startup_error().expect("the startup failed");
+        assert!(e.contains("no network") && e.contains("main"), "{e}");
+        assert!(scene.find("Boss").is_none(), "nothing starts");
+    }
+
+    // M9-API-1617
+    #[test]
+    fn a_scene_naming_a_class_that_never_registered_says_so() {
+        let (mut n, mut scene, mut ui) = start(
+            "class Registered extends Component {}
+             class Forgotten extends Component {}
+             register(Registered);
+",
+        );
+        let text = r#"{"format":"iron.scene","version":1,"name":"s","objects":[{"name":"o","components":[{"type":"Forgotten"}]}]}"#;
+        let warnings = n.with_scene(&mut scene, &mut ui, || {
+            iron_scenes::load_scene(text, false).expect("the scene loads");
+            iron_scenes::take_warnings()
+        });
+        let all = warnings.join(
+            "
+",
+        );
+        assert!(
+            all.contains("Forgotten") && all.contains("never registered"),
+            "{all}"
+        );
+    }
+
+    // M9-API-1618
+    #[test]
+    fn a_reload_into_a_program_that_awaits_restores_the_world_once_it_has_started() {
+        let (mut n, mut scene, mut ui) = start(
+            "class A extends Component {}
+register(A);
+",
+        );
+        assert!(scene.find("A").is_some());
+        n.reload(
+            bundle(
+                "class A extends Component {}
+class B extends Component {}
+register(A);
+                 await new Promise<void>((r) => setTimeout(r, 20));
+register(B);
+",
+            ),
+            &mut scene,
+            &mut ui,
+        )
+        .unwrap();
+        assert!(!n.started() && scene.find("A").is_none() && scene.find("B").is_none());
+        n.frame(&mut scene, &mut ui, 0.016, 16.0);
+        n.frame(&mut scene, &mut ui, 0.016, 40.0);
+        assert!(n.started());
+        assert!(scene.find("A").is_some(), "the saved world came back");
+        assert!(
+            scene.find("B").is_some(),
+            "a class that is new gets its object"
+        );
     }
 
     // M9-API-806

@@ -106,6 +106,67 @@ enum TopItem<'a> {
     Expr(&'a Expression<'a>),
     /// A control-flow statement (`if`, `for`, `while`, `switch`, `try`, a block, ..).
     Stmt(&'a Statement<'a>),
+    /// The start of a module's text in a bundle that has a top-level `await` somewhere
+    /// (`__iron_module(..)`, written by `modules.rs`).
+    Module(ModuleInfo),
+}
+
+/// A module of the bundle, as `modules.rs` described it.
+#[derive(Clone)]
+struct ModuleInfo {
+    /// Its position in the bundle (dependencies first).
+    id: usize,
+    name: String,
+    /// The module has a top-level `await` of its own.
+    tla: bool,
+    /// The modules it imports that may finish late (they have a top-level `await` or import
+    /// such a module), by position.
+    deps: Vec<usize>,
+}
+
+impl ModuleInfo {
+    /// Does evaluating it take more than the synchronous run (it awaits, or waits for a dependency)?
+    fn is_async(&self) -> bool {
+        self.tla || !self.deps.is_empty()
+    }
+}
+
+/// `__iron_module(id, "path", tla, [dep, ..])`, the marker `modules.rs` writes before a module.
+fn module_marker(e: &Expression<'_>) -> Option<ModuleInfo> {
+    let Expression::CallExpression(c) = e else {
+        return None;
+    };
+    let Expression::Identifier(f) = &c.callee else {
+        return None;
+    };
+    if f.name != "__iron_module" {
+        return None;
+    }
+    let num = |a: Option<&Argument<'_>>| match a {
+        Some(Argument::NumericLiteral(n)) => Some(n.value as usize),
+        _ => None,
+    };
+    let name = match c.arguments.get(1) {
+        Some(Argument::StringLiteral(s)) => s.value.to_string(),
+        _ => return None,
+    };
+    let deps = match c.arguments.get(3) {
+        Some(Argument::ArrayExpression(a)) => a
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ArrayExpressionElement::NumericLiteral(n) => Some(n.value as usize),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    Some(ModuleInfo {
+        id: num(c.arguments.first())?,
+        name,
+        tla: num(c.arguments.get(2))? != 0,
+        deps,
+    })
 }
 
 #[derive(Clone)]
@@ -630,7 +691,10 @@ impl<'a> Lowerer<'a> {
                 Statement::ExportDeclaration(e) => self.collect(&e.declaration, true, &mut vars)?,
                 Statement::VariableDeclaration(d) => self.collect_vars(d, false, &mut vars)?,
                 Statement::FunctionDeclaration(f) => self.collect_fn(f, false)?,
-                Statement::ExpressionStatement(es) => vars.push(TopItem::Expr(&es.expression)),
+                Statement::ExpressionStatement(es) => match module_marker(&es.expression) {
+                    Some(info) => vars.push(TopItem::Module(info)),
+                    None => vars.push(TopItem::Expr(&es.expression)),
+                },
                 Statement::ClassDeclaration(c) if c.type_parameters.is_some() => {}
                 Statement::ClassDeclaration(c) => {
                     self.collect_class(c)?;
@@ -695,58 +759,50 @@ impl<'a> Lowerer<'a> {
         self.fstate.push(2);
         self.cur = FnCtx::default();
         self.cur.scopes.push(HashMap::new());
-        // With a top-level `await` the statements below become a closure `(p) => { .. }` that
-        // `__async$number` runs as a coroutine: its environment and promise are the first locals.
-        let tla = if self.top_await {
-            let env = self.new_local(Self::env_ty());
-            let promise = self.named_type("Promise$number")?;
-            let p = self.new_local(promise.clone());
-            Some((env, p, promise))
-        } else {
-            None
-        };
-        let mut init_body = Vec::new();
+        // The top-level code in segments, one per module of a bundle that has a top-level
+        // `await` (modules.rs marks them). A module that awaits, or imports one that does, runs as
+        // an async closure of its own, started where the module's text begins; the modules that
+        // do not wait for anything run in place, so the order is ECMAScript's: a module runs after
+        // the ones it imports have finished, and a sibling that does not depend on a pending
+        // module runs while it waits.
+        let mut segments: Vec<(Option<ModuleInfo>, Vec<TopItem<'a>>)> = vec![(None, Vec::new())];
         for item in vars {
             match item {
-                TopItem::Var(decl, _exported, is_const) => {
-                    self.lower_top_var(decl, is_const, &mut init_body)?
+                TopItem::Module(info) => segments.push((Some(info), Vec::new())),
+                other => segments.last_mut().expect("a segment").1.push(other),
+            }
+        }
+        // Without markers a top-level `await` makes the whole program one module.
+        if segments.len() == 1 && self.top_await {
+            let items = std::mem::take(&mut segments[0].1);
+            segments[0] = (
+                Some(ModuleInfo {
+                    id: 0,
+                    name: "main".to_string(),
+                    tla: true,
+                    deps: Vec::new(),
+                }),
+                items,
+            );
+        }
+        let mut init_body = Vec::new();
+        let mut module_promise: HashMap<usize, GlobalId> = HashMap::new();
+        for (info, items) in segments {
+            match info {
+                Some(info) if info.is_async() => {
+                    self.lower_async_module(&info, items, &mut module_promise, &mut init_body)?
                 }
-                TopItem::Class(c) => self.lower_class_statics(c, &mut init_body)?,
-                TopItem::Expr(e) => {
-                    let v = self.lower_expr(e, None)?;
-                    init_body.push(Stmt::Eval(v));
+                _ => {
+                    for item in items {
+                        self.lower_top_item(item, &mut init_body)?;
+                    }
                 }
-                TopItem::Stmt(st) => self.lower_stmts(std::slice::from_ref(st), &mut init_body)?,
             }
         }
         init_body.push(Stmt::Return(None));
         let ctx = std::mem::take(&mut self.cur);
-        if let Some((env, p, promise)) = tla {
-            let main_id = self.m.funcs.len();
-            self.m.funcs.push(Func {
-                name: "tla$main".into(),
-                exported: false,
-                params: vec![env, p],
-                ret: Ty::Void,
-                locals: ctx.locals,
-                body: init_body,
-            });
-            self.fsig.push((vec![promise.clone()], Some(Ty::Void)));
-            self.fstate.push(2);
-            let clo = mk_expr(
-                ExprKind::MakeClosure(main_id, None),
-                Ty::Fn(Box::new(FnTy {
-                    params: vec![promise],
-                    ret: Ty::Void,
-                })),
-            );
-            let started = self.call_helper("__async$number", vec![clo])?;
-            self.m.funcs[init_id].locals = vec![];
-            self.m.funcs[init_id].body = vec![Stmt::Eval(started), Stmt::Return(None)];
-        } else {
-            self.m.funcs[init_id].locals = ctx.locals;
-            self.m.funcs[init_id].body = init_body;
-        }
+        self.m.funcs[init_id].locals = ctx.locals;
+        self.m.funcs[init_id].body = init_body;
         self.m.init = Some(init_id);
         // 3. Every function body. Lowering can declare more functions (specialisations of
         // generics): go on until none is left. A plain top-level function that nothing lowered so
@@ -1252,6 +1308,91 @@ impl<'a> Lowerer<'a> {
                 format!("{}: {e}", self.loc(oxc_span::GetSpan::span(d).start))
             }
         })
+    }
+
+    fn lower_top_item(&mut self, item: TopItem<'a>, init_body: &mut Vec<Stmt>) -> R<()> {
+        match item {
+            TopItem::Var(decl, _exported, is_const) => {
+                self.lower_top_var(decl, is_const, init_body)
+            }
+            TopItem::Class(c) => self.lower_class_statics(c, init_body),
+            TopItem::Expr(e) => {
+                let v = self.lower_expr(e, None)?;
+                init_body.push(Stmt::Eval(v));
+                Ok(())
+            }
+            TopItem::Stmt(st) => self.lower_stmts(std::slice::from_ref(st), init_body),
+            TopItem::Module(_) => Ok(()),
+        }
+    }
+
+    /// A module that awaits or waits for one that does: its statements become the body of a
+    /// closure `(env, p) => { await dependencies; .. }` that `__async$number` runs as a coroutine.
+    /// The promise is kept in a module variable for the modules that import this one, and
+    /// `__modWatch` reports its start and end (or failure) to the host's startup bookkeeping.
+    fn lower_async_module(
+        &mut self,
+        info: &ModuleInfo,
+        items: Vec<TopItem<'a>>,
+        promises: &mut HashMap<usize, GlobalId>,
+        init_body: &mut Vec<Stmt>,
+    ) -> R<()> {
+        let outer = std::mem::take(&mut self.cur);
+        self.cur.scopes.push(HashMap::new());
+        let env = self.new_local(Self::env_ty());
+        let promise = self.named_type("Promise$number")?;
+        let p = self.new_local(promise.clone());
+        let mut body = Vec::new();
+        // Wait for the dependencies that are still running, in import order.
+        for dep in &info.deps {
+            let Some(&g) = promises.get(dep) else {
+                continue; // an import cycle: the module comes later in the bundle
+            };
+            let q = mk_expr(ExprKind::GlobalVar(g), promise.clone());
+            let wait = self.call_helper("__await$number", vec![q])?;
+            body.push(Stmt::Eval(wait));
+        }
+        let mut result = Ok(());
+        for item in items {
+            result = self.lower_top_item(item, &mut body);
+            if result.is_err() {
+                break;
+            }
+        }
+        body.push(Stmt::Return(None));
+        let ctx = std::mem::replace(&mut self.cur, outer);
+        result?;
+        let main_id = self.m.funcs.len();
+        self.m.funcs.push(Func {
+            name: format!("tla$module{}", info.id),
+            exported: false,
+            params: vec![env, p],
+            ret: Ty::Void,
+            locals: ctx.locals,
+            body,
+        });
+        self.fsig.push((vec![promise.clone()], Some(Ty::Void)));
+        self.fstate.push(2);
+        let clo = mk_expr(
+            ExprKind::MakeClosure(main_id, None),
+            Ty::Fn(Box::new(FnTy {
+                params: vec![promise.clone()],
+                ret: Ty::Void,
+            })),
+        );
+        let started = self.call_helper("__async$number", vec![clo])?;
+        let g = self.m.globals.len();
+        self.m.globals.push(Global {
+            name: format!("__module{}", info.id),
+            ty: promise.clone(),
+        });
+        promises.insert(info.id, g);
+        init_body.push(Stmt::StoreGlobal(g, started));
+        let name = self.str_lit(&info.name);
+        let watched = mk_expr(ExprKind::GlobalVar(g), promise);
+        let watch = self.call_helper("__modWatch", vec![name, watched])?;
+        init_body.push(Stmt::Eval(watch));
+        Ok(())
     }
 
     /// `const [a, b] = pair();` / `const { x, y } = o;` at the top level: every name becomes a

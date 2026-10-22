@@ -1677,6 +1677,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1612 | Integration | List and record results come back flat through `iron_api_result`; enums travel as indexes (unknown ones are the first value); `iron_<Enum>_name` gives a name (`crates/iron_api/tests/records_enums.rs`). |
 | M9-API-1613 | Integration | QuickJS gets arrays, objects, strings, rest arguments and an options object after a parameter (`crates/iron_api/tests/records_enums.rs`). |
 | M9-API-1614 | Integration | A create with `options(after = ..)` reads the parameters after the named one through the shim (`crates/iron_api/tests/records_enums.rs`). |
+| M9-API-1615 | Integration | A program with a pending top-level `await` shows the UI it mounted before it, keeps the registered class unspawned for frames, and spawns it (and runs its first update) once the timer lets the module finish (`crates/iron_app/src/native.rs`). |
+| M9-API-1616 | Integration | A rejected top-level `await` stops the startup: `startup_error()` names the module and the error and nothing spawns (`native.rs`). |
+| M9-API-1617 | Integration | A scene that names a component class no `register` call named gets a warning naming the class and saying it never registered (`native.rs`). |
+| M9-API-1618 | Integration | A hot reload into a program that awaits restores the saved world and spawns the new class once its startup has finished (`native.rs`). |
 | M9-TS-3103 | Unit | Enums, records, lists, rest, docs, `like` and `options_after` become declarations (`tools/iron_ts/src/types_dts.rs`). |
 | M9-TS-3110 | Integration | Every point of every `Shapes` function on edge cases equals the old compiled TypeScript (`RefShapes`) bit for bit, in normal, stress GC and collection-off modes (`tools/iron_ts_tests/tests/all/outlines.rs`, `bench/outlines.ts`). |
 | M9-TS-3111 | Integration | Shape points are `Vector2` objects; object literals pass where points go (`tools/iron_ts_tests/tests/all/outlines.rs`). |
@@ -1771,3 +1775,17 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3199 | Integration | `Light.measureIlluminance` stays pending until a physics step, then equals `Light.illuminanceAt` without colliders (`originals_engine.rs`). |
 | M9-TS-3200 | Integration | A closure given to `Physics.afterNextStep` runs once, after the next step (`originals_engine.rs`). |
 | M9-TS-3201 | Integration | The fog keys of a scene file's `renderSettings` apply (with defaults for missing keys) and are saved, as `scenes.ts` has them (`tools/iron_ts_tests/tests/all/render_native.rs`). |
+| M9-TS-3202 | Integration | An importer of a module with a top-level `await` runs after it has finished: `b1,b2,main sees 7`, equal to bun running the files as ES modules (`tools/iron_ts_tests/tests/all/tla_modules.rs`, cases in `bench/tla_modules_cases.txt`). |
+| M9-TS-3203 | Integration | A sibling that does not import the pending module runs while it waits (`b1,c,b2,main 3`), equal to bun (`tla_modules.rs`). |
+| M9-TS-3204 | Integration | Two awaiting siblings overlap (`slow1,fast1,fast2,slow2,main 11`), equal to bun (`tla_modules.rs`). |
+| M9-TS-3205 | Integration | A chain leaf, mid, main waits all the way up while an unrelated module runs (`leaf1,other,leaf2,mid 3,main 106`), equal to bun (`tla_modules.rs`). |
+| M9-TS-3206 | Integration | Modules without a top-level `await` keep import order and the bundle has no module markers (`tla_modules.rs`). |
+| M9-TS-3207 | Integration | The entry awaits after awaiting imports, equal to bun (`tla_modules.rs`). |
+| M9-TS-3208 | Unit | Module markers are written only when some module has a top-level `await` (`tla_modules.rs`). |
+| M9-TS-3209 | Integration | A rejected top-level `await` fails the startup with the module path and the error text (`tla_modules.rs`). |
+| M9-TS-3210 | Integration | While a module waits the startup is pending and names it (first in start order); it is done after the event loop (`tla_modules.rs`). |
+| M9-TS-3211 | Integration | `register` before and after an `await` records classes in call order; the startup is pending in between (`tools/iron_ts_tests/tests/all/startup.rs`). |
+| M9-TS-3212 | Integration | `register` in `if` / `else`, a function called from a loop, and twice for one class: only the calls that run register, a class keeps its first place (`startup.rs`). |
+| M9-TS-3213 | Integration | `register({ A, B }, { spawn: false })` and `{ spawn }` with a run-time value are recorded per class (`startup.rs`). |
+| M9-TS-3214 | Integration | `register` of an unknown name, of a variable and of an expression are compile errors that say so; a program's own `register` function is left alone (`startup.rs`). |
+| M9-TS-3215 | Integration | Each run of the top level starts with no registrations (`startup.rs`). |

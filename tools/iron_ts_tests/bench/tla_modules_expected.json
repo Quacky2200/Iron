@@ -1,0 +1,8 @@
+{
+ "importer_waits_for_the_awaiting_module": "b1,b2,main sees 7",
+ "a_sibling_runs_while_the_other_is_pending": "b1,c,b2,main 3",
+ "two_awaiting_siblings_overlap": "slow1,fast1,fast2,slow2,main 11",
+ "a_chain_waits_all_the_way_up": "leaf1,other,leaf2,mid 3,main 106",
+ "modules_without_an_await_keep_their_order": "a,b1,main2",
+ "an_await_in_the_entry_after_awaiting_imports": "dep 4,main 5"
+}

@@ -65,9 +65,6 @@ pub struct NativeClass {
     pub contact_hooks: [Option<ContactHook>; 6],
     /// The `@property` table: name, byte offset in the object, type name (`PROPS_<Class>`).
     pub props: &'static [(&'static str, usize, &'static str)],
-    /// Named in a `register(..)` call: the host starts these with an object; the other component
-    /// classes of the program are only made by `addComponent`.
-    pub registered: bool,
 }
 
 /// A `@property` value as the engine sees it (scene files, the editor).
@@ -359,13 +356,18 @@ impl NativeHost {
         self.classes.iter().map(|c| c.name).collect()
     }
 
-    /// The classes a `register(..)` names (the others only exist for `addComponent`): the ones
-    /// that get a starting object.
-    pub fn registered_class_names(&self) -> Vec<&'static str> {
-        self.classes
-            .iter()
-            .filter(|c| c.registered)
-            .map(|c| c.name)
+    /// The classes a `register(..)` call has named so far, in the order of the calls (the others
+    /// only exist for `addComponent`), with their `spawn` option: the ones that get a starting
+    /// object. Call it once the program's startup is done.
+    pub fn registered_class_names(&self) -> Vec<(&'static str, bool)> {
+        registered_classes()
+            .into_iter()
+            .filter_map(|(n, spawn)| {
+                self.classes
+                    .iter()
+                    .find(|c| c.name == n)
+                    .map(|c| (c.name, spawn))
+            })
             .collect()
     }
 
@@ -1019,6 +1021,13 @@ fn register_kind(name: &'static str) {
     iron_kinds::register(iron_kinds::Kind {
         name: name.to_string(),
         create: Box::new(move |object| {
+            // A scene or prefab names its classes; one that no `register(..)` call named cannot
+            // be made from a name (`addComponent(Class)` does not need the registration).
+            if !is_registered(name) {
+                return Err(format!(
+                    "the component class `{name}` was never registered: call `register({name})`"
+                ));
+            }
             let ptr = ts_rt_component_add_gc(object, sid as f64);
             REG.with(|r| {
                 r.borrow()

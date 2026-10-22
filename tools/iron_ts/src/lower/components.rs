@@ -12,6 +12,7 @@
 use super::R;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::*;
+use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType};
 use std::collections::HashMap;
@@ -123,8 +124,77 @@ pub fn wanted(src: &str) -> bool {
     src.contains("extends Component") || src.contains("register(")
 }
 
-/// The program with every top-level `register(Class)` removed (blanked, so lines stay) and the
-/// thunks appended. `None` when there is nothing to register.
+/// One `register(..)` call: where it is, the classes it names and its `spawn` option as source text.
+struct RegisterCall {
+    span: (u32, u32),
+    names: Vec<String>,
+    spawn: Option<String>,
+    error: Option<String>,
+}
+
+/// Finds every `register(..)` call, wherever it is (a branch, a loop, a function, after an `await`).
+struct RegisterFinder<'s> {
+    src: &'s str,
+    calls: Vec<RegisterCall>,
+}
+
+impl<'a> Visit<'a> for RegisterFinder<'_> {
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if let Expression::Identifier(f) = &call.callee
+            && f.name == "register"
+        {
+            let mut names = Vec::new();
+            let mut spawn = None;
+            let mut error = None;
+            match call.arguments.first() {
+                // `register(Player)`
+                Some(Argument::Identifier(arg)) => names.push(arg.name.to_string()),
+                // `register({ Player, Enemy })`: the engine's form, several classes at once.
+                Some(Argument::ObjectExpression(o)) => {
+                    for p in &o.properties {
+                        match p {
+                            ObjectPropertyKind::ObjectProperty(p) => match &p.key {
+                                PropertyKey::StaticIdentifier(k) => names.push(k.name.to_string()),
+                                _ => error = Some("register({ .. }) takes class names".to_string()),
+                            },
+                            _ => error = Some("register({ .. }) takes class names".to_string()),
+                        }
+                    }
+                }
+                _ => {
+                    error = Some(
+                        "register(..) takes a class name: a class is not a value in a compiled program, so `register(cls)` of a variable or an expression is not supported"
+                            .to_string(),
+                    )
+                }
+            }
+            // `{ spawn: false }`: the value is read at run time, so it may be any expression.
+            if let Some(Argument::ObjectExpression(o)) = call.arguments.get(1) {
+                for p in &o.properties {
+                    if let ObjectPropertyKind::ObjectProperty(p) = p
+                        && let PropertyKey::StaticIdentifier(k) = &p.key
+                        && k.name == "spawn"
+                    {
+                        let sp = p.value.span();
+                        spawn = Some(self.src[sp.start as usize..sp.end as usize].to_string());
+                    }
+                }
+            }
+            let sp = call.span;
+            self.calls.push(RegisterCall {
+                span: (sp.start, sp.end),
+                names,
+                spawn,
+                error,
+            });
+        }
+        walk::walk_call_expression(self, call);
+    }
+}
+
+/// The program with every `register(Class)` call turned into a run-time call that records the
+/// class (`__registerClass`, so registration works in a branch, a loop or after an `await`) and
+/// the thunks appended. `None` when there is nothing to register.
 pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option<String>> {
     if !src.contains("register(") {
         return Ok(None);
@@ -135,7 +205,7 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
         return Ok(None); // the real parse reports it
     }
     let mut classes: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
-    let mut registered: Vec<(String, (u32, u32))> = Vec::new();
+    let mut registered: Vec<String> = Vec::new();
     let mut abstract_classes: Vec<String> = Vec::new();
     // (class, method) -> the type its first parameter names.
     let mut param_types: HashMap<(String, String), String> = HashMap::new();
@@ -187,30 +257,31 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
             }
             classes.insert(id.name.to_string(), (parent, methods));
         }
-        if let Statement::ExpressionStatement(es) = st
-            && let Expression::CallExpression(call) = &es.expression
-            && let Expression::Identifier(f) = &call.callee
-            && f.name == "register"
-        {
-            let sp = es.span();
-            match call.arguments.first() {
-                // `register(Player)`
-                Some(Argument::Identifier(arg)) => {
-                    registered.push((arg.name.to_string(), (sp.start, sp.end)));
-                }
-                // `register({ Player, Enemy })`: the engine's form, several classes at once.
-                Some(Argument::ObjectExpression(o)) => {
-                    for p in &o.properties {
-                        let ObjectPropertyKind::ObjectProperty(p) = p else {
-                            return Err("register({ .. }) takes class names".to_string());
-                        };
-                        let PropertyKey::StaticIdentifier(k) = &p.key else {
-                            return Err("register({ .. }) takes class names".to_string());
-                        };
-                        registered.push((k.name.to_string(), (sp.start, sp.end)));
-                    }
-                }
-                _ => return Err("register(..) takes a class name".to_string()),
+    }
+    // A program that declares its own `register` keeps it.
+    let own_register = ret.program.body.iter().any(|st| match st {
+        Statement::FunctionDeclaration(f) => f.id.as_ref().is_some_and(|i| i.name == "register"),
+        Statement::VariableDeclaration(d) => d
+            .declarations
+            .iter()
+            .any(|v| matches!(&v.id, BindingPattern::BindingIdentifier(i) if i.name == "register")),
+        _ => false,
+    });
+    if own_register {
+        return Ok(None);
+    }
+    let mut finder = RegisterFinder {
+        src,
+        calls: Vec::new(),
+    };
+    finder.visit_program(&ret.program);
+    for c in &finder.calls {
+        if let Some(e) = &c.error {
+            return Err(e.clone());
+        }
+        for n in &c.names {
+            if !registered.contains(n) {
+                registered.push(n.clone());
             }
         }
     }
@@ -218,14 +289,41 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
         return Ok(None);
     }
     let mut out = src.to_string();
+    // Calls go back to front so the offsets of the earlier ones hold.
+    let mut calls = finder.calls;
+    calls.sort_by_key(|c| std::cmp::Reverse(c.span.0));
+    for c in &calls {
+        for n in &c.names {
+            if !classes.contains_key(n) {
+                return Err(format!(
+                    "register({n}): `{n}` is not a class of this program"
+                ));
+            }
+        }
+        let spawn = match &c.spawn {
+            Some(e) => format!("(({e}) ? 1 : 0)"),
+            None => "1".to_string(),
+        };
+        // The call may span lines: keep their number.
+        let lines = src[c.span.0 as usize..c.span.1 as usize]
+            .matches("\n")
+            .count();
+        let text = format!(
+            "__registerClass(\"{}\", {spawn}){}",
+            c.names.join(","),
+            "\n".repeat(lines)
+        );
+        out.replace_range(c.span.0 as usize..c.span.1 as usize, &text);
+    }
     let mut tail = String::from("\n");
     // Every other component class is still creatable (`go.addComponent(Turntable)`): it gets
-    // the same thunks and an `iron_noreg_<Class>` marker, so the host does not start it.
+    // the same thunks; whether the host starts a class is decided by the `register(..)` calls
+    // that run.
     let mut unregistered: Vec<String> = Vec::new();
     let mut names: Vec<&String> = classes.keys().collect();
     names.sort();
     for n in names {
-        if abstract_classes.contains(n) || registered.iter().any(|(r, _)| r == n) {
+        if abstract_classes.contains(n) || registered.contains(n) {
             continue;
         }
         let mut cur = classes[n].0.clone();
@@ -242,30 +340,8 @@ pub fn desugar(src: &str, has_game_object: bool, has_collider: bool) -> R<Option
             cur = classes.get(&p).and_then(|c| c.0.clone());
         }
     }
-    let todo: Vec<(String, Option<(u32, u32)>)> = registered
-        .iter()
-        .map(|(n, sp)| (n.clone(), Some(*sp)))
-        .chain(unregistered.iter().map(|n| (n.clone(), None)))
-        .collect();
-    for (name, span) in &todo {
-        let Some(_) = classes.get(name) else {
-            return Err(format!(
-                "register({name}): `{name}` is not a class of this program"
-            ));
-        };
-        match span {
-            // Blank the call, keeping its newlines.
-            Some((a, b)) => {
-                let blank: String = src[*a as usize..*b as usize]
-                    .chars()
-                    .map(|c| if c == '\n' { '\n' } else { ' ' })
-                    .collect();
-                out.replace_range(*a as usize..*b as usize, &blank);
-            }
-            None => {
-                tail += &format!("export function iron_noreg_{name}(): number {{ return 0; }}\n");
-            }
-        }
+    let todo: Vec<&String> = registered.iter().chain(unregistered.iter()).collect();
+    for name in todo {
         let go = if has_game_object {
             ", go: GameObject | null"
         } else {

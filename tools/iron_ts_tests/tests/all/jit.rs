@@ -206,7 +206,7 @@ fn the_runtime_symbol_table_lists_its_exports() {
 // M9-TS-2009
 //
 // A component class that no `register(..)` names is still in the class table (so
-// `addComponent(Class)` finds it) and is marked as not registered.
+// `addComponent(Class)` finds it) and is not among the classes the register calls named.
 #[test]
 fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
     let _serial = iron_ts_tests::serial();
@@ -223,22 +223,17 @@ fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
         },
     )
     .unwrap();
-    let meta: Vec<_> = game
-        .class_meta()
-        .iter()
-        .map(|c| (c.name.as_str(), c.registered))
-        .collect();
-    assert_eq!(meta, [("Started", true), ("OnlyAdded", false)]);
+    let meta: Vec<_> = game.class_meta().iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(meta, ["Started", "OnlyAdded"]);
     let mut scene = Scene::new();
     let _scope = iron_scene::api::enter(&mut scene);
     game.init().unwrap();
-    let flags: Vec<_> = game
-        .classes()
-        .unwrap()
-        .iter()
-        .map(|c| c.registered)
-        .collect();
-    assert_eq!(flags, [true, false]);
+    // Which classes are registered is what the `register(..)` calls did when they ran.
+    assert_eq!(
+        iron_ts_rt::registered_classes(),
+        [("Started".to_string(), true)]
+    );
+    assert!(game.classes().is_ok());
 }
 
 // M9-TS-2874

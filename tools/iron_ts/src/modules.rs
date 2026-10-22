@@ -264,6 +264,8 @@ struct Module {
     /// Statements whose text is appended after the module (the entry's re-exports are rewritten).
     export_from_entry: Vec<(String, String)>,
     tsx: bool,
+    /// The module has an `await` (or `for await`) at its top level.
+    tla: bool,
     /// Name given to an anonymous default expression.
     default_name: Option<String>,
 }
@@ -527,6 +529,44 @@ impl Graph {
         };
         let mut out = String::new();
         let mut starts: Vec<(usize, String)> = Vec::new();
+        // With a top-level `await` somewhere, every file starts with a marker the lowering reads
+        // (`__iron_module(position, "path", own await, [late dependencies])`): a module that
+        // awaits, or imports one that does, finishes late, and the modules that import it wait.
+        let pos_of: HashMap<usize, usize> = self
+            .order
+            .iter()
+            .enumerate()
+            .map(|(p, &mi)| (mi, p))
+            .collect();
+        let mut late = vec![false; self.order.len()];
+        let mut late_deps: Vec<Vec<usize>> = vec![Vec::new(); self.order.len()];
+        for (p, &mi) in self.order.iter().enumerate() {
+            let m = &self.mods[mi];
+            let specs =
+                m.imports
+                    .iter()
+                    .map(|i| i.spec.as_str())
+                    .chain(m.exports.iter().filter_map(|e| match &e.src {
+                        ExportSrc::From(s, _) | ExportSrc::Star(s) => Some(s.as_str()),
+                        _ => None,
+                    }));
+            for spec in specs {
+                if is_library(spec) || (is_relative(spec) && spec.ends_with(".css")) {
+                    continue;
+                }
+                // A dependency later in the order is an import cycle: it counts as running.
+                if let Ok(t) = self.target(mi, spec)
+                    && let Some(&dp) = pos_of.get(&t)
+                    && dp < p
+                    && late[dp]
+                    && !late_deps[p].contains(&dp)
+                {
+                    late_deps[p].push(dp);
+                }
+            }
+            late[p] = m.tla || !late_deps[p].is_empty();
+        }
+        let any_tla = self.mods.iter().any(|m| m.tla);
         let tsx = self.mods.iter().any(|m| m.tsx);
         let mut css = self.css.clone();
         css.dedup();
@@ -594,6 +634,16 @@ impl Graph {
                         final_of(&r, &renames)
                     ));
                 }
+            }
+            if any_tla {
+                let p = pos_of[&mi];
+                let deps: Vec<String> = late_deps[p].iter().map(|d| d.to_string()).collect();
+                out.push_str(&format!(
+                    "__iron_module({p}, {:?}, {}, [{}]); ",
+                    m.path,
+                    u8::from(m.tla),
+                    deps.join(", ")
+                ));
             }
             out.push_str(&format!("// ---- {}\n", m.path));
             starts.push((out.matches('\n').count(), m.path.clone()));
@@ -866,7 +916,11 @@ fn parse_module(path: &str, src: String, entry: bool) -> Result<Module, String> 
         }
     }
     // Identifier uses and declarations.
-    let mut v = Occs { occs: Vec::new() };
+    let mut v = Occs {
+        occs: Vec::new(),
+        fn_depth: 0,
+        tla: false,
+    };
     for stmt in &ret.program.body {
         match stmt {
             Statement::ImportDeclaration(_) => {}
@@ -891,6 +945,7 @@ fn parse_module(path: &str, src: String, entry: bool) -> Result<Module, String> 
         }
     }
     m.occs = v.occs;
+    m.tla = v.tla;
     m.src = src;
     Ok(m)
 }
@@ -919,9 +974,39 @@ fn declared_names(d: &Declaration) -> Vec<String> {
 
 struct Occs {
     occs: Vec<Occ>,
+    /// Inside a function (an `await` there belongs to it, not to the module).
+    fn_depth: usize,
+    /// An `await` or `for await` at the top level of the module.
+    tla: bool,
 }
 
 impl<'a> Visit<'a> for Occs {
+    fn visit_function(&mut self, it: &Function<'a>, flags: oxc_syntax::scope::ScopeFlags) {
+        self.fn_depth += 1;
+        walk::walk_function(self, it, flags);
+        self.fn_depth -= 1;
+    }
+
+    fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+        self.fn_depth += 1;
+        walk::walk_arrow_function_expression(self, it);
+        self.fn_depth -= 1;
+    }
+
+    fn visit_await_expression(&mut self, it: &AwaitExpression<'a>) {
+        if self.fn_depth == 0 {
+            self.tla = true;
+        }
+        walk::walk_await_expression(self, it);
+    }
+
+    fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
+        if it.r#await && self.fn_depth == 0 {
+            self.tla = true;
+        }
+        walk::walk_for_of_statement(self, it);
+    }
+
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
         self.occs.push(Occ {
             start: it.span.start,

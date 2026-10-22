@@ -756,12 +756,23 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   after the other into a tuple (`await_all_tuple`). Not the same as JavaScript only in this: a promise that rejects while an earlier
   one is pending is reported as unhandled until its turn comes. `Promise.all` of mixed promises that is not awaited on the spot is
   still a compile error (no promise class stands for a tuple); `Promise<Promise<T>>` too.
-- **Top-level `await`** (the entry module and the modules it imports): the module's top-level code becomes the body of an implicit
-  async function (`tla$main`, run by `__async$number`), started by `ts_init`. Module variables are still globals, so functions
-  declared anywhere see them as they are set. **Ordering:** the code before the first `await` runs inside `ts_init` (the statements,
-  the initialisers, the classes' static fields in source order); everything after it continues when the awaited promise settles, i.e.
-  when the host drains microtasks and timers (`ts_rt_run_loop`). A host function called in between sees the variables initialised so
-  far (and zero / null for the later ones). An error thrown after an await is an unhandled promise rejection (logged once).
+- **Top-level `await`** (the entry module and the modules it imports) follows ECMAScript's module evaluation order. The module graph
+  is still one program (`modules.rs` bundles it, dependencies first), but when some module awaits at its top level every file starts
+  with a marker `__iron_module(position, "path", own await, [late dependencies])` (written on the `// ---- path` line, so line numbers
+  hold) and the lowering splits the top-level code into one segment per module (`lower_async_module` in `lower/mod.rs`). A module that
+  has a top-level `await`, or imports a module that finishes late, runs as an async closure of its own (`tla$module<n>`, run by
+  `__async$number`, started where the module's text begins); its promise is a module variable. Such a closure first awaits the promises
+  of the late modules it imports, in import order, and then runs its statements. The other modules run in place, so a sibling that
+  does not import the pending module runs while it waits (`a, b1, c, b2, main`, as in bun, `M9-TS-3202..3207`). A program with one
+  file and a top-level `await` is a single module called `main`. Module variables are still globals, so functions declared anywhere
+  see them as they are set. The code before a module's first `await` runs inside `ts_init`; the rest continues when the awaited
+  promise settles, i.e. when the host drains microtasks and timers (`ts_rt_run_loop`).
+  **Startup state.** Each late module reports to the runtime (`__modWatch`, the prelude in `asyncs.rs`; `startup.rs` in `iron_ts_rt`):
+  `startup_state()` is `Done`, `Pending(modules still evaluating, in start order)` or `Failed { module, message }`. A rejected
+  top-level `await` fails the module and every module that imports it; the first failure is the one kept and it is not also logged as
+  an unhandled rejection (the host reports it, see "Components for the host"). **Not the same as ECMAScript:** an import cycle through
+  a late module treats the cyclic edge as already finished; an importer waits for its late dependencies in import order, not all at
+  once (the result is the same unless two of them reject).
 - **Declared types.** `gen_components.py` marks the handle-valued properties of generated components (`Texture`, `Mesh`, `Material`,
   `Sprite`, `GameObject`) `#[nullable]` (`Texture | null`, as in the QuickJS declarations) and the name-valued ones (`Light.type`,
   `LineRenderer2D.fillRule`, `TextMesh.alignment`, ..) `#[ts_type]`; `QualitySettings.shadows`, `softShadowQuality` and
@@ -806,8 +817,11 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 - **Facade chunks need the thing they are written for.** A `//# when a|b&c` header triggers on `a`, or on `b` and `c` both; the
   window helpers (`.on(`, `.emit(`, `.request(`, `broadcast`, ..) need the program to name `Window`, so a class with its own `on` or
   `emit` method does not pull them in (`M9-TS-3197`).
-- **`register(Class)`** stays a statement at the top level of a module: the host starts the registered classes before any code
-  runs, so a registration that depends on a condition cannot be made lazily (the error says so).
+- **`register(Class)`** is an ordinary run-time call (`__registerClass`): it records the class when it runs, so it works inside `if`,
+  loops and functions and after an `await`; the order of the registrations is the order of the calls. The argument must name a class
+  (`register(Player)`, `register({ A, B })`): a class is not a value in a compiled program, so `register(cls)` of a variable is a compile
+  error. `{ spawn: false }` is read at run time. The host starts the registered classes (and loads `iron.startScene`) only after every
+  module has finished evaluating.
 
 ## The original example sources ([lower/tagged.rs](../tools/iron_ts/src/lower/tagged.rs), [lower/accessors.rs](../tools/iron_ts/src/lower/accessors.rs))
 
@@ -958,7 +972,7 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
 - **Limits:** `then(f, g)` needs both callbacks to return the same kind of result; `Promise.allSettled` results are `PromiseSettledResult<T>` objects with all of `status`/`value`/`reason`;
   `for await` works over arrays and other sync iterables (each element is awaited; it is rewritten to a
   `for..of` plus `await`); async generators, `Symbol.asyncIterator` and `AsyncGenerator` are compile errors;
-  top-level `await` is a compile error (`put the code in an async function main()`); `Promise.reject(e)` is
+  top-level `await` works (see its section); `Promise.reject(e)` is
   `Promise<number>` unless written `Promise.reject<T>(e)`; `resolve()` with no value only for
   `Promise<void>` / `Promise<number>`; `resolve(v)` takes a value, not a promise; `setTimeout` takes no
   extra arguments; `Promise<Promise<T>>` is a compile error (write `Promise<T>`); `Promise.all([a, b])`
@@ -1100,8 +1114,9 @@ To add a test module:
 
 `class Player extends Component { onUpdate(dt: number) { .. } }` plus `register(Player)` at the top level
 ([components.rs](../tools/iron_ts/src/lower/components.rs)). `Component` is a prelude class with `id` and, when
-the manifest has the `GameObject` handle, `gameObject: GameObject | null`. `register(X)` is blanked out of the
-program and exported functions are appended: `iron_new_X(id, gameObject)` and one `iron_hook_X_<hook>(this, dt)`
+the manifest has the `GameObject` handle, `gameObject: GameObject | null`. `register(X)` becomes a run-time call
+(`__registerClass("X", spawn)`, wherever it is written) and exported functions are appended for every component class of the
+program, registered or not: `iron_new_X(id, gameObject)` and one `iron_hook_X_<hook>(this, dt)`
 for each hook the class or an ancestor defines (`onAwake`, `onStart`, `onUpdate`, `onLateUpdate`,
 `onFixedUpdate`, `onPreRender`, `onDestroy`; all take `dt` so the host calls them alike).
 
@@ -1113,6 +1128,17 @@ all `onUpdate`, then all `onLateUpdate`), `fixed_update`, `pre_render`, `destroy
 (`Fault { id, class, hook }`). Same rules as `iron_script::ComponentHost`. Not built: `@property` save/load
 through `PROPS_<Class>` in the host, `getComponent`/`addComponent`, a message for the fault, `this.transform`.
 Tests `M9-TS-556..561`.
+
+**Startup (the host's side of `register` and top-level `await`).** Which classes are registered is not in the class table: it is
+what the `register(..)` calls did when they ran, in call order, with their `spawn` option (`iron_ts_rt::registered_classes()`,
+`NativeHost::registered_class_names()`; `Game::init` clears it before the top level runs, so a reload registers again). The
+host waits for `iron_ts_rt::startup_state()` to be `Done` before it spawns the registered classes, loads `iron.startScene` or
+runs a component hook (`Native::advance_startup` in `crates/iron_app/src/native.rs`); frames, timers, microtasks and the UI the
+top level mounted run while it waits, so `createRoot().render(<Loading />)` before the first `await` shows and updates. A module
+still pending after ten seconds is named in the log (`warn`); a `Failed` state is logged once ("the game did not start: module `x`
+failed while evaluating: ..") and the game never starts. A hot reload into a program that is still starting puts the saved world
+back when its startup finishes. A scene or prefab that names a component class no `register` call named gets a warning that names
+it (`go.addComponent(Class)` needs no registration). Tests `M9-TS-3211..3215`, `M9-API-1615..1618`.
 
 Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`) take a prelude `Collision` (`other`, `collider`,
 `speed`, `sensor`); `NativeClass.contact_hooks` holds their thunks and `NativeHost::dispatch_physics` / `dispatch_contacts` call them

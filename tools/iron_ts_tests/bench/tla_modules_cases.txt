@@ -1,0 +1,123 @@
+Cases for tests/all/tla_modules.rs: a program of several modules, each case split at `//## name`
+and each file at `//@ path`. The entry is `main.ts`, which exports `result()`. The test bundles the
+files with iron_ts, runs the module code and the event loop in the normal, stress GC and
+collection-off modes and compares with bun, which runs the files as real ES modules
+(`bun bench/gen_tla_modules_expected.ts`).
+//## importer_waits_for_the_awaiting_module
+//@ log.ts
+export const log: string[] = [];
+//@ b.ts
+import { log } from "./log";
+log.push("b1");
+export const x: number = await Promise.resolve(7);
+log.push("b2");
+//@ main.ts
+import { log } from "./log";
+import { x } from "./b";
+log.push("main sees " + x);
+export function result(): string {
+  return log.join(",");
+}
+//## a_sibling_runs_while_the_other_is_pending
+//@ log.ts
+export const log: string[] = [];
+//@ b.ts
+import { log } from "./log";
+log.push("b1");
+await new Promise<void>((r) => setTimeout(r, 5));
+log.push("b2");
+export const b = 1;
+//@ c.ts
+import { log } from "./log";
+log.push("c");
+export const c = 2;
+//@ main.ts
+import { log } from "./log";
+import { b } from "./b";
+import { c } from "./c";
+log.push("main " + (b + c));
+export function result(): string {
+  return log.join(",");
+}
+//## two_awaiting_siblings_overlap
+//@ log.ts
+export const log: string[] = [];
+//@ slow.ts
+import { log } from "./log";
+log.push("slow1");
+await new Promise<void>((r) => setTimeout(r, 10));
+log.push("slow2");
+export const slow = 10;
+//@ fast.ts
+import { log } from "./log";
+log.push("fast1");
+await new Promise<void>((r) => setTimeout(r, 1));
+log.push("fast2");
+export const fast = 1;
+//@ main.ts
+import { log } from "./log";
+import { slow } from "./slow";
+import { fast } from "./fast";
+log.push("main " + (slow + fast));
+export function result(): string {
+  return log.join(",");
+}
+//## a_chain_waits_all_the_way_up
+//@ log.ts
+export const log: string[] = [];
+//@ leaf.ts
+import { log } from "./log";
+log.push("leaf1");
+export const value: number = await Promise.resolve(3);
+log.push("leaf2");
+//@ mid.ts
+import { log } from "./log";
+import { value } from "./leaf";
+log.push("mid " + value);
+export const doubled = value * 2;
+//@ other.ts
+import { log } from "./log";
+log.push("other");
+export const other = 100;
+//@ main.ts
+import { log } from "./log";
+import { doubled } from "./mid";
+import { other } from "./other";
+log.push("main " + (doubled + other));
+export function result(): string {
+  return log.join(",");
+}
+//## modules_without_an_await_keep_their_order
+//@ log.ts
+export const log: string[] = [];
+//@ a.ts
+import { log } from "./log";
+log.push("a");
+export const a = 1;
+//@ b.ts
+import { log } from "./log";
+import { a } from "./a";
+log.push("b" + a);
+export const b = a + 1;
+//@ main.ts
+import { log } from "./log";
+import { b } from "./b";
+log.push("main" + b);
+export function result(): string {
+  return log.join(",");
+}
+//## an_await_in_the_entry_after_awaiting_imports
+//@ log.ts
+export const log: string[] = [];
+//@ dep.ts
+import { log } from "./log";
+export const v: number = await Promise.resolve(4);
+log.push("dep " + v);
+//@ main.ts
+import { log } from "./log";
+import { v } from "./dep";
+const w: number = await Promise.resolve(v + 1);
+log.push("main " + w);
+export function result(): string {
+  return log.join(",");
+}
