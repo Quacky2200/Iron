@@ -4,7 +4,7 @@
 // headings, tables, code, task lists and images. gen-docs.ts bundles the files at build time.
 import "./reader.css";
 
-import { input, PlayerPrefs } from "@iron/engine";
+import { Application, input, PlayerPrefs } from "@iron/engine";
 import {
   createRoot,
   Image,
@@ -16,11 +16,15 @@ import {
 } from "@iron/react";
 import { Fragment, memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DOCS, IMAGES } from "./docs.gen.ts";
+import { DOCS, IMAGES, ROOT } from "./docs.gen.ts";
 import { highlight } from "./highlight.ts";
 import { type Block, type Doc, type Inline, parse, plainText } from "./markdown.ts";
 
-const HOME = DOCS["docs/README.md"] !== undefined ? "docs/README.md" : Object.keys(DOCS)[0]!;
+/** The first page: Iron's `docs/README.md`, else the root's README, else the first doc. */
+const HOME =
+  ["docs/README.md", "README.md", "readme.md", "index.md"].find((p) => DOCS[p] !== undefined) ??
+  Object.keys(DOCS).sort()[0] ??
+  "";
 const IMAGE_FILES = new Set(IMAGES);
 const VIDEO = /\.(mp4|webm|mov|mkv|avi|m4v|ogv)$/i;
 
@@ -146,7 +150,6 @@ interface Ctx {
   path: string;
   follow: (href: string) => void;
   hover: (href: string | null) => void;
-  headings: Map<string, IronElement>;
 }
 
 function inlines(list: Inline[], ctx: Ctx): ReactNode[] {
@@ -246,16 +249,22 @@ function Blocks({ blocks, ctx }: { blocks: Block[]; ctx: Ctx }) {
   return <>{blocks.map((b, i) => <BlockView key={i} block={b} ctx={ctx} />)}</>;
 }
 
-function BlockView({ block, ctx, joined = false }: { block: Block; ctx: Ctx; joined?: boolean }): ReactNode {
+function BlockView({
+  block,
+  ctx,
+  joined = false,
+  mark = null,
+}: {
+  block: Block;
+  ctx: Ctx;
+  joined?: boolean;
+  /** Marks one of a list's items (`mark.item`). */
+  mark?: Mark | null;
+}): ReactNode {
   switch (block.kind) {
     case "heading":
       return (
-        <Text
-          className={`h h${block.level}`}
-          ref={(el: IronElement | null) => {
-            if (el) ctx.headings.set(block.id, el);
-          }}
-        >
+        <Text className={`h h${block.level}`}>
           {inlines(block.children, ctx)}
         </Text>
       );
@@ -289,20 +298,23 @@ function BlockView({ block, ctx, joined = false }: { block: Block; ctx: Ctx; joi
     case "list":
       return (
         <box className={joined ? "list joined" : "list"}>
-          {block.items.map((item, i) => (
-            <box key={i} className="item">
-              {item.checked === null ? (
-                <Text className="marker">{block.ordered ? `${block.start + i}.` : "•"}</Text>
-              ) : (
-                <box className="marker task">
-                  <box className={item.checked ? "check done" : "check"}>{item.checked ? <box className="tick" /> : null}</box>
+          {block.items.map((item, i) => {
+            const view = (
+              <box key={i} className="item">
+                {item.checked === null ? (
+                  <Text className="marker">{block.ordered ? `${block.start + i}.` : "•"}</Text>
+                ) : (
+                  <box className="marker task">
+                    <box className={item.checked ? "check done" : "check"}>{item.checked ? <box className="tick" /> : null}</box>
+                  </box>
+                )}
+                <box className="item-body">
+                  <Blocks blocks={item.children} ctx={ctx} />
                 </box>
-              )}
-              <box className="item-body">
-                <Blocks blocks={item.children} ctx={ctx} />
               </box>
-            </box>
-          ))}
+            );
+            return i === mark?.item ? <Marked key={i} mark={mark}>{view}</Marked> : view;
+          })}
         </box>
       );
     case "table": {
@@ -369,7 +381,7 @@ function folderMarkdown(path: string, folder: Folder): string {
       return `| [${name}](${name}) | ${title(p).replaceAll("|", "\\|")} |`;
     }),
   ];
-  return `# ${path || "Iron"}/\n\n| Name | Title |\n|---|---|\n${rows.join("\n")}\n`;
+  return `# ${path || ROOT.name}/\n\n| Name | Title |\n|---|---|\n${rows.join("\n")}\n`;
 }
 
 const cache = new Map<string, Doc>();
@@ -467,22 +479,81 @@ function chunksOf(rows: Row[], need: number): Row[][] {
   return out;
 }
 
+/** The row a jump went to: highlighted, then fading, and the element scrolled to. */
+interface Mark {
+  /** Its index among the chunk's rows, -1 for none. */
+  at: number;
+  /** For a list, the item marked instead of the whole row (-1 for the row). */
+  item: number;
+  faded: boolean;
+  ref: { current: IronElement | null };
+}
+
+/** The highlighted box around a jump's target. */
+function Marked({ mark, children }: { mark: Mark; children: ReactNode }) {
+  return (
+    <box
+      className={mark.faded ? "mark faded" : "mark"}
+      ref={(el: IronElement | null) => {
+        mark.ref.current = el;
+      }}
+    >
+      {children}
+    </box>
+  );
+}
+
 // Each chunk is its own box and memoized component: mounting the next one lays out and
 // renders only it, not everything above it again.
-const Chunk = memo(function Chunk({ rows, ctx }: { rows: Row[]; ctx: Ctx }) {
+const Chunk = memo(function Chunk({ rows, ctx, mark }: { rows: Row[]; ctx: Ctx; mark: Mark | null }) {
   return (
     <box className="chunk">
-      {rows.map((row, i) => (
-        <BlockView key={i} block={row.block} ctx={ctx} joined={row.joined} />
-      ))}
+      {rows.map((row, i) => {
+        const marked = i === mark?.at ? mark : null;
+        if (marked && marked.item >= 0) {
+          return <BlockView key={i} block={row.block} ctx={ctx} joined={row.joined} mark={marked} />;
+        }
+        const view = <BlockView key={i} block={row.block} ctx={ctx} joined={row.joined} />;
+        return marked ? (
+          <Marked key={i} mark={marked}>
+            {view}
+          </Marked>
+        ) : (
+          view
+        );
+      })}
     </box>
   );
 });
 
-/** The page, mounted progressively, a chunk a frame; the first `need` rows come at once. */
-function Page({ doc, need, ctx }: { doc: Doc; need: number; ctx: Ctx }) {
+/** The page, mounted progressively, a chunk a frame; the first `need` rows come at once.
+ * `mark` is where a jump went. */
+function Page({
+  doc,
+  need,
+  mark,
+  faded,
+  markRef,
+  ctx,
+}: {
+  doc: Doc;
+  need: number;
+  mark: Target;
+  faded: boolean;
+  markRef: Mark["ref"];
+  ctx: Ctx;
+}) {
   const rows = rowsOf(doc);
   const chunks = useMemo(() => chunksOf(rows, need), [rows, need]);
+  // Only the chunk holding the mark gets one, so the others stay memoized.
+  const marks = useMemo(() => {
+    let start = 0;
+    return chunks.map((chunk) => {
+      const at = mark.row - start;
+      start += chunk.length;
+      return at >= 0 && at < chunk.length ? { at, item: mark.item, faded, ref: markRef } : null;
+    });
+  }, [chunks, mark, faded, markRef]);
   const [count, setCount] = useState(1);
   useEffect(() => {
     if (count >= chunks.length) return;
@@ -493,10 +564,41 @@ function Page({ doc, need, ctx }: { doc: Doc; need: number; ctx: Ctx }) {
   return (
     <>
       {chunks.slice(0, count).map((chunk, i) => (
-        <Chunk key={i} rows={chunk} ctx={ctx} />
+        <Chunk key={i} rows={chunk} ctx={ctx} mark={marks[i]!} />
       ))}
     </>
   );
+}
+
+/** Where a jump goes: a row, and in a list row one item (-1 for the whole row). */
+interface Target {
+  row: number;
+  item: number;
+}
+
+const NOWHERE: Target = { row: -1, item: -1 };
+
+/** The target an anchor names: a heading's id, or `L<n>` (a 1-based source line, as on
+ * GitHub; `L<n>-L<m>` goes to the first) for the block or list item holding that line. */
+function targetOf(doc: Doc, anchor: string): Target {
+  const rows = rowsOf(doc);
+  const line = /^L(\d+)(?:-L?\d+)?$/.exec(anchor);
+  if (!line) {
+    return { row: rows.findIndex((r) => r.block.kind === "heading" && r.block.id === anchor), item: -1 };
+  }
+  const want = parseInt(line[1]!, 10) - 1;
+  let found = NOWHERE;
+  rows.forEach((r, row) => {
+    const b = r.block;
+    if (b.kind !== "list") {
+      if (b.line !== undefined && b.line <= want) found = { row, item: -1 };
+      return;
+    }
+    b.items.forEach((it, item) => {
+      if (it.line <= want) found = { row, item };
+    });
+  });
+  return found;
 }
 
 /** How many rows must be mounted to show `entry` right: through its anchor, or all of
@@ -504,15 +606,48 @@ function Page({ doc, need, ctx }: { doc: Doc; need: number; ctx: Ctx }) {
 function rowsNeeded(doc: Doc, entry: Entry): number {
   const rows = rowsOf(doc);
   if (entry.anchor) {
-    const at = rows.findIndex((r) => r.block.kind === "heading" && r.block.id === entry.anchor);
+    const at = targetOf(doc, entry.anchor).row;
     return at < 0 ? rows.length : at;
   }
   return entry.scroll > 0 ? rows.length : 0;
 }
 
+/** `--goto "<doc>#<anchor>"` and `--root <folder>` from the command line (after `--`). */
+function commandLine(): { goto: string | null; root: string | null } {
+  const args = Application.args;
+  const value = (name: string) => {
+    const i = args.findIndex((a) => a === name || a.startsWith(`${name}=`));
+    if (i < 0) return null;
+    return args[i]!.includes("=") ? args[i]!.slice(name.length + 1) : (args[i + 1] ?? null);
+  };
+  return { goto: value("--goto"), root: value("--root") };
+}
+
+const clean = (path: string) => path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "");
+
+/** The first history entry and any message about the command line. */
+function startAt(): { entry: Entry; status: string } {
+  const { goto, root } = commandLine();
+  let status = "";
+  // Runtime folders need Iron's file access (M6); the folder is chosen when building.
+  if (root && !(ROOT.path && (ROOT.path === clean(root) || ROOT.path.endsWith(`/${clean(root)}`)))) {
+    status = `--root ${root}: this build reads ${ROOT.path ?? "Iron's docs"}. Rebuild with MD_READER_ROOT=${root} bun run build`;
+  }
+  if (!goto) return { entry: { path: HOME, anchor: null, scroll: 0 }, status };
+  const hash = goto.indexOf("#");
+  const path = clean(hash < 0 ? goto : goto.slice(0, hash));
+  const anchor = hash < 0 ? null : goto.slice(hash + 1) || null;
+  if (path && DOCS[path] === undefined && !isFolder(path)) {
+    return { entry: { path: HOME, anchor: null, scroll: 0 }, status: `--goto: no doc ${path} in ${ROOT.name}` };
+  }
+  return { entry: { path: path || HOME, anchor, scroll: 0 }, status };
+}
+
+const START = startAt();
+
 function App() {
   const [history, setHistory] = useState<{ entries: Entry[]; index: number }>({
-    entries: [{ path: HOME, anchor: null, scroll: 0 }],
+    entries: [START.entry],
     index: 0,
   });
   const [sidebar, setSidebar] = useState(true);
@@ -523,13 +658,15 @@ function App() {
   };
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(["docs"]));
   const [hovered, setHovered] = useState<string | null>(null);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(START.status);
   const content = useRef<IronElement>(null);
   const scrollTop = useRef(0);
-  const headings = useRef(new Map<string, IronElement>());
+  const markRef = useRef<IronElement | null>(null);
+  const [faded, setFaded] = useState(false);
 
   const entry = history.entries[history.index]!;
   const doc = docAt(entry.path);
+  const mark = useMemo(() => (entry.anchor ? targetOf(doc, entry.anchor) : NOWHERE), [doc, entry.anchor]);
 
   const go = useCallback((path: string, anchor: string | null) => {
     setStatus("");
@@ -581,15 +718,19 @@ function App() {
   useEffect(() => {
     const el = content.current;
     if (!el) return;
-    const target = entry.anchor ? headings.current.get(entry.anchor) : undefined;
+    const target = entry.anchor ? markRef.current : null;
     if (target) {
       // Scrolling into view goes the shortest way; from the bottom, that puts the
-      // heading at the top.
+      // target at the top.
       el.scrollTo(0, 1e9);
       target.scrollIntoView();
     } else {
       el.scrollTo(0, entry.scroll);
+      if (entry.anchor) setStatus((s) => s || `No #${entry.anchor} in ${entry.path}`);
     }
+    // The target is highlighted, then fades.
+    setFaded(false);
+    const fade = setTimeout(() => setFaded(true), 1200);
     // Reveal the open file in the tree.
     const parts = entry.path ? entry.path.split("/") : [];
     const folders = isFolder(entry.path) ? parts : parts.slice(0, -1);
@@ -597,6 +738,7 @@ function App() {
       const want = folders.map((_, i) => folders.slice(0, i + 1).join("/"));
       return want.every((f) => o.has(f)) ? o : new Set([...o, ...want]);
     });
+    return () => clearTimeout(fade);
   }, [entry]);
 
   // Alt+Left / Alt+Right, like a browser; Ctrl+B toggles the file tree.
@@ -610,10 +752,10 @@ function App() {
     });
   }, [step]);
 
-  const ctx = useMemo<Ctx>(() => {
-    headings.current = new Map();
-    return { path: base(entry.path), follow, hover: setHovered, headings: headings.current };
-  }, [entry.path, follow]);
+  const ctx = useMemo<Ctx>(
+    () => ({ path: base(entry.path), follow, hover: setHovered }),
+    [entry.path, follow],
+  );
 
   const toggle = (path: string) =>
     setOpen((o) => {
@@ -627,7 +769,7 @@ function App() {
   const footer = hovered ? (isExternal(hovered) ? hovered : resolve(base(entry.path), hovered)) : status;
   // The path bar, like Explorer's: every folder in it opens that folder.
   const parts = entry.path ? entry.path.split("/") : [];
-  const crumbs = [{ name: "Iron", path: "" }, ...parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join("/") }))];
+  const crumbs = [{ name: ROOT.name, path: "" }, ...parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join("/") }))];
 
   return (
     <box
@@ -680,7 +822,7 @@ function App() {
             );
           })}
         </Text>
-        <Text className="doc-title">{isFolder(entry.path) ? `${entry.path || "Iron"}/` : title(entry.path)}</Text>
+        <Text className="doc-title">{isFolder(entry.path) ? `${entry.path || ROOT.name}/` : title(entry.path)}</Text>
         <box className="button" onClick={toggleTheme}>
           <ThemeIcon light={light} />
         </box>
@@ -699,7 +841,7 @@ function App() {
           }}
         >
           <box key={entry.path} className="page">
-            <Page doc={doc} need={rowsNeeded(doc, entry)} ctx={ctx} />
+            <Page doc={doc} need={rowsNeeded(doc, entry)} mark={mark} faded={faded} markRef={markRef} ctx={ctx} />
           </box>
         </box>
       </box>

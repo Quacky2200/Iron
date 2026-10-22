@@ -11,7 +11,12 @@ export type Inline =
 
 export type Align = "left" | "center" | "right" | null;
 
-export type Block =
+export type Block = BlockKind & {
+  /** The source line it starts on (0-based), for `#L<n>` links. */
+  line?: number;
+};
+
+type BlockKind =
   | { kind: "heading"; level: number; id: string; children: Inline[] }
   | { kind: "paragraph"; children: Inline[] }
   | { kind: "code"; lang: string; text: string }
@@ -21,6 +26,8 @@ export type Block =
   | { kind: "rule" };
 
 export interface ListItem {
+  /** The source line the item starts on (0-based). */
+  line: number;
   /** `[ ]` / `[x]` task items; `null` for plain ones. */
   checked: boolean | null;
   children: Block[];
@@ -86,10 +93,19 @@ type HeadingId = (level: number, children: Inline[]) => string;
 const startsBlock = (line: string) =>
   FENCE.test(line) || HEADING.test(line) || RULE.test(line) || QUOTE.test(line) || BULLET.test(line);
 
-function parseBlocks(lines: string[], heading: HeadingId): Block[] {
+/** Blocks from `lines`, which start at source line `base`. */
+function parseBlocks(lines: string[], heading: HeadingId, base = 0): Block[] {
   const out: Block[] = [];
   let i = 0;
+  // Blocks pushed since `at` started at source line `from`.
+  let at = 0;
+  let from = 0;
+  const locate = () => {
+    for (; at < out.length; at++) out[at]!.line ??= base + from;
+    from = i;
+  };
   while (i < lines.length) {
+    locate();
     const line = lines[i]!;
     if (!line.trim()) {
       i++;
@@ -130,15 +146,16 @@ function parseBlocks(lines: string[], heading: HeadingId): Block[] {
     }
     if (QUOTE.test(line)) {
       const body: string[] = [];
+      const first = i;
       while (i < lines.length && lines[i]!.trim() && (QUOTE.test(lines[i]!) || !startsBlock(lines[i]!))) {
         body.push(lines[i]!.replace(QUOTE, ""));
         i++;
       }
-      out.push({ kind: "quote", children: parseBlocks(body, heading) });
+      out.push({ kind: "quote", children: parseBlocks(body, heading, base + first) });
       continue;
     }
     if (BULLET.test(line)) {
-      i = parseList(lines, i, heading, out);
+      i = parseList(lines, i, heading, out, base);
       continue;
     }
     if (line.includes("|") && i + 1 < lines.length && TABLE_RULE.test(lines[i + 1]!)) {
@@ -166,6 +183,7 @@ function parseBlocks(lines: string[], heading: HeadingId): Block[] {
     }
     out.push({ kind: "paragraph", children: parseInline(joinLines(body)) });
   }
+  locate();
   return out;
 }
 
@@ -182,7 +200,7 @@ function joinLines(lines: string[]): string {
     .replace(/\u0000 /g, "\u0000");
 }
 
-function parseList(lines: string[], start: number, heading: HeadingId, out: Block[]): number {
+function parseList(lines: string[], start: number, heading: HeadingId, out: Block[], base: number): number {
   const first = BULLET.exec(lines[start]!)!;
   const ordered = /\d/.test(first[2]!);
   const indent = first[1]!.length;
@@ -193,6 +211,7 @@ function parseList(lines: string[], start: number, heading: HeadingId, out: Bloc
     if (!m || m[1]!.length !== indent || /\d/.test(m[2]!) !== ordered) break;
     // The item's content column: continuation lines indented this far belong to it.
     const column = m[0].length;
+    const itemLine = i;
     const body = [lines[i]!.slice(column)];
     i++;
     while (i < lines.length) {
@@ -217,7 +236,7 @@ function parseList(lines: string[], start: number, heading: HeadingId, out: Bloc
       checked = task[1] !== " ";
       body[0] = body[0]!.slice(task[0].length);
     }
-    items.push({ checked, children: parseBlocks(body, heading) });
+    items.push({ line: base + itemLine, checked, children: parseBlocks(body, heading, base + itemLine) });
     // Blank lines between items.
     while (i < lines.length && !lines[i]!.trim()) {
       const next = lines[nextFilled(lines, i)];

@@ -46,18 +46,35 @@ JPEG and SVG; GIFs show their caption until Iron decodes them), lists (nested, n
 lists), quotes, GitHub tables, rules and code blocks. Code is highlighted for TypeScript /
 JavaScript, Rust, WGSL, CSS, JSON, TOML and shell, in Atom's One Dark or One Light colours.
 
-## Command-line arguments (planned)
+## Command-line arguments
 
-Iron doesn't pass extra arguments to game scripts yet, so these are planned, not available
-(see [TODO.md](TODO.md)):
+Arguments after `--` go to the reader (Iron passes them to scripts as `Application.args`):
 
 ```bash
-cargo run --release -p iron_app -- examples/md-reader --root ../my-project/docs --goto "guide/setup.md#install"
+cargo run --release -p iron_app -- examples/md-reader -- --goto "docs/ui-tree.md#images"
 ```
 
-- `--root <folder>`: the folder to read instead of Iron's own docs.
-- `--goto "<doc>#<heading-id>"`: open a doc at a heading. The doc path is relative to the root.
-  `#L42` jumps to line 42 instead.
+- `--goto "<doc>#<anchor>"`: open a doc, relative to the root (`docs/css.md`, or a folder for its
+  listing), at an anchor:
+  - `#<heading-id>`: a heading, by its GitHub-style id (lower case, punctuation dropped, spaces
+    as dashes: `## 6.2 fetch` is `#62-fetch`).
+  - `#L<line>`: the block or list item holding that source line (1-based, as on GitHub;
+    `#L10-L20` goes to line 10).
+
+  The target is highlighted, then fades. Links inside the docs take the same anchors
+  (`[see](ui-tree.md#L300)`). An unknown doc or anchor is reported in the status bar.
+- `--root <folder>`: which docs to read. The docs are bundled when the reader is built, so the
+  folder is chosen then, with `MD_READER_ROOT` (or `bun gen-docs.ts --root <folder>`):
+
+  ```bash
+  cd examples/md-reader && MD_READER_ROOT=../../../my-project/docs bun run build
+  ```
+
+  In PowerShell: `$env:MD_READER_ROOT = "..\..\..\my-project\docs"; bun run build`. Every
+  `.md` under the folder is included (not `node_modules`, `.git`, `dist`, `target`), with paths
+  relative to it, and the path bar starts with the folder's name. Passing `--root` when running
+  only checks it against the bundled folder and says how to rebuild if they differ: reading a
+  folder while running needs Iron's file access for scripts, which isn't there yet.
 
 ## Files
 

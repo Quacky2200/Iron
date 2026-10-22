@@ -1689,7 +1689,11 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
     `scrollIntoView`) before sizing the UI to the window, so the first frame laid out at 1x1.
     It now sizes the UI at the start of each frame too
   - [ ] Scrolling lays out again on every wheel tick: move the scrolled subtree's rects instead
-  - [ ] Extra command-line arguments passed to scripts (`iron <game> -- --root x --goto y`)
+  - [x] Extra command-line arguments passed to scripts: `iron <game> -- ...` is `Application.args`
+    (`M5-APP-11`)
+  - [ ] Reading a folder outside the game while running (the reader's `--root`): M6 plans only
+    the `game` and `data` roots, so this needs a decision (a read-only folder the user names on
+    the command line?)
 - [ ] GIF images in `iron_ui`: `image` elements and `background-image` only decode PNG, JPEG and
   SVG today (`The image format Gif is not supported`). Decode GIFs (the `image` crate's `gif`
   feature in `iron_render`), then play animated ones with their frame timings (frames in the

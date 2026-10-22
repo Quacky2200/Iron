@@ -19,6 +19,7 @@
   --odd: #12161d;
   --edge: #3a4558;
   --check: #5a6578;
+  --mark: rgba(255, 196, 64, 0.11);
   --code-bg: #1b212c;
   --code: #f0b47a;
   --mono: Consolas, "Cascadia Mono", "Courier New", monospace;
@@ -52,6 +53,7 @@
   --odd: #f8fafc;
   --edge: #d0d7de;
   --check: #8c959f;
+  --mark: rgba(255, 196, 0, 0.28);
   --code-bg: #f6f8fa;
   --code: #b35900;
   /* Atom's One Light theme (MIT). */
@@ -215,6 +217,17 @@
   flex-direction: column;
   flex-shrink: 0;
 }
+
+/* The block a jump went to (`#heading`, `#L42`): highlighted, then fading. */
+.mark {
+  flex-direction: column;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background-color: var(--mark);
+  transition: background-color 1.5s;
+}
+.mark.faded { background-color: transparent; }
 
 /* Markdown */
 .h {

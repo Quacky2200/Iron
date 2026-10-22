@@ -34,13 +34,14 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
   Markdown, diff, PowerShell (its own rules rather than shell's), SQL
 - [ ] Fuzzy search for files in the current folder (and below), keyboard-first (Ctrl+P)
 - [ ] Find in page (Ctrl+F) with matches highlighted, next / previous, a match count
-- [ ] Command-line arguments (needs Iron to pass extra arguments to scripts, and runtime file
-  reading for `--root`, M6 Script IO):
-  - [ ] `--root <folder>`: the folder of docs to read instead of Iron's own
-  - [ ] `--goto "<doc>#<heading-id>"`: open a doc at a heading; the doc path is relative to the
-    root. `#L<line>` jumps to a line (and highlights it)
-  - [ ] The same `doc#fragment` links from outside, as a browser takes a URL with a fragment:
-    jump there and highlight the target briefly
+- [x] Command-line arguments after `--` (Iron passes them as `Application.args`, `M5-APP-11`):
+  - [x] `--goto "<doc>#<anchor>"`: a doc relative to the root, at a heading id or `#L<line>`
+    (the block or list item holding the line); the target is highlighted, then fades. Links in
+    the docs take the same anchors
+  - [~] `--root <folder>`: chosen when building (`MD_READER_ROOT` / `gen-docs.ts --root`); at
+    run time `--root` is only checked against the bundled folder. Reading a folder while running
+    needs a decision on Iron's file access (M6 plans only the game and data folders)
+  - [ ] Ranges: `#L10-L20` highlights the whole range (today it goes to line 10)
 - [ ] An "on this page" outline, selectable / copyable text and code
 - [ ] Open external links in the system browser (needs an app shell op)
 - [ ] GIF images (Iron decodes PNG, JPEG and SVG today; see the root TODO.md)
