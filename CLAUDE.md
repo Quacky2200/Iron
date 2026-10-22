@@ -122,6 +122,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
     read just that code and the affected doc pages, not the whole codebase.
 - **Charm font:** never commit it. It lives in `/Charm/` with local copies under `examples/*/assets/fonts/`. It's excluded via `.git/info/exclude` and `dist/` is ignored. Check `git status` before committing.
 - **Code style:** match the surrounding code. Comments are short and say why. Tests are named after behaviour and tagged with their `TESTS.md` ID in a comment.
+- **Write clippy-clean code the first time:** write Rust the way `cargo clippy --workspace --all-targets -- -D warnings` wants it (no needless clones, borrows or returns, `is_empty()` over `len() == 0`, `&str`/`&[T]` parameters, `Default` where `new()` takes nothing, no `too_many_arguments`: group them in a struct, and so on) instead of fixing lints after the fact. Declare things once and in the right place (one interface, type or table that others reuse) rather than repeating them. Never silence a lint with `#[allow]` unless a short comment says why.
 - **CSS:** prefer standard CSS over s&box's custom extensions. The CSS parity backlog is TODO.md "M3d".
 - **Known differences from browsers** (filter order, mask modes, linear-light fades, defaults, gaps)
   are listed in `docs/differences.md`. Check it before touching those areas, and keep it current.
