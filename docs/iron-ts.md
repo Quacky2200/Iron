@@ -981,11 +981,11 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
   that read the file and reject with an `Error` (missing file, not a scene, path outside the game folder);
   `Texture.whenLoaded()` / `Model.whenLoaded()` resolve when loaded and reject when loading failed;
   `Task.delay` / `delaySeconds` / `frame`; `Window.request` / `ask`; `Light.measureIlluminance`. The
-  native forms (`loadSceneAsync$n`, `onSceneLoaded`, `onPrefabLoaded`, `onSceneLoadFailed`) are what the
-  facade promises are written over.
+  native forms (`loadSceneAsync$n`, `requestJson$n`, `askJson$n`, ..: `#[promise]` functions with resolve and reject callbacks) are what the
+  compiler's promise functions are written over.
 - **Window handlers.** `answer(name, async (..) => ..)` and an `async` raw `onRequest` handler are
   allowed: the compiler finds the handler's promise type (`async_variant` in `facade.rs`) and uses the
-  `..P` facade, which replies when the promise resolves and fails the asker's promise with the error's
+  `..P` function (`lower/messages.rs`), which replies when the promise resolves and fails the asker's promise with the error's
   message (`Window.replyError`) when it rejects.
 - **Host contract.** After every call into script the host calls `ts_rt_microtasks_run()`; once per frame it
   calls `ts_rt_timers_advance(now_ms)` with the game clock (a paused game pauses its timers);
@@ -1168,8 +1168,10 @@ failed while evaluating: ..") and the game never starts. A hot reload into a pro
 back when its startup finishes. A scene or prefab that names a component class no `register` call named gets a warning that names
 it (`go.addComponent(Class)` needs no registration). Tests `M9-TS-3211..3215`, `M9-API-1615..1618`.
 
-Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`) take a prelude `Collision` (`other`, `collider`,
-`speed`, `sensor`); `NativeClass.contact_hooks` holds their thunks and `NativeHost::dispatch_physics` / `dispatch_contacts` call them
+Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`, and the `..2D` forms) take a `Collision` (`gameObject`,
+`collider`, `relativeSpeed`, `speed`, `sensor`; a trigger hook that names `Collider` gets the other side, `{ gameObject }`): records
+of the physics manifest (`iron_physics_api`, `Collision2D` an alias) that the thunk builds from what the host passes;
+`NativeClass.contact_hooks` holds their thunks and `NativeHost::dispatch_physics` / `dispatch_contacts` call them
 (design: `docs/research/iron-native-physics.md` section 8). Tests `M9-TS-1000..1003`.
 
 The `GameObject` properties that are arrays or not in the engine API are done by the compiler: `go.children` and `GameObject.roots`
@@ -1255,7 +1257,7 @@ when `cond` is false.
 - **Lazy state, node methods.** `useState(() => init)` and `useState(read)` (an arrow, or a top-level function) compute the first
   value once (`useStateLazy`); state may be an array of numbers. `ref.current?.focus()`, `.blur()`, `.scrollTo(x, y)` queue a
   `NodeCommand` that the host applies to its tree (`iron_ts_ui::take_node_commands`); `useRef<T>(null)` is `useRef<T | null>(null)`.
-- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, the UI tables (`iron_ui::tables`, written by `ui_dts.rs`) and the hand-written `engine_ts.d.ts`; see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
+- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, the UI tables (`iron_ui::tables`, written by `ui_dts.rs`) and the compiler built-ins (`builtins.rs`); see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
 - **Ambient types** (the prelude and the `.d.ts` are both written by [ui_dts.rs](../tools/iron_ts/src/ui_dts.rs) from the tables of
   `crates/iron_ui/src/tables`; the hook helpers stay in [ui.ts](../tools/iron_ts/src/lower/ui.ts)):
   `ReactNode`, `React.ReactNode`, `IronElement`, `IronKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,

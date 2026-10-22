@@ -5,7 +5,7 @@ own UI, and talking between windows. The example is `examples/windows`. Design a
 `docs/research/iron-windows.md` (plan: `iron-windows-plan.md`). Code: `crates/iron_engine_api/src/window.rs` (the API and its
 state), `crates/iron_platform/src/windows.rs` and the runner (`docs/platform.md`, "Multi-window"),
 `crates/iron_app/src/windows.rs` (trees, surfaces, routing, drawing) and `native_render.rs` (`sync_window_roots`),
-`js/engine/src/window.ts` (types for QuickJS games), `tools/iron_ts/src/lower/engine_ts.d.ts` (types for compiled games).
+`js/engine/src/window.ts` (types for QuickJS games), `tools/iron_ts/src/builtins.rs` (the typed members for compiled games) and `tools/iron_ts/src/lower/messages.rs` (their compiled form).
 
 **Honest status.** The winit runner has not been run on a real display. Everything was checked with the fake platform
 (`FakePlatform`), unit tests of the pure parts (`plan`, `place`, `WindowTree`, the message queues) and `--screenshot` runs, where

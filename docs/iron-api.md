@@ -592,7 +592,7 @@ handles `null`. Methods of one class with the same script name (`#[js_name]`) ar
 5. The old `__iron_op("scene.*" / "physics.*" / "audio.*")` paths and these native globals both exist: a game bundle should use the
    native globals **or** the `@iron/engine` classes, not hand ids between them.
 
-- **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/iron_ts/TODO.md` and `tools/iron_ts/src/lower/facade.ts`. `Camera.main()` is a native static (`CameraRef::main`).
+- **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/iron_ts/TODO.md` and `tools/iron_ts/src/lower/facade.rs`. `Camera.main()` is a native static (`CameraRef::main`).
 ### Native games in `iron_app` (compiled in process)
 
 `iron_app` runs a game two ways. A folder with `dist/game.irbundle` (or a `.irbundle` / `.ts` / `.tsx` path) is a **native
@@ -693,8 +693,10 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
 - **`Camera`**: `fog` (show the fog, on), `exposure` / `sceneBrightness` (EV100, read back from the GPU a frame or two late, NaN
   before: the app calls `camera::set_exposure`), `resetExposure()`, `aperture` / `shutterSpeed` / `iso` and `physicalExposure`.
 - **`Light`**: `volumetricIntensity`, `spotShape` (`cone` | `pyramid`), `aspectRatio`; `Light.illuminanceAt(point, normal?)` and
-  `Light.measureIlluminance(point, normal?)` (a facade over `Light.count()` / `at(i)` and `Physics.raycast`; the promise resolves
-  after the next physics step, through `Physics.afterNextStep`, as the TypeScript tier does). **`FogVolume`** is a component (`size`, `density`, `color`,
+  `Light.measureIlluminance(point, normal?)` (native, `crates/iron_render_api/src/light_meter.rs`: the sum over every light, the
+  shadowed form casting a physics ray to each, so `iron_render_api` depends on `iron_physics_api`; `measureIlluminance` is a
+  `#[promise]` that resolves after the next physics step, through `Physics.afterNextStep`, as the TypeScript tier does;
+  `M9-API-1645`). **`FogVolume`** is a component (`size`, `density`, `color`,
   `blendDistance`, `shape`).
 - **`QualitySettings`** also has `autoExposure`, `volumetricFog`, `hdr`, `additionalLights`, `additionalLightShadows` (per level in
   `project.json`'s `quality.levels`; Low has no light shafts) and `softShadowQuality` `medium`. `RenderStats` (meshes, culled
@@ -850,9 +852,10 @@ or `[time, value]` pairs: QuickJS reads both, compiled code converts `number[][]
 parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string` (a result) and `strings` (a parameter). `tools/iron_ts/src/types_dts.rs` reads them
 (`enum` becomes `type X = ..` and `namespace X { name, parse }`, `record` an `interface`).
 
-**Guard tests** (`tools/iron_build/tests/generated_dts.rs`): `M9-TS-3100` a ratchet over the hand-written `.d.ts` files and
-`facade.ts` chunks (they may only shrink), `M9-TS-3101` no name is declared by both the manifests and a hand-written file beyond a
-listed set, `M9-TS-3102` the generated `types/iron.d.ts` equals a blessed API snapshot
+**Guard tests** (`tools/iron_build/tests/generated_dts.rs`): `M9-TS-3100` no hand-written `.d.ts` file under `tools/` (strict:
+`engine_ts.d.ts` and `facade.ts` are gone; what the compiler itself declares is the table `tools/iron_ts/src/builtins.rs`),
+`M9-TS-3101` the built-ins declare no engine name again and every class they add members to exists, `M9-TS-3102` the generated
+`types/iron.d.ts` equals a blessed API snapshot
 (`tools/iron_build/tests/golden/api_surface.txt`; `IRON_BLESS=1 cargo test -p iron_build --test generated_dts` rewrites it, and the
 diff shows exactly which declarations changed).
 

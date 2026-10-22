@@ -760,4 +760,38 @@ facade kind are gone. The mechanism, which turned out to be small because the co
 
 ## 13. Resume point
 
-See "Resume point" at the end of `tools/iron_ts/TODO.md`: state at `8d011e9` (engine_ts.d.ts 258 lines, facade.ts 435 lines in 14 chunks), what remains and how to verify.
+See "Resume point" at the end of `tools/iron_ts/TODO.md`: what remains and how to verify.
+
+## 14. Progress, the last chunks and phases 3 and 5 (2026-10-22)
+
+`facade.ts` (4 chunks) and `engine_ts.d.ts` (149 lines) are deleted; the ratchet `M9-TS-3100` is strict (no `.d.ts` under `tools/`).
+
+- **`Random.pick<T>`**: a lowerer intrinsic (`facade.rs` `lower_random_pick`, `items[Random.rangeInt(0, length)]`, no draw for an
+  empty list), as section 3.3 planned.
+- **Light meter**: native (`crates/iron_render_api/src/light_meter.rs`, the same sums in the same order); `measureIlluminance` is a
+  `#[promise]` over `Physics.afterNextStep`. `iron_render_api` depends on `iron_physics_api` for the rays (no cycle). `Option<V>`
+  parameters may be `#[optional]` now (left out: null in both backends); the generated promise wrappers take value parameters.
+- **Window messaging (F-JSON, the engine side)**: `iron_engine_api::window` writes the event envelope (`emitJson`,
+  `Window.emitAllJson`, `event_text`), keeps the pending requests and settles their promises (`#[promise] requestJson` / `askJson`:
+  reply, refusal at once, timeout, closed window, `no answer for`), and names the empty-name error (`Window.eventNameError`, thrown by
+  the typed calls; natives cannot throw). The QuickJS prelude uses the same natives (its reply table is gone). What stays in the
+  compiler is the static type: `lower/messages.rs` writes, per program, the functions that stringify / parse the payload and one
+  promise function per reply type; the compiled reply table (`__win_pending`, `WINDOW_REPLIES`) and `REQUEST_TEMPLATE` /
+  `ASK_TEMPLATE` are gone. Generic glue written as TypeScript text by Rust follows the P2d pattern (subscriptions, promises): the
+  lowerer instantiates generic functions, so the typed parts are TypeScript the compiler writes, not IR.
+- **`Collision` / `Collider` / `Collision2D`**: records of the physics manifest (`records(..)`, `aliases(Collision2D = Collision)`);
+  the contact thunks build the record (the compiled-only `Collision.other` is gone; `collider` is `{ gameObject }` of the other side,
+  it was a number). A record alias sets no QuickJS global.
+- **Phase 3, the built-ins table** (`tools/iron_ts/src/builtins.rs`): one entry per declaration the compiler gives (`Place::Top`,
+  `Static`, `Member`, `Ctor`; raw signatures, decision 1), each with the code that lowers it named next to it: timers (now also
+  `setInterval`, `clearInterval`, `queueMicrotask`), `register`, `property`, `ComponentClass`, `ClassOf`, the `GameObject` options,
+  constructor and generic members, the typed `Window` members, `Random.pick`, `NumberList`, the wider `MeshRenderer.mesh` /
+  `AudioSource.playOneShot`, `Color`'s optional alpha. `Component` is written from `components::HOOKS` and `hook_param` (shared with
+  the thunks). `<Value>Like` types are written for the value classes the declarations name. Not done: a `Builtin::lowering` tag
+  checked by a test that reaches it (each entry names its code in a comment instead).
+- **Phase 5**: `parse_supplement`, `ENGINE_TS_DTS`, `generate_default` and `ENGINE_AMBIENT` are gone (`types_dts::generate` takes the
+  manifests only); `M9-TS-3101` now checks that the built-ins declare no engine name again and that every class they add to exists.
+  Left in Rust as TypeScript text (outside the ratchet, which covers files): `ui_dts.rs`'s React types and `console`, the compiler
+  preludes (`prelude.rs`, `components.rs`, `messages.rs`).
+- **Later, separate steps**: P4b (the UI hook helpers of `ui.ts` as IR lowering) and `temporal.ts` in Rust (decision 2) are not
+  started; both stay on the `ALLOWED_TS` list of `M9-TS-3100` with their reasons.

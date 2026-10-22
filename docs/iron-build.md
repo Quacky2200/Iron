@@ -274,19 +274,23 @@ The file (`iron_ts::types_dts`, one deterministic file, about 3000 lines) is, in
    property: name, TypeScript type, doc; `iron_ui` tests that `apply_style` applies each and that nothing it applies is missing), the
    event interfaces and `IronProps` (attributes and `on*` props with their event types), `JSX.IntrinsicElements` and the
    `Text`/`Span`/`Input`/`TextArea`/`Image`/`List`/`Dialog` components (from the element table), the hooks and `createRoot` (raw
-   TypeScript signatures kept as data next to the tables), `IronElement` (the `UiNode` class of the `Ui` manifest), `console`, and the
-   engine names `FullScreenMode`, `Gamepad`, `Collision` that wait for `#[iron_enum]` / `#[iron_record]` (plan phase 2). The same
-   tables write the compiled side (`StyleValue`, `StyleEntry`, the `UiEvent` class whose fields read the event slots of
+   TypeScript signatures kept as data next to the tables), `IronElement` (the `UiNode` class of the `Ui` manifest) and `console`. The
+   same tables write the compiled side (`StyleValue`, `StyleEntry`, the `UiEvent` class whose fields read the event slots of
    `UiEvent::script_args`) and decide which event type an `on*` prop listens to (`onChange` is `input`, `onFocus` is `focusin`).
-   No `.d.ts` or Python file is written by hand for the UI: the guard `M9-TS-3100` (`tools/iron_build/tests/generated_dts.rs`) lists
-   the remaining hand-written files with a reason each.
-3. **`engine_ts.d.ts`** (hand-written, `tools/iron_ts/src/lower/`): the TypeScript-side shapes the manifests do not carry, which the
-   compiler expands (`facade.ts`, `engine_objs.rs`, `components.rs`): `Component`, `register`, `property`, the `GameObject` members
-   (`addComponent`, `getComponent`, `findObjectOfType`, `instantiate`, ...), `RenderSettings.skybox`, `Camera.main`, texture options,
-   `Screen.resolutions`, `input.gamepads()`, `AnimatorController`, the particle and cloth property shapes, ... An `interface N { .. }`
-   block replaces the native instance members of the same names, a `declare namespace N { .. }` block the native statics, and
-   `//@ctor N(params)` lines the constructors (`$OPTIONS` stands for the class's property keys). Names it declares are exported by
-   `@iron/engine` too.
+3. **The compiler built-ins** (`tools/iron_ts/src/builtins.rs`): one entry per declaration the compiler itself gives a program, with
+   its signature and doc and the code that lowers it named next to it: the `Component` base class (written from the hooks the host
+   calls, `components::HOOKS` / `hook_param`), `register`, `property`, `ComponentClass`, `ClassOf`, the timers (`setTimeout`,
+   `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask`), `GameObjectOptions` / `InstantiateObjectOptions` and the
+   generic `GameObject` members (`addComponent`, `getComponent`, `findObjectOfType`, `instantiate`, `createPrimitive`, ...), the typed
+   window messages (`postMessage<T>`, `request<R>`, `emit` / `on` / `ask<R>` / `answer`, `Window.broadcast` / `emitAll`),
+   `Random.pick<T>`, `NumberList`, and the members whose script type is wider than the native one (`MeshRenderer.mesh` takes a
+   primitive's name, `AudioSource.playOneShot` a path: `coerce_ext` calls the handle's `fromString`; `Color`'s optional alpha). A
+   member goes into the generated class or namespace of its owner and replaces a native member of the same name (a static of a
+   namespace is a `function` / `const`); a constructor replaces the generated ones. The `<Value>Like` types (`Vector3Like`, ...)
+   are written for the value classes the declarations name.
+   No `.d.ts`, no `include_str!` of one and no Python file under `tools/` is written by hand: the guard `M9-TS-3100`
+   (`tools/iron_build/tests/generated_dts.rs`) is strict, and `M9-TS-3101` checks that no built-in declares an engine name again and
+   that every class a built-in member belongs to exists.
 4. **The three modules** (`@iron/engine`, `@iron/react`, `react`) as re-exports.
 
 `iron-build build` passes the file to `tsc` itself: it writes `dist/.tsc/iron.d.ts` and `dist/.tsc/tsconfig.json` (which extends the
