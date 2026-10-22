@@ -132,11 +132,6 @@ function __xm_Window_answer0<R>(self: Window, name: string, f: () => R): number 
 }
 // `ask<R>(name, payload?, timeoutMs?)` is written per reply type by facade.rs.
 
-//# when Random.pick
-function __xt_Random_pick<T>(items: T[]): T | undefined {
-  return items.length > 0 ? items[Random.rangeInt(0, items.length)] : undefined;
-}
-
 //# when illuminanceAt|measureIlluminance
 function __light_lux(l: Light, point: Vector3, normal: Vector3 | undefined): number {
   if (!l.gameObject.activeInHierarchy) return 0;

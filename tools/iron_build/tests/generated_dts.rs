@@ -51,7 +51,7 @@ const ALLOWED_D_TS: &[(&str, &str)] = &[(
 
 /// Hand-written TypeScript compiled into games, each with why it is not Rust yet. The facade may
 /// only lose `//# when` chunks.
-const MAX_FACADE_CHUNKS: usize = 4;
+const MAX_FACADE_CHUNKS: usize = 3;
 const ALLOWED_TS: &[(&str, &str)] = &[
     (
         "tools/iron_ts/src/lower/facade.ts",
@@ -194,7 +194,6 @@ const KNOWN_OVERLAPS: &[&str] = &[
     "AudioSource",
     "MeshRenderer",
     "GameObject",
-    "Random",
 ];
 
 // M9-TS-3101

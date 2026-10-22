@@ -267,6 +267,15 @@ export function flatMeshesAndPicks(): string {
   return `${a}|${m.vertexCount}|${m.triangleCount}|${p !== undefined && p >= 4 && p <= 6}|${Random.pick(none) === undefined}`;
 }
 
+export function picksOfEveryKind(): string {
+  const word = Random.pick(["a", "b"]);
+  const flag = Random.pick([true, true]);
+  const box = Random.pick([{ n: 7 }]);
+  const noBox: { n: number }[] = [];
+  const noFlag: boolean[] = [];
+  return `${word === "a" || word === "b"}|${flag}|${box !== undefined ? box.n : -1}|${Random.pick(noBox) === undefined}|${Random.pick(noFlag) === undefined}`;
+}
+
 export function lightMeter(): string {
   const sun = new GameObject("Sun").addComponent(Light, { type: "directional", intensity: 3 });
   const lamp = new GameObject("Lamp", { position: new Vector3(0, 2, 0) }).addComponent(Light, { type: "point", intensity: 4 * Math.PI * 4, range: 20 });

@@ -134,10 +134,6 @@ interface MeshRenderer {
   /** A mesh, or the name of a primitive. */
   mesh: Mesh | PrimitiveType;
 }
-declare namespace Random {
-  /** A random item from a list (`undefined` when empty). */
-  function pick<T>(items: readonly T[]): T | undefined;
-}
 declare namespace Light {
   /** A light meter: how much light falls on `point` from every light (lux in physical light units), facing `normal` if given. Shadows are not counted. */
   function illuminanceAt(point: Vector3Like, normal?: Vector3Like): number;

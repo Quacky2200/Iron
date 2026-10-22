@@ -1074,10 +1074,21 @@ impl Decls {
                 if hidden.is_some_and(|h| h.contains(member_name(decl_line(m)))) {
                     continue;
                 }
+                // A compiler built-in of the same name replaces it.
+                if m.starts_with("static ")
+                    && crate::builtins::statics(name)
+                        .any(|b| crate::builtins::member_name(b.sig) == member_name(m))
+                {
+                    continue;
+                }
                 if let Some(d) = self.docs.get(&(name.clone(), m.clone())) {
                     s += &jsdoc(d, &format!("{indent}  "));
                 }
                 s += &format!("{indent}  {m}\n");
+            }
+            for b in crate::builtins::statics(name) {
+                s += &jsdoc(b.doc, &format!("{indent}  "));
+                s += &format!("{indent}  static {}\n", b.sig);
             }
             // `Class.create({ .. })` sets the keys as properties, like `new Class({ .. })`.
             if self.creates.get(name).is_some_and(|c| c.is_empty())
@@ -1124,10 +1135,23 @@ impl Decls {
                 {
                     continue;
                 }
+                if crate::builtins::statics(name)
+                    .any(|b| crate::builtins::member_name(b.sig) == member_name(m))
+                {
+                    continue;
+                }
                 if let Some(d) = self.docs.get(&(name.clone(), m.clone())) {
                     s += &jsdoc(d, &format!("{indent}  "));
                 }
                 s += &format!("{indent}  {m}\n");
+            }
+            // A class of the same name has them as statics already.
+            for b in crate::builtins::statics(name).filter(|_| !self.classes.contains_key(name)) {
+                s += &jsdoc(b.doc, &format!("{indent}  "));
+                s += &format!(
+                    "{indent}  {}\n",
+                    crate::builtins::as_namespace_member(b.sig)
+                );
             }
             s += &format!("{indent}}}\n");
         }

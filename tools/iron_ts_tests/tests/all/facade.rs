@@ -241,6 +241,14 @@ fn flat_meshes_take_typed_arrays_and_random_pick_chooses_an_item() {
     });
 }
 
+// M9-TS-3359
+#[test]
+fn random_pick_is_a_built_in_over_lists_of_any_type() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_fac_picksOfEveryKind()), "true|true|7|true|true");
+    });
+}
+
 // M9-TS-2882
 #[test]
 fn the_light_meter_sums_what_each_light_sheds_on_a_point() {

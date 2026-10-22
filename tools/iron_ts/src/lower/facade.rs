@@ -2,7 +2,7 @@
 //! engine API (`facade.ts`, chunks appended to a program that names them) or expanded at compile
 //! time (windows, `createPrimitive`).
 
-use super::expr::mk;
+use super::expr::{mk, num};
 use super::*;
 
 const FACADE_TS: &str = include_str!("facade.ts");
@@ -840,6 +840,9 @@ impl<'a> Lowerer<'a> {
         if class == "GameObject" && m == "createPrimitive" {
             return self.lower_create_primitive(c);
         }
+        if class == "Random" && m == "pick" {
+            return self.lower_random_pick(c);
+        }
         if m.ends_with("$n") {
             return Ok(None);
         }
@@ -892,6 +895,60 @@ impl<'a> Lowerer<'a> {
             return Ok(None);
         }
         self.call_declared(&name, &c.arguments, None).map(Some)
+    }
+
+    /// `Random.pick(items)` (a built-in, `builtins.rs`): the item at `Random.rangeInt(0, length)`,
+    /// or `undefined` for an empty list (no number is drawn then).
+    fn lower_random_pick(&mut self, c: &'a CallExpression<'a>) -> R<Option<Expr>> {
+        let at = self.loc(c.span.start);
+        let Some(range) = self
+            .manifest
+            .namespaces
+            .get("Random")
+            .and_then(|n| n.get("rangeInt"))
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let [arg] = c.arguments.as_slice() else {
+            bail!("{at}: Random.pick takes one array")
+        };
+        let Some(e) = arg.as_expression() else {
+            bail!("{at}: Random.pick takes an array, not a spread")
+        };
+        let items = self.lower_expr(e, None)?;
+        let el = match items.ty.strip() {
+            Ty::Arr(el) => (**el).clone(),
+            t => bail!("{at}: Random.pick takes an array, not {t}"),
+        };
+        let want = el.clone().nullable();
+        let a = self.new_local(items.ty.clone());
+        let len = mk(ExprKind::Len(Box::new(self.var_expr(a))), Ty::Num);
+        let i = self.emit_extern(&range, vec![num(0.0), len.clone()]);
+        // As `items[i]` reads it (null past the end for pointers, numbers and handles).
+        let raw = if el.is_ptr() || el == Ty::Num || matches!(el.strip(), Ty::Handle(_)) {
+            el.nullable()
+        } else {
+            el
+        };
+        let read = mk(
+            ExprKind::Index(Box::new(self.var_expr(a)), Box::new(i)),
+            raw,
+        );
+        let read = self.coerce(read, &want)?;
+        let none = self.coerce(mk(ExprKind::Null, Ty::Null), &want)?;
+        let some = mk(
+            ExprKind::Cmp(CmpOp::Gt, Box::new(len), Box::new(num(0.0))),
+            Ty::Bool,
+        );
+        let pick = mk(
+            ExprKind::Cond(Box::new(some), Box::new(read), Box::new(none)),
+            want.clone(),
+        );
+        Ok(Some(mk(
+            ExprKind::Seq(vec![Stmt::Assign(a, items)], Box::new(pick)),
+            want,
+        )))
     }
 
     /// `GameObject.createPrimitive("cube", { position, scale, .. })`: `Primitives.create(kind)`,
