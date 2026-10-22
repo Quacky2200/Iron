@@ -473,6 +473,19 @@ Behaviours checked 2026-10-22 (all with GC stress where it applies):
 - [x] P2 enums and nullables, records and option bags, lists, subscriptions and promises, remaining logic; P3 built-ins; P5 delete `engine_ts.d.ts` and make the ratchet empty (2026-10-22: `facade.ts`, `engine_ts.d.ts`, the supplement mechanism and `WINDOW_REPLIES` are gone; `builtins.rs` is the compiler's declaration table; `M9-TS-3100` is strict).
 - Found while porting: the old compiled `Shapes.bezier(.., 0)` answered (0, 0) where JavaScript (and the native one) gives NaN, and a NaN spline index read 0 from a `Float64Array` where JavaScript reads `undefined`; both are edge cases outside any example.
 
+## Merges of main and md-reader-example (2026-10-22)
+
+`1fdd708` merge of `main` (docs only), `16bb297` merge of `md-reader-example` (md-reader, launcher, smooth scrolling,
+scrollIntoView alignment, scroll-padding, Application.args / quit(code)), `7754703` native ports and the compiler features the
+two examples needed (M9-TS-3361..3382), `b7730d0` the examples as iron-build games with `project.json` `prebuild`
+(M9-TS-3383). 43 examples build. Open questions for the user:
+- **`prebuild` runs bun** (`bun gen-docs.ts` / `bun gen-games.ts` write `src/*.gen.ts` and `content/`): the examples compile
+  as written, but a build needs bun on the PATH again. Alternatives: port the generators to iron_ts once M6 file IO exists,
+  or have the readers load the docs / screenshots at run time through `Assets` (changes the example sources).
+- **Known limits met on the way**: `null` and `undefined` are one value (`console.log(r?.length)` prints `null`;
+  `Number(x)` of a missing string is NaN, as for `undefined`); a copy where an object of another shape goes is still a copy
+  (Ref<T> became `{ current: T }` so refs are shared); errors in lazily lowered functions can carry the caller's line.
+
 ## Resume point (2026-10-22, generated declarations: phases 1-5 done)
 
 **Done (commits, newest first):** `0fdee4c` engine_ts.d.ts and the supplement mechanism deleted, ratchet strict; `12658ae` the built-ins table (`src/builtins.rs`) declares what engine_ts.d.ts did;

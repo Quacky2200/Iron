@@ -384,7 +384,7 @@ Key events are forwarded after the UI has handled them, **except while a text fi
 - `input.isButtonDown(name)`: any connected pad holds it (value above 0.5).
 - `input.on(type, fn)` returns an unsubscribe function. Types: `keydown`, `keyup`,
   `gamepadconnected`, `gamepaddisconnected`, `gamepadbuttondown`, `gamepadbuttonup` (fired when a
-  value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run.
+  value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run. Compiled games take the same kinds and event fields (`InputEvent`; see `iron-api.md`).
 - `blur` clears held keys and zeroes pad buttons, since the releases may never arrive.
 
 ### The mouse for gameplay (M5.a2)

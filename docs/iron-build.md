@@ -10,7 +10,7 @@ cargo run -p iron_build -- build ../examples/hello
 
 | Command | What |
 |---|---|
-| `build <game> [--no-tsc] [--aot] [--cook] [--no-compile]` | Builds `<game>/dist`. |
+| `build <game> [--no-tsc] [--aot] [--cook] [--no-compile] [--no-prebuild]` | Builds `<game>/dist`. |
 | `types [<game>] [--out file]` | Writes `<game>/types/iron.d.ts` (type declarations for `tsc`). |
 | `assets <folder>... [--prune]` | Writes `.meta` GUID files (the port of `scripts/assets.ts`). |
 | `dev <game> [--no-tsc]` | Rebuilds on every change and signals the running app. |
@@ -77,6 +77,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
 | `exe` | `${title}` made file-name safe (quotes dropped) | file name, `InternalName`, `OriginalFilename` |
 | `main` | first of `src/main.tsx`, `src/main.ts`, `src/index.tsx`, ... | entry file |
 | `startScene` | none | scene loaded at start |
+| `prebuild` | none | a command run in the game folder before compiling (`cmd /C` on Windows, `sh -c` elsewhere), e.g. to write generated sources (`md-reader`: `bun gen-docs.ts`); a failing command stops the build; `--no-prebuild` skips it |
 | `layers`, `quality`, `display` | none | layer names, quality levels and default, window mode and size (as before in `iron`) |
 | `fps`, `runInBackground` | on / false | FPS counter, `Application.runInBackground` |
 | `dataDir`, `include`, `exclude` | `data`, `["assets/**"]`, none | data folder name beside the exe; what `package` copies to it: paths, folders or globs (`*` inside one path part, `**` across parts, `?`; case-sensitive; a plain folder means `folder/**`), minus the `exclude` globs. An `include` entry that matches no file is a warning |
@@ -525,5 +526,5 @@ unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built 
 
 `M9-TS-1800..1806` module graph, `1810` declarations, `1830..1831` `.meta` files, `1840` CSS bundling, `1850..1852` config and a
 full build, `1860..1861` the dev status file and the change fingerprint. `bun run typecheck:examples` (`iron-build check ../examples --tsc`, from `tools`)
-builds all 20 examples and prints a table; failures there are missing language or engine features, listed in
+builds all 43 examples and prints a table; failures there are missing language or engine features, listed in
 `docs/research/iron-examples-on-iron-ts.md`.
