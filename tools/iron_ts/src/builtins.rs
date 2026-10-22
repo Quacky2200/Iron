@@ -256,6 +256,13 @@ pub const BUILTINS: &[Builtin] = &[
         "emitAll(name: string, payload?: unknown): number;",
         "`broadcast` of a named event (see `Window.emit`).",
     ),
+    // ---- Types `#[ts_param]` names that no manifest declares (`Mesh.createFlat`'s lists; the
+    // compiler reads a typed array or a plain one, `expr.rs` `coerce_ext`).
+    top(
+        "NumberList",
+        "type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;",
+        "Numbers as a plain array or a typed array (for meshes made in bulk).",
+    ),
     // ---- `Random.pick<T>` (`lower/facade.rs` `lower_random_pick`).
     stat(
         "Random",

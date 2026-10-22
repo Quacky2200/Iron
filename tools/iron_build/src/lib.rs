@@ -201,7 +201,7 @@ pub fn types_dts() -> Result<String, String> {
         .into_iter()
         .filter(|m| !m.contains("\"namespace\":\"Ui\""))
         .collect();
-    iron_ts::types_dts::generate_default(&ms)
+    iron_ts::types_dts::generate(&ms)
 }
 
 #[derive(Debug, Clone, Default)]

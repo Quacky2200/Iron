@@ -394,19 +394,6 @@ fn safe_ident(n: &str) -> String {
     }
 }
 
-/// What the hand-written supplement (`engine_ts.d.ts`) asks of the generator: the TypeScript-side
-/// shapes the manifests lack. Its members replace the manifest's members of the same name (an
-/// `interface N { .. }` block for instance members, a `declare namespace N { .. }` block for
-/// statics), and `//@ctor N(params)` lines are the constructors of the class `N`.
-#[derive(Default)]
-struct Supplement {
-    ctors: BTreeMap<String, Vec<String>>,
-    hide_inst: BTreeMap<String, BTreeSet<String>>,
-    hide_static: BTreeMap<String, BTreeSet<String>>,
-    /// Top-level names it declares (the module `@iron/engine` re-exports them too).
-    names: BTreeSet<String>,
-}
-
 fn ident_at(s: &str) -> &str {
     let end = s
         .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
@@ -441,82 +428,6 @@ fn member_name(line: &str) -> &str {
         }
     }
     ident_at(s)
-}
-
-fn parse_supplement(text: &str) -> Supplement {
-    let mut sup = Supplement::default();
-    // (is_namespace, name) of the block being read.
-    let mut block: Option<(bool, String)> = None;
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("//@ctor ") {
-            let name = ident_at(rest).to_string();
-            let params = rest[name.len()..].trim();
-            sup.ctors
-                .entry(name)
-                .or_default()
-                .push(format!("constructor{params};"));
-            continue;
-        }
-        if line.starts_with("//") || line.trim().is_empty() {
-            continue;
-        }
-        if !line.starts_with(' ') && !line.starts_with('}') {
-            let mut s = line;
-            for kw in ["export ", "declare ", "abstract "] {
-                s = s.strip_prefix(kw).unwrap_or(s);
-            }
-            s = s.strip_prefix("export ").unwrap_or(s);
-            for (kw, ns) in [
-                ("interface ", false),
-                ("namespace ", true),
-                ("class ", false),
-                ("function ", false),
-                ("const ", false),
-                ("let ", false),
-                ("var ", false),
-                ("type ", false),
-                ("enum ", false),
-            ] {
-                if let Some(r) = s.strip_prefix(kw) {
-                    let name = ident_at(r).to_string();
-                    sup.names.insert(name.clone());
-                    block = if line.trim_end().ends_with('{') && (ns || kw == "interface ") {
-                        Some((ns, name))
-                    } else {
-                        None
-                    };
-                    break;
-                }
-            }
-            continue;
-        }
-        if line.starts_with('}') {
-            block = None;
-            continue;
-        }
-        if line.starts_with("  ") && !line.starts_with("   ") {
-            let n = member_name(line);
-            if n.is_empty() {
-                continue;
-            }
-            match &block {
-                Some((true, b)) => {
-                    sup.hide_static
-                        .entry(b.clone())
-                        .or_default()
-                        .insert(n.to_string());
-                }
-                Some((false, b)) => {
-                    sup.hide_inst
-                        .entry(b.clone())
-                        .or_default()
-                        .insert(n.to_string());
-                }
-                None => {}
-            }
-        }
-    }
-    sup
 }
 
 /// A record: its doc and its fields (name, type, doc).
@@ -561,12 +472,6 @@ fn push_unique(list: &mut Vec<String>, line: String) {
     if !list.contains(&line) {
         list.push(line);
     }
-}
-
-/// The declaration line of a member (the lines of the supplement and of `members` are single
-/// lines; kept as a function so a member could carry more later).
-fn decl_line(m: &str) -> &str {
-    m
 }
 
 impl Decls {
@@ -894,14 +799,12 @@ impl Decls {
     }
 
     /// `{ prop?: T; .. }` over the writable properties of a class: the keys of `new Class({ .. })`.
-    fn options_type(&self, name: &str, sup: &Supplement) -> String {
-        let hidden = sup.hide_inst.get(name);
+    fn options_type(&self, name: &str) -> String {
         let props: Vec<String> = self
             .props
             .get(name)
             .into_iter()
             .flatten()
-            .filter(|(n, _)| !hidden.is_some_and(|h| h.contains(n)))
             // A built-in member of the same name declares it otherwise.
             .filter(|(n, _)| {
                 !crate::builtins::members(name).any(|b| crate::builtins::member_name(b.sig) == n)
@@ -911,18 +814,14 @@ impl Decls {
         format!("{{ {} }}", props.join("; "))
     }
 
-    /// The constructor lines of a class: the supplement's, else the value class's fields, else
+    /// The constructor lines of a class: the built-in ones, else the value class's fields, else
     /// the handle class's `create` (and the options form the compiler also accepts).
-    fn ctor_lines(&self, name: &str, sup: &Supplement) -> Vec<String> {
+    fn ctor_lines(&self, name: &str) -> Vec<String> {
         let built: Vec<String> = crate::builtins::ctors(name)
             .map(|b| b.sig.to_string())
             .collect();
         if !built.is_empty() {
             return built;
-        }
-        if let Some(c) = sup.ctors.get(name) {
-            let opts = self.options_type(name, sup);
-            return c.iter().map(|l| l.replace("$OPTIONS", &opts)).collect();
         }
         if let Some(fields) = self.values.get(name) {
             let ctor: Vec<String> = fields.iter().map(|f| format!("{f}: number")).collect();
@@ -946,7 +845,7 @@ impl Decls {
             if self.props.get(name).is_some_and(|p| !p.is_empty()) {
                 out.push(format!(
                     "constructor(options?: {});",
-                    self.options_type(name, sup)
+                    self.options_type(name)
                 ));
             }
             return out;
@@ -973,7 +872,7 @@ impl Decls {
             parts.push(format!("options?: {{ {} }}", keys.join("; ")));
             return vec![format!("constructor({});", parts.join(", "))];
         }
-        let opts = self.options_type(name, sup);
+        let opts = self.options_type(name);
         let mut seen_optional = false;
         let pos: Vec<String> = create
             .iter()
@@ -1001,7 +900,7 @@ impl Decls {
     }
 
     /// `prefix` is `declare ` at the top level and `export ` inside the module block.
-    fn text(&self, prefix: &str, indent: &str, sup: &Supplement) -> String {
+    fn text(&self, prefix: &str, indent: &str) -> String {
         let mut s = String::new();
         for h in &self.handles {
             if self.classes.contains_key(h) || self.values.contains_key(h) {
@@ -1057,7 +956,7 @@ impl Decls {
                 s += &jsdoc(d, indent);
             }
             s += &format!("{indent}{prefix}class {name} {{\n");
-            for c in self.ctor_lines(name, sup) {
+            for c in self.ctor_lines(name) {
                 s += &format!("{indent}  {c}\n");
             }
             if let Some(fields) = self.values.get(name) {
@@ -1073,15 +972,6 @@ impl Decls {
                             .starts_with(&format!("{f}:"))
                     })
                 {
-                    continue;
-                }
-                // The supplement's member of the same name replaces it.
-                let hidden = if m.starts_with("static ") {
-                    sup.hide_static.get(name)
-                } else {
-                    sup.hide_inst.get(name)
-                };
-                if hidden.is_some_and(|h| h.contains(member_name(decl_line(m)))) {
                     continue;
                 }
                 // A compiler built-in of the same name replaces it.
@@ -1112,23 +1002,21 @@ impl Decls {
             // `Class.create({ .. })` sets the keys as properties, like `new Class({ .. })`.
             if self.creates.get(name).is_some_and(|c| c.is_empty())
                 && self.props.get(name).is_some_and(|p| !p.is_empty())
-                && !sup
-                    .hide_static
-                    .get(name)
-                    .is_some_and(|h| h.contains("create"))
+                && !crate::builtins::statics(name)
+                    .any(|b| crate::builtins::member_name(b.sig) == "create")
             {
                 s += &format!(
                     "{indent}  static create(options: {}): {name};\n",
-                    self.options_type(name, sup)
+                    self.options_type(name)
                 );
             }
             // A component handle (it has a `gameObject`) also has what every component has.
             let members = self.classes.get(name);
             if members.is_some_and(|m| m.iter().any(|l| l == "readonly gameObject: GameObject;")) {
-                let hidden = sup.hide_inst.get(name);
                 let has = |n: &str| {
                     members.is_some_and(|m| m.iter().any(|l| member_name(l) == n))
-                        || hidden.is_some_and(|h| h.contains(n))
+                        || crate::builtins::members(name)
+                            .any(|b| crate::builtins::member_name(b.sig) == n)
                 };
                 if !has("transform") {
                     s += &format!("{indent}  readonly transform: Transform;\n");
@@ -1147,13 +1035,6 @@ impl Decls {
             }
             s += &format!("{indent}{prefix}namespace {name} {{\n");
             for m in members {
-                if sup
-                    .hide_static
-                    .get(name)
-                    .is_some_and(|h| h.contains(member_name(m)))
-                {
-                    continue;
-                }
                 if crate::builtins::statics(name)
                     .any(|b| crate::builtins::member_name(b.sig) == member_name(m))
                 {
@@ -1200,29 +1081,12 @@ fn reexports(module: &str, names: &[String]) -> String {
     s
 }
 
-/// The hand-written TypeScript-side engine shapes (`engine_ts.d.ts`) the compiler ships until the
-/// manifests carry them (docs/research/iron-generated-dts-plan.md, phase 2).
-pub const ENGINE_TS_DTS: &str = include_str!("lower/engine_ts.d.ts");
-
-/// Types that parameters name through `#[ts_param]` and no manifest declares.
-const FIXED_TYPES: &str = "/** Numbers as a plain array or a typed array (for meshes made in bulk). */
-type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array | Uint16Array | Int32Array;
-";
-
-/// The names `FIXED_TYPES` declares (the engine module re-exports them).
-const FIXED_NAMES: &[&str] = &["NumberList"];
-
-/// `generate` with the shipped supplement.
-pub fn generate_default(manifests: &[String]) -> Result<String, String> {
-    generate(manifests, ENGINE_TS_DTS)
-}
-
 /// The declarations for every manifest as globals (every class, namespace, value class and handle
 /// type is a top-level `declare`), then the UI declarations (`ui_dts`: React-style
-/// names, `JSX`, hooks, UI components), then the modules `@iron/engine`, `@iron/react` and
-/// `react` as re-exports of those globals. A game needs no import; the old imports still work.
-pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String> {
-    let sup = parse_supplement(supplement);
+/// names, `JSX`, hooks, UI components), then what the compiler gives (`builtins.rs`), then the
+/// modules `@iron/engine`, `@iron/react` and `react` as re-exports of those globals. A game needs
+/// no import; the old imports still work.
+pub fn generate(manifests: &[String]) -> Result<String, String> {
     let mut d = Decls::default();
     for m in manifests {
         d.add(m)?;
@@ -1232,12 +1096,8 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
          // Every engine and UI name is a global, so a game type-checks with no import and no node_modules;\n\
          // `import { Vector3 } from \"@iron/engine\"` (and `react`, `@iron/react`) work too.\n\n",
     );
-    out += &d.text("declare ", "", &sup);
-    out += "
-";
-    out += FIXED_TYPES;
-    out += "
-";
+    out += &d.text("declare ", "");
+    out += "\n";
     out += &crate::ui_dts::declarations();
     out += "\n// What the compiler gives a program (`builtins.rs`).\n";
     out += &crate::builtins::top_level();
@@ -1246,17 +1106,10 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     let mut likes: Vec<String> = Vec::new();
     for (name, fields) in &d.values {
         let like = format!("{name}Like");
-        if contains_word(&out, &like) || contains_word(supplement, &like) {
+        if contains_word(&out, &like) {
             let fs: Vec<String> = fields.iter().map(|f| format!("{f}: number")).collect();
             out += &format!("type {like} = {{ {} }};\n", fs.join("; "));
             likes.push(like);
-        }
-    }
-    if !supplement.trim().is_empty() {
-        out += "\n";
-        out += supplement;
-        if !supplement.ends_with('\n') {
-            out += "\n";
         }
     }
     let mut engine: BTreeSet<String> = d.handles.iter().cloned().collect();
@@ -1268,10 +1121,8 @@ pub fn generate(manifests: &[String], supplement: &str) -> Result<String, String
     engine.extend(d.option_types.keys().cloned());
     engine.extend(d.namespaces.keys().filter(|n| !n.is_empty()).cloned());
     engine.extend(d.globals.keys().cloned());
-    engine.extend(sup.names.iter().cloned());
     engine.extend(likes);
     engine.extend(crate::builtins::top_names().into_iter().map(String::from));
-    engine.extend(FIXED_NAMES.iter().map(|s| (*s).to_string()));
     out += "\n";
     out += &reexports("@iron/engine", &engine.into_iter().collect::<Vec<_>>());
     out += "\n";
@@ -1298,7 +1149,7 @@ mod tests {
     // M9-TS-1810
     #[test]
     fn manifests_become_global_declarations_that_the_engine_module_re_exports() {
-        let t = generate(&[DEMO.to_string()], "").unwrap();
+        let t = generate(&[DEMO.to_string()]).unwrap();
         assert!(t.contains("declare module \"@iron/engine\" {"), "{t}");
         assert!(t.contains("  export import V2 = globalThis.V2;"), "{t}");
         assert!(t.contains("\ndeclare type Thing = number &"), "{t}");
@@ -1325,7 +1176,7 @@ mod tests {
         );
         assert!(t.contains("export import Obj = globalThis.Obj;"), "{t}");
         // The same input gives the same text.
-        assert_eq!(t, generate(&[DEMO.to_string()], "").unwrap());
+        assert_eq!(t, generate(&[DEMO.to_string()]).unwrap());
     }
 
     const CREATABLE: &str = r#"{"namespace":"Audio","handles":[],"values":[],
@@ -1344,7 +1195,7 @@ mod tests {
     // M9-TS-2310
     #[test]
     fn a_call_gets_an_options_object_form_and_a_creatable_class_constructors() {
-        let t = generate(&[CREATABLE.to_string()], "").unwrap();
+        let t = generate(&[CREATABLE.to_string()]).unwrap();
         // Leading required parameters stay positional; the rest are keys.
         assert!(
             t.contains("function load(path: string, options?: { stream?: boolean }): Thing;"),
@@ -1382,30 +1233,53 @@ mod tests {
         );
     }
 
+    const BUILT: &str = r#"{"namespace":"Random","handles":["GameObject"],"values":[{"name":"Vector3","fields":[{"name":"x","type":"f64"},{"name":"y","type":"f64"},{"name":"z","type":"f64"}]}],
+      "classes":[{"name":"GameObject","functions":[
+        {"name":"create","symbol":"g1","kind":"static","params":[],"returns":"handle:GameObject"},
+        {"name":"instantiate","symbol":"g2","kind":"static","params":[{"name":"o","type":"handle:GameObject"}],"returns":"handle:GameObject"},
+        {"name":"children","symbol":"g3","kind":"get","params":[{"name":"this","type":"handle:GameObject"}],"returns":"f64"}]}],
+      "functions":[{"name":"pick","symbol":"r1","kind":"static","params":[],"returns":"f64"}]}"#;
+
     // M9-TS-2311
     #[test]
-    fn the_supplement_replaces_members_of_the_same_name_and_adds_constructors() {
-        let sup = "//@ctor Thing(label?: string, options?: $OPTIONS)\n\
-                   interface Thing {\n  size: string;\n}\n\
-                   declare namespace Thing {\n  function create(x: number): Thing;\n}\n\
-                   declare namespace Audio {\n  function load(path: string): Thing;\n}\n\
-                   declare class Extra {}\n";
-        let t = generate(&[CREATABLE.to_string()], sup).unwrap();
-        // The native `size: number` is gone (the interface declares it), the native create too.
-        assert!(!t.contains("  size: number;"), "{t}");
-        assert!(!t.contains("static create(options"), "{t}");
-        assert!(!t.contains("function load(path: string, stream"), "{t}");
+    fn the_built_ins_replace_members_of_the_same_name_and_add_constructors() {
+        let t = generate(&[BUILT.to_string()]).unwrap();
+        // The native members of the same names are gone; the built-in ones are in the class.
+        assert!(!t.contains("static instantiate(o: GameObject)"), "{t}");
         assert!(
-            t.contains("  constructor(label?: string, options?: { name?: string });"),
+            t.contains("  static instantiate(original: GameObject | Prefab,"),
+            "{t}"
+        );
+        assert!(!t.contains("readonly children: number;"), "{t}");
+        assert!(t.contains("  readonly children: GameObject[];"), "{t}");
+        assert!(
+            t.contains("  constructor(name?: string, options?: GameObjectOptions);"),
             "{t}"
         );
         assert!(!t.contains("  constructor();\n"), "{t}");
-        assert!(t.contains("interface Thing {\n  size: string;\n}"), "{t}");
-        // Names the supplement declares are exported by the module too.
+        // In a namespace a static is a function.
         assert!(
-            t.contains("  export import Extra = globalThis.Extra;"),
+            t.contains("  function pick<T>(items: readonly T[]): T | undefined;"),
             "{t}"
         );
+        assert!(!t.contains("function pick(): number;"), "{t}");
+        // The top-level ones, and the `Like` type they name, are exported by the module.
+        assert!(t.contains("\ndeclare abstract class Component {\n"), "{t}");
+        assert!(
+            t.contains("type Vector3Like = { x: number; y: number; z: number };"),
+            "{t}"
+        );
+        for n in [
+            "Component",
+            "GameObjectOptions",
+            "setTimeout",
+            "Vector3Like",
+        ] {
+            assert!(
+                t.contains(&format!("  export import {n} = globalThis.{n};")),
+                "{n}: {t}"
+            );
+        }
     }
 
     const RECORDS: &str = r#"{"namespace":"Rec","doc":"Things that exist.","like":true,"handles":["Thing"],
@@ -1424,7 +1298,7 @@ mod tests {
     // M9-TS-3103
     #[test]
     fn enums_records_lists_rest_docs_and_like_become_declarations() {
-        let t = generate(&[RECORDS.to_string()], "").unwrap();
+        let t = generate(&[RECORDS.to_string()]).unwrap();
         // Enums: a string union and the converters.
         assert!(
             t.contains(
@@ -1489,7 +1363,7 @@ mod tests {
     // M9-TS-3342
     #[test]
     fn a_named_options_object_is_an_interface_with_docs_and_array_parameters_are_readonly() {
-        let t = generate(&[OPTIONS.to_string()], "").unwrap();
+        let t = generate(&[OPTIONS.to_string()]).unwrap();
         assert!(
             t.contains(
                 "declare interface LoadOptions {

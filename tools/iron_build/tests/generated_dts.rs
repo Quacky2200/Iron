@@ -1,6 +1,6 @@
 //! Guard rails for "every declaration is generated from Rust" (docs/research/iron-generated-dts-plan.md):
-//! a ratchet over the hand-written `.d.ts` files, a check that nothing is declared both by the manifests
-//! and by a hand-written file, and a snapshot of the API surface `tsc` sees.
+//! no hand-written `.d.ts` file (and the TypeScript compiled into games only on a short list), the
+//! compiler built-ins declare no engine name again, and a snapshot of the API surface `tsc` sees.
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{Statement, TSNamespaceDeclarationBody};
@@ -41,14 +41,6 @@ fn rel(p: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// The hand-written declaration files still allowed, each with why and what removes it. Lower this
-/// list, never raise it: a new `.d.ts` under `tools/` fails the test. The UI declarations
-/// (`ambient.d.ts`) are generated from `iron_ui::tables` now (`tools/iron_ts/src/ui_dts.rs`).
-const ALLOWED_D_TS: &[(&str, &str)] = &[(
-    "tools/iron_ts/src/lower/engine_ts.d.ts",
-    "TypeScript-side engine shapes (records, enums, promises, overloads) the manifests cannot carry yet:      plan phase 2 (F-REC, F-ENUM, F-UNION, F-PROMISE) moves them into #[iron_api]; phase 5 deletes the file",
-)];
-
 /// Hand-written TypeScript compiled into games, each with why it is not Rust yet. (`facade.ts`, the
 /// engine adapters, is gone: the compiler writes those functions from the manifests.)
 const ALLOWED_TS: &[(&str, &str)] = &[
@@ -72,18 +64,11 @@ fn no_new_hand_written_declaration_files_appear() {
         .map(|p| rel(p))
         .filter(|r| r.ends_with(".d.ts"))
         .collect();
-    let allowed: BTreeSet<String> = ALLOWED_D_TS.iter().map(|(p, _)| p.to_string()).collect();
-    let new: Vec<_> = found.difference(&allowed).collect();
     assert!(
-        new.is_empty(),
-        "hand-written .d.ts files are not allowed (generate them from #[iron_api]): {new:?}"
+        found.is_empty(),
+        "hand-written .d.ts files are not allowed (declare it in #[iron_api], iron_ui::tables or tools/iron_ts/src/builtins.rs): {found:?}"
     );
-    let stale: Vec<_> = allowed.difference(&found).collect();
-    assert!(
-        stale.is_empty(),
-        "these files are gone: remove them from ALLOWED_D_TS (the ratchet only goes down): {stale:?}"
-    );
-    // No Rust source may include a declaration file that is not on the list either.
+    // No Rust source may include a declaration file either.
     let mut included = BTreeSet::new();
     for p in &files {
         if p.extension().is_some_and(|e| e == "rs") {
@@ -98,13 +83,9 @@ fn no_new_hand_written_declaration_files_appear() {
             }
         }
     }
-    let known: BTreeSet<String> = allowed
-        .iter()
-        .map(|p| p.rsplit('/').next().unwrap().to_string())
-        .collect();
     assert!(
-        included.is_subset(&known),
-        "include_str! of an unlisted declaration file: {included:?}"
+        included.is_empty(),
+        "include_str! of a declaration file: {included:?}"
     );
     let ts: BTreeSet<String> = files
         .iter()
@@ -126,73 +107,61 @@ fn no_new_hand_written_declaration_files_appear() {
     assert!(py.is_empty(), "no Python step under tools/iron_ts: {py:?}");
 }
 
-/// Reads a top-level name out of a declaration line (`declare class X {`, `interface X {`,
-/// `type X = ..`, `declare function f(..)`, `declare const c: T`, `declare namespace N {`).
-fn declared_names(src: &str) -> BTreeSet<String> {
-    let alloc = Allocator::default();
-    let ret = Parser::new(&alloc, src, SourceType::d_ts()).parse();
-    assert!(ret.diagnostics.is_empty(), "{:?}", ret.diagnostics);
+/// The top-level names the manifests declare (namespaces, classes, value classes, handle types,
+/// enums, records, aliases, globals).
+fn manifest_names(ms: &[String]) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
-    for s in &ret.program.body {
-        let text = &src[s.span().start as usize..s.span().end as usize];
-        let mut t = text.trim_start();
-        for kw in ["export ", "declare ", "abstract "] {
-            t = t.strip_prefix(kw).unwrap_or(t);
+    for m in ms {
+        let v: serde_json::Value = serde_json::from_str(m).unwrap();
+        if let Some(n) = v["namespace"].as_str().filter(|n| !n.is_empty()) {
+            names.insert(n.to_string());
         }
-        for kw in [
-            "class ",
-            "interface ",
-            "namespace ",
-            "function ",
-            "const ",
-            "let ",
-            "var ",
-            "type ",
-            "enum ",
-        ] {
-            if let Some(r) = t.strip_prefix(kw) {
-                let name: String = r
-                    .chars()
-                    .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
-                    .collect();
-                if !name.is_empty() {
-                    names.insert(name);
-                }
-                break;
+        for h in v["handles"].as_array().into_iter().flatten() {
+            names.extend(h.as_str().map(str::to_string));
+        }
+        for key in ["classes", "values", "enums", "records", "aliases"] {
+            for x in v[key].as_array().into_iter().flatten() {
+                names.extend(x["name"].as_str().map(str::to_string));
+            }
+        }
+        for f in v["functions"].as_array().into_iter().flatten() {
+            if f["global"].as_bool() == Some(true) {
+                names.extend(f["name"].as_str().map(str::to_string));
             }
         }
     }
     names
 }
 
-/// Names that both a manifest and a hand-written declaration file declare today (an `interface`
-/// of the supplement that adds members to a generated class, a `type` next to a handle). The
-/// plan removes them phase by phase; a new one fails the test, and one that goes must be taken
-/// off this list.
-const KNOWN_OVERLAPS: &[&str] = &[];
-
 // M9-TS-3101
 #[test]
-fn nothing_is_declared_by_both_the_manifests_and_a_hand_written_file() {
+fn the_built_ins_declare_no_engine_name_again_and_their_owners_exist() {
+    use iron_ts::builtins::{BUILTINS, Place, top_names};
     let ms: Vec<String> = iron_build::manifests()
         .into_iter()
         .filter(|m| !m.contains("\"namespace\":\"Ui\""))
         .collect();
-    let generated = iron_ts::types_dts::generate(&ms, "").unwrap();
-    // The `declare module` re-export blocks are not declarations of their own.
-    let gen_names = declared_names(&generated);
-    let hand = declared_names(iron_ts::types_dts::ENGINE_TS_DTS);
-    let overlap: BTreeSet<String> = gen_names.intersection(&hand).cloned().collect();
-    let known: BTreeSet<String> = KNOWN_OVERLAPS.iter().map(|s| s.to_string()).collect();
-    let new: Vec<_> = overlap.difference(&known).collect();
+    let engine = manifest_names(&ms);
+    let twice: Vec<_> = top_names()
+        .into_iter()
+        .filter(|n| engine.contains(*n))
+        .collect();
     assert!(
-        new.is_empty(),
-        "declared by a manifest and by a hand-written .d.ts: {new:?}"
+        twice.is_empty(),
+        "declared by a manifest and by builtins.rs: {twice:?}"
     );
-    let gone: Vec<_> = known.difference(&overlap).collect();
+    // A member of a class or namespace no manifest has would be dropped silently.
+    let mut ownerless = Vec::new();
+    for b in BUILTINS {
+        if let Place::Static(o) | Place::Member(o) | Place::Ctor(o) = b.place
+            && !engine.contains(o)
+        {
+            ownerless.push((o, b.sig));
+        }
+    }
     assert!(
-        gone.is_empty(),
-        "no longer declared twice, remove from KNOWN_OVERLAPS: {gone:?}"
+        ownerless.is_empty(),
+        "built-ins of no engine class: {ownerless:?}"
     );
 }
 
