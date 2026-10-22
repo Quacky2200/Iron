@@ -117,6 +117,7 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 |---|---|---|---|
 | `transform-style: preserve-3d` | Children's 3D transforms combine before flattening (each plane lands exactly), but they still paint in tree order | Planes in a 3D context are depth-sorted and intersect | No depth buffer or plane splitting; order elements by hand (or with `z-index`) |
 | Text under rotation, skew or perspective | Glyph masks are sampled nearest-neighbour in the element's plane | Re-rasterized glyphs | Turned text looks slightly jagged; fine for motion, softer than a browser at rest |
+| Text under a scale and move only | Re-rasterized at the on-screen size every frame and placed in window space, as at rest | Re-rasterized at the end; during a transition the cached text is composited (scaled bitmap) | Scaled and sliding text stays sharp throughout, and there is no pop when a transition ends; costs a few extra glyph rasters (cached per 0.25 px size) |
 | Anti-aliasing under scale/perspective | One window pixel of feathering is computed in the element's plane | Exact | Strongly scaled-down or steep planes get softer or harsher edges |
 | `visibility: collapse` | Same as `hidden` | Removes table rows/columns | Iron has no tables |
 | `position: fixed` inside a transformed element | Still fixed to the window | The transformed ancestor contains it | Fixed nodes paint at the top level |

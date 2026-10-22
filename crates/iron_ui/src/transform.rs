@@ -150,6 +150,21 @@ impl Homography {
         Homography(r)
     }
 
+    /// `(s, tx, ty)` when this only scales evenly by `s > 0` and moves by (tx, ty): no
+    /// rotation, skew, uneven scale or perspective. Text under such a map can be drawn
+    /// as plain text at the new size.
+    pub fn as_scale_translate(&self) -> Option<(f32, f32, f32)> {
+        let m = &self.0;
+        let w = m[2][2];
+        if w.abs() < 1e-6 || m[2][0].abs() > 1e-6 || m[2][1].abs() > 1e-6 {
+            return None;
+        }
+        let (sx, sy) = (m[0][0] / w, m[1][1] / w);
+        let even = (sx - sy).abs() <= 1e-4 * sx.abs().max(1.0);
+        let axis_aligned = (m[0][1] / w).abs() < 1e-5 && (m[1][0] / w).abs() < 1e-5;
+        (sx > 1e-4 && even && axis_aligned).then_some((sx, m[0][2] / w, m[1][2] / w))
+    }
+
     pub fn inverse(&self) -> Option<Homography> {
         let m = &self.0;
         let c00 = m[1][1] * m[2][2] - m[1][2] * m[2][1];
@@ -525,6 +540,28 @@ mod tests {
 
     fn close(a: (f32, f32), b: (f32, f32)) -> bool {
         (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3
+    }
+
+    // M3-XF-03
+    #[test]
+    fn scale_and_move_maps_are_recognised_and_others_not() {
+        let h = |m: [[f32; 3]; 3]| Homography(m);
+        assert_eq!(
+            h([[1.5, 0.0, 10.0], [0.0, 1.5, -4.0], [0.0, 0.0, 1.0]]).as_scale_translate(),
+            Some((1.5, 10.0, -4.0))
+        );
+        // Normalised by w.
+        assert_eq!(
+            h([[3.0, 0.0, 20.0], [0.0, 3.0, 8.0], [0.0, 0.0, 2.0]]).as_scale_translate(),
+            Some((1.5, 10.0, 4.0))
+        );
+        let rotated = h([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]);
+        let uneven = h([[2.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+        let perspective = h([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.001, 0.0, 1.0]]);
+        let mirrored = h([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]);
+        for m in [rotated, uneven, perspective, mirrored] {
+            assert_eq!(m.as_scale_translate(), None, "{m:?}");
+        }
     }
 
     /// Where the point (x, y) of a 100×100 box at the origin goes under `transform`

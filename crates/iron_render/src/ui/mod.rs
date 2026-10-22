@@ -778,11 +778,13 @@ impl UiRenderer {
         let mut clip_stack: Vec<u32> = Vec::new();
         // Instances from `clip_from` on haven't been given their clip index yet.
         let mut clip_from = 0usize;
-        // Instances since the last clip or transform change get the current ones.
+        // Instances since the last clip or transform change get the current ones. An
+        // instance already placed in window space (`xf[0]` = -1: text re-rasterized at its
+        // transformed size) gets no transform.
         let tag = |instances: &mut Vec<Instance>, clip_from: &mut usize, clip: u32, xf: u32| {
             for instance in &mut instances[*clip_from..] {
                 instance.params[3] = clip as f32;
-                instance.xf[0] = xf as f32;
+                instance.xf[0] = if instance.xf[0] < 0.0 { 0.0 } else { xf as f32 };
             }
             *clip_from = instances.len();
         };
@@ -1001,27 +1003,39 @@ impl UiRenderer {
                             }
                         }
                     }
+                    // Text that is only scaled and moved (a pop-in, a lifted tile, a slide)
+                    // is drawn as a browser does: glyphs rasterized at their on-screen size
+                    // and placed in window space. Sampling the unscaled masks in the plane
+                    // (still the way for rotated, skewed or perspective text) blurs and
+                    // breaks it up while it moves.
+                    let (gs, gx, gy, window_space) = match xf_h.and_then(|h| h.as_scale_translate())
+                    {
+                        Some((s, tx, ty)) => (s, tx, ty, true),
+                        None => (1.0, 0.0, 0.0, false),
+                    };
+                    let xf_mark = if window_space { -1.0 } else { 0.0 };
                     // `background-clip: text`: glyphs take their colour from the gradient,
                     // laid out over the element's box (in p1); the text colour goes on top.
                     let fill = text.fill.as_ref().and_then(|(image, rect)| {
-                        let g = gradient::build(image, *rect)?;
+                        let rect = if window_space { world(*rect) } else { *rect };
+                        let g = gradient::build(image, rect)?;
                         gradients.push(g);
-                        Some(((gradients.len() - 1) as f32, rect4(*rect)))
+                        Some(((gradients.len() - 1) as f32, rect4(rect)))
                     });
                     for run in &text.runs {
                         let color = linear_premultiplied(run.color);
-                        let size_px = run.font_size * scale;
+                        let size_px = run.font_size * gs * scale;
                         for g in &run.glyphs {
                             // Snap to whole pixels vertically and to quarter pixels
                             // horizontally (the subpixel offset is baked into the glyph).
-                            let px = g.x * scale;
+                            let px = (g.x * gs + gx) * scale;
                             let mut x = px.floor();
                             let mut bin = ((px - x) * f32::from(SUBPIXEL_BINS)).round() as u8;
                             if bin == SUBPIXEL_BINS {
                                 x += 1.0;
                                 bin = 0;
                             }
-                            let y = (g.y * scale).round();
+                            let y = ((g.y * gs + gy) * scale).round();
                             let Some(e) = self.atlas.glyph(gpu, run, g.id, size_px, bin, 0.0)
                             else {
                                 continue;
@@ -1037,7 +1051,7 @@ impl UiRenderer {
                                 ],
                                 radii: [0.0; 4],
                                 radii_y: [0.0; 4],
-                                xf: [0.0; 4],
+                                xf: [xf_mark, 0.0, 0.0, 0.0],
                                 p0: [e.x as f32, e.y as f32, e.width as f32, e.height as f32],
                                 p1: [0.0; 4],
                                 color0: color,
@@ -1068,9 +1082,14 @@ impl UiRenderer {
                             }
                             // The stroke goes over the fill, centred on the outline.
                             if let Some((width, stroke_color)) = run.stroke
-                                && let Some(s) =
-                                    self.atlas
-                                        .glyph(gpu, run, g.id, size_px, bin, width * scale)
+                                && let Some(s) = self.atlas.glyph(
+                                    gpu,
+                                    run,
+                                    g.id,
+                                    size_px,
+                                    bin,
+                                    width * gs * scale,
+                                )
                             {
                                 let (sx, sy) = (x + s.left as f32, y - s.top as f32);
                                 instances.push(Instance {
