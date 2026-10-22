@@ -57,6 +57,7 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | `scrollbar-gutter: stable both-edges` | Reserves the end edge only | Both edges | Taffy reserves one side |
 | `scrollbar-gutter` on the x axis | Only vertical scrollbars get a gutter | Same (gutters follow the block axis' bar) | — |
 | `overscroll-behavior: none` | Same as `contain` | Also disables bounce / pull-to-refresh | Iron has no overscroll effects |
+| `scroll-padding` | px lengths only (no percentages); `auto` is 0 | Percentages of the scrollport; `auto` is UA-chosen | No UA padding; percentages unneeded so far |
 
 ## Transitions (M3d step 7a)
 

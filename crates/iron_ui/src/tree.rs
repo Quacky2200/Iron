@@ -3547,6 +3547,13 @@ impl<L: LayoutEngine> UiTree<L> {
             .map_or_else(|| self.scroll_offset(id), |s| s.to)
     }
 
+    /// `id`'s `scroll-padding` (top, right, bottom, left) in px.
+    pub fn scroll_padding(&self, id: NodeId) -> [f32; 4] {
+        self.nodes
+            .get(&id)
+            .map_or([0.0; 4], |n| n.visual.scroll_padding)
+    }
+
     /// Whether `id` has `scroll-behavior: smooth`.
     pub fn smooth_by_default(&self, id: NodeId) -> bool {
         self.nodes.get(&id).is_some_and(|n| n.visual.scroll_smooth)

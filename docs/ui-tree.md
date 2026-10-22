@@ -508,6 +508,10 @@ them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin
   them (`step_smooth_scrolls`), `is_animating` includes them, `take_smooth_scrolled` lists containers
   moved, `scroll_goal` is where one is heading. `scrollBehavior: smooth` (`Visual.scroll_smooth`;
   `smooth_by_default`) makes script scrolls with `Auto` behavior smooth.
+- **Scroll padding** (`M3-EVT-10`): `Visual.scroll_padding: [f32; 4]` (top, right, bottom, left, px) from
+  `scrollPadding` (1 to 4 lengths or `auto` = 0) and the `Top/Right/Bottom/Left/Block/Inline`
+  longhands; `UiTree::scroll_padding(id)` reads it. `Interaction::scroll_into_view` insets the
+  container's view by it. Not inherited; px only.
 - **Applied in `layout_if_needed`**: while building `rects`, an element's offset is first clamped
   to the current `scroll_max` (content may have shrunk), then subtracted from the origin passed to
   its children. Hit testing and drawing both read these shifted rects, and the `overflow` clip is

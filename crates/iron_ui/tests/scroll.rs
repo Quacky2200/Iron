@@ -857,3 +857,46 @@ fn smooth_scrolls_ease_over_time_and_send_scroll_events() {
         Some(ScrollBehavior::Smooth)
     );
 }
+
+// M3-EVT-10
+#[test]
+fn scroll_padding_keeps_scrolled_into_view_elements_clear_of_the_edges() {
+    // A 100px scroller of 50px rows; row 2 spans 100..150.
+    let (mut tree, scroller, rows) = list("hidden", 6);
+    tree.apply_commit(&Commit {
+        ops: vec![op(
+            iron_ui::opcodes::SET_STYLE,
+            &[n(scroller.0), "scrollPadding".into(), "10px 0".into()],
+        )],
+    });
+    let mut ui = Interaction::new();
+    let mut rec = Rec::new();
+    let mut place = |tree: &mut UiTree, from: f32, block: ScrollAlign| {
+        tree.scroll_to(scroller, 0.0, from, false);
+        let input = Input::ScrollIntoView {
+            id: rows[2],
+            block,
+            inline: ScrollAlign::Nearest,
+            behavior: ScrollBehavior::Auto,
+        };
+        handle(&mut ui, tree, &mut rec, input);
+        tree.scroll_offset(scroller).1
+    };
+    // The view is 10..90 inside the scroller.
+    assert_eq!(
+        place(&mut tree, 0.0, ScrollAlign::Nearest),
+        60.0,
+        "its end at 90"
+    );
+    assert_eq!(
+        place(&mut tree, 200.0, ScrollAlign::Nearest),
+        90.0,
+        "its start at 10"
+    );
+    assert_eq!(place(&mut tree, 0.0, ScrollAlign::Start), 90.0);
+    assert_eq!(
+        place(&mut tree, 55.0, ScrollAlign::Nearest),
+        60.0,
+        "under the bottom padding: moves clear of it"
+    );
+}

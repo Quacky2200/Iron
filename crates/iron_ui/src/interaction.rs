@@ -799,7 +799,8 @@ impl Interaction {
     }
 
     /// Scrolls `id`'s scroll containers (innermost first) to put it at `block` vertically
-    /// and `inline` horizontally (clamped to what each can scroll).
+    /// and `inline` horizontally (clamped to what each can scroll), inside each one's
+    /// `scroll-padding`.
     fn scroll_into_view(
         &mut self,
         tree: &mut UiTree,
@@ -820,6 +821,13 @@ impl Interaction {
             let (Some(target), Some(view)) = (tree.rect(id), tree.padding_box(container)) else {
                 continue;
             };
+            let [pt, pr, pb, pl] = tree.scroll_padding(container);
+            let view = crate::Rect::new(
+                view.x + pl,
+                view.y + pt,
+                (view.width - pl - pr).max(0.0),
+                (view.height - pt - pb).max(0.0),
+            );
             let dx = inline.delta(target.x - ax, target.width, view.x, view.width);
             let dy = block.delta(target.y - ay, target.height, view.y, view.height);
             if dx != 0.0 || dy != 0.0 {
