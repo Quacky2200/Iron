@@ -38,7 +38,7 @@ const LOADING_MS = 1100;
 /** How long a game stays selected before its picture fades in behind everything. */
 const DWELL_MS = 3000;
 /** The background's colours with no game selected (an empty category). */
-const NEUTRAL: Palette = { top: "#1b2433", bottom: "#10141c", glow: "124, 196, 255" };
+const NEUTRAL: Palette = { top: "#1b2433", bottom: "#10141c", glow: "124, 196, 255", picture: 0.4 };
 /** Left stick: past this it moves, repeating while held. */
 const STICK = 0.55;
 const REPEAT_FIRST_MS = 380;
@@ -579,7 +579,10 @@ function App() {
       {/* After DWELL_MS on a game its own picture fades in; moving on fades it out (`:outro`). */}
       {game && dwelt === game.name ? (
         <box key={game.name} className="backdrop">
-          <Shot game={game} className="backdrop-shot" />
+          {/* Dimmer for a bright picture, so white text stays readable on it. */}
+          <box className="backdrop-fill" style={{ opacity: game.palette.picture }}>
+            <Shot game={game} className="backdrop-shot" />
+          </box>
         </box>
       ) : null}
       <box className="shade" />

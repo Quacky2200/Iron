@@ -1,6 +1,8 @@
 // Build-time colours for the launcher's backgrounds: a screenshot's top and bottom tones and
 // its most vivid colour, read straight from the PNG (8-bit RGB / RGBA, not interlaced, as
-// Iron's screenshots are), so each game gets a gradient that matches its picture.
+// Iron's screenshots are), so each game gets a gradient that matches its picture. White text
+// sits on top, so every colour keeps a hue and stays well below white: a grey or white
+// picture borrows its accent's hue, and bright pictures show fainter behind the UI.
 import { inflateSync } from "node:zlib";
 
 export interface Palette {
@@ -9,6 +11,8 @@ export interface Palette {
   bottom: string;
   /** A glow in the picture's most vivid colour, as `r, g, b`. */
   glow: string;
+  /** How opaque the picture itself shows behind the UI: lower for bright pictures. */
+  picture: number;
 }
 
 type Rgb = [number, number, number];
@@ -113,35 +117,65 @@ function vivid(png: Png): Rgb {
   return best.sum.map((v) => v / best.weight) as Rgb;
 }
 
-/** `c` with its brightness capped at `max` (0..1) and saturation lifted a little. */
-function deepen(c: Rgb, max: number): string {
-  const [h, s, v] = hsv(c);
-  const [s2, v2] = [Math.min(1, s * 1.25 + 0.08), Math.min(v, max)];
+function rgb(h: number, s: number, v: number): Rgb {
   const f = (n: number) => {
     const k = (n + h / 60) % 6;
-    return Math.round(255 * (v2 - v2 * s2 * Math.max(0, Math.min(k, 4 - k, 1))));
+    return 255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1)));
   };
-  return `#${[f(5), f(3), f(1)].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+  return [f(5), f(3), f(1)];
+}
+
+const hex = (c: Rgb) => `#${c.map((n) => Math.round(n).toString(16).padStart(2, "0")).join("")}`;
+
+/**
+ * `c` as a dark backdrop tone: brightness capped at `max` (0..1), saturation lifted, and a
+ * grey (a white or washed-out picture) given `accent`'s hue instead, so it never reads as
+ * a flat grey close to the text.
+ */
+function deepen(c: Rgb, max: number, accent: Rgb): string {
+  let [h, s, v] = hsv(c);
+  if (s < 0.18) {
+    h = hsv(accent)[0];
+    s = 0.4;
+  }
+  return hex(rgb(h, Math.min(1, Math.max(0.3, s * 1.25 + 0.08)), Math.min(v, max)));
+}
+
+/** The accent, kept saturated and off white so its glow tints rather than brightens. */
+function glowOf(c: Rgb): string {
+  const [h, s, v] = hsv(c);
+  return rgb(h, Math.max(s, 0.55), Math.min(v, 0.85)).map(Math.round).join(", ");
+}
+
+/** Mean luma, 0..1. */
+function luma(png: Png): number {
+  const [r, g, b] = average(png, 0, 1);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
 /** Colours for a screenshot, or `null` when it can't be read. */
 export function palette(file: Buffer): Palette | null {
   const png = decode(file);
   if (!png) return null;
-  const glow = vivid(png).map(Math.round);
-  return { top: deepen(average(png, 0, 0.4), 0.34), bottom: deepen(average(png, 0.6, 1), 0.2), glow: glow.join(", ") };
+  const accent = vivid(png);
+  return {
+    top: deepen(average(png, 0, 0.4), 0.3, accent),
+    bottom: deepen(average(png, 0.6, 1), 0.18, accent),
+    glow: glowOf(accent),
+    // 0.4 for a dark picture, down to 0.14 for a white one.
+    picture: Math.round((0.4 - 0.26 * Math.min(1, Math.max(0, (luma(png) - 0.25) / 0.6))) * 100) / 100,
+  };
 }
 
 /** A palette from the name's hash, for games without a screenshot. */
 export function fallback(name: string): Palette {
   let hue = 0;
   for (const c of name) hue = (hue * 31 + c.charCodeAt(0)) % 360;
-  const at = (h: number, s: number, v: number): Rgb => {
-    const f = (n: number) => {
-      const k = (n + h / 60) % 6;
-      return 255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1)));
-    };
-    return [f(5), f(3), f(1)];
+  const accent = rgb(hue, 0.6, 1);
+  return {
+    top: deepen(rgb(hue, 0.6, 0.5), 0.3, accent),
+    bottom: deepen(rgb(hue + 40, 0.6, 0.3), 0.18, accent),
+    glow: glowOf(accent),
+    picture: 0.4,
   };
-  return { top: deepen(at(hue, 0.6, 0.5), 0.34), bottom: deepen(at(hue + 40, 0.6, 0.3), 0.2), glow: at(hue, 0.6, 1).map(Math.round).join(", ") };
 }

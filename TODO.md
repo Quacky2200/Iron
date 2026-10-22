@@ -1710,6 +1710,10 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   - [x] Engine fix: with any `:outro` rule in use, an element removed mid-transition (a
     caption replaced while browsing fast) stayed, in layout, until that transition ended;
     only motion the exit starts holds it now (`M3-ANI-05`)
+  - [x] Backgrounds stay below the text's brightness: grey or white pictures borrow their
+    accent's hue, tones are capped lower, bright pictures fade in fainter, titles get a shadow
+  - [x] Engine: text that is only scaled and moved is rasterized at its on-screen size, so
+    pop-ins and lifted tiles stay sharp, with no pop at the end (`M3-XF-03`)
   - [ ] Engine: gradients draw only 8 stops and warn every frame about the rest; warn once
   - [ ] Actually launch a game (start `iron <folder>` as a child process, or switch games in
     place) and return to the launcher when it quits
