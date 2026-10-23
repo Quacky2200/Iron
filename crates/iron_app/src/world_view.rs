@@ -139,38 +139,70 @@ struct Plane {
     color: [f32; 4],
 }
 
+/// A `MeshRenderer` (or skinned one) with its material, as the `meshRenderer` op gives it;
+/// a compiled game's sync builds it directly ([`WorldViews::set_renderer`]).
 #[derive(Clone, Copy, Debug)]
-struct Renderer {
-    object: ScriptObject,
+pub(crate) struct Renderer {
+    pub(crate) object: ScriptObject,
     /// A primitive's id or a script mesh's.
-    mesh: u32,
-    color: [f32; 4],
-    emission: [f32; 3],
-    smoothness: f32,
-    metallic: f32,
-    unlit: bool,
-    texture: Option<u32>,
-    tiling: [f32; 4],
-    cast_shadows: bool,
-    extras: MaterialExtras,
+    pub(crate) mesh: u32,
+    pub(crate) color: [f32; 4],
+    pub(crate) emission: [f32; 3],
+    pub(crate) smoothness: f32,
+    pub(crate) metallic: f32,
+    pub(crate) unlit: bool,
+    pub(crate) texture: Option<u32>,
+    pub(crate) tiling: [f32; 4],
+    pub(crate) cast_shadows: bool,
+    pub(crate) extras: MaterialExtras,
 }
 
 /// A skinned renderer's bones (objects, in the mesh's joint order) and their inverse
 /// bind poses.
 #[derive(Clone, Debug)]
-struct Skin {
-    bones: Vec<ScriptObject>,
-    bindposes: Vec<Mat4>,
+pub(crate) struct Skin {
+    pub(crate) bones: Vec<ScriptObject>,
+    pub(crate) bindposes: Vec<Mat4>,
 }
 
 /// A material's settings past the basic ones.
 #[derive(Clone, Copy, Debug, Default)]
-struct MaterialExtras {
-    maps: MaterialMaps,
-    specular: Option<[f32; 3]>,
-    mode: RenderMode,
-    alpha_cutoff: f32,
-    double_sided: bool,
+pub(crate) struct MaterialExtras {
+    pub(crate) maps: MaterialMaps,
+    pub(crate) specular: Option<[f32; 3]>,
+    pub(crate) mode: RenderMode,
+    pub(crate) alpha_cutoff: f32,
+    pub(crate) double_sided: bool,
+}
+
+/// A table of components (ids are per kind), for [`WorldViews::remove_component`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Kind {
+    Camera,
+    Light,
+    FogVolume,
+    /// Mesh renderers and skinned ones (from `SKIN_BASE`), with their skins.
+    Renderer,
+    Sprite,
+    Stroke,
+    Plane,
+    Mirror,
+    Probe,
+    Lod,
+    Particles,
+}
+
+/// A `LineRenderer2D` as the `stroke` op gives it ([`WorldViews::set_stroke`]).
+pub(crate) struct StrokeSpec<'a> {
+    pub(crate) object: ScriptObject,
+    /// Full width in world units.
+    pub(crate) width: f32,
+    pub(crate) color: [f32; 4],
+    pub(crate) closed: bool,
+    pub(crate) points: &'a [[f32; 2]],
+    pub(crate) fill: Option<[f32; 4]>,
+    pub(crate) nonzero: bool,
+    pub(crate) order: i32,
 }
 
 /// A material's maps and modes from `meshRenderer`'s last argument:
@@ -792,40 +824,138 @@ impl WorldViews {
         Ok(Some((id, width, height)))
     }
 
-    /// Drops the cameras, lights and mesh renderers: a compiled game's are rebuilt every frame
-    /// from its registries (`render_sync`).
-    pub fn clear_components(&mut self) {
+    /// Drops one component a compiled game no longer has (`render_sync`).
+    pub(crate) fn remove_component(&mut self, kind: Kind, id: u32) {
+        match kind {
+            Kind::Camera => {
+                self.cameras.remove(&id);
+            }
+            Kind::Light => {
+                self.lights.remove(&id);
+            }
+            Kind::FogVolume => {
+                self.fog_volumes.remove(&id);
+            }
+            Kind::Renderer => {
+                self.renderers.remove(&id);
+                self.skins.remove(&id);
+            }
+            Kind::Sprite => {
+                self.sprites.remove(&id);
+            }
+            Kind::Stroke => {
+                self.strokes.remove(&id);
+            }
+            Kind::Plane => {
+                self.planes.remove(&id);
+            }
+            Kind::Mirror => {
+                self.mirrors.remove(&id);
+            }
+            Kind::Probe => {
+                self.probes.remove(&id);
+            }
+            Kind::Lod => {
+                self.lod_groups.remove(&id);
+            }
+            Kind::Particles => {
+                self.particles.remove(&id);
+            }
+        }
+    }
+
+    /// Drops every component but the particle systems (whose particles live here): a full
+    /// rebuild of a compiled game's components (`render_sync`'s check mode).
+    pub(crate) fn clear_components(&mut self) {
         self.cameras.clear();
         self.lights.clear();
         self.fog_volumes.clear();
         self.renderers.clear();
         self.skins.clear();
+        self.sprites.clear();
+        self.strokes.clear();
+        self.planes.clear();
+        self.mirrors.clear();
+        self.probes.clear();
+        self.lod_groups.clear();
     }
 
-    /// Drops planes, sprites, 2D lines and mirrors whose ids a compiled game no longer has.
-    pub fn keep_components(
-        &mut self,
-        planes: &std::collections::HashSet<u32>,
-        sprites: &std::collections::HashSet<u32>,
-        strokes: &std::collections::HashSet<u32>,
-        mirrors: &std::collections::HashSet<u32>,
-    ) {
-        self.planes.retain(|id, _| planes.contains(id));
-        self.sprites.retain(|id, _| sprites.contains(id));
-        self.strokes.retain(|id, _| strokes.contains(id));
-        self.mirrors.retain(|id, _| mirrors.contains(id));
+    /// A mesh renderer (`meshRenderer`), with its bones if it is skinned.
+    pub(crate) fn set_renderer(&mut self, id: u32, renderer: Renderer, skin: Option<Skin>) {
+        match skin {
+            Some(s) => self.skins.insert(id, s),
+            None => self.skins.remove(&id),
+        };
+        self.renderers.insert(id, renderer);
     }
 
-    /// Drops probes, LOD groups and particle systems a compiled game no longer has.
-    pub fn keep_more(
-        &mut self,
-        probes: &std::collections::HashSet<u32>,
-        lods: &std::collections::HashSet<u32>,
-        particles: &std::collections::HashSet<u32>,
-    ) {
-        self.probes.retain(|id, _| probes.contains(id));
-        self.lod_groups.retain(|id, _| lods.contains(id));
-        self.particles.retain(|id, _| particles.contains(id));
+    /// A 2D line or shape (`stroke`): unchanged points keep their fill's triangles.
+    pub(crate) fn set_stroke(&mut self, id: u32, s: StrokeSpec) {
+        let rule = if s.nonzero {
+            FillRule::NonZero
+        } else {
+            FillRule::EvenOdd
+        };
+        let fill = s.fill.map(|color| {
+            match self.strokes.get(&id) {
+                Some(old) if old.points == s.points && old.nonzero == s.nonzero => {
+                    old.fill.as_ref().map(|(_, tris)| tris.clone())
+                }
+                _ => None,
+            }
+            .map_or_else(
+                || (color, iron_render::tessellate_fill(s.points, rule)),
+                |tris| (color, tris),
+            )
+        });
+        let stroke = Stroke2d {
+            object: s.object,
+            points: s.points.to_vec(),
+            nonzero: s.nonzero,
+            fill,
+            order: s.order,
+            width: s.width.max(0.0),
+            color: s.color,
+            closed: s.closed,
+        };
+        self.strokes.insert(id, stroke);
+    }
+
+    /// The components as text, in id order: what a full rebuild must match (`render_sync`'s
+    /// equivalence test). Particle systems by their settings (their particles are a simulation).
+    #[cfg(test)]
+    pub(crate) fn components_dump(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::new();
+        let cameras: BTreeMap<_, _> = self
+            .cameras
+            .iter()
+            .map(|(id, c)| {
+                (
+                    id,
+                    Camera {
+                        lines: Vec::new(),
+                        ..c.clone()
+                    },
+                )
+            })
+            .collect();
+        let _ = writeln!(s, "cameras {cameras:?}");
+        let _ = writeln!(s, "lights {:?}", self.lights);
+        let _ = writeln!(s, "fog volumes {:?}", self.fog_volumes);
+        let _ = writeln!(s, "renderers {:?}", self.renderers);
+        let skins: BTreeMap<_, _> = self.skins.iter().collect();
+        let _ = writeln!(s, "skins {skins:?}");
+        let _ = writeln!(s, "sprites {:?}", self.sprites);
+        let _ = writeln!(s, "strokes {:?}", self.strokes);
+        let _ = writeln!(s, "planes {:?}", self.planes);
+        let _ = writeln!(s, "mirrors {:?}", self.mirrors);
+        let _ = writeln!(s, "probes {:?}", self.probes);
+        let _ = writeln!(s, "lods {:?}", self.lod_groups);
+        for (id, p) in &self.particles {
+            let _ = writeln!(s, "particles {id} {} {:?}", p.object, p.settings);
+        }
+        s
     }
 
     /// Runs one `render.*` op.
@@ -965,7 +1095,7 @@ impl WorldViews {
             // modes] (see `material_extras`) [bone objects]|null [bindposes, 16 each]`
             "meshRenderer" => {
                 let extras = material_extras(args.get(11))?;
-                match args.get(12) {
+                let skin = match args.get(12) {
                     Some(Value::Array(bones)) => {
                         let bones: Vec<ScriptObject> = bones
                             .iter()
@@ -985,12 +1115,10 @@ impl WorldViews {
                                 bindposes.len()
                             ));
                         }
-                        self.skins.insert(id, Skin { bones, bindposes });
+                        Some(Skin { bones, bindposes })
                     }
-                    _ => {
-                        self.skins.remove(&id);
-                    }
-                }
+                    _ => None,
+                };
                 let mesh = match args.get(2) {
                     Some(Value::String(name)) => {
                         primitive_id(name).ok_or_else(|| format!("no primitive `{name}`"))?
@@ -1013,7 +1141,7 @@ impl WorldViews {
                     cast_shadows: !matches!(args.get(9), Some(Value::Bool(false))),
                     extras,
                 };
-                self.renderers.insert(id, renderer);
+                self.set_renderer(id, renderer, skin);
             }
             // `sprite component object texture [x y w h]|null [pivot x y] pixelsPerUnit
             // [r g b a] flipX flipY sortingOrder`
@@ -1037,41 +1165,20 @@ impl WorldViews {
             // `... [fill r g b a]|null evenodd|nonzero sortingOrder`: the points as a closed,
             // filled shape; higher orders draw over lower.
             "stroke" => {
-                let points = flat(args.get(5))
-                    .ok_or("stroke needs [x, y, ...]")?
-                    .as_chunks::<2>()
-                    .0
-                    .to_vec();
-                let rule = match args.get(7).and_then(Value::as_str) {
-                    Some("nonzero") => FillRule::NonZero,
-                    _ => FillRule::EvenOdd,
-                };
-                let nonzero = matches!(rule, FillRule::NonZero);
-                // A native game sends every shape every frame: unchanged points keep their
-                // triangles.
-                let fill = nums::<4>(args.get(6)).map(|color| {
-                    match self.strokes.get(&id) {
-                        Some(old) if old.points == points && old.nonzero == nonzero => {
-                            old.fill.as_ref().map(|(_, tris)| tris.clone())
-                        }
-                        _ => None,
-                    }
-                    .map_or_else(
-                        || (color, iron_render::tessellate_fill(&points, rule)),
-                        |tris| (color, tris),
-                    )
-                });
-                let stroke = Stroke2d {
-                    object: id_at(1)?,
-                    points,
-                    nonzero,
-                    fill,
-                    order: num(8).unwrap_or(0.0) as i32,
-                    width: num(2)?.max(0.0),
-                    color: nums::<4>(args.get(3)).unwrap_or([1.0; 4]),
-                    closed: matches!(args.get(4), Some(Value::Bool(true))),
-                };
-                self.strokes.insert(id, stroke);
+                let flat = flat(args.get(5)).ok_or("stroke needs [x, y, ...]")?;
+                self.set_stroke(
+                    id,
+                    StrokeSpec {
+                        object: id_at(1)?,
+                        width: num(2)?,
+                        color: nums::<4>(args.get(3)).unwrap_or([1.0; 4]),
+                        closed: matches!(args.get(4), Some(Value::Bool(true))),
+                        points: flat.as_chunks::<2>().0,
+                        fill: nums::<4>(args.get(6)),
+                        nonzero: args.get(7).and_then(Value::as_str) == Some("nonzero"),
+                        order: num(8).unwrap_or(0.0) as i32,
+                    },
+                );
             }
             // `light component object type [r g b] intensity range spotAngle innerSpotAngle
             // haloSize beamIntensity shadows(none|hard|soft) shadowStrength cullingMask

@@ -447,19 +447,81 @@ fn gen_component(c: &Component) -> Vec<String> {
         &mut o,
         "    static {store}: RefCell<Vec<Option<{data}>>> = const { RefCell::new(Vec::new()) };",
     );
+    w(
+        &mut o,
+        "    static {store}_VERSION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };",
+    );
     w(&mut o, "}");
     w(&mut o, "");
-    w(&mut o, "/// Runs `f` on a `{name}`'s data.");
+    w(
+        &mut o,
+        "/// Counts changes to the `{name}s` (any mutable access, made or removed): the renderer's",
+    );
+    w(
+        &mut o,
+        "/// sync skips the registry while it stays the same.",
+    );
+    w(&mut o, "pub fn {low}s_version() -> u64 {");
+    w(&mut o, "    {store}_VERSION.with(std::cell::Cell::get)");
+    w(&mut o, "}");
+    w(&mut o, "");
+    w(&mut o, "fn bump_{low}s() {");
+    w(&mut o, "    {store}_VERSION.with(|c| c.set(c.get() + 1));");
+    w(&mut o, "}");
+    w(&mut o, "");
+    w(
+        &mut o,
+        "/// Runs `f` on a `{name}`'s data (counts as a change: see [`read_{low}`]).",
+    );
     w(
         &mut o,
         "pub fn with_{low}<R>(r: {ref}, f: impl FnOnce(&mut {data}) -> R) -> Option<R> {",
     );
-    w(&mut o, "    {store}.with(|v| {");
+    w(&mut o, "    let out = {store}.with(|v| {");
     w(&mut o, "        let mut v = v.borrow_mut();");
     w(
         &mut o,
         "        v.get_mut((r.0 as usize).checked_sub(1)?)?.as_mut().map(f)",
     );
+    w(&mut o, "    });");
+    w(&mut o, "    if out.is_some() {");
+    w(&mut o, "        bump_{low}s();");
+    w(&mut o, "    }");
+    w(&mut o, "    out");
+    w(&mut o, "}");
+    w(&mut o, "");
+    w(&mut o, "/// Reads a `{name}`'s data.");
+    w(
+        &mut o,
+        "pub fn read_{low}<R>(r: {ref}, f: impl FnOnce(&{data}) -> R) -> Option<R> {",
+    );
+    w(&mut o, "    {store}.with(|v| {");
+    w(&mut o, "        let v = v.borrow();");
+    w(
+        &mut o,
+        "        v.get((r.0 as usize).checked_sub(1)?)?.as_ref().map(f)",
+    );
+    w(&mut o, "    })");
+    w(&mut o, "}");
+    w(&mut o, "");
+    w(
+        &mut o,
+        "/// Runs `f` on every live `{name}` in the order they were made, without copying them (`f`",
+    );
+    w(&mut o, "/// must not reach the `{name}s` itself).");
+    w(
+        &mut o,
+        "pub fn for_each_{low}(mut f: impl FnMut({ref}, &{data})) {",
+    );
+    w(&mut o, "    {store}.with(|v| {");
+    w(
+        &mut o,
+        "        for (i, d) in v.borrow().iter().enumerate() {",
+    );
+    w(&mut o, "            if let Some(d) = d {");
+    w(&mut o, "                f({ref}(i as u32 + 1), d);");
+    w(&mut o, "            }");
+    w(&mut o, "        }");
     w(&mut o, "    })");
     w(&mut o, "}");
     w(&mut o, "");
@@ -482,6 +544,7 @@ fn gen_component(c: &Component) -> Vec<String> {
     w(&mut o, "");
     if asset {
         w(&mut o, "pub fn create_{low}() -> {ref} {");
+        w(&mut o, "    bump_{low}s();");
         w(&mut o, "    {store}.with(|v| {");
         w(&mut o, "        let mut v = v.borrow_mut();");
         w(&mut o, "        v.push(Some({data}::new()));");
@@ -500,14 +563,17 @@ fn gen_component(c: &Component) -> Vec<String> {
             "/// The `{name}s` on an object, in the order they were added.",
         );
         w(&mut o, "pub fn {low}s_on(object: ObjectId) -> Vec<{ref}> {");
-        w(&mut o, "    {low}s()");
-        w(&mut o, "        .into_iter()");
-        w(&mut o, "        .filter(|(_, d)| d.object == object)");
-        w(&mut o, "        .map(|(r, _)| r)");
-        w(&mut o, "        .collect()");
+        w(&mut o, "    let mut on = Vec::new();");
+        w(&mut o, "    for_each_{low}(|r, d| {");
+        w(&mut o, "        if d.object == object {");
+        w(&mut o, "            on.push(r);");
+        w(&mut o, "        }");
+        w(&mut o, "    });");
+        w(&mut o, "    on");
         w(&mut o, "}");
         w(&mut o, "");
         w(&mut o, "pub fn attach_{low}(object: ObjectId) -> {ref} {");
+        w(&mut o, "    bump_{low}s();");
         w(&mut o, "    let r = {store}.with(|v| {");
         w(&mut o, "        let mut v = v.borrow_mut();");
         w(&mut o, "        v.push(Some({data}::new(object)));");
@@ -532,6 +598,7 @@ fn gen_component(c: &Component) -> Vec<String> {
     w(&mut o, "            *slot = None;");
     w(&mut o, "        }");
     w(&mut o, "    });");
+    w(&mut o, "    bump_{low}s();");
     w(&mut o, "}");
     w(&mut o, "");
     if !asset {
@@ -545,6 +612,7 @@ fn gen_component(c: &Component) -> Vec<String> {
     }
     w(&mut o, "pub fn reset_{low}s() {");
     w(&mut o, "    {store}.with(|v| v.borrow_mut().clear());");
+    w(&mut o, "    bump_{low}s();");
     w(&mut o, "}");
     if let Some(items) = c.items.filter(|i| !i.is_empty()) {
         w(&mut o, "");
@@ -564,7 +632,7 @@ fn gen_component(c: &Component) -> Vec<String> {
             if asset { "" } else { "none_object()" }
         ));
     }
-    w(&mut o, "    with_{low}(r, |d| {");
+    w(&mut o, "    read_{low}(r, |d| {");
     for f in c.fields {
         if c.skip_save.contains(&f.ts) {
             continue;
@@ -701,7 +769,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         w(&mut o, "            let copy = super::create_{low}();");
         w(
             &mut o,
-            "            if let Some(data) = with_{low}(self, |d| d.clone()) {",
+            "            if let Some(data) = read_{low}(self, |d| d.clone()) {",
         );
         w(&mut o, "                with_{low}(copy, |d| *d = data);");
         w(&mut o, "            }");
@@ -739,7 +807,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         w(&mut o, "        pub fn game_object(self) -> ObjectId {");
         w(
             &mut o,
-            "            with_{low}(self, |d| d.object).unwrap_or_else(none_object)",
+            "            read_{low}(self, |d| d.object).unwrap_or_else(none_object)",
         );
         w(&mut o, "        }");
     }
@@ -768,7 +836,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         let gx = ty.getter.replace("d.F", &format!("d.{}", f.rs));
         o.push(t(
             &format!(
-                "            with_{{low}}(self, |d| {gx}).unwrap_or_else(|| {})",
+                "            read_{{low}}(self, |d| {gx}).unwrap_or_else(|| {})",
                 ty.fallback
             ),
             kv,
@@ -851,7 +919,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         w(&mut o, "            Ok(u64::from(r.0))");
         w(&mut o, "        }),");
         w(&mut o, "        describe: Box::new(|h| {");
-        w(&mut o, "            with_{low}({ref}(h as u32), |_| ())?;");
+        w(&mut o, "            read_{low}({ref}(h as u32), |_| ())?;");
         w(
             &mut o,
             "            Some(Value::Object(save_{low}({ref}(h as u32))))",
@@ -896,7 +964,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         }
         w(
             &mut o,
-            "        object: Box::new(|h| with_{low}({ref}(h as u32), |d| d.object.to_raw())),",
+            "        object: Box::new(|h| read_{low}({ref}(h as u32), |d| d.object.to_raw())),",
         );
         w(
             &mut o,

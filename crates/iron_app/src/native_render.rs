@@ -93,6 +93,7 @@ pub fn report_particles(changed: &[f64], scene: &mut iron_scene::Scene) {
 impl App {
     /// Called before drawing each frame of a compiled game.
     pub(super) fn sync_native_render(&mut self) {
+        let mut lap = crate::sync_profile::Lap::start();
         {
             // `CameraFollow` and `CameraOrbit` move their cameras after every `onLateUpdate`.
             let _scope = iron_scene::api::enter(&mut self.scene.scene);
@@ -105,9 +106,13 @@ impl App {
             iron_render_api::late_update_camera_follows(dt);
             iron_render_api::late_update_camera_orbits(dt);
         }
+        lap.mark("animation, splines, camera follow");
         let extras = render_sync::sync(&mut self.world_view, &mut self.scene, &self.asset_root);
+        let mut lap = crate::sync_profile::Lap::start();
         self.apply_ui_resources();
+        lap.mark("ui resources");
         self.apply_cursor_and_screen();
+        lap.mark("cursor and screen");
         for (name, args) in extras.cloths {
             if let Err(e) = self
                 .cloth
@@ -116,9 +121,13 @@ impl App {
                 tracing::warn!("cloth.{name}: {e}");
             }
         }
+        lap.mark("cloth ops");
         self.sync_panels(extras.panels);
+        lap.mark("panels");
         self.sync_texts(extras.texts);
+        lap.mark("texts");
         self.sync_window_roots();
+        lap.mark("window roots");
     }
 
     /// A compiled game reloaded: its registries start over, and so does what hangs on them.
@@ -244,8 +253,12 @@ impl App {
         }
     }
 
-    /// `TextMesh` components: panels of one text, dropped with their component.
-    fn sync_texts(&mut self, specs: Vec<Vec<Value>>) {
+    /// `TextMesh` components: panels of one text, dropped with their component (`None`: none
+    /// changed).
+    fn sync_texts(&mut self, specs: Option<Vec<Vec<Value>>>) {
+        let Some(specs) = specs else {
+            return;
+        };
         let (root, fonts, sheets) = (&self.asset_root, &self.font_sources, &self.sheet_sources);
         let mut ids = HashSet::new();
         for args in specs {
@@ -275,35 +288,37 @@ impl App {
     }
 
     /// World panels: the `WorldPanel` components' settings, new roots of `createRoot(panel)`,
-    /// and every panel's pending state updates.
-    fn sync_panels(&mut self, specs: Vec<Vec<Value>>) {
-        let (root, fonts, sheets) = (&self.asset_root, &self.font_sources, &self.sheet_sources);
-        let mut ids = HashSet::new();
-        for args in specs {
-            if let Some(id) = args.first().and_then(Value::as_f64) {
-                ids.insert(id as u32);
+    /// and every panel's pending state updates (`specs` is `None` when no `WorldPanel` changed).
+    fn sync_panels(&mut self, specs: Option<Vec<Vec<Value>>>) {
+        if let Some(specs) = specs {
+            let (root, fonts, sheets) = (&self.asset_root, &self.font_sources, &self.sheet_sources);
+            let mut ids = HashSet::new();
+            for args in specs {
+                if let Some(id) = args.first().and_then(Value::as_f64) {
+                    ids.insert(id as u32);
+                }
+                if let Err(e) = self
+                    .panels
+                    .apply(&args, || new_panel_tree(root, fonts, sheets))
+                {
+                    tracing::warn!("world panel: {e}");
+                }
             }
-            if let Err(e) = self
-                .panels
-                .apply(&args, || new_panel_tree(root, fonts, sheets))
-            {
-                tracing::warn!("world panel: {e}");
+            // A panel whose component is gone goes with its tree.
+            let gone: Vec<u32> = st(|s| {
+                let gone = s
+                    .live
+                    .iter()
+                    .filter(|id| !ids.contains(id))
+                    .copied()
+                    .collect();
+                s.live = ids;
+                gone
+            });
+            for id in gone {
+                self.panels.remove(id);
+                st(|s| s.runtimes.remove(&id));
             }
-        }
-        // A panel whose component is gone goes with its tree.
-        let gone: Vec<u32> = st(|s| {
-            let gone = s
-                .live
-                .iter()
-                .filter(|id| !ids.contains(id))
-                .copied()
-                .collect();
-            s.live = ids;
-            gone
-        });
-        for id in gone {
-            self.panels.remove(id);
-            st(|s| s.runtimes.remove(&id));
         }
         let Some(native) = self.native.as_mut() else {
             return;

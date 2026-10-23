@@ -115,6 +115,7 @@ pub(crate) fn reset_effects() {
     CONTROLS.with(|c| c.borrow_mut().clear());
     STOPPED.with(|s| s.borrow_mut().clear());
     EFFECTS.with(|e| e.borrow_mut().clear());
+    LINES_SEEN.with(|s| s.set(None));
 }
 
 /// The engine's report for a system: how many particles are alive and whether it still emits or
@@ -143,8 +144,23 @@ pub fn report_particles(r: ParticleSystemRef, count: u32, alive: bool) {
 // ---- LineRenderer ----
 
 thread_local! {
-    /// Per line renderer: the mesh it draws into, its mesh renderer and the key of what is drawn.
-    static EFFECTS: RefCell<HashMap<u32, (MeshRef, MeshRendererRef, String)>> = RefCell::new(HashMap::new());
+    /// Per line renderer: the mesh it draws into, its mesh renderer and what is drawn.
+    static EFFECTS: RefCell<HashMap<u32, LineEffect>> = RefCell::new(HashMap::new());
+    /// The line renderers' version when [`pre_render_lines`] last looked.
+    static LINES_SEEN: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// A line renderer's mesh, its mesh renderer and what is drawn in it.
+type LineEffect = (MeshRef, MeshRendererRef, Option<Drawn>);
+
+/// What a line renderer's tube was built from: width, sides, smoothing and the points.
+#[derive(Clone, PartialEq)]
+pub(crate) struct Drawn(f64, i32, i32, Vec<V3>);
+
+impl Drawn {
+    fn matches(&self, d: &LineData) -> bool {
+        self.0 == d.width && self.1 == d.sides && self.2 == d.smoothing && self.3 == d.positions
+    }
 }
 
 /// Whether a mesh renderer belongs to a `LineRenderer` (scene files leave it out: the line makes
@@ -182,7 +198,7 @@ pub(crate) fn line_attached(r: LineRendererRef) {
         d.mesh = mesh.0;
         d.material = material;
     });
-    EFFECTS.with(|e| e.borrow_mut().insert(r.0, (mesh, renderer, String::new())));
+    EFFECTS.with(|e| e.borrow_mut().insert(r.0, (mesh, renderer, None)));
 }
 
 pub(crate) fn line_removed(r: LineRendererRef) {
@@ -194,28 +210,29 @@ pub(crate) fn line_removed(r: LineRendererRef) {
 
 /// Rebuilds the tube if the points or its look changed (what `redraw()` does in the TypeScript).
 pub(crate) fn line_redraw(r: LineRendererRef) {
-    let Some(d) = with_line_renderer(r, |d| d.clone()) else {
+    let Some((mesh, renderer)) = EFFECTS.with(|e| e.borrow().get(&r.0).map(|x| (x.0, x.1))) else {
         return;
     };
-    let Some((mesh, renderer, drawn)) = EFFECTS.with(|e| e.borrow().get(&r.0).cloned()) else {
-        return;
-    };
-    // The renderer follows `material`.
-    with_mesh_renderer(renderer, |m| m.material = d.material);
-    let key = format!(
-        "{},{},{},{}",
-        d.width,
-        d.sides,
-        d.smoothing,
-        d.positions
-            .iter()
-            .map(|p| format!("{},{},{}", p.x, p.y, p.z))
-            .collect::<Vec<_>>()
-            .join(";")
-    );
-    if key == drawn || d.positions.len() < 2 {
-        return;
+    // Unchanged (the usual case): nothing is copied.
+    let fresh = read_line_renderer(r, |d| {
+        let drawn = EFFECTS.with(|e| {
+            e.borrow()
+                .get(&r.0)
+                .and_then(|x| x.2.as_ref())
+                .is_some_and(|k| k.matches(d))
+        });
+        (!drawn && d.positions.len() >= 2).then(|| d.clone())
+    });
+    // The renderer follows `material` (written only when it differs: a write is a change).
+    if let Some(material) = read_line_renderer(r, |d| d.material)
+        && read_mesh_renderer(renderer, |m| m.material) != Some(material)
+    {
+        with_mesh_renderer(renderer, |m| m.material = material);
     }
+    let Some(Some(d)) = fresh else {
+        return;
+    };
+    let key = Drawn(d.width, d.sides, d.smoothing, d.positions.clone());
     // World-space points into this object's space (usually it stays at the origin).
     let t = TransformRef(d.object);
     let local: Vec<V3> = d
@@ -238,15 +255,21 @@ pub(crate) fn line_redraw(r: LineRendererRef) {
     );
     EFFECTS.with(|e| {
         if let Some(x) = e.borrow_mut().get_mut(&r.0) {
-            x.2 = key;
+            x.2 = Some(key);
         }
     });
 }
 
 /// Rebuilds every line renderer that changed. The host calls it once a frame before drawing
-/// (`onPreRender`).
+/// (`onPreRender`); nothing to do while no line renderer changed.
 pub fn pre_render_lines() {
-    for (r, _) in line_renderers() {
+    let version = line_renderers_version();
+    if LINES_SEEN.with(|s| s.replace(Some(version))) == Some(version) {
+        return;
+    }
+    let mut lines = Vec::new();
+    for_each_line_renderer(|r, _| lines.push(r));
+    for r in lines {
         line_redraw(r);
     }
 }

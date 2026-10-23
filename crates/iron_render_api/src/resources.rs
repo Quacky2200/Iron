@@ -105,12 +105,22 @@ pub fn take_commands() -> Vec<RenderCommand> {
     st(|s| std::mem::take(&mut s.commands))
 }
 
+/// Whether textures, meshes or models are waiting for [`take_commands`].
+pub fn has_commands() -> bool {
+    st(|s| !s.commands.is_empty())
+}
+
 pub fn texture_info(t: TextureRef) -> Option<TextureInfo> {
     st(|s| s.textures.get((t.0 as usize).wrapping_sub(1))?.clone())
 }
 
 pub fn mesh_info(m: MeshRef) -> Option<MeshInfo> {
     st(|s| s.meshes.get((m.0 as usize).wrapping_sub(1))?.clone())
+}
+
+/// Reads a mesh's info without copying it (its vertices can be large).
+pub fn read_mesh_info<R>(m: MeshRef, f: impl FnOnce(&MeshInfo) -> R) -> Option<R> {
+    st(|s| Some(f(s.meshes.get((m.0 as usize).wrapping_sub(1))?.as_ref()?)))
 }
 
 /// A texture finished loading (`width` 0: it failed). Scripts read the size and the flags.
@@ -185,7 +195,7 @@ pub fn primitive_mesh(name: &str) -> MeshRef {
 
 /// The name of a built-in mesh.
 pub fn primitive_name(m: MeshRef) -> Option<String> {
-    mesh_info(m)?.primitive
+    read_mesh_info(m, |i| i.primitive.clone())?
 }
 
 /// A mesh the engine fills in (a cloth's simulated copy).
@@ -744,12 +754,12 @@ pub mod mesh_api {
 
         #[property]
         pub fn vertex_count(self) -> f64 {
-            mesh_info(self).map_or(0.0, |i| (i.vertices.len() / 3) as f64)
+            read_mesh_info(self, |i| (i.vertices.len() / 3) as f64).unwrap_or(0.0)
         }
 
         #[property]
         pub fn triangle_count(self) -> f64 {
-            mesh_info(self).map_or(0.0, |i| (i.triangles.len() / 3) as f64)
+            read_mesh_info(self, |i| (i.triangles.len() / 3) as f64).unwrap_or(0.0)
         }
 
         /// The name of a built-in mesh ("" for any other).

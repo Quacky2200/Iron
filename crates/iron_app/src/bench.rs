@@ -507,8 +507,10 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
     let mut frame_no: u64 = 0;
     let mut startup_ms = None;
     let mut pads = std::collections::HashSet::new();
+    crate::sync_profile::enable();
     let mut run_frames = |p: &mut FakePlatform<App>, count: u32, input: &[(u32, Step)]| {
         let mut times = Vec::with_capacity(count as usize);
+        let mut parts = Vec::with_capacity(count as usize);
         let mut next = 0;
         for f in 0..count {
             if p.exited() {
@@ -564,18 +566,23 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
                 sync: app.sync_time.as_secs_f64() * 1000.0,
                 render: app.render_time.as_secs_f64() * 1000.0,
             });
+            parts.push(crate::sync_profile::take());
         }
-        times
+        (times, parts)
     };
 
     run_frames(&mut p, spec.warmup, &[]);
     let mut all = Vec::new();
+    let mut all_parts = Vec::new();
     let mut segments = Vec::new();
     for (i, s) in spec.segments.iter().enumerate() {
-        let times = run_frames(&mut p, s.warmup + s.frames, &s.input);
+        let (times, parts) = run_frames(&mut p, s.warmup + s.frames, &s.input);
         let measured = times.get(s.warmup as usize..).unwrap_or(&[]);
+        let measured_parts = parts.get(s.warmup as usize..).unwrap_or(&[]);
         all.extend_from_slice(measured);
+        all_parts.extend_from_slice(measured_parts);
         let mut v = stats(measured);
+        v["syncParts"] = part_means(measured_parts);
         v["name"] = s.name.clone().into();
         v["warmup"] = s.warmup.into();
         segments.push(v);
@@ -605,9 +612,30 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
         "startupMs": startup_ms.map(|m| (m * 10.0).round() / 10.0),
         "peakMemoryMb": peak_memory_mb(),
         "total": stats(&all),
+        "syncParts": part_means(&all_parts),
         "segments": segments,
     });
     write_report(args.out.as_deref(), &report)
+}
+
+/// The mean milliseconds a frame of each part of the render sync (`sync_profile`), largest first.
+fn part_means(frames: &[Vec<(&'static str, f64)>]) -> Value {
+    let mut sums: Vec<(&str, f64)> = Vec::new();
+    for parts in frames {
+        for &(name, ms) in parts {
+            match sums.iter_mut().find(|(n, _)| *n == name) {
+                Some(s) => s.1 += ms,
+                None => sums.push((name, ms)),
+            }
+        }
+    }
+    let n = frames.len().max(1) as f64;
+    sums.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let mut m = serde_json::Map::new();
+    for (name, sum) in sums {
+        m.insert(name.into(), json!((sum / n * 10000.0).round() / 10000.0));
+    }
+    Value::Object(m)
 }
 
 fn write_report(out: Option<&Path>, report: &Value) -> Result<()> {

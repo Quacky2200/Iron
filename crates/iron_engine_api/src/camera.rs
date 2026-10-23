@@ -77,6 +77,17 @@ pub struct CameraData {
 
 thread_local! {
     static CAMERAS: RefCell<Vec<Option<CameraData>>> = const { RefCell::new(Vec::new()) };
+    static VERSION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts changes to the cameras (any mutable access, made or removed; not the exposure the
+/// renderer reads back): the renderer's sync skips them while it stays the same.
+pub fn version() -> u64 {
+    VERSION.with(std::cell::Cell::get)
+}
+
+fn bump() {
+    VERSION.with(|v| v.set(v.get() + 1));
 }
 
 /// The live cameras, in the order they were made.
@@ -110,14 +121,18 @@ pub fn physical_ev(aperture: f64, shutter_speed: f64, iso: f64) -> f64 {
 
 /// The renderer read back a camera's exposure (EV100 in use) and how bright it metered.
 pub fn set_exposure(c: CameraRef, ev: f64, scene_brightness: f64) {
-    with(c, |d| {
-        d.exposure = ev;
-        d.scene_brightness = scene_brightness;
+    // Not a change the renderer has to hear about.
+    CAMERAS.with(|v| {
+        if let Some(Some(d)) = v.borrow_mut().get_mut((c.0 as usize).wrapping_sub(1)) {
+            d.exposure = ev;
+            d.scene_brightness = scene_brightness;
+        }
     });
 }
 
 /// Removes the cameras of destroyed GameObjects.
 pub fn remove_on(object: ObjectId) {
+    bump();
     CAMERAS.with(|c| {
         for slot in c.borrow_mut().iter_mut() {
             if slot.as_ref().is_some_and(|d| d.object == object) {
@@ -129,6 +144,7 @@ pub fn remove_on(object: ObjectId) {
 
 /// Removes one camera.
 pub fn remove(c: CameraRef) {
+    bump();
     CAMERAS.with(|v| {
         if let Some(slot) = v.borrow_mut().get_mut((c.0 as usize).wrapping_sub(1)) {
             *slot = None;
@@ -138,15 +154,37 @@ pub fn remove(c: CameraRef) {
 
 pub fn reset() {
     CAMERAS.with(|c| c.borrow_mut().clear());
+    bump();
+}
+
+/// Runs `f` on every live camera in the order they were made, without copying them.
+pub fn for_each(mut f: impl FnMut(CameraRef, &CameraData)) {
+    CAMERAS.with(|v| {
+        for (i, d) in v.borrow().iter().enumerate() {
+            if let Some(d) = d {
+                f(CameraRef(i as u32 + 1), d);
+            }
+        }
+    });
 }
 
 /// Width over height of the camera's part of the window.
 fn pixel_aspect(c: CameraRef) -> f64 {
-    let rect = with(c, |d| d.rect).unwrap_or([0.0, 0.0, 1.0, 1.0]);
+    let rect = CAMERAS
+        .with(|v| {
+            Some(
+                v.borrow()
+                    .get((c.0 as usize).checked_sub(1)?)?
+                    .as_ref()?
+                    .rect,
+            )
+        })
+        .unwrap_or([0.0, 0.0, 1.0, 1.0]);
     crate::screen::screen_api::aspect() * (rect[2] / rect[3])
 }
 
 fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
+    bump();
     CAMERAS.with(|v| {
         let mut v = v.borrow_mut();
         v.get_mut((c.0 as usize).checked_sub(1)?)?.as_mut().map(f)
@@ -177,6 +215,7 @@ pub mod camera_api {
     impl CameraRef {
         /// Adds a camera to a GameObject (what `go.addComponent(Camera)` does).
         pub fn attach(object: ObjectId) -> CameraRef {
+            super::bump();
             CAMERAS.with(|c| {
                 let mut c = c.borrow_mut();
                 c.push(Some(CameraData {

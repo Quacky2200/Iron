@@ -10,7 +10,7 @@
 mod app;
 
 // The shared modules reach each other through `crate::`.
-use app::{asset_db, cook, info, models, particles, reload, world_view};
+use app::{asset_db, cook, info, models, particles, reload, sync_profile, world_view};
 
 fn main() -> anyhow::Result<()> {
     app::main()

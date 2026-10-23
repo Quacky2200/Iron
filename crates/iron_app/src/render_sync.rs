@@ -2,9 +2,14 @@
 //!
 //! The QuickJS path hands the renderer `render.*` ops; a native game writes typed data (cameras,
 //! lights, mesh renderers, materials, textures, meshes, sprites, ...). Each frame this turns that
-//! data into the same op calls (`WorldViews::apply`, `texture_op`), so there is one renderer path.
-//! The components are rebuilt from the registries every frame (cheap: tens of items), which also
-//! handles removal. Native objects get script ids through `ScriptScene::adopt`.
+//! data into the same op calls (`WorldViews::apply`, `texture_op`) or, for the many-item kinds
+//! (mesh renderers, 2D lines), typed calls (`set_renderer`, `set_stroke`), so there is one renderer
+//! path. The sync is incremental: a kind whose registries' versions (`*_version()`, bumped by
+//! every mutable access) did not change is skipped; otherwise each component is compared with
+//! what was last sent ([`Track`]) and sent again only when it differs, and the ones gone from the
+//! registry are dropped. Transforms and active flags are read when drawing, so moves cost
+//! nothing here. `IRON_RENDER_SYNC=full` rebuilds everything every frame instead (the old way, to
+//! compare). Native objects get script ids through `ScriptScene::adopt`.
 //!
 //! Wired here: cameras (and render textures, gizmos), lights, mesh and skinned mesh renderers
 //! (primitives, script meshes, model meshes, materials and their maps), sprites, 2D lines, planes,
@@ -12,8 +17,10 @@
 //! models (glTF files), textures from files and pixels, `RenderSettings` and `QualitySettings`.
 //! What needs the app (world panels, cloth, fonts and stylesheets) comes back in [`Extras`].
 
-use crate::world_view::WorldViews;
+use crate::world_view::{Kind, MaterialExtras, Renderer, Skin, StrokeSpec, WorldViews};
 use iron_core::Value;
+use iron_core::glam::Mat4;
+use iron_render::{MaterialMaps, RenderMode, WorldTexture, primitive_id};
 use iron_render_api::MeshRef;
 use iron_scene::ScriptScene;
 use std::cell::RefCell;
@@ -57,18 +64,17 @@ fn rgb(c: iron_engine_api::color::Rgba) -> Value {
 struct Cache {
     /// The last presented gizmo frame: camera id and its lines, kept until the next one.
     gizmos: Option<(u32, Vec<f64>)>,
-    /// What each probe was last sent, and its render requests (they render again on a change).
-    probes: HashMap<u32, (Vec<Value>, f64)>,
-    /// What each particle system was last sent.
-    particles: HashMap<u32, Vec<Value>>,
     /// Cloth rebuild counters already handed to the app.
     cloths: HashMap<u32, f64>,
     /// Inverse bind poses of model meshes (flat, 16 per bone), by mesh id.
     bindposes: HashMap<u32, Vec<f64>>,
     settings_version: Option<u64>,
     quality_version: Option<u64>,
-    /// `resetExposure()` counters per camera, as last seen.
-    exposure_resets: HashMap<u32, f64>,
+    /// Counts the frames [`resources`] uploaded something (meshes, models: what renderers and
+    /// skins may wait for).
+    uploads: u64,
+    /// What each component was last sent as.
+    sent: Sent,
 }
 
 thread_local! {
@@ -89,406 +95,846 @@ pub fn reset() {
 pub struct Extras {
     /// `cloth.*` ops (`cloth` to set one up, `remove`), for `ClothSystem::apply`.
     pub cloths: Vec<(String, Vec<Value>)>,
-    /// `render.panel` args for every live world panel (the panel's own id first).
-    pub panels: Vec<Vec<Value>>,
-    /// `render.text` args for every `TextMesh` (ids from [`TEXT_BASE`], in the panels' id space).
-    pub texts: Vec<Vec<Value>>,
+    /// `render.panel` args for every live world panel (the panel's own id first); `None` while
+    /// no `WorldPanel` changed.
+    pub panels: Option<Vec<Vec<Value>>>,
+    /// `render.text` args for every `TextMesh` (ids from [`TEXT_BASE`], in the panels' id space);
+    /// `None` while no `TextMesh` changed.
+    pub texts: Option<Vec<Vec<Value>>>,
 }
 
 /// `TextMesh` components are panels with ids from this number up (above the skinned renderers').
 pub const TEXT_BASE: u32 = 1 << 25;
 
-/// The mesh argument of a renderer op: a primitive's name, or the id of an uploaded mesh.
+/// Whether a mesh exists (an engine mesh of a model always does).
+fn mesh_exists(mesh: u32) -> bool {
+    mesh >= ENGINE_IDS || iron_render_api::read_mesh_info(MeshRef(mesh), |_| ()).is_some()
+}
+
+/// The mesh argument of a `cloth` op: a primitive's name, or the id of an uploaded mesh.
 fn mesh_arg(mesh: u32) -> Option<Value> {
-    if mesh >= ENGINE_IDS {
-        return Some(n(f64::from(mesh)));
+    if !mesh_exists(mesh) {
+        return None;
     }
-    let info = iron_render_api::mesh_info(MeshRef(mesh))?;
-    Some(match info.primitive {
+    Some(match iron_render_api::primitive_name(MeshRef(mesh)) {
         Some(name) => Value::String(name),
         None => n(f64::from(mesh)),
     })
 }
 
-/// The `meshRenderer` op's arguments for a renderer id, its object and mesh, and a material.
-fn renderer_args(
-    id: u32,
-    object: u32,
-    mesh: Value,
-    material: u32,
-    shadow_casting_mode: &str,
-    skin: Option<(Vec<u32>, Vec<f64>)>,
-) -> Option<Vec<Value>> {
-    let m = iron_render_api::with_material(iron_render_api::MaterialRef(material), |m| m.clone())?;
-    let extras = Value::Array(vec![
-        tex(m.normal_map),
-        n(m.normal_scale),
-        tex(m.metallic_gloss_map),
-        Value::Bool(m.gltf_packing),
-        tex(m.occlusion_map),
-        n(m.occlusion_strength),
-        tex(m.emission_map),
-        tex(m.detail_albedo_map),
-        arr(&[
-            m.detail_albedo_map_scale.x,
-            m.detail_albedo_map_scale.y,
-            m.detail_albedo_map_offset.x,
-            m.detail_albedo_map_offset.y,
-        ]),
-        if m.has_specular_color {
-            arr(&[m.specular_color.r, m.specular_color.g, m.specular_color.b])
-        } else {
-            Value::Null
-        },
-        Value::String(m.rendering_mode.clone()),
-        n(m.alpha_cutoff),
-        Value::Bool(m.double_sided),
-    ]);
-    let mut args = vec![
-        n(f64::from(id)),
-        n(f64::from(object)),
-        mesh,
-        rgba(m.color),
-        rgb(m.emission),
-        n(m.smoothness),
-        Value::Bool(m.unlit),
-        tex(m.main_texture),
-        arr(&[
-            m.main_texture_scale.x,
-            m.main_texture_scale.y,
-            m.main_texture_offset.x,
-            m.main_texture_offset.y,
-        ]),
-        Value::Bool(shadow_casting_mode != "off"),
-        n(m.metallic),
-        extras,
-    ];
-    if let Some((bones, bindposes)) = skin {
-        args.push(Value::Array(
-            bones.into_iter().map(|b| n(f64::from(b))).collect(),
-        ));
-        args.push(arr(&bindposes));
+/// The renderer's mesh id for a registry mesh: a primitive's built-in id, else the mesh's own.
+fn mesh_id(mesh: u32) -> Result<u32, String> {
+    if !mesh_exists(mesh) {
+        // Not made yet: the renderer shows once it is (a quiet skip, as before).
+        return Err(String::new());
     }
-    Some(args)
+    match iron_render_api::primitive_name(MeshRef(mesh)) {
+        Some(name) => primitive_id(&name).ok_or_else(|| format!("no primitive `{name}`")),
+        None => Ok(mesh),
+    }
 }
 
-/// Uploads what the game queued (textures, meshes, models) and rebuilds the renderer's
-/// components. Returns what the app has to apply itself.
+/// A finite number as the renderer's, else `default` (what the ops do with bad numbers).
+fn fin(v: f64, default: f32) -> f32 {
+    let v = v as f32;
+    if v.is_finite() { v } else { default }
+}
+
+/// A texture handle for a material map: 0 is none.
+fn map(id: u32) -> Option<WorldTexture> {
+    (id != 0).then_some(WorldTexture::Asset(id))
+}
+
+/// A mesh renderer as the renderer keeps it: its object, mesh and material (what the
+/// `meshRenderer` op reads from its arguments).
+fn renderer(
+    object: u32,
+    mesh: u32,
+    m: &iron_render_api::MaterialData,
+    shadow_casting_mode: &str,
+) -> Result<Renderer, String> {
+    let mode = match m.rendering_mode.as_str() {
+        "opaque" => RenderMode::Opaque,
+        "cutout" => RenderMode::Cutout,
+        "fade" => RenderMode::Fade,
+        "transparent" => RenderMode::Transparent,
+        other => return Err(format!("unknown rendering mode `{other}`")),
+    };
+    let c = |v: f64| v as f32;
+    Ok(Renderer {
+        object,
+        mesh: mesh_id(mesh)?,
+        color: [c(m.color.r), c(m.color.g), c(m.color.b), c(m.color.a)],
+        emission: [c(m.emission.r), c(m.emission.g), c(m.emission.b)],
+        smoothness: fin(m.smoothness, 0.5),
+        metallic: fin(m.metallic, 0.0).clamp(0.0, 1.0),
+        unlit: m.unlit,
+        texture: (m.main_texture != 0).then_some(m.main_texture),
+        tiling: [
+            c(m.main_texture_scale.x),
+            c(m.main_texture_scale.y),
+            c(m.main_texture_offset.x),
+            c(m.main_texture_offset.y),
+        ],
+        cast_shadows: shadow_casting_mode != "off",
+        extras: MaterialExtras {
+            maps: MaterialMaps {
+                normal: map(m.normal_map),
+                normal_scale: fin(m.normal_scale, 1.0),
+                metallic_gloss: map(m.metallic_gloss_map),
+                gltf_packing: m.gltf_packing,
+                occlusion: map(m.occlusion_map),
+                occlusion_strength: fin(m.occlusion_strength, 1.0),
+                emission: map(m.emission_map),
+                detail: map(m.detail_albedo_map),
+                detail_tiling: [
+                    c(m.detail_albedo_map_scale.x),
+                    c(m.detail_albedo_map_scale.y),
+                    c(m.detail_albedo_map_offset.x),
+                    c(m.detail_albedo_map_offset.y),
+                ],
+                reflection: None,
+            },
+            specular: m.has_specular_color.then(|| {
+                [
+                    c(m.specular_color.r),
+                    c(m.specular_color.g),
+                    c(m.specular_color.b),
+                ]
+            }),
+            mode,
+            alpha_cutoff: fin(m.alpha_cutoff, 0.5),
+            double_sided: m.double_sided,
+        },
+    })
+}
+
+/// What was last sent for one kind of component: a key per id that says whether it changed,
+/// and the registry versions it was synced at (unchanged versions skip the kind).
+struct Track<K> {
+    seen: Option<[u64; 3]>,
+    /// The key last sent per id, and the pass it was last seen in.
+    items: HashMap<u32, (K, u64)>,
+    pass: u64,
+}
+
+impl<K> Default for Track<K> {
+    fn default() -> Self {
+        Self {
+            seen: None,
+            items: HashMap::new(),
+            pass: 0,
+        }
+    }
+}
+
+impl<K> Track<K> {
+    /// Whether the registries this kind follows changed since the last sync (and starts a pass
+    /// over them when they did).
+    fn stale(&mut self, versions: [u64; 3]) -> bool {
+        if self.seen == Some(versions) {
+            return false;
+        }
+        self.seen = Some(versions);
+        self.pass += 1;
+        true
+    }
+
+    /// Sends one component if `same` says its last sent key differs (or it is new): `send`
+    /// applies it, and an error (empty: a quiet skip) drops it from the views.
+    fn update(
+        &mut self,
+        views: &mut WorldViews,
+        kind: Kind,
+        id: u32,
+        same: impl FnOnce(&mut K) -> bool,
+        key: impl FnOnce() -> K,
+        send: impl FnOnce(&mut WorldViews) -> Result<(), String>,
+    ) {
+        let pass = self.pass;
+        if let Some((k, seen)) = self.items.get_mut(&id) {
+            *seen = pass;
+            if same(k) {
+                return;
+            }
+        }
+        match send(views) {
+            Ok(()) => {
+                self.items.insert(id, (key(), pass));
+            }
+            Err(e) => {
+                if !e.is_empty() {
+                    tracing::warn!(target: "render", "{kind:?} {id}: {e}");
+                }
+                self.items.remove(&id);
+                views.remove_component(kind, id);
+            }
+        }
+    }
+
+    /// Drops the components the last pass did not see (their registry entries are gone).
+    fn sweep(&mut self, views: &mut WorldViews, kind: Kind) {
+        let pass = self.pass;
+        self.items.retain(|id, (_, seen)| {
+            let keep = *seen == pass;
+            if !keep {
+                views.remove_component(kind, *id);
+            }
+            keep
+        });
+    }
+}
+
+/// What every kind of component was last sent as (see [`components`]).
+#[derive(Default)]
+struct Sent {
+    cameras: Track<iron_engine_api::camera::CameraData>,
+    /// `resetExposure()` counters per camera, as last seen.
+    exposure_resets: HashMap<u32, f64>,
+    lights: Track<iron_render_api::LightData>,
+    fog_volumes: Track<iron_render_api::FogVolumeData>,
+    renderers: Track<(
+        iron_render_api::MeshRendererData,
+        iron_render_api::MaterialData,
+    )>,
+    skinned: Track<(iron_render_api::SkinnedData, iron_render_api::MaterialData)>,
+    sprites: Track<(
+        iron_render_api::SpriteRendererData,
+        iron_render_api::SpriteData,
+    )>,
+    strokes: Track<iron_render_api::StrokeData>,
+    planes: Track<iron_render_api::PlaneData>,
+    mirrors: Track<iron_render_api::MirrorData>,
+    probes: Track<iron_render_api::ProbeData>,
+    lods: Track<iron_render_api::LodData>,
+    particles: Track<iron_render_api::ParticleData>,
+    panels: Track<()>,
+    texts: Track<()>,
+    cloths: Track<()>,
+}
+
+/// A camera's settings are the same (not the exposure the renderer reads back, which changes
+/// every frame and may be NaN).
+fn same_camera(
+    a: &iron_engine_api::camera::CameraData,
+    b: &iron_engine_api::camera::CameraData,
+) -> bool {
+    a.object == b.object
+        && a.fov == b.fov
+        && a.near == b.near
+        && a.far == b.far
+        && a.background == b.background
+        && a.depth == b.depth
+        && a.orthographic == b.orthographic
+        && a.orthographic_size == b.orthographic_size
+        && a.clear_flags == b.clear_flags
+        && a.rect == b.rect
+        && a.culling_mask == b.culling_mask
+        && a.layer_cull_distances == b.layer_cull_distances
+        && a.layer_cull_spherical == b.layer_cull_spherical
+        && a.antialiasing == b.antialiasing
+        && a.target_texture == b.target_texture
+        && a.scene_grid == b.scene_grid
+        && a.fog == b.fog
+        && a.exposure_resets == b.exposure_resets
+}
+
+/// `IRON_RENDER_SYNC=full`: rebuild every component each frame (the old way, to compare).
+fn full_rebuild() -> bool {
+    static FULL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FULL.get_or_init(|| std::env::var("IRON_RENDER_SYNC").is_ok_and(|v| v == "full"))
+}
+
+/// Uploads what the game queued (textures, meshes, models) and sends the components that
+/// changed since the last frame. Returns what the app has to apply itself.
 pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Extras {
+    let mut lap = crate::sync_profile::Lap::start();
     let mut extras = Extras::default();
     resources(views, scene, root);
+    lap.mark("resources");
     // Line renderers redraw their tubes (they are mesh renderers on the same objects).
     iron_render_api::pre_render_lines();
-    resources(views, scene, root);
-    views.clear_components();
+    lap.mark("line renderers");
+    if iron_render_api::has_commands() {
+        resources(views, scene, root);
+    }
     settings(views);
-    for (r, d) in iron_engine_api::camera::cameras() {
-        let object = scene.adopt(d.object);
-        let flags = if d.clear_flags == "skybox" {
-            "skybox"
-        } else {
-            "color"
+    lap.mark("settings");
+    let mut sent = cache(|c| std::mem::take(&mut c.sent));
+    if full_rebuild() {
+        views.clear_components();
+        // Particle systems keep their particles (and are compared, not rebuilt).
+        let particles = std::mem::take(&mut sent.particles);
+        sent = Sent {
+            particles,
+            ..Sent::default()
         };
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            n(f64::from(d.fov)),
-            n(f64::from(d.near)),
-            n(f64::from(d.far)),
-            arr(&[
-                d.background.r,
-                d.background.g,
-                d.background.b,
-                d.background.a,
-            ]),
-            n(f64::from(d.depth)),
-            Value::Bool(d.orthographic),
-            n(f64::from(d.orthographic_size)),
-            arr(&d.rect),
-            Value::String(flags.into()),
-            n(f64::from(d.culling_mask)),
-            if d.layer_cull_distances.iter().any(|v| *v > 0.0) {
-                arr(&d.layer_cull_distances)
-            } else {
-                Value::Null
-            },
-            Value::Bool(d.layer_cull_spherical),
-            Value::String(d.antialiasing.clone()),
-            if d.target_texture.0 == 0 {
-                Value::Null
-            } else {
-                n(f64::from(d.target_texture.0))
-            },
-            Value::Bool(d.scene_grid),
-            Value::Bool(d.fog),
-        ];
-        warn(views.apply("camera", &args), "camera");
-        // `resetExposure()` calls since the last frame.
-        let resets = cache(|c| c.exposure_resets.insert(r.0, d.exposure_resets));
-        if resets.is_some_and(|before| before != d.exposure_resets) {
-            warn(
-                views.apply("exposureReset", &[n(f64::from(r.0))]),
-                "exposureReset",
-            );
-        }
+        sent.particles.seen = None;
     }
+    let uploads = cache(|c| c.uploads);
+    let cameras_changed = components(views, scene, &mut sent, uploads, &mut extras, &mut lap);
     // Gizmo lines belong to the camera they were presented for, until the next frame of them.
-    if let Some(frame) = iron_engine_api::gizmos::take_frame() {
-        let mut flat = Vec::with_capacity(frame.lines.len() * 10);
-        for l in &frame.lines {
-            flat.extend([
-                l.from.x, l.from.y, l.from.z, l.to.x, l.to.y, l.to.z, l.color.r, l.color.g,
-                l.color.b, l.color.a,
-            ]);
+    let frame = iron_engine_api::gizmos::take_frame();
+    if frame.is_some() || cameras_changed {
+        if let Some(frame) = frame {
+            let mut flat = Vec::with_capacity(frame.lines.len() * 10);
+            for l in &frame.lines {
+                flat.extend([
+                    l.from.x, l.from.y, l.from.z, l.to.x, l.to.y, l.to.z, l.color.r, l.color.g,
+                    l.color.b, l.color.a,
+                ]);
+            }
+            cache(|c| c.gizmos = Some((frame.camera.0, flat)));
         }
-        cache(|c| c.gizmos = Some((frame.camera.0, flat)));
-    }
-    if let Some((camera, flat)) = cache(|c| c.gizmos.clone()) {
-        // A camera that is gone has nothing to show them on.
-        let _ = views.apply("gizmos", &[n(f64::from(camera)), arr(&flat)]);
-    }
-    for (r, d) in iron_render_api::lights() {
-        let object = scene.adopt(d.object);
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            Value::String(d.r#type.clone()),
-            rgb(d.color),
-            n(d.intensity),
-            n(d.range),
-            n(d.spot_angle),
-            n(d.inner_spot_angle),
-            n(d.halo_size),
-            n(d.beam_intensity),
-            Value::String(d.shadows.clone()),
-            n(d.shadow_strength),
-            n(f64::from(d.culling_mask)),
-            n(d.volumetric_intensity.max(0.0)),
-            Value::String(d.spot_shape.clone()),
-            n(d.aspect_ratio.max(1e-3)),
-        ];
-        warn(views.apply("light", &args), "light");
-    }
-    for (r, d) in iron_render_api::fog_volumes() {
-        let object = scene.adopt(d.object);
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            arr(&[d.size.x, d.size.y, d.size.z]),
-            n(d.density.max(0.0)),
-            rgb(d.color),
-            n(d.blend_distance.max(0.0)),
-            Value::String(d.shape.clone()),
-        ];
-        warn(views.apply("fogVolume", &args), "fogVolume");
-    }
-    for (r, d) in iron_render_api::mesh_renderers() {
-        let object = scene.adopt(d.object);
-        let Some(mesh) = mesh_arg(d.mesh) else {
-            continue;
-        };
-        if let Some(args) =
-            renderer_args(r.0, object, mesh, d.material, &d.shadow_casting_mode, None)
-        {
-            warn(views.apply("meshRenderer", &args), "meshRenderer");
+        if let Some((camera, flat)) = cache(|c| c.gizmos.clone()) {
+            // A camera that is gone has nothing to show them on.
+            let _ = views.apply("gizmos", &[n(f64::from(camera)), arr(&flat)]);
         }
     }
-    for (r, d) in iron_render_api::skinned_mesh_renderers() {
-        let object = scene.adopt(d.object);
-        let Some(mesh) = mesh_arg(d.mesh) else {
-            continue;
-        };
-        let bindposes = if d.mesh >= ENGINE_IDS {
-            cache(|c| c.bindposes.get(&d.mesh).cloned()).unwrap_or_default()
-        } else {
-            iron_render_api::mesh_info(MeshRef(d.mesh))
-                .map(|i| i.bindposes)
-                .unwrap_or_default()
-        };
-        let bones: Vec<u32> = d.bones.iter().map(|b| scene.adopt(*b)).collect();
-        if bindposes.len() != bones.len() * 16 {
-            continue;
+    for (r, action, count) in iron_render_api::take_particle_controls() {
+        let mut args = vec![n(f64::from(r.0)), Value::String(action)];
+        if count > 0.0 {
+            args.push(n(count));
         }
-        if let Some(args) = renderer_args(
-            SKIN_BASE + r.0,
-            object,
-            mesh,
-            d.material,
-            &d.shadow_casting_mode,
-            Some((bones, bindposes)),
-        ) {
-            warn(views.apply("meshRenderer", &args), "skinnedMeshRenderer");
-        }
+        warn(views.apply("particleControl", &args), "particleControl");
     }
-    let mut kept = Kept::default();
-    for (r, d) in iron_render_api::sprite_renderers() {
-        let object = scene.adopt(d.object);
-        let Some(s) =
-            iron_render_api::with_sprite(iron_render_api::SpriteRef(d.sprite), |s| s.clone())
-        else {
-            continue;
-        };
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            n(f64::from(s.texture)),
-            if s.has_rect {
-                arr(&s.rect)
-            } else {
-                Value::Null
-            },
-            arr(&[s.pivot.x, s.pivot.y]),
-            n(s.pixels_per_unit),
-            rgba(d.color),
-            Value::Bool(d.flip_x),
-            Value::Bool(d.flip_y),
-            n(f64::from(d.sorting_order)),
-        ];
-        kept.sprites.insert(r.0);
-        warn(views.apply("sprite", &args), "sprite");
+    lap.mark("gizmos, particle controls");
+    let versions = [
+        iron_render_api::cloths_version(),
+        iron_render_api::mesh_renderers_version(),
+        uploads,
+    ];
+    if sent.cloths.stale(versions) {
+        cloths(scene, &mut extras);
     }
-    for (r, d) in iron_render_api::line_renderer2ds() {
-        let object = scene.adopt(d.object);
-        let flat: Vec<f64> = d.points.iter().flat_map(|p| [p.x, p.y]).collect();
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            n(d.width),
-            rgba(d.color),
-            Value::Bool(d.r#loop),
-            arr(&flat),
-            d.fill_color.map_or(Value::Null, rgba),
-            Value::String(d.fill_rule.clone()),
-            n(f64::from(d.sorting_order)),
-        ];
-        kept.strokes.insert(r.0);
-        warn(views.apply("stroke", &args), "stroke");
-    }
-    for (r, d) in iron_render_api::plane_renderers() {
-        let object = scene.adopt(d.object);
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            arr(&[d.size.x, d.size.y]),
-            rgba(d.color),
-        ];
-        kept.planes.insert(r.0);
-        warn(views.apply("plane", &args), "plane");
-    }
-    for (r, d) in iron_render_api::mirrors() {
-        let object = scene.adopt(d.object);
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            if d.has_normal {
-                arr(&[d.normal.x, d.normal.y, d.normal.z])
-            } else {
-                Value::Null
-            },
-            n(f64::from(d.culling_mask)),
-        ];
-        kept.mirrors.insert(r.0);
-        warn(views.apply("mirror", &args), "mirror");
-    }
-    for (r, d) in iron_render_api::reflection_probes() {
-        let object = scene.adopt(d.object);
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            arr(&[d.size.x, d.size.y, d.size.z]),
-            n(d.resolution),
-            Value::Bool(d.box_projection),
-            Value::Bool(d.refresh_mode == "everyFrame"),
-            n(f64::from(d.culling_mask)),
-        ];
-        kept.probes.insert(r.0);
-        // A probe renders when it is new, changed, or asked to render again.
-        let (changed, again) = cache(|c| {
-            let old = c.probes.get(&r.0);
-            let changed = old.is_none_or(|(a, _)| *a != args);
-            let again = old.is_some_and(|(_, k)| *k != d.render_requests);
-            c.probes.insert(r.0, (args.clone(), d.render_requests));
-            (changed, again)
-        });
-        if changed {
-            warn(views.apply("probe", &args), "probe");
-        } else if again {
-            warn(views.apply("probeRender", &[n(f64::from(r.0))]), "probe");
-        }
-    }
-    for (r, d) in iron_render_api::lod_groups() {
-        let object = scene.adopt(d.object);
-        let heights: Vec<f64> = d.lods.iter().map(|l| l.0).collect();
-        let levels = Value::Array(
-            d.lods
-                .iter()
-                .map(|l| Value::Array(l.1.iter().map(|id| n(f64::from(*id))).collect()))
-                .collect(),
-        );
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            n(d.size),
-            arr(&heights),
-            levels,
-            n(f64::from(d.forced)),
-        ];
-        kept.lods.insert(r.0);
-        warn(views.apply("lodGroup", &args), "lodGroup");
-    }
-    particles(views, scene, &mut kept);
-    cloths(scene, &mut extras);
-    for (r, d) in iron_render_api::world_panels() {
-        let object = scene.adopt(d.object);
-        extras.panels.push(vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            arr(&[d.width, d.height]),
-            n(d.pixels_per_meter),
-            n(d.resolution),
-            rgba(d.tint),
-            Value::Bool(d.interactive),
-        ]);
-    }
-    for (r, d) in iron_render_api::text_meshs() {
-        let object = scene.adopt(d.object);
-        extras.texts.push(vec![
-            n(f64::from(TEXT_BASE + r.0)),
-            n(f64::from(object)),
-            Value::String(d.text.clone()),
-            rgba(d.color),
-            n(d.font_size),
-            if d.font.is_empty() {
-                Value::Null
-            } else {
-                Value::String(d.font.clone())
-            },
-            n(d.font_weight),
-            Value::String(d.alignment.clone()),
-            n(d.max_width),
-            n(d.pixels_per_unit),
-            n(d.resolution),
-        ]);
-    }
-    views.keep_components(&kept.planes, &kept.sprites, &kept.strokes, &kept.mirrors);
-    views.keep_more(&kept.probes, &kept.lods, &kept.particles);
-    cache(|c| {
-        c.probes.retain(|id, _| kept.probes.contains(id));
-        c.particles.retain(|id, _| kept.particles.contains(id));
-    });
+    lap.mark("cloths");
+    cache(|c| c.sent = sent);
     extras
 }
 
-/// The ids of the components that exist this frame, per kind (what is not here is dropped).
-#[derive(Default)]
-struct Kept {
-    planes: HashSet<u32>,
-    sprites: HashSet<u32>,
-    strokes: HashSet<u32>,
-    mirrors: HashSet<u32>,
-    probes: HashSet<u32>,
-    lods: HashSet<u32>,
-    particles: HashSet<u32>,
+/// Sends the components whose registries changed: per kind, nothing at all while its
+/// registries' versions stay the same, else the ones whose data differs from what was sent
+/// last, and drops the ones that are gone. Says whether any camera was sent. `uploads` counts
+/// [`resources`] frames that uploaded something (renderers wait for their meshes).
+fn components(
+    views: &mut WorldViews,
+    scene: &mut ScriptScene,
+    sent: &mut Sent,
+    uploads: u64,
+    extras: &mut Extras,
+    lap: &mut crate::sync_profile::Lap,
+) -> bool {
+    use iron_engine_api::camera;
+    use iron_render_api as api;
+    let mut cameras_changed = false;
+    let t = &mut sent.cameras;
+    if t.stale([camera::version(), 0, 0]) {
+        let resets = &mut sent.exposure_resets;
+        camera::for_each(|r, d| {
+            let object = scene.adopt(d.object);
+            t.update(
+                views,
+                Kind::Camera,
+                r.0,
+                |k| same_camera(k, d),
+                || d.clone(),
+                |views| {
+                    cameras_changed = true;
+                    let flags = if d.clear_flags == "skybox" {
+                        "skybox"
+                    } else {
+                        "color"
+                    };
+                    views.apply(
+                        "camera",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            n(f64::from(d.fov)),
+                            n(f64::from(d.near)),
+                            n(f64::from(d.far)),
+                            arr(&[
+                                d.background.r,
+                                d.background.g,
+                                d.background.b,
+                                d.background.a,
+                            ]),
+                            n(f64::from(d.depth)),
+                            Value::Bool(d.orthographic),
+                            n(f64::from(d.orthographic_size)),
+                            arr(&d.rect),
+                            Value::String(flags.into()),
+                            n(f64::from(d.culling_mask)),
+                            if d.layer_cull_distances.iter().any(|v| *v > 0.0) {
+                                arr(&d.layer_cull_distances)
+                            } else {
+                                Value::Null
+                            },
+                            Value::Bool(d.layer_cull_spherical),
+                            Value::String(d.antialiasing.clone()),
+                            if d.target_texture.0 == 0 {
+                                Value::Null
+                            } else {
+                                n(f64::from(d.target_texture.0))
+                            },
+                            Value::Bool(d.scene_grid),
+                            Value::Bool(d.fog),
+                        ],
+                    )?;
+                    // `resetExposure()` calls since the last time.
+                    let before = resets.insert(r.0, d.exposure_resets);
+                    if before.is_some_and(|b| b != d.exposure_resets) {
+                        warn(
+                            views.apply("exposureReset", &[n(f64::from(r.0))]),
+                            "exposureReset",
+                        );
+                    }
+                    Ok(())
+                },
+            );
+        });
+        t.sweep(views, Kind::Camera);
+        sent.exposure_resets
+            .retain(|id, _| t.items.contains_key(id));
+    }
+    lap.mark("cameras");
+    let t = &mut sent.lights;
+    if t.stale([api::lights_version(), 0, 0]) {
+        api::for_each_light(|r, d| {
+            let object = scene.adopt(d.object);
+            t.update(
+                views,
+                Kind::Light,
+                r.0,
+                |k| k == d,
+                || d.clone(),
+                |views| {
+                    views.apply(
+                        "light",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            Value::String(d.r#type.clone()),
+                            rgb(d.color),
+                            n(d.intensity),
+                            n(d.range),
+                            n(d.spot_angle),
+                            n(d.inner_spot_angle),
+                            n(d.halo_size),
+                            n(d.beam_intensity),
+                            Value::String(d.shadows.clone()),
+                            n(d.shadow_strength),
+                            n(f64::from(d.culling_mask)),
+                            n(d.volumetric_intensity.max(0.0)),
+                            Value::String(d.spot_shape.clone()),
+                            n(d.aspect_ratio.max(1e-3)),
+                        ],
+                    )
+                },
+            );
+        });
+        t.sweep(views, Kind::Light);
+    }
+    let t = &mut sent.fog_volumes;
+    if t.stale([api::fog_volumes_version(), 0, 0]) {
+        api::for_each_fog_volume(|r, d| {
+            let object = scene.adopt(d.object);
+            t.update(
+                views,
+                Kind::FogVolume,
+                r.0,
+                |k| k == d,
+                || d.clone(),
+                |views| {
+                    views.apply(
+                        "fogVolume",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            arr(&[d.size.x, d.size.y, d.size.z]),
+                            n(d.density.max(0.0)),
+                            rgb(d.color),
+                            n(d.blend_distance.max(0.0)),
+                            Value::String(d.shape.clone()),
+                        ],
+                    )
+                },
+            );
+        });
+        t.sweep(views, Kind::FogVolume);
+    }
+    lap.mark("lights, fog volumes");
+    let materials = api::materials_version();
+    let t = &mut sent.renderers;
+    if t.stale([api::mesh_renderers_version(), materials, uploads]) {
+        api::for_each_mesh_renderer(|r, d| {
+            let object = scene.adopt(d.object);
+            let found = api::read_material(api::MaterialRef(d.material), |m| {
+                t.update(
+                    views,
+                    Kind::Renderer,
+                    r.0,
+                    |k| k.0 == *d && k.1 == *m,
+                    || (d.clone(), m.clone()),
+                    |views| {
+                        let renderer = renderer(object, d.mesh, m, &d.shadow_casting_mode)?;
+                        views.set_renderer(r.0, renderer, None);
+                        Ok(())
+                    },
+                );
+            });
+            if found.is_none() {
+                // No material: not drawn.
+                t.update(
+                    views,
+                    Kind::Renderer,
+                    r.0,
+                    |_| false,
+                    || unreachable!(),
+                    |_| Err(String::new()),
+                );
+            }
+        });
+        t.sweep(views, Kind::Renderer);
+    }
+    lap.mark("mesh renderers");
+    let t = &mut sent.skinned;
+    if t.stale([api::skinned_mesh_renderers_version(), materials, uploads]) {
+        api::for_each_skinned_mesh_renderer(|r, d| {
+            let object = scene.adopt(d.object);
+            let id = SKIN_BASE + r.0;
+            let found = api::read_material(api::MaterialRef(d.material), |m| {
+                t.update(
+                    views,
+                    Kind::Renderer,
+                    id,
+                    // Bind poses come with the mesh or model: an upload sends it again.
+                    |k| k.0 == *d && k.1 == *m,
+                    || (d.clone(), m.clone()),
+                    |views| {
+                        let bindposes = if d.mesh >= ENGINE_IDS {
+                            cache(|c| c.bindposes.get(&d.mesh).cloned()).unwrap_or_default()
+                        } else {
+                            api::read_mesh_info(MeshRef(d.mesh), |i| i.bindposes.clone())
+                                .unwrap_or_default()
+                        };
+                        if bindposes.len() != d.bones.len() * 16 {
+                            return Err(String::new());
+                        }
+                        let bones = d.bones.iter().map(|b| scene.adopt(*b)).collect();
+                        let bindposes = bindposes
+                            .as_chunks::<16>()
+                            .0
+                            .iter()
+                            .map(|p| Mat4::from_cols_array(&p.map(|v| v as f32)))
+                            .collect();
+                        let renderer = renderer(object, d.mesh, m, &d.shadow_casting_mode)?;
+                        views.set_renderer(id, renderer, Some(Skin { bones, bindposes }));
+                        Ok(())
+                    },
+                );
+            });
+            if found.is_none() {
+                t.update(
+                    views,
+                    Kind::Renderer,
+                    id,
+                    |_| false,
+                    || unreachable!(),
+                    |_| Err(String::new()),
+                );
+            }
+        });
+        t.sweep(views, Kind::Renderer);
+    }
+    lap.mark("skinned renderers");
+    let t = &mut sent.sprites;
+    if t.stale([api::sprite_renderers_version(), api::sprites_version(), 0]) {
+        api::for_each_sprite_renderer(|r, d| {
+            let object = scene.adopt(d.object);
+            let found = api::read_sprite(api::SpriteRef(d.sprite), |s| {
+                t.update(
+                    views,
+                    Kind::Sprite,
+                    r.0,
+                    |k| k.0 == *d && k.1 == *s,
+                    || (d.clone(), s.clone()),
+                    |views| {
+                        views.apply(
+                            "sprite",
+                            &[
+                                n(f64::from(r.0)),
+                                n(f64::from(object)),
+                                n(f64::from(s.texture)),
+                                if s.has_rect {
+                                    arr(&s.rect)
+                                } else {
+                                    Value::Null
+                                },
+                                arr(&[s.pivot.x, s.pivot.y]),
+                                n(s.pixels_per_unit),
+                                rgba(d.color),
+                                Value::Bool(d.flip_x),
+                                Value::Bool(d.flip_y),
+                                n(f64::from(d.sorting_order)),
+                            ],
+                        )
+                    },
+                );
+            });
+            if found.is_none() {
+                t.update(
+                    views,
+                    Kind::Sprite,
+                    r.0,
+                    |_| false,
+                    || unreachable!(),
+                    |_| Err(String::new()),
+                );
+            }
+        });
+        t.sweep(views, Kind::Sprite);
+    }
+    lap.mark("sprites");
+    let t = &mut sent.strokes;
+    if t.stale([api::line_renderer2ds_version(), 0, 0]) {
+        api::for_each_line_renderer2d(|r, d| {
+            let object = scene.adopt(d.object);
+            t.update(
+                views,
+                Kind::Stroke,
+                r.0,
+                |k| k == d,
+                || d.clone(),
+                |views| {
+                    let points: Vec<[f32; 2]> =
+                        d.points.iter().map(|p| [p.x as f32, p.y as f32]).collect();
+                    let c = |c: iron_engine_api::color::Rgba| {
+                        [c.r as f32, c.g as f32, c.b as f32, c.a as f32]
+                    };
+                    if !d.width.is_finite() {
+                        return Err("argument 2 must be a number".into());
+                    }
+                    views.set_stroke(
+                        r.0,
+                        StrokeSpec {
+                            object,
+                            width: d.width as f32,
+                            color: c(d.color),
+                            closed: d.r#loop,
+                            points: &points,
+                            fill: d.fill_color.map(c),
+                            nonzero: d.fill_rule == "nonzero",
+                            order: d.sorting_order,
+                        },
+                    );
+                    Ok(())
+                },
+            );
+        });
+        t.sweep(views, Kind::Stroke);
+    }
+    lap.mark("lines 2d");
+    let t = &mut sent.planes;
+    if t.stale([api::plane_renderers_version(), 0, 0]) {
+        api::for_each_plane_renderer(|r, d| {
+            let object = scene.adopt(d.object);
+            t.update(
+                views,
+                Kind::Plane,
+                r.0,
+                |k| k == d,
+                || d.clone(),
+                |views| {
+                    views.apply(
+                        "plane",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            arr(&[d.size.x, d.size.y]),
+                            rgba(d.color),
+                        ],
+                    )
+                },
+            );
+        });
+        t.sweep(views, Kind::Plane);
+    }
+    let t = &mut sent.mirrors;
+    if t.stale([api::mirrors_version(), 0, 0]) {
+        api::for_each_mirror(|r, d| {
+            let object = scene.adopt(d.object);
+            t.update(
+                views,
+                Kind::Mirror,
+                r.0,
+                |k| k == d,
+                || d.clone(),
+                |views| {
+                    views.apply(
+                        "mirror",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            if d.has_normal {
+                                arr(&[d.normal.x, d.normal.y, d.normal.z])
+                            } else {
+                                Value::Null
+                            },
+                            n(f64::from(d.culling_mask)),
+                        ],
+                    )
+                },
+            );
+        });
+        t.sweep(views, Kind::Mirror);
+    }
+    let t = &mut sent.probes;
+    if t.stale([api::reflection_probes_version(), 0, 0]) {
+        api::for_each_reflection_probe(|r, d| {
+            let object = scene.adopt(d.object);
+            // A probe renders when it is new, changed, or asked to render again.
+            let mut again = false;
+            t.update(
+                views,
+                Kind::Probe,
+                r.0,
+                |k| {
+                    again = k.render_requests != d.render_requests;
+                    k.render_requests = d.render_requests;
+                    k == d
+                },
+                || d.clone(),
+                |views| {
+                    views.apply(
+                        "probe",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            arr(&[d.size.x, d.size.y, d.size.z]),
+                            n(d.resolution),
+                            Value::Bool(d.box_projection),
+                            Value::Bool(d.refresh_mode == "everyFrame"),
+                            n(f64::from(d.culling_mask)),
+                        ],
+                    )
+                },
+            );
+            if again && t.items.get(&r.0).is_some_and(|(k, _)| k == d) {
+                warn(views.apply("probeRender", &[n(f64::from(r.0))]), "probe");
+            }
+        });
+        t.sweep(views, Kind::Probe);
+    }
+    let t = &mut sent.lods;
+    if t.stale([api::lod_groups_version(), 0, 0]) {
+        api::for_each_lod_group(|r, d| {
+            let object = scene.adopt(d.object);
+            t.update(
+                views,
+                Kind::Lod,
+                r.0,
+                |k| k == d,
+                || d.clone(),
+                |views| {
+                    let heights: Vec<f64> = d.lods.iter().map(|l| l.0).collect();
+                    let levels = Value::Array(
+                        d.lods
+                            .iter()
+                            .map(|l| Value::Array(l.1.iter().map(|id| n(f64::from(*id))).collect()))
+                            .collect(),
+                    );
+                    views.apply(
+                        "lodGroup",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            n(d.size),
+                            arr(&heights),
+                            levels,
+                            n(f64::from(d.forced)),
+                        ],
+                    )
+                },
+            );
+        });
+        t.sweep(views, Kind::Lod);
+    }
+    lap.mark("planes, mirrors, probes, lods");
+    let t = &mut sent.particles;
+    if t.stale([api::particle_systems_version(), 0, 0]) {
+        api::for_each_particle_system(|r, d| {
+            let object = scene.adopt(d.object);
+            let first = !t.items.contains_key(&r.0);
+            t.update(
+                views,
+                Kind::Particles,
+                r.0,
+                // The counts the renderer reports back are not settings.
+                |k| {
+                    k.particle_count = d.particle_count;
+                    k.alive = d.alive;
+                    k == d
+                },
+                || d.clone(),
+                |views| {
+                    views.apply(
+                        "particles",
+                        &[
+                            n(f64::from(r.0)),
+                            n(f64::from(object)),
+                            Value::Array(particle_pairs(d)),
+                            Value::Bool(first && d.play_on_awake),
+                        ],
+                    )
+                },
+            );
+        });
+        t.sweep(views, Kind::Particles);
+    }
+    lap.mark("particles");
+    if sent.panels.stale([api::world_panels_version(), 0, 0]) {
+        let mut panels = Vec::new();
+        api::for_each_world_panel(|r, d| {
+            let object = scene.adopt(d.object);
+            panels.push(vec![
+                n(f64::from(r.0)),
+                n(f64::from(object)),
+                arr(&[d.width, d.height]),
+                n(d.pixels_per_meter),
+                n(d.resolution),
+                rgba(d.tint),
+                Value::Bool(d.interactive),
+            ]);
+        });
+        extras.panels = Some(panels);
+    }
+    if sent.texts.stale([api::text_meshs_version(), 0, 0]) {
+        let mut texts = Vec::new();
+        api::for_each_text_mesh(|r, d| {
+            let object = scene.adopt(d.object);
+            texts.push(vec![
+                n(f64::from(TEXT_BASE + r.0)),
+                n(f64::from(object)),
+                Value::String(d.text.clone()),
+                rgba(d.color),
+                n(d.font_size),
+                if d.font.is_empty() {
+                    Value::Null
+                } else {
+                    Value::String(d.font.clone())
+                },
+                n(d.font_weight),
+                Value::String(d.alignment.clone()),
+                n(d.max_width),
+                n(d.pixels_per_unit),
+                n(d.resolution),
+            ]);
+        });
+        extras.texts = Some(texts);
+    }
+    lap.mark("panel and text specs");
+    cameras_changed
 }
 
 /// `RenderSettings` and `QualitySettings`, when they changed.
@@ -759,33 +1205,6 @@ fn particle_pairs(d: &iron_render_api::ParticleData) -> Vec<Value> {
     out
 }
 
-/// Particle systems: settings when they changed, then what scripts asked of them (`play`, ...).
-fn particles(views: &mut WorldViews, scene: &mut ScriptScene, kept: &mut Kept) {
-    for (r, d) in iron_render_api::particle_systems() {
-        let object = scene.adopt(d.object);
-        let pairs = particle_pairs(&d);
-        kept.particles.insert(r.0);
-        if cache(|c| c.particles.get(&r.0) == Some(&pairs)) {
-            continue;
-        }
-        let first = cache(|c| c.particles.insert(r.0, pairs.clone())).is_none();
-        let args = vec![
-            n(f64::from(r.0)),
-            n(f64::from(object)),
-            Value::Array(pairs),
-            Value::Bool(first && d.play_on_awake),
-        ];
-        warn(views.apply("particles", &args), "particles");
-    }
-    for (r, action, count) in iron_render_api::take_particle_controls() {
-        let mut args = vec![n(f64::from(r.0)), Value::String(action)];
-        if count > 0.0 {
-            args.push(n(count));
-        }
-        warn(views.apply("particleControl", &args), "particleControl");
-    }
-}
-
 /// Cloth: a `cloth` op for every new or rebuilt one, `remove` for the ones that are gone.
 fn cloths(scene: &mut ScriptScene, extras: &mut Extras) {
     // A cloth a program made starts when the host first sees it (the TypeScript's `onStart`),
@@ -915,7 +1334,11 @@ fn model_bindposes(description: &serde_json::Value) {
 /// Textures, meshes and models the game made since the last frame.
 fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
     use iron_render_api::{RenderCommand, TextureRef};
-    for cmd in iron_render_api::take_commands() {
+    let commands = iron_render_api::take_commands();
+    if !commands.is_empty() {
+        cache(|c| c.uploads += 1);
+    }
+    for cmd in commands {
         match cmd {
             RenderCommand::Texture(t) => {
                 let Some(info) = iron_render_api::texture_info(t) else {
@@ -1015,11 +1438,186 @@ fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
     }
 }
 
+/// The components a full rebuild from the registries makes, as text (fresh views, nothing
+/// remembered): what the incremental sync's views must match.
+#[cfg(test)]
+fn full_rebuild_dump(scene: &mut ScriptScene) -> String {
+    let mut fresh = WorldViews::default();
+    let uploads = cache(|c| c.uploads);
+    components(
+        &mut fresh,
+        scene,
+        &mut Sent::default(),
+        uploads,
+        &mut Extras::default(),
+        &mut crate::sync_profile::Lap::start(),
+    );
+    fresh.components_dump()
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::native::{Bundle, Native};
     use super::*;
     use iron_ui::UiTree;
+
+    // M9-API-1700
+    #[test]
+    fn the_incremental_sync_matches_a_full_rebuild_under_random_changes() {
+        iron_render_api::reset();
+        iron_engine_api::camera::reset();
+        reset();
+        let mut scene = ScriptScene::new();
+        let mut ui = UiTree::new(100.0, 100.0);
+        let bundle = Bundle {
+            source: "class Chaos extends Component {
+                seed = 12345;
+                objs: GameObject[] = [];
+                mats: Material[] = [];
+                lights: Light[] = [];
+                shapes: LineRenderer2D[] = [];
+                lines: LineRenderer[] = [];
+                planes: PlaneRenderer[] = [];
+                bursts: ParticleSystem[] = [];
+                cam: Camera | null = null;
+                rnd(): number {
+                  this.seed = (this.seed * 1103515245 + 12345) % 2147483648;
+                  return this.seed / 2147483648;
+                }
+                pick(n: number): number {
+                  return Math.floor(this.rnd() * n);
+                }
+                override onStart(): void {
+                  this.cam = new GameObject(\"Cam\").addComponent(Camera, { fieldOfView: 50 });
+                  for (let i = 0; i < 3; i++) {
+                    this.mats.push(Material.create({ color: new Color(this.rnd(), this.rnd(), this.rnd(), 1) }));
+                  }
+                }
+                override onUpdate(): void {
+                  for (let k = 0; k < 4; k++) {
+                    this.step();
+                  }
+                }
+                step(): void {
+                  const op = this.pick(14);
+                  if (op === 0 || this.objs.length === 0) {
+                    const go = new GameObject(\"Box\");
+                    go.addComponent(MeshRenderer, { mesh: this.rnd() < 0.5 ? \"cube\" : \"sphere\", material: this.mats[this.pick(this.mats.length)] });
+                    this.objs.push(go);
+                  } else if (op === 1) {
+                    const i = this.pick(this.objs.length);
+                    this.objs[i].destroy();
+                    this.objs.splice(i, 1);
+                  } else if (op === 2) {
+                    this.mats[this.pick(this.mats.length)].color = new Color(this.rnd(), this.rnd(), this.rnd(), 1);
+                  } else if (op === 3) {
+                    const r = this.objs[this.pick(this.objs.length)].getComponent(MeshRenderer);
+                    if (r !== null) {
+                      r.material = this.mats[this.pick(this.mats.length)];
+                    }
+                  } else if (op === 4) {
+                    if (this.lights.length < 2 || this.rnd() < 0.5) {
+                      this.lights.push(new GameObject(\"Lamp\").addComponent(Light, { type: \"point\", intensity: this.rnd() * 3 }));
+                    } else {
+                      const i = this.pick(this.lights.length);
+                      this.lights[i].gameObject.destroy();
+                      this.lights.splice(i, 1);
+                    }
+                  } else if (op === 5 && this.lights.length > 0) {
+                    this.lights[this.pick(this.lights.length)].intensity = this.rnd() * 5;
+                  } else if (op === 6 && this.cam !== null) {
+                    this.cam.fieldOfView = 30 + this.rnd() * 60;
+                  } else if (op === 7) {
+                    if (this.shapes.length < 2) {
+                      this.shapes.push(new GameObject(\"Shape\").addComponent(LineRenderer2D, { width: 0.1, loop: true }));
+                    }
+                    const s = this.shapes[this.pick(this.shapes.length)];
+                    s.points = Shapes.circle(new Vector2(this.rnd(), 0), 0.5 + this.rnd(), 3 + this.pick(6));
+                    s.fillColor = this.rnd() < 0.5 ? null : new Color(1, 0, 0, 1);
+                  } else if (op === 8) {
+                    this.objs[this.pick(this.objs.length)].enabled = this.rnd() < 0.5;
+                  } else if (op === 9) {
+                    this.mats.push(Material.create({ color: new Color(this.rnd(), 1, 1, 1), smoothness: this.rnd() }));
+                  } else if (op === 10) {
+                    if (this.planes.length < 2) {
+                      this.planes.push(new GameObject(\"Plane\").addComponent(PlaneRenderer, { size: new Vector2(1, 1) }));
+                    }
+                    this.planes[this.pick(this.planes.length)].size = new Vector2(1 + this.rnd(), 1 + this.rnd());
+                  } else if (op === 11) {
+                    if (this.bursts.length < 2) {
+                      this.bursts.push(new GameObject(\"Burst\").addComponent(ParticleSystem, { rateOverTime: 5 }));
+                    } else {
+                      this.bursts[this.pick(this.bursts.length)].rateOverTime = 1 + this.pick(20);
+                    }
+                  } else if (op === 12) {
+                    if (this.lines.length < 2) {
+                      this.lines.push(new GameObject(\"Cable\").addComponent(LineRenderer, { width: 0.05, material: this.mats[0] }));
+                    }
+                    const l = this.lines[this.pick(this.lines.length)];
+                    l.positions = [new Vector3(0, 0, 0), new Vector3(this.rnd(), 1, 0), new Vector3(2, this.rnd(), 0)];
+                  } else if (op === 13 && this.lines.length > 0) {
+                    const i = this.pick(this.lines.length);
+                    this.lines[i].gameObject.destroy();
+                    this.lines.splice(i, 1);
+                  }
+                }
+              }
+              register(Chaos);"
+                .into(),
+            ..Default::default()
+        };
+        let mut native = Native::load(bundle, &mut scene.scene, &mut ui).unwrap();
+        let mut views = WorldViews::default();
+        for frame in 0..150 {
+            native.frame(&mut scene.scene, &mut ui, 0.016, 16.0 * frame as f64);
+            sync(&mut views, &mut scene, Path::new("."));
+            let incremental = views.components_dump();
+            assert_eq!(
+                incremental,
+                full_rebuild_dump(&mut scene),
+                "frame {frame}: the incremental views differ from a full rebuild"
+            );
+        }
+        // Something was drawn and things came and went.
+        let dump = views.components_dump();
+        assert!(dump.contains("Renderer {"), "{dump}");
+    }
+
+    // M9-API-1701
+    #[test]
+    fn an_unchanged_frame_sends_nothing() {
+        iron_render_api::reset();
+        iron_engine_api::camera::reset();
+        reset();
+        let mut scene = ScriptScene::new();
+        let mut ui = UiTree::new(100.0, 100.0);
+        let bundle = Bundle {
+            source: "class Still extends Component {
+                override onStart(): void {
+                  new GameObject(\"Cam\").addComponent(Camera, { fieldOfView: 50 });
+                  const m = Material.create({ color: new Color(1, 0, 0, 1) });
+                  for (let i = 0; i < 20; i++) {
+                    new GameObject(\"Box\").addComponent(MeshRenderer, { mesh: \"cube\", material: m });
+                  }
+                }
+              }
+              register(Still);"
+                .into(),
+            ..Default::default()
+        };
+        let mut native = Native::load(bundle, &mut scene.scene, &mut ui).unwrap();
+        let mut views = WorldViews::default();
+        native.frame(&mut scene.scene, &mut ui, 0.016, 16.0);
+        sync(&mut views, &mut scene, Path::new("."));
+        let versions = cache(|c| c.sent.renderers.seen);
+        let pass = cache(|c| c.sent.renderers.pass);
+        native.frame(&mut scene.scene, &mut ui, 0.016, 32.0);
+        sync(&mut views, &mut scene, Path::new("."));
+        // The registries did not change: the renderers were not even walked.
+        assert_eq!(cache(|c| c.sent.renderers.seen), versions);
+        assert_eq!(cache(|c| c.sent.renderers.pass), pass);
+        assert_eq!(views.components_dump(), full_rebuild_dump(&mut scene));
+    }
 
     // M9-API-620
     #[test]
@@ -1082,7 +1680,7 @@ mod tests {
         native.frame(&mut scene.scene, &mut ui, 0.016, 16.0);
         let mut views = WorldViews::default();
         let extras = sync(&mut views, &mut scene, Path::new("."));
-        assert!(extras.panels.is_empty());
+        assert!(extras.panels.unwrap_or_default().is_empty());
         scene.scene.update_world();
         let v = views.views(&scene, (200, 100), &[]);
         assert_eq!(v.len(), 1);
@@ -1251,8 +1849,9 @@ mod tests {
         scene.scene.update_world();
         // The text mesh goes out as a `render.text` spec in the panels' id space; the rider went a
         // quarter of the way along 4 units.
-        assert_eq!(extras.texts.len(), 1);
-        let args = &extras.texts[0];
+        let texts = extras.texts.expect("text meshes were made");
+        assert_eq!(texts.len(), 1);
+        let args = &texts[0];
         assert_eq!(args[0].as_f64(), Some(f64::from(TEXT_BASE + 1)));
         assert_eq!(args[2].as_str(), Some("x 1.00"));
         assert_eq!(args[4].as_f64(), Some(20.0));

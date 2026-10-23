@@ -37,6 +37,7 @@ mod prefs;
 mod project;
 pub(crate) mod reload;
 mod render_sync;
+pub(crate) mod sync_profile;
 mod ui_scale;
 mod windows;
 pub(crate) mod world_view;
