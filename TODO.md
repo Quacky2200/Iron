@@ -1126,11 +1126,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     out of shadow maps they miss (`RenderStats.shadowCasters`); `Renderer.isVisible` (watched
     once a script asks); the parts of one skeleton share their bone matrices (render 14.6 → 8.6
     ms for 500 figures); animators are grouped per object (no scan of every animator per object)
-  - [ ] Animation culling follow-ups: count secondary windows' cameras; a cheaper bone box
-    (bounds per bone at import); bone matrices are built and uploaded twice (shadows, views) for
-    every skinned renderer every frame, seen or not (about 18 ms building and 6 ms uploading for
-    2000 figures); the animation update is about 28 µs a figure (two clips of 65 bones),
-    single-threaded; a script switch for frustum culling (none today)
+  - [x] Animation culling follow-ups, part 2 (2026-10-23): the safeguard (an animated object
+    with a physics component, AudioSource, ParticleSystem, Light or script below it is never
+    culled, one warning each, `M5-ANI-14`); `Animator.update(dt)` and `Animator.enabled`
+    (`M5-ANI-15`); render-texture cameras (how a secondary window shows the world) count
+    (`M5-CUL-06`; windows draw no world of their own); `Animator` / `Animation` settings,
+    controllers and clips saved in scene files (`M5-ANI-16`); bone matrices kept between frames
+    and only drawn ones uploaded, once (`M5-CUL-07`); animators posed in parallel, bit for bit
+    (`M5-ANI-17`). 1000 a block, view 4: 9.5 → 25.9 fps (`docs/benchmarks.md`)
+  - [ ] Animation culling follow-ups, left: a cheaper bone box (bounds per bone at import; a
+    moving skeleton's matrices are still built every frame for its frustum test, seen or not);
+    writing the animated transforms stays in turn (about 4 ms at 2000 figures, mostly
+    `set_local`); `update_world` walks every object every frame; animator parameter values and
+    current states are not saved in scene files; `Camera.targetWindow` (D3) would need its own
+    views counted; a script switch for frustum culling (none today); a thread pool instead of
+    scoped threads per frame
   - [x] `examples/crowd` (2026-10-23): two city blocks of walking mannequins (50 to 1000 a
     block, each its own Animator), four views, the culling modes on a key, a HUD counting what
     is seen, animated and culled per block; `tools/bench/inputs/crowd.json`
