@@ -165,6 +165,9 @@ pub(crate) struct Skin {
     pub(crate) bindposes: Vec<Mat4>,
 }
 
+/// Skins whose bone matrices start at a place in a view's list (by their first and last bones).
+type SkinRuns<'a> = Vec<(u32, &'a Skin)>;
+
 /// A material's settings past the basic ones.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct MaterialExtras {
@@ -1769,8 +1772,21 @@ impl WorldViews {
         // its inverse bind pose (a missing bone holds its bind pose).
         let mut bones: Vec<Mat4> = Vec::new();
         let mut skinned: HashMap<u32, (u32, u32)> = HashMap::new();
+        // Parts of one figure share a skeleton: its matrices are worked out once.
+        let mut shared: HashMap<(ScriptObject, ScriptObject, usize), SkinRuns> = HashMap::new();
         for (&id, skin) in &self.skins {
             let start = bones.len() as u32;
+            if let (Some(&first), Some(&last)) = (skin.bones.first(), skin.bones.last()) {
+                let same = shared.entry((first, last, skin.bones.len())).or_default();
+                if let Some(&(start, _)) = same
+                    .iter()
+                    .find(|(_, s)| s.bones == skin.bones && s.bindposes == skin.bindposes)
+                {
+                    skinned.insert(id, (start, skin.bones.len() as u32));
+                    continue;
+                }
+                same.push((start, skin));
+            }
             for (b, inverse) in skin.bones.iter().zip(&skin.bindposes) {
                 let world_bone = world(*b).map_or(inverse.inverse(), Mat4::from);
                 bones.push(world_bone * *inverse);
@@ -2303,6 +2319,83 @@ mod tests {
             Ok(None)
         );
         assert!(matches!(views.texture_uploads.pop(), Some((4, None))));
+    }
+
+    // M5-SKN-05
+    #[test]
+    fn parts_of_one_skeleton_share_their_bone_matrices() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        for object in 2..=5 {
+            let at = Value::Array(vec![n(f64::from(object)), n(0.0), n(0.0)]);
+            scene
+                .apply(
+                    "create",
+                    &[n(f64::from(object)), "bone".into(), Value::Null, at],
+                )
+                .unwrap();
+        }
+        scene.scene.update_world();
+        views
+            .apply(
+                "camera",
+                &[
+                    n(100.0),
+                    n(1.0),
+                    n(60.0),
+                    n(0.1),
+                    n(1000.0),
+                    Value::Null,
+                    n(0.0),
+                    Value::Bool(false),
+                    n(5.0),
+                    Value::Null,
+                    "color".into(),
+                ],
+            )
+            .unwrap();
+        let renderer = |object: u32| Renderer {
+            object,
+            mesh: 1,
+            color: [1.0; 4],
+            emission: [0.0; 3],
+            smoothness: 0.0,
+            metallic: 0.0,
+            unlit: false,
+            texture: None,
+            tiling: [1.0, 1.0, 0.0, 0.0],
+            cast_shadows: true,
+            extras: MaterialExtras::default(),
+        };
+        let skin = |bones: Vec<ScriptObject>| Skin {
+            bindposes: vec![Mat4::IDENTITY; bones.len()],
+            bones,
+        };
+        // A body and its joints on one skeleton (bones 2, 3), and a second figure (4, 5).
+        views.set_renderer(10, renderer(2), Some(skin(vec![2, 3])));
+        views.set_renderer(11, renderer(2), Some(skin(vec![2, 3])));
+        views.set_renderer(12, renderer(4), Some(skin(vec![4, 5])));
+        // Same bones, other bind poses: its own matrices.
+        let mut odd = skin(vec![4, 5]);
+        odd.bindposes[1] = Mat4::from_translation(Vec3::X);
+        views.set_renderer(13, renderer(4), Some(odd));
+        let v = views.views(&scene, (64, 64), &[]).remove(0);
+        assert_eq!(v.bones.len(), 6, "three skeletons' worth, not four");
+        let mut ranges: Vec<(u32, u32)> = v.meshes.iter().filter_map(|m| m.bones).collect();
+        ranges.sort_unstable();
+        ranges.dedup();
+        assert_eq!(ranges.len(), 3);
+        // Each range holds its bones' world matrices times their inverse bind poses.
+        for m in &v.meshes {
+            let (start, count) = m.bones.unwrap();
+            assert_eq!(count, 2);
+            let x = v.bones[start as usize].w_axis.x;
+            assert!(x == 2.0 || x == 4.0, "{x}");
+        }
     }
 
     // M5-LAY-02
