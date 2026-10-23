@@ -1,6 +1,7 @@
 {
   "name": "iron",
   "private": true,
+  "license": "Apache-2.0",
   "workspaces": ["js/*", "editor", "tests/fixtures"],
   "scripts": {
     "build": "bun run --filter iron-editor build",

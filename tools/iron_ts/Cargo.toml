@@ -3,6 +3,7 @@ name = "iron_ts"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 iron_ts_rt = { path = "../iron_ts_rt" }

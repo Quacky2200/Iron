@@ -3,6 +3,7 @@ name = "iron_pack"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 # Asset packs (`.irpk`): the container, its writer and reader, and the layered asset file system
 # (loose folders and packs behind one interface). Design: docs/research/iron-asset-packs.md.

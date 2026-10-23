@@ -6,6 +6,7 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 publish = false
+license = "Apache-2.0"
 
 # Line tables only: full debug info made 185 PDBs of 8.6 GB; panics and backtraces still show lines.
 [profile.dev]

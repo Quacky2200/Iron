@@ -3,6 +3,7 @@ name = "iron_render_api"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 iron_animation = { path = "../iron_animation" }

@@ -3,6 +3,7 @@ name = "iron_physics"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 iron_core = { path = "../iron_core" }

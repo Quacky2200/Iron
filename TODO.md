@@ -13,7 +13,7 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] Layout: Taffy first, Yoga fallback behind `LayoutEngine`
 - [x] **First script backend:** QuickJS (`rquickjs` 0.14). `deno_core` follows as a second backend.
 - [x] Rust edition 2024, latest stable (1.99 at time of writing)
-- [ ] Licence: private for now (see README) until a working demo; open-source licence to be chosen then
+- [x] Licence: Apache-2.0 (see `LICENSE` and the README; it lets people modify anywhere and keep their changes with less friction). It was private until a working demo. Done with it: `license = "Apache-2.0"` in the Cargo manifests and package.json files, an `SPDX-License-Identifier: Apache-2.0` header on our source files, checked by `M9-LIC-01`. Open: the copyright holder line for the headers, if one is wanted
 
 ---
 

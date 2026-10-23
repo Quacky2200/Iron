@@ -32,8 +32,20 @@ web had done, potentially allowing web designers/developers chances to work
 on games for those who have the interest - following similar footsteps to
 S&Box who impressed me with their Razor flexbox system.
 
-This source code is current under a private license until a working demo is
-made with satisfaction it is able to provide something useful to all.
+Licence:
+========
+
+Iron is licensed under the Apache License, Version 2.0 (Apache-2.0). The full
+text is in [LICENSE](LICENSE). (It was private until there was a working demo;
+there now is one.)
+
+Every source file we write starts with the line
+`SPDX-License-Identifier: Apache-2.0` in that file's comment syntax (`//` for
+Rust, TypeScript, JavaScript and WGSL, `/* */` for CSS, `#` for Python, shell
+and TOML), after a `#!` line if there is one. New files need it too: the
+`M9-LIC-01` test (`tools/iron_build/tests/spdx_headers.rs`) fails for a tracked
+source file without it. Generated files, built fixtures and third-party code
+are left out; the test's exclusion list says which.
 
 Languages, dates and numbers (Intl):
 ====================================

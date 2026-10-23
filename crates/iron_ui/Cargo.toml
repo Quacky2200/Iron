@@ -3,6 +3,7 @@ name = "iron_ui"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 wuff = "0.2.9"

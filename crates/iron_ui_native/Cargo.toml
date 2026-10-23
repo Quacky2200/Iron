@@ -3,6 +3,7 @@ name = "iron_ui_native"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 iron_core = { version = "0.1.0", path = "../iron_core" }
