@@ -47,12 +47,15 @@ mod light_meter;
 mod models;
 mod render_settings;
 mod resources;
+mod visibility;
 
 pub use effects::*;
 pub use generated::*;
 pub use models::*;
 pub use render_settings::*;
 pub use resources::*;
+pub(crate) use visibility::is_visible;
+pub use visibility::{RendererId, set_seen_renderers, watched_renderers};
 
 pub(crate) fn none_object() -> ObjectId {
     ObjectId {
@@ -141,6 +144,7 @@ pub fn reset() {
     render_settings::reset_render_settings();
     effects::reset_effects();
     models::reset_models();
+    visibility::reset_visibility();
 }
 
 /// The manifests of this crate's script API, for the compiler.

@@ -87,10 +87,12 @@ fn render_stats_and_light_units_are_set_by_the_host() {
     iron_render_api::set_render_stats(iron_render_api::Stats {
         meshes: 12.0,
         fog_culled: 3.0,
+        shadow_casters: 7.0,
         ..Default::default()
     });
     assert_eq!(iron_render_api::render_stats_api::meshes(), 12.0);
     assert_eq!(iron_render_api::render_stats_api::fog_culled(), 3.0);
+    assert_eq!(iron_render_api::render_stats_api::shadow_casters(), 7.0);
     assert_eq!(
         iron_render_api::graphics_settings_api::light_units(),
         "legacy"

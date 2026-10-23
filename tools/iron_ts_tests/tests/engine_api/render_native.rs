@@ -436,6 +436,25 @@ fn quality_levels_validate_remember_and_tell_listeners() {
     });
 }
 
+// M9-TS-3387
+#[test]
+fn renderers_say_whether_the_last_frame_saw_them_once_asked() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(text(ts_rdn_visibility()), "false|false|0");
+        let mesh = render::RendererId::Mesh(render::mesh_renderers()[0].0.0);
+        let body = render::RendererId::Skinned(render::skinned_mesh_renderers()[0].0.0);
+        let mut watched = render::watched_renderers();
+        watched.sort_by_key(|r| matches!(r, render::RendererId::Skinned(_)));
+        assert_eq!(watched, [mesh, body], "asking starts the watch");
+        render::set_seen_renderers([body]);
+        render::set_render_stats(render::Stats {
+            shadow_casters: 5.0,
+            ..Default::default()
+        });
+        assert_eq!(text(ts_rdn_visibility()), "false|true|5");
+    });
+}
+
 // M9-TS-1239
 //
 // A model asked for before the host read its file gets its nodes when the host reports the

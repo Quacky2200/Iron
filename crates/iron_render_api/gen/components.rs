@@ -783,7 +783,17 @@ pub const COMPONENTS: &[Component] = &[
         extra_records: &[],
         extra_value_types: &[],
         items: None,
-        api: None,
+        api: Some(
+            r#"
+        /// Whether the last frame drawn saw it: in a camera's view, or casting a shadow that can
+        /// fall in one (Unity's `Renderer.isVisible`). Asking starts watching it: false until a
+        /// frame has been drawn since.
+        #[property]
+        pub fn is_visible(self) -> bool {
+            crate::is_visible(crate::RendererId::Mesh(self.0))
+        }
+"#,
+        ),
         remove_hook: None,
         awake_hook: None,
         attach_hook: None,
@@ -875,6 +885,15 @@ pub const COMPONENTS: &[Component] = &[
             with_skinned_mesh_renderer(self, |d| d.bones.get(index as usize).copied())
                 .flatten()
                 .unwrap_or_else(none_object)
+        }
+
+        /// Whether the last frame drawn saw it: in a camera's view (judged by a box holding
+        /// every bone's image of its bind pose), or casting a shadow that can fall in one
+        /// (Unity's `Renderer.isVisible`). Asking starts watching it: false until a frame has
+        /// been drawn since.
+        #[property]
+        pub fn is_visible(self) -> bool {
+            crate::is_visible(crate::RendererId::Skinned(self.0))
         }
 "#,
         ),

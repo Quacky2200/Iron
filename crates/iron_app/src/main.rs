@@ -2819,6 +2819,7 @@ impl PlatformApp for App {
                 lights: stats.lights as f64,
                 culled_lights: stats.culled_lights as f64,
                 shadow_maps: stats.shadow_maps as f64,
+                shadow_casters: stats.shadow_casters as f64,
             });
         }
         // Each camera's exposure (EV100 in use, and how bright it metered), when it changes.

@@ -1472,6 +1472,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
             lights: 1,
             culled_lights: 1,
             shadow_maps: 1,
+            shadow_casters: 2,
         }
     );
     let pixels = target.read_pixels(&gpu).unwrap();
@@ -1531,6 +1532,96 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
     // With a low sun behind the camera, its shadow stretches forward into view.
     w.lights[0].direction = Vec3::new(0.0, -0.3, -1.0).normalize();
     world.render_views(&gpu, &rt, std::slice::from_ref(&w), &[]);
+    assert_eq!(world.seen(), [1, 2]);
+}
+
+// M5-CUL-05
+#[test]
+fn skinned_meshes_are_culled_by_their_bones_and_leave_shadow_maps_they_miss() {
+    use iron_render::{Light, LightKind, MeshData, MeshInstance, Shadows};
+    let gpu = shared_gpu();
+    let size = (96, 96);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    // A half-metre box, every vertex on bone 0.
+    let mut cube = MeshData::default();
+    for i in 0..8u32 {
+        let p = [
+            if i & 1 == 0 { -0.25 } else { 0.25 },
+            if i & 2 == 0 { 0.0 } else { 0.5 },
+            if i & 4 == 0 { -0.25 } else { 0.25 },
+        ];
+        cube.positions.push(p);
+        cube.normals.push([0.0, 1.0, 0.0]);
+        cube.uvs.push([0.0, 0.0]);
+        cube.joints.push([0, 0, 0, 0]);
+        cube.weights.push([1.0, 0.0, 0.0, 0.0]);
+    }
+    cube.indices.extend([
+        0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6,
+    ]);
+    let mut world = WorldRenderer::new(&gpu);
+    assert!(world.set_mesh(&gpu, 9, &cube));
+    // Looking down at the origin from 6 m; the sun's maps cover what is near the camera.
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(
+            Vec3::new(0.0, 6.0, 0.01),
+            Vec3::ZERO,
+            Vec3::NEG_Z,
+        )
+        .inverse(),
+        60.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    // Three figures by their bones: under the camera, 4 m off screen beside it (but in the
+    // sun's maps), and 200 m away (in neither). Their `model` is ignored.
+    v.bones = vec![
+        Mat4::IDENTITY,
+        Mat4::from_translation(Vec3::new(4.5, 0.0, 0.0)),
+        Mat4::from_translation(Vec3::new(200.0, 0.0, 0.0)),
+    ];
+    v.meshes = (0..3)
+        .map(|i| MeshInstance {
+            mesh: 9,
+            bones: Some((i, 1)),
+            cast_shadows: true,
+            visibility_key: i + 1,
+            ..Default::default()
+        })
+        .collect();
+    v.lights = vec![Light {
+        kind: LightKind::Directional,
+        color: [1.0, 1.0, 1.0],
+        position: Vec3::ZERO,
+        direction: Vec3::new(-0.3, -1.0, 0.2).normalize(),
+        range: 0.0,
+        shadows: Some(Shadows {
+            soft: false,
+            strength: 1.0,
+        }),
+        culling_mask: ALL_LAYERS,
+        volumetric: 1.0,
+    }];
+    world.shadow_distance = 20.0;
+    world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+    let stats = world.stats();
+    assert_eq!((stats.meshes, stats.culled_meshes), (1, 2), "{stats:?}");
+    assert_eq!(
+        stats.shadow_casters, 2,
+        "the far one casts into no map: {stats:?}"
+    );
+    // Animation culling sees through the same boxes (the one beside casts into view).
     assert_eq!(world.seen(), [1, 2]);
 }
 

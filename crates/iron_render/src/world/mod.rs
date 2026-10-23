@@ -21,11 +21,10 @@ pub mod texture;
 mod upscale;
 mod volume;
 
-use std::collections::HashMap;
-use std::ops::Range;
-
 use bytemuck::{Pod, Zeroable};
 use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
+use std::collections::HashMap;
+use std::ops::Range;
 
 use crate::{Color, Gpu, RenderTarget};
 pub use bloom::{
@@ -39,6 +38,9 @@ use texture::SamplerKey;
 pub use texture::{
     Anisotropic, CookedTexture, TexelFormat, TextureData, TextureFilter, TextureWrap, mip_chain,
 };
+
+/// A box in the world: its least and greatest corners.
+type WorldBox = (Vec3, Vec3);
 
 /// A texture a quad or mesh is drawn with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1133,6 +1135,9 @@ pub struct WorldStats {
     pub culled_lights: usize,
     /// Shadow map layers drawn (once a frame, shared by every view).
     pub shadow_maps: usize,
+    /// Meshes drawn into the shadow maps (once per culling mask of the casting lights):
+    /// casters outside every layer are left out.
+    pub shadow_casters: usize,
 }
 
 /// Quad, background-fill, opaque-mesh and see-through-mesh pipelines for one format.
@@ -1261,6 +1266,9 @@ pub struct WorldRenderer {
     stats: WorldStats,
     /// The visibility keys of the meshes the last frame saw, sorted.
     seen: Vec<u32>,
+    /// Skinned meshes' world boxes this frame, by (view's bone list, first bone, mesh): the
+    /// shadow pass, the sight report and each view's culling ask for the same ones.
+    skin_boxes: std::cell::RefCell<HashMap<(usize, u32, u32), Option<WorldBox>>>,
     textures: HashMap<u32, AssetTexture>,
     samplers: HashMap<SamplerKey, wgpu::Sampler>,
     /// Material bind groups made from kept textures only, reused across frames (cleared
@@ -1712,6 +1720,7 @@ impl WorldRenderer {
             meshes: HashMap::new(),
             stats: WorldStats::default(),
             seen: Vec::new(),
+            skin_boxes: Default::default(),
             textures: HashMap::new(),
             samplers: HashMap::new(),
             material_groups: HashMap::new(),
@@ -1865,9 +1874,41 @@ impl WorldRenderer {
         {
             return;
         }
-        // Each shadow layer's volume, with the light it is of.
-        let plan = &self.shadow_plan;
-        let mut layers: Vec<(cull::Frustum, &Light)> = Vec::new();
+        let layers = Self::shadow_layers(&self.shadow_plan);
+        let mut seen = std::mem::take(&mut self.seen);
+        for view in views {
+            let frustum = cull::Frustum::from_view_proj(view.camera.view_proj);
+            let fog_reach = view
+                .fog
+                .filter(|f| f.cull)
+                .and_then(|f| f.cull_distance())
+                .map(|d| cull::FogReach::new(&view.camera, d));
+            for m in view.meshes.iter().filter(|m| m.visibility_key != 0) {
+                let Some((lo, hi)) = self.world_box(view, m) else {
+                    continue;
+                };
+                let in_view = frustum.aabb(lo, hi) && !fog_reach.is_some_and(|r| r.hides((lo, hi)));
+                // A caster counts when it is in a shadow map and its shadow can fall in view.
+                let casts = m.cast_shadows && !m.blended();
+                let in_shadow = casts
+                    && layers.iter().any(|(f, light)| {
+                        in_mask(light.culling_mask, m.layer)
+                            && f.aabb_past_near(lo, hi)
+                            && self.shadow_reaches(light, (lo, hi), &frustum, &view.camera)
+                    });
+                if in_view || in_shadow {
+                    seen.push(m.visibility_key);
+                }
+            }
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        self.seen = seen;
+    }
+
+    /// Each shadow layer's volume, with the light it is of.
+    fn shadow_layers(plan: &shadows::ShadowPlan) -> Vec<(cull::Frustum, &Light)> {
+        let mut layers = Vec::new();
         for slot in &plan.slots {
             let count = if slot.first == 0 {
                 plan.cascades
@@ -1889,49 +1930,27 @@ impl WorldRenderer {
                 layers.push((cull::Frustum::from_view_proj(*m), &slot.light));
             }
         }
-        let mut seen = std::mem::take(&mut self.seen);
-        for view in views {
-            let frustum = cull::Frustum::from_view_proj(view.camera.view_proj);
-            let fog_reach = view
-                .fog
-                .filter(|f| f.cull)
-                .and_then(|f| f.cull_distance())
-                .map(|d| cull::FogReach::new(&view.camera, d));
-            for m in view.meshes.iter().filter(|m| m.visibility_key != 0) {
-                let Some(b) = self.meshes.get(&m.mesh) else {
-                    continue;
-                };
-                let (lo, hi) = b.bounds;
-                let world_box = match m.bones {
-                    Some((start, n)) => {
-                        let bones = view
-                            .bones
-                            .get(start as usize..(start + n) as usize)
-                            .unwrap_or(&[]);
-                        cull::skinned_aabb(lo, hi, bones)
-                    }
-                    None => Some(cull::transform_aabb(lo, hi, m.model)),
-                };
-                let Some((lo, hi)) = world_box else {
-                    continue;
-                };
-                let in_view = frustum.aabb(lo, hi) && !fog_reach.is_some_and(|r| r.hides((lo, hi)));
-                // A caster counts when it is in a shadow map and its shadow can fall in view.
-                let casts = m.cast_shadows && !m.blended();
-                let in_shadow = casts
-                    && layers.iter().any(|(f, light)| {
-                        in_mask(light.culling_mask, m.layer)
-                            && f.aabb_past_near(lo, hi)
-                            && self.shadow_reaches(light, (lo, hi), &frustum, &view.camera)
-                    });
-                if in_view || in_shadow {
-                    seen.push(m.visibility_key);
-                }
-            }
+        layers
+    }
+
+    /// A mesh's box in the world: its bounds moved by its model, or a skinned mesh's bind-pose
+    /// bounds under every bone (kept for the frame). `None` for a mesh not uploaded yet.
+    fn world_box(&self, view: &WorldView, m: &MeshInstance) -> Option<(Vec3, Vec3)> {
+        let (lo, hi) = self.meshes.get(&m.mesh)?.bounds;
+        let Some((start, n)) = m.bones else {
+            return Some(cull::transform_aabb(lo, hi, m.model));
+        };
+        let key = (view.bones.as_ptr() as usize, start, m.mesh);
+        if let Some(b) = self.skin_boxes.borrow().get(&key) {
+            return *b;
         }
-        seen.sort_unstable();
-        seen.dedup();
-        self.seen = seen;
+        let bones = view
+            .bones
+            .get(start as usize..(start + n) as usize)
+            .unwrap_or(&[]);
+        let b = cull::skinned_aabb(lo, hi, bones);
+        self.skin_boxes.borrow_mut().insert(key, b);
+        b
     }
 
     /// Whether a caster's shadow from `light` can reach the view: for the sun, the box swept
@@ -2290,12 +2309,22 @@ impl WorldRenderer {
         Self::upload(gpu, &mut self.shadow_bones, "shadow bones", &bones);
         let mut instances: Vec<GpuMesh> = Vec::new();
         let mut runs_by_mask: Vec<(u32, Vec<ShadowRun>)> = Vec::new();
+        // A caster outside every layer of its lights (what lies before a layer's near plane
+        // still casts into it) leaves the maps as they are.
+        let layers = Self::shadow_layers(&plan);
         for &mask in &masks {
             let mut casters: Vec<&MeshInstance> = view
                 .meshes
                 .iter()
                 .filter(|m| self.meshes.contains_key(&m.mesh))
                 .filter(|m| m.cast_shadows && !m.blended() && in_mask(mask, m.layer))
+                .filter(|m| {
+                    self.world_box(view, m).is_none_or(|(lo, hi)| {
+                        layers.iter().any(|(f, light)| {
+                            light.culling_mask == mask && f.aabb_past_near(lo, hi)
+                        })
+                    })
+                })
                 .collect();
             // Skinned cut-outs cast solid shadows.
             let cutout = |m: &MeshInstance| m.mode == RenderMode::Cutout && m.bones.is_none();
@@ -2348,6 +2377,7 @@ impl WorldRenderer {
             }
             runs_by_mask.push((mask, runs));
         }
+        self.stats.shadow_casters = instances.len();
         Self::upload(gpu, &mut self.shadow_casters, "shadow casters", &instances);
         // Cut-out casters need their textures.
         let mut groups: HashMap<MaterialKey, wgpu::BindGroup> = HashMap::new();
@@ -2791,6 +2821,7 @@ impl WorldRenderer {
         textures: &[&wgpu::TextureView],
     ) {
         self.stats = WorldStats::default();
+        self.skin_boxes.get_mut().clear();
         // Shadow maps once, from the biggest screen view, for every view this frame.
         let main = views
             .iter()
@@ -3352,17 +3383,16 @@ impl WorldRenderer {
                 .map(|d| cull::FogReach::new(&view.camera, d));
             // What the fog hid, counted as it's culled (in view, past the fog).
             let fog_hid = std::cell::Cell::new(0usize);
-            let fogged = |b: (Vec3, Vec3), model: Mat4| {
-                let hid = fog_reach.is_some_and(|r| r.hides(cull::transform_aabb(b.0, b.1, model)));
+            let fogged = |b: (Vec3, Vec3)| {
+                let hid = fog_reach.is_some_and(|r| r.hides(b));
                 fog_hid.set(fog_hid.get() + usize::from(hid));
                 hid
             };
-            // Skinned meshes move with their bones, away from their bounds: always drawn.
+            // Skinned meshes by their bind-pose box under every bone (they move away from
+            // their bounds with their bones).
             let sees = |m: &MeshInstance| {
-                m.bones.is_some()
-                    || self.meshes.get(&m.mesh).is_none_or(|b| {
-                        frustum.transformed(b.bounds, m.model) && !fogged(b.bounds, m.model)
-                    })
+                self.world_box(view, m)
+                    .is_none_or(|(lo, hi)| frustum.aabb(lo, hi) && !fogged((lo, hi)))
             };
             // Opaque meshes, grouped by mesh and texture (instancing).
             let mut opaque: Vec<&MeshInstance> = view
@@ -3427,8 +3457,9 @@ impl WorldRenderer {
                     view.quads
                         .iter()
                         .filter(|q| {
-                            frustum.transformed(cull::QUAD_BOUNDS, q.model)
-                                && !fogged(cull::QUAD_BOUNDS, q.model)
+                            let (lo, hi) = cull::QUAD_BOUNDS;
+                            let b = cull::transform_aabb(lo, hi, q.model);
+                            frustum.aabb(b.0, b.1) && !fogged(b)
                         })
                         .map(|q| (q.order, depth_of(q.model), Item::Quad(q))),
                 )

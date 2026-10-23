@@ -844,6 +844,7 @@ declare class MeshRenderer :: getComponent<T>(cls: { prototype: T }): T | undefi
 declare class MeshRenderer :: material: Material | null;
 declare class MeshRenderer :: mesh: Mesh | PrimitiveType;
 declare class MeshRenderer :: readonly gameObject: GameObject;
+declare class MeshRenderer :: readonly isVisible: boolean;
 declare class MeshRenderer :: readonly transform: Transform;
 declare class MeshRenderer :: set shadowCastingMode(v: string);
 declare class MeshRenderer :: static attach(object: GameObject): MeshRenderer;
@@ -1270,6 +1271,7 @@ declare class SkinnedMeshRenderer :: material: Material | null;
 declare class SkinnedMeshRenderer :: mesh: Mesh | null;
 declare class SkinnedMeshRenderer :: readonly boneCount: number;
 declare class SkinnedMeshRenderer :: readonly gameObject: GameObject;
+declare class SkinnedMeshRenderer :: readonly isVisible: boolean;
 declare class SkinnedMeshRenderer :: readonly transform: Transform;
 declare class SkinnedMeshRenderer :: rootBone: GameObject | null;
 declare class SkinnedMeshRenderer :: set bones(v: readonly GameObject[]);
@@ -2522,6 +2524,7 @@ declare namespace RenderStats :: const fogCulled: number;
 declare namespace RenderStats :: const lights: number;
 declare namespace RenderStats :: const meshes: number;
 declare namespace RenderStats :: const quads: number;
+declare namespace RenderStats :: const shadowCasters: number;
 declare namespace RenderStats :: const shadowMaps: number;
 declare namespace RigidbodyConstraints
 declare namespace RigidbodyConstraints :: const FreezeAll: number;

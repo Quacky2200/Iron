@@ -206,6 +206,18 @@ export function model(): string {
   return `${m.isLoaded}|${a.name}|${b.name}|${m === again}|${m.src}`;
 }
 
+let watchedBox: MeshRenderer | null = null;
+let watchedBody: SkinnedMeshRenderer | null = null;
+
+/** `isVisible` of a mesh renderer and a skinned one, and the shadow casters drawn. */
+export function visibility(): string {
+  if (!watchedBox) {
+    watchedBox = new GameObject("Box").addComponent(MeshRenderer);
+    watchedBody = new GameObject("Body").addComponent(SkinnedMeshRenderer);
+  }
+  return `${watchedBox.isVisible}|${watchedBody!.isVisible}|${RenderStats.shadowCasters}`;
+}
+
 export function others(): string {
   const go = new GameObject("Stuff");
   const mirror = go.addComponent(Mirror, { cullingMask: 6 });

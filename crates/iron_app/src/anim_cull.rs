@@ -3,6 +3,7 @@
 //! last frame's drawing (one frame late), then the renderers under culled objects are watched while
 //! this frame draws (`MeshInstance::visibility_key`, `WorldRenderer::seen`).
 
+use super::render_sync::SKIN_BASE;
 use iron_scene::{ObjectId, ScriptObject, ScriptScene};
 use std::collections::{HashMap, HashSet};
 
@@ -34,15 +35,18 @@ impl Watch {
         }
     }
 
-    /// The renderer's report on the frame just drawn (keys from [`Self::key`]).
+    /// The renderer's report on the frame just drawn (keys from [`Self::key`]), passed on to
+    /// `Renderer.isVisible`.
     pub(crate) fn note_seen(&mut self, keys: &[u32]) {
         self.drawn.clone_from(&self.watched);
         self.seen.clear();
         self.seen.extend(keys.iter().map(|k| k - 1));
+        iron_render_api::set_seen_renderers(self.seen.iter().map(|&id| renderer_id(id)));
     }
 
     /// What the last frame saw of each of `roots` (through any renderer on it or below it), and
-    /// watches those renderers this frame. A renderer not watched last frame counts as seen.
+    /// watches those renderers this frame, and those scripts asked `isVisible` of. A renderer
+    /// not watched last frame counts as seen.
     pub(crate) fn sight(
         &mut self,
         scene: &ScriptScene,
@@ -50,6 +54,14 @@ impl Watch {
         roots: &[ObjectId],
     ) -> Sight {
         self.watched.clear();
+        self.watched.extend(
+            iron_render_api::watched_renderers()
+                .into_iter()
+                .map(|r| match r {
+                    iron_render_api::RendererId::Mesh(id) => id,
+                    iron_render_api::RendererId::Skinned(id) => SKIN_BASE + id,
+                }),
+        );
         let mut out = HashMap::new();
         if roots.is_empty() {
             return Sight(out);
@@ -70,6 +82,14 @@ impl Watch {
             }
         }
         Sight(out)
+    }
+}
+
+/// A renderer table id as its component (skinned renderers from `SKIN_BASE`).
+fn renderer_id(id: u32) -> iron_render_api::RendererId {
+    match id.checked_sub(SKIN_BASE) {
+        Some(skinned) => iron_render_api::RendererId::Skinned(skinned),
+        None => iron_render_api::RendererId::Mesh(id),
     }
 }
 
@@ -108,5 +128,29 @@ mod tests {
         // No culled objects: nothing watched.
         w.sight(&scene, renderers(), &[]);
         assert_eq!(w.key(7), 0);
+    }
+
+    // M5-CUL-04
+    #[test]
+    fn renderers_scripts_ask_is_visible_of_are_watched_and_told_what_was_seen() {
+        iron_render_api::reset();
+        let scene = ScriptScene::new();
+        let mut w = Watch::default();
+        let (mesh, skinned) = (
+            iron_render_api::MeshRendererRef(4),
+            iron_render_api::SkinnedMeshRendererRef(2),
+        );
+        let skin_id = SKIN_BASE + 2;
+        assert!(!mesh.is_visible() && !skinned.is_visible());
+        // Asked: watched with no animator culling at all.
+        w.sight(&scene, std::iter::empty(), &[]);
+        assert_eq!(w.key(4), 5);
+        assert_eq!(w.key(skin_id), skin_id + 1);
+        w.note_seen(&[skin_id + 1]);
+        assert!(!mesh.is_visible());
+        assert!(skinned.is_visible());
+        w.note_seen(&[5]);
+        assert!(mesh.is_visible() && !skinned.is_visible());
+        iron_render_api::reset();
     }
 }

@@ -32,7 +32,7 @@ use std::path::Path;
 const ENGINE_IDS: u32 = crate::models::ENGINE_IDS;
 
 /// Skinned renderers share the renderer table with mesh renderers: their ids start here.
-const SKIN_BASE: u32 = 1 << 24;
+pub(crate) const SKIN_BASE: u32 = 1 << 24;
 
 fn n(x: f64) -> Value {
     Value::Number(x)

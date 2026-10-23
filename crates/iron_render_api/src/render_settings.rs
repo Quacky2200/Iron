@@ -1668,6 +1668,7 @@ pub struct Stats {
     pub lights: f64,
     pub culled_lights: f64,
     pub shadow_maps: f64,
+    pub shadow_casters: f64,
 }
 
 thread_local! {
@@ -1730,6 +1731,12 @@ pub mod render_stats_api {
     #[property]
     pub fn shadow_maps() -> f64 {
         stat(|s| s.shadow_maps)
+    }
+
+    /// Meshes drawn into the shadow maps: casters outside every map are left out.
+    #[property]
+    pub fn shadow_casters() -> f64 {
+        stat(|s| s.shadow_casters)
     }
 }
 
