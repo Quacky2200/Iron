@@ -9,6 +9,8 @@
 mod api;
 mod data;
 mod kinds;
+#[cfg(test)]
+mod kinds_tests;
 mod manager;
 
 pub use api::{manifests, scene_manager_api};

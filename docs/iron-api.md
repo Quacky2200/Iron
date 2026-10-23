@@ -376,7 +376,11 @@ QuickJS both pass it (`GameObject.setParent(parent, keepWorld = true)` is declar
 `toJSON`). The file format is `scenes.ts`'s `iron.scene` version 1, read and written with `serde_json`.
 
 The loader does not know component classes. `iron_kinds` is a per-thread registry of *kinds* (`create`, `on`, `save`, `load`,
-`awake`, `object`, `destroy` over raw `u64` handles). `iron_scenes` registers `Camera`, `Animation` and `Animator`; a compiled
+`awake`, `object`, `destroy` over raw `u64` handles). `iron_scenes` registers `Camera`, `Animation` (`clip`, `clips`,
+`playAutomatically`, `cullingType`) and `Animator` (`controller`, `speed`, `cullingMode`, `enabled`; not its parameter values
+or current state), with the shared asset kinds `AnimationController` and `AnimationClip` (the `toJson` text, the controller's
+clips inline: one `assets` entry however many components use it; a prefab or copy keeps the live one; fields a file lacks keep
+their defaults, `M5-ANI-16`); a compiled
 program's `NativeHost` registers one kind per class it has (properties go through the `PROPS` table: numbers, booleans, strings,
 component and `GameObject` references, and the value classes `Vector2/3/4`, `Quaternion`, `Color`, `Rect`, ... written in
 place). A component whose kind is not registered is skipped with a warning (`take_warnings()`). References are placeholders for

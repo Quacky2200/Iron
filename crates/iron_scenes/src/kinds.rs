@@ -1,12 +1,13 @@
 //! The component kinds of the engine components that are native: `Camera`, `Animation` and
 //! `Animator`. Other engine components register their own as they are ported.
 
+use iron_animation::{ClipId, ControllerId};
 use iron_api::Handle;
-use iron_engine_api::animation::AnimationRef;
-use iron_engine_api::animator::AnimatorRef;
+use iron_engine_api::animation::{AnimationRef, ClipRef, animation_component_api};
+use iron_engine_api::animator::{AnimatorRef, ControllerRef, animator_api};
 use iron_engine_api::camera::{self, CameraRef};
 use iron_engine_api::color::Rgba;
-use iron_kinds::Kind;
+use iron_kinds::{AssetKind, Kind};
 use iron_scene::ObjectId;
 use serde_json::{Map, Value, json};
 
@@ -121,32 +122,143 @@ fn camera_kind() -> Kind {
     }
 }
 
-/// A kind with no saved properties yet: it is made and found, and its data comes later.
-fn bare(
-    name: &str,
+/// The functions of a kind with one component per object (`find` gives it, 0 for none).
+struct One {
     create: fn(ObjectId) -> u64,
     find: fn(ObjectId) -> u64,
     object: fn(u64) -> Option<ObjectId>,
+}
+
+/// A kind of one component per object, saved and loaded by `save` / `load` (`load` applies one
+/// property, `None` for a value of the wrong shape, `Some(false)` for an unknown name).
+fn one(
+    name: &str,
+    f: One,
+    save: fn(u64) -> Map<String, Value>,
+    load: fn(u64, &str, &Value) -> Option<bool>,
 ) -> Kind {
-    let n = name.to_owned();
     Kind {
         name: name.into(),
-        create: Box::new(move |o| Ok(create(ObjectId::from_raw(o)))),
-        on: Box::new(move |o| match find(ObjectId::from_raw(o)) {
+        create: Box::new(move |o| Ok((f.create)(ObjectId::from_raw(o)))),
+        on: Box::new(move |o| match (f.find)(ObjectId::from_raw(o)) {
             0 => Vec::new(),
             h => vec![h],
         }),
-        save: Box::new(|_| Map::new()),
-        load: Box::new(move |_, props| {
-            props
-                .keys()
-                .map(|k| format!("{n}.{k} is not loaded from scene files yet; dropped"))
-                .collect()
+        save: Box::new(save),
+        load: Box::new(move |h, props| {
+            let mut warnings = Vec::new();
+            for (k, v) in props {
+                match load(h, k, v) {
+                    Some(true) => {}
+                    Some(false) => warnings.push(format!("no property `{k}` yet; dropped")),
+                    None => warnings.push(format!("property `{k}` has a value of the wrong shape")),
+                }
+            }
+            warnings
         }),
         awake: Box::new(|_| {}),
-        object: Box::new(move |h| object(h).map(Handle::to_raw)),
+        object: Box::new(move |h| (f.object)(h).map(Handle::to_raw)),
         destroy: Box::new(|_| {}),
     }
+}
+
+/// An animation asset (`AnimationController`, `AnimationClip`): shared, so components using one
+/// keep using one; its definition is the JSON `toJson` writes.
+fn animation_asset(
+    name: &str,
+    describe: fn(&iron_animation::World, u64) -> Value,
+    create: fn(&mut iron_animation::World, &Value) -> u64,
+) -> AssetKind {
+    let type_name = name.to_owned();
+    AssetKind {
+        name: name.into(),
+        also: Vec::new(),
+        shared: true,
+        create: Box::new(move |def| Ok(iron_animation::with_world(|w| create(w, def)))),
+        describe: Box::new(move |h| {
+            let mut def = iron_animation::with_world(|w| describe(w, h));
+            // The table entry names its kind.
+            def.as_object_mut()?.insert("type".into(), json!(type_name));
+            Some(def)
+        }),
+    }
+}
+
+fn animator_save(h: u64) -> Map<String, Value> {
+    let a = AnimatorRef(h);
+    let mut m = Map::new();
+    m.insert(
+        "controller".into(),
+        iron_kinds::asset_ref("AnimationController", a.controller().0),
+    );
+    m.insert("speed".into(), json!(a.speed()));
+    m.insert(
+        "cullingMode".into(),
+        json!(animator_api::animator_culling_mode_name(a.culling_mode())),
+    );
+    m.insert("enabled".into(), json!(a.enabled()));
+    m
+}
+
+fn animator_load(h: u64, k: &str, v: &Value) -> Option<bool> {
+    let a = AnimatorRef(h);
+    match k {
+        "controller" => {
+            let c = iron_kinds::asset_handle(v, "AnimationController")?;
+            a.set_controller(ControllerRef(c));
+        }
+        "speed" => a.set_speed(v.as_f64()?),
+        "cullingMode" => {
+            a.set_culling_mode(animator_api::animator_culling_mode_parse(v.as_str()?)?)
+        }
+        "enabled" => a.set_enabled(v.as_bool()?),
+        _ => return Some(false),
+    }
+    Some(true)
+}
+
+fn animation_save(h: u64) -> Map<String, Value> {
+    let a = AnimationRef(h);
+    let mut m = Map::new();
+    m.insert(
+        "clip".into(),
+        iron_kinds::asset_ref("AnimationClip", a.clip().0),
+    );
+    let clips: Vec<Value> = (0..a.clip_count() as usize)
+        .map(|i| iron_kinds::asset_ref("AnimationClip", a.clip_at(i as f64).0))
+        .collect();
+    m.insert("clips".into(), Value::Array(clips));
+    m.insert("playAutomatically".into(), json!(a.play_automatically()));
+    m.insert(
+        "cullingType".into(),
+        json!(animation_component_api::animation_culling_type_name(
+            a.culling_type()
+        )),
+    );
+    m
+}
+
+fn animation_load(h: u64, k: &str, v: &Value) -> Option<bool> {
+    let a = AnimationRef(h);
+    match k {
+        "clip" => a.set_clip(ClipRef(iron_kinds::asset_handle(v, "AnimationClip")?)),
+        "clips" => {
+            let clips = v
+                .as_array()?
+                .iter()
+                .map(|c| iron_kinds::asset_handle(c, "AnimationClip"))
+                .collect::<Option<Vec<u64>>>()?;
+            for c in clips.into_iter().filter(|&c| c != 0) {
+                a.add_clip(ClipRef(c), "");
+            }
+        }
+        "playAutomatically" => a.set_play_automatically(v.as_bool()?),
+        "cullingType" => a.set_culling_type(animation_component_api::animation_culling_type_parse(
+            v.as_str()?,
+        )?),
+        _ => return Some(false),
+    }
+    Some(true)
 }
 
 /// Registers the engine's kinds on this thread (a later registration replaces an earlier one).
@@ -155,22 +267,40 @@ pub fn register_engine_kinds() {
     iron_engine_api::audio_components::register_kinds();
     iron_engine_api::spline::register_kinds();
     iron_render_api::register_kinds();
-    iron_kinds::register(bare(
-        "Animation",
-        |o| AnimationRef::attach(o).0,
-        |o| AnimationRef::find_on(o).0,
-        |h| {
-            let o = AnimationRef(h).game_object();
-            (o.index != u32::MAX).then_some(o)
-        },
+    iron_kinds::register_asset(animation_asset(
+        "AnimationController",
+        |w, h| w.controller_to_json(ControllerId(h as u32)),
+        |w, def| u64::from(w.controller_from_json(def).0),
     ));
-    iron_kinds::register(bare(
-        "Animator",
-        |o| AnimatorRef::attach(o).0,
-        |o| AnimatorRef::find_on(o).0,
-        |h| {
-            let o = AnimatorRef(h).game_object();
-            (o.index != u32::MAX).then_some(o)
+    iron_kinds::register_asset(animation_asset(
+        "AnimationClip",
+        |w, h| w.clip_to_json(ClipId(h as u32)),
+        |w, def| u64::from(w.clip_from_json(def).0),
+    ));
+    iron_kinds::register(one(
+        "Animation",
+        One {
+            create: |o| AnimationRef::attach(o).0,
+            find: |o| AnimationRef::find_on(o).0,
+            object: |h| {
+                let o = AnimationRef(h).game_object();
+                (o.index != u32::MAX).then_some(o)
+            },
         },
+        animation_save,
+        animation_load,
+    ));
+    iron_kinds::register(one(
+        "Animator",
+        One {
+            create: |o| AnimatorRef::attach(o).0,
+            find: |o| AnimatorRef::find_on(o).0,
+            object: |h| {
+                let o = AnimatorRef(h).game_object();
+                (o.index != u32::MAX).then_some(o)
+            },
+        },
+        animator_save,
+        animator_load,
     ));
 }
