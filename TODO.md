@@ -1115,7 +1115,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     built by `iron_animation::gltf`, the `Animator` in `iron_animation`); still to do there:
     group a clip's curves per bone once and cache resolved paths (`Pose` looks each path up by
     name every frame), as `animation.ts` now does
-- [ ] **A profiler** (asked for 2026-10-21): today a slow frame is found by switching
+  - [x] Native render sync (found 2026-10-22 by `iron-build bench`: `sync_native_render` cost
+    0.6-2 ms a frame, making fog-world and six clock faces slower native than QuickJS): it
+    rebuilt every component every frame and copied every script mesh's vertices per renderer
+    (`mesh_info`). Now incremental (registry versions, compare with what was sent, typed
+    `set_renderer` / `set_stroke`; `M9-API-1700..1701`): 1.9 → 0.03 ms in fog-world,
+    godrays-clouds, godrays-forest and fog-park, 0.6 → 0.07 ms in clock (docs/benchmarks.md)- [ ] **A profiler** (asked for 2026-10-21): today a slow frame is found by switching
   features off and timing runs. Wanted, in the window (an overlay or the editor) and as a
   capture to compare:
   - [ ] Frame time split: script (per hook: `onUpdate`, animation, physics callbacks, UI

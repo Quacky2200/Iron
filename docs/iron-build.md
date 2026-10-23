@@ -522,7 +522,13 @@ frame), so GPU time counts. It warms up, measures, and writes JSON (`--bench-out
 p99 / worst frame ms, and the mean split into `script` (game code: hooks, timers, the UI it renders), `sync` (a compiled game's
 `sync_native_render`: animation, splines, cameras, registries into `WorldViews`; 0 under QuickJS, which does that in script),
 `render` (layout and draw list, world, GPU wait) and `other`; start-up (process start to the first frame), load time and peak
-working set. Flags: `--warmup N` (120), `--frames N` (600), `--fixed-dt s` (every frame advances the game's clock by exactly
+working set. Finer splits: `syncParts` (where `sync_native_render` goes: resources, line renderers, settings, each kind of
+component, panels, texts, ...; `iron_app/src/sync_profile.rs`), `startupParts` (log and asset mount, bundle read, asset index,
+UI tree and fonts, the compiler's phases from `iron_ts::timing`: engine manifests, source rewrites, oxc parse, type inference and
+lowering, throw analysis, IR passes, Cranelift code generation, JIT linking; the program's top level and starting components; the
+headless GPU device, renderer set-up and the first frame; plus the program's and prelude's line counts), `opsApplyMs` (applying
+what scripts queued: React commits and a QuickJS game's ops, part of `other`) and `opMarshalMs` (QuickJS: copying `__iron_op`
+arguments out of JavaScript, part of `script`). The timers run only in bench runs. Flags: `--warmup N` (120), `--frames N` (600), `--fixed-dt s` (every frame advances the game's clock by exactly
 `s`, so runs are comparable whatever their speed), `--size WxH`, `--bench-shots dir` (a PNG after each segment, to check the
 input did what it should), `--force` for a QuickJS bundle as usual.
 

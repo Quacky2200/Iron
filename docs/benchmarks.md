@@ -28,14 +28,37 @@ compile for native games); peak MB is the peak working set.
   2.0x, emoji 1.7x, arcade 1.6x.
 - **GPU-bound scenes are equal** (materials, cloth, cornell, text, shapes, tunnel, godrays-lift: 0.99-1.03x): the
   backends share the renderer.
-- **Native regressions:** fog-world (0.86x), fog-blocks (0.93x), form (0.97x), and in clock the Dials, Meter, Sundial,
-  Sand timer, Morphing and Alarm clock faces (0.5-0.8x). The cause is the **sync** column: `sync_native_render` costs
-  1.8 ms a frame in fog-world, 1.95 in fog-park, 1.9 in godrays-clouds, 1.4 in godrays-forest and 0.6 in clock, often
-  more than the script time it replaces. It walks the registries every frame whether or not anything changed; making it
-  incremental (dirty flags per registry) is the obvious next optimisation. fog-blocks and form differ by 0.03 ms or less a
-  frame (noise at 2000+ fps).
-- **Start-up** is about the same (0.5-0.8 s), except emoji (2.2 s native against 1.2 s QuickJS: JIT-compiling about
-  4700 lines) and clock (1.0 s both).
+- **The render sync is incremental now** (2026-10-23, `docs/iron-api.md`, "3D from a native game"). The first run found
+  native regressions in fog-world (0.86x) and six clock faces (Dials, Meter, Sundial, Sand timer, Morphing, Alarm clock:
+  0.5-0.8x), all from the **sync** column: `sync_native_render` rebuilt every component every frame, and 1.85-1.95 ms of
+  it was the mesh renderers alone (every renderer copied its script mesh's vertices to read the mesh's name; clock: 0.42 ms
+  of 2D lines rebuilt from `Value`s). Before -> after (sync ms; native fps):
+
+  | Example | sync before | sync after | native fps before | native fps after | QuickJS fps | speed-up now |
+  |---|---:|---:|---:|---:|---:|---:|
+  | fog-world | 1.83 | 0.03 | 323 | 917 | 389 | 2.36x (was 0.86x) |
+  | fog-park | 1.95 | 0.03 | 223 | 462 | 225 | 2.06x (was 1.07x) |
+  | godrays-clouds | 1.87 | 0.03 | 206 | 305 | 175 | 1.74x (was 1.16x) |
+  | godrays-forest | 1.44 | 0.02 | 276 | 367 | 211 | 1.74x (was 1.09x) |
+  | clock (all faces) | 0.62 | 0.07 | 725 | 1526 | 720 | 2.12x (was 1.08x) |
+
+  No clock face is slower native any more: Dials 1.52x, Meter 1.38x, Sundial 1.39x, Sand timer 1.58x, Morphing 1.08x,
+  Alarm clock 1.00x (draw-bound: equal script and sync, the render is the frame).
+  Renders before and after are pixel-identical (fog-world, godrays-clouds, godrays-forest, fog-park, emoji, materials,
+  and all twelve clock faces, at the same fixed step). fog-blocks (1.07x), form (0.97x) and hello (0.88x) differ by 0.01
+  ms or less in the median at 3000-8000 fps: noise (an A/B of the old and new hosts on hello gives 8431 and 8480 fps).
+- **Like-for-like script time:** a QuickJS game's **script** column holds the JavaScript, the native API calls it makes
+  (math, scene, rendering data: QuickJS games call the same `#[iron_api]` functions) and its animation, spline and camera
+  follow components; native counts those components under **sync**. `opMarshalMs` in `results.json` (copying `__iron_op`
+  arguments out of JavaScript) is at most 0.3 ms (raindrop-demo 0.31, godrays-room 0.17, fishtank 0.12, else under
+  0.1) and `opsApplyMs` (applying those ops, under **other**) at most 0.27 (godrays-clouds): QuickJS script time is almost
+  all JavaScript plus native calls, which cannot be told apart without a timer in every binding.
+- **Start-up** is about the same (0.4-1.0 s). The 2.2 s native emoji start-up of the first run did not come back (0.9-1.0 s
+  now, QuickJS 1.2-1.5 s). `startupParts` in a bench report splits it: for emoji (4701 lines + 443 of prelude) 342 ms
+  are the headless GPU device (every backend pays it), 174 ms Cranelift code generation, 121 ms the first frame (the
+  performers' assets), 93 ms the asset index (`.meta` files), 36 ms type inference and lowering, 31 ms source rewrites
+  (JSX, async, components), 12 ms engine manifests (6 to build, 6 to read), 32 ms renderer set-up; parsing (2 ms), IR
+  passes (2 ms) and JIT linking (1 ms) are small.
 - Some originals on `main` are older versions of the examples (the branch changed them since), so a few scenes draw
   slightly different work: godrays-shed and godrays-cell render more native-side (4.1 / 1.9 ms against 2.2 / 1.1 ms)
   with equal script cost. emoji is random (each run picks other performers).
@@ -46,7 +69,7 @@ compile for native games); peak MB is the peak working set.
 <!-- bench:begin (written by `iron-build bench`) -->
 Machine: AMD Ryzen 9 5900X 12-Core Processor (32 GB RAM), NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu), Microsoft Windows 11 Pro 10.0.22631.
 
-Commit 189b820 against main (5b8aa52); every run 1280x720 px, a fixed step of 1/60 s per frame (`--fixed-dt`), no window, no vsync or frame cap, release host.
+Commit 311074be against main (5b8aa521); every run 1280x720 px, a fixed step of 1/60 s per frame (`--fixed-dt`), no window, no vsync or frame cap, release host.
 
 ## Summary
 
@@ -56,28 +79,28 @@ Commit 189b820 against main (5b8aa52); every run 1280x720 px, a fixed step of 1/
 | [arcade](#arcade) | 2037 | 1241 | 1.64x | 0.39 / 1.34 | 0.69 / 2.12 | 0.03 / 0.03 | 0.38 |
 | [boxes](#boxes) | 2394 | 2123 | 1.13x | 0.32 / 1.42 | 0.38 / 1.46 | 0.01 / 0.01 | 0.04 |
 | [classics](#classics) | 2401 | 1802 | 1.33x | 0.38 / 1.34 | 0.49 / 1.42 | 0.01 / 0.03 | 0.15 |
-| [clock](#clock) | 725 | 669 | 1.08x | 1.26 / 2.48 | 1.29 / 4.41 | 0.08 / 0.62 | 0.81 |
+| [clock](#clock) | 1526 | 720 | 2.12x | 0.58 / 1.12 | 1.14 / 3.71 | 0.07 / 0.07 | 0.80 |
 | [cloth](#cloth) | 800 | 808 | 0.99x | 1.22 / 2.55 | 1.22 / 2.38 | 0.01 / 0.02 | 0.07 |
 | [cornell](#cornell) | 1871 | 1849 | 1.01x | 0.48 / 1.24 | 0.50 / 1.36 | 0.01 / 0.02 | 0.03 |
 | [css](#css) | 2386 | 2211 | 1.08x | 0.40 / 1.03 | 0.37 / 3.90 | 0.01 / 0.01 | 0.04 |
-| [dark-room](#dark-room) | 338 | 324 | 1.04x | 2.78 / 4.55 | 2.77 / 5.48 | 0.12 / 0.23 | 0.77 |
-| [emoji](#emoji) | 477 | 284 | 1.68x | 1.90 / 4.23 | 2.63 / 13.84 | 0.06 / 0.50 | 1.53 |
-| [fishtank](#fishtank) | 886 | 271 | 3.26x | 1.06 / 2.11 | 3.63 / 4.47 | 0.17 / 0.29 | 2.95 |
+| [dark-room](#dark-room) | 349 | 340 | 1.03x | 2.75 / 3.73 | 2.76 / 4.74 | 0.10 / 0.04 | 0.70 |
+| [emoji](#emoji) | 654 | 454 | 1.44x | 1.19 / 6.74 | 1.95 / 4.14 | 0.06 / 0.03 | 0.79 |
+| [fishtank](#fishtank) | 1297 | 267 | 4.85x | 0.74 / 0.99 | 3.71 / 4.24 | 0.14 / 0.04 | 2.97 |
 | [fog](#fog) | 1295 | 1199 | 1.08x | 0.72 / 2.03 | 0.81 / 1.99 | 0.01 / 0.14 | 0.26 |
-| [fog-blocks](#fog-blocks) | 2267 | 2448 | 0.93x | 0.41 / 1.35 | 0.38 / 1.36 | 0.01 / 0.06 | 0.05 |
-| [fog-park](#fog-park) | 223 | 209 | 1.07x | 4.28 / 6.36 | 4.70 / 6.06 | 0.02 / 1.95 | 2.43 |
-| [fog-raider](#fog-raider) | 1670 | 1194 | 1.40x | 0.58 / 0.88 | 0.77 / 1.25 | 0.02 / 0.21 | 0.41 |
+| [fog-blocks](#fog-blocks) | 2798 | 2617 | 1.07x | 0.35 / 0.42 | 0.37 / 0.45 | 0.01 / 0.01 | 0.05 |
+| [fog-park](#fog-park) | 462 | 225 | 2.06x | 2.10 / 2.90 | 4.41 / 5.27 | 0.02 / 0.03 | 2.28 |
+| [fog-raider](#fog-raider) | 1936 | 1318 | 1.47x | 0.51 / 0.89 | 0.75 / 0.84 | 0.02 / 0.01 | 0.39 |
 | [fog-teapots](#fog-teapots) | 2157 | 2107 | 1.02x | 0.41 / 0.80 | 0.44 / 0.80 | 0.01 / 0.02 | 0.05 |
-| [fog-world](#fog-world) | 323 | 377 | 0.86x | 2.95 / 7.42 | 1.49 / 15.84 | 0.25 / 1.83 | 1.66 |
-| [form](#form) | 3293 | 3402 | 0.97x | 0.30 / 0.34 | 0.29 / 0.31 | 0.01 / 0.01 | 0.01 |
-| [godrays-cell](#godrays-cell) | 386 | 315 | 1.23x | 2.51 / 4.13 | 3.12 / 4.06 | 0.13 / 0.59 | 2.03 |
-| [godrays-clouds](#godrays-clouds) | 206 | 178 | 1.16x | 4.72 / 5.94 | 5.54 / 6.43 | 0.30 / 1.87 | 2.48 |
-| [godrays-forest](#godrays-forest) | 276 | 253 | 1.09x | 3.44 / 4.78 | 3.90 / 4.88 | 0.02 / 1.44 | 1.91 |
+| [fog-world](#fog-world) | 917 | 389 | 2.36x | 0.99 / 5.12 | 1.38 / 15.76 | 0.23 / 0.03 | 1.66 |
+| [form](#form) | 3381 | 3489 | 0.97x | 0.29 / 0.34 | 0.28 / 0.31 | 0.01 / 0.01 | 0.01 |
+| [godrays-cell](#godrays-cell) | 388 | 329 | 1.18x | 2.50 / 3.08 | 3.04 / 3.39 | 0.12 / 0.03 | 2.00 |
+| [godrays-clouds](#godrays-clouds) | 305 | 175 | 1.74x | 3.25 / 4.56 | 5.67 / 6.89 | 0.29 / 0.03 | 2.54 |
+| [godrays-forest](#godrays-forest) | 367 | 211 | 1.74x | 2.73 / 3.40 | 4.71 / 5.51 | 0.01 / 0.02 | 1.93 |
 | [godrays-lift](#godrays-lift) | 1435 | 1393 | 1.03x | 0.67 / 1.23 | 0.68 / 1.61 | 0.01 / 0.05 | 0.10 |
-| [godrays-room](#godrays-room) | 475 | 174 | 2.73x | 2.03 / 2.75 | 5.76 / 7.00 | 0.21 / 0.80 | 4.43 |
+| [godrays-room](#godrays-room) | 767 | 168 | 4.58x | 1.28 / 1.83 | 5.97 / 7.58 | 0.21 / 0.05 | 4.55 |
 | [godrays-shed](#godrays-shed) | 222 | 221 | 1.00x | 4.33 / 6.07 | 4.34 / 6.12 | 0.10 / 0.33 | 2.23 |
 | [godrays-sunset](#godrays-sunset) | 802 | 718 | 1.12x | 1.09 / 2.30 | 1.24 / 2.57 | 0.02 / 0.25 | 0.39 |
-| [hello](#hello) | 8156 | 6794 | 1.20x | 0.12 / 0.22 | 0.12 / 0.25 | 0.01 / 0.01 | 0.02 |
+| [hello](#hello) | 7440 | 8461 | 0.88x | 0.12 / 0.23 | 0.12 / 0.17 | 0.01 / 0.01 | 0.01 |
 | [launcher](#launcher) | 655 | n/a | - | 1.99 / 3.25 | n/a | 0.01 / 0.01 | n/a |
 | [layers](#layers) | 1392 | 1257 | 1.11x | 0.70 / 1.12 | 0.78 / 0.90 | 0.01 / 0.21 | 0.31 |
 | [light-units](#light-units) | 1428 | 1328 | 1.08x | 0.67 / 1.41 | 0.71 / 1.27 | 0.02 / 0.03 | 0.10 |
@@ -86,7 +109,7 @@ Commit 189b820 against main (5b8aa52); every run 1280x720 px, a fixed step of 1/
 | [physics](#physics) | 1889 | 751 | 2.51x | 0.44 / 1.20 | 1.24 / 2.41 | 0.26 / 0.01 | 0.86 |
 | [platformer](#platformer) | 2095 | 1436 | 1.46x | 0.45 / 0.77 | 0.67 / 1.04 | 0.08 / 0.09 | 0.31 |
 | [quality](#quality) | 1972 | 1728 | 1.14x | 0.47 / 0.81 | 0.52 / 1.09 | 0.01 / 0.07 | 0.15 |
-| [raindrop-demo](#raindrop-demo) | 1696 | 274 | 6.19x | 0.57 / 0.91 | 3.60 / 4.87 | 0.13 / 0.10 | 3.07 |
+| [raindrop-demo](#raindrop-demo) | 1986 | 282 | 7.04x | 0.49 / 0.58 | 3.50 / 4.16 | 0.10 / 0.08 | 3.01 |
 | [scenes](#scenes) | 2717 | 2172 | 1.25x | 0.36 / 0.41 | 0.43 / 0.79 | 0.01 / 0.02 | 0.10 |
 | [shapes](#shapes) | 2850 | 2836 | 1.01x | 0.32 / 0.58 | 0.34 / 0.43 | 0.01 / 0.04 | 0.08 |
 | [sine-circle-demo](#sine-circle-demo) | 3045 | 1998 | 1.52x | 0.30 / 0.43 | 0.44 / 0.96 | 0.02 / 0.02 | 0.12 |
@@ -94,7 +117,7 @@ Commit 189b820 against main (5b8aa52); every run 1280x720 px, a fixed step of 1/
 | [text](#text) | 2250 | 2228 | 1.01x | 0.43 / 0.64 | 0.42 / 0.89 | 0.01 / 0.01 | 0.02 |
 | [tunnel](#tunnel) | 613 | 610 | 1.01x | 1.68 / 3.06 | 1.68 / 3.07 | 0.01 / 0.27 | 0.37 |
 | [windows](#windows) | 1367 | n/a | - | 0.82 / 1.24 | n/a | 0.02 / 0.01 | n/a |
-| [world](#world) | 1093 | 268 | 4.07x | 0.85 / 1.42 | 4.33 / 5.17 | 0.05 / 0.04 | 1.85 |
+| [world](#world) | 1200 | 271 | 4.43x | 0.82 / 1.03 | 4.23 / 5.33 | 0.04 / 0.01 | 1.82 |
 
 ## Per example
 
@@ -137,23 +160,23 @@ Input: the right arrow clicked through all twelve faces.
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 725 | 1.38 | 1.26 | 2.02 | 2.48 | 10.10 | 0.08 | 0.62 | 0.63 | 0.05 | 1018 ms | 245 |
-| QuickJS | 669 | 1.50 | 1.29 | 3.76 | 4.41 | 8.39 | 0.81 | 0.00 | 0.64 | 0.05 | 999 ms | 247 |
+| native | 1526 | 0.66 | 0.58 | 1.07 | 1.12 | 2.63 | 0.07 | 0.07 | 0.46 | 0.05 | 741 ms | 233 |
+| QuickJS | 720 | 1.39 | 1.14 | 3.55 | 3.71 | 5.13 | 0.80 | 0.00 | 0.55 | 0.04 | 639 ms | 230 |
 
 | Segment | frames | native fps | QuickJS fps | speed-up | native median / p99 | QuickJS median / p99 | native script | QuickJS script |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Analog | 240 | 827 | 680 | 1.21x | 1.17 / 1.79 | 1.41 / 2.10 | 0.05 | 1.00 |
-| Dials | 240 | 733 | 1152 | 0.64x | 1.25 / 2.53 | 0.84 / 1.30 | 0.02 | 0.34 |
-| Meter | 240 | 751 | 962 | 0.78x | 1.31 / 1.56 | 1.03 / 1.25 | 0.02 | 0.33 |
-| Sundial | 240 | 478 | 608 | 0.79x | 2.02 / 3.53 | 1.59 / 2.49 | 0.04 | 0.22 |
-| Sand timer | 240 | 889 | 1281 | 0.69x | 1.10 / 1.51 | 0.77 / 1.23 | 0.03 | 0.34 |
-| Lava lamp | 240 | 559 | 251 | 2.23x | 1.76 / 2.11 | 3.81 / 7.00 | 0.44 | 3.08 |
-| Underwater | 240 | 819 | 833 | 0.98x | 1.19 / 1.64 | 1.18 / 1.38 | 0.04 | 0.61 |
-| Chandelier | 240 | 653 | 630 | 1.04x | 1.50 / 1.94 | 1.55 / 2.19 | 0.03 | 0.60 |
-| Rainbow | 240 | 767 | 652 | 1.18x | 1.26 / 2.16 | 1.51 / 1.67 | 0.08 | 0.97 |
-| Morphing | 240 | 937 | 1829 | 0.51x | 1.05 / 1.39 | 0.53 / 1.17 | 0.02 | 0.14 |
-| Flip | 240 | 817 | 409 | 2.00x | 1.20 / 1.41 | 2.40 / 2.80 | 0.16 | 1.95 |
-| Alarm clock | 240 | 770 | 1187 | 0.65x | 1.27 / 1.49 | 0.83 / 1.06 | 0.02 | 0.18 |
+| Analog | 240 | 1859 | 663 | 2.81x | 0.52 / 0.68 | 1.49 / 1.87 | 0.05 | 1.07 |
+| Dials | 240 | 1824 | 1198 | 1.52x | 0.53 / 0.69 | 0.83 / 0.89 | 0.01 | 0.33 |
+| Meter | 240 | 1375 | 995 | 1.38x | 0.71 / 0.88 | 1.00 / 1.16 | 0.02 | 0.32 |
+| Sundial | 240 | 1772 | 1275 | 1.39x | 0.55 / 0.71 | 0.74 / 1.21 | 0.03 | 0.22 |
+| Sand timer | 240 | 1969 | 1250 | 1.58x | 0.50 / 0.65 | 0.77 / 1.27 | 0.03 | 0.34 |
+| Lava lamp | 240 | 921 | 278 | 3.31x | 1.07 / 1.25 | 3.57 / 4.05 | 0.42 | 2.84 |
+| Underwater | 240 | 1728 | 811 | 2.13x | 0.57 / 0.70 | 1.20 / 1.71 | 0.04 | 0.62 |
+| Chandelier | 240 | 1274 | 683 | 1.87x | 0.77 / 0.96 | 1.43 / 1.76 | 0.03 | 0.58 |
+| Rainbow | 240 | 1689 | 601 | 2.81x | 0.58 / 0.73 | 1.59 / 2.41 | 0.06 | 0.99 |
+| Morphing | 240 | 1968 | 1817 | 1.08x | 0.49 / 0.65 | 0.54 / 0.67 | 0.02 | 0.14 |
+| Flip | 240 | 1640 | 415 | 3.95x | 0.59 / 0.77 | 2.35 / 2.79 | 0.15 | 1.94 |
+| Alarm clock | 240 | 1222 | 1226 | 1.00x | 0.81 / 0.88 | 0.78 / 1.38 | 0.02 | 0.18 |
 
 ### cloth
 
@@ -180,8 +203,8 @@ Input: the right arrow clicked through all twelve faces.
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 338 | 2.96 | 2.78 | 4.31 | 4.55 | 10.60 | 0.12 | 0.23 | 2.59 | 0.02 | 774 ms | 341 |
-| QuickJS | 324 | 3.09 | 2.77 | 5.01 | 5.48 | 8.32 | 0.77 | 0.00 | 2.29 | 0.03 | 670 ms | 334 |
+| native | 349 | 2.87 | 2.75 | 3.40 | 3.73 | 4.98 | 0.10 | 0.04 | 2.71 | 0.01 | 514 ms | 212 |
+| QuickJS | 340 | 2.94 | 2.76 | 4.25 | 4.74 | 7.45 | 0.70 | 0.00 | 2.22 | 0.02 | 552 ms | 281 |
 
 ### emoji
 
@@ -189,15 +212,15 @@ Input: the show is random: each run picks other performers.
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 477 | 2.10 | 1.90 | 3.36 | 4.23 | 47.49 | 0.06 | 0.50 | 1.45 | 0.08 | 2183 ms | 282 |
-| QuickJS | 284 | 3.52 | 2.63 | 9.86 | 13.84 | 38.58 | 1.53 | 0.00 | 1.85 | 0.14 | 1222 ms | 271 |
+| native | 654 | 1.53 | 1.19 | 4.62 | 6.74 | 14.84 | 0.06 | 0.03 | 1.36 | 0.08 | 968 ms | 184 |
+| QuickJS | 454 | 2.20 | 1.95 | 3.25 | 4.14 | 25.95 | 0.79 | 0.00 | 1.33 | 0.08 | 1164 ms | 200 |
 
 ### fishtank
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 886 | 1.13 | 1.06 | 1.58 | 2.11 | 5.54 | 0.17 | 0.29 | 0.66 | 0.01 | 565 ms | 166 |
-| QuickJS | 271 | 3.69 | 3.63 | 4.03 | 4.47 | 5.69 | 2.95 | 0.00 | 0.65 | 0.09 | 602 ms | 168 |
+| native | 1297 | 0.77 | 0.74 | 0.93 | 0.99 | 2.49 | 0.14 | 0.04 | 0.58 | 0.01 | 507 ms | 165 |
+| QuickJS | 267 | 3.74 | 3.71 | 4.02 | 4.24 | 5.60 | 2.97 | 0.00 | 0.68 | 0.09 | 530 ms | 167 |
 
 ### fog
 
@@ -210,22 +233,22 @@ Input: the show is random: each run picks other performers.
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 2267 | 0.44 | 0.41 | 0.54 | 1.35 | 2.54 | 0.01 | 0.06 | 0.36 | 0.01 | 548 ms | 166 |
-| QuickJS | 2448 | 0.41 | 0.38 | 0.50 | 1.36 | 2.04 | 0.05 | 0.00 | 0.35 | 0.01 | 638 ms | 167 |
+| native | 2798 | 0.36 | 0.35 | 0.37 | 0.42 | 2.05 | 0.01 | 0.01 | 0.33 | 0.01 | 502 ms | 165 |
+| QuickJS | 2617 | 0.38 | 0.37 | 0.40 | 0.45 | 1.97 | 0.05 | 0.00 | 0.33 | 0.01 | 571 ms | 167 |
 
 ### fog-park
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 223 | 4.48 | 4.28 | 5.70 | 6.36 | 10.29 | 0.02 | 1.95 | 2.50 | 0.01 | 601 ms | 308 |
-| QuickJS | 209 | 4.78 | 4.70 | 5.41 | 6.06 | 8.96 | 2.43 | 0.00 | 2.33 | 0.02 | 824 ms | 254 |
+| native | 462 | 2.16 | 2.10 | 2.60 | 2.90 | 5.57 | 0.02 | 0.03 | 2.11 | 0.01 | 568 ms | 211 |
+| QuickJS | 225 | 4.45 | 4.41 | 4.81 | 5.27 | 10.71 | 2.28 | 0.00 | 2.16 | 0.01 | 734 ms | 214 |
 
 ### fog-raider
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 1670 | 0.60 | 0.58 | 0.72 | 0.88 | 2.28 | 0.02 | 0.21 | 0.36 | 0.01 | 566 ms | 165 |
-| QuickJS | 1194 | 0.84 | 0.77 | 1.09 | 1.25 | 2.78 | 0.41 | 0.00 | 0.41 | 0.02 | 614 ms | 166 |
+| native | 1936 | 0.52 | 0.51 | 0.61 | 0.89 | 2.15 | 0.02 | 0.01 | 0.45 | 0.03 | 482 ms | 164 |
+| QuickJS | 1318 | 0.76 | 0.75 | 0.79 | 0.84 | 2.32 | 0.39 | 0.00 | 0.36 | 0.01 | 518 ms | 165 |
 
 ### fog-teapots
 
@@ -238,36 +261,36 @@ Input: the show is random: each run picks other performers.
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 323 | 3.09 | 2.95 | 3.64 | 7.42 | 12.54 | 0.25 | 1.83 | 1.00 | 0.01 | 689 ms | 299 |
-| QuickJS | 377 | 2.65 | 1.49 | 9.94 | 15.84 | 18.69 | 1.66 | 0.00 | 0.97 | 0.03 | 921 ms | 279 |
+| native | 917 | 1.09 | 0.99 | 1.33 | 5.12 | 10.74 | 0.23 | 0.03 | 0.83 | 0.01 | 643 ms | 240 |
+| QuickJS | 389 | 2.57 | 1.38 | 9.90 | 15.76 | 19.46 | 1.66 | 0.00 | 0.89 | 0.02 | 850 ms | 274 |
 
 ### form
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 3293 | 0.30 | 0.30 | 0.32 | 0.34 | 1.45 | 0.01 | 0.01 | 0.28 | 0.01 | 509 ms | 166 |
-| QuickJS | 3402 | 0.29 | 0.29 | 0.30 | 0.31 | 1.44 | 0.01 | 0.00 | 0.27 | 0.01 | 545 ms | 168 |
+| native | 3381 | 0.30 | 0.29 | 0.31 | 0.34 | 0.36 | 0.01 | 0.01 | 0.27 | 0.01 | 466 ms | 165 |
+| QuickJS | 3489 | 0.29 | 0.28 | 0.30 | 0.31 | 0.35 | 0.01 | 0.00 | 0.27 | 0.01 | 501 ms | 166 |
 
 ### godrays-cell
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 386 | 2.59 | 2.51 | 2.90 | 4.13 | 6.29 | 0.13 | 0.59 | 1.85 | 0.01 | 551 ms | 199 |
-| QuickJS | 315 | 3.18 | 3.12 | 3.68 | 4.06 | 5.59 | 2.03 | 0.00 | 1.06 | 0.09 | 610 ms | 206 |
+| native | 388 | 2.58 | 2.50 | 2.90 | 3.08 | 5.20 | 0.12 | 0.03 | 2.41 | 0.01 | 498 ms | 208 |
+| QuickJS | 329 | 3.04 | 3.04 | 3.19 | 3.39 | 6.48 | 2.00 | 0.00 | 0.95 | 0.08 | 558 ms | 208 |
 
 ### godrays-clouds
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 206 | 4.84 | 4.72 | 5.41 | 5.94 | 9.02 | 0.30 | 1.87 | 2.66 | 0.01 | 535 ms | 220 |
-| QuickJS | 178 | 5.61 | 5.54 | 6.07 | 6.43 | 10.71 | 2.48 | 0.00 | 2.81 | 0.32 | 676 ms | 211 |
+| native | 305 | 3.28 | 3.25 | 3.73 | 4.56 | 7.84 | 0.29 | 0.03 | 2.96 | 0.01 | 494 ms | 207 |
+| QuickJS | 175 | 5.72 | 5.67 | 6.09 | 6.89 | 9.40 | 2.54 | 0.00 | 2.87 | 0.31 | 655 ms | 213 |
 
 ### godrays-forest
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 276 | 3.62 | 3.44 | 4.37 | 4.78 | 7.40 | 0.02 | 1.44 | 2.16 | 0.01 | 538 ms | 201 |
-| QuickJS | 253 | 3.96 | 3.90 | 4.34 | 4.88 | 8.69 | 1.91 | 0.00 | 2.03 | 0.02 | 743 ms | 206 |
+| native | 367 | 2.72 | 2.73 | 3.18 | 3.40 | 5.53 | 0.01 | 0.02 | 2.67 | 0.01 | 499 ms | 211 |
+| QuickJS | 211 | 4.74 | 4.71 | 5.17 | 5.51 | 8.55 | 1.93 | 0.00 | 2.80 | 0.02 | 691 ms | 204 |
 
 ### godrays-lift
 
@@ -280,8 +303,8 @@ Input: the show is random: each run picks other performers.
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 475 | 2.10 | 2.03 | 2.54 | 2.75 | 7.59 | 0.21 | 0.80 | 1.08 | 0.01 | 548 ms | 212 |
-| QuickJS | 174 | 5.75 | 5.76 | 6.31 | 7.00 | 9.61 | 4.43 | 0.00 | 1.14 | 0.18 | 630 ms | 213 |
+| native | 767 | 1.30 | 1.28 | 1.55 | 1.83 | 6.15 | 0.21 | 0.05 | 1.04 | 0.01 | 513 ms | 208 |
+| QuickJS | 168 | 5.97 | 5.97 | 6.55 | 7.58 | 10.26 | 4.55 | 0.00 | 1.24 | 0.18 | 581 ms | 253 |
 
 ### godrays-shed
 
@@ -301,8 +324,8 @@ Input: the show is random: each run picks other performers.
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 8156 | 0.12 | 0.12 | 0.13 | 0.22 | 1.25 | 0.01 | 0.01 | 0.10 | 0.01 | 477 ms | 163 |
-| QuickJS | 6794 | 0.15 | 0.12 | 0.22 | 0.25 | 1.28 | 0.02 | 0.00 | 0.12 | 0.01 | 489 ms | 164 |
+| native | 7440 | 0.13 | 0.12 | 0.18 | 0.23 | 0.41 | 0.01 | 0.01 | 0.11 | 0.01 | 423 ms | 162 |
+| QuickJS | 8461 | 0.12 | 0.12 | 0.13 | 0.17 | 0.23 | 0.01 | 0.00 | 0.10 | 0.01 | 442 ms | 163 |
 
 ### launcher
 
@@ -393,8 +416,8 @@ Input: each quality level clicked in the menu (this stops the demo's own cycling
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 1696 | 0.59 | 0.57 | 0.75 | 0.91 | 2.14 | 0.13 | 0.10 | 0.34 | 0.02 | 537 ms | 170 |
-| QuickJS | 274 | 3.65 | 3.60 | 4.09 | 4.87 | 14.11 | 3.07 | 0.00 | 0.41 | 0.18 | 788 ms | 183 |
+| native | 1986 | 0.50 | 0.49 | 0.56 | 0.58 | 2.04 | 0.10 | 0.08 | 0.30 | 0.02 | 497 ms | 168 |
+| QuickJS | 282 | 3.55 | 3.50 | 3.88 | 4.16 | 15.26 | 3.01 | 0.00 | 0.36 | 0.17 | 746 ms | 181 |
 
 ### scenes
 
@@ -449,11 +472,11 @@ Input: each quality level clicked in the menu (this stops the demo's own cycling
 
 | Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| native | 1093 | 0.92 | 0.85 | 1.20 | 1.42 | 2.61 | 0.05 | 0.04 | 0.80 | 0.03 | 598 ms | 193 |
-| QuickJS | 268 | 3.73 | 4.33 | 4.84 | 5.17 | 6.44 | 1.85 | 0.00 | 0.98 | 0.91 | 573 ms | 198 |
+| native | 1200 | 0.83 | 0.82 | 0.93 | 1.03 | 2.39 | 0.04 | 0.01 | 0.75 | 0.03 | 544 ms | 194 |
+| QuickJS | 271 | 3.69 | 4.23 | 4.91 | 5.33 | 6.78 | 1.82 | 0.00 | 0.98 | 0.89 | 540 ms | 196 |
 
 | Segment | frames | native fps | QuickJS fps | speed-up | native median / p99 | QuickJS median / p99 | native script | QuickJS script |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| idle | 300 | 1173 | 260 | 4.52x | 0.84 / 1.03 | 4.46 / 5.34 | 0.04 | 1.89 |
-| pointer sweep | 600 | 1057 | 273 | 3.87x | 0.87 / 1.45 | 4.30 / 4.90 | 0.05 | 1.82 |
+| idle | 300 | 1224 | 285 | 4.30x | 0.81 / 0.98 | 4.14 / 4.73 | 0.04 | 1.80 |
+| pointer sweep | 600 | 1188 | 264 | 4.49x | 0.82 / 1.03 | 4.31 / 5.48 | 0.04 | 1.83 |
 <!-- bench:end -->

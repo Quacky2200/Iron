@@ -653,10 +653,25 @@ top level made hold removed objects, component references between components are
 
 **3D from a native game** (`crates/iron_app/src/render_sync.rs`): each frame `sync` takes the resource commands
 (`iron_render_api::take_commands`: textures from files or pixels through `WorldViews::texture_op`, then `texture_loaded`; script meshes
-through the `mesh` op), clears the renderer's cameras, lights and mesh renderers, and rebuilds them from `iron_engine_api::camera::cameras()`,
-`iron_render_api::lights()` and `mesh_renderers()` (with `with_material`) by calling `WorldViews::apply` with the same arguments the
-QuickJS `render.*` ops carry, so there is one renderer path. Native objects get script ids with `ScriptScene::adopt`. Cameras look along
--z (as in the QuickJS path, unlike Unity).
+through the `mesh` op), then sends the components that changed to the renderer, by calling `WorldViews::apply` with the same arguments
+the QuickJS `render.*` ops carry, or for the many-item kinds typed calls (`set_renderer` for mesh and skinned renderers with their
+materials, `set_stroke` for `LineRenderer2D`), so there is one renderer path. Native objects get script ids with `ScriptScene::adopt`.
+Cameras look along -z (as in the QuickJS path, unlike Unity).
+
+The sync is incremental. Every registry counts its changes: the generated components and assets of `iron_render_api`
+(`<name>s_version()`, bumped by `attach_*`, `create_*`, `remove_*`, `reset_*` and `with_*`, the mutable access every setter uses;
+getters, `<name>s_on` and the scene-file save read through `read_*` and do not count) and the cameras (`camera::version()`; the exposure
+the renderer reads back does not count). Per kind, `components()` keeps a `Track`: the versions it last synced at (a kind whose
+registries, and for renderers the materials and the upload counter, did not change is not walked at all) and the key last sent per id (the
+registry data, with the material or sprite asset). A walked kind iterates the registry by reference (`for_each_*`, nothing copied),
+sends a component only when its data differs, and drops the ids it no longer saw (`WorldViews::remove_component`); a component that
+cannot be sent (no mesh yet, no material) is dropped and retried on the next change. Transforms, layers and active flags are read when
+the views are built, so moving objects costs the sync nothing. Line renderer tubes are rebuilt only when their width, sides, smoothing
+or points change (`pre_render_lines` skips them all while the registry's version stays), world panel and `TextMesh` specs go to the app
+only when their registry changed (`Extras::panels` / `texts` are `None` otherwise), and the second resource pass runs only when
+`pre_render_lines` queued something. `IRON_RENDER_SYNC=full` rebuilds every component every frame instead (the old way, for comparing);
+`M9-API-1700` checks the incremental views against a full rebuild every frame of a game making random changes. `--bench` reports the
+sync's parts (`syncParts`, `iron_app/src/sync_profile.rs`).
 
 Round 2 (render side): `sync` also turns sprite renderers, `LineRenderer2D`, planes, mirrors, reflection probes (sent when new or
 changed; `probeRender` on a new render request), LOD groups, skinned mesh renderers (ids from `1 << 24`; bind poses from the mesh or from
@@ -664,7 +679,8 @@ the model's skins), line renderers (`pre_render_lines` makes their tube meshes, 
 (settings as the TypeScript's `[key, value, ...]` pairs when they change, then `take_particle_controls`; `world_view.update_particles`
 results go back through `native_render::report_particles` into `report_particles`, so `onStopped` and `stopAction` work), models
 (`RenderCommand::Model` -> `WorldViews::model_op` -> `model_loaded`; model meshes and textures keep the host's ids from `1 << 30`, which
-`mesh_arg` passes straight through), render textures (`renderTexture` op), gizmos (`take_frame`, re-applied every frame after the cameras),
+`mesh_arg` passes straight through), render textures (`renderTexture` op), gizmos (`take_frame`; applied on a new frame of them or
+after a camera changed),
 `RenderSettings` (ambient, sky, bloom, post) and `QualitySettings` (quality, shadow settings) whenever their version counters change.
 Mesh renderer ids are the registry handles, so `LODGroup` renderer lists match. A cloth starts when the host first sees it with a mesh
 renderer on its object (`rebuild()`), and its `cloth.*` ops go to `ClothSystem` through `Extras`.
