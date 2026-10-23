@@ -80,6 +80,8 @@ struct Object {
     /// Cached world matrix, valid unless `dirty`.
     world: Affine3A,
     dirty: bool,
+    /// In [`Scene::moved`]. With `dirty` too, so is every descendant (`mark_moved` stops here).
+    listed: bool,
     /// Changes when a name or a parent link changes in the subtree (see [`Scene::tree_version`]).
     tree_version: u64,
 }
@@ -103,6 +105,8 @@ pub struct Scene {
     new_tag: u32,
     /// The last tree version handed out.
     versions: u64,
+    /// `mark_moved`'s stack, kept between calls.
+    mark_stack: Vec<ObjectId>,
 }
 
 impl Scene {
@@ -148,6 +152,7 @@ impl Scene {
             local: Transform::IDENTITY,
             world: Affine3A::IDENTITY,
             dirty: true,
+            listed: true,
             tree_version: {
                 self.versions += 1;
                 self.versions
@@ -202,7 +207,13 @@ impl Scene {
                 gone.push(id);
             }
         }
-        self.moved.retain(|m| !gone.contains(m));
+        // The destroyed ids no longer match their slots' generations.
+        let slots = &self.slots;
+        self.moved.retain(|m| {
+            slots
+                .get(m.index as usize)
+                .is_some_and(|s| s.generation == m.generation && s.object.is_some())
+        });
         gone
     }
 
@@ -400,18 +411,26 @@ impl Scene {
         }
     }
 
-    /// Marks the object's and its descendants' world transforms stale. (A stale object
-    /// always has stale descendants, which `world_matrix` relies on.)
+    /// Marks the object's and its descendants' world transforms stale and lists them as
+    /// moved. (A stale object always has stale descendants, which `world_matrix` relies on,
+    /// and a listed one listed descendants: so an object both stale and listed ends the walk.)
     fn mark_moved(&mut self, id: ObjectId) {
-        let mut stack = vec![id];
+        let mut stack = std::mem::take(&mut self.mark_stack);
+        stack.push(id);
         while let Some(id) = stack.pop() {
             let Some(o) = self.get_mut(id) else { continue };
+            if o.dirty && o.listed {
+                continue;
+            }
             o.dirty = true;
             stack.extend(o.children.iter().copied());
-            if !self.moved.contains(&id) {
+            let new = !o.listed;
+            o.listed = true;
+            if new {
                 self.moved.push(id);
             }
         }
+        self.mark_stack = stack;
     }
 
     /// The object's world matrix (identity for unknown ids).
@@ -465,7 +484,13 @@ impl Scene {
     /// Objects whose world transform changed since the last call (including new ones),
     /// for syncing scripts, physics and the renderer.
     pub fn take_moved(&mut self) -> Vec<ObjectId> {
-        std::mem::take(&mut self.moved)
+        let moved = std::mem::take(&mut self.moved);
+        for id in &moved {
+            if let Some(o) = self.get_mut(*id) {
+                o.listed = false;
+            }
+        }
+        moved
     }
 
     /// The view-projection-ready matrix of an object (for cameras and drawing).

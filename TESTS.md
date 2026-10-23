@@ -325,6 +325,7 @@ layout pass):
 | M5-CAM-01 | JS unit | `Matrix4x4` (TRS, inverse, determinant); camera conversions for perspective and orthographic cameras with a `rect` (screen and viewport points round-trip, parallel orthographic rays); `Camera.main` / `allCameras` order; `CameraFollow` and `CameraOrbit`. |
 | M5-OBJ-08 | Integration | Lifecycle hooks run in Unity's order: start, fixed updates, update, late update, pre-render, destroy. |
 | M5-OBJ-09 | Unit | `Scene::tree_version` changes for renames, new children, children moved away and objects destroyed below an object, not for moves, flags, an unchanged name or edits in another tree. |
+| M5-OBJ-10 | Unit | `mark_moved` stops at objects already stale and listed: over 3000 random moves, re-parentings, creations, destructions, `update_world`s and `take_moved`s in 40-deep hierarchies the moved list equals the old walk-the-whole-subtree one, in order, and every world matrix equals one composed from the locals. |
 | M5-PNL-01 | JS unit | Each React root (screen or world panel) commits to its own engine tree with its target id; updates to a panel's nodes only go to the panel's tree; one root per target. |
 | M5-PNL-02 | Unit | Rays meet panel quads at the right UV and distance (centre, corner); rays behind or parallel miss. |
 | M5-PNL-03 | Manual | In `examples/world`, hovering the world panel's menu items highlights them, clicking counts, and the screen HUD still takes clicks over the panel. |

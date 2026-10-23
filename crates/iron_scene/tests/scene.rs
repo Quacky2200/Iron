@@ -116,6 +116,107 @@ fn moved_objects_and_active_state() {
     assert!(s.active(b));
 }
 
+/// The moved list as `mark_moved` kept it before it stopped at listed, stale objects: the whole
+/// subtree walked every time, each object added once.
+fn mark_every_time(s: &Scene, id: iron_scene::ObjectId, moved: &mut Vec<iron_scene::ObjectId>) {
+    let mut stack = vec![id];
+    while let Some(id) = stack.pop() {
+        if !s.contains(id) {
+            continue;
+        }
+        stack.extend(s.children(id).iter().copied());
+        if !moved.contains(&id) {
+            moved.push(id);
+        }
+    }
+}
+
+/// The world matrix from the locals up the chain, with no cache.
+fn uncached(s: &Scene, id: iron_scene::ObjectId) -> glam::Affine3A {
+    let mut m = glam::Affine3A::IDENTITY;
+    let mut at = Some(id);
+    while let Some(a) = at {
+        m = s.local(a).unwrap().to_affine() * m;
+        at = s.parent(a);
+    }
+    m
+}
+
+// M5-OBJ-10
+#[test]
+fn moves_in_deep_hierarchies_list_the_same_objects_and_keep_world_matrices_right() {
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut next = |n: usize| {
+        seed ^= seed >> 12;
+        seed ^= seed << 25;
+        seed ^= seed >> 27;
+        (seed.wrapping_mul(0x2545_f491_4f6c_dd1d) % n as u64) as usize
+    };
+    let mut s = Scene::new();
+    let mut expected = Vec::new();
+    // Chains 40 deep with branches.
+    let mut all = Vec::new();
+    for _ in 0..3 {
+        let mut parent = s.create("root");
+        expected.push(parent);
+        all.push(parent);
+        for d in 0..40 {
+            let go = s.create(&format!("bone{d}"));
+            expected.push(go);
+            s.set_parent(go, Some(parent), false);
+            mark_every_time(&s, go, &mut expected);
+            all.push(go);
+            if d % 3 == 0 {
+                let leaf = s.create("leaf");
+                expected.push(leaf);
+                s.set_parent(leaf, Some(go), false);
+                mark_every_time(&s, leaf, &mut expected);
+                all.push(leaf);
+            }
+            parent = go;
+        }
+    }
+    for step in 0..3000 {
+        all.retain(|o| s.contains(*o));
+        let go = all[next(all.len())];
+        match next(20) {
+            0 => {
+                assert_eq!(s.take_moved(), std::mem::take(&mut expected), "step {step}");
+            }
+            1 => s.update_world(),
+            2 => {
+                let to = all[next(all.len())];
+                if s.set_parent(go, Some(to), next(2) == 0) {
+                    mark_every_time(&s, go, &mut expected);
+                }
+            }
+            3 if all.len() > 20 => {
+                let gone = s.destroy(go);
+                expected.retain(|m| !gone.contains(m));
+            }
+            4 => {
+                let c = s.create("new");
+                expected.push(c);
+                all.push(c);
+            }
+            _ => {
+                let t = Transform::from_position(Vec3::new(step as f32, 1.0, -0.5));
+                s.set_local(go, t);
+                mark_every_time(&s, go, &mut expected);
+            }
+        }
+        if step % 97 == 0 {
+            for o in &all {
+                if s.contains(*o) {
+                    let (a, b) = (s.world_matrix(*o), uncached(&s, *o));
+                    assert!(a.abs_diff_eq(b, 1e-3), "step {step}");
+                }
+            }
+        }
+    }
+    assert_eq!(s.take_moved(), expected);
+}
+
 // M5-OBJ-09
 #[test]
 fn tree_versions_change_with_names_and_links_below_but_not_with_moves() {
