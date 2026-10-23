@@ -51,6 +51,10 @@ watches only the renderers under them, giving their meshes a `MeshInstance::visi
 `take_seen()` reports which were seen (skinned meshes judged by their bind-pose box under every bone, a box that holds
 them); the next frame's update asks through `iron_animation::Visibility` (`M5-ANI-13`, `M5-CUL-03`). This is one frame
 late. Cameras of secondary windows are not counted. Colliders and objects attached to bones are not moved while culled.
+The renderer culls skinned meshes by that same box (`WorldRenderer::world_box`) in every view, so an unseen figure is also
+not drawn (`M5-CUL-05`). `MeshRenderer.isVisible` / `SkinnedMeshRenderer.isVisible` read the same answer: a renderer is
+watched once a script has asked, and the host reports the frame's seen renderers back with `set_seen_renderers`
+(`M5-CUL-04`). `update_culled` groups players and animators per object in a map, instead of scanning all of them for each.
 
 **Bench timers.** With `--bench`, `profile.rs` adds `animation: update (all)`, `animation: pose add`, `animation: pose
 apply` and `animation: set_local` to `syncParts` (`sync_profile` merges them); each is a clock read per call, and

@@ -743,7 +743,7 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
   `blendDistance`, `shape`).
 - **`QualitySettings`** also has `autoExposure`, `volumetricFog`, `hdr`, `additionalLights`, `additionalLightShadows` (per level in
   `project.json`'s `quality.levels`; Low has no light shafts) and `softShadowQuality` `medium`. `RenderStats` (meshes, culled
-  meshes, quads, ..., `fogCulled`, `lights`, `shadowMaps`) is filled by the app after each frame; `GraphicsSettings.lightUnits` is
+  meshes, quads, ..., `fogCulled`, `lights`, `shadowMaps`, `shadowCasters`) is filled by the app after each frame; `GraphicsSettings.lightUnits` is
   `physical` when `project.json` says `"lightUnits": "physical"`.
 - **Meshes**: `Mesh.createFlat(data)` / `mesh.setFlat(data)` (positions, triangles, normals, uv: typed arrays are copied to
   `number[]` at the boundary; a list left out is empty) over `Mesh.createFlatArrays(..)`. Script meshes

@@ -604,3 +604,27 @@ Culled, what is left is walking the scene for players and the state machines (`c
 the renderers (about 0.02 ms). In view with culling on, the frame costs about 0.14 ms more: the renderer works out a box
 for each of the 100 skinned renderers from its 65 bones in every view, then tests it against the view and the shadow
 maps (a follow-up in TODO.md).
+
+**examples/crowd.** Two busy sidewalks of animated mannequins (two blended clips of 65 bones each), measured with the
+release host, windowless `--bench`, 1280x720, fixed step 1/60, on the machine above, `tools/bench/inputs/crowd.json`,
+600 frames a segment:
+
+| Segment | fps | Frame mean (ms) | Animation update (ms) | Render (ms) |
+|---|---:|---:|---:|---:|
+| 250 a block, view 1 street A, `alwaysAnimate` | 38.1 | 26.2 | 14.8 | 10.2 |
+| 250, view 3 both, `alwaysAnimate` | 38.7 | 25.9 | 14.4 | 10.3 |
+| 250, view 4 over B, `alwaysAnimate` | 39.4 | 25.4 | 14.3 | 9.9 |
+| 250, view 4, `cullUpdateTransforms` | 53.6 | 18.7 | 7.9 | 9.3 |
+| 250, view 4, `cullCompletely` | 51.8 | 19.3 | 8.1 | 9.7 |
+| 250, view 3, `cullCompletely` | 38.5 | 26.0 | 14.4 | 10.2 |
+| 1000, view 4, `cullCompletely` | 12.2 | 82.2 | 32.2 | 42.7 |
+| 1000, view 4, `alwaysAnimate` | 9.3 | 108.0 | 58.3 | 44.1 |
+| 1000, view 4, `cullUpdateTransforms` | 12.1 | 83.0 | 32.6 | 42.9 |
+| 1000, view 3, `alwaysAnimate` | 9.1 | 109.8 | 57.8 | 45.4 |
+| 1000, view 1, `cullCompletely` | 13.3 | 75.0 | 24.8 | 42.1 |
+
+With block A off screen (view 4) culling halves the animation (A's figures stop); in view 3, with everything seen, the
+modes cost the same. Render time does not drop with culling: bone matrices for every skinned renderer are still built
+(about 18 ms for 2000 figures) and uploaded (about 6 ms) every frame, seen or not (a follow-up in TODO.md). Before this
+work the render took 14.6 ms for 500 figures (skinned meshes never culled, bone matrices per renderer) against 8.6-10 ms
+now. Animation is about 28 µs a figure.

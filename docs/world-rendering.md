@@ -181,7 +181,11 @@ renderer's `Skin` ([animation-3d.md](animation-3d.md#skinned-meshes) has the scr
   bones are already in world space.
 - The shadow pass has `vs_shadow_skinned` and its own bones buffer, so skinned casters bend the shadow.
   Skinned cut-outs cast solid shadows. Skinned and rigid casters are drawn in separate runs.
-- Skinned meshes are never frustum culled: they move away from their mesh bounds.
+- Skinned meshes are frustum culled in every view by their bind-pose box under every bone
+  (`WorldRenderer::world_box`; the mesh bounds would be wrong, as bones move away from them). The boxes are cached
+  per frame in `skin_boxes` and shared by the shadow pass, `note_seen` and each view (`M5-CUL-05`).
+- Renderers with identical bones and bind poses (a crowd of one skeleton) share one run of bone matrices in
+  `views()` (`M5-SKN-05`).
 - The golden is `M5-RND-21`.
 
 ### Materials
@@ -549,7 +553,7 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   counted in `WorldStats::fog_culled`. Height fog and fog volumes never cull. With a background unlike the
   fog colour, culled things would have been fog-coloured silhouettes, so turn culling off there.
   Scripts read `RenderStats` (`meshes`, `culledMeshes`, `quads`, `culledQuads`, `fogCulled`, `lights`,
-  `culledLights`, `shadowMaps`); `main.rs` calls `__iron_render_stats` with them each frame they change.
+  `culledLights`, `shadowMaps`, `shadowCasters`); `main.rs` calls `__iron_render_stats` with them each frame they change.
 - **Left clear.** The editor grid and gizmo lines.
 
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
@@ -823,8 +827,10 @@ perspective and orthographic) and tests spheres and boxes. Meshes use the box of
 - See-through meshes and quads out of view are dropped before sorting.
 - Point and spot lights whose range sphere misses the frustum are dropped; directional lights never
   are. The shadow light's index is looked up again in the kept list for each view.
+- Shadow casters outside every shadow layer of their lights are left out of the shadow maps.
 - `WorldRenderer::stats()` returns `WorldStats` (meshes, quads and lights drawn and culled, summed
-  over the views of the last `render_views` call), which the tests use.
+  over the views of the last `render_views` call, and `shadow_casters`, the casters drawn into shadow maps),
+  which the tests use.
 
 **LOD groups.** `LODGroup` (`rendering.ts`: `size`, `setLODs([{ screenRelativeTransitionHeight,
 renderers }])`, `forceLOD(i)`) sends `render.lodGroup`. Levels go from most to least detailed, and the
@@ -935,8 +941,8 @@ then decodes the cooked texture and uses `set_texture`. How cooking makes them:
   (by its centre), with no blending between probes; the cube mips are a box blur, not a GGX
   prefilter. The sky is one fixed 128-texel map, and only specular reflections use probes.
 - There is no screen-space reflection.
-- Skinning is four bones per vertex, in the vertex shader. Skinned meshes are never culled and a skinned
-  renderer's bones are rebuilt every frame for each view.
+- Skinning is four bones per vertex, in the vertex shader. Bone matrices are built and uploaded every frame
+  for every skinned renderer (one run per distinct skeleton), seen or not, even though unseen ones are not drawn.
 - Frustum culling is conservative: meshes are tested by the bounding box of their mesh, quads by the unit
   quad, and nothing is occlusion culled. Cull distances are per layer, not per object.
 - Panels re-render every frame while visible, with no dirty tracking; only TextMesh panels skip it until their text changes.
