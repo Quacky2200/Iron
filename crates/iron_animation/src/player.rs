@@ -303,6 +303,7 @@ pub fn update(
     dt: f64,
 ) -> Vec<FiredEvent> {
     let lap = crate::profile::start();
+    world.binds.get_mut().sweep(scene);
     let mut events = Vec::new();
     // Players of destroyed objects are dropped lazily: they are skipped here.
     let mut players = std::mem::take(&mut world.players);

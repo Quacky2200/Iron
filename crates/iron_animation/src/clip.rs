@@ -75,6 +75,10 @@ pub struct World {
     pub animators: Vec<crate::animator::AnimatorPlayer>,
     /// Controller pieces.
     pub graphs: crate::controller::Graphs,
+    /// Counts changes to clips and curves: bindings made before one are made again.
+    pub(crate) edits: u64,
+    /// Clips' bindings per animated root.
+    pub(crate) binds: RefCell<crate::bind::Binds>,
 }
 
 thread_local! {
@@ -107,6 +111,7 @@ impl World {
     }
 
     pub fn curve_mut(&mut self, id: CurveId) -> Option<&mut Curve> {
+        self.edits += 1;
         self.curves.get_mut((id.0 as usize).wrapping_sub(1))
     }
 
@@ -115,6 +120,7 @@ impl World {
     }
 
     pub fn clip_mut(&mut self, id: ClipId) -> Option<&mut Clip> {
+        self.edits += 1;
         self.clips.get_mut((id.0 as usize).wrapping_sub(1))
     }
 

@@ -115,3 +115,41 @@ fn moved_objects_and_active_state() {
     s.set_enabled(a, true);
     assert!(s.active(b));
 }
+
+// M5-OBJ-09
+#[test]
+fn tree_versions_change_with_names_and_links_below_but_not_with_moves() {
+    let mut s = Scene::new();
+    let root = s.create("root");
+    let arm = s.create("arm");
+    s.set_parent(arm, Some(root), false);
+    let hand = s.create("hand");
+    s.set_parent(hand, Some(arm), false);
+    let other = s.create("other");
+    let mut last = s.tree_version(root);
+    let mut changed = |s: &Scene| {
+        let v = s.tree_version(root);
+        let c = v != last;
+        last = v;
+        c
+    };
+    s.set_local(hand, Transform::from_position(Vec3::X));
+    s.set_enabled(hand, false);
+    assert!(!changed(&s), "moves and flags keep the version");
+    s.set_name(hand, "hand");
+    assert!(!changed(&s), "the same name is no change");
+    s.set_name(hand, "fist");
+    assert!(changed(&s), "a rename below");
+    let child = s.create("child");
+    assert!(!changed(&s), "a new root elsewhere");
+    s.set_parent(child, Some(hand), false);
+    assert!(changed(&s), "a new child below");
+    s.set_parent(child, Some(other), false);
+    assert!(changed(&s), "a child moved away");
+    s.set_parent(other, None, false);
+    s.set_name(other, "elsewhere");
+    assert!(!changed(&s), "changes in another tree");
+    s.destroy(hand);
+    assert!(changed(&s), "an object destroyed below");
+    assert_eq!(s.tree_version(hand), 0);
+}

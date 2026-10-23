@@ -3,12 +3,17 @@
 //! `docs/research/iron-native-animation.md`. Behaviour and numbers follow `js/engine/src/animation.ts`.
 
 pub mod animator;
+mod bind;
 pub mod clip;
 pub mod controller;
 pub mod curve;
 pub mod gltf;
+#[cfg(test)]
+mod legacy_pose;
 pub mod player;
 pub mod pose;
+#[cfg(test)]
+mod pose_tests;
 pub mod profile;
 pub mod registry;
 

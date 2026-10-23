@@ -80,6 +80,8 @@ struct Object {
     /// Cached world matrix, valid unless `dirty`.
     world: Affine3A,
     dirty: bool,
+    /// Changes when a name or a parent link changes in the subtree (see [`Scene::tree_version`]).
+    tree_version: u64,
 }
 
 struct Slot {
@@ -99,6 +101,8 @@ pub struct Scene {
     len: usize,
     /// The tag new objects get.
     new_tag: u32,
+    /// The last tree version handed out.
+    versions: u64,
 }
 
 impl Scene {
@@ -144,6 +148,10 @@ impl Scene {
             local: Transform::IDENTITY,
             world: Affine3A::IDENTITY,
             dirty: true,
+            tree_version: {
+                self.versions += 1;
+                self.versions
+            },
         };
         let id = match self.free.pop() {
             Some(index) => {
@@ -176,6 +184,9 @@ impl Scene {
     pub fn destroy(&mut self, id: ObjectId) -> Vec<ObjectId> {
         if !self.contains(id) {
             return Vec::new();
+        }
+        if let Some(parent) = self.parent(id) {
+            self.touch_tree(parent);
         }
         self.unlink(id);
         let mut gone = Vec::new();
@@ -210,7 +221,34 @@ impl Scene {
 
     pub fn set_name(&mut self, id: ObjectId, name: &str) {
         if let Some(o) = self.get_mut(id) {
+            if o.name == name {
+                return;
+            }
             o.name = name.to_owned();
+            self.touch_tree(id);
+        }
+    }
+
+    /// A number that changes whenever a name or a parent link changes anywhere under `id` (`id`
+    /// included): an object renamed, re-parented, destroyed or given a child. What depends on
+    /// paths by name below an object (animation bindings) is cached against it. 0 for unknown ids.
+    pub fn tree_version(&self, id: ObjectId) -> u64 {
+        self.get(id).map_or(0, |o| o.tree_version)
+    }
+
+    /// Gives `id` and its ancestors a new tree version.
+    fn touch_tree(&mut self, id: ObjectId) {
+        self.versions += 1;
+        let v = self.versions;
+        let mut at = Some(id);
+        while let Some(a) = at {
+            match self.get_mut(a) {
+                Some(o) => {
+                    o.tree_version = v;
+                    at = o.parent;
+                }
+                None => break,
+            }
         }
     }
 
@@ -306,12 +344,16 @@ impl Scene {
             return false;
         }
         let world = keep_world.then(|| self.world_matrix(id));
+        if let Some(old) = self.parent(id) {
+            self.touch_tree(old);
+        }
         self.unlink(id);
         match parent {
             Some(p) => self.get_mut(p).expect("checked").children.push(id),
             None => self.roots.push(id),
         }
         self.get_mut(id).expect("checked").parent = parent;
+        self.touch_tree(id);
         if let Some(world) = world {
             let parent_world = parent.map_or(Affine3A::IDENTITY, |p| self.world_matrix(p));
             let local = Transform::from_affine(parent_world.inverse() * world);
