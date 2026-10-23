@@ -159,14 +159,11 @@ pub(crate) struct Renderer {
 
 /// A skinned renderer's bones (objects, in the mesh's joint order) and their inverse
 /// bind poses.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Skin {
     pub(crate) bones: Vec<ScriptObject>,
     pub(crate) bindposes: Vec<Mat4>,
 }
-
-/// Skins whose bone matrices start at a place in a view's list (by their first and last bones).
-type SkinRuns<'a> = Vec<(u32, &'a Skin)>;
 
 /// A material's settings past the basic ones.
 #[derive(Clone, Copy, Debug, Default)]
@@ -428,8 +425,9 @@ pub struct WorldViews {
     pub render_texture_uploads: Vec<(u32, (u32, u32))>,
     /// Render textures' sizes, for their cameras' aspect.
     render_textures: HashMap<u32, (u32, u32)>,
-    /// Skinned renderers' bones, by component.
-    skins: HashMap<u32, Skin>,
+    /// Skinned renderers' bones, by component, and their matrices kept between frames.
+    skins: crate::bone_cache::Skins,
+    bone_cache: std::cell::RefCell<crate::bone_cache::BoneCache>,
     /// Loaded textures' sizes in pixels, for sprites.
     texture_sizes: HashMap<u32, (u32, u32)>,
     /// Renderers watched for animation culling, and what the last frame saw of them.
@@ -472,7 +470,8 @@ impl Default for WorldViews {
             render_texture_uploads: Vec::new(),
             cooked_uploads: Vec::new(),
             render_textures: HashMap::new(),
-            skins: HashMap::new(),
+            skins: Default::default(),
+            bone_cache: Default::default(),
             texture_sizes: HashMap::new(),
             culling: crate::anim_cull::Watch::default(),
         }
@@ -1769,31 +1768,9 @@ impl WorldViews {
                 ))
             })
             .collect();
-        // Skinned renderers' bone matrices, for every view: each bone's world matrix times
-        // its inverse bind pose (a missing bone holds its bind pose).
-        let mut bones: Vec<Mat4> = Vec::new();
-        let mut skinned: HashMap<u32, (u32, u32)> = HashMap::new();
-        // Parts of one figure share a skeleton: its matrices are worked out once.
-        let mut shared: HashMap<(ScriptObject, ScriptObject, usize), SkinRuns> = HashMap::new();
-        for (&id, skin) in &self.skins {
-            let start = bones.len() as u32;
-            if let (Some(&first), Some(&last)) = (skin.bones.first(), skin.bones.last()) {
-                let same = shared.entry((first, last, skin.bones.len())).or_default();
-                if let Some(&(start, _)) = same
-                    .iter()
-                    .find(|(_, s)| s.bones == skin.bones && s.bindposes == skin.bindposes)
-                {
-                    skinned.insert(id, (start, skin.bones.len() as u32));
-                    continue;
-                }
-                same.push((start, skin));
-            }
-            for (b, inverse) in skin.bones.iter().zip(&skin.bindposes) {
-                let world_bone = world(*b).map_or(inverse.inverse(), Mat4::from);
-                bones.push(world_bone * *inverse);
-            }
-            skinned.insert(id, (start, skin.bones.len() as u32));
-        }
+        // Skinned renderers' bone matrices, one list for every view (`bone_cache.rs`).
+        let mut cache = self.bone_cache.borrow_mut();
+        let (bones, skinned) = cache.update(&self.skins, scene);
         let meshes: Vec<Tagged<MeshInstance>> = self
             .renderers
             .iter()

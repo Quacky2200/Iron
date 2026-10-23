@@ -12,6 +12,7 @@ pub(crate) mod anim_cull;
 pub(crate) mod asset_db;
 mod asset_root;
 mod bench;
+pub(crate) mod bone_cache;
 mod cloth_sync;
 pub(crate) mod cook;
 mod cursor;

@@ -10,6 +10,7 @@
 //! passed to each render) or kept by the renderer ([`WorldRenderer::set_texture`]).
 
 pub mod bloom;
+mod bone_pack;
 pub mod cull;
 pub mod environment;
 mod fill;
@@ -533,8 +534,10 @@ pub struct WorldView {
     /// of the target (Unity's `Camera.targetTexture`); its viewport is within the texture.
     pub target_texture: Option<u32>,
     /// Skinned meshes' bone matrices (each bone's world matrix times its inverse bind
-    /// pose), which their [`MeshInstance::bones`] point into.
-    pub bones: Vec<Mat4>,
+    /// pose), which their [`MeshInstance::bones`] point into. Shared: views showing one
+    /// world share one list, and only the runs of the skinned meshes drawn (in a view or a
+    /// shadow map) are sent to the GPU, once a frame.
+    pub bones: std::sync::Arc<Vec<Mat4>>,
     /// Draws the editor's ground grid on y = 0 after the opaque meshes: 1 m and 10 m
     /// lines fading with distance, the X axis red and the Z axis blue.
     pub grid: bool,
@@ -859,7 +862,7 @@ impl WorldView {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
-            bones: Vec::new(),
+            bones: Default::default(),
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
@@ -1138,6 +1141,9 @@ pub struct WorldStats {
     /// Meshes drawn into the shadow maps (once per culling mask of the casting lights):
     /// casters outside every layer are left out.
     pub shadow_casters: usize,
+    /// Bone matrices sent to the GPU: only those of the skinned meshes drawn, each run once
+    /// however many passes draw it.
+    pub bones: usize,
 }
 
 /// Quad, background-fill, opaque-mesh and see-through-mesh pipelines for one format.
@@ -1212,9 +1218,10 @@ pub struct WorldRenderer {
     shadow_pipeline: wgpu::RenderPipeline,
     shadow_cutout_pipeline: wgpu::RenderPipeline,
     shadow_skinned_pipeline: wgpu::RenderPipeline,
-    /// Bone matrices: the views' (the main pass) and the shadow pass's.
+    /// Bone matrices of the frame's drawn skinned meshes, shared by every pass, and what
+    /// is in it.
     bones: wgpu::Buffer,
-    shadow_bones: wgpu::Buffer,
+    bone_pack: std::cell::RefCell<bone_pack::BonePack>,
     /// The sun's cascades and the spot / point lights' maps.
     sun_shadows: ShadowArray,
     local_shadows: ShadowArray,
@@ -1672,7 +1679,7 @@ impl WorldRenderer {
             shadow_cutout_pipeline,
             shadow_skinned_pipeline,
             bones: Self::storage::<[[f32; 4]; 4]>(gpu, "world bones", 16),
-            shadow_bones: Self::storage::<[[f32; 4]; 4]>(gpu, "shadow bones", 16),
+            bone_pack: Default::default(),
             sun_shadows: ShadowArray::new(gpu, "sun shadows", 1, 1),
             local_shadows: ShadowArray::new(gpu, "light shadows", 1, 1),
             shadow_plan: shadows::ShadowPlan::default(),
@@ -2305,8 +2312,6 @@ impl WorldRenderer {
             skinned: bool,
             range: Range<u32>,
         }
-        let bones: Vec<[[f32; 4]; 4]> = view.bones.iter().map(|m| m.to_cols_array_2d()).collect();
-        Self::upload(gpu, &mut self.shadow_bones, "shadow bones", &bones);
         let mut instances: Vec<GpuMesh> = Vec::new();
         let mut runs_by_mask: Vec<(u32, Vec<ShadowRun>)> = Vec::new();
         // A caster outside every layer of its lights (what lies before a layer's near plane
@@ -2347,7 +2352,9 @@ impl WorldRenderer {
                         0.0,
                         0.0,
                         m.alpha_cutoff,
-                        m.bones.map_or(0.0, |(start, _)| (start + 1) as f32),
+                        m.bones.map_or(0.0, |run| {
+                            (self.bone_pack.borrow_mut().place(&view.bones, run) + 1) as f32
+                        }),
                     ],
                     ..Zeroable::zeroed()
                 });
@@ -2379,6 +2386,7 @@ impl WorldRenderer {
         }
         self.stats.shadow_casters = instances.len();
         Self::upload(gpu, &mut self.shadow_casters, "shadow casters", &instances);
+        self.bone_pack.get_mut().upload(gpu, &mut self.bones);
         // Cut-out casters need their textures.
         let mut groups: HashMap<MaterialKey, wgpu::BindGroup> = HashMap::new();
         for key in runs_by_mask
@@ -2437,7 +2445,7 @@ impl WorldRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: self.shadow_bones.as_entire_binding(),
+                    resource: self.bones.as_entire_binding(),
                 },
             ],
         });
@@ -2822,6 +2830,7 @@ impl WorldRenderer {
     ) {
         self.stats = WorldStats::default();
         self.skin_boxes.get_mut().clear();
+        self.bone_pack.get_mut().clear();
         // Shadow maps once, from the biggest screen view, for every view this frame.
         let main = views
             .iter()
@@ -3279,11 +3288,7 @@ impl WorldRenderer {
         let mut meshes: Vec<GpuMesh> = Vec::new();
         let mut lights: Vec<GpuLight> = Vec::new();
         let mut per_view: Vec<ViewRuns> = Vec::new();
-        let mut bones: Vec<[[f32; 4]; 4]> = Vec::new();
         for view in views {
-            // This view's bones, after the earlier views'.
-            let bone_base = bones.len() as u32;
-            bones.extend(view.bones.iter().map(|m| m.to_cols_array_2d()));
             let eye = view.camera.position;
             // How far along the view something is: straight-line distance in
             // perspective, distance along the view direction in orthographic (where
@@ -3367,8 +3372,9 @@ impl WorldRenderer {
                         m.maps.occlusion_strength.clamp(0.0, 1.0),
                         m.alpha_cutoff,
                         // The first bone in this frame's list, plus one (0: rigid).
-                        m.bones
-                            .map_or(0.0, |(start, _)| (bone_base + start + 1) as f32),
+                        m.bones.map_or(0.0, |run| {
+                            (self.bone_pack.borrow_mut().place(&view.bones, run) + 1) as f32
+                        }),
                     ],
                     detail: m.maps.detail_tiling,
                 }
@@ -3712,7 +3718,8 @@ impl WorldRenderer {
                 .write_buffer(&self.strokes, 0, bytemuck::cast_slice(&all_strokes));
         }
         Self::upload(gpu, &mut self.mesh_instances, "world meshes", &meshes);
-        Self::upload(gpu, &mut self.bones, "world bones", &bones);
+        self.bone_pack.get_mut().upload(gpu, &mut self.bones);
+        self.stats.bones = self.bone_pack.get_mut().len();
         if self.globals.size() < self.stride * views.len().max(1) as u64 {
             self.globals = Self::buffer(
                 gpu,

@@ -170,16 +170,22 @@ like Unity's Standard shader:
 `MeshData` can also hold `joints` and `weights` (four per vertex). A mesh with them gets a second vertex
 buffer of `SkinVertex { joints: [u32; 4], weights: [f32; 4] }` (attributes 4 and 5). `MeshInstance::bones`
 is `Some((first, count))` for a skinned renderer, pointing into `WorldView::bones`: one matrix per bone,
-the bone's world matrix times its inverse bind pose, made each frame by `WorldViews::views` from the
-renderer's `Skin` ([animation-3d.md](animation-3d.md#skinned-meshes) has the script side).
+the bone's world matrix times its inverse bind pose, kept by `WorldViews`' bone cache
+(`iron_app/src/bone_cache.rs`) from the renderer's `Skin`
+([animation-3d.md](animation-3d.md#skinned-meshes) has the script side). The list is an `Arc<Vec<Mat4>>`
+shared by every view; a skeleton's run is worked out again only when one of its bones moved since it was
+built (`Scene::moved_since`: `update_world` moves `Scene::epoch` on, a move stamps the object and all below
+it, `M5-OBJ-11`), so a culled crowd costs one check per bone (`M5-CUL-07`).
 
 - The main pass has four extra pipelines (`skinned`: opaque or see-through, one- or two-sided) using
   `vs_mesh_skinned` with the normal `fs_mesh`. Bone matrices go in a storage buffer (binding 4 of the
-  mesh group). Every view's bones are appended in one list, each view after the earlier ones; the
-  instance's `maps.w` carries the first bone plus one (0: a rigid mesh).
+  mesh group). Only the runs of skinned meshes some pass draws (a view, a mirror, a probe, the shadow maps)
+  go in it, each once a frame (`world/bone_pack.rs`: placed by list and run the first time a pass draws one,
+  converted then, and each pass uploads only what was placed since; `WorldStats::bones` counts them); the
+  instance's `maps.w` carries the packed first bone plus one (0: a rigid mesh).
 - `skin_matrix` blends the four bone matrices by weight. The object's own `model` matrix is ignored:
   bones are already in world space.
-- The shadow pass has `vs_shadow_skinned` and its own bones buffer, so skinned casters bend the shadow.
+- The shadow pass has `vs_shadow_skinned` and reads the same packed list, so skinned casters bend the shadow.
   Skinned cut-outs cast solid shadows. Skinned and rigid casters are drawn in separate runs.
 - Skinned meshes are frustum culled in every view by their bind-pose box under every bone
   (`WorldRenderer::world_box`; the mesh bounds would be wrong, as bones move away from them). The boxes are cached
@@ -941,8 +947,8 @@ then decodes the cooked texture and uses `set_texture`. How cooking makes them:
   (by its centre), with no blending between probes; the cube mips are a box blur, not a GGX
   prefilter. The sky is one fixed 128-texel map, and only specular reflections use probes.
 - There is no screen-space reflection.
-- Skinning is four bones per vertex, in the vertex shader. Bone matrices are built and uploaded every frame
-  for every skinned renderer (one run per distinct skeleton), seen or not, even though unseen ones are not drawn.
+- Skinning is four bones per vertex, in the vertex shader. A moving skeleton's matrices are built every frame,
+  seen or not (the frustum test needs its bone box); only drawn ones are uploaded.
 - Frustum culling is conservative: meshes are tested by the bounding box of their mesh, quads by the unit
   quad, and nothing is occlusion culled. Cull distances are per layer, not per object.
 - Panels re-render every frame while visible, with no dirty tracking; only TextMesh panels skip it until their text changes.

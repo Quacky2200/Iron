@@ -254,3 +254,45 @@ fn tree_versions_change_with_names_and_links_below_but_not_with_moves() {
     assert!(changed(&s), "an object destroyed below");
     assert_eq!(s.tree_version(hand), 0);
 }
+
+// M5-OBJ-11
+#[test]
+fn moved_since_says_which_world_matrices_changed_after_an_update() {
+    let mut s = Scene::new();
+    let root = s.create("root");
+    let arm = s.create("arm");
+    s.set_parent(arm, Some(root), false);
+    let hand = s.create("hand");
+    s.set_parent(hand, Some(arm), false);
+    let other = s.create("other");
+    assert!(
+        s.moved_since(hand, s.epoch()),
+        "stale before the first update"
+    );
+    s.update_world();
+    let built = s.epoch();
+    for o in [root, arm, hand, other] {
+        assert!(!s.moved_since(o, built));
+    }
+    // A move stamps the object and everything below it, not its parents or others.
+    s.set_local(arm, Transform::from_position(Vec3::X));
+    s.set_local(hand, Transform::from_position(Vec3::Y));
+    s.update_world();
+    assert!(s.moved_since(arm, built) && s.moved_since(hand, built));
+    assert!(!s.moved_since(root, built) && !s.moved_since(other, built));
+    let built = s.epoch();
+    assert!(!s.moved_since(hand, built), "settled after the next update");
+    // A parent's move reaches the children, even after a move of theirs this epoch.
+    s.set_local(hand, Transform::from_position(Vec3::Z));
+    s.set_local(root, Transform::from_position(Vec3::X));
+    assert!(s.moved_since(hand, built), "stale: not updated yet");
+    s.update_world();
+    assert!(s.moved_since(arm, built) && s.moved_since(hand, built));
+    let built = s.epoch();
+    // Re-parenting moves; a destroyed object always counts as moved.
+    s.set_parent(other, Some(hand), false);
+    s.update_world();
+    assert!(s.moved_since(other, built) && !s.moved_since(hand, built));
+    s.destroy(other);
+    assert!(s.moved_since(other, s.epoch()));
+}

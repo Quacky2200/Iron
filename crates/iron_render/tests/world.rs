@@ -205,7 +205,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
-            bones: Vec::new(),
+            bones: Default::default(),
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
@@ -237,7 +237,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
-            bones: Vec::new(),
+            bones: Default::default(),
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
@@ -276,7 +276,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
             probes: Vec::new(),
             fxaa: false,
             target_texture: None,
-            bones: Vec::new(),
+            bones: Default::default(),
             grid: false,
             lines: Vec::new(),
             strokes: Vec::new(),
@@ -1473,6 +1473,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
             culled_lights: 1,
             shadow_maps: 1,
             shadow_casters: 2,
+            bones: 0,
         }
     );
     let pixels = target.read_pixels(&gpu).unwrap();
@@ -1642,7 +1643,8 @@ fn skinned_meshes_are_culled_by_their_bones_and_leave_shadow_maps_they_miss() {
         Mat4::IDENTITY,
         Mat4::from_translation(Vec3::new(4.5, 0.0, 0.0)),
         Mat4::from_translation(Vec3::new(200.0, 0.0, 0.0)),
-    ];
+    ]
+    .into();
     v.meshes = (0..3)
         .map(|i| MeshInstance {
             mesh: 9,
@@ -1675,6 +1677,17 @@ fn skinned_meshes_are_culled_by_their_bones_and_leave_shadow_maps_they_miss() {
     );
     // Animation culling sees through the same boxes (the one beside casts into view).
     assert_eq!(world.seen(), [1, 2]);
+
+    // M5-CUL-07: only the drawn figures' bones go to the GPU, once for the shadow maps and
+    // every view sharing the list; the far one's never.
+    assert_eq!(stats.bones, 2, "{stats:?}");
+    let second = v.clone();
+    world.render_views(&gpu, &rt, &[v.clone(), second], &[]);
+    assert_eq!(world.stats().bones, 2, "one copy for both views");
+    let pixels = target.read_pixels(&gpu).unwrap();
+    // The same frame as one view's (the second draws over the first, alike).
+    world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+    assert_eq!(target.read_pixels(&gpu).unwrap(), pixels);
 }
 
 // M5-RND-16
@@ -2439,7 +2452,7 @@ fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
         Color::rgb(0.05, 0.06, 0.09),
     );
     let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
-    v.bones = bones;
+    v.bones = bones.into();
     v.meshes = vec![
         MeshInstance {
             mesh: primitive_id("plane").unwrap(),

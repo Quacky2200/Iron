@@ -84,6 +84,8 @@ struct Object {
     listed: bool,
     /// Changes when a name or a parent link changes in the subtree (see [`Scene::tree_version`]).
     tree_version: u64,
+    /// The [`Scene::epoch`] its world transform last changed in.
+    moved_at: u64,
 }
 
 struct Slot {
@@ -107,6 +109,8 @@ pub struct Scene {
     versions: u64,
     /// `mark_moved`'s stack, kept between calls.
     mark_stack: Vec<ObjectId>,
+    /// Counts [`Scene::update_world`] calls: moves are stamped with it.
+    epoch: u64,
 }
 
 impl Scene {
@@ -157,6 +161,7 @@ impl Scene {
                 self.versions += 1;
                 self.versions
             },
+            moved_at: self.epoch,
         };
         let id = match self.free.pop() {
             Some(index) => {
@@ -416,6 +421,7 @@ impl Scene {
     /// and a listed one listed descendants: so an object both stale and listed ends the walk.)
     fn mark_moved(&mut self, id: ObjectId) {
         let mut stack = std::mem::take(&mut self.mark_stack);
+        let epoch = self.epoch;
         stack.push(id);
         while let Some(id) = stack.pop() {
             let Some(o) = self.get_mut(id) else { continue };
@@ -423,6 +429,7 @@ impl Scene {
                 continue;
             }
             o.dirty = true;
+            o.moved_at = epoch;
             stack.extend(o.children.iter().copied());
             let new = !o.listed;
             o.listed = true;
@@ -479,6 +486,19 @@ impl Scene {
             let world = o.world;
             stack.extend(o.children.iter().map(|c| (*c, world)));
         }
+        self.epoch += 1;
+    }
+
+    /// The number [`Scene::update_world`] moves on by one each call. Something worked out from
+    /// world matrices right after one can be kept while [`Scene::moved_since`] says no.
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// Whether the object's world transform changed in or after `epoch` (or is stale, or the
+    /// object is gone): a move stamps the object and all below it with the current epoch.
+    pub fn moved_since(&self, id: ObjectId, epoch: u64) -> bool {
+        self.get(id).is_none_or(|o| o.dirty || o.moved_at >= epoch)
     }
 
     /// Objects whose world transform changed since the last call (including new ones),
