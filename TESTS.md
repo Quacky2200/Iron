@@ -1453,6 +1453,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2723 | Integration | `package` warns about empty fields and about `company`/`copyright`/`license` still at their defaults, still packages, and is silent when all are given. |
 | M9-TS-2724 | Integration | The `iron-build` program: `build` and `package` print the empty-field warnings, `check` does not (`tools/iron_build/tests/cli.rs`). |
 | M9-TS-2725 | Unit | Games are found by `project.json` (or a `package.json` with an `iron` section, the deprecated fallback), not by any `package.json`. |
+| M9-LIC-01 | Integration | Every tracked source file (`.rs`, `.ts`, `.tsx`, `.js`, `.mts`, `.wgsl`, `.css`, `.py`, `.toml`, `.sh`) has `SPDX-License-Identifier: Apache-2.0` in its first lines, except the commented list of generated files, built fixtures and third-party ports; skipped without git (`tools/iron_build/tests/spdx_headers.rs`). |
 | M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
 | M9-API-901 | Unit | The rate rounds to the nearest integer. |
 | M9-API-902 | Unit | `FpsCounter` closes a window once 0.25 s have passed and reports it; 100 FPS over 0.6 s gives two windows of `100 FPS`. |
