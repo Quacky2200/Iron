@@ -2045,3 +2045,13 @@ implicitly (its UI is QuickJS) and logs the note once. Nothing is deleted yet. W
 - [ ] Delete `iron_native::register_quickjs` (keep the native `#[iron_api]` registries compiled code uses).
 - [ ] Delete `js/engine`, `js/react`, `js/editor-ui`, `tests/fixtures` (the QuickJS fixtures) and the `bun run build*` / `scripts/dev.ts` / `scripts/screenshots.ts` bun paths.
 - [ ] Rust integration tests that use ScriptRuntime/QuickJS as a library: port to compiled games or delete with their crates.
+
+## Code review (after the iron_ts branch is merged into `main`)
+
+Most of this branch (about 300 commits) was written by agents and checked by tests, ratchets and snapshots, which catch regressions but not design drift. Once `claude/recursing-wright-856ffa` is merged into `main` (the user decides squash or merge as-is), do a human-readable review pass:
+- [ ] **Run `/code-review`** on the merged range (start at `high` effort, then `xhigh` on the compiler and engine crates) and triage the findings into TODO items.
+- [ ] **Read-only review agents per area**, one report each (no edits): `tools/iron_ts` (the compiler: `lower/expr.rs` is about 5,800 lines, split candidates), `tools/iron_ts_rt` (GC, maps, JSON: unsafe code and rooting), `crates/iron_api_macros` (3,900 lines), `crates/iron_app` (`main.rs` 3,300 lines, `native.rs`, `render_sync.rs`, `windows.rs`), `crates/iron_ui` / `iron_ui_native`, `crates/iron_render_api` (generated registries), packs and the virtual file system, `iron-build`.
+- [ ] **Look for design drift and duplication:** the same logic in the QuickJS and native paths, copies of the same table, helpers that grew into modules, `#[allow]` without a reason, `unsafe` blocks without a safety comment, `TODO`/`FIXME` left in code, dead code behind deprecated QuickJS paths.
+- [ ] **Security-minded pass** (`/security-review`): asset path handling (`resolve_asset`, the unsafe-paths design), pack reading (`.irpk`), JSON parsing, the `prebuild` command of `project.json`, anything that runs external commands.
+- [ ] **Split the largest files** the review flags (new modules rather than growing them), and keep the notes in `CLAUDE.md` ("Notes for agents") current.
+- [ ] **Prune the notes:** `TESTS.md` (split by milestone), `TODO.md` (done items to history), the `CLAUDE.md` Status section (stale), the `tools/iron_ts/TODO.md` log.
