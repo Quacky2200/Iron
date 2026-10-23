@@ -7,7 +7,7 @@ the GPU work of the frame before it), at 1280x720 and a fixed step of 1/60 s, wi
 (`tools/bench/inputs/<name>.json`). How it works and the flags: `docs/iron-build.md`, "Benchmarks". Raw numbers:
 `docs/benchmarks/results.json`.
 
-Re-run (about 40 minutes for all 44; `--only a,b` re-runs some and keeps the rest):
+Re-run (about 40 minutes for all 44, plus about 10 for `crowd`; `--only a,b` re-runs some and keeps the rest):
 
 ```bash
 cd tools && cargo run -q -p iron_build -- bench ../examples

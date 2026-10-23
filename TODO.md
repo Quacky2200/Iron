@@ -1121,10 +1121,19 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `cullUpdateTransforms`, `cullCompletely`) and `Animation.cullingType` (`basedOnRenderers`),
     seen from the renderer's last frame (views and shadow maps); 50 mannequins looking away
     0.81 → 0.10 / 0.085 ms
-  - [ ] Animation culling follow-ups: cull skinned meshes in the main pass by the bone box
-    `note_seen` already works out (they are always drawn today); count secondary windows'
-    cameras; the in-view cost of watching (about 0.14 ms a frame for 100 skinned renderers of
-    65 bones: one box per bone per mesh); a cheaper bone box (bounds per bone at import)
+  - [x] Animation culling follow-ups, part 1 (2026-10-23, found with `examples/crowd`): skinned
+    meshes are frustum-culled in every view by their bone box (worked out once a frame) and left
+    out of shadow maps they miss (`RenderStats.shadowCasters`); `Renderer.isVisible` (watched
+    once a script asks); the parts of one skeleton share their bone matrices (render 14.6 → 8.6
+    ms for 500 figures); animators are grouped per object (no scan of every animator per object)
+  - [ ] Animation culling follow-ups: count secondary windows' cameras; a cheaper bone box
+    (bounds per bone at import); bone matrices are built and uploaded twice (shadows, views) for
+    every skinned renderer every frame, seen or not (about 18 ms building and 6 ms uploading for
+    2000 figures); the animation update is about 28 µs a figure (two clips of 65 bones),
+    single-threaded; a script switch for frustum culling (none today)
+  - [x] `examples/crowd` (2026-10-23): two city blocks of walking mannequins (50 to 1000 a
+    block, each its own Animator), four views, the culling modes on a key, a HUD counting what
+    is seen, animated and culled per block; `tools/bench/inputs/crowd.json`
   - [x] Native render sync (found 2026-10-22 by `iron-build bench`: `sync_native_render` cost
     0.6-2 ms a frame, making fog-world and six clock faces slower native than QuickJS): it
     rebuilt every component every frame and copied every script mesh's vertices per renderer

@@ -1,0 +1,29 @@
+{
+  "warmup": 180,
+  "segments": [
+    { "name": "250, view 1 (street, A), alwaysAnimate", "warmup": 90, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit7", "hold": 2 } ] },
+    { "name": "250, view 2 (over A), alwaysAnimate", "warmup": 60, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit2", "hold": 2 } ] },
+    { "name": "250, view 3 (both), alwaysAnimate", "warmup": 60, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit3", "hold": 2 } ] },
+    { "name": "250, view 4 (over B), alwaysAnimate", "warmup": 60, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit4", "hold": 2 } ] },
+    { "name": "250, view 4 (over B), cullUpdateTransforms", "warmup": 30, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "KeyM", "hold": 2 } ] },
+    { "name": "250, view 4 (over B), cullCompletely", "warmup": 30, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "KeyM", "hold": 2 } ] },
+    { "name": "250, view 3 (both), cullCompletely", "warmup": 60, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit3", "hold": 2 } ] },
+    { "name": "1000, view 4 (over B), cullCompletely", "warmup": 200, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit9", "hold": 2 }, { "frame": 0, "kind": "key", "code": "Digit4", "hold": 2 } ] },
+    { "name": "1000, view 4 (over B), alwaysAnimate", "warmup": 30, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "KeyM", "hold": 2 } ] },
+    { "name": "1000, view 4 (over B), cullUpdateTransforms", "warmup": 30, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "KeyM", "hold": 2 } ] },
+    { "name": "1000, view 3 (both), alwaysAnimate", "warmup": 60, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "KeyM", "hold": 2 }, { "frame": 4, "kind": "key", "code": "KeyM", "hold": 2 }, { "frame": 0, "kind": "key", "code": "Digit3", "hold": 2 } ] },
+    { "name": "1000, view 1 (street, A), cullCompletely", "warmup": 60, "frames": 600,
+      "input": [ { "frame": 0, "kind": "key", "code": "KeyM", "hold": 2 }, { "frame": 4, "kind": "key", "code": "KeyM", "hold": 2 }, { "frame": 0, "kind": "key", "code": "Digit1", "hold": 2 } ] }
+  ]
+}
