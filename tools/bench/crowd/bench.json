@@ -1,0 +1,16 @@
+{
+  "warmup": 120,
+  "segments": [
+    { "name": "alwaysAnimate, in view", "frames": 300 },
+    { "name": "alwaysAnimate, looking away", "warmup": 10, "frames": 300,
+      "input": [ { "frame": 0, "kind": "key", "code": "KeyL", "hold": 2 } ] },
+    { "name": "cullUpdateTransforms, looking away", "warmup": 10, "frames": 300,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit2", "hold": 2 } ] },
+    { "name": "cullCompletely, looking away", "warmup": 10, "frames": 300,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit3", "hold": 2 } ] },
+    { "name": "cullUpdateTransforms, in view", "warmup": 10, "frames": 300,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit2", "hold": 2 }, { "frame": 0, "kind": "key", "code": "KeyL", "hold": 2 } ] },
+    { "name": "cullCompletely, in view", "warmup": 10, "frames": 300,
+      "input": [ { "frame": 0, "kind": "key", "code": "Digit3", "hold": 2 } ] }
+  ]
+}

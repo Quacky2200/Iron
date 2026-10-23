@@ -79,6 +79,8 @@ List properties (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` /
 | `getComponent(MeshRenderer)` on a skinned part | Finds nothing: a `SkinnedMeshRenderer` is a renderer of its own, as in Unity | `SkinnedMeshRenderer extends MeshRenderer`, so it is found | Engine handles have no subclassing yet; Unity's shape. Ask for `SkinnedMeshRenderer` (`fog-white-room` does both) |
 | Options objects (`Material.create({ mainTextureScale })`, `new X({ .. })`) | A value-class key takes a plain object (`{ x: 4, y: 4 }`, `Vector2Like`), as the TypeScript's `MaterialOptions` did | - | Was declared as the class, so `tsc` refused plain objects |
 | `Animation.destroy()` | Empties the component's slot (players are numbered by place); `getComponent(Animation)` is then `undefined` | Removes the component | |
+| `Animator.cullingMode` / `Animation.cullingType` (2026-10-23) | Unity's modes; "seen" is the last frame's drawing (one frame late): any renderer on or below the object in a camera's frustum, or casting into a shadow map with its shadow able to reach a view; skinned meshes judged by a box holding every bone's image of their bind-pose box (larger than Unity's bounds); cameras of secondary windows don't count | Not there (always animates) | Unity culls on the current frame's renderer bounds; one frame late keeps the renderer's results the only source |
+| Culled animation and bones | While culled, bone transforms are not written, so colliders and objects attached to bones stay where they were (Unity the same for `cullUpdateTransforms`); `basedOnRenderers` pauses the legacy `Animation` (its times stand still) | - | |
 
 ## Intl backends (compiled TypeScript)
 

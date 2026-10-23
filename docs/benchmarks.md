@@ -115,6 +115,7 @@ sync was made incremental (`31be6440`, `97756c28`, `a8dd52dc`).
 - **fog-white-room** (new, native only: not on `main`): 861 fps, median 1.25 ms. Its 0.58 ms of sync is the
   `Animator` on the skinned mannequin (a speed blend tree plus one-shot states: `syncParts` "animation, splines, camera
   follow" 0.57 ms), the largest sync left in any example; QuickJS games evaluate animation inside script time.
+  Since cut to about 0.03-0.04 ms (see "Animator" below, after the generated tables).
 - **Like-for-like script time:** a QuickJS game's **script** column holds the JavaScript, the native API calls it makes
   (math, scene, rendering data: QuickJS games call the same `#[iron_api]` functions) and its animation, spline and camera
   follow components; native counts those components under **sync**. `opMarshalMs` (copying `__iron_op` arguments out
@@ -555,3 +556,51 @@ Input: each quality level clicked in the menu (this stops the demo's own cycling
 | idle | 300 | 939 | 289 | 3.25x | 1.03 / 1.51 | 4.09 / 4.71 | 0.05 | 1.78 |
 | pointer sweep | 600 | 1224 | 278 | 4.40x | 0.80 / 1.07 | 4.23 / 4.78 | 0.04 | 1.79 |
 <!-- bench:end -->
+
+## Animator
+
+Hand-written (kept by `iron-build bench`). The native `Animator` made cheap (2026-10-23), one commit per step, and
+Unity's animation culling. Measured with the release host (`cargo build --release -p iron_app`), no window, on the
+machine above (AMD Ryzen 9 5900X, NVIDIA GeForce RTX 5080 on Vulkan, Windows 11 Pro 22631):
+
+```bash
+target/release/iron_app.exe examples/fog-white-room --bench --bench-input tools/bench/inputs/fog-white-room.json \
+  --fixed-dt 0.0166667 --bench-out out.json
+```
+
+The numbers are `syncParts` means in ms a frame: "animation, splines, camera follow" (the whole update; splines and
+camera follow are next to nothing here) and the animation timers added in the first step (`animation: pose add`,
+`pose apply`, `set_local`, which is timed per bone, so part of its share is the timer). Median of 3 runs per step (5
+for the last; 1 for "before"), segments "idle" (one clip) and "jog, sprint, jump and roll" (2 to 4 clips blended).
+
+| Step | Commit | Idle: update | add | apply | set_local | Moving: update | add | apply | Frame mean idle / moving |
+|---|---|---|---|---|---|---|---|---|---|
+| Before (timers only) | `8b0d59aa` | 0.375 | 0.202 | 0.163 | 0.029 | 0.635 | 0.456 | 0.166 | 0.97 / 1.24 |
+| Bind tracks once per (clip, root) | `b722f24e` | 0.058 | 0.016 | 0.033 | 0.029 | 0.073 | 0.027 | 0.033 | 0.64 / 0.67 |
+| `mark_moved` stops at listed objects | `6fe4775d` | 0.033 | 0.017 | 0.008 | 0.003 | 0.049 | 0.028 | 0.007 | 0.61 / 0.63 |
+| Reused pose buffer, shared key search, kept clip lengths | `3abe1f58` | 0.029 | 0.017 | 0.008 | 0.003 | 0.042 | 0.030 | 0.007 | 0.63 / 0.64 |
+| With culling (default `alwaysAnimate`) | `b168dc3c` | 0.027 | 0.014 | 0.008 | 0.003 | 0.039 | 0.027 | 0.007 | 0.62 / 0.63 |
+
+Overall 14x idle and 16x moving for the 65-bone mannequin (about 650 curves a clip). The first step is nearly all of it
+(the string work per curve per frame); the rest are microseconds and near the noise between runs (add moved between
+0.012 and 0.017 ms idle across runs of one build). Frames of `examples/animation` and fog-white-room rendered at fixed
+frames before and after every step are identical byte for byte.
+
+**A crowd and culling.** `tools/bench/crowd` (a bench scene, not an example: copy the mannequin into its `assets/`):
+50 mannequins jogging, each with its own `Animator` (65 bones, one looping clip), the camera on them or turned away;
+`tools/bench/crowd/bench.json` switches the mode (keys 1 / 2 / 3) and the view (L). Same build as the last row, median of
+3 runs:
+
+| Segment | Animation update (ms) | Per character | Frame mean (ms) |
+|---|---|---|---|
+| `alwaysAnimate`, in view | 0.812 | 0.016 | 1.65 |
+| `alwaysAnimate`, looking away | 0.808 | 0.016 | 1.65 |
+| `cullUpdateTransforms`, looking away | 0.098 | 0.002 | 0.94 |
+| `cullCompletely`, looking away | 0.085 | 0.002 | 0.92 |
+| `cullUpdateTransforms`, in view | 0.834 | 0.017 | 1.80 |
+| `cullCompletely`, in view | 0.837 | 0.017 | 1.78 |
+
+Culled, what is left is walking the scene for players and the state machines (`cullUpdateTransforms`) and the watch over
+the renderers (about 0.02 ms). In view with culling on, the frame costs about 0.14 ms more: the renderer works out a box
+for each of the 100 skinned renderers from its 65 bones in every view, then tests it against the view and the shadow
+maps (a follow-up in TODO.md).

@@ -686,7 +686,11 @@ Mesh renderer ids are the registry handles, so `LODGroup` renderer lists match. 
 renderer on its object (`rebuild()`), and its `cloth.*` ops go to `ClothSystem` through `Extras`.
 
 The app side is `crates/iron_app/src/native_render.rs` (`impl App`, called from `frame()` through `sync_native_render`):
-`CameraFollow` / `CameraOrbit` late updates and `iron_engine_api::animation::update`, the quality levels from `package.json`
+`CameraFollow` / `CameraOrbit` late updates and `iron_engine_api::animation::update_culled` (animation culling:
+`culled_roots()` lists the objects whose `Animator.cullingMode` / `Animation.cullingType` culls, `WorldViews::animation_sight`
+(`anim_cull.rs`) answers from what the renderer saw of their renderers last frame (`WorldRenderer::take_seen`, read after each
+frame is drawn) and watches them for this frame; while culled, bones are not moved, so colliders and objects attached to bones
+stay put; see `docs/animation-native.md`), the quality levels from `package.json`
 (`configure_quality` and `apply_default_quality`, once), `UiResources` requests (`addStyleSheet`, `removeStyleSheet`, `loadFont` through
 the same code as the QuickJS ops, on the screen and every panel), `Cursor` (version counter) and `Screen` (window requests, the display
 state and size changes), and world panels: `Native::take_panel_mounts` hands over `createRoot(panel).render(..)` roots; each panel has its

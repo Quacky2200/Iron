@@ -1109,12 +1109,22 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     searched the clip again for each rotation, every frame, and `clip.length` rescanned all
     curves. Clips' curves are now grouped per bone once, paths cached per root, lengths
     cached: 24.6 → 5.7 ms a frame for the room (~3.3 ms of it the figure)
-  - [ ] Skeletal animation natively: sample glTF clips and blend poses in Rust (the
+  - [x] Skeletal animation natively: sample glTF clips and blend poses in Rust (the
     `Animator`'s state machine stays in script), so a crowd of animated characters costs
-    little script time. Compiled games (iron_ts) do this already (2026-10-23: `Model.animations`
-    built by `iron_animation::gltf`, the `Animator` in `iron_animation`); still to do there:
-    group a clip's curves per bone once and cache resolved paths (`Pose` looks each path up by
-    name every frame), as `animation.ts` now does
+    little script time. Compiled games (iron_ts) do this (2026-10-23: `Model.animations`
+    built by `iron_animation::gltf`, the `Animator` in `iron_animation`). Clips' curves are now
+    bound once per (clip, root) to bone slots and channels (`bind.rs`, Unity's `Rebind`), the
+    pose is a dense per-bone array reused between frames, a bone's curves share their key
+    search, and `mark_moved` stops at listed objects: fog-white-room's animation 0.375 → 0.027 ms
+    idle, 0.635 → 0.039 ms moving (docs/benchmarks.md, "Animator"). QuickJS is left as it is
+  - [x] Animation culling (2026-10-23): `Animator.cullingMode` (`alwaysAnimate`,
+    `cullUpdateTransforms`, `cullCompletely`) and `Animation.cullingType` (`basedOnRenderers`),
+    seen from the renderer's last frame (views and shadow maps); 50 mannequins looking away
+    0.81 → 0.10 / 0.085 ms
+  - [ ] Animation culling follow-ups: cull skinned meshes in the main pass by the bone box
+    `note_seen` already works out (they are always drawn today); count secondary windows'
+    cameras; the in-view cost of watching (about 0.14 ms a frame for 100 skinned renderers of
+    65 bones: one box per bone per mesh); a cheaper bone box (bounds per bone at import)
   - [x] Native render sync (found 2026-10-22 by `iron-build bench`: `sync_native_render` cost
     0.6-2 ms a frame, making fog-world and six clock faces slower native than QuickJS): it
     rebuilt every component every frame and copied every script mesh's vertices per renderer
