@@ -50,7 +50,9 @@ How it is wired: `culled_roots()` lists the objects whose components cull; the a
 watches only the renderers under them, giving their meshes a `MeshInstance::visibility_key`; `WorldRenderer::seen()` /
 `take_seen()` reports which were seen (skinned meshes judged by their bind-pose box under every bone, a box that holds
 them); the next frame's update asks through `iron_animation::Visibility` (`M5-ANI-13`, `M5-CUL-03`). This is one frame
-late. Cameras of secondary windows are not counted.
+late. Every camera counts, those drawing into render textures too (`M5-CUL-06`): secondary windows draw no world of their
+own (`Camera.targetWindow` is not built, `docs/windows.md`), so a window shows a 3D view through an `image` of a render
+texture, whose camera is drawn, and judged, with the main window's frame.
 
 **The safeguard (Iron's; Unity has none).** A culled animator writes no bone transforms, so what hangs on its bones would
 be left behind. The exact rule: an animated object is never culled (it counts as always seen, and its renderers are not

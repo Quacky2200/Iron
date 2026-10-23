@@ -1535,6 +1535,58 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
     assert_eq!(world.seen(), [1, 2]);
 }
 
+// M5-CUL-06
+#[test]
+fn a_render_texture_camera_counts_for_what_was_seen() {
+    use iron_render::MeshInstance;
+    let gpu = shared_gpu();
+    let size = (64, 64);
+    let target =
+        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let view = target.view().unwrap();
+    let rt = RenderTarget {
+        view: &view,
+        format: target.format(),
+        size,
+        scale: 1.0,
+    };
+    let camera = |eye: Vec3, at: Vec3| {
+        WorldCamera::perspective(
+            iron_core::glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y).inverse(),
+            60.0,
+            0.1,
+            50.0,
+            size,
+            Color::rgb(0.0, 0.0, 0.0),
+        )
+    };
+    // A figure at the origin; the screen's camera looks away from it.
+    let figure = MeshInstance {
+        mesh: iron_render::primitive_id("cube").unwrap(),
+        visibility_key: 7,
+        ..Default::default()
+    };
+    let mut screen = iron_render::WorldView::new(
+        camera(Vec3::new(0.0, 1.0, 5.0), Vec3::new(0.0, 1.0, 20.0)),
+        [0.0, 0.0, 1.0, 1.0],
+    );
+    screen.meshes = vec![figure];
+    let mut world = WorldRenderer::new(&gpu);
+    world.render_views(&gpu, &rt, std::slice::from_ref(&screen), &[]);
+    assert!(world.seen().is_empty());
+    // A second camera draws it into a render texture (what a tool window shows through an
+    // `image`: secondary windows draw no world of their own): seen.
+    world.set_render_texture(&gpu, 3, (32, 32));
+    let mut monitor = iron_render::WorldView::new(
+        camera(Vec3::new(0.0, 1.0, 5.0), Vec3::ZERO),
+        [0.0, 0.0, 1.0, 1.0],
+    );
+    monitor.meshes = vec![figure];
+    monitor.target_texture = Some(3);
+    world.render_views(&gpu, &rt, &[screen, monitor], &[]);
+    assert_eq!(world.seen(), [7]);
+}
+
 // M5-CUL-05
 #[test]
 fn skinned_meshes_are_culled_by_their_bones_and_leave_shadow_maps_they_miss() {
