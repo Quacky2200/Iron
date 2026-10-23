@@ -657,6 +657,7 @@ function saveRenderSettings(saver: Saver): Record<string, unknown> {
       fogStartDistance: RenderSettings.fogStartDistance,
       fogEndDistance: RenderSettings.fogEndDistance,
       heightFog: RenderSettings.heightFog,
+      cloudLayer: RenderSettings.cloudLayer,
       volumetricFog: RenderSettings.volumetricFog,
       fogCulling: RenderSettings.fogCulling,
     },
@@ -678,6 +679,7 @@ function applyRenderSettings(saved: Record<string, unknown>): void {
   if (typeof s.fogStartDistance === "number") RenderSettings.fogStartDistance = s.fogStartDistance;
   if (typeof s.fogEndDistance === "number") RenderSettings.fogEndDistance = s.fogEndDistance;
   if ("heightFog" in s) RenderSettings.heightFog = (s.heightFog as never) ?? null;
+  if ("cloudLayer" in s) RenderSettings.cloudLayer = (s.cloudLayer as never) ?? null;
   if ("volumetricFog" in s) RenderSettings.volumetricFog = (s.volumetricFog as never) ?? null;
   if (typeof s.fogCulling === "boolean") RenderSettings.fogCulling = s.fogCulling;
   if (typeof s.fog === "boolean") RenderSettings.fog = s.fog;

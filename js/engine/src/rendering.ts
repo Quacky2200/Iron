@@ -1535,6 +1535,46 @@ export interface HeightFogSettings {
 }
 
 let heightFog: HeightFogSettings | null = null;
+
+/**
+ * A deck of cloud drawn with the background (HDRP's cloud layer): behind everything, so the
+ * distance fog doesn't hide it. Each pixel of sky looks up to where its ray meets the deck,
+ * so the clouds shift overhead as the camera moves under them; the wind carries them; they
+ * thin out towards the horizon. Every field is optional.
+ */
+export interface CloudLayerSettings {
+  /** The deck's height in metres (1500). */
+  altitude?: number;
+  /** About how wide a cloud is, metres (2000). */
+  size?: number;
+  /** How much of the sky is cloud, 0 to 1 (0.5). */
+  coverage?: number;
+  /** 0 to 1 (1). */
+  opacity?: number;
+  /** How soft the clouds' edges are, 0 (hard) to 1 (0.3). */
+  softness?: number;
+  /** Their colour (linear; thick parts are a little darker underneath). Light grey. */
+  tint?: Color;
+  /** The wind, m/s (0) and the way it blows in degrees from +x towards +z (0). */
+  windSpeed?: number;
+  windDirection?: number;
+  /** Over about this distance along a ray they fade into the sky, metres (20000). */
+  fadeDistance?: number;
+}
+
+let cloudLayer: CloudLayerSettings | null = null;
+
+function sendClouds(): void {
+  const c = cloudLayer;
+  const t = c?.tint;
+  __iron_op(
+    "render.clouds",
+    0,
+    c
+      ? [c.altitude ?? 1500, c.size ?? 2000, c.coverage ?? 0.5, c.opacity ?? 1, c.softness ?? 0.3, t?.r ?? 0.8, t?.g ?? 0.8, t?.b ?? 0.82, c.windSpeed ?? 0, c.windDirection ?? 0, c.fadeDistance ?? 20000]
+      : null,
+  );
+}
 let fogCulling = true;
 
 /**
@@ -1811,6 +1851,14 @@ export const RenderSettings = {
    */
   get heightFog(): HeightFogSettings | null {
     return heightFog;
+  },
+  /** The cloud layer (`null`: none, the default). See `CloudLayerSettings`. */
+  get cloudLayer(): CloudLayerSettings | null {
+    return cloudLayer;
+  },
+  set cloudLayer(c: CloudLayerSettings | null) {
+    cloudLayer = c ? { ...c } : null;
+    sendClouds();
   },
   set heightFog(h: HeightFogSettings | null) {
     heightFog = h ? { ...h } : null;

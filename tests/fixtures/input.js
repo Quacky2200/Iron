@@ -3459,6 +3459,12 @@ ${err.stack}` : ""}`);
   var fogStart = 0;
   var fogEnd = 300;
   var heightFog = null;
+  var cloudLayer = null;
+  function sendClouds() {
+    const c = cloudLayer;
+    const t = c?.tint;
+    __iron_op("render.clouds", 0, c ? [c.altitude ?? 1500, c.size ?? 2000, c.coverage ?? 0.5, c.opacity ?? 1, c.softness ?? 0.3, t?.r ?? 0.8, t?.g ?? 0.8, t?.b ?? 0.82, c.windSpeed ?? 0, c.windDirection ?? 0, c.fadeDistance ?? 20000] : null);
+  }
   var fogCulling = true;
   var DENOISING = { none: 0, reprojection: 1, gaussian: 2, both: 3 };
   var VOLUME_DETAILS = ["low", "medium", "high", "ultra"];
@@ -3619,6 +3625,13 @@ ${err.stack}` : ""}`);
     },
     get heightFog() {
       return heightFog;
+    },
+    get cloudLayer() {
+      return cloudLayer;
+    },
+    set cloudLayer(c) {
+      cloudLayer = c ? { ...c } : null;
+      sendClouds();
     },
     set heightFog(h) {
       heightFog = h ? { ...h } : null;
@@ -5221,6 +5234,8 @@ ${err.stack}` : ""}`);
     frameRate = 60;
     events = [];
     _bindings = [];
+    _tracks = null;
+    _length = null;
     constructor(name = "clip") {
       this.name = name;
     }
@@ -5231,21 +5246,27 @@ ${err.stack}` : ""}`);
         this._bindings.splice(i, 1);
       if (curve)
         this._bindings.push({ path: relativePath, type: typeName, property: propertyName, curve });
+      this._tracks = null;
+      this._length = null;
     }
     get curves() {
       return this._bindings;
     }
     get length() {
-      let end = 0;
-      for (const b of this._bindings)
-        end = Math.max(end, b.curve.keys.at(-1)?.time ?? 0);
-      for (const e of this.events)
-        end = Math.max(end, e.time);
-      return end;
+      if (this._length === null) {
+        let end = 0;
+        for (const b of this._bindings)
+          end = Math.max(end, b.curve.keys.at(-1)?.time ?? 0);
+        for (const e of this.events)
+          end = Math.max(end, e.time);
+        this._length = end;
+      }
+      return this._length;
     }
     addEvent(event) {
       this.events.push({ ...event });
       this.events.sort((a, b) => a.time - b.time);
+      this._length = null;
     }
     sampleAnimation(go, time) {
       const pose = new Pose;
@@ -5284,46 +5305,107 @@ ${err.stack}` : ""}`);
     }
     return go;
   }
+  var resolved = new WeakMap;
+  function resolveCached(root, path) {
+    let paths = resolved.get(root);
+    if (!paths) {
+      paths = new Map;
+      resolved.set(root, paths);
+    }
+    const hit = paths.get(path);
+    if (hit && !hit.destroyed)
+      return hit;
+    const go = resolve(root, path);
+    paths.set(path, go ?? null);
+    return go;
+  }
   function componentNamed(go, name) {
     return go.components.find((c) => c.constructor.name === name);
+  }
+  var AXES = { x: 0, y: 1, z: 2, w: 3 };
+  function tracksOf(clip) {
+    if (clip._tracks)
+      return clip._tracks;
+    const byPath = new Map;
+    for (const b of clip._bindings) {
+      let t = byPath.get(b.path);
+      if (!t) {
+        t = { path: b.path, p: [], r: [], s: [], e: [], other: [] };
+        byPath.set(b.path, t);
+      }
+      const [field, axis] = b.property.split(".");
+      const i = axis === undefined ? -1 : AXES[axis] ?? -1;
+      const list = b.type !== "Transform" ? null : field === "localPosition" ? t.p : field === "localRotation" ? t.r : field === "localScale" ? t.s : field === "localEulerAngles" ? t.e : null;
+      if (list && i >= 0 && (list === t.r || i < 3))
+        list[i] = b.curve;
+      else if (b.type !== "Transform")
+        t.other.push(b);
+    }
+    clip._tracks = [...byPath.values()];
+    return clip._tracks;
   }
 
   class Pose {
     transforms = new Map;
     props = new Map;
     add(root, clip, time, weight) {
+      this.addClip(root, clip, time, weight, false);
+    }
+    addAligned(root, clip, time, weight) {
+      this.addClip(root, clip, time, weight, true);
+    }
+    addClip(root, clip, time, weight, align) {
       if (weight <= 0)
         return;
-      for (const b of clip._bindings) {
-        const go = resolve(root, b.path);
+      for (const track of tracksOf(clip)) {
+        const go = resolveCached(root, track.path);
         if (!go)
           continue;
-        const value = b.curve.evaluate(time);
-        if (b.type === "Transform") {
+        if (track.p.length || track.r.length || track.s.length || track.e.length) {
           let t = this.transforms.get(go);
           if (!t) {
-            t = { p: [0, 0, 0], r: [0, 0, 0, 0], s: [0, 0, 0], e: [0, 0, 0], w: {} };
+            t = { p: [0, 0, 0], pw: [0, 0, 0], r: [0, 0, 0, 0], rw: 0, s: [0, 0, 0], sw: [0, 0, 0], e: [0, 0, 0], ew: [0, 0, 0] };
             this.transforms.set(go, t);
           }
-          const [field, axis] = b.property.split(".");
-          const i = "xyzw".indexOf(axis);
-          const list = field === "localPosition" ? t.p : field === "localRotation" ? t.r : field === "localScale" ? t.s : field === "localEulerAngles" ? t.e : null;
-          if (!list || i < 0)
-            continue;
-          list[i] += value * weight;
-          t.w[b.property] = (t.w[b.property] ?? 0) + weight;
-          continue;
+          for (let i = 0;i < 3; i++) {
+            const pc = track.p[i];
+            if (pc) {
+              t.p[i] += pc.evaluate(time) * weight;
+              t.pw[i] += weight;
+            }
+            const sc = track.s[i];
+            if (sc) {
+              t.s[i] += sc.evaluate(time) * weight;
+              t.sw[i] += weight;
+            }
+            const ec = track.e[i];
+            if (ec) {
+              t.e[i] += ec.evaluate(time) * weight;
+              t.ew[i] += weight;
+            }
+          }
+          if (track.r.length) {
+            const q = [0, 1, 2, 3].map((i) => track.r[i]?.evaluate(time) ?? 0);
+            const dot = q[0] * t.r[0] + q[1] * t.r[1] + q[2] * t.r[2] + q[3] * t.r[3];
+            const sign = align && dot < 0 ? -1 : 1;
+            for (let i = 0;i < 4; i++)
+              t.r[i] += sign * q[i] * weight;
+            t.rw += weight;
+          }
         }
-        const target = b.type === "GameObject" ? go : componentNamed(go, b.type);
-        if (!target)
-          continue;
-        const key = `${go.id}/${b.type}/${b.property}`;
-        const prev = this.props.get(key);
-        if (prev) {
-          prev.value += value * weight;
-          prev.weight += weight;
-        } else {
-          this.props.set(key, { target, property: b.property, value: value * weight, weight });
+        for (const b of track.other) {
+          const target = b.type === "GameObject" ? go : componentNamed(go, b.type);
+          if (!target)
+            continue;
+          const value = b.curve.evaluate(time);
+          const key = `${go.id}/${b.type}/${b.property}`;
+          const prev = this.props.get(key);
+          if (prev) {
+            prev.value += value * weight;
+            prev.weight += weight;
+          } else {
+            this.props.set(key, { target, property: b.property, value: value * weight, weight });
+          }
         }
       }
     }
@@ -5332,24 +5414,15 @@ ${err.stack}` : ""}`);
         if (go.destroyed)
           continue;
         const tr = go.transform;
-        const has = (f, n) => [..."xyzw".slice(0, n)].some((a) => t.w[`${f}.${a}`]);
-        const avg = (f, list, current) => current.map((c, i) => {
-          const w = t.w[`${f}.${"xyzw"[i]}`];
-          return w ? list[i] / w : c;
-        });
-        const cur = tr.localPosition;
-        const v3 = (a) => new Vector3(a[0], a[1], a[2]);
-        const position = has("localPosition", 3) ? v3(avg("localPosition", t.p, [cur.x, cur.y, cur.z])) : cur;
-        const sc = tr.localScale;
-        const scale = has("localScale", 3) ? v3(avg("localScale", t.s, [sc.x, sc.y, sc.z])) : sc;
+        const avg = (sum, w, current) => w[0] || w[1] || w[2] ? new Vector3(w[0] ? sum[0] / w[0] : current.x, w[1] ? sum[1] / w[1] : current.y, w[2] ? sum[2] / w[2] : current.z) : current;
+        const position = avg(t.p, t.pw, tr.localPosition);
+        const scale = avg(t.s, t.sw, tr.localScale);
         let rotation = tr.localRotation;
-        if (has("localRotation", 4)) {
-          const q = avg("localRotation", t.r, [rotation.x, rotation.y, rotation.z, rotation.w]);
-          rotation = new Quaternion(q[0], q[1], q[2], q[3]).normalized;
-        } else if (has("localEulerAngles", 3)) {
-          const e0 = tr.localEulerAngles;
-          const e = avg("localEulerAngles", t.e, [e0.x, e0.y, e0.z]);
-          rotation = Quaternion.euler(e[0], e[1], e[2]);
+        if (t.rw > 0)
+          rotation = new Quaternion(t.r[0], t.r[1], t.r[2], t.r[3]).normalized;
+        else if (t.ew[0] || t.ew[1] || t.ew[2]) {
+          const e = avg(t.e, t.ew, tr.localEulerAngles);
+          rotation = Quaternion.euler(e.x, e.y, e.z);
         }
         tr._setLocal(position, rotation, scale);
       }
@@ -5363,44 +5436,6 @@ ${err.stack}` : ""}`);
         setProperty(p.target, p.property, value);
       }
     }
-    addAligned(root, clip, time, weight) {
-      const flips = new Map;
-      for (const b of clip._bindings) {
-        if (b.type !== "Transform" || !b.property.startsWith("localRotation."))
-          continue;
-        const go = resolve(root, b.path);
-        if (!go || flips.has(go))
-          continue;
-        const sum = this.transforms.get(go)?.r;
-        if (!sum || sum.every((v) => v === 0))
-          continue;
-        const q = "xyzw".split("").map((a) => clip._bindings.find((c) => c.path === b.path && c.type === "Transform" && c.property === `localRotation.${a}`)?.curve.evaluate(time) ?? 0);
-        const dot = q.reduce((d, v, i) => d + v * sum[i], 0);
-        flips.set(go, dot < 0 ? -1 : 1);
-      }
-      if ([...flips.values()].every((f) => f > 0)) {
-        this.add(root, clip, time, weight);
-        return;
-      }
-      for (const b of clip._bindings) {
-        const go = resolve(root, b.path);
-        const flip = go && b.type === "Transform" && b.property.startsWith("localRotation.") ? flips.get(go) ?? 1 : 1;
-        const single = new AnimationClip;
-        single._bindings.push(flip < 0 ? { ...b, curve: negated(b.curve) } : b);
-        this.add(root, single, time, weight);
-      }
-    }
-  }
-  var negatedCache = new WeakMap;
-  function negated(c) {
-    let n = negatedCache.get(c);
-    if (!n) {
-      n = new AnimationCurve(...c.keys.map((k) => new Keyframe(k.time, -k.value, -k.inTangent, -k.outTangent)));
-      n.preWrapMode = c.preWrapMode;
-      n.postWrapMode = c.postWrapMode;
-      negatedCache.set(c, n);
-    }
-    return n;
   }
   function setProperty(target, property, value) {
     const record = target;
@@ -5649,7 +5684,7 @@ ${err.stack}` : ""}`);
       const name = this.controller.defaultState ?? this.controller.states[0]?.name;
       const state = this.controller.states.find((s) => s.name === name);
       if (state)
-        this.current = { state, time: 0 };
+        this.current = { state, norm: 0 };
     }
     setFloat(name, value) {
       this.values.set(name, value);
@@ -5682,7 +5717,7 @@ ${err.stack}` : ""}`);
       const state = this.controller?.states.find((s) => s.name === stateName);
       if (!state)
         return;
-      this.current = { state, time: normalizedTime * this.lengthOf(state) };
+      this.current = { state, norm: normalizedTime };
       this.next = null;
     }
     crossFade(stateName, duration = 0.25, normalizedTime = 0) {
@@ -5693,7 +5728,7 @@ ${err.stack}` : ""}`);
           this.play(stateName, normalizedTime);
         return;
       }
-      this.next = { state, time: normalizedTime * this.lengthOf(state), progress: 0, duration: Math.max(0.0001, duration) };
+      this.next = { state, norm: normalizedTime, progress: 0, duration: Math.max(0.0001, duration) };
     }
     get isInTransition() {
       return this.next !== null;
@@ -5708,7 +5743,7 @@ ${err.stack}` : ""}`);
     info(p) {
       const length = p ? this.lengthOf(p.state) : 0;
       const name = p?.state.name ?? "";
-      return { name, length, normalizedTime: p && length > 0 ? p.time / length : 0, isName: (n) => n === name };
+      return { name, length, normalizedTime: p && length > 0 ? p.norm : 0, isName: (n) => n === name };
     }
     clips(state) {
       const m = state.motion;
@@ -5763,8 +5798,7 @@ ${err.stack}` : ""}`);
       if (!this.controller || !this.current || this.next)
         return;
       const from = this.current;
-      const length = this.lengthOf(from.state);
-      const normalized = length > 0 ? from.time / length : 1;
+      const normalized = this.lengthOf(from.state) > 0 ? from.norm : 1;
       for (const t of this.controller.transitions) {
         if (t.from !== from.state.name && !(t.from === "Any" && t.to !== from.state.name))
           continue;
@@ -5783,11 +5817,11 @@ ${err.stack}` : ""}`);
         if (!state)
           continue;
         const duration = t.duration ?? 0.25;
-        const start = (t.offset ?? 0) * this.lengthOf(state);
+        const start = t.offset ?? 0;
         if (duration <= 0)
-          this.current = { state, time: start };
+          this.current = { state, norm: start };
         else
-          this.next = { state, time: start, progress: 0, duration };
+          this.next = { state, norm: start, progress: 0, duration };
         return;
       }
     }
@@ -5798,12 +5832,13 @@ ${err.stack}` : ""}`);
       this.checkTransitions();
       const pose = new Pose;
       const run = (p, weight) => {
-        const before = p.time;
-        p.time += dt * this.stateSpeed(p.state);
+        const before = p.norm;
         const length = this.lengthOf(p.state);
+        if (length > 0)
+          p.norm += dt * this.stateSpeed(p.state) / length;
         for (const c of this.clips(p.state)) {
-          const t = length > 0 ? p.time / length * c.clip.length : 0;
-          const t0 = length > 0 ? before / length * c.clip.length : 0;
+          const t = length > 0 ? p.norm * c.clip.length : 0;
+          const t0 = length > 0 ? before * c.clip.length : 0;
           const mode = c.clip.wrapMode === "once" ? "clampForever" : c.clip.wrapMode;
           if (c.weight * weight >= 0.5)
             fireEvents(this.gameObject, c.clip, t0, t, c.clip.length, mode);
@@ -5816,7 +5851,7 @@ ${err.stack}` : ""}`);
         run(this.current, 1 - w);
         run(this.next, w);
         if (w >= 1) {
-          this.current = { state: this.next.state, time: this.next.time };
+          this.current = { state: this.next.state, norm: this.next.norm };
           this.next = null;
         }
       } else {
@@ -7178,7 +7213,7 @@ ${err.stack}` : ""}`);
   var MOUSE_BUTTONS = ["MouseLeft", "MouseRight", "MouseMiddle"];
   var mouseCode = (button) => MOUSE_BUTTONS[button] ?? `Mouse${button}`;
   var MOUSE_SENSITIVITY = 0.1;
-  var AXES = {
+  var AXES2 = {
     Horizontal: { neg: ["KeyA", "ArrowLeft"], pos: ["KeyD", "ArrowRight"], stick: "LeftStickX" },
     Vertical: { neg: ["KeyS", "ArrowDown"], pos: ["KeyW", "ArrowUp"], stick: "LeftStickY" }
   };
@@ -7247,7 +7282,7 @@ ${err.stack}` : ""}`);
         return -cur().deltaThisTick.y * MOUSE_SENSITIVITY;
       if (name === "Mouse ScrollWheel")
         return cur().wheelThisTick.y * MOUSE_SENSITIVITY;
-      const axis = AXES[name];
+      const axis = AXES2[name];
       if (!axis)
         return 0;
       const keyValue = (axis.pos.some((k) => cur().keys.has(k)) ? 1 : 0) - (axis.neg.some((k) => cur().keys.has(k)) ? 1 : 0);
@@ -7482,8 +7517,9 @@ ${err.stack}` : ""}`);
           if (path === undefined)
             continue;
           const [property, size] = ch.path === "translation" ? ["localPosition", 3] : ch.path === "rotation" ? ["localRotation", 4] : ["localScale", 3];
+          const values = ch.path === "rotation" ? continuous(ch.values, ch.interpolation === "cubic") : ch.values;
           for (let k = 0;k < size; k++) {
-            const curve = ch.interpolation === "cubic" ? cubic(ch.times, ch.values, size, k) : AnimationCurve.fromPoints(ch.times.map((t, i) => [t, ch.values[i * size + k]]), ch.interpolation === "step" ? "step" : "linear");
+            const curve = ch.interpolation === "cubic" ? cubic(ch.times, values, size, k) : AnimationCurve.fromPoints(ch.times.map((t, i) => [t, values[i * size + k]]), ch.interpolation === "step" ? "step" : "linear");
             clip.setCurve(path, "Transform", `${property}.${"xyzw"[k]}`, curve);
           }
         }
@@ -7533,6 +7569,20 @@ ${err.stack}` : ""}`);
       m?._loaded(typeof json === "string" ? JSON.parse(json) : null);
     }
   };
+  function continuous(values, cubicKeys) {
+    const out = [...values];
+    const stride = cubicKeys ? 12 : 4;
+    const at = cubicKeys ? 4 : 0;
+    for (let i = stride;i + stride <= out.length; i += stride) {
+      let dot = 0;
+      for (let c = 0;c < 4; c++)
+        dot += out[i - stride + at + c] * out[i + at + c];
+      if (dot < 0)
+        for (let c = 0;c < stride; c++)
+          out[i + c] = -out[i + c];
+    }
+    return out;
+  }
   function cubic(times, values, size, k) {
     const keys = times.map((t, i) => {
       const at = (part) => values[(i * 3 + part) * size + k];
@@ -8081,6 +8131,7 @@ ${err.stack}` : ""}`);
       fogStartDistance: RenderSettings.fogStartDistance,
       fogEndDistance: RenderSettings.fogEndDistance,
       heightFog: RenderSettings.heightFog,
+      cloudLayer: RenderSettings.cloudLayer,
       volumetricFog: RenderSettings.volumetricFog,
       fogCulling: RenderSettings.fogCulling
     }, "renderSettings");
@@ -8109,6 +8160,8 @@ ${err.stack}` : ""}`);
       RenderSettings.fogEndDistance = s.fogEndDistance;
     if ("heightFog" in s)
       RenderSettings.heightFog = s.heightFog ?? null;
+    if ("cloudLayer" in s)
+      RenderSettings.cloudLayer = s.cloudLayer ?? null;
     if ("volumetricFog" in s)
       RenderSettings.volumetricFog = s.volumetricFog ?? null;
     if (typeof s.fogCulling === "boolean")

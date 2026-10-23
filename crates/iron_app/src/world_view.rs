@@ -10,8 +10,8 @@ use std::path::Path;
 use iron_core::Value;
 use iron_core::glam::{Mat4, Quat, Vec3};
 use iron_render::{
-    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, Color, Denoising, FillRule,
-    FillVertex, Fog, FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind,
+    ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, CloudLayer, Color, Denoising,
+    FillRule, FillVertex, Fog, FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind,
     MAX_CURVE_POINTS, MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering,
     Mirror, PipelineAsset, Projection, ReflectionProbe, RenderMode, ShadowQuality, Shadows,
     ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog,
@@ -370,6 +370,8 @@ pub struct WorldViews {
     pub environment: (f32, bool),
     /// Fog for every camera that shows it (`render.fog`).
     fog: Option<Fog>,
+    /// The cloud layer (`render.clouds`), and the wind carrying it: m/s along x and z.
+    clouds: Option<(CloudLayer, [f32; 2])>,
     /// `emit` requests waiting for the next particle update (which knows where objects are).
     pending_emits: Vec<(u32, u32)>,
     ambient: [f32; 3],
@@ -421,6 +423,7 @@ impl Default for WorldViews {
             sky: None,
             environment: (1.0, true),
             fog: None,
+            clouds: None,
             pending_emits: Vec::new(),
             ambient: [0.2, 0.2, 0.22],
             mesh_uploads: Vec::new(),
@@ -500,6 +503,14 @@ fn sprite_quad(s: &Sprite, (tw, th): (u32, u32)) -> (Mat4, [f32; 4]) {
 }
 
 impl WorldViews {
+    /// Carries the cloud layer on the wind for `dt` seconds.
+    pub fn advance_clouds(&mut self, dt: f32) {
+        if let Some((c, wind)) = self.clouds.as_mut() {
+            // Wrapped well before floats lose precision: far past any cloud's size.
+            c.offset = [0, 1].map(|i| (c.offset[i] + wind[i] * dt) % 1.0e5);
+        }
+    }
+
     /// `model id src`: loads a glTF model, queuing its meshes and textures for upload.
     /// Returns its description for scripts.
     pub fn model_op(&mut self, root: &Path, args: &[Value]) -> Result<serde_json::Value, String> {
@@ -1345,6 +1356,34 @@ impl WorldViews {
             // `fog 0 mode(linear|exponential|exponentialSquared) [r g b] density start end
             // [heightDensity baseHeight falloff]|null [intensity anisotropy steps distance r g
             // b]|null cull`; `fog 0 null` clears the air.
+            // `clouds 0 [altitude size coverage opacity softness r g b windSpeed windDirection
+            // fade]|null`: the wind's direction in degrees from +x towards +z.
+            "clouds" => {
+                self.clouds = match args.get(1) {
+                    Some(Value::Array(v)) => {
+                        let n = |i: usize, d: f32| match v.get(i) {
+                            Some(Value::Number(x)) => *x as f32,
+                            _ => d,
+                        };
+                        let (speed, dir) = (n(8, 0.0), n(9, 0.0).to_radians());
+                        let offset = self.clouds.map_or([0.0; 2], |(c, _)| c.offset);
+                        Some((
+                            CloudLayer {
+                                altitude: n(0, 1500.0),
+                                size: n(1, 2000.0),
+                                coverage: n(2, 0.5),
+                                opacity: n(3, 1.0),
+                                softness: n(4, 0.3),
+                                color: [n(5, 0.8), n(6, 0.8), n(7, 0.82)],
+                                offset,
+                                fade: n(10, 20000.0),
+                            },
+                            [speed * dir.cos(), speed * dir.sin()],
+                        ))
+                    }
+                    _ => None,
+                };
+            }
             "fog" => {
                 self.fog = match args.get(1) {
                     Some(Value::Null) | None => None,
@@ -1891,6 +1930,7 @@ impl WorldViews {
                     fills: shown_fills,
                     shapes: shown_shapes,
                     fog: self.fog.filter(|_| camera.fog),
+                    clouds: self.clouds.map(|(c, _)| c),
                     exposure_key: camera_id,
                     fog_volumes: if camera.fog {
                         // The nearest ones the camera's layers show, up to the renderer's limit.
@@ -2491,6 +2531,55 @@ mod tests {
         group(&mut views, 1.0);
         assert_eq!(level(&mut scene, &views, -1.5), ["simple"]);
         assert_eq!(level(&mut scene, &views, -300.0), ["simple"]);
+    }
+
+    // M7-CLOUD-02
+    #[test]
+    fn the_cloud_layer_reaches_cameras_and_drifts_on_the_wind() {
+        let n = Value::from;
+        let mut scene = ScriptScene::new();
+        let mut views = WorldViews::default();
+        scene
+            .apply("create", &[n(1.0), "camera".into(), Value::Null])
+            .unwrap();
+        scene.scene.update_world();
+        views
+            .apply(
+                "camera",
+                &[
+                    n(100.0),
+                    n(1.0),
+                    n(60.0),
+                    n(0.1),
+                    n(1000.0),
+                    Value::Null,
+                    n(0.0),
+                    Value::Bool(false),
+                    n(5.0),
+                ],
+            )
+            .unwrap();
+        let clouds = |views: &WorldViews| views.views(&scene, (64, 64), &[])[0].clouds;
+        assert_eq!(clouds(&views), None, "none by default");
+        let layer = [60.0, 40.0, 0.6, 0.9, 0.4, 0.5, 0.52, 0.55, 2.0, 90.0, 300.0];
+        views
+            .apply(
+                "clouds",
+                &[n(0.0), Value::Array(layer.iter().map(|v| n(*v)).collect())],
+            )
+            .unwrap();
+        let c = clouds(&views).expect("a cloud layer");
+        assert_eq!(
+            (c.altitude, c.size, c.coverage, c.fade),
+            (60.0, 40.0, 0.6, 300.0)
+        );
+        assert_eq!(c.color, [0.5, 0.52, 0.55]);
+        // 2 m/s towards +z (90 degrees from +x), for half a second.
+        views.advance_clouds(0.5);
+        let o = clouds(&views).unwrap().offset;
+        assert!(o[0].abs() < 1e-5 && (o[1] - 1.0).abs() < 1e-5, "{o:?}");
+        views.apply("clouds", &[n(0.0), Value::Null]).unwrap();
+        assert_eq!(clouds(&views), None);
     }
 
     // M7-FOG-03

@@ -1737,6 +1737,16 @@ declare interface BoneWeights :: weights: number[];
 declare interface ClothBox
 declare interface ClothBox :: max: Vector3Like;
 declare interface ClothBox :: min: Vector3Like;
+declare interface CloudLayerSettings
+declare interface CloudLayerSettings :: altitude?: number;
+declare interface CloudLayerSettings :: coverage?: number;
+declare interface CloudLayerSettings :: fadeDistance?: number;
+declare interface CloudLayerSettings :: opacity?: number;
+declare interface CloudLayerSettings :: size?: number;
+declare interface CloudLayerSettings :: softness?: number;
+declare interface CloudLayerSettings :: tint?: Color;
+declare interface CloudLayerSettings :: windDirection?: number;
+declare interface CloudLayerSettings :: windSpeed?: number;
 declare interface ColorKey
 declare interface ColorKey :: color: Color;
 declare interface ColorKey :: time: number;
@@ -1919,6 +1929,7 @@ declare module "@iron/engine" :: export import CircleCollider2D = globalThis.Cir
 declare module "@iron/engine" :: export import ClassOf = globalThis.ClassOf;
 declare module "@iron/engine" :: export import Cloth = globalThis.Cloth;
 declare module "@iron/engine" :: export import ClothBox = globalThis.ClothBox;
+declare module "@iron/engine" :: export import CloudLayerSettings = globalThis.CloudLayerSettings;
 declare module "@iron/engine" :: export import Collider = globalThis.Collider;
 declare module "@iron/engine" :: export import Collider2D = globalThis.Collider2D;
 declare module "@iron/engine" :: export import Collision = globalThis.Collision;
@@ -2446,6 +2457,7 @@ declare namespace RenderSettings :: let bloomEnabled: boolean;
 declare namespace RenderSettings :: let bloomIntensity: number;
 declare namespace RenderSettings :: let bloomScatter: number;
 declare namespace RenderSettings :: let bloomThreshold: number;
+declare namespace RenderSettings :: let cloudLayer: CloudLayerSettings | null;
 declare namespace RenderSettings :: let exposureTransition: number;
 declare namespace RenderSettings :: let fixedExposure: number | null;
 declare namespace RenderSettings :: let fog: boolean;

@@ -523,6 +523,26 @@ fn settings(views: &mut WorldViews) {
         };
         warn(views.apply("bloom", &bloom), "bloom");
         warn(views.apply("fog", &fog_args(&s.fog)), "fog");
+        let clouds = match &s.cloud_layer {
+            None => vec![n(0.0), Value::Null],
+            Some(c) => vec![
+                n(0.0),
+                arr(&[
+                    c.altitude,
+                    c.size,
+                    c.coverage,
+                    c.opacity,
+                    c.softness,
+                    c.tint.r,
+                    c.tint.g,
+                    c.tint.b,
+                    c.wind_speed,
+                    c.wind_direction,
+                    c.fade_distance,
+                ]),
+            ],
+        };
+        warn(views.apply("clouds", &clouds), "clouds");
     }
     let v = iron_engine_api::screen::quality_version();
     let quality_changed = cache(|c| c.quality_version.replace(v)) != Some(v);
@@ -1150,6 +1170,45 @@ mod tests {
         iron_render_api::render_settings_api::set_fog(false);
         sync(&mut views, &mut scene, Path::new("."));
         assert!(views.fog_for_test().is_none());
+    }
+
+    // M7-CLOUD-04
+    #[test]
+    fn a_compiled_games_cloud_layer_reaches_the_views_with_its_defaults() {
+        iron_render_api::reset();
+        iron_engine_api::screen::reset();
+        reset();
+        let mut scene = ScriptScene::new();
+        let mut ui = UiTree::new(100.0, 100.0);
+        let bundle = Bundle {
+            source: "class Stage extends Component {
+                override onStart(): void {
+                  new GameObject(\"Cam\").addComponent(Camera);
+                  RenderSettings.cloudLayer = { altitude: 40, coverage: 0.55, tint: new Color(0.6, 0.62, 0.66, 1), windSpeed: 2, windDirection: 90 };
+                }
+              }
+              register(Stage);"
+                .into(),
+            ..Default::default()
+        };
+        let mut native = Native::load(bundle, &mut scene.scene, &mut ui).unwrap();
+        native.frame(&mut scene.scene, &mut ui, 0.016, 16.0);
+        let mut views = WorldViews::default();
+        sync(&mut views, &mut scene, Path::new("."));
+        scene.scene.update_world();
+        let c = views.views(&scene, (64, 64), &[])[0]
+            .clouds
+            .expect("a cloud layer");
+        // Given keys, and the defaults for the rest.
+        assert_eq!((c.altitude, c.coverage), (40.0, 0.55));
+        assert_eq!((c.size, c.opacity, c.fade), (2000.0, 1.0, 20000.0));
+        assert_eq!(c.color, [0.6, 0.62, 0.66]);
+        views.advance_clouds(0.5);
+        let o = views.views(&scene, (64, 64), &[])[0].clouds.unwrap().offset;
+        assert!(o[0].abs() < 1e-5 && (o[1] - 1.0).abs() < 1e-5, "{o:?}");
+        iron_render_api::render_settings_api::set_cloud_layer(None);
+        sync(&mut views, &mut scene, Path::new("."));
+        assert_eq!(views.views(&scene, (64, 64), &[])[0].clouds, None);
     }
 
     // M9-API-1511, M9-TS-2887

@@ -202,6 +202,10 @@ export class AnimationClip {
   /** @internal */
   readonly _bindings: Binding[] = [];
 
+  /** @internal Its curves grouped per object, and its length: worked out once, until it changes. */
+  _tracks: Track[] | null = null;
+  private _length: number | null = null;
+
   constructor(public name = "clip") {}
 
   /** Sets (or with `null` removes) the curve for one property. */
@@ -210,6 +214,8 @@ export class AnimationClip {
     const i = this._bindings.findIndex((b) => b.path === relativePath && b.type === typeName && b.property === propertyName);
     if (i >= 0) this._bindings.splice(i, 1);
     if (curve) this._bindings.push({ path: relativePath, type: typeName, property: propertyName, curve });
+    this._tracks = null;
+    this._length = null;
   }
 
   /** The curves, as (path, type, property, curve). */
@@ -219,15 +225,19 @@ export class AnimationClip {
 
   /** The last key's time over all curves (or the last event's). */
   get length(): number {
-    let end = 0;
-    for (const b of this._bindings) end = Math.max(end, b.curve.keys.at(-1)?.time ?? 0);
-    for (const e of this.events) end = Math.max(end, e.time);
-    return end;
+    if (this._length === null) {
+      let end = 0;
+      for (const b of this._bindings) end = Math.max(end, b.curve.keys.at(-1)?.time ?? 0);
+      for (const e of this.events) end = Math.max(end, e.time);
+      this._length = end;
+    }
+    return this._length;
   }
 
   addEvent(event: AnimationEvent): void {
     this.events.push({ ...event });
     this.events.sort((a, b) => a.time - b.time);
+    this._length = null;
   }
 
   /** Poses `go` as the clip is at `time` (Unity's `SampleAnimation`). */
@@ -276,9 +286,70 @@ function resolve(root: GameObject, path: string): GameObject | undefined {
   return go;
 }
 
+/** Each root's objects by path, found once (looked up again if one is destroyed). */
+const resolved = new WeakMap<GameObject, Map<string, GameObject | null>>();
+function resolveCached(root: GameObject, path: string): GameObject | undefined {
+  let paths = resolved.get(root);
+  if (!paths) {
+    paths = new Map();
+    resolved.set(root, paths);
+  }
+  const hit = paths.get(path);
+  if (hit && !hit.destroyed) return hit;
+  // A miss is looked up again each frame: the object may appear (a model still loading).
+  const go = resolve(root, path);
+  paths.set(path, go ?? null);
+  return go;
+}
+
 /** A component on `go` by class name. */
 function componentNamed(go: GameObject, name: string): Component | undefined {
   return go.components.find((c) => c.constructor.name === name);
+}
+
+const AXES: Record<string, number> = { x: 0, y: 1, z: 2, w: 3 };
+
+/** One object's curves in a clip: transform channels by axis, and anything else. */
+interface Track {
+  path: string;
+  p: (AnimationCurve | undefined)[];
+  r: (AnimationCurve | undefined)[];
+  s: (AnimationCurve | undefined)[];
+  e: (AnimationCurve | undefined)[];
+  other: Binding[];
+}
+
+/** A clip's curves grouped per object (once per clip, until its curves change). */
+function tracksOf(clip: AnimationClip): Track[] {
+  if (clip._tracks) return clip._tracks;
+  const byPath = new Map<string, Track>();
+  for (const b of clip._bindings) {
+    let t = byPath.get(b.path);
+    if (!t) {
+      t = { path: b.path, p: [], r: [], s: [], e: [], other: [] };
+      byPath.set(b.path, t);
+    }
+    const [field, axis] = b.property.split(".") as [string, string | undefined];
+    const i = axis === undefined ? -1 : (AXES[axis] ?? -1);
+    const list =
+      b.type !== "Transform" ? null : field === "localPosition" ? t.p : field === "localRotation" ? t.r : field === "localScale" ? t.s : field === "localEulerAngles" ? t.e : null;
+    if (list && i >= 0 && (list === t.r || i < 3)) list[i] = b.curve;
+    else if (b.type !== "Transform") t.other.push(b);
+  }
+  clip._tracks = [...byPath.values()];
+  return clip._tracks;
+}
+
+/** One object's blended transform: weighted sums and the weight per channel. */
+interface Sums {
+  p: number[];
+  pw: number[];
+  r: number[];
+  rw: number;
+  s: number[];
+  sw: number[];
+  e: number[];
+  ew: number[];
 }
 
 /**
@@ -286,66 +357,83 @@ function componentNamed(go: GameObject, name: string): Component | undefined {
  * quaternions sign-aligned then normalized), and other properties.
  */
 class Pose {
-  private transforms = new Map<GameObject, { p: number[]; r: number[]; s: number[]; e: number[]; w: Record<string, number> }>();
+  private transforms = new Map<GameObject, Sums>();
   private props = new Map<string, { target: Component | GameObject; property: string; value: number; weight: number }>();
 
   add(root: GameObject, clip: AnimationClip, time: number, weight: number): void {
+    this.addClip(root, clip, time, weight, false);
+  }
+
+  /** As `add`, each rotation flipped to the side of what's summed so far (q and -q are one turn). */
+  addAligned(root: GameObject, clip: AnimationClip, time: number, weight: number): void {
+    this.addClip(root, clip, time, weight, true);
+  }
+
+  private addClip(root: GameObject, clip: AnimationClip, time: number, weight: number, align: boolean): void {
     if (weight <= 0) return;
-    for (const b of clip._bindings) {
-      const go = resolve(root, b.path);
+    for (const track of tracksOf(clip)) {
+      const go = resolveCached(root, track.path);
       if (!go) continue;
-      const value = b.curve.evaluate(time);
-      if (b.type === "Transform") {
+      if (track.p.length || track.r.length || track.s.length || track.e.length) {
         let t = this.transforms.get(go);
         if (!t) {
-          t = { p: [0, 0, 0], r: [0, 0, 0, 0], s: [0, 0, 0], e: [0, 0, 0], w: {} };
+          t = { p: [0, 0, 0], pw: [0, 0, 0], r: [0, 0, 0, 0], rw: 0, s: [0, 0, 0], sw: [0, 0, 0], e: [0, 0, 0], ew: [0, 0, 0] };
           this.transforms.set(go, t);
         }
-        const [field, axis] = b.property.split(".") as [string, string];
-        const i = "xyzw".indexOf(axis);
-        const list = field === "localPosition" ? t.p : field === "localRotation" ? t.r : field === "localScale" ? t.s : field === "localEulerAngles" ? t.e : null;
-        if (!list || i < 0) continue;
-        list[i]! += value * weight;
-        t.w[b.property] = (t.w[b.property] ?? 0) + weight;
-        continue;
+        for (let i = 0; i < 3; i++) {
+          const pc = track.p[i];
+          if (pc) {
+            t.p[i]! += pc.evaluate(time) * weight;
+            t.pw[i]! += weight;
+          }
+          const sc = track.s[i];
+          if (sc) {
+            t.s[i]! += sc.evaluate(time) * weight;
+            t.sw[i]! += weight;
+          }
+          const ec = track.e[i];
+          if (ec) {
+            t.e[i]! += ec.evaluate(time) * weight;
+            t.ew[i]! += weight;
+          }
+        }
+        if (track.r.length) {
+          const q = [0, 1, 2, 3].map((i) => track.r[i]?.evaluate(time) ?? 0);
+          const dot = q[0]! * t.r[0]! + q[1]! * t.r[1]! + q[2]! * t.r[2]! + q[3]! * t.r[3]!;
+          const sign = align && dot < 0 ? -1 : 1;
+          for (let i = 0; i < 4; i++) t.r[i]! += sign * q[i]! * weight;
+          t.rw += weight;
+        }
       }
-      const target = b.type === "GameObject" ? go : componentNamed(go, b.type);
-      if (!target) continue;
-      const key = `${go.id}/${b.type}/${b.property}`;
-      const prev = this.props.get(key);
-      if (prev) {
-        prev.value += value * weight;
-        prev.weight += weight;
-      } else {
-        this.props.set(key, { target, property: b.property, value: value * weight, weight });
+      for (const b of track.other) {
+        const target = b.type === "GameObject" ? go : componentNamed(go, b.type);
+        if (!target) continue;
+        const value = b.curve.evaluate(time);
+        const key = `${go.id}/${b.type}/${b.property}`;
+        const prev = this.props.get(key);
+        if (prev) {
+          prev.value += value * weight;
+          prev.weight += weight;
+        } else {
+          this.props.set(key, { target, property: b.property, value: value * weight, weight });
+        }
       }
     }
   }
 
-  /** Quaternion channels need sign alignment before summing: done per clip by the caller. */
   apply(): void {
     for (const [go, t] of this.transforms) {
       if (go.destroyed) continue;
       const tr = go.transform;
-      const has = (f: string, n: number) => [..."xyzw".slice(0, n)].some((a) => t.w[`${f}.${a}`]);
-      const avg = (f: string, list: number[], current: number[]) =>
-        current.map((c, i) => {
-          const w = t.w[`${f}.${"xyzw"[i]}`];
-          return w ? list[i]! / w : c;
-        });
-      const cur = tr.localPosition;
-      const v3 = (a: number[]) => new Vector3(a[0], a[1], a[2]);
-      const position = has("localPosition", 3) ? v3(avg("localPosition", t.p, [cur.x, cur.y, cur.z])) : cur;
-      const sc = tr.localScale;
-      const scale = has("localScale", 3) ? v3(avg("localScale", t.s, [sc.x, sc.y, sc.z])) : sc;
+      const avg = (sum: number[], w: number[], current: Vector3) =>
+        w[0] || w[1] || w[2] ? new Vector3(w[0] ? sum[0]! / w[0] : current.x, w[1] ? sum[1]! / w[1] : current.y, w[2] ? sum[2]! / w[2] : current.z) : current;
+      const position = avg(t.p, t.pw, tr.localPosition);
+      const scale = avg(t.s, t.sw, tr.localScale);
       let rotation = tr.localRotation;
-      if (has("localRotation", 4)) {
-        const q = avg("localRotation", t.r, [rotation.x, rotation.y, rotation.z, rotation.w]);
-        rotation = new Quaternion(q[0], q[1], q[2], q[3]).normalized;
-      } else if (has("localEulerAngles", 3)) {
-        const e0 = tr.localEulerAngles;
-        const e = avg("localEulerAngles", t.e, [e0.x, e0.y, e0.z]);
-        rotation = Quaternion.euler(e[0]!, e[1]!, e[2]!);
+      if (t.rw > 0) rotation = new Quaternion(t.r[0]!, t.r[1]!, t.r[2]!, t.r[3]!).normalized;
+      else if (t.ew[0] || t.ew[1] || t.ew[2]) {
+        const e = avg(t.e, t.ew, tr.localEulerAngles);
+        rotation = Quaternion.euler(e.x, e.y, e.z);
       }
       tr._setLocal(position, rotation, scale);
     }
@@ -358,47 +446,6 @@ class Pose {
       setProperty(p.target, p.property, value);
     }
   }
-
-  /** A clip's quaternion values, flipped to agree with what's already summed. */
-  addAligned(root: GameObject, clip: AnimationClip, time: number, weight: number): void {
-    // Rotations from different clips can be on opposite sides (q and -q are the same
-    // turn): flip a clip's quaternion to the side of the running sum before adding.
-    const flips = new Map<GameObject, number>();
-    for (const b of clip._bindings) {
-      if (b.type !== "Transform" || !b.property.startsWith("localRotation.")) continue;
-      const go = resolve(root, b.path);
-      if (!go || flips.has(go)) continue;
-      const sum = this.transforms.get(go)?.r;
-      if (!sum || sum.every((v) => v === 0)) continue;
-      const q = "xyzw".split("").map((a) => clip._bindings.find((c) => c.path === b.path && c.type === "Transform" && c.property === `localRotation.${a}`)?.curve.evaluate(time) ?? 0);
-      const dot = q.reduce((d, v, i) => d + v * sum[i]!, 0);
-      flips.set(go, dot < 0 ? -1 : 1);
-    }
-    if ([...flips.values()].every((f) => f > 0)) {
-      this.add(root, clip, time, weight);
-      return;
-    }
-    // Add with the flipped rotations negated.
-    for (const b of clip._bindings) {
-      const go = resolve(root, b.path);
-      const flip = go && b.type === "Transform" && b.property.startsWith("localRotation.") ? (flips.get(go) ?? 1) : 1;
-      const single = new AnimationClip();
-      single._bindings.push(flip < 0 ? { ...b, curve: negated(b.curve) } : b);
-      this.add(root, single, time, weight);
-    }
-  }
-}
-
-const negatedCache = new WeakMap<AnimationCurve, AnimationCurve>();
-function negated(c: AnimationCurve): AnimationCurve {
-  let n = negatedCache.get(c);
-  if (!n) {
-    n = new AnimationCurve(...c.keys.map((k) => new Keyframe(k.time, -k.value, -k.inTangent, -k.outTangent)));
-    n.preWrapMode = c.preWrapMode;
-    n.postWrapMode = c.postWrapMode;
-    negatedCache.set(c, n);
-  }
-  return n;
 }
 
 /** Sets a number property, or one field of a value property (copied, then set back). */
@@ -696,7 +743,11 @@ export interface AnimatorStateInfo {
 
 interface Playing {
   state: AnimatorState;
-  time: number;
+  /**
+   * How far through the state, over its length (past 1 after loops), as Unity keeps it: a
+   * blend tree's length changes with its weights, so seconds would jump about in its cycle.
+   */
+  norm: number;
 }
 
 /**
@@ -720,7 +771,7 @@ export class Animator extends Component {
     }
     const name = this.controller.defaultState ?? this.controller.states[0]?.name;
     const state = this.controller.states.find((s) => s.name === name);
-    if (state) this.current = { state, time: 0 };
+    if (state) this.current = { state, norm: 0 };
   }
 
   setFloat(name: string, value: number): void {
@@ -756,7 +807,7 @@ export class Animator extends Component {
     this.ensure();
     const state = this.controller?.states.find((s) => s.name === stateName);
     if (!state) return;
-    this.current = { state, time: normalizedTime * this.lengthOf(state) };
+    this.current = { state, norm: normalizedTime };
     this.next = null;
   }
 
@@ -768,7 +819,7 @@ export class Animator extends Component {
       if (state) this.play(stateName, normalizedTime);
       return;
     }
-    this.next = { state, time: normalizedTime * this.lengthOf(state), progress: 0, duration: Math.max(1e-4, duration) };
+    this.next = { state, norm: normalizedTime, progress: 0, duration: Math.max(1e-4, duration) };
   }
 
   get isInTransition(): boolean {
@@ -787,7 +838,7 @@ export class Animator extends Component {
   private info(p: Playing | null): AnimatorStateInfo {
     const length = p ? this.lengthOf(p.state) : 0;
     const name = p?.state.name ?? "";
-    return { name, length, normalizedTime: p && length > 0 ? p.time / length : 0, isName: (n) => n === name };
+    return { name, length, normalizedTime: p && length > 0 ? p.norm : 0, isName: (n) => n === name };
   }
 
   /** The state's clips with their weights (a blend tree's two neighbours). */
@@ -845,8 +896,7 @@ export class Animator extends Component {
   private checkTransitions(): void {
     if (!this.controller || !this.current || this.next) return;
     const from = this.current;
-    const length = this.lengthOf(from.state);
-    const normalized = length > 0 ? from.time / length : 1;
+    const normalized = this.lengthOf(from.state) > 0 ? from.norm : 1;
     for (const t of this.controller.transitions) {
       if (t.from !== from.state.name && !(t.from === "Any" && t.to !== from.state.name)) continue;
       if (t.hasExitTime && normalized < (t.exitTime ?? 1)) continue;
@@ -860,9 +910,9 @@ export class Animator extends Component {
       const state = this.controller.states.find((s) => s.name === t.to);
       if (!state) continue;
       const duration = t.duration ?? 0.25;
-      const start = (t.offset ?? 0) * this.lengthOf(state);
-      if (duration <= 0) this.current = { state, time: start };
-      else this.next = { state, time: start, progress: 0, duration };
+      const start = t.offset ?? 0;
+      if (duration <= 0) this.current = { state, norm: start };
+      else this.next = { state, norm: start, progress: 0, duration };
       return;
     }
   }
@@ -874,13 +924,13 @@ export class Animator extends Component {
     this.checkTransitions();
     const pose = new Pose();
     const run = (p: Playing, weight: number) => {
-      const before = p.time;
-      p.time += dt * this.stateSpeed(p.state);
+      const before = p.norm;
       const length = this.lengthOf(p.state);
+      if (length > 0) p.norm += (dt * this.stateSpeed(p.state)) / length;
       for (const c of this.clips(p.state)) {
-        // Blended clips share the state's normalized time.
-        const t = length > 0 ? (p.time / length) * c.clip.length : 0;
-        const t0 = length > 0 ? (before / length) * c.clip.length : 0;
+        // Blended clips share the state's normalized time, so their steps stay in phase.
+        const t = length > 0 ? p.norm * c.clip.length : 0;
+        const t0 = length > 0 ? before * c.clip.length : 0;
         const mode = c.clip.wrapMode === "once" ? "clampForever" : c.clip.wrapMode;
         if (c.weight * weight >= 0.5) fireEvents(this.gameObject, c.clip, t0, t, c.clip.length, mode);
         pose.addAligned(this.gameObject, c.clip, wrap(t, c.clip.length, mode), c.weight * weight);
@@ -892,7 +942,7 @@ export class Animator extends Component {
       run(this.current, 1 - w);
       run(this.next, w);
       if (w >= 1) {
-        this.current = { state: this.next.state, time: this.next.time };
+        this.current = { state: this.next.state, norm: this.next.norm };
         this.next = null;
       }
     } else {

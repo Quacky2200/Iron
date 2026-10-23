@@ -48,6 +48,11 @@ struct Globals {
     // (the camera's last exposure, in the HD pipeline, so real-world light stays inside
     // fp16's range); the post pass divides it back out. 1 elsewhere.
     exposure: vec4<f32>,
+    // The cloud layer: x altitude, y size, z coverage, w opacity; rgb colour, w softness;
+    // xy the wind's offset, z the fade distance, w 1 when on.
+    cloud: vec4<f32>,
+    cloud_color: vec4<f32>,
+    cloud_move: vec4<f32>,
     local_fogs: array<LocalFog, 8>,
 };
 
@@ -871,10 +876,13 @@ fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let far4 = g.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
     let far = far4.xyz / far4.w;
     var c = g.background;
+    let dir = normalize(far - g.camera.xyz);
     if (g.flags.x > 0.5) {
         // The sky along this pixel's view ray.
-        let dir = normalize(far - g.camera.xyz);
         c = vec4<f32>(textureSampleLevel(env_map, env_samp, dir, 0.0).rgb * g.env.y, 1.0);
+    }
+    if (g.cloud_move.w > 0.5) {
+        c = with_clouds(c, dir);
     }
     // Distance fog leaves the background alone (Unity's); height fog covers it out to the
     // far plane, so the horizon sinks into it (and shafts reach into the sky).
@@ -890,6 +898,58 @@ fn fs_fill(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         c = vec4<f32>(c.rgb + shafts(far, pos.xy, false) * c.a, c.a);
     }
     return pre(c);
+}
+
+// A smooth hash-based value noise, 0 to 1.
+fn cloud_hash(p: vec2<f32>) -> f32 {
+    let q = fract(p * vec2<f32>(0.1031, 0.1030));
+    let r = q + dot(q, q.yx + 33.33);
+    return fract((r.x + r.y) * r.x);
+}
+
+fn cloud_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = cloud_hash(i);
+    let b = cloud_hash(i + vec2<f32>(1.0, 0.0));
+    let c = cloud_hash(i + vec2<f32>(0.0, 1.0));
+    let d = cloud_hash(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Five octaves, each turned a little so their grids don't line up.
+fn cloud_fbm(p0: vec2<f32>) -> f32 {
+    var p = p0;
+    var sum = 0.0;
+    var amp = 0.5;
+    let turn = mat2x2<f32>(0.8, 0.6, -0.6, 0.8);
+    for (var i = 0; i < 5; i++) {
+        sum += amp * cloud_noise(p);
+        p = turn * p * 2.03;
+        amp *= 0.5;
+    }
+    return sum / 0.97;
+}
+
+// The cloud layer over background `c` along `dir`: where the ray meets the deck, a cloud
+// of fractal noise, darker underneath where it's thick, fading out towards the horizon.
+fn with_clouds(c: vec4<f32>, dir: vec3<f32>) -> vec4<f32> {
+    let rise = g.cloud.x - g.camera.y;
+    if (dir.y <= 0.001 || rise <= 0.0) {
+        return c;
+    }
+    let t = rise / dir.y;
+    let at = (g.camera.xz + dir.xz * t + g.cloud_move.xy) / g.cloud.y;
+    let n = cloud_fbm(at);
+    let edge = 1.0 - g.cloud.z;
+    let soft = g.cloud_color.w * 0.5;
+    let cover = smoothstep(edge - soft, edge + soft, n);
+    let thick = smoothstep(edge, edge + 0.35, n);
+    let fade = exp(-t / g.cloud_move.z);
+    let a = cover * g.cloud.w * fade;
+    let col = g.cloud_color.rgb * (1.0 - 0.3 * thick);
+    return vec4<f32>(mix(c.rgb, col * c.a, a), c.a);
 }
 
 // The editor's ground grid: each pixel's view ray meets y = 0, where 1 m and 10 m lines

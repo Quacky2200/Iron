@@ -214,12 +214,13 @@ export class Model {
         if (path === undefined) continue;
         const [property, size] =
           ch.path === "translation" ? ["localPosition", 3] : ch.path === "rotation" ? ["localRotation", 4] : ["localScale", 3];
+        const values = ch.path === "rotation" ? continuous(ch.values, ch.interpolation === "cubic") : ch.values;
         for (let k = 0; k < size; k++) {
           const curve =
             ch.interpolation === "cubic"
-              ? cubic(ch.times, ch.values, size, k)
+              ? cubic(ch.times, values, size, k)
               : AnimationCurve.fromPoints(
-                  ch.times.map((t, i) => [t, ch.values[i * size + k]!] as const),
+                  ch.times.map((t, i) => [t, values[i * size + k]!] as const),
                   ch.interpolation === "step" ? "step" : "linear",
                 );
           clip.setCurve(path, "Transform", `${property}.${"xyzw"[k]}`, curve);
@@ -290,6 +291,25 @@ export function _resetModelsForTests() {
 }
 
 /** A glTF cubic spline channel's component `k`: keys with the file's tangents. */
+/**
+ * Rotation keys made sign-continuous: q and -q are the same turn, and exporters (Blender's)
+ * sometimes switch sides from one key to the next. Blended component by component, a key
+ * pair on opposite sides passes near zero between them, and normalized that's a wild pose
+ * for a frame or two (a leg flung up mid-stride). Each key is flipped to its predecessor's
+ * side; cubic keys (in-tangent, value, out-tangent) flip as a whole.
+ */
+function continuous(values: number[], cubicKeys: boolean): number[] {
+  const out = [...values];
+  const stride = cubicKeys ? 12 : 4;
+  const at = cubicKeys ? 4 : 0;
+  for (let i = stride; i + stride <= out.length; i += stride) {
+    let dot = 0;
+    for (let c = 0; c < 4; c++) dot += out[i - stride + at + c]! * out[i + at + c]!;
+    if (dot < 0) for (let c = 0; c < stride; c++) out[i + c] = -out[i + c]!;
+  }
+  return out;
+}
+
 function cubic(times: number[], values: number[], size: number, k: number): AnimationCurve {
   const keys = times.map((t, i) => {
     const at = (part: number) => values[(i * 3 + part) * size + k]!;

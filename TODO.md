@@ -1104,6 +1104,29 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] 2D shapes: check draw calls and re-tessellation with hundreds of shapes, and batch
     them where it helps
   - [ ] Profile the rest of the frame (~6 ms engine and render with 123 fish, ~800 shapes)
+  - [x] Skeletal animation in script (found 2026-10-21 with `examples/fog-white-room`: one
+    65-bone mannequin cost ~20 ms a frame): `Pose` resolved every curve's path by name and
+    searched the clip again for each rotation, every frame, and `clip.length` rescanned all
+    curves. Clips' curves are now grouped per bone once, paths cached per root, lengths
+    cached: 24.6 → 5.7 ms a frame for the room (~3.3 ms of it the figure)
+  - [ ] Skeletal animation natively: sample glTF clips and blend poses in Rust (the
+    `Animator`'s state machine stays in script), so a crowd of animated characters costs
+    little script time
+- [ ] **A profiler** (asked for 2026-10-21): today a slow frame is found by switching
+  features off and timing runs. Wanted, in the window (an overlay or the editor) and as a
+  capture to compare:
+  - [ ] Frame time split: script (per hook: `onUpdate`, animation, physics callbacks, UI
+    commits), engine (scene, physics step, audio), render (CPU encode, GPU passes via
+    timestamp queries: shadows, world, light volume, post, UI), present / vsync wait
+  - [ ] Scripts: time per component class and per hot function (QuickJS sampling or
+    instrumented `__iron_run`), allocations and GC pauses
+  - [ ] Animation: animators, bones and curves sampled per frame, time per character
+  - [ ] Rendering counters beside `RenderStats`: draw calls, triangles, pipeline switches,
+    texture and buffer memory, shadow maps drawn
+  - [ ] UI: restyle, layout, text shaping and draw-list time per commit, nodes touched
+  - [ ] Physics: bodies, contacts and step time; audio: voices and mixer time
+  - [ ] Frame-time graph with spikes kept, and a capture written to a file (Chrome trace
+    format, so it opens in Perfetto)
 - [x] **Physics: locked axes switch friction off** (found 2026-10-18 with `examples/physics`):
   a body that can't move along one axis and can't turn about the other two (`setAllowedAxes`
   with z movement and x/y turns locked, the usual way to keep bodies in a plane) slid as if
@@ -1520,8 +1543,11 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     distance is the fog: seeded noise terrain built per 16×16 chunk as one textured mesh of
     visible faces (`Mesh.createFlat` / `setFlat`), chunks recycled around the camera, a spare
     ring past the fog for fog culling to skip; the HUD reads `RenderStats`
-  - [ ] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
-    2026-10-21): a third-person character on a bright white floor of glowing grid tiles under
+  - [x] An "endless white room" fog level, like Assassin's Creed's loading screen (asked for
+    2026-10-21; `examples/fog-white-room`, 2026-10-21: Quaternius's CC0 mannequin with an
+    Animator (idle / walk / jog / sprint blend tree, jumps, a roll), linear fog past a clear
+    bubble, a thin height fog, tiles lit underfoot and on their own, drifting fragments, a
+    floating origin): a third-person character on a bright white floor of glowing grid tiles under
     a grey cloudy sky, everything fading into white fog a few tiles away. The floor moves with
     the player like a treadmill (tiles recycled around them), so the area never ends: no walls
     to reach, no edge to fall off. The player can run and jump with gravity (a

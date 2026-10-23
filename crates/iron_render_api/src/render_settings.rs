@@ -142,6 +142,47 @@ impl Default for Fog {
     }
 }
 
+/// A deck of cloud drawn with the sky (HDRP's cloud layer), behind the fog.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CloudLayer {
+    /// The deck's height in metres.
+    pub altitude: f64,
+    /// About how wide a cloud is, metres.
+    pub size: f64,
+    /// How much of the sky is cloud, 0 to 1.
+    pub coverage: f64,
+    pub opacity: f64,
+    /// How soft the edges are, 0 (hard) to 1.
+    pub softness: f64,
+    pub tint: Rgba,
+    /// m/s, and the way it blows in degrees from +x towards +z.
+    pub wind_speed: f64,
+    pub wind_direction: f64,
+    /// Over about this distance along a ray the clouds fade into the sky, metres.
+    pub fade_distance: f64,
+}
+
+impl Default for CloudLayer {
+    fn default() -> Self {
+        CloudLayer {
+            altitude: 1500.0,
+            size: 2000.0,
+            coverage: 0.5,
+            opacity: 1.0,
+            softness: 0.3,
+            tint: Rgba {
+                r: 0.8,
+                g: 0.8,
+                b: 0.82,
+                a: 1.0,
+            },
+            wind_speed: 0.0,
+            wind_direction: 0.0,
+            fade_distance: 20000.0,
+        }
+    }
+}
+
 /// Auto exposure (HDRP's Automatic mode).
 #[derive(Clone, Debug, PartialEq)]
 pub struct AutoExposure {
@@ -194,6 +235,8 @@ pub struct RenderSettingsData {
     /// Stops, before tonemapping.
     pub post_exposure: f64,
     pub fog: Fog,
+    /// The cloud layer (none: no clouds).
+    pub cloud_layer: Option<CloudLayer>,
     /// Adapts the exposure to the view (none: off).
     pub auto_exposure: Option<AutoExposure>,
     /// The manual exposure in EV100 (none: light as it is).
@@ -218,6 +261,7 @@ impl Default for RenderSettingsData {
             tonemapping: "none".to_string(),
             post_exposure: 0.0,
             fog: Fog::default(),
+            cloud_layer: None,
             auto_exposure: None,
             fixed_exposure: None,
             exposure_transition: 0.0,
@@ -281,6 +325,19 @@ pub fn save_render_settings() -> Value {
         Value::Null,
         |h| json!({ "density": h.density, "baseHeight": h.base_height, "falloff": h.falloff }),
     );
+    let clouds = s.cloud_layer.as_ref().map_or(Value::Null, |c| {
+        json!({
+            "altitude": c.altitude,
+            "size": c.size,
+            "coverage": c.coverage,
+            "opacity": c.opacity,
+            "softness": c.softness,
+            "tint": color_json(c.tint),
+            "windSpeed": c.wind_speed,
+            "windDirection": c.wind_direction,
+            "fadeDistance": c.fade_distance,
+        })
+    });
     let volumetric = s.fog.volumetric.as_ref().map_or(Value::Null, |v| {
         json!({
             "intensity": v.intensity,
@@ -310,6 +367,7 @@ pub fn save_render_settings() -> Value {
         "fogStartDistance": s.fog.start,
         "fogEndDistance": s.fog.end,
         "heightFog": height,
+        "cloudLayer": clouds,
         "volumetricFog": volumetric,
         "fogCulling": s.fog.culling,
     })
@@ -401,6 +459,25 @@ pub fn apply_render_settings(saved: &Value) {
                     density: n("density", d.density),
                     base_height: n("baseHeight", d.base_height),
                     falloff: n("falloff", d.falloff),
+                });
+            }
+            _ => {}
+        }
+        match saved.get("cloudLayer") {
+            Some(Value::Null) => s.cloud_layer = None,
+            Some(c) if c.is_object() => {
+                let d = CloudLayer::default();
+                let n = |k: &str, d: f64| c.get(k).and_then(Value::as_f64).unwrap_or(d);
+                s.cloud_layer = Some(CloudLayer {
+                    altitude: n("altitude", d.altitude),
+                    size: n("size", d.size),
+                    coverage: n("coverage", d.coverage),
+                    opacity: n("opacity", d.opacity),
+                    softness: n("softness", d.softness),
+                    tint: c.get("tint").and_then(color_of).unwrap_or(d.tint),
+                    wind_speed: n("windSpeed", d.wind_speed),
+                    wind_direction: n("windDirection", d.wind_direction),
+                    fade_distance: n("fadeDistance", d.fade_distance),
                 });
             }
             _ => {}
@@ -604,6 +681,54 @@ impl VolumetricPatch {
     }
 }
 
+/// A cloud layer as a script gives it: every key may be left out.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CloudLayerPatch {
+    pub altitude: Option<f64>,
+    pub size: Option<f64>,
+    pub coverage: Option<f64>,
+    pub opacity: Option<f64>,
+    pub softness: Option<f64>,
+    pub tint: Option<Rgba>,
+    pub wind_speed: Option<f64>,
+    pub wind_direction: Option<f64>,
+    pub fade_distance: Option<f64>,
+}
+
+impl CloudLayerPatch {
+    fn apply(self, mut c: CloudLayer) -> CloudLayer {
+        macro_rules! set {
+            ($($f:ident),*) => { $( if let Some(x) = self.$f { c.$f = x; } )* };
+        }
+        set!(
+            altitude,
+            size,
+            coverage,
+            opacity,
+            softness,
+            tint,
+            wind_speed,
+            wind_direction,
+            fade_distance
+        );
+        c
+    }
+
+    fn of(c: &CloudLayer) -> CloudLayerPatch {
+        CloudLayerPatch {
+            altitude: Some(c.altitude),
+            size: Some(c.size),
+            coverage: Some(c.coverage),
+            opacity: Some(c.opacity),
+            softness: Some(c.softness),
+            tint: Some(c.tint),
+            wind_speed: Some(c.wind_speed),
+            wind_direction: Some(c.wind_direction),
+            fade_distance: Some(c.fade_distance),
+        }
+    }
+}
+
 /// Auto exposure as a script gives it: every key may be left out.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AutoExposurePatch {
@@ -737,6 +862,27 @@ impl AutoExposurePatch {
             /// Samples for cells whose view moved this frame (2).
             motion_samples: Option<f64>
         ],
+        /// A deck of cloud drawn with the sky (HDRP's cloud layer): behind everything, so the distance fog doesn't hide it. Each pixel of sky looks up to where its ray meets the deck, so the clouds shift overhead as the camera moves under them; the wind carries them; they thin out towards the horizon. Every field is optional.
+        CloudLayerSettings = CloudLayerPatch [
+            /// The deck's height in metres (1500).
+            altitude: Option<f64>,
+            /// About how wide a cloud is, metres (2000).
+            size: Option<f64>,
+            /// How much of the sky is cloud, 0 to 1 (0.5).
+            coverage: Option<f64>,
+            /// 0 to 1 (1).
+            opacity: Option<f64>,
+            /// How soft the clouds' edges are, 0 (hard) to 1 (0.3).
+            softness: Option<f64>,
+            /// Their colour (linear; thick parts are a little darker underneath). Light grey.
+            tint: Option<Color>,
+            /// The wind, m/s (0).
+            wind_speed: Option<f64>,
+            /// The way the wind blows, degrees from +x towards +z (0).
+            wind_direction: Option<f64>,
+            /// Over about this distance along a ray they fade into the sky, metres (20000).
+            fade_distance: Option<f64>
+        ],
         /// Auto exposure (HDRP's Automatic mode). Every field is optional.
         AutoExposureSettings = AutoExposurePatch [
             /// The darkest average brightness it adapts to, in EV100 (-10).
@@ -829,6 +975,17 @@ pub mod render_settings_api {
 
     pub fn set_height_fog(v: Option<HeightFog>) {
         change(|s| s.fog.height = v);
+    }
+
+    /// The cloud layer as one object (`null`: none, the default). Setting it replaces the
+    /// layer: the defaults with the given keys changed. See `CloudLayerSettings`.
+    #[property]
+    pub fn cloud_layer() -> Option<CloudLayerPatch> {
+        read(|s| s.cloud_layer.as_ref().map(CloudLayerPatch::of))
+    }
+
+    pub fn set_cloud_layer(v: Option<CloudLayerPatch>) {
+        change(|s| s.cloud_layer = v.map(|p| p.apply(CloudLayer::default())));
     }
 
     /// Light shafts in the fog, while `fog` is on, as one object (`null`: none). Setting it

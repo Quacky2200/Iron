@@ -175,6 +175,7 @@ export {
   type BloomSettings,
   type FogMode,
   FogVolume,
+  type CloudLayerSettings,
   type HeightFogSettings,
   type VolumetricFogSettings,
   type AutoExposureSettings,

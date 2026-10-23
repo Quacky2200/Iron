@@ -1109,6 +1109,7 @@ impl App {
         let dt = self.components.frame_dt() as f32;
         // Auto exposure adapts by the frame's time.
         self.world_view.grading.delta_time = dt;
+        self.world_view.advance_clouds(dt);
         let changed = self.world_view.update_particles(dt, &self.scene);
         if self.native.is_some() {
             native_render::report_particles(&changed, &mut self.scene.scene);
