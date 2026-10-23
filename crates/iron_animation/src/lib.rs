@@ -6,6 +6,7 @@ pub mod animator;
 pub mod clip;
 pub mod controller;
 pub mod curve;
+pub mod gltf;
 pub mod player;
 pub mod pose;
 pub mod registry;

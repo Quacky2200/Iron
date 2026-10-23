@@ -105,6 +105,36 @@ impl<'a> Lowerer<'a> {
         })
     }
 
+    /// `xs.reduce(f)` with no initial value: the first element (the last for `reduceRight`) is
+    /// the start, and an empty array throws a `TypeError`, as in JavaScript.
+    pub(crate) fn reduce_from_first(
+        &mut self,
+        recv: Expr,
+        cb: &'a Expression<'a>,
+        rev: bool,
+    ) -> R<Expr> {
+        let it = self.begin_iter_dir(recv, rev)?;
+        let acc = self.new_local(it.el_ty.clone());
+        let first = self.new_local(Ty::Bool);
+        let mut stmts = it.pre.clone();
+        stmts.push(Stmt::Assign(first, mk(ExprKind::Bool(true), Ty::Bool)));
+        let mut body = it.head.clone();
+        let call = self.inline_cb(cb, &[acc, it.elem, it.idx, it.arr], RetKind::Val, Some(acc))?;
+        body.push(Stmt::If(
+            self.var_expr(first),
+            vec![
+                Stmt::Assign(acc, self.var_expr(it.elem)),
+                Stmt::Assign(first, mk(ExprKind::Bool(false), Ty::Bool)),
+            ],
+            vec![call],
+        ));
+        stmts.push(Stmt::Loop(it.label, body));
+        let empty = self.throw_type_error("Reduce of empty array with no initial value")?;
+        stmts.push(Stmt::If(self.var_expr(first), vec![empty], vec![]));
+        let ty = self.cur.locals[acc as usize].clone();
+        Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(acc))), ty))
+    }
+
     /// Emits a `return` for the innermost function or inlined callback.
     pub(crate) fn emit_return(&mut self, val: Option<Expr>, out: &mut Vec<Stmt>) -> R<()> {
         if self.fin_applies(&Exit::Return) {
@@ -941,7 +971,12 @@ impl<'a> Lowerer<'a> {
                                 mk(ExprKind::Seq(stmts, Box::new(ov)), ty)
                             }
                             "find" | "findLast" => {
-                                if !(el.is_ptr() || el == Ty::Num || el == Ty::Lit) {
+                                // An engine handle's "none" is its null (`clips.find(..)`).
+                                if !(el.is_ptr()
+                                    || el == Ty::Num
+                                    || el == Ty::Lit
+                                    || matches!(el, Ty::Handle(_)))
+                                {
                                     bail!("find over {el} elements");
                                 }
                                 let ty = el.clone().nullable();
@@ -1380,7 +1415,7 @@ impl<'a> Lowerer<'a> {
             (Ty::Arr(_) | Ty::Typed(_), "reduce" | "reduceRight") => {
                 let cb = cb_arg(0)?;
                 let Some(init) = c.arguments.get(1).and_then(|a| a.as_expression()) else {
-                    bail!("reduce needs an initial value")
+                    return self.reduce_from_first(recv, cb, m == "reduceRight");
                 };
                 let init = self.lower_expr(init, None)?;
                 if init.ty == Ty::Null {

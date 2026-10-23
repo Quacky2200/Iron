@@ -490,3 +490,19 @@ fn a_scene_serializes_to_a_record_and_to_text() {
         assert_eq!(text(ts_fac_sceneSummary()), "2|alpha,beta,|true|true");
     });
 }
+
+// M9-TS-3384, M9-TS-3385
+//
+// What `examples/fog-white-room` needed: a plain `{ x, y }` for a Vector2 key of an options
+// object, a `bool` parameter's default given as `true`, `find` and `reduce` (no initial value)
+// over engine handles, `Animation.destroy()`, and a model's `materials` / `animations` lists
+// (empty before it loads).
+#[test]
+fn white_room_shapes_options_finds_over_handles_and_model_lists() {
+    in_every_gc_mode(|| unsafe {
+        assert_eq!(
+            text(ts_fac_whiteRoomShapes()),
+            "4|2|1|B|true|C|true|true|true|0"
+        );
+    });
+}

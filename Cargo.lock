@@ -2328,6 +2328,7 @@ dependencies = [
 name = "iron_render_api"
 version = "0.1.0"
 dependencies = [
+ "iron_animation",
  "iron_api",
  "iron_engine_api",
  "iron_kinds",

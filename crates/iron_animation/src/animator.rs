@@ -12,14 +12,16 @@ use iron_scene::{ObjectId, Scene};
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Playing {
     node: NodeId,
-    time: f64,
+    /// How far through the state, over its length (past 1 after loops), as Unity keeps it: a
+    /// blend tree's length changes with its weights, so seconds would jump about in its cycle.
+    norm: f64,
 }
 
 /// The state being faded to, and how far (0..1) over how long.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Next {
     node: NodeId,
-    time: f64,
+    norm: f64,
     progress: f64,
     duration: f64,
 }
@@ -107,7 +109,7 @@ impl AnimatorPlayer {
         if let Some(name) = name
             && let Some(node) = g.find_node(c, &name)
         {
-            self.current = Some(Playing { node, time: 0.0 });
+            self.current = Some(Playing { node, norm: 0.0 });
         }
     }
 
@@ -157,10 +159,9 @@ impl AnimatorPlayer {
         let Some(node) = self.node_named(world, name) else {
             return;
         };
-        let length = self.length_of(world, node);
         self.current = Some(Playing {
             node,
-            time: normalized_time * length,
+            norm: normalized_time,
         });
         self.next = None;
     }
@@ -175,10 +176,9 @@ impl AnimatorPlayer {
             }
             return;
         };
-        let length = self.length_of(world, node);
         self.next = Some(Next {
             node,
-            time: normalized_time * length,
+            norm: normalized_time,
             progress: 0.0,
             duration: jsnum::max(1e-4, duration),
         });
@@ -191,11 +191,11 @@ impl AnimatorPlayer {
     pub fn current_info(&mut self, world: &World) -> StateInfo {
         self.ensure(world);
         let p = self.current;
-        self.info(world, p.map(|p| (p.node, p.time)))
+        self.info(world, p.map(|p| (p.node, p.norm)))
     }
 
     pub fn next_info(&self, world: &World) -> StateInfo {
-        self.info(world, self.next.map(|n| (n.node, n.time)))
+        self.info(world, self.next.map(|n| (n.node, n.norm)))
     }
 
     fn info(&self, world: &World, p: Option<(NodeId, f64)>) -> StateInfo {
@@ -206,7 +206,7 @@ impl AnimatorPlayer {
                 .map(|n| n.name.clone())
                 .unwrap_or_default(),
             normalized_time: match p {
-                Some((_, t)) if length > 0.0 => t / length,
+                Some((_, norm)) if length > 0.0 => norm,
                 _ => 0.0,
             },
             length,
@@ -310,9 +310,8 @@ impl AnimatorPlayer {
             .node(from.node)
             .map(|n| n.name.clone())
             .unwrap_or_default();
-        let length = self.length_of(world, from.node);
-        let normalized = if length > 0.0 {
-            from.time / length
+        let normalized = if self.length_of(world, from.node) > 0.0 {
+            from.norm
         } else {
             1.0
         };
@@ -351,13 +350,13 @@ impl AnimatorPlayer {
                 continue;
             };
             let duration = t.duration.unwrap_or(0.25);
-            let start = t.offset.unwrap_or(0.0) * self.length_of(world, node);
+            let start = t.offset.unwrap_or(0.0);
             if duration <= 0.0 {
-                self.current = Some(Playing { node, time: start });
+                self.current = Some(Playing { node, norm: start });
             } else {
                 self.next = Some(Next {
                     node,
-                    time: start,
+                    norm: start,
                     progress: 0.0,
                     duration,
                 });
@@ -380,20 +379,17 @@ impl AnimatorPlayer {
         weight: f64,
     ) {
         let before = playing.1;
-        playing.1 += dt * self.state_speed(world, playing.0);
         let length = self.length_of(world, playing.0);
+        if length > 0.0 {
+            playing.1 += dt * self.state_speed(world, playing.0) / length;
+        }
         for c in self.clips(world, playing.0) {
             let clip_len = world.clip_length(c.clip);
-            // Blended clips share the state normalized time.
-            let t = if length > 0.0 {
-                (playing.1 / length) * clip_len
+            // Blended clips share the state's normalized time, so their steps stay in phase.
+            let (t, t0) = if length > 0.0 {
+                (playing.1 * clip_len, before * clip_len)
             } else {
-                0.0
-            };
-            let t0 = if length > 0.0 {
-                (before / length) * clip_len
-            } else {
-                0.0
+                (0.0, 0.0)
             };
             let wm = world.clip(c.clip).map_or(WrapMode::Once, |k| k.wrap_mode);
             let mode = if wm == WrapMode::Once {
@@ -432,27 +428,27 @@ impl AnimatorPlayer {
         self.check_transitions(world);
         let mut pose = Pose::new();
         let cur = self.current.expect("checked");
-        let mut cur = (cur.node, cur.time);
+        let mut cur = (cur.node, cur.norm);
         if let Some(mut next) = self.next {
             next.progress = jsnum::min(1.0, next.progress + dt / next.duration);
             let w = next.progress;
-            let mut nx = (next.node, next.time);
+            let mut nx = (next.node, next.norm);
             self.run(world, scene, sink, &mut pose, events, &mut cur, dt, 1.0 - w);
             self.run(world, scene, sink, &mut pose, events, &mut nx, dt, w);
             if w >= 1.0 {
                 self.current = Some(Playing {
                     node: nx.0,
-                    time: nx.1,
+                    norm: nx.1,
                 });
                 self.next = None;
             } else {
                 self.current = Some(Playing {
                     node: cur.0,
-                    time: cur.1,
+                    norm: cur.1,
                 });
                 self.next = Some(Next {
                     node: nx.0,
-                    time: nx.1,
+                    norm: nx.1,
                     progress: w,
                     duration: next.duration,
                 });
@@ -461,9 +457,77 @@ impl AnimatorPlayer {
             self.run(world, scene, sink, &mut pose, events, &mut cur, dt, 1.0);
             self.current = Some(Playing {
                 node: cur.0,
-                time: cur.1,
+                norm: cur.1,
             });
         }
         pose.apply(scene, sink);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clip::Clip;
+    use crate::controller::{BlendChild, BlendTree, Controller, Node};
+    use crate::curve::Curve;
+    use crate::pose::NoComponents;
+
+    /// A looping clip moving x from 0 to 1 over `length` seconds.
+    fn slide(w: &mut World, length: f64) -> ClipId {
+        let mut c = Clip::new("slide");
+        c.wrap_mode = WrapMode::Loop;
+        let id = w.add_clip(c);
+        let curve = w.add_curve(Curve::linear(0.0, 0.0, length, 1.0));
+        w.set_curve(id, "", "Transform", "localPosition.x", Some(curve));
+        id
+    }
+
+    // M5-ANI-07
+    #[test]
+    fn a_blend_tree_keeps_its_phase_when_its_weights_change() {
+        let mut w = World::default();
+        let (short, long) = (slide(&mut w, 1.0), slide(&mut w, 2.0));
+        let blend = w.graphs.add_blend(BlendTree {
+            parameter: "speed".into(),
+            children: vec![
+                BlendChild {
+                    clip: short,
+                    threshold: 0.0,
+                    time_scale: None,
+                },
+                BlendChild {
+                    clip: long,
+                    threshold: 1.0,
+                    time_scale: None,
+                },
+            ],
+        });
+        let node = w.graphs.add_node(Node {
+            name: "Move".into(),
+            motion: Motion::Blend(blend),
+            speed: None,
+            speed_parameter: None,
+        });
+        let controller = w.graphs.add_controller(Controller {
+            nodes: vec![node],
+            ..Default::default()
+        });
+        let mut scene = Scene::new();
+        let go = scene.create("Runner");
+        let mut a = AnimatorPlayer::new(go);
+        a.controller = Some(controller);
+        let mut events = Vec::new();
+        let x = |scene: &Scene| f64::from(scene.local(go).unwrap().position.x);
+        // A quarter of the way through the short clip.
+        a.animate(&w, &mut scene, &mut NoComponents, 0.25, &mut events);
+        assert!((x(&scene) - 0.25).abs() < 1e-6);
+        // Switched to the long clip: still a quarter of the way through (not 0.125).
+        a.set_float("speed", 1.0);
+        a.animate(&w, &mut scene, &mut NoComponents, 0.0, &mut events);
+        assert!((x(&scene) - 0.25).abs() < 1e-6, "{}", x(&scene));
+        assert!((a.current_info(&w).normalized_time - 0.25).abs() < 1e-9);
+        // Then on at the blend's pace: half a second of a 2 s cycle is another quarter.
+        a.animate(&w, &mut scene, &mut NoComponents, 0.5, &mut events);
+        assert!((x(&scene) - 0.5).abs() < 1e-6, "{}", x(&scene));
     }
 }

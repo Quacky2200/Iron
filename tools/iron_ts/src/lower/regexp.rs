@@ -341,7 +341,7 @@ impl<'a> Lowerer<'a> {
         self.make_regexp(pattern, fl, at)
     }
 
-    fn throw_type_error(&mut self, message: &str) -> R<Stmt> {
+    pub(crate) fn throw_type_error(&mut self, message: &str) -> R<Stmt> {
         let Some(&fid) = self.fids.get("__rtThrow") else {
             bail!("the error classes are missing")
         };

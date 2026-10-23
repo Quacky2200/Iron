@@ -109,3 +109,22 @@ function t(): string {
   const lit: "disable" | "hardOnly" | "all" = next(MODES, "disable");
   return `${a} ${b} ${c} ${lit}`;
 }
+//## reduce_without_an_initial_value
+interface Glow {
+  age: number;
+  life: number;
+}
+function t(): string {
+  const max = [3, 9, 4].reduce((a, b) => (a > b ? a : b));
+  const right = ["a", "b", "c"].reduceRight((a, b) => a + b);
+  const glows: Glow[] = [{ age: 1, life: 4 }, { age: 3, life: 4 }, { age: 1, life: 2 }];
+  const oldest = glows.reduce((a, b) => (a.age / a.life > b.age / b.life ? a : b));
+  let caught = "";
+  try {
+    ([] as number[]).reduce((a, b) => a + b);
+  } catch (e) {
+    caught = e instanceof TypeError ? "TypeError" : "other";
+  }
+  const one = [7].reduce((a, b) => a * b);
+  return `${max} ${right} ${oldest.age}/${oldest.life} ${caught} ${one}`;
+}

@@ -547,6 +547,9 @@ pub fn wanted(src: &str) -> bool {
         || src.contains("BigInt")
         || src.contains("bigint")
         || has_bigint_literal(src)
-        || src.contains("unescape("))
+        || src.contains("unescape(")
+        // `reduce` with no initial value throws a TypeError on an empty array.
+        || src.contains(".reduce")
+        || src.contains(".reduceRight"))
         && !src.contains("class Error")
 }

@@ -38,4 +38,5 @@ bun_tests! {
     3194 flat_with_a_depth_that_is_not_a_literal "flat_with_a_depth_that_is_not_a_literal" "lo4_" 2104000;
     3195 a_tuple_as_a_rest_parameter "a_tuple_as_a_rest_parameter" "lo5_" 2105000;
     3196 const_array_with_a_string_argument "const_array_with_a_string_argument" "lo6_" 2106000;
+    3386 reduce_without_an_initial_value "reduce_without_an_initial_value" "lo7_" 2107000;
 }

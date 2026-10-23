@@ -809,7 +809,12 @@ impl Decls {
             .filter(|(n, _)| {
                 !crate::builtins::members(name).any(|b| crate::builtins::member_name(b.sig) == n)
             })
-            .map(|(n, t)| format!("{n}?: {t}"))
+            // A value class key takes a plain object too, as its setter's parameter does
+            // (`mainTextureScale: { x: 4, y: 4 }`).
+            .map(|(n, t)| match self.values.contains_key(t.as_str()) {
+                true => format!("{n}?: {t}Like"),
+                false => format!("{n}?: {t}"),
+            })
             .collect();
         format!("{{ {} }}", props.join("; "))
     }

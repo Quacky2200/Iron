@@ -629,6 +629,19 @@ pub mod animation_component_api {
             let name = (!name.is_empty()).then_some(name);
             player(self, |p, _| p.is_playing(name)).unwrap_or(false)
         }
+
+        /// Removes it from its object: it stops posing it (another component, an `Animator`,
+        /// can take over).
+        pub fn destroy(self) {
+            player(self, |p, _| {
+                // Players are numbered by place, so the slot stays, empty and on no object.
+                *p = AnimationPlayer::new(ObjectId {
+                    index: u32::MAX,
+                    generation: u32::MAX,
+                });
+                p.play_automatically = false;
+            });
+        }
     }
 }
 

@@ -566,3 +566,20 @@ export function sceneSummary(): string {
   for (let i = 0; i < d.objects.length; i++) names += d.objects[i]!.name + ",";
   return `${d.objects.length}|${names}|${scene.toJson().includes("\"alpha\"")}|${d.name === scene.name}`;
 }
+
+/** What `examples/fog-white-room` needed: Like options, flag defaults, finds over handles. */
+export function whiteRoomShapes(): string {
+  const m = Material.create({ mainTextureScale: { x: 4, y: 2 }, color: new Color(0.9, 0.9, 0.9, 1) });
+  const controller = new AnimatorController().addParameter("grounded", "bool", true).addParameter("speed", "float", 0);
+  const kids = [new GameObject("A"), new GameObject("B"), new GameObject("C")];
+  const hit = kids.find((g) => g.name === "B");
+  const miss = kids.find((g) => g.name === "Z");
+  const longest = kids.reduce((a, b) => (b.name > a.name ? b : a));
+  const go = new GameObject("animated");
+  go.addComponent(Animation);
+  go.getComponent(Animation)?.destroy();
+  const model = Model.load("assets/none.glb");
+  const [first] = model.materials;
+  const clip = model.animations.find((a) => a.name === "Walk");
+  return `${m.mainTextureScale.x}|${m.mainTextureScale.y}|${controller.parameterAt(0).defaultValue}|${hit?.name}|${miss === undefined}|${longest.name}|${go.getComponent(Animation) === undefined}|${first === undefined}|${clip === undefined}|${model.animations.length}`;
+}

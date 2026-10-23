@@ -4,10 +4,12 @@
 //! JSON of the TypeScript: nodes, roots, materials, skins). `instantiate` builds the node tree as
 //! GameObjects with mesh renderers; asked before loading finishes, the nodes appear once it has.
 //!
-//! Not built: glTF animations (`Model.animations`), and the colliders option needs the physics
-//! side to call [`set_model_collider_hook`].
+//! The file's animations become clips (`Model.animations`, built by `iron_animation::gltf`), and a
+//! copy gets an `Animation` playing the first. The colliders option needs the physics side to
+//! call [`set_model_collider_hook`].
 
 use super::*;
+use iron_engine_api::animation::{AnimationRef, ClipRef};
 use iron_engine_api::assets;
 use iron_math::Q;
 use iron_scene::api::scene_api;
@@ -26,6 +28,8 @@ struct ModelData {
     description: Option<Value>,
     materials: Vec<MaterialRef>,
     meshes: Vec<MeshRef>,
+    /// The file's animations as clips (looping), paths from the copy's root.
+    animations: Vec<ClipRef>,
     /// Copies asked for before it loaded: the root and the `colliders` option.
     pending: Vec<(ObjectId, String)>,
 }
@@ -162,6 +166,84 @@ fn material_of(m: &Value) -> MaterialRef {
     r
 }
 
+/// The glTF's animations as clips, paths by node names from the copy's root.
+fn clips_of(d: &Value) -> Vec<ClipRef> {
+    let nodes = d["nodes"].as_array().cloned().unwrap_or_default();
+    let mut paths: HashMap<usize, String> = HashMap::new();
+    let mut stack: Vec<(usize, String)> = d["roots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r.as_u64().map(|r| (r as usize, String::new())))
+        .collect();
+    while let Some((index, prefix)) = stack.pop() {
+        let Some(node) = nodes.get(index) else {
+            continue;
+        };
+        let name = match node["name"].as_str() {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => format!("Node {index}"),
+        };
+        let path = prefix + &name;
+        for c in node["children"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_u64)
+        {
+            stack.push((c as usize, format!("{path}/")));
+        }
+        paths.insert(index, path);
+    }
+    let numbers = |v: &Value| -> Vec<f64> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_f64)
+            .collect()
+    };
+    d["animations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, a)| {
+            let name = match a["name"].as_str() {
+                Some(s) if !s.is_empty() => s.to_string(),
+                _ => format!("Animation {i}"),
+            };
+            // The channels' keys as numbers, kept while the clip borrows them.
+            let found: Vec<(&Value, &String)> = a["channels"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|ch| Some((ch, paths.get(&(ch["node"].as_u64()? as usize))?)))
+                .collect();
+            let keys: Vec<[Vec<f64>; 2]> = found
+                .iter()
+                .map(|(ch, _)| [numbers(&ch["times"]), numbers(&ch["values"])])
+                .collect();
+            let channels: Vec<iron_animation::gltf::Channel> = found
+                .iter()
+                .zip(&keys)
+                .map(
+                    |((ch, path), [times, values])| iron_animation::gltf::Channel {
+                        path,
+                        target: ch["path"].as_str().unwrap_or(""),
+                        interpolation: ch["interpolation"].as_str().unwrap_or("linear"),
+                        times,
+                        values,
+                    },
+                )
+                .collect();
+            let id = iron_animation::with_world(|w| {
+                iron_animation::gltf::clip_from_channels(w, &name, &channels)
+            });
+            ClipRef(u64::from(id.0))
+        })
+        .collect()
+}
+
 /// The host read the file: its description (the TypeScript's JSON), or `None` when it failed.
 /// Models asked for meanwhile are built now.
 pub fn model_loaded(m: ModelRef, description: Option<&str>) {
@@ -182,6 +264,7 @@ pub fn model_loaded(m: ModelRef, description: Option<&str>) {
                     .filter_map(|p| p["mesh"].as_u64())
                     .map(|id| MeshRef(id as u32))
                     .collect();
+                d.animations = clips_of(desc);
                 d.description = Some(desc.clone());
             }
             None => d.failed = true,
@@ -238,8 +321,13 @@ pub fn build_into(m: ModelRef, root: ObjectId, colliders: &str) {
 }
 
 fn build(m: ModelRef, root: ObjectId, colliders: &str) {
-    let Some((d, materials)) = with_model(m, |d| (d.description.clone(), d.materials.clone()))
-    else {
+    let Some((d, materials, animations)) = with_model(m, |d| {
+        (
+            d.description.clone(),
+            d.materials.clone(),
+            d.animations.clone(),
+        )
+    }) else {
         return;
     };
     let Some(d) = d else { return };
@@ -391,11 +479,22 @@ fn build(m: ModelRef, root: ObjectId, colliders: &str) {
             d.bones = bones;
         });
     }
+    // The file's animations play on the copy: the first by itself.
+    if let Some(first) = animations.first()
+        && AnimationRef::find_on(root).0 == 0
+    {
+        let a = AnimationRef::attach(root);
+        for c in &animations {
+            a.add_clip(*c, "");
+        }
+        a.set_clip(*first);
+    }
 }
 
 #[iron_api(
     namespace = "Model", quickjs,
-    handles(Model = ModelRef, GameObject = ObjectId, Mesh = MeshRef, Material = MaterialRef),
+    handles(Model = ModelRef, GameObject = ObjectId, Mesh = MeshRef, Material = MaterialRef,
+        AnimationClip = ClipRef),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
 )]
 pub mod model_api {
@@ -452,6 +551,19 @@ pub mod model_api {
                 .unwrap_or(MaterialRef(0))
         }
 
+        /// Its materials, in the file's order (after loading).
+        #[property]
+        pub fn materials(self) -> Vec<MaterialRef> {
+            with_model(self, |d| d.materials.clone()).unwrap_or_default()
+        }
+
+        /// The file's animations as clips that loop, with paths from a copy's root (after
+        /// loading). A copy plays the first by itself (its `Animation`).
+        #[property]
+        pub fn animations(self) -> Vec<ClipRef> {
+            with_model(self, |d| d.animations.clone()).unwrap_or_default()
+        }
+
         /// How many meshes it has, one per glTF primitive (after loading).
         #[property]
         pub fn mesh_count(self) -> f64 {
@@ -495,6 +607,7 @@ fn load_model(source: &str) -> ModelRef {
             description: None,
             materials: Vec::new(),
             meshes: Vec::new(),
+            animations: Vec::new(),
             pending: Vec::new(),
         });
         let m = ModelRef(s.models.len() as u32);

@@ -567,12 +567,13 @@ export function f(): number { return 1; }";
         .err()
         .unwrap();
         assert!(e.contains("sort over"), "{e}");
-        let e = lower::lower_source(
-            "export function f(xs: number[]): number { return xs.reduce((a, x) => a + x); }",
-        )
-        .err()
-        .unwrap();
-        assert!(e.contains("initial value"), "{e}");
+        // `reduce` with no initial value starts from the first element (M9-TS-3386).
+        assert!(
+            lower::lower_source(
+                "export function f(xs: number[]): number { return xs.reduce((a, x) => a + x); }",
+            )
+            .is_ok()
+        );
         let e = lower::lower_source(
             "export function f(xs: boolean[]): boolean | undefined { return xs.pop(); }",
         )

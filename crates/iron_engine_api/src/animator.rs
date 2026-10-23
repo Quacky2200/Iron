@@ -552,6 +552,20 @@ pub mod animation_controller_api {
             self
         }
 
+        /// Adds a parameter with a flag for its default (a `bool`'s `true`, as Unity's) and
+        /// returns the controller.
+        #[js_name = "addParameter"]
+        pub fn add_parameter_flag(
+            self,
+            name: &str,
+            type_name: &str,
+            default_value: bool,
+        ) -> ControllerRef {
+            let v = if default_value { 1.0 } else { 0.0 };
+            self.add_parameter(ParameterRef::create(name, type_name, v));
+            self
+        }
+
         /// Adds a state that plays a clip and returns the controller.
         #[js_name = "addState"]
         #[optional(opts)]
