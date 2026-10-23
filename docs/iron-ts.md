@@ -7,10 +7,13 @@ measurements and the design notes: [iron-ts-spike.md](research/iron-ts-spike.md)
 [iron-ts-classes.md](research/iron-ts-classes.md), [iron-ts-engine-boundary.md](research/iron-ts-engine-boundary.md).
 Design note for `Intl.DateTimeFormat` options (step I3a is built on it): [iron-ts-intl-datetime.md](research/iron-ts-intl-datetime.md).
 
-This is a **spike**. It compiles a typed subset of TypeScript (gameplay rules written as plain
-functions and classes) to a native object file. It is not wired into `iron`, the build scripts or
-the engine workspace: `tools/` is its own cargo workspace, so engine builds never see it. The
-engine still runs gameplay as JavaScript in QuickJS ([scripting.md](scripting.md)).
+This compiler is the engine's script backend. It compiles a typed subset of TypeScript (games written
+as ordinary classes, functions, components and React UI) to native code, either in process with the
+Cranelift JIT (`iron_app` loads `dist/game.irbundle`, built by `iron-build`) or to an object file
+(`--aot`). The QuickJS backend ([scripting.md](scripting.md)) is deprecated and runs only with
+`--force`. The move, its results and its limits are in [iron-ts-native.md](iron-ts-native.md); the
+benchmarks are in [benchmarks.md](benchmarks.md). The sections below were written during the spike and
+still describe the design.
 
 ## Running it
 
