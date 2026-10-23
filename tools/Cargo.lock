@@ -1422,6 +1422,7 @@ name = "iron_scenes"
 version = "0.1.0"
 dependencies = [
  "glam 0.34.1",
+ "iron_animation",
  "iron_api",
  "iron_engine_api",
  "iron_kinds",

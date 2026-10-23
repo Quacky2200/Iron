@@ -179,6 +179,7 @@ declare class Animator :: controller: AnimationController;
 declare class Animator :: crossFade(stateName: string, duration?: number, normalizedTime?: number): void;
 declare class Animator :: crossFade(stateName: string, options?: { duration?: number; normalizedTime?: number }): void;
 declare class Animator :: cullingMode: AnimatorCullingMode;
+declare class Animator :: enabled: boolean;
 declare class Animator :: getBool(name: string): boolean;
 declare class Animator :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class Animator :: getCurrentAnimatorStateInfo(): AnimatorStateInfo;
@@ -204,6 +205,7 @@ declare class Animator :: setTrigger(name: string): void;
 declare class Animator :: speed: number;
 declare class Animator :: static attach(object: GameObject): Animator;
 declare class Animator :: static findOn(object: GameObject): Animator;
+declare class Animator :: update(deltaTime: number): void;
 declare class AudioListener
 declare class AudioListener :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class AudioListener :: readonly gameObject: GameObject;
