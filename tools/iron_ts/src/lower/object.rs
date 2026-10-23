@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Object.keys / values / entries / assign / freeze / hasOwn`, the `in` operator, object spread and
 //! rest. The program is typed and closed, so the keys of an object are the fields of its struct and
 //! these are all resolved at compile time (`Object.keys(p)` is an array of constant strings).

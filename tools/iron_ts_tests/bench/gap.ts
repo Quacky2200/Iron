@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Two programs a collector with a sloppy root analysis gets wrong. In JavaScript both are fine
 // because an argument that has been evaluated stays alive until the call; the native code has to
 // keep it alive too.

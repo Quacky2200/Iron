@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cooking (`iron --cook [game]`): textures and models prepared ahead of time, so games
 //! load them without decoding images, making mip levels or parsing glTF.
 //!

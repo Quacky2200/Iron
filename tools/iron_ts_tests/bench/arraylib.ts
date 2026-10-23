@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The array library: pop shift unshift slice splice concat reverse sort fill indexOf lastIndexOf
 // findIndex at reduce, `length = n`, Array.from / of / isArray and `new Array(n)`.
 export interface Item {

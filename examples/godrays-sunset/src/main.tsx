@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // God rays: a high-rise flat at sunset. Floor-to-ceiling windows on the 25th floor look west
 // over a city; venetian blinds cover part of them. Over a minute the sun sinks from the
 // afternoon to the horizon: its beams through the mullions and the blinds' slats swing round

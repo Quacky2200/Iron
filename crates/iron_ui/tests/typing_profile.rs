@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Profiles typing into `examples/form` headlessly: the real bundle and stylesheet,
 //! keystrokes through `Interaction` and QuickJS like the app, then commits and the
 //! draw list. Ignored by default (needs `bun run build` and is slow in debug):

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Destructuring compiled by `iron_ts` (`bench/destructure.ts`). The expected numbers are what bun
 //! computes from the same file. Every test runs three times: normally, with a collection at every
 //! allocation, and with collection off. IDs are in TESTS.md (M9-TS-71..).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Gamepad glue: events for the game's `input` API (`__iron_input` in @iron/engine)
 //! and gamepad UI navigation (d-pad / left stick move focus, South clicks).
 

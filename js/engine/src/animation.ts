@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Animation, Unity's way: `AnimationCurve`s (keyframes with tangents) gathered into an
 // `AnimationClip`, each curve driving one channel of an object under the animated one
 // (its transform, or a number on one of its components). Two players:

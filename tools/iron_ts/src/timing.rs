@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where compiling a program spends its time, by phase (`iron --bench` reports it as start-up
 //! parts). Process-wide, because lowering and code generation run on worker threads; a phase is
 //! one clock read, and nothing is kept until [`enable`] is called.

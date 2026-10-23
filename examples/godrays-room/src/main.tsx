@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // God rays: a derelict hall on a late afternoon. The sun pours in through a tall window with a
 // cross mullion, through the louvres of a half-shuttered window and through a broken patch of
 // the roof, in beams (the light volume; G adds `VolumetricFogSettings.sharpDistance`) that land as bright shapes on

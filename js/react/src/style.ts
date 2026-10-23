@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Style properties understood by the engine (crates/iron_ui/src/style.rs).
 // Numbers are logical pixels; strings are CSS values.
 

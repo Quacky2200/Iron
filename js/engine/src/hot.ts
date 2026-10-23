@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // In-place reloads of the game's code (dev builds, where React and the engine live in a
 // vendor bundle that stays loaded). The engine wraps each load of the game's code in
 // `__iron_hot_begin()` / `__iron_hot_end()`:

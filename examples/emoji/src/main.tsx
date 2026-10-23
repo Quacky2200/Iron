@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Emoji parade: a spinner wheel picks an emoji, the red curtain opens and it comes on in one
 // of thirteen ways, strikes a pose in the spotlight while its name appears, the crowd reacts
 // (applause and cheers with cannons and balloons, boos and thrown tomatoes, gasps, aws, laughs), and it leaves in one of

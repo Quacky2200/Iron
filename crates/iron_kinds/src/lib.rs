@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The registry of component kinds: how the scene loader, `instantiate` and the editor make,
 //! save and load components without knowing their classes. A kind is a name (`Camera`, or a
 //! class a game registered) and a set of functions over the component's handle; whoever owns

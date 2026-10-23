@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The whole sine-circle demo component (`bench/sine_demo_full.ts`: the `SineDemo` class and its
 //! tweens, copied from commit 9dc2f51 with the single edit its header lists) compiled by
 //! iron_ts and driven by the Rust host against the declared engine API: a camera is made, the

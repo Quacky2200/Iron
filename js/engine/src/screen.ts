@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The window as scripts see it (Unity's `Screen`). Sizes are in UI pixels, the units
 // pointer events (`clientX`/`clientY`) and screen UI use: the window's pixels divided
 // by its DPI scale and the UI scale (`setUiScale`). The engine reports changes with

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Unit tests of the physics components (`M9-API-200..`): they work on `comp.rs` and the kinds
 //! directly; the compiled-program tests are in `tools/iron_ts_tests/tests/engine/physics.rs`.
 

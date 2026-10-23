@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The engine's handle classes from QuickJS: `GameObject`, `Transform`, `Camera`, `AnimationCurve`.
 //! The same state is read through the compiled-code shims. IDs are in TESTS.md (M9-API-*).
 use iron_api::qjs::HandleBox;

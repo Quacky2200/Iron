@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use iron_core::{Commit, NodeId, Value};
 use iron_ui::opcodes::*;
 use iron_ui::{DrawCmd, Quad, ROOT, Rect, Rgba, UiTree};

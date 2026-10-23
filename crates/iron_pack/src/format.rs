@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `.irpk` layout, version 1. Everything is little-endian; offsets are `u64` from the start of
 //! the pack (a pack may sit inside a larger file, as in an Android APK).
 //!

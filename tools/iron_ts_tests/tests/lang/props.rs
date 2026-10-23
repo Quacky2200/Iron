@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `@property` reflection tables (`bench/props.ts`): the generated `PROPS_<Class>` constants tell a
 //! host which fields are properties, where they are and what they hold, and the host reads and
 //! writes them with no script running. IDs are in TESTS.md (M9-TS-139..).

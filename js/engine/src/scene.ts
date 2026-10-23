@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // GameObjects and components, the s&box / Unity way. Rust owns the objects (crates/
 // iron_scene); scripts hold `GameObject` handles with numeric IDs and a mirror of each
 // object's name, parent and local transform, so reads need no round trip. Changes go

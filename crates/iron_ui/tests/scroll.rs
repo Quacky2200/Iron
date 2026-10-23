@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scrolling (M3-EVT-05): scroll offsets shift content (drawing and hit testing
 //! agree), the wheel, keys and focus scroll the right container, scrollbars show,
 //! drag and page, and scripts get `scroll` events.

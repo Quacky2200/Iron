@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Sprite particles and props: a pool of small world panels, each showing one Noto emoji, that
 // the effects and signature acts fly around (hearts, tears, bubbles, notes, snowflakes, a swung
 // pickaxe, a banana...). Unlike the line particles in fx.ts they have shapes and can be props.

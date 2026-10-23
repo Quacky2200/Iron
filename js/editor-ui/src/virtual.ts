@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The virtual list's arithmetic: which rows to mount for a scroll position, where to
 // scroll to show a row, and where keys move the selection. Rows have a fixed height.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The original Animator and AnimatorController under the native API's class names: the pieces are
 // classes (and a builder) instead of object literals, which the original reads as plain objects.
 import "./anim_player_prelude.ts";

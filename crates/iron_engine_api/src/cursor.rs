@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Cursor`: the OS mouse cursor (`js/engine/src/cursor.ts`): show or hide it, hold it in the
 //! window, and give it an image. The host reads [`state`] when [`version`] changed. UI elements'
 //! CSS `cursor` still wins where they set one.

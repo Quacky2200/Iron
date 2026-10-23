@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The hand-written parts of the particle, line, cloth and primitive components: JSON helpers
 //! for their kinds, what the host calls (`report_particles`, `take_particle_controls`,
 //! `pre_render_lines`) and the geometry of `LineRenderer`'s tube.

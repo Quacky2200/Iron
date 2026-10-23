@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl`, step I2: `Intl.NumberFormat` and `Number.prototype.toLocaleString`, on ICU4X's decimal,
 //! compact and (experimental) currency and percent formatters. Rounding, digit counts, grouping and
 //! sign display follow ECMA-402; scientific and engineering notation are assembled here because

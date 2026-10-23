@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use iron_script::conformance::capture_logs;
 use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime, Value};
 

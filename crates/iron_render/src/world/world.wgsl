@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The 3D world pass: lit meshes and instanced quads (planes) seen through a
 // perspective or orthographic camera. Colours are linear and premultiplied.
 

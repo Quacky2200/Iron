@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Window families and event domains (design section 3a): roots, domains, the cross-family guard and
 //! the setup exception. IDs are in TESTS.md (M9-API-14xx).
 use iron_api::Callback;

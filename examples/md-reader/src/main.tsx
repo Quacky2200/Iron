@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A Markdown reader for Iron's own docs, drawn by Iron's UI: a file tree of docs/ and the
 // repo's top-level .md files (toggled from the top bar), back / forward history (the
 // buttons, Alt+Left / Alt+Right, or the mouse's side buttons), links between docs and to

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Small pieces of the object model: the `HideFlags` constants (flags that keep an object out of
 //! the editor views and saved scenes; combine with `|`).
 

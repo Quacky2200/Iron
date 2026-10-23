@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compiled code calling the engine API beyond the scene (`bench/engine2.ts`, `iron_engine_api`):
 //! `Color` statics and methods, namespace properties (`Time`, `Screen`, `Gizmos.color`) and a
 //! handle class with a static (`Camera.attach`). IDs are in TESTS.md (M9-TS-593..).

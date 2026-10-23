@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Physics driven by a real script bundle in QuickJS, the way the app does it.
 
 use iron_physics::Physics;

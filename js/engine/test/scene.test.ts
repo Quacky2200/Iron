@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { Component, GameObject, Quaternion, register, Vector3 } from "../src/index.ts";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Map, Set, WeakMap and WeakSet in compiled code. Every exported function without parameters returns
 // a number or a string; `gen_collections_expected.ts` runs this file in bun and
 // `tests/collections.rs` compares.

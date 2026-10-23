@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A desktop-style menubar drawn by Iron's UI: click or Alt+letter opens a menu, hover
 // moves between open menus, arrows/Home/End/Enter/Escape navigate, a press outside
 // closes, and items' accelerators work from anywhere (menu.ts has the logic).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // TimeSince and TimeUntil on the game clock, and Time's real-time reads, compiled against the
 // native API and run in bun against js/engine/src/time.ts. The clock has run three frames of
 // 0.25 s (0.75 s) before the program starts.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Text style properties: their specified values (what a node sets) and computed
 //! values (after CSS inheritance down the tree).
 //!

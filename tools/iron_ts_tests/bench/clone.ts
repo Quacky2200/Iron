@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // structuredClone of data: nested objects and arrays, nullable fields, a recursive tree, typed
 // arrays, independence of the copy. Every exported function without parameters returns a string;
 // `gen_clone_expected.ts` runs this file in bun.

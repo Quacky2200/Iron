@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of layers.ts in bun against the original engine TypeScript
 // (layers.ts) and writes what they return.
 //   bun bench/gen_layers_expected.ts

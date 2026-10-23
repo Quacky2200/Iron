@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `createRoot(target?).render(<App/>)` for compiled games: the program hands its root element to
 //! the host with `UiRoot.mount(target, element)` and the host renders it with its
 //! `iron_ui_native::Runtime`. Target 0 is the screen; another number is a world panel's handle. A window

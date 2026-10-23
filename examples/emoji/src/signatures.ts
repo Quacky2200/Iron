@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Signature poses: what each emoji does when it's on stage that nobody else would. Tears for the
 // laughing face, a pickaxe for the diamond, a barking dog with a bone, a bulb for the thinker.
 // Each is an `Act` (motion plus cues) built from small helpers, using sprite particles (Noto

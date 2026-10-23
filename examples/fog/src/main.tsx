@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Fog: a misty clearing at dusk. A low sun shines through a slatted pergola and between the
 // trees, so light shafts cross the clearing; a lamp post's spot light makes a cone in the
 // mist; height fog lies in the valley and swallows the horizon. The camera drifts slowly.

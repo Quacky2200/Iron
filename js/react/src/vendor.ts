@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The vendor bundle of dev builds (`scripts/dev.ts`): React, the reconciler, the Fast
 // Refresh runtime, `@iron/engine` and `@iron/react`, loaded once and kept while the
 // game's own code (`game.js`, built with those as externals) reloads in place. The game's

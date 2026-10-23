@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The draw list: GPU-free paint commands produced by [`crate::UiTree::draw_list`]
 //! and consumed by the renderer (DESIGN.md §5.2 "Draw list shape").
 

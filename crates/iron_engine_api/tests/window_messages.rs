@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Messages between windows (design section 3b): the queue per domain, delivery order, requests and
 //! replies, broadcast. IDs are in TESTS.md (M9-API-14xx).
 use iron_api::Callback;

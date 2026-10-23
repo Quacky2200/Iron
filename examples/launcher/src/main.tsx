@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A game launcher mock-up, to see whether a store / launcher front end works in Iron's UI: the
 // examples' screenshots (gen-games.ts) as a cover-flow carousel or a grid, browsed with the
 // mouse (arrows, clicks, wheel), the keys (arrows, WASD) or a gamepad (d-pad, bumpers, left

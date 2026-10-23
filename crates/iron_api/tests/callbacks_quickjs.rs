@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Closure parameters from QuickJS: a JS function is kept (reference counted, so the collector
 //! sees it as a root) and called with the same arguments compiled code gives. IDs are in TESTS.md
 //! (M9-API-*).

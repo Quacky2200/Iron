@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CSS Color 4/5 functions beyond `rgb()` / `hsl()`: `hwb()`, `lab()`, `lch()`,
 //! `oklab()`, `oklch()`, `color(srgb | srgb-linear | display-p3 ...)` and
 //! `color-mix()`, plus s&box's `darken()`, `lighten()` and `mix()` (which work like

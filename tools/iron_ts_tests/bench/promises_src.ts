@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Promises, async/await, microtask order and timers. Each `async function t_NAME(): Promise<string>`
 // is a test; `gen_promises_program.py` adds the glue that stores its result (see promises.ts).
 

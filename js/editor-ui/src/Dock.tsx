@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Docking panels: splits with draggable splitters, tab groups, and tabs dragged onto
 // another group's middle (as a tab) or edges (a new split). The layout is data
 // (dock.ts) the parent keeps, so it can be saved and loaded as JSON. Drags use pointer

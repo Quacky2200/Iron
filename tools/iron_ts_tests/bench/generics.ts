@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Generics by monomorphisation: functions, classes, interfaces and aliases with type parameters.
 // Every exported function without parameters returns a string; `gen_generics_expected.ts` runs
 // this in bun.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Arcade: a small game with a React HUD. Steer the ball (WASD / arrow keys / left stick)
 // to collect coins (1 point) and gems (5) before the round ends; quick pickups build a
 // combo that multiplies points. Leave the controls alone and it plays itself.

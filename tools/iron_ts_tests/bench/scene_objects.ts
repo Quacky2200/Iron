@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // GameObject and Transform members (hierarchy, world and local transforms, directions, points),
 // compiled against the native API and run in bun against js/engine/src/scene.ts. The scene stores
 // floats, so numbers are printed to four decimals.

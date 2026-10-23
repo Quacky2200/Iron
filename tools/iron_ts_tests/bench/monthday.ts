@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Temporal.PlainYearMonth and Temporal.PlainMonthDay. Every exported function without parameters
 // returns a string; `gen_monthday_expected.ts` runs this file in bun.
 

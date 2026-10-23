@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `register(Class)` as an ordinary run-time call (in a branch, a loop, a function, after an
 //! `await`) and the order the registrations happen in. IDs are in TESTS.md (M9-TS-3211..).
 use iron_ts::jit::{Game, JitOptions, compile_and_load};

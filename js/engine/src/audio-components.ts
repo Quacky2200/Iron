@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Unity-style audio components over the handles in audio.ts: an `AudioSource` plays
 // sounds from its GameObject (an emitter that follows it) and the `AudioListener` puts
 // the player's ears on its object (usually the camera).

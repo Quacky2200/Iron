@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The React side: what the emoji panel shows (a Noto SVG, or a face drawn in code whose eyes
 // follow the mouse), the caption, the spinner wheel and the curtains. The director writes to
 // small stores; components read them.

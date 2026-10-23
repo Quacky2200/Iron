@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The docking layout as data: splits (rows or columns of children with size fractions)
 // and tab groups at the leaves. Every change returns a new layout; the layout saves to
 // JSON and loads back. Rects are computed here too, the same way the flex layout in

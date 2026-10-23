@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // react-reconciler host config: turns React's tree mutations into UI ops.
 //
 // Ops are collected during render/commit and sent to the engine with ONE

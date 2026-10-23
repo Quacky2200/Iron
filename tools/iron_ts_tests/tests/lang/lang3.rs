@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! TypeScript-semantics fixes: `flat(depth)` with a depth known only at run time, `this` in
 //! object literal methods and accessors, `Object.assign` into objects by key, string array
 //! parameters of host functions. The programs of `bench/lang3_cases.ts` run in the normal, stress

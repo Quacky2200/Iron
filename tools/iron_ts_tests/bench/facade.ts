@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The TypeScript `@iron/engine` shapes the examples use, over the native API: object-valued
 // namespace properties and `new GameObject(name, { .. })` option keys. The Rust test
 // (tests/engine_api/facade.rs) reads the same state back.

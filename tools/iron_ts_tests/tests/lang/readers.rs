@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! TypeScript the md-reader and launcher examples use, compiled as written: intersections and
 //! recursive object aliases, a discriminated union whose variants give a field different types,
 //! `filter(Boolean)`, hoisted function declarations, `x || null`, `s ?? 1` as a `string | number`,

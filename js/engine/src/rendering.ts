@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The engine's rendering components (M5.a): cameras and planes, plus camera helpers.
 // Like Unity's, they're added to GameObjects (`go.addComponent(Camera)`) and follow
 // the object's transform. Each sends its settings to the engine as `render.*` ops when

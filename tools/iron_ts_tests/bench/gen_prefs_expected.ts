@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of prefs.ts in bun against the original engine TypeScript
 // (prefs.ts) and writes what they return.
 //   bun bench/gen_prefs_expected.ts

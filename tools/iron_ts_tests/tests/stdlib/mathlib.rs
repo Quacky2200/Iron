@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Math library surface and the operators around it compiled by `iron_ts`
 //! (`bench/mathlib.ts`). The expected values are what bun computes from the same file, compared
 //! bit for bit (the sign of zero counts; NaN equals NaN). IDs are in TESTS.md (M9-TS-85..).

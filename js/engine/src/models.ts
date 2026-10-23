@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // glTF models (`.glb` / `.gltf`), Unity-prefab style: `Model.load` reads one (the engine
 // uploads its meshes and textures), and `instantiate` builds its node tree as
 // GameObjects with MeshRenderers, optionally with mesh colliders.

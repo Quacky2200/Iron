@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Engine objects made the way gameplay code writes them: `new GameObject("Main Camera", {
 //! position: new Vector3(0, 0, 10) })` and `go.addComponent(Camera, { orthographic: true })`.
 //!

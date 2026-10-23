@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Dev builds with React Fast Refresh. Run in a game's folder (its `bun run dev`):
 //
 //   bun ../../scripts/dev.ts          build, then rebuild the game's code on every edit

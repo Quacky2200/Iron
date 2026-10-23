@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Promises in the lowerer: routing `await`, `.then/.catch/.finally`, `Promise.*` and the value an
 //! async function returns to the per-type helpers `asyncs.rs` writes. Only here are the types
 //! known: `p.then(v => v + 1)` is `__then$number$number` because the callback returns a number.

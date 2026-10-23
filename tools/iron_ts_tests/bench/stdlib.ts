@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The standard library in compiled code: `typeof`, `Number` statics, `Math` extras, `Array`
 // methods. Every exported function without parameters returns a number or a string;
 // `gen_stdlib_expected.ts` runs this file in bun and `tests/stdlib.rs` compares.

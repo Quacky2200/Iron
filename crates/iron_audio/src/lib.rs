@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Audio for scripts: kira driven by ops (DESIGN.md §8.2).
 //!
 //! Like physics, scripts pick numeric IDs for sounds, playing instances, buses and

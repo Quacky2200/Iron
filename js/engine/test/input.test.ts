@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { Cursor, CursorLockMode, input, Vector2 } from "../src/index.ts";

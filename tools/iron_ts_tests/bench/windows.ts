@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Window API from compiled code: options objects, static properties, listeners and
 // `createRoot(win)`. The Rust test (tests/ui/windows.rs) plays the host (opened, resized, closed).
 

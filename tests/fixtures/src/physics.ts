@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M4-PHY-02: a component drops a ball onto a floor through @iron/engine's `physics`
 // and counts collisions. The Rust test runs ops, steps and sends the batches back,
 // then reads `__physics_log()`.

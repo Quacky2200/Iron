@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Symbol values: Symbol(), description, toString, identity, Symbol.for, Symbol.keyFor, typeof.
 // Every exported function without parameters returns a string; `gen_symbols_expected.ts` runs
 // this file in bun.

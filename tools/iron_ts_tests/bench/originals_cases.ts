@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Language features the original (QuickJS-era) example sources need, for tests/lang/originals.rs.
 // Each case (split at `//## name`) defines `function t(): string`; the test compiles it with
 // iron_ts (normal, GC-stress, GC-off) and compares the result with bun's

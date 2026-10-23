@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Asset packs: how a release build ships its assets (design: `docs/research/iron-asset-packs.md`).
 //!
 //! - [`format`]: the `.irpk` byte layout (header, table of contents, chunks), little-endian.

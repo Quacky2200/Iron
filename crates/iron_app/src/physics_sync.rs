@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Keeps GameObjects and their physics bodies together (`Rigidbody` / collider
 //! components attach a body to their object with `physics.attach`): scripts moving an
 //! object move its body before the step, and bodies the step moved move their objects.

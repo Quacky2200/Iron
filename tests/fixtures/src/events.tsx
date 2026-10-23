@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M3-EVT-02/03/04: UI events from Rust reach React handlers. The button counts its
 // clicks, stops them from bubbling, prevents pointerdown (so it doesn't steal focus)
 // and focuses the field through a ref. Clicks elsewhere count on the panel. The

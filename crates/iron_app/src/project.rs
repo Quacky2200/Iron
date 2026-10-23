@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The editor's file operations on the project folder: list a folder, copy files in
 //! from outside (what was dropped on the window), move within. Paths from scripts are
 //! relative to the project and checked like asset paths (`iron_core::resolve_asset`:

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The rendering data API from QuickJS: components and assets are plain data the renderer reads.
 //! IDs are in TESTS.md (M9-API-*).
 mod common;

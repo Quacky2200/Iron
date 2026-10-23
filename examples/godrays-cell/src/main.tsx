@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // God rays: the cell. A medieval basement prison cell of rough stone, lit only by daylight
 // through a small barred window high in the back wall. The sun slants down through the
 // dusty air in beams from a fine light volume (`VolumetricFogSettings.resolution`), the bars' shadows striping the beams and the pool of light on

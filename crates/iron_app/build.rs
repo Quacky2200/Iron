@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The main thread runs the game's compiled code and the UI reconciler, which recurse over the
 // element tree (a long Markdown page in `examples/md-reader` nests a few hundred calls deep).
 // Windows gives a program's main thread 1 MB unless the executable asks for more; a debug build's

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strings: WTF-8 bytes with JavaScript's UTF-16 behaviour (design: `docs/research/iron-ts-strings.md`).
 //!
 //! A string is stored as UTF-8, plus the three-byte form of a lone surrogate (WTF-8), so every

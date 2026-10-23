@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Clipping (M3-EVT-05, M3-EVT-01): `overflow` clips children to the padding box with
 //! inner radii, `clipPath` / `clip` clip the element itself, the draw list brackets
 //! the right commands with `PushClip` / `PopClip`, and hit testing matches.

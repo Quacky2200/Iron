@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Quaternion` (Euler angles in degrees) and `Matrix4x4` (column-major, right-handed, depth 0 to
 //! 1) as `js/engine/src/math.ts` has them, computed in the same order.
 //!

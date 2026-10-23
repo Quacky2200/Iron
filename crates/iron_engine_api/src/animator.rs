@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The script API of the animation controller and the `Animator` component: `AnimationParameter`,
 //! `AnimationCondition`, `AnimationTransition`, `AnimationBlendTree`, `AnimationNode` (a state),
 //! `AnimationController`, the chained `AnimationBuilder` that makes them, and `Animator`. The design

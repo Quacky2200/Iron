@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { Debug, input, Log, Random, Rng, Task, Time, TimeSince, TimeUntil, Vector3 } from "../src/index.ts";

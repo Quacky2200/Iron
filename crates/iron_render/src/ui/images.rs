@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Background images: loading `url(...)` files from the game's folder into
 //! textures (cached by URL), and CSS `background-size` / `background-position`.
 //! SVG images (and inline `<svg>` elements) are rasterized with resvg at the size

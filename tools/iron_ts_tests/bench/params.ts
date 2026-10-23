@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Default, optional and rest parameters, and spread in array literals and calls.
 export interface Item {
   v: number;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compiles the zombie game's sim.ts and the programs in `bench/` with `iron_ts` and links the
 //! objects into this crate's targets.
 //!

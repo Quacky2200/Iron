@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Stack values: value-class objects that never leave their function become scalars
 //! (`iron_ts::sroa`). IDs are in TESTS.md (M9-TS-720..).
 

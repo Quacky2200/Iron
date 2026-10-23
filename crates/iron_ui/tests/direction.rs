@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Right-to-left text (M3-TXT-09): CSS `direction`, the `dir` attribute, `text-align`
 //! start/end, and mixed-direction lines.
 

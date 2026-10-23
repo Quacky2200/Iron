@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Splines: Iron's `Spline` in two halves.
 //
 // Left, splines that move: a closed ribbon whose knots drift, ridden by a car that goes by

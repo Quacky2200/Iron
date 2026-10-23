@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Compiled components driven by the Rust host (`iron_ts_rt::NativeHost`) with no script engine:
 // `class X extends Component` plus `register(X)`. The host creates, updates and destroys them;
 // the components move their GameObject through the real scene API.

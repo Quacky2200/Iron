@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M5.a2 2D showcase: a side-on platformer. An orthographic camera follows a fox
 // (a Rigidbody2D with a CapsuleCollider2D and an animated SpriteRenderer) across tiled
 // ground (an EdgeCollider2D), stone platforms (BoxCollider2D) and a stack of crates

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Render scale: the world drawn into a texture smaller (or larger) than the target, then
 //! stretched onto it with bilinear filtering. Screen UI is drawn afterwards, at full size.
 

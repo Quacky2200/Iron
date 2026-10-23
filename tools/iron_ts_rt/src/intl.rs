@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl`, step I1: `normalize`, `localeCompare`, `Intl.Collator` and locale-aware case mapping, on
 //! ICU4X (compiled data for every locale). The locales a program may use come from the host with
 //! `ts_rt_intl_set_locales` (a comma-separated list; the first is the default, `en-US` when never

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! What only the editor (`iron_editor`) does: where its UI lives, the project folder,
 //! feeding the log to its console (`__iron_log`) and the `editor.*` ops (opening code,
 //! project files). In `iron` the ops are refused, so games can't use them.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Draws `iron_ui` draw lists: rounded boxes, borders, gradients, box shadows,
 //! blur filters, group opacity and backdrop blur (DESIGN.md §5.2).
 //!

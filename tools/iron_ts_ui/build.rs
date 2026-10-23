@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 include!("../symbols_build.rs");
 
 fn main() {

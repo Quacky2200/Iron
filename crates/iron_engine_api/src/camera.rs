@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Camera`: a component on a GameObject. Scripts make one with `Camera.attach(go)` (what
 //! `go.addComponent(Camera, { .. })` compiles to) and set its properties; the host reads the cameras
 //! with [`cameras`] when it draws.

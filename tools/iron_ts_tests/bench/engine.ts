@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Scripts calling the engine API directly: `Demo.fn(..)` is a call of the Rust shim
 // `iron_Demo_fn`, with the numbers converted to the engine's own widths and `Entity` handles
 // passing through as plain 64-bit ids. (The API is `iron_demo_api`, written with `#[iron_api]`.)

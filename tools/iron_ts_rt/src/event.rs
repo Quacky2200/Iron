@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The microtask queue and the timers behind `Promise`, `queueMicrotask`, `setTimeout` and
 //! `setInterval`. No thread and no OS event loop: the host decides when script runs.
 //!

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! String-literal unions as real types: locals, parameters, returns, fields, arrays, maps,
 //! `switch` and `===`, and optional fields assigned to locals. The programs of
 //! `bench/unions_cases.ts` run in the normal, stress GC and collection-off modes and are compared

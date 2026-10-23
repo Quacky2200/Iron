@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Real-world light units (Unity 7's and HDRP's). A sunlit stone courtyard on a clear day (the sun
 // at 100000 lux, the sky some 5000 nits) and, through a doorway, a hall lit by three lamps
 // (1500 lumens each): about ten stops darker, as in life. The camera walks in from the sun

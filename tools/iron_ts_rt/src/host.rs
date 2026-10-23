@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The engine side of compiled components: a class table (from the generated bindings'
 //! `classes()`), one rooted instance per component and the lifecycle the QuickJS-based
 //! `ComponentHost` has, with no script engine in the loop.

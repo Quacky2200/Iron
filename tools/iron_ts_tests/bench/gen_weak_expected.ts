@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of weak.ts in bun and writes what they return.
 //   bun bench/gen_weak_expected.ts
 import * as m from "./weak.ts";

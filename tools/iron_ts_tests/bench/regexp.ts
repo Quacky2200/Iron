@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Regular expressions in compiled code: literals, `new RegExp`, `test` and `exec`, `lastIndex`,
 // flags, named groups, match objects. Every exported function without parameters returns a string;
 // `gen_regexp_expected.ts` runs this file in bun and `tests/regexp.rs` compares.

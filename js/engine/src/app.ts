@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The game and the machine it runs on (Unity's `Application` and `SystemInfo`). The
 // engine installs `globalThis.__iron_info` before the game's code runs: the game's
 // manifest (its `package.json`: `name`, `version` and an `iron` section with `title`,

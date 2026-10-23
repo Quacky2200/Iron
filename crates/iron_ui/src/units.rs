@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Relative lengths and math functions, resolved to pixels during restyle (like
 //! `var()`): `em`, `rem`, `vw`, `vh`, `vmin`, `vmax` (plus the `d`/`s`/`l` viewport
 //! variants) and `calc()`, `min()`, `max()`, `clamp()`. The result is plain CSS text

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Shapes: Iron's GDI-style 2D drawing in one place. Each shape is a LineRenderer2D (an
 // outline, a fill, or both) with points from `Shapes`, labelled with a TextMesh. The stars
 // show the two fill rules; the last shape turns to show outlines and fills follow their object.

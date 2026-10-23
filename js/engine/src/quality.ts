@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Rendering quality (Unity's `QualitySettings`): named levels (Low / Medium / High /
 // Ultra) that set anti-aliasing, render scale and shadows together, and each setting on
 // its own. Each level also carries the render pipeline's settings (Unity 7's URP asset per

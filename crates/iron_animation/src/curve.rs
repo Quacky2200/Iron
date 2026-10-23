@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Keyframes and curves, as `AnimationCurve` in `js/engine/src/animation.ts`: keys joined by cubic
 //! Hermite segments shaped by their tangents, wrap modes before and after.
 

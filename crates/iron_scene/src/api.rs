@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The scene's script API, declared once with `#[iron_api]` (see `docs/iron-api.md`): the
 //! `Scene` namespace of `GameObject` handles and `Vector3` / `Quaternion` values. It sits next to
 //! the op-based `ScriptScene`, which keeps working; this is what compiled scripts call directly.

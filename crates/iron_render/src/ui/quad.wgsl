@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Iron UI quads: rounded boxes with borders and fills (solid or gradient),
 // and analytic outer / inset box shadows. One instance per primitive.
 //

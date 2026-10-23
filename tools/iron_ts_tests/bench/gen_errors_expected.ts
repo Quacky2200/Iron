@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of errors.ts in bun and writes what they return (an uncaught
 // exception as `{ "threw": "<name>: <message>" }`) for `tests/errors.rs`.
 //   bun bench/gen_errors_expected.ts

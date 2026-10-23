@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of random.ts in bun against the original engine TypeScript
 // (random.ts) and writes what they return.
 //   bun bench/gen_random_expected.ts

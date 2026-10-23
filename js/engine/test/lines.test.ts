@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { Color, GameObject, LineRenderer, LineRenderer2D, MeshRenderer, Vector2, Vector3 } from "../src/index.ts";

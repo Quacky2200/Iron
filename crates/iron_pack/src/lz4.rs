@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The LZ4 *block* format (no frame header), in safe Rust: a greedy single-hash compressor and a
 //! bounds-checked decompressor. Output is standard LZ4 (any LZ4 block decoder reads it, and this
 //! decoder reads blocks made by `lz4_flex` / liblz4), so a faster or stronger compressor can

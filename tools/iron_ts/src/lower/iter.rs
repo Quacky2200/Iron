@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Well-known symbols as member names and the iterator protocol for classes: `[Symbol.iterator]()`
 //! is a method with the internal name `@@iterator`; `for...of`, spread and `Array.from` call it and
 //! then `next()` until `done`. The result is an `IteratorResult<T>` object (`done`, `value`) of the

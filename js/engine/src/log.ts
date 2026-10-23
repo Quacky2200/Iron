@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Logging the way Unity (`Debug.Log`), s&box (`Log.Info`) and C# (`Console.WriteLine`)
 // spell it. Everything goes to the engine's log through `console`, so it shows in the
 // terminal (and the editor console later). Values print readably: vectors through

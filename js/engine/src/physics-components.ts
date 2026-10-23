@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Physics as components on GameObjects, the Unity way: a `Rigidbody` makes an object
 // simulated; `BoxCollider`, `SphereCollider`, `CapsuleCollider` and `MeshCollider`
 // give it shape (an object with colliders and no Rigidbody is static). The engine moves

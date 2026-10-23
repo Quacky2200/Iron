@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared setup: a QuickJS context with the whole native API and a current scene.
 #![allow(dead_code)]
 use iron_scene::{Scene, api::enter};

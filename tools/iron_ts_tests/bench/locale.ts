@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Intl.Locale: parsing, parts, extension keywords, options, maximize and minimize. Every exported
 // function without parameters returns a string; `gen_locale_expected.ts` runs this file in bun.
 

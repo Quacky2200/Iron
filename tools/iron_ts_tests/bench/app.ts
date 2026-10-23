@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Application and SystemInfo, compiled against the native API and run in bun against
 // js/engine/src/app.ts. The prelude sets the game's manifest and the machine.
 

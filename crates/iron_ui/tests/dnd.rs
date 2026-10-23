@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Drag and drop (M5-DND): `draggable` elements, the drag events and their order,
 //! accepting drops by preventing `dragover`, cancelling, the drag image, and files
 //! dragged in from the system. The script side is in `js/react/test/events.test.tsx`.

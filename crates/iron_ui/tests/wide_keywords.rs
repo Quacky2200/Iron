@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CSS-wide keywords (M3d step 1): `initial`, `inherit`, `unset` and `revert` on any
 //! property, inline or from stylesheets, for inherited and non-inherited properties.
 

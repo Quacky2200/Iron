@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Top-level `await`: the module's code runs as an implicit async function started by `ts_init`.
 //! The programs of `bench/tla_cases.ts` run (init, then the event loop) in the normal, stress GC
 //! and collection-off modes and are compared with bun (`bench/gen_tla_expected.ts`). IDs are in

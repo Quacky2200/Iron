@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The analog face: three rings sweep round with the seconds, minutes and hours (`Shapes.arc`,
 // round-capped strokes) and unwind when they come full circle; the hands are closed splines
 // (leaf shapes, filled) turned by their objects; the second hand ticks with a little overshoot,

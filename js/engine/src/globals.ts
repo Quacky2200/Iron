@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Globals provided by the Iron script runtime (crates/iron_script).
 // Hand-written for M1; to be generated from Rust later.
 

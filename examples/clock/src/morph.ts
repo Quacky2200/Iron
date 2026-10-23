@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The morphing face, after Android's Material clock: each digit is one thick, round-capped
 // stroke, and when it changes it morphs into the next (a 1 bends into a 2). Every glyph is a
 // spline through a few knots in a 1 x 2 box (corner knots are `linear`), resampled by distance

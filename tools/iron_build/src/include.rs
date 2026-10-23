@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which files of a game folder a packaged build takes: `include` / `exclude` of `project.json`
 //! (paths, folders, globs), the dynamic path families the code builds, and what the code names.
 //! Shared by `iron-build build` (the report and `dist/assets.plan`) and `package`.

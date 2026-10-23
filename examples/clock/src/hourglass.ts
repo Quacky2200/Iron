@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The sand timer: an hourglass that empties over each minute and turns over when the minute
 // changes. The sand in each bulb is a filled shape cut to the glass at its level (the top one
 // dips in the middle as it drains, the bottom one heaps into a mound), a thin stream falls

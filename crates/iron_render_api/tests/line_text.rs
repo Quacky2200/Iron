@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `LineRenderer2D` fills and draw order, and the `TextMesh` component, as data (the host reads
 //! the registries; nothing draws here).
 use iron_api::Handle;

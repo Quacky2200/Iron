@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Generators by source rewriting. A generator body is a function that runs on its own native stack
 //! (a coroutine, `iron_ts_rt/src/coro.rs`). Before parsing, every `function*` / `*method()` is
 //! rewritten so the body becomes a closure handed to a per-type generator class:

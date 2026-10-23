@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Writes house.glb, the glTF test model (M5-GLB-01), next to this script.
 
 A textured box ("House", 1 m) with a two-part roof ("Roof": a red pyramid without

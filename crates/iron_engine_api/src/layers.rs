@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `LayerMask`: the 32 render layers. Unity's built-in names come first; the game names the rest in
 //! its `package.json` (`"iron": { "layers": { "8": "Player" } }`), which the host passes to
 //! [`set_game_layers`]. Masks are numbers (a bit per layer), like `js/engine/src/layers.ts`.

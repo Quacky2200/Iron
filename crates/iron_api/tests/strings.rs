@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strings across the boundary: `&str` parameters read from a script string object, `String`
 //! results handed back through a per-thread buffer. IDs are in TESTS.md (M9-API-*).
 use iron_api::{Ty, iron_api};

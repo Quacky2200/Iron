@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The bound `Pose` against the string-keyed one it replaced (`legacy_pose.rs`): random hierarchies,
 //! clips, weights and times, with the hierarchy edited between frames, must give the same
 //! transforms, `active` flags and component writes, bit for bit.

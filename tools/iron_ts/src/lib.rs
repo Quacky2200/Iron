@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron_ts`: an ahead-of-time compiler for Iron's TypeScript gameplay code.
 //! TypeScript (oxc) -> typed Iron IR -> Cranelift object file. See `docs/research/iron-ts-spike.md`.
 

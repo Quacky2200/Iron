@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Inline SVG (M3d step 5.1b): an `svg` element is a box; the SVG elements inside it
 //! are tree nodes (so selectors, inheritance of styles and transitions work), which
 //! the tree serializes back to SVG markup with their computed presentation properties

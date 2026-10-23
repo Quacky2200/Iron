@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The parallel update against the update in turn.
 
 use crate::animator::AnimatorPlayer;

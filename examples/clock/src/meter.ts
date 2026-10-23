@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The meter face: a mileage counter with the case taken away. Each digit sits on an invisible
 // drum and rolls forward to the next, carrying 9 to 0 like the real thing; the last one creeps
 // round all the time, as on a water meter. Digits fade as they turn away from the front, and

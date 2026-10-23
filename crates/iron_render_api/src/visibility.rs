@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Renderer.isVisible` (Unity's): whether a renderer was seen in the last frame drawn, by a
 //! camera or as a shadow caster whose shadow can fall in a view. Watching costs the renderer a
 //! test per view, so only renderers a script has asked about are watched: the first question

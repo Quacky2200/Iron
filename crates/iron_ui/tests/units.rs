@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Relative units and math in styles (M3d step 1): `em`, `rem`, viewport units and
 //! `calc()` / `min()` / `max()` / `clamp()` resolve at restyle, from inline styles and
 //! stylesheets, and update when the font size or the window size changes.

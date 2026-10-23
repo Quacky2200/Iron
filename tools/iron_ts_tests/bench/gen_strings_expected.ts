@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of strings.ts in bun and writes what they return, for
 // `tests/strings.rs` to compare with the compiled code. A string is its UTF-16 units.
 //   bun bench/gen_strings_expected.ts

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M9-TS-1511
 //
 // The compiler embeds the `Ui` manifest (so JSX needs none from the caller); it must not drift

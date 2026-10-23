@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The engine's script API beyond the scene, declared with `#[iron_api]`: `Color`, `Time`, `input`,
 //! `Gizmos`, `Camera`, `Screen`, `QualitySettings` and `Window`. Each module keeps its state per thread and
 //! has plain Rust functions for the host (the app) to feed or read; scripts, compiled or in

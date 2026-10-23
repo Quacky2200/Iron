@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The math types as JavaScript classes in QuickJS (`iron_math::register_quickjs`): constructors
 //! through `create`, overloads by argument count, statics, getters and methods. IDs are in
 //! TESTS.md (M9-API-46..).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Language leftovers for tests/lang/lang2.rs: `for...in` over arrays, `Object.assign` into
 // dictionaries and objects, setters in object literals, narrowing across closures, `in` and
 // `instanceof` narrowing of unions, truthiness narrowing, `flat(depth)`. Each case (split at

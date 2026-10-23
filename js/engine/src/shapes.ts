@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // GDI-style shape outlines for `LineRenderer2D.points`: rectangles, ellipses, arcs, pies,
 // polygons, Béziers and cardinal splines. The maths is native (`iron_math::outlines`, the same
 // functions compiled games call); the app installs it as the global `Shapes`. y is up, angles are

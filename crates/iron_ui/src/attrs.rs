@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Element attributes and interaction state, as seen by CSS selectors.
 
 use iron_core::Value;

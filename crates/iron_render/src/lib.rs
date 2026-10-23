@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! GPU access through wgpu: device setup, window surfaces and offscreen targets.
 //!
 //! This crate doesn't depend on winit; anything wgpu accepts as a surface target

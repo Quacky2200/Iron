@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // WeakRef, WeakMap and WeakSet. Weak references keep their target here (a collector may), so
 // the programs only look at what is still reachable. Every exported function without parameters
 // returns a string; `gen_weak_expected.ts` runs this file in bun.

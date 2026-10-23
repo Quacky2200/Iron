@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Top-level `await` across modules: a module that imports one with a top-level `await` runs
 //! after it has finished, and a module that does not depend on it runs meanwhile (ECMAScript's
 //! order). The cases of `bench/tla_modules_cases.txt` are bundled, run in the normal, stress GC

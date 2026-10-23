@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // God rays: the lift. A dark hotel corridor late at night: a carpet, doors to rooms, the
 // green glow of an exit sign. At the end of it the lift is coming: the lamps over its doors
 // count the floors down. It arrives and its doors slide open: a thin sliver of hard white

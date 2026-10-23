@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Physics for compiled scripts: rigid bodies, colliders and ray queries over `iron_physics`,
 //! declared with `#[iron_api]` (design: `docs/research/iron-native-physics.md`).
 //!

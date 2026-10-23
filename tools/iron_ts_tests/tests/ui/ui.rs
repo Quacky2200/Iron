@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compiled TSX components rendered by the native reconciler (`bench/ui.ts`): JSX, hooks, keyed
 //! lists and events written as ordinary TypeScript, run through `iron_ts_ui` and `iron_ui_native`
 //! into a real `UiTree`. Each test runs normally and with a collection at every allocation.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // switch (numbers, enums, string unions, fall-through, default in the middle) and enums.
 export enum Dir {
   Up,

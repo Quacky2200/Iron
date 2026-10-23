@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Sound effects: the WAV files in assets/sfx, made by tools/make_sfx.py.
 
 export const NAMES: string[] = [

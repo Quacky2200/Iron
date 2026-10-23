@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Closures given to the engine: `input.onKeyDown((key) => ...)`.
 //!
 //! A shim for a function with a closure parameter wraps the script closure in a [`Callback`]. The

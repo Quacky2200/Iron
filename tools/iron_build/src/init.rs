@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron-build init [<dir>]`: writes a default `project.json` whose templates take their values
 //! from the person running it (`"title": "${firstName}'s Game"`), a minimal `src/main.ts` when the
 //! folder has no `src/`, and prints what the templates evaluate to right now. See

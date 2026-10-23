@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The multi-window platform path, driven by the fake platform (no display, no GPU).
 
 use std::collections::BTreeSet;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Temporal (ISO calendar): Duration, PlainDate, PlainTime, PlainDateTime, Instant. Every exported
 // function without parameters returns a string; `gen_temporal_expected.ts` runs this file in bun.
 

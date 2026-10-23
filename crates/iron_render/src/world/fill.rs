@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Filled shapes for [`WorldView::fills`](super::WorldView::fills): a closed polygon
 //! tessellated into triangles (lyon), with GDI's two fill rules, so self-crossing outlines
 //! (a star, a figure eight) fill the way WinForms fills them.

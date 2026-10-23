@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The rainbow face: lots of colour. Seven bands chase each other round the outside, sixty
 // ticks run round the hue wheel and light up as the seconds pass, the hands slowly cycle
 // through the colours, confetti orbits the dial, and each character of the time below has a

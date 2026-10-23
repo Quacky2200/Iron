@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Post-processing for the world pass: with bloom, exposure or tonemapping on, the world
 //! draws into an HDR texture ([`HDR_FORMAT`]), whose bright parts are blurred down and up
 //! a chain of half-size textures and added back as it's copied to the target, with

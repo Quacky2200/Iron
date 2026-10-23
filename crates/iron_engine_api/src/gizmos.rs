@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Gizmos`: immediate-mode debug lines. A script clears, sets the colour, draws lines and calls
 //! `present(camera)`; the host takes the finished frame with [`take_frame`] and draws it as thin
 //! lines, so no mesh is built in script each frame.

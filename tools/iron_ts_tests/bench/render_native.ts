@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The native rendering data API from compiled code: lights, meshes, materials, textures,
 // sprites, mesh renderers, LOD groups and the camera extras. The Rust test
 // (tests/engine_api/render_native.rs) reads the registries the renderer would.

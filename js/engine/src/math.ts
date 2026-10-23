@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Value types for gameplay code, named and behaving like Unity's (and s&box's):
 // `Vector2`, `Vector3`, `Vector4`, `Vector2Int`/`Vector3Int` (points on a grid),
 // `Quaternion` (Euler angles in degrees), `Rect`, `RectInt`, `Bounds`, `Ray`, `Plane`,

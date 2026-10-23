@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The sundial face: a garden sundial under a sun placed for today's date and the time. The
 // dial is a real horizontal sundial for latitude 51.5° N: the gnomon's edge rises at the
 // latitude, so it lies parallel to the Earth's axis, and the hour lines sit where

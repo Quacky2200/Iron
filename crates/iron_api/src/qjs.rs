@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! QuickJS side of the boundary: opaque handle objects and value-class argument reading.
 //!
 //! An engine handle (a `GameObject`, a `Body`) reaches QuickJS as an object of the class the

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // encodeURI, encodeURIComponent, decodeURI, decodeURIComponent, escape, unescape. Every exported
 // function without parameters returns a string; `gen_uri_expected.ts` runs this file in bun.
 

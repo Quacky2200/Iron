@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Sparks, dust, speed lines and confetti: a pool of short LineRenderer2D capsules.
 // A particle's length and width are set when it's emitted; after that it only moves and fades.
 

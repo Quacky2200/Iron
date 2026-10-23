@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Functions that return an unsubscribe function (`#[subscription(off = ..)]`) from QuickJS: the
 //! same native code compiled games call (`tools/iron_ts_tests/tests/engine_api/facade.rs`, M9-TS-3351).
 //! IDs are in TESTS.md (M9-API-1636).

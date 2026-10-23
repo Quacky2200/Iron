@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scalar replacement of value-class objects (`Vector2`, `Vector3`, `Quaternion`, `Color`, ...).
 //!
 //! The lowering makes every value-class result a heap object (`NewObj`, filled by the engine call

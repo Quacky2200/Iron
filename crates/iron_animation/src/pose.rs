@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Blended values for one frame (`Pose` in `js/engine/src/animation.ts`): per object, transform
 //! channels as weighted sums (quaternions sign-aligned, then normalised), and other properties as
 //! weighted averages. `apply` writes each transform once.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! M4-HOT-07: a hot reload that keeps state, with 1,000 script components (each with a
 //! child object) and a ~1 MB bundle. Measures saving in the old runtime, loading the
 //! bundle into a fresh one, restoring and applying the ops it queues. Target: under

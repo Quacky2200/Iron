@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Exceptions in compiled code (`bench/errors.ts`): `throw`, `try` / `catch`, error classes,
 //! unwinding through calls, closures and loops. `bench/gen_errors_expected.ts` ran the same file in
 //! bun; every function here must return what bun returned, in the normal, stress GC and

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Physics components from compiled programs (`bench/physics_comp.ts`, `iron_physics_api`
 //! components, joints, `Rope`, `CharacterController` and 2D). IDs are in TESTS.md (M9-TS-1100..).
 use iron_core::Value;

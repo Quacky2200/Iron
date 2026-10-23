@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Plain classes: fields, constructors, methods, getters and setters, statics, private members.
 export class Vec2 {
   constructor(

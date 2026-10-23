@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Scene view: an editor camera drawing the world into the panel's box (the panel
 // is see-through, so the world shows under it), Unity's mouse and key controls
 // (scene-camera.ts), the x/y/z orientation gizmo in the corner, SceneIcons (an icon at

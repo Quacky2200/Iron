@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The pointer state machine: hover with enter/leave, `:hover` / `:active`, clicks on
 //! the common ancestor, double clicks, wheel and cursors (M3-EVT-02, M3-EVT-03; the
 //! script side is in `react_quickjs.rs` and `js/react/test/events.test.tsx`).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Module-level `let` variables: assigned from functions and closures, holding pointers, nullable
 // values and closures. A `let` is never folded into its uses, even with a literal initialiser.
 export interface Item {

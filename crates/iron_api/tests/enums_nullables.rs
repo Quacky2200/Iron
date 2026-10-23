@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Enums shared between namespaces, optional enum parameters, explicit names, enum lists, nullable
 //! numbers / strings / values, `#[nullable(undefined)]` and aliases in `#[iron_api]`
 //! (docs/iron-api.md, "Enums and nullables"). IDs are in TESTS.md (M9-API-162x).

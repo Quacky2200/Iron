@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Endless blocks in the fog: a Minecraft-like world that never ends. Terrain comes from
 // seeded noise, built per 16×16-column chunk as one textured mesh holding only the faces
 // you can see, so thousands of blocks are a few dozen draws. Chunks stream in and out in a

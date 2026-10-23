@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Engine API shapes the original (QuickJS-era) example sources use, from compiled code
 //! (`bench/originals_engine.ts`, prefix `ogn_`), in the normal, stress GC and collection-off
 //! modes. IDs are in TESTS.md (M9-TS-3184..).

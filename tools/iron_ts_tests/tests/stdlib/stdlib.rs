@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Standard library pieces in compiled code (`bench/stdlib.ts`): `typeof`, `Number` statics, `Math`
 //! extras and `Array` methods. `bench/gen_stdlib_expected.ts` ran the same file in bun; every
 //! function here must return what bun returned, in the normal, stress GC and collection-off

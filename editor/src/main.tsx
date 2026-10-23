@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Iron editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
 // Inspector, Console, Project) and a status bar, built with @iron/editor-ui.
 // `iron_editor` loads this bundle (editor/dist). The Hierarchy and Scene view show the

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl`, step I1: `normalize`, `localeCompare`, `toLocaleUpperCase`/`toLocaleLowerCase` and
 //! `Intl.Collator`. The work is in the runtime (`iron_ts_rt/src/intl.rs`, ICU4X). Locale arguments
 //! are strings or array literals of strings; an options argument must be an object literal with

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // `GameObject.createPrimitive`, like Unity's: an object with a built-in mesh and the
 // matching collider (a cube gets a BoxCollider, a sphere a SphereCollider, ...).
 

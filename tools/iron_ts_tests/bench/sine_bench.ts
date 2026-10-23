@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Frame loop for the QuickJS and bun runs of the sine-circle curve: the demo's per-frame work.
 // QuickJS gets the real `__iron_op`, so the cost of crossing into Rust is included.
 import { curveFlat, type SineType } from "./sine.ts";

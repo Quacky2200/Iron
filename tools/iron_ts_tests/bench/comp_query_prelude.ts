@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The original scene with no engine behind it; each function starts with an empty scene.
 import { _resetSceneForTests } from "../../../js/engine/src/scene.ts";
 

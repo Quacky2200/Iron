@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A small engine API written with `#[iron_api]`, to prove the whole path: Rust functions, the
 //! generated manifest, and TypeScript compiled by `iron_ts` calling the generated `extern "C"`
 //! shims directly. It keeps a tiny "world" of entities behind handles, like the real engine will.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Closures given to the engine: listeners with number, boolean and string arguments, captured
 // variables, and removing one by its token. The Rust test (tests/engine_api/callbacks.rs) sends the events.
 

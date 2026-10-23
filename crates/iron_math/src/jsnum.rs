@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! JavaScript number semantics the math types need: `Math.min` / `Math.max` / `Math.sign` with
 //! their NaN and signed-zero rules, `Math.hypot`, `ToInt32`, `Math.round`, and `String(number)`.
 //! Results equal what the original TypeScript computed, bit for bit.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared types for every Iron crate: typed IDs, script values and the op buffer
 //! that carries commands from scripts to the engine.
 

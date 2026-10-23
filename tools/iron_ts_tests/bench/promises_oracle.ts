@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every test of promises.ts in bun, one after the other, lets timers and microtasks finish,
 // and writes each result. (add_module.py writes gen_promises_expected.ts over and over; this is
 // the real oracle.)   bun bench/promises_oracle.ts

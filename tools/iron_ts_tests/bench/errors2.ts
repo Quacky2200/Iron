@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Error cause and AggregateError. Every exported function without parameters returns a string;
 // `gen_errors2_expected.ts` runs this file in bun.
 

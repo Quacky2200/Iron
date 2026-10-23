@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Eye adaptation (`RenderSettings.autoExposure`): a bedroom on a bright day behind closed
 // louvred shutters. The sun comes through the slats in crisp stripes across the floor: the
 // room is dim, but the eyes have adapted and it's easy to see. Then the shutters swing open: blinding, the windows white,

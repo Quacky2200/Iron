@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! JSX and hooks need no manifest from the caller (`M9-TS-1500..1519`): the compiler brings the
 //! `Ui` namespace itself. These tests only compile; linking `ts_ui_*` is the host's business.
 

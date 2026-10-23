@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Temporal (ISO calendar): the classes are TypeScript in `temporal.ts`, compiled in front of
 //! programs that mention `Temporal.`. The source rewrite `Temporal.X` -> `Temporal_X` makes them
 //! ordinary classes; this file routes what needs types: `Temporal.X.from(v)` and a string passed

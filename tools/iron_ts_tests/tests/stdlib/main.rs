@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! iron_ts tests: the standard library (Math, JSON, RegExp, typed arrays and buffers, structured
 //! clone, URI, Date, Intl and Temporal). One of five test binaries by area, so an edit relinks a
 //! smaller one.

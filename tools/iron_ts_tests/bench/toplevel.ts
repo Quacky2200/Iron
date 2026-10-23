@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Top-level control-flow statements (`if`, `for`, `while`, `switch`, `try`, blocks, labels) run in
 // source order with the declarations around them. Every export returns a string.
 import { depLog, depTotal } from "./toplevel_dep.ts";

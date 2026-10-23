@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Temporal (ISO calendar only): Duration, PlainDate, PlainTime, PlainDateTime, Instant, Now.
 // Compiled in front of programs that mention `Temporal.` (see prelude.rs / temporal.rs). Written in
 // the dialect the compiler accepts: no overloads and no unions, so the lowerer routes

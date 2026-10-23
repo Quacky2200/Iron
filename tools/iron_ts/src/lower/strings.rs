@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strings: literals, `+` and template literals, methods, `length`, and the conversions between
 //! strings and numbers. Everything calls the runtime (`iron_ts_rt/src/string*.rs`), whose strings
 //! behave exactly as JavaScript's (UTF-16 `length` and indices, code unit ordering). See

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Windows resources of the packaged executable: the icon and the VERSIONINFO block, written
 //! into a copy of the host's PE file with the `editpe` crate (no `rc.exe`, no external tool).
 //! Must run before the payload is appended and before any signing (`docs/research/iron-code-signing.md`).

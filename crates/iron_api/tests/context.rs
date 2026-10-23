@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The engine's current world for `#[iron_api]` functions (`iron_api::context`).
 //! IDs are in TESTS.md (M9-API-*).
 use iron_api::{context, iron_api};

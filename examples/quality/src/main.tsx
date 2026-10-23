@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Quality settings: the same scene at Low, Medium, High and Ultra. Thin things show
 // anti-aliasing (the fence, the fan's blades, the cables), their shadows show shadow
 // quality, and Low's render scale softens everything but the UI. The menu switches

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Map`, `Set`, `WeakMap` and `WeakSet` in compiled code (`bench/collections.ts`).
 //! `bench/gen_collections_expected.ts` ran the same file in bun; every function here must return what
 //! bun returned, in the normal, stress GC and collection-off modes. IDs are in TESTS.md

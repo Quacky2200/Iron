@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Fog, light shafts, exposure, `RenderStats` and `GraphicsSettings` in `iron_render_api`
 //! (`RenderSettings` is per thread: every test runs on its own).
 use iron_api::Handle;

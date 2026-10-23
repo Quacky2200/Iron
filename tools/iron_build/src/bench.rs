@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron-build bench <examples>`: every example timed by `iron --bench` (windowless) on the native
 //! backend and, for the examples the base branch has, on the QuickJS original built from it; the
 //! results go to `docs/benchmarks.md` and `docs/benchmarks/results.json` (`docs/iron-build.md`,

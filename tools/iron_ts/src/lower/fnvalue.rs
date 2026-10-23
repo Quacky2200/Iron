@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Functions that are not declared in the program used as values: `const hex = Color.hex`,
 //! `xs.map(Math.abs)`, `xs.map(Vector3.zero.add)` is not one of them. Each becomes a closure over a
 //! small wrapper function that makes the call (`MakeClosure`, no environment).

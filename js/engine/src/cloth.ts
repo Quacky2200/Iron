@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Cloth (Unity's `Cloth`): put it on an object with a `MeshRenderer` (a "plane", "quad"
 // or script `Mesh`) and the engine simulates a copy of the mesh on the fixed tick:
 // gravity, wind, edges that keep their length, folds that resist, pinned vertices held

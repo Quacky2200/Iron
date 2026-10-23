@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /// An sRGB colour with straight (not premultiplied) alpha, each channel in `0.0..=1.0`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rgba {

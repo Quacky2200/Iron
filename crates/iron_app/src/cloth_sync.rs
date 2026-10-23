@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Cloth` components: each simulates a copy of its object's mesh (`iron_physics::cloth`)
 //! on the fixed tick, holding pinned vertices where the object is and pushing vertices out
 //! of its sphere and capsule colliders, then hands the moved vertices to the renderer.

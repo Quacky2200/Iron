@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // for(;;), do...while, labelled break/continue and labelled blocks.
 export interface Item {
   v: number;

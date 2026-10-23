@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The data of an `AnimatorController` (`js/engine/src/animation.ts`, one layer): parameters, states
 //! that play a clip or a 1D blend tree, and transitions on conditions or exit time. Every piece is
 //! an object of its own in the arenas, so a script can keep a handle to it and change it after it

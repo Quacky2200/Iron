@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M5.a showcase: GameObjects in 3D. A camera orbits a floor with standing coloured
 // planes; a ring of panels spins as one object (children follow their parent). An
 // orthographic camera draws a top-down minimap in the corner (camera depth and rect),

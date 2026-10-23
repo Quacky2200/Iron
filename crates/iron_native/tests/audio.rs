@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Audio from QuickJS: the commands the host receives are the ones compiled code produces. IDs are
 //! in TESTS.md (M9-API-*).
 mod common;

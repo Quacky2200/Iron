@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // PS1 fog: a blocky tomb in the style of the first Tomb Raider games. A long corridor of
 // 1 m sandstone blocks opens into a hall with pillars, a pool and steps up to a dais, lit by
 // a few orange torches. Black linear fog sits very close to the camera, as on the PS1: it

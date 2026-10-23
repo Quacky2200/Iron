@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Enums. A numeric enum is a `number` whose members are constants; a string enum is a union of
 //! string tags (`Ty::Lit`). Members are folded into their uses, so an enum costs nothing at run time.
 

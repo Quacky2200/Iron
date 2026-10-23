@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `#[iron_api]`: the manifest, the `.d.ts`, the `extern "C"` shims and the QuickJS bindings all
 //! come from one module of ordinary Rust. IDs are in TESTS.md (M9-API-*).
 use iron_api::{Handle, Ty, iron_api};

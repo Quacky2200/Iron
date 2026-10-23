@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl.Locale` on ICU4X: parsing and canonicalising a tag, its parts, `maximize` and `minimize`.
 //! A locale is kept as its canonical tag string; every question parses it again.
 

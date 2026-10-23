@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Unions of different types (`number | [number, number]`, `string | Handler`): a struct with a
 //! tag and one slot per member, made when a value goes where the union is expected and read back
 //! (projected) where `typeof x === ".."` / `Array.isArray(x)` / a truthiness test narrowed it.

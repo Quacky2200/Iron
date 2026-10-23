@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Hot reload: [`BundleWatcher`] watches the bundle (and its CSS) for rebuilds by `bun
 //! build --watch` and says when to reload the scripts; [`AssetWatcher`] watches the game
 //! folder's other files (textures, models, sounds) and says which changed.

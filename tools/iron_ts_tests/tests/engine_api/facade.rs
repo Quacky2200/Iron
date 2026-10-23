@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The TypeScript `@iron/engine` shapes over the native API (`bench/facade.ts`, prefix `fac_`),
 //! in the normal, stress GC and collection-off modes. IDs are in TESTS.md (M9-TS-1700..).
 use iron_scene::Scene;

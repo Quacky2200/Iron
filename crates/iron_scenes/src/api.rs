@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The script API of scenes: `SceneManager`, `Scene` and `Prefab`, declared once with
 //! `#[iron_api]` for compiled scripts. `GameObject.instantiate(..)` and `dontDestroyOnLoad` are
 //! lowered by the compiler onto `SceneManager.instantiate` / `dontDestroyOnLoad`.

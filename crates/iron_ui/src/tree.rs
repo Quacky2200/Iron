@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::fmt;
 use std::rc::Rc;

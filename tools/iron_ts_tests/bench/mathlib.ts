@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Math library surface and the operators that go with it. Functions return arrays so the
 // native tests can compare every value, including the sign of zero.
 

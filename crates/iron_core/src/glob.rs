@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Path globs for `include` / `exclude` in `project.json` (and later `Assets.list`).
 //!
 //! Paths are game paths: relative, `/`-separated. `*` matches any characters inside one path

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scenes and scene files in Rust: `scenes.ts`'s `SceneManager`, `Scene`, `Prefab` and
 //! `GameObject.instantiate`, with the same JSON format (`iron.scene` version 1). Design:
 //! `docs/research/iron-native-scenes.md`.

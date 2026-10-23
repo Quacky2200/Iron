@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // God rays: the forest. Morning sun slants through gaps in a dense canopy of tall trees, so
 // long diagonal beams cross the soft lilac haze and land in bright patches on the mossy floor
 // among ferns, rocks, fallen logs and small flowers. The canopy is built from many

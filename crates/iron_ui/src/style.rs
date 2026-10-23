@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Applying style properties from React to a node.
 //!
 //! Names are React-style camelCase. Numbers are logical pixels; strings are CSS

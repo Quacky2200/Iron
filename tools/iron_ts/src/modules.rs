@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The module graph: several source files become one source text for the lowering.
 //!
 //! `bundle` starts at an entry file, follows relative imports (`./x`, `../y/z.ts`) and re-exports,

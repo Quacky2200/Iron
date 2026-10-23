@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The game's database, and the native API's shape over the original `Assets` (no undefined, an
 // importer as JSON text, a list by index).
 import { Assets as A } from "../../../js/engine/src/assets.ts";

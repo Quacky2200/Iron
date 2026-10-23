@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where the animation update spends its time, for `--bench` (the host merges these into its
 //! `syncParts`). Off unless the host turns it on: a timer is then one clock read.
 

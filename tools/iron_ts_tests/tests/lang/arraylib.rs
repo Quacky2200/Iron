@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The array library compiled by `iron_ts` (`bench/arraylib.ts`). The expected numbers are what
 //! bun computes from the same file. Every test runs three times: normally, with a collection at
 //! every allocation, and with collection off. IDs are in TESTS.md (M9-TS-92..).

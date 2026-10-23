@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // C#-style `DateTime` and `TimeSpan` (as in s&box), on top of JS `Date`.
 //
 // Resolution is one millisecond, like JS `Date` and engine time. There are no

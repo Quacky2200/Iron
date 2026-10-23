@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Unity's `Gizmos`: wire shapes for editor views (a camera's frustum, a light's range).
 // Draw calls collect line segments in world space, through `Gizmos.matrix` and in
 // `Gizmos.color`; `Gizmos.present(camera)` hands them to one camera, which shows them

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! What compiled games hand to the app each frame, apart from drawing: audio commands for the
 //! mixer and the finished sounds going back, `Application` requests,
 //! and `PlayerPrefs` (`iron_engine_api::{audio, app, prefs}`). The window, quality and cursor are

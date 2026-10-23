@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The script API of animation: `Keyframe`, `AnimationCurve` and `AnimationClip` over
 //! `iron_animation`. The design and what differs from `js/engine/src/animation.ts` is
 //! `docs/research/iron-native-animation.md`.

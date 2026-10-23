@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // React Fast Refresh for dev builds (`vendor.ts`). This must run before React and the
 // reconciler load: it installs the devtools hook the reconciler registers with, and the
 // `$RefreshReg$` / `$RefreshSig$` globals that Bun's `--react-fast-refresh` transform

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Selector matching against the UI tree and the CSS cascade.
 
 use std::fmt;

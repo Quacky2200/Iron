@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Writes assets/sfx/*.wav for the emoji example: every sound is synthesised here in plain Python
 (no samples, no libraries), so they are original and free to use (CC0).
 

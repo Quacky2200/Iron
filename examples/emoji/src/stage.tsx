@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The set: floor, spotlight beam and pool of light, drifting dust, the dark around the spot,
 // and the red curtain. The curtain halves are WorldPanels (so they sit in front of the
 // emoji); drawing them back squashes their folds towards the sides.

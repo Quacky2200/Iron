@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The engine's log for the editor: `iron_editor` sends new records to `__iron_log`
 // each frame once `editor.logHistory` asked for them (everything kept so far first).
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Texture` and `Mesh`: the assets a host uploads. Scripts make them; every change is queued as a
 //! [`RenderCommand`] and the app reads the data with [`texture_info`] / [`mesh_info`] (and tells
 //! the engine when a file finished loading with [`texture_loaded`]).

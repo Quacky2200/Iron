@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Builds bench/promises.ts from bench/promises_src.ts: every `async function t_NAME(): Promise<string>`
 # gets an exported `NAME()` that starts it and stores the result, and `NAME_result()` that returns it.
 #   python bench/gen_promises_program.py   (then add_module.py promises pr 900 <id>, see the notes)

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // What an emoji does in the spotlight. Every pose starts and ends at rest.
 import type { PoseName } from "./cast.ts";
 import { GROUND, HEIGHT } from "./config.ts";

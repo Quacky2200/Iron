@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of assets.ts in bun against the original engine TypeScript
 // (assets.ts) and writes what they return.
 //   bun bench/gen_assets_expected.ts

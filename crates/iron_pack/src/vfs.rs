@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The asset file system: sources stacked in mount order, the last mounted answering first.
 //! A development run mounts the game folder ([`DirSource`]); a release run mounts the packs the
 //! manifest lists ([`PackSource`]), patches and DLC after them, mods last. Loaders ask the

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Two frames: the first as in inputs_prelude.ts, then a key released, another pressed, a gamepad
 // gone, and the window losing focus.
 import { _resetInputForTests } from "../../../js/engine/src/input.ts";

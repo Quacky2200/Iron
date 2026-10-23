@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Writes bench/datefmt.ts and bench/gen_datefmt_expected.ts (the option sets are written out here
 # because Iron reads Intl options as literals). Run from tools/iron_ts_tests:
 #   python3 bench/gen_datefmt_program.py

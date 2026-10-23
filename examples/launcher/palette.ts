@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Build-time colours for the launcher's backgrounds: a screenshot's top and bottom tones and
 // its most vivid colour, read straight from the PNG (8-bit RGB / RGBA, not interlaced, as
 // Iron's screenshots are), so each game gets a gradient that matches its picture. White text

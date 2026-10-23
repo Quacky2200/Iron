@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Shapes`: GDI-style outlines (rectangles, ellipses, arcs, pies, polygons, Beziers, cardinal
 //! curves) as lists of points for `LineRenderer2D.points`. The maths is ported from
 //! `js/engine/src/shapes.ts` and the compiled facade, in the same order of operations, so the

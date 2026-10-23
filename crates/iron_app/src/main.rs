@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A windowed program: no console window of its own (the log goes to a file, see
 // `logging`); tests keep the console harness.
 #![cfg_attr(not(test), windows_subsystem = "windows")]

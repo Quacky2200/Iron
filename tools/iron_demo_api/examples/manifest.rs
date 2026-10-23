@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Prints what `#[iron_api]` generated for the demo namespace: the JSON manifest the compiler reads
 //! and the TypeScript declarations.
 //!

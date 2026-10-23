@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A platform without a display, for tests (and the offscreen windows of screenshot runs).
 //!
 //! [`FakePlatform`] drives any [`PlatformApp`] through the same `run_commands` / `request_close`

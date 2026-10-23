@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of uri.ts in bun and writes what they return.
 //   bun bench/gen_uri_expected.ts
 import * as m from "./uri.ts";

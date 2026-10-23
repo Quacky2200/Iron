@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // resolvedOptions of Intl.DateTimeFormat and Intl.NumberFormat (the common fields). Every exported
 // function without parameters returns a string; `gen_resolved_expected.ts` runs this in bun.
 

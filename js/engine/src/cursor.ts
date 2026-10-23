@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The OS mouse cursor (Unity's `Cursor`): show or hide it, hold it in the window, and
 // give it an image. UI elements' CSS `cursor` still wins where they set one; the image
 // here replaces the default arrow everywhere else.

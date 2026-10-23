@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where a program's text is code: the spans of its string literals, template text and comments, so
 //! text-level passes (the window message glue, the native name aliases) leave what a string says
 //! alone (a Markdown reader's docs mention `.request<..>(` and `AnimatorController`).

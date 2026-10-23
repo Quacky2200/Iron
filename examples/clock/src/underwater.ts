@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The underwater face: a brass porthole clock lying on the sea bed, slightly tilted, its second
 // hand dragging as if through water. Light shafts drift down through blue water, kelp sways,
 // bubbles wobble up to the surface, and fish (spline bodies) swim past, turning at the edges.

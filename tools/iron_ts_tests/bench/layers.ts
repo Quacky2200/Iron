@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // LayerMask: names, masks and the game's own layer names, compiled against the native API and run
 // in bun against js/engine/src/layers.ts. The game names layers 8, 9 and 4 (renaming "Water").
 

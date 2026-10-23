@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Temporal rounding: PlainTime, PlainDateTime, Instant, ZonedDateTime and Duration `round`. Every
 // exported function without parameters returns a string; `gen_rounding_expected.ts` runs this in bun.
 

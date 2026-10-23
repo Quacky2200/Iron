@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The lifecycle of components script adds and removes (`bench/comp_life.ts`): `onAwake` and
 //! `onDestroy` when the calling hook returns, `destroy()` on a component, the focus and pause hooks,
 //! and objects destroyed through the scene API. IDs are in TESTS.md (M9-TS-707..).

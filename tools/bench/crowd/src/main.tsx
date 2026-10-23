@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A bench scene (not an example): 50 mannequins jogging in a grid in front of the camera, each
 // with its own Animator. Keys: 1 / 2 / 3 set every Animator's cullingMode (alwaysAnimate,
 // cullUpdateTransforms, cullCompletely); L turns the camera to look away and back.

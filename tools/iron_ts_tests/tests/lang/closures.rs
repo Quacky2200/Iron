@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Closures compiled by `iron_ts` (`bench/closures.ts`). The expected numbers are what bun
 //! computes from the same file. Every test runs three times: normally, with the collector run
 //! at every allocation (a missing root crashes loudly), and with automatic collection off.

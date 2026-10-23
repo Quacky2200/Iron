@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The component / GameObject surface of scene.ts from compiled code (`bench/comp_api.ts`). IDs
 //! are in TESTS.md (M9-TS-1010..).
 use iron_scene::Scene;

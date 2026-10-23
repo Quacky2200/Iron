@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `bench/layers.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_layers_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-611..).

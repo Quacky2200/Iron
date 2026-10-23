@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Backend-independent tests every [`ScriptRuntime`] must pass (M1-SCR-08).
 //!
 //! A backend's test file runs them all with [`runtime_conformance_tests!`].

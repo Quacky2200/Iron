@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! M3-BEN-01: CSS restyle cost on an editor-like UI of ~2,250 nodes with a
 //! realistic stylesheet. Run with `cargo bench -p iron_ui --bench restyle`.
 

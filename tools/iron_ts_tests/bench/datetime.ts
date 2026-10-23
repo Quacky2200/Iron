@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // DateTime in New York time (the zone the generator and the test both set), compiled against the
 // native API and run in bun against js/engine/src/time.ts.
 

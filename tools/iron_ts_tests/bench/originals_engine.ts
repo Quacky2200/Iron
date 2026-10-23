@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Engine API shapes the original (QuickJS-era) example sources use, from compiled code. The Rust
 // test (tests/engine_api/originals_engine.rs) reads the same state back.
 

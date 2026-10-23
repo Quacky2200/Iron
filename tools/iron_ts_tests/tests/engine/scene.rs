@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compiled scripts driving the real engine scene (`bench/scene.ts`): `iron_scene`'s `Scene`
 //! API, written with `#[iron_api]`, is called directly by native code the compiler made from
 //! TypeScript. The scene is made current with `iron_scene::api::enter`, as the host will around

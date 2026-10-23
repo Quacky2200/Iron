@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A handler may be missing (`onClick={cond ? undefined : f}`) and may take no parameter.
 function __handler(f: ((e: UiEvent) => void) | undefined): () => void {
   return (): void => {

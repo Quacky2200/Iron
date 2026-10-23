@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // JSON in compiled code, typed from the program's static types. Every exported function without
 // parameters returns a string; `gen_json_expected.ts` runs this file in bun and `tests/json.rs`
 // compares.

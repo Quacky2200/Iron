@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! React running inside the engine's script runtime, driving the Rust UI tree
 //! (M2-INT-01, M2-INT-02). Uses `tests/fixtures/boxes.js`, built by Bun from
 //! `tests/fixtures/src/boxes.tsx`.

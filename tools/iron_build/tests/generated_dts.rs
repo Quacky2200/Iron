@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Guard rails for "every declaration is generated from Rust" (docs/research/iron-generated-dts-plan.md):
 //! no hand-written `.d.ts` file (and the TypeScript compiled into games only on a short list), the
 //! compiler built-ins declare no engine name again, and a snapshot of the API surface `tsc` sees.

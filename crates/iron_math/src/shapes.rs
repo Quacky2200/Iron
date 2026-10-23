@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Vector2Int`, `Vector3Int`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds` and `Pose` as
 //! `js/engine/src/math.ts` has them. The classes with vector members (`Ray.origin`, `Bounds.size`)
 //! keep them as flat numbers and give the vectors back from getters, so `ray.origin` is a new

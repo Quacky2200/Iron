@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Interfaces implemented by classes: `interface Shape { area(): number }`, `class Circle implements
 //! Shape`, a `Shape[]` holding circles and squares, `shape.area()`.
 //!

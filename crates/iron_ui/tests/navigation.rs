@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Gamepad-style UI navigation (M3-PAD-01, UI side): the d-pad moves focus to the
 //! nearest focusable element in a direction, and Activate clicks the focused one.
 

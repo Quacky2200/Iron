@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Application` and `SystemInfo` (Unity's): the game's manifest (its `package.json`) and what the
 //! OS and GPU report. The host fills them ([`set_app`], [`set_system`], [`set_focus`]) before the
 //! game's code runs; scripts read them, and their few writes (`targetFrameRate`,

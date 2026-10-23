@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Language leftovers: `for...in` over arrays, `Object.assign` into dictionaries and objects,
 //! setters in object literals, narrowing that survives a closure (a `const`, or a variable never
 //! assigned), `in` / `instanceof` / truthiness narrowing of unions, `flat(depth)` with a depth known

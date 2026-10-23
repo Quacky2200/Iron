@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The engine's input events, then the frame tick.
 import { _resetInputForTests } from "../../../js/engine/src/input.ts";
 

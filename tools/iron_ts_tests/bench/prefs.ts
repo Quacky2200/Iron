@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // PlayerPrefs: numbers and strings by key, with and without fallbacks, compiled against the native
 // API and run in bun against js/engine/src/prefs.ts. The saved file had "saved.n" = 7.9 and
 // "saved.s" = "hello".

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which functions can throw. Exceptions unwind by returning: after a call that can throw, the
 //! generated code checks the pending-exception word and leaves for the handler. The program is
 //! closed, so the set is computed once: a function can throw if it contains a `throw`, calls a

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // New York time, and the native API's name for subtracting a span.
 import { DateTime } from "../../../js/engine/src/time.ts";
 

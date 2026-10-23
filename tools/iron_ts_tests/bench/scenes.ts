@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Scene files, `instantiate` and prefabs for the Rust host: scenes are loaded from JSON text,
 // components are made by kind (the classes below), and the program copies objects.
 import { property } from "./property_stub";

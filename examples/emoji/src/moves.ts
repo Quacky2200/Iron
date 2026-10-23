@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // What an act (an entrance, an exit or a pose) is, and the small maths they share.
 //
 // An act is a pure function of time that returns a `Move`: the director turns that into

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // `&&` and `||` give the operand (not a boolean) when both sides have one type; in conditions they
 // stay tests. Every exported function without parameters returns a string; `gen_logic_expected.ts`
 // runs this file in bun.

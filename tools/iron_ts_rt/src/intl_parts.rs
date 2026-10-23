@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `formatToParts`: the pieces of a formatted string and what each is. The result crosses the
 //! runtime boundary as one string: `type \u{2} value` records joined by `\u{1}`.
 

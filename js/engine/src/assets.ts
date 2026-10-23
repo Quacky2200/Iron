@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Asset files in the game folder.
 //
 // - The asset database: each asset's `.meta` file (made by `scripts/assets.ts`, which

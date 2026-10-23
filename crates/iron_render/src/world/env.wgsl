@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Environment cube maps: a procedural sky drawn into each face, faces copied in from 2D
 // renders (reflection probes), and the mip chain blurred down for rough reflections.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // God rays: the clouds. Late afternoon from high on a hillside, looking towards the sun over rolling
 // country. The sun sits behind a broken layer of cumulus: it lights the clouds' edges and
 // sends beams (crepuscular rays) fanning down through the gaps between them, across the hazy

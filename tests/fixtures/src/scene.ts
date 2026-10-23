@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M5-OBJ-06: GameObjects and components through @iron/engine in QuickJS. The Rust
 // test applies the scene ops, drives the host and reads `__scene_log()`.
 import { Component, GameObject, Light, property, Quaternion, register, SceneManager, Time, Vector3 } from "@iron/engine";

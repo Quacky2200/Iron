@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `for(;;)`, `do...while` and labelled jumps compiled by `iron_ts` (`bench/loops.ts`). The
 //! expected numbers are what bun computes from the same file. Every test runs three times:
 //! normally, with a collection at every allocation, and with collection off.

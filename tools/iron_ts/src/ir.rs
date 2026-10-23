@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Iron IR: a small typed, structured IR between the TypeScript AST and Cranelift.
 //!
 //! Structured on purpose (blocks, loops, labelled break/continue instead of a CFG): lowering

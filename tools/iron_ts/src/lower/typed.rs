@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed arrays (`Int8Array` .. `Float64Array`, `Uint8ClampedArray`): `new`, `from`, the in-place
 //! methods (`fill`, `set`, `reverse`, `sort`), `slice`, and every read-only array method through a
 //! `number[]` copy. Element reads and writes are in the code generator (`typed_load`/`typed_store`),

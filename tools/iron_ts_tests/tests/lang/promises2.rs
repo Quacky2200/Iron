@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Promises beyond `bench/promises.ts`: generic promise-returning functions and classes,
 //! `for await`, `Promise.withResolvers`, unhandled rejections, clear compile errors. The programs
 //! of `bench/promises2_cases.ts` are compiled in the process (the JIT), run in the normal, stress

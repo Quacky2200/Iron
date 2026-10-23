@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strings, part two: trimming, padding, repetition, case mapping, `split`/`join`, and the
 //! conversions between strings and numbers. Same rules as `string.rs`: JavaScript's results,
 //! WTF-8 storage, `_gc` functions for generated code.

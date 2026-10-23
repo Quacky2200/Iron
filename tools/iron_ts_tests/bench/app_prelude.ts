@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The manifest and the machine as the engine installs them, and the native API's flat screen
 // properties over the original `SystemInfo.screen`.
 import { SystemInfo as S } from "../../../js/engine/src/app.ts";

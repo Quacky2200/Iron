@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Objects indexed by a key (`state[key] = !state[key]`, `TINTS[tint]`) and `Record<string, V>` as a
 //! dictionary (`dict[k]`, `dict[k] = v`, a record as a dictionary). The programs of
 //! `bench/tables_cases.ts` run in the normal, stress GC and collection-off modes and are compared

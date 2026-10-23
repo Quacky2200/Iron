@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Properties on a namespace: `Time.deltaTime`, `Gizmos.color = c`. A `#[property]` function without
 //! a receiver is the getter, `set_x(v)` next to it the setter. IDs are in TESTS.md (M9-API-*).
 use iron_api::{FnKind, Ty, iron_api};

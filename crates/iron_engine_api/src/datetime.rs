@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! C#-style `TimeSpan` and `DateTime` (as in s&box), as `js/engine/src/time.ts` has them: whole
 //! milliseconds, months 1 to 12, local time through the OS zone (or [`set_zone`]) with the same
 //! daylight-saving rules as JavaScript's `Date` (a time in a gap moves forward, in an overlap it

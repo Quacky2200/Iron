@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Materials: physically based shading under a procedural sky.
 // - The classic grid: spheres from rough to smooth (left to right) and from plastic to
 //   metal (front to back).

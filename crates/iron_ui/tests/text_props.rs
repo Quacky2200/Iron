@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Text properties from M3d group 4: `text-transform`, `text-overflow`, wrapping,
 //! fonts, decorations and strokes.
 

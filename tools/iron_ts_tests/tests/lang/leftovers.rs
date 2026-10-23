@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Dictionaries and small language leftovers the original example sources use: iterating, testing
 //! and deleting the keys of `Record<Union, V>` and `Record<string, V>`, `Object.entries` /
 //! `fromEntries`, `as const` arrays as literal unions, `flat(depth)` with a depth known at run

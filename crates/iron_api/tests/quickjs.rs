@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed QuickJS bindings for value classes and strings: a JS string is a Rust `&str`/`String`, a
 //! value class is an object with the fields' names (a result is a new object). IDs are in
 //! TESTS.md (M9-API-*).

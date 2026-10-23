@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of comp_query.ts in bun against the original engine TypeScript
 // (scene.ts, math.ts) and writes what they return.
 //   bun bench/gen_comp_query_expected.ts

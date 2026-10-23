@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Windows showcase: a main window with a small UI, owned tool windows (a palette and counters,
 // keyed so they survive a hot reload) and an isolated Inspector window with no parent. The
 // Inspector shares nothing with the main window: it hears the selected object through named

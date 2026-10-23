@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The iterator protocol on classes: [Symbol.iterator](), next(), for...of, spread, Array.from.
 // Every exported function without parameters returns a string; `gen_iterators_expected.ts` runs
 // this file in bun.

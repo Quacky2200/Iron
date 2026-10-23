@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Iron IR -> Cranelift -> an object file for the host target.
 //!
 //! Machine types: `Num` f64, `Bool` i8, `Lit` i32, pointers i64. Object and array slots are

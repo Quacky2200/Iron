@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A tree view on the virtual list: only the rows in view are mounted, so hierarchies
 // with hundreds of thousands of nodes stay fast. Selection, expansion and focus live
 // in a `TreeState` the parent owns (tree.ts has the logic).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A small Markdown parser: the subset Iron's docs use (CommonMark blocks plus GitHub
 // tables, task lists and strikethrough). It makes a plain tree the reader draws.
 

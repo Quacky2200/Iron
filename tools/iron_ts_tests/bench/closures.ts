@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Closures: functions created in script, capturing variables. Every exported function returns a
 // number so the test can compare it with what bun computes from this same file.
 export interface Counter {

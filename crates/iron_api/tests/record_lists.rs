@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Records with lists of numbers and of records, a function called with one object of all its
 //! parameters (`#[options(.., object)]`), and a class function declared twice. IDs are in TESTS.md
 //! (M9-API-1640..).

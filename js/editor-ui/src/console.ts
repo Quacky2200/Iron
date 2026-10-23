@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The console's model: log entries, the level filter and counts, search, collapsing
 // repeats, and finding code links (`src/main.ts:12:5`) in messages.
 

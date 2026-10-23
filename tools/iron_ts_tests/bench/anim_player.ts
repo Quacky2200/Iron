@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Animation component (named clip states, play, crossFade, stop, events, the default clip,
 // engine component properties), compiled against the native API and run in bun against
 // js/engine/src/animation.ts and scene.ts. The program advances time with Animations.updateAll.

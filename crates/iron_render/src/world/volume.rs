@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Light shafts' froxel volume: 3D textures over each view's frustum (screen cells by depth
 //! slices). Two compute passes fill them once per view:
 //! - `cs_volume_light` lights each cell: the light the fog there scatters towards the camera,

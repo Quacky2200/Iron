@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Reading a pack: the header and table of contents are checked once at open; entries are found
 //! by binary search (GUID, or path hash then path) in the TOC as stored, without building maps.
 //! Data is read chunk by chunk, so a 4 KiB read of a 2 GiB entry touches one chunk.

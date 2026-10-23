@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! String methods that take a regular expression (`bench/regexp2.ts`): `match`, `matchAll`, `search`,
 //! `replace`, `replaceAll` and `split`. `bench/gen_regexp2_expected.ts` ran
 //! the same file in bun; every function here must return what bun returned, in the normal, stress

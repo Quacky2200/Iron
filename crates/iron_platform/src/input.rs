@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use winit::event::{ElementState, Ime, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, ModifiersState, NamedKey, PhysicalKey};
 

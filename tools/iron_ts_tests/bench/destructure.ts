@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Destructuring: object and array patterns in declarations, parameters, loops and callbacks,
 // nested patterns and defaults.
 export interface Vec {

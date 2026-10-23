@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Logging the way Unity (`Debug.Log`), s&box (`Log.Info`) and C# (`Console.WriteLine`) spell it.
 //! Everything goes to one sink the host sets ([`set_sink`]); with none, to stderr. Each function
 //! takes one string (compiled code writes a template literal; `js/engine`'s versions joined many

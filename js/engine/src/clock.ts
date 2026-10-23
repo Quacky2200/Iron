@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Game time, the Unity / s&box way: `Time` (deltaTime, time, frameCount, timeScale),
 // s&box's `TimeSince` / `TimeUntil`, and awaitable delays (`Task`).
 //

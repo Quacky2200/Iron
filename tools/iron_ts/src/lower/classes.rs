@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Classes: fields, constructors, methods, accessors, statics, private members, inheritance.
 //!
 //! A class is a struct whose fields start with its base class's fields (the prefix layout), so a

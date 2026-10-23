@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::Value;
 
 /// One command queued by a script for the engine (create a UI node, spawn an entity, ...).

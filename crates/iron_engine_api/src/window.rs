@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Window`: the game's windows as scripts see them (design: `docs/research/iron-windows.md`). The
 //! main window exists from the start; `Window.create({ .. })` makes more, each with its own UI root.
 //!

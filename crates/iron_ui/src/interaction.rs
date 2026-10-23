@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Focus, keyboard and default actions on top of [`Pointer`].
 //!
 //! [`Interaction::handle`] takes one input, dispatches the resulting events through

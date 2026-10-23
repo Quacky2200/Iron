@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Rect, RectInt, Ray, Plane, Bounds and Pose, compiled against the native API and run in bun
 // against js/engine/src/math.ts. Every number is printed in full.
 

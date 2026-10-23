@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Feeds the 3D renderer from what a compiled game left in the `iron_render_api` registries.
 //!
 //! The QuickJS path hands the renderer `render.*` ops; a native game writes typed data (cameras,

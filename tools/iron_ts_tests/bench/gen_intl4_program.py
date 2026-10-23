@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 
 os.chdir(r"C:\Users\quack\Desktop\Iron\.claude\worktrees\recursing-wright-856ffa\tools\iron_ts_tests")

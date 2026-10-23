@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Windows: `Window.main` is the original window (title, size, events); `Window.create({ .. })` opens more,
 // each with its own UI (`createRoot(win).render(<Panel />)` from `@iron/react`). The class itself is native:
 // the app installs it as the global `Window`, with the same members compiled games have (design:

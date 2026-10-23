@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Date`: a time value is milliseconds since the epoch as an `f64` (NaN for an invalid date), and the
 //! calendar maths follow the ECMAScript spec (MakeDay, MakeTime, TimeClip ...). Local time goes
 //! through `jiff`'s time zone database: the OS zone, or the one set with `ts_rt_date_set_zone`.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { Component, register } from "@iron/engine";
 
 class Hello extends Component {

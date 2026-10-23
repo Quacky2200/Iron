@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Inline SVG (M3-SVG-02): `svg` elements size from their attributes, serialize their
 //! content with attributes and computed CSS presentation properties, restyle and
 //! transition like other elements, and are hit as one box.

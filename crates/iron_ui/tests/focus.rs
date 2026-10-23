@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Focus and keyboard (M3-EVT-04): Tab order from `tabIndex`, focus by pointer and
 //! script, key events to the focused element, and `:focus` / `:focus-visible` /
 //! `:focus-within`. The script side is in `events_quickjs.rs` and

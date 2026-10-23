@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `audio`: sounds, playbacks, buses, emitters and the listener, as `js/engine/src/audio.ts` has
 //! them. Scripts hold handles; every change is recorded as an [`AudioCommand`] that the host takes
 //! with [`take_commands`] and runs on the mixer (`iron_audio`): [`AudioCommand::to_op`] gives the

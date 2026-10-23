@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Local generic arrows over the keys of a type, as a source rewrite before parsing:
 //!
 //! ```ts

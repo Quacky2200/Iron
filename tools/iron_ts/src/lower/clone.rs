@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `structuredClone(x)`: a deep copy of data, one lifted function per type (so a recursive type such
 //! as a tree is a recursive function). Numbers, strings, booleans and bigints are shared (they are
 //! immutable); arrays and objects are copied, typed arrays are copied, a class instance keeps its

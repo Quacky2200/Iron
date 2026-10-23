@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The math types of the script API: `Mathf`, `Vector2/3/4` (and the grid, quaternion, matrix and
 //! shape types as they arrive), declared with `#[iron_api]` as `js/engine/src/math.ts` has them.
 //! The values are doubles computed in the order the TypeScript did, so results are bit for bit the

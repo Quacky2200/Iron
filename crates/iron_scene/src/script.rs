@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The scene as scripts drive it: `scene.*` ops with script-chosen object ids (like
 //! UI nodes and physics bodies), mapped to [`ObjectId`]s.
 //!

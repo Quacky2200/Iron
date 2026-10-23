@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Window modes and resolutions (Unity's `Screen.fullScreenMode`, `Screen.SetResolution`,
 //! `Screen.resolutions`). What each platform allows differs: Wayland has no exclusive
 //! fullscreen (compositors own the display mode), and phones and tablets only run

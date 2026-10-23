@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Writing a pack: entries stream out as they are added (only the table of contents is kept in
 //! memory), then [`PackWriter::finish`] writes the TOC and fills in the header. Nothing but the
 //! added entries and the options affects the bytes (no times, no machine names), so building the

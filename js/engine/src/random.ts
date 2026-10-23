@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Random numbers, Unity style (`Random.value`, `Random.range`, `Random.insideUnitSphere`,
 // ...) with a seedable generator, plus C#'s `System.Random` as `Rng` (`next`,
 // `nextDouble`). Not for security: use it for gameplay only.

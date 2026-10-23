@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Small conveniences: functions as values (`Util.twice`, `Math.abs`), casts of empty literals,
 //! field types from constructor calls, `!` on assignment targets, closures over destructured
 //! constants and spread strings. The programs of `bench/misc_cases.ts` run in the normal, stress

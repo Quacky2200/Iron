@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // UI commit opcodes. Must match crates/iron_ui/src/opcodes.rs.
 // Each op is `[opcode, ...args]`; node 0 is the root container.
 

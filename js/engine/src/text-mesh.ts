@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Text in the world without a UI panel of your own (Unity's `TextMesh`, GDI's `DrawString`):
 // a label on its object's XY plane, centred on the object. Iron's UI lays the text out and
 // draws it (any font loaded with `loadFont`, line breaks, wrapping), sized to fit, then tints

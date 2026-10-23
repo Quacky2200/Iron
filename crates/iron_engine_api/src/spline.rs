@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Spline` (a path through knots, `iron_math::spline`) and `SplineAnimate` (a component that moves
 //! its object along one), the script API of `js/engine/src/spline.ts` and the compiled facade made
 //! native. A `Spline` is a handle to a spline kept here per thread, so compiled scripts and

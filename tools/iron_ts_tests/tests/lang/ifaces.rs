@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Interfaces implemented by classes (and by plain objects): dispatch through the interface,
 //! `extends` between interfaces, optional members, writes, `instanceof` on an interface value. The
 //! programs of `bench/ifaces_cases.ts` run in the normal, stress GC and collection-off modes and

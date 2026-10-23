@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M5-RB2D-01: 2D physics components. The Rust test runs the app's physics sync and
 // reads the results back.
 import {

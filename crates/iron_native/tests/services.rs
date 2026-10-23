@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Engine services from QuickJS: input and listener callbacks, time, random numbers, scenes and
 //! prefabs, the cursor. IDs are in TESTS.md (M9-API-*).
 mod common;

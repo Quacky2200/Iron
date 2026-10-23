@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Physics from compiled code: bodies, colliders, a ray and attaching an object.
 
 export function fall(steps: number): number {

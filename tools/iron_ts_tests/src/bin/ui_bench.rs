@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `ui_bench [rows]`: the same UI app (a list of keyed rows: mount, change one row, change every
 //! row, reverse) rendered two ways into a real `UiTree`:
 //! - React 19 + `@iron/react` running in QuickJS (the engine today): the script builds the

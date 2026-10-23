@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Three-argument hypot as the native math does it, and NaN where the original answers null.
 import "./hypot_patch.ts";
 import { Plane, Vector3 } from "../../../js/engine/src/math.ts";

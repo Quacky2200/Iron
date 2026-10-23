@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The engine API as the compiler sees it: the JSON manifest `iron_api` generates
 //! (`Namespace::to_json`), read into a table of functions the TypeScript can call directly.
 //!

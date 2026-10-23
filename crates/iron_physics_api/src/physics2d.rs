@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! 2D physics for compiled scripts: `Rigidbody2D`, `BoxCollider2D`, `CircleCollider2D`,
 //! `CapsuleCollider2D`, `PolygonCollider2D`, `EdgeCollider2D` and `Physics2D`, as in
 //! `physics2d.ts`. They run in the same rapier world as 3D: a Rigidbody2D's body moves in x and

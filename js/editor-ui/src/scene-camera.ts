@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Scene view's camera, as Unity's works: it looks at a pivot from `distance` away,
 // turned by `yaw` and `pitch`. Every control is a plain function from one state to the
 // next (tested without React or the engine running): look (right-drag) turns about the

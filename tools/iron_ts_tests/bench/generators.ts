@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Generators: function*, yield, yield*, methods, [Symbol.iterator], next(sent), try/finally,
 // exceptions, interleaving. Every exported function without parameters returns a string;
 // `gen_generators_expected.ts` runs this file in bun.

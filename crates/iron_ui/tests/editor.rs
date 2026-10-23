@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Text fields (M3-INP-01; the IME part is M3-IME-01): sizing, typing
 //! and editing keys, selection by keyboard and pointer, controlled `value`,
 //! `readOnly` / `disabled`, clipboard requests, drawing and keeping the caret in view.

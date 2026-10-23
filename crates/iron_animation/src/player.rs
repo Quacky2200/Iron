@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `Animation` component (`js/engine/src/animation.ts`): named states that play clips, with
 //! `play`, `crossFade` and `stop`, advanced every frame after the components' updates. Clip events
 //! are collected as [`FiredEvent`]s for the host to deliver to the object's components.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Compiled UI components for the native reconciler (`iron_ui_native` through `iron_ts_ui`): JSX,
 // useState, useRef, useMemo, useEffect and keyed lists, written as ordinary TSX.
 

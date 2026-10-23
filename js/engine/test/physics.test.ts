@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { type CollisionEvent, physics } from "../src/index.ts";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Compiled scripts driving the real engine scene (`iron_scene`'s `Scene` API, written with
 // `#[iron_api]`): GameObject handles and Vector3 / Quaternion values, no JavaScript engine.
 

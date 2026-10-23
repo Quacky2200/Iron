@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Resolving asset paths (`url(...)` images, fonts) that scripts give the engine.
 
 use std::path::{Component, Path, PathBuf};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Screen` and `QualitySettings` (`js/engine/src/screen.ts`, `quality.ts`): the window as
 //! scripts see it, and the rendering quality levels. The host feeds the window ([`update`],
 //! [`set_display`]) and reads what scripts asked for: [`state`] / [`take_requests`] for the

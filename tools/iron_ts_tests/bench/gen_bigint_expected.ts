@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of bigint.ts in bun and writes what they return.
 //   bun bench/gen_bigint_expected.ts
 import * as m from "./bigint.ts";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Textures for the world pass (Unity's `Texture2D` settings): sRGB pixels with a
 //! filter mode, a wrap mode and optional mipmaps, made on the CPU.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of anim_clips.ts in bun against the original engine TypeScript
 // (animation.ts, scene.ts, math.ts) and writes what they return.
 //   bun bench/gen_anim_clips_expected.ts

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The native rendering data API from compiled programs (`bench/render_native.ts`) and its
 //! scene-file kinds, in the normal, stress GC and collection-off modes. IDs are in TESTS.md
 //! (M9-TS-1220..).

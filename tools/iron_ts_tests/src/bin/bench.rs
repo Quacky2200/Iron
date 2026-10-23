@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `bench [steps]`: step() on a busy state for QuickJS (the engine's runtime), bun (a JIT
 //! stand-in) and the native code `iron_ts` generated. All three print a checksum; they should agree.
 use iron_core::Value;

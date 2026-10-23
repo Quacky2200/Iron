@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Animation culling (Unity's `Animator.cullingMode` and `Animation.cullingType`): what an animated
 //! object does while none of its renderers was drawn. The host says what was drawn ([`Visibility`]);
 //! the default animates always.

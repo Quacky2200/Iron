@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Planning the shadow-stack frame of a function: which locals are mirrored, and how many
 //! extra slots the code generator needs to keep pointer temporaries alive across allocations.
 //!

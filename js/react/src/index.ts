@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * @iron/react — render React components into Iron's engine-owned UI tree.
  *

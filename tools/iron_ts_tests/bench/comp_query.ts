@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Looking up and removing components of the program own classes: getComponent (subclasses count),
 // getComponents, getComponentInChildren, GameObject.findObjectOfType, removeComponent, destroy(),
 // transform and gameObject on a component. Compiled with a NativeHost and run in bun against

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Game input: keyboard and gamepad state plus events, for gameplay code. (UI
 // elements get their own events through @iron/react; keys typed into a focused text
 // field don't reach here.) Rust calls `__iron_input(type, ...args)`.

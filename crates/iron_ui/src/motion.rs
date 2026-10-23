@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Transitions and animations (M3d group 7): timing functions, interpolation of
 //! computed CSS values, and the `transition*` / `animation*` properties.
 //!

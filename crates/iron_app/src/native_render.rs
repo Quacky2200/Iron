@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's side of rendering a compiled game: what [`render_sync::sync`] cannot do on its own
 //! because it lives in the app. World panels (each has a UI tree, a native `Runtime` and a
 //! texture), cloth, the fonts and stylesheets scripts add (`UiResources`), the cursor and the

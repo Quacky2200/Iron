@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Incremental layout (M2-LAY-07): appending to a long column lays out the new child,
 //! not every sibling again, so streaming content in stays cheap as it grows.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M3a showcase: text and fonts. Sizes and weights, italics, mixed spans,
 // wrapping and alignment, decorations, text shadows, emoji and CJK through
 // system font fallback, a font loaded at runtime, and live-updating text.

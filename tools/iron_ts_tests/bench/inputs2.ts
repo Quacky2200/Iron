@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Keyboard, mouse and gamepad input after the engine delivered events and ticked, compiled against
 // the native API and run in bun against js/engine/src/input.ts.
 

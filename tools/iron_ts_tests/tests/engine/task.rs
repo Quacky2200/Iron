@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Task.delay`, `Task.delaySeconds` and `Task.frame` (`bench/task.ts`): awaitable waits on the
 //! runtime timers, which the host advances with engine time. IDs are in TESTS.md (M9-TS-651..).
 use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_timers_advance};

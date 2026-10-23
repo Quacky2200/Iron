@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The physics API from QuickJS: the same worlds as the compiled-code tests
 //! (`iron_physics_api/src/tests.rs`). IDs are in TESTS.md (M9-API-*).
 mod common;

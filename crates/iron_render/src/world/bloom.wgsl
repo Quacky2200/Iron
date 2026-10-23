@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Bloom: bright parts of the HDR world image, blurred over a chain of half-size
 // textures and added back (like Unity's Bloom: threshold, intensity, scatter). The
 // composite also applies exposure (each camera's manual or auto exposure, then Unity's post

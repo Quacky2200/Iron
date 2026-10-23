@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Button prompts that follow the last input device, as most PC games do: a key or mouse move
 // shows keyboard keys (and the cursor); plugging in a pad, or its first button or stick push,
 // shows that pad's buttons (and hides the cursor), and unplugging the last pad goes back to

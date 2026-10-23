@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 """Converts the classic test models to .glb for examples/classics/assets.
 
     python examples/classics/tools/make_models.py <bun_zipper_res2.ply> <newell_teaset dir>

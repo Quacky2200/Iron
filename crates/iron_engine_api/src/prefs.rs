@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `PlayerPrefs`: numbers and strings by key (Unity's). The host loads the saved values at start
 //! ([`load`]) and applies what scripts changed ([`take_changes`]) to the file; keys starting with
 //! `iron.` are the engine's own (window mode, quality level).

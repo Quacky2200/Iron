@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Inheritance: extends, super, overriding, abstract classes, virtual calls, instanceof, downcasts.
 export abstract class Shape {
   static created = 0;

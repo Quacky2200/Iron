@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Drag and drop, like HTML's: a primary press on a `draggable` element that moves
 //! more than [`DRAG_THRESHOLD`] pixels starts a drag (`dragstart`, which scripts can
 //! prevent). While it lasts, pointer events stop: the dragged element gets `drag`, the

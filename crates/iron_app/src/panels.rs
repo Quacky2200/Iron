@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! World panels: React UI drawn on planes in the world (`WorldPanel` components, s&box's
 //! name). Each panel has its own UI tree (React commits with its target id), its own
 //! interaction state (hover, focus), and a texture it's drawn into each frame, which the

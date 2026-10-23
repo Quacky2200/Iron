@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * @iron/editor-ui — the editor's UI components, drawn by Iron's own UI: a menubar,
  * docking panels, a virtualized list, a tree view, a log console and a project

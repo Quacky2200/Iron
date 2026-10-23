@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Temporal.ZonedDateTime on IANA zones. Every exported function without parameters returns a
 // string; `gen_zoned_expected.ts` runs this file in bun.
 

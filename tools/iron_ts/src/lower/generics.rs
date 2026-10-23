@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Generics by monomorphisation: `function id<T>(x: T): T`, `class Box<T>`, `interface Pair<A, B>`,
 //! `type Opt<T> = T | null`. Nothing is generic at run time. Each distinct list of type arguments
 //! gets its own copy (`id$$number`, `Box$$string`), lowered with a type environment (`tenv`) that

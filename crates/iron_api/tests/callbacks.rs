@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Closure parameters (`Callback`), their manifest type and the listener table (`M9-API-300..302`).
 use iron_api::callback::{HandleArg, Listeners, emit};
 use iron_api::{Callback, Handle, iron_api};

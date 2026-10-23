@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! TypeScript AST (oxc) -> Iron IR.
 //!
 //! Types come from the source's own annotations (see `types.rs`); expression types are inferred

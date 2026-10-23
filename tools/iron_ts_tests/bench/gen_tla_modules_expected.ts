@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs the cases of tla_modules_cases.txt in bun as real ES modules (each case's files go into a
 // temporary folder, `main.ts` is imported and its `result()` read once the whole graph has been
 // evaluated) and writes tla_modules_expected.json.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The hashes a pack uses: a 128-bit content hash (deduplication, incremental builds, pack ids),
 //! a 64-bit path hash (the path index) and CRC-32 (per-chunk integrity). All fixed functions of
 //! the bytes, so builds are reproducible and readers on any machine agree.

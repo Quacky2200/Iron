@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where the engine's log goes. `iron` is a windowed (GUI) program, so there's no
 //! console of its own: the log is written to `Player.log` in the game's settings folder
 //! (next to `prefs.json`; the last run's is kept as `Player-prev.log`, like Unity's),

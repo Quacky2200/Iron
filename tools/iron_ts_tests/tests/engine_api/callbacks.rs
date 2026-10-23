@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `bench/callbacks.ts`: closures given to the engine (`input.onKeyDown(..)`), called back by the
 //! engine with numbers, booleans and strings, in the normal, stress GC and collection-off modes.
 //! IDs are in TESTS.md (M9-TS-1200..).

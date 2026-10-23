@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Cornell box (Cornell University Program of Computer Graphics, 1984), built from
 // primitives: a 2 m room with a red left wall, a green right wall, white floor, ceiling
 // and back, a tall and a short block, and a light in the ceiling.

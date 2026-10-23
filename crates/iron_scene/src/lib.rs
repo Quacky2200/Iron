@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The game world's objects (DESIGN.md §7.5): GameObjects in a generational arena,
 //! each with a name, an enabled flag, a parent and children, and a local transform.
 //! World transforms are worked out lazily from the hierarchy.

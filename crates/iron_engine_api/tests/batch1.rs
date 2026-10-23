@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The first batch of modules moved from `js/engine` to Rust (random, layers, log, prefs, assets,
 //! app, time classes) through their QuickJS bindings and host functions. IDs are in TESTS.md
 //! (M9-API-37..).

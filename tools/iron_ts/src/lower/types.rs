@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Annotation -> IR type resolution, struct layouts and coercions.
 
 use super::expr::mk;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The original Animation component over a scene with no engine behind it (see anim_clips_prelude.ts),
 // with `Animations.updateAll(dt)` = the lifecycle start of new components and `__iron_animate(dt)`,
 // and a component on every animated object that records the clip events it is called with

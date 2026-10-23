@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! iron_ts tests: engine services and maths from compiled code (time, input, assets, audio,
 //! rendering data, shapes, the facade). One of five test binaries by area, so an edit relinks a
 //! smaller one.

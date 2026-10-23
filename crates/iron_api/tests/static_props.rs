@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Static properties of handle classes: `Demo.current` is a getter on the class in the manifest and in
 //! QuickJS (`Window.main` reads the same in both backends). IDs are in TESTS.md (M9-API-*).
 use iron_api::{FnKind, Handle, Ty, iron_api};

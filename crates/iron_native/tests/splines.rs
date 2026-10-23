@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Spline` and `SplineAnimate` from QuickJS: the same native code compiled games call (the numbers
 //! are compared with the old TypeScript in `tools/iron_ts_tests/tests/engine_api/outlines.rs`). IDs are in
 //! TESTS.md (M9-API-16xx).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // God rays: the alien scan. A garden shed at night, dusty and dark but for the moon through
 // the gaps between its planks. Outside, a craft hovers by the window and sweeps a scanning
 // beam through the shed: a narrow cone of green (or red) light that slices into blades where

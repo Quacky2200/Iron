@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Writes iron_ts_rt/src/intl_pad.rs: for each main-market locale, whether ICU4C pads a numeric
 // month, day and hour to two digits in the default numeric patterns (CLDR `availableFormats`
 // `yMd`, `Md`, `Hm`, `Hms`). ICU4X's semantic patterns do not carry this, so `Intl.DateTimeFormat`

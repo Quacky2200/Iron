@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Joint components (`FixedJoint`, `CharacterJoint`, `HingeJoint`, `SpringJoint`, `RopeJoint`)
 //! and `Rope` for compiled scripts, as in `physics-components.ts`. A joint is made (and remade
 //! when a setting changes) as soon as its object has a Rigidbody; one set up before that is made

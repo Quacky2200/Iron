@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The lifecycle of a component a script removes or destroys: onDestroy runs when the calling hook
 // returns, the focus and pause hooks get their flag, and a destroyed object takes its components
 // with it. The Rust test drives the host and reads the log.

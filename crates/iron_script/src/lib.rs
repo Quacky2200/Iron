@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Script runtimes behind one trait, so each platform can use the best JS engine
 //! (DESIGN.md §4.1), plus the component host that drives script components.
 

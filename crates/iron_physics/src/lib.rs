@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Physics for scripts: a rapier world driven by ops (DESIGN.md §8.1).
 //!
 //! Scripts never hold rapier handles. They pick numeric IDs for bodies and colliders

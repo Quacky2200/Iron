@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron <game> --bench` runs a native game without a window, sends its scripted input and
 //! writes the timings (needs a GPU, like the other rendering tests; no window opens).
 

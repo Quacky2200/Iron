@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Dates: construction, getters and setters in local time and UTC, parsing, ISO and UTC strings,
 // arithmetic. Every exported function without parameters returns a string. `gen_date_expected.ts`
 // runs this file in bun once per time zone and `tests/date.rs` compares (the zone list is the same).

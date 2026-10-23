@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Top-level `await` for tests/lang/tla.rs. Each case (split at `//## name`) is a module that
 // exports `function result(): string`; the test compiles it with iron_ts, runs the module's code
 // and the event loop in the normal, stress GC and collection-off modes, and compares the result

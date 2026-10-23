@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of intl.ts in bun and writes what they return.
 //   bun bench/gen_intl_expected.ts
 import * as m from "./intl.ts";

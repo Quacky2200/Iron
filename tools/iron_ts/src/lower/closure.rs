@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Closures: arrow and function expressions that are values.
 //!
 //! A closure is lifted to an ordinary IR function `lambda(env, params...)`; the value is a

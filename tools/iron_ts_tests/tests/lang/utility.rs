@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Partial` / `Required` / `Readonly` / `Pick` / `Omit` over interfaces, aliases, classes and
 //! records. The programs of `bench/utility_cases.ts` run in the normal, stress GC and
 //! collection-off modes and are compared with bun (`bench/gen_cases_expected.ts`). IDs are in

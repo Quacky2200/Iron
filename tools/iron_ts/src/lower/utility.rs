@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Partial<T>`, `Required<T>`, `Readonly<T>`, `Pick<T, K>` and `Omit<T, K>`: plain objects whose
 //! fields come from `T` (an interface, an alias, a class, or an engine class: its settable
 //! properties), so option bags written as `Partial<LineRenderer2D>` are ordinary structs.

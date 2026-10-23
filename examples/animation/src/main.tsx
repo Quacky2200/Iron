@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Animation: clips, players and skinning.
 // - A robot made of primitives with an `Animator`: a locomotion blend tree (idle, walk,
 //   run by `speed`) and a jump on a trigger that returns by exit time. It speeds up and

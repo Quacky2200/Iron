@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed arrays (`Int8Array` .. `Float64Array`). An array object with the `HDR_BYTES` header: `len`
 //! is the element count, `cap` the bytes allocated, `data` the elements, raw and little endian. The
 //! compiler knows the element kind statically and passes its code (the index in `TypedKind::ALL`):

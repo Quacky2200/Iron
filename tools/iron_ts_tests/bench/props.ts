@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // `@property` fields: compile-time metadata, read by the host through a generated table.
 import { property } from "./property_stub";
 

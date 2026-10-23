@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `ParticleSystem` components (Unity's main, emission, shape, over-lifetime and
 //! texture-sheet modules), simulated here each frame and drawn as camera-facing quads.
 //!

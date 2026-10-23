@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs the cases of promises2_cases.ts in bun and writes promises2_expected.json.
 //   bun bench/gen_promises2_expected.ts
 import { readFileSync, writeFileSync } from "node:fs";

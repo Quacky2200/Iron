@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `Animator` component (`js/engine/src/animation.ts`): runs an `AnimatorController`. Parameters
 //! set from script move it between states, cross-fading; `play` and `cross_fade` jump directly.
 

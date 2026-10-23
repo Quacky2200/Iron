@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! What scripts put in the 3D world for the renderer: `Camera`, `PlaneRenderer`,
 //! `MeshRenderer`, `SpriteRenderer`, `ParticleSystem` and `Light` components (`render.*`
 //! ops, keyed by component id), read with their GameObjects' world transforms each frame, plus script

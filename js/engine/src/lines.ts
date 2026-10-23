@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // `LineRenderer`: a smooth round tube through a list of points (ropes, cables, trails,
 // laser beams). Unlike Unity's flat, camera-facing ribbon it's real geometry, lit like any
 // mesh and the same from every side. It rebuilds its mesh when its points change.

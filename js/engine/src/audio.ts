@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Sound for gameplay and UI code, mixed by kira in Rust (crates/iron_audio). Like
 // physics, scripts hold handles with numeric IDs and changes go to the engine as
 // `audio.*` ops. Rust calls `__iron_audio(ended)` when playing sounds finish.

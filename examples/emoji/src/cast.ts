@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The cast: fifty emoji, each with a show of its own (see specials.ts and signatures.ts).
 // Art is Noto Emoji (assets/emoji/<codepoint>.svg). Two performers are drawn in code instead,
 // because their eyes follow the mouse.

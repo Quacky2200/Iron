@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The dials face: three rings (hours, minutes, seconds) carry their numbers round and turn to
 // bring the time under a window at twelve o'clock, like a car's odometer laid flat. Seconds
 // step with a small overshoot, minutes ease round when they change, hours glide.

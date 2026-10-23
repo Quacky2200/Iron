@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Objects and dictionaries as collections of entries: `Object.entries` and `Object.fromEntries` as
 //! values, `key in obj` with a key known only at run time, `delete obj.key` and
 //! `for (const k in obj)`. The keys of a struct are its fields, and an optional field (a

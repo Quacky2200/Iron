@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Date formatting in compiled code (`bench/datefmt.ts`): `toLocale*String` and
 //! `Intl.DateTimeFormat`. `bench/gen_datefmt_expected.ts` ran the same file in bun once per time
 //! zone; every function here must return what bun returned in every zone, in the normal, stress GC

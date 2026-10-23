@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Bundles the docs into the reader: every Markdown file goes into src/docs.gen.ts, and the
 // images they can show (anything but video) are copied into content/, inside the game
 // folder, where `image` elements can load them. Both outputs are git-ignored; `bun run

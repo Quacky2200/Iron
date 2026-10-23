@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Gamepads through gilrs, as [`InputEvent::Gamepad`] events with stable names for
 //! buttons and axes (the Xbox-style layout gilrs maps every pad to).
 

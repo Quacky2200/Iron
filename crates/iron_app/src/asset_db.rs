@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The game's asset database: every `<file>.meta` in the game folder (written by
 //! `scripts/assets.ts`), giving assets GUIDs and importer settings. Scripts get it as
 //! `__iron_info.assets` (`[{ path, guid, importer }]`) for `Assets.guidToPath` and

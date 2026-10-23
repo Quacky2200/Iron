@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M4-HOT-06: Fast Refresh in QuickJS. Built twice as a dev game bundle (`LABEL` "v1" and
 // "v2") against refresh-vendor.js; the Rust test loads v1, changes state, then loads v2
 // in the same runtime the way a reload in place does.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The menubar's model: menus, accelerators and keyboard movement, without React, so
 // it can be tested on its own (MenuBar.tsx draws it).
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Language features the original (QuickJS-era) example sources need: generic inference from a
 //! closure that returns nothing, unions of different types, `ReturnType<typeof f<T>>` and the
 //! other utility types. The programs of `bench/originals_cases.ts` run in the normal, stress GC

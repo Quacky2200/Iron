@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The TypeScript `@iron/engine` shapes that the native API holds differently: functions the
 //! compiler writes from the manifests (subscriptions, promises, globals, object arguments) and the
 //! typed window messages (`messages.rs`), appended to a program that names them, or calls expanded

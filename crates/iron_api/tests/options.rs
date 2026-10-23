@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `#[options]`: QuickJS functions whose optional parameters may come as one object, by camelCase
 //! name (`Window.create({ title: "T", minWidth: 200 })`). IDs are in TESTS.md (M9-API-14xx).
 use iron_api::{ValueType, iron_api};

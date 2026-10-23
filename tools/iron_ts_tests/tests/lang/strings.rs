@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strings in compiled code (`bench/strings.ts`): `+` and `+=`, template literals, methods,
 //! comparisons, `switch`, arrays of strings, nullable strings and conversions. `bench/strings.ts`
 //! also runs in bun; `bench/gen_strings_expected.ts` wrote what bun returned

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The runtime's strings against JavaScript: `tests/strings_expected.json` holds what bun answers
 //! (made by `tests/gen_strings.ts`, regenerate with `bun tests/gen_strings.ts`) for every
 //! operation over a corpus with ASCII, Latin-1, CJK, astral and lone-surrogate strings. The

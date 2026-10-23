@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Cloth: three `Cloth` components on meshes made in code.
 // - A flag pinned along its pole edge, flapping in gusty wind (`randomAcceleration`).
 // - A sheet dropped onto a ball and a capsule (sphere and capsule colliders).

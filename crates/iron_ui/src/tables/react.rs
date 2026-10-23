@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The React names a game uses without importing them, and the module they are re-exported from
 //! (`react`, `@iron/react`). The signatures are TypeScript text (the hooks are generic over the
 //! program's own types); `tools/iron_ts` prints them and lowers the calls (`lower/jsx.rs`).

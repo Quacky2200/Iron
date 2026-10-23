@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Textures and sprites (Unity's `Texture2D`, `Sprite` and `SpriteRenderer`). Textures
 // load in the engine (`render.texture`), which reports their sizes back through
 // `__iron_textures` once loaded; sprites are drawn as quads facing the object's +z,

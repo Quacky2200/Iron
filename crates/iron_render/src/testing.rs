@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Golden-image helpers for render tests (see TESTS.md "Conventions").
 //!
 //! References live in `tests/golden/<id>.png` at the workspace root. Set

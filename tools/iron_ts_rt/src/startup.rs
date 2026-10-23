@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Startup of a compiled program: which component classes `register(..)` named (in call order) and
 //! whether every module of the graph has finished evaluating (a module with a top-level `await`
 //! finishes later). The host starts the registered classes only when the startup is done.

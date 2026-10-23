@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // ArrayBuffer, typed arrays over a buffer, subarray, .buffer and DataView. Every exported function
 // without parameters returns a string; `gen_buffers_expected.ts` runs this file in bun.
 

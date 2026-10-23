@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Rng` (a seedable generator, C#'s `System.Random` shaped) and Unity's static `Random`. The
 //! generator is mulberry32, the one `js/engine/src/random.ts` uses, so a seed gives the same
 //! numbers in both. Not for security.

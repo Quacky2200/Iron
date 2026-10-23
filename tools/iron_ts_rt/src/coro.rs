@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Stackful coroutines for generators (and, next, `async`/`await`). A coroutine runs a `() => void`
 //! closure on its own native stack (`corosensei`). The garbage collector's roots live on the shadow
 //! stack, a linked list of frames that sit in each function's native frame, so a coroutine only needs

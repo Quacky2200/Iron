@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The classic computer graphics test models, as glTF: the Stanford Bunny and the Newell
 // teaset (teapot, teacup, teaspoon), each turning on a pedestal under a key light, a
 // rim light and spotlights while the camera orbits. Behind them, the classic material

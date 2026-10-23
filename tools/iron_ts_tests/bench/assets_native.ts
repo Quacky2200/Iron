@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Assets.exists / list / packOf from compiled code. The Rust test (tests/engine_api/assets_native.rs)
 // fills the index the host would, and checks what the program gets.
 

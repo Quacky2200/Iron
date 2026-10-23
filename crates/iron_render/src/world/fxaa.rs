@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! FXAA (fast approximate anti-aliasing, Timothy Lottes' reduced form): a post pass over
 //! the finished, tonemapped image that blends along edges it finds by contrast. Cheaper
 //! than MSAA and smooths what MSAA can't (texture and shading edges), a little blurrier.

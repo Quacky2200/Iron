@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Files dragged onto the window from the system. winit reports one event per file
 //! (`HoveredFile`, `DroppedFile`, `HoveredFileCancelled`) and no positions while the
 //! system drags, so the files are gathered here and handed to the screen's UI once a

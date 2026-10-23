@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `Platform` layer: windowing, input and gamepads.
 //!
 //! Everything above this crate sees Iron's own [`InputEvent`]s, so `winit` + `gilrs`

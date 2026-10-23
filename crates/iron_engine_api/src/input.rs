@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `input`: keyboard, mouse and gamepad state for gameplay code, as `js/engine/src/input.ts` has
 //! it. Keys are named by physical code (`"Space"`, `"KeyV"`); mouse buttons are keys named
 //! `MouseLeft`, `MouseRight`, `MouseMiddle` (then `Mouse3`...). The host reports events as they

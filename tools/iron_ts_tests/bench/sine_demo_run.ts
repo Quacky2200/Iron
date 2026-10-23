@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // QuickJS and bun entry for the verbatim sine-circle demo class (`sine_demo.ts`): exposes
 // `__sineDemo(n)` for QuickJS, and times itself under bun (with `--preload bench/iron_stub.ts`,
 // because the engine package expects `__iron_op`).

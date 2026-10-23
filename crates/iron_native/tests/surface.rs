@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every function of every manifest exists in QuickJS. IDs are in TESTS.md (M9-API-*).
 mod common;
 use serde_json::Value;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `RenderSettings`: scene-wide lighting (ambient light, the procedural sky, bloom, tonemapping),
 //! as `rendering.ts`'s `RenderSettings` object has it. The app reads [`settings`] when
 //! [`version`] changed. Scene files save and load it under `renderSettings` (the active scene).

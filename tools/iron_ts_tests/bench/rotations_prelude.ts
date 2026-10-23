@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Three-argument hypot as the native math does it, and the native name for building a matrix
 // from columns (the original takes an array).
 import "./hypot_patch.ts";

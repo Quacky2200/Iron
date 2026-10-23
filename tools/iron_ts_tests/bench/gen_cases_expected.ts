@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs the cases (`//## name`, each defining `function t(): string`) of a cases file in bun and
 // writes <name>_expected.json next to it.
 //   bun bench/gen_cases_expected.ts unions_cases.ts

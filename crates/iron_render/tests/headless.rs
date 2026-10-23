@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use iron_render::testing::{assert_golden, shared_gpu};
 use iron_render::{Color, Gpu, OffscreenTarget};
 

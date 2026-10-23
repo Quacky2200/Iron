@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `dump_api`: prints every engine API manifest (the ones `compile_check` loads) as a compact
 //! listing, one line per function: `Namespace.Class kind name(params) -> ret`. A development
 //! aid for the engine facade (what the TypeScript examples can call, and what they cannot).

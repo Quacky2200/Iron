@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Native audio from compiled programs (`bench/audio_native.ts`): the commands the host would run
 //! on the mixer, in the normal, stress GC and collection-off modes. IDs are in TESTS.md
 //! (M9-TS-1210..).

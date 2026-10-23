@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! glTF models (`js/engine/src/models.ts`), Unity-prefab style. `Model.load(path)` asks the host to
 //! read a `.glb` / `.gltf` ([`RenderCommand::Model`]); the host uploads its meshes and textures
 //! ([`engine_mesh`], [`engine_texture`]) and reports the description with [`model_loaded`] (the

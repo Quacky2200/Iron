@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The payload of a single-file game: an archive appended to the engine host's executable
 //! (`iron-build package` writes it, `iron_app` reads it; see `docs/iron-build.md`).
 //!

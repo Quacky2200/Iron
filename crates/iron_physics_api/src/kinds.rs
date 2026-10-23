@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Component kinds (`iron_kinds`) of the physics components, so scene files with them load and
 //! `instantiate` copies them. [`register_kinds`] registers them on this thread (the host calls it
 //! with the other engine kinds). Properties are saved under the TypeScript names; a collider's

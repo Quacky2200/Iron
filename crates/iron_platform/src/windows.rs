@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Window types for games with more than one window: what a window asks for ([`WindowSpec`]), what that
 //! means on this OS ([`plan`], decided without a display so it can be tested), where a new window goes
 //! ([`place`]) and who owns whom ([`WindowTree`]). Design: `docs/research/iron-windows.md` section 7.

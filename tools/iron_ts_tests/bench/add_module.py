@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Registers a new bun-compared test module for bench/<name>.ts:
 #   python3 bench/add_module.py <name> <prefix> <struct_base> <first_test_id>
 # It adds ("<name>", "<prefix>_", <base>) to build.rs, a `pub mod <name>_t` to src/lib.rs, the

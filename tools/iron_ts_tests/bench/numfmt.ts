@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Intl, step I2: Number.prototype.toLocaleString and Intl.NumberFormat. Every exported function
 // without parameters returns a string; `gen_numfmt_expected.ts` runs this file in bun and
 // `tests/numfmt.rs` compares.

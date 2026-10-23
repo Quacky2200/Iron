@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The original animation module over a scene with no engine behind it, plus the native API's names
 // where they differ (see docs/research/iron-native-animation.md): text JSON, event arguments instead
 // of an object, a transform read back at f32 precision (the native scene stores floats), and

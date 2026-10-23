@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { GraphicsSettings } from "../src/index.ts";

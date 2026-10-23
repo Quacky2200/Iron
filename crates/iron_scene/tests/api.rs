@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The scene's `#[iron_api]` namespace: handles, values and the current scene. IDs are in
 //! TESTS.md (M9-API-*).
 use glam::Quat;

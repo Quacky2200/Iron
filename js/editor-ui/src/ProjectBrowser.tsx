@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The project browser: the project folder's files, navigable by folder. Files dragged
 // in from the system are copied into the folder they're dropped on (or the one shown);
 // items dragged inside it move into a folder (a row, a breadcrumb, or `..`).

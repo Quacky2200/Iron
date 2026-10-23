@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A native reconciler with React's re-render semantics, replacing `react-reconciler` for UI that
 //! runs without a JavaScript engine. Design: `docs/research/iron-ui-native.md`.
 //!

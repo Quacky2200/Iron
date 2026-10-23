@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! What scripts learn about the game and the machine: the game's manifest (its
 //! `project.json`) for `Application`, and the OS, hardware, GPU and screen for
 //! `SystemInfo`. It reaches scripts as `globalThis.__iron_info` before the bundle runs.

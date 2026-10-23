@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The physics components (`Rigidbody`, the colliders, joints, `Rope`, and their 2D twins) as
 //! data in Rust. A component is a number (its place in `State::comps`); the properties live
 //! here and every change reaches the rapier world at once. One body per GameObject is shared by

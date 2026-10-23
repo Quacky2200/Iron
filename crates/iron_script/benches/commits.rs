@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! M2-BEN-04: cost of sending UI commits from JS to Rust through QuickJS.
 //!
 //! Run with `cargo bench -p iron_script`.

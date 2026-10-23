@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CSS stylesheets: parsing with `cssparser` and selectors with Servo's `selectors`
 //! crate (DESIGN.md §5.2). Declarations are kept as CSS text and applied with the
 //! same `apply_style` as inline styles, after kebab-case → camelCase.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! glTF models (`.glb` / `.gltf`): meshes, materials, textures and the node tree.
 //!
 //! `render.model id src` loads one: its meshes and textures are uploaded under engine

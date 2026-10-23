@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * @iron/engine — the TypeScript side of Iron.
  *

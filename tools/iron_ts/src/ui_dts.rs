@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The UI half of the generated declarations, written from the tables of `iron_ui::tables` (style
 //! properties, attributes, elements, events, React names) and from the `Ui` manifest: `interface
 //! IronStyle`, the event interfaces, `IronProps`, `JSX`, the hooks, `createRoot` and the element

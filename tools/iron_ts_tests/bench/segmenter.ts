@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Intl.Segmenter: graphemes, words, sentences. Every exported function without parameters returns
 // a string; `gen_segmenter_expected.ts` runs this file in bun.
 

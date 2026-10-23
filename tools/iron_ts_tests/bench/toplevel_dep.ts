@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Imported by toplevel.ts: control-flow statements at the top of a module run too.
 export const depLog: string[] = [];
 export let depTotal = 0;

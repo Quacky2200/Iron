@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // What the clock faces share: colours, easings, and builders that put everything a face makes
 // under that face's root object (so switching faces is turning one object on or off).
 

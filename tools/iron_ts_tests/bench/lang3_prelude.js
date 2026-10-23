@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // What the `Words` test API of tests/lang/lang3.rs does, for bun.
 var Words = {
   join: (words, sep) => words.join(sep),

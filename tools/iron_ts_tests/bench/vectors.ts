@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Vector2, Vector3, Vector4 and the integer grid vectors, compiled against the native API and run
 // in bun against js/engine/src/math.ts. Every number is printed in full.
 

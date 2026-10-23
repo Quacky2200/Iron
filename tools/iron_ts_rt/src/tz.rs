@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Time zone queries for `Temporal.ZonedDateTime`, on jiff: a zone name checked and made canonical,
 //! the UTC offset at an instant, and a local date and time turned into an instant (with the four
 //! `disambiguation` choices).

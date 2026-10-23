@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M5-DND-09: drag and drop from Rust through React. The item is draggable and puts
 // its name in the dataTransfer; the folder accepts drops (prevents dragover) and shows
 // what it got, including files dragged in from the system. The status line says how

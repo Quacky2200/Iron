@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `RegExp`: literals, `new RegExp`, `test` and `exec`, and the match object. A regular expression
 //! is an object of the prelude class `RegExp` (its `lastIndex` is a plain field); the engine and
 //! the registry of compiled expressions are in the runtime (`iron_ts_rt/src/regexp.rs`). A match is

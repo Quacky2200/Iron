@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Array methods lowered to loops, with callbacks inlined at the call site.
 //!
 //! `xs.filter((x) => p(x))` becomes an index loop whose body is the callback's body; `return`

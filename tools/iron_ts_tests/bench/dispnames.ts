@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Intl.DisplayNames for regions, scripts and languages. Every exported function without parameters
 // returns a string; `gen_dispnames_expected.ts` runs this file in bun.
 

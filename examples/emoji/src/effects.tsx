@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Things that happen to the whole stage: rain and storms (rain is a CSS overlay drawn over the
 // emoji; lightning is a bolt behind it plus a flash over everything), the room blushing red with
 // a heartbeat, disco lights and a dropping disco ball, tomatoes thrown from the audience, and a

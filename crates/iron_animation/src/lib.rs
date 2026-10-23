@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Animation without a script engine: curves, clips, blending and the players that advance them.
 //! The script API over it is `iron_engine_api::animation`; the design is
 //! `docs/research/iron-native-animation.md`. Behaviour and numbers follow `js/engine/src/animation.ts`.

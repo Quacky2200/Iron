@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M3c showcase: interaction. A profile form with controlled text fields (validation,
 // a character counter), keyboard- and gamepad-operable toggles and buttons with
 // :hover / :active / :focus-visible / :disabled styles, and a scrolling list of saved

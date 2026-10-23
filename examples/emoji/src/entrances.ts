@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Ways on to the stage. Each is an `Act` over time `t`, ending still at the centre (apart from
 // `rollcrash`, which misses the show).
 import { GATHER, GROUND, HEIGHT, view } from "./config.ts";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The native backend: a game compiled by `iron_ts` (TypeScript to machine code) and run in this
 //! process, instead of a QuickJS bundle.
 //!

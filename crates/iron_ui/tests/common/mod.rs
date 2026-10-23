@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared helpers for building small trees in integration tests.
 #![allow(dead_code)]
 

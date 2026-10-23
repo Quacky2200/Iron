@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs the cases of tla_cases.ts in bun, as the body of an async function (so the top-level
 // awaits are ordinary awaits), and writes tla_expected.json.
 //   bun bench/gen_tla_expected.ts

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A single-file game: when this executable carries a payload (`iron-build package`, format in
 //! `iron_core::payload`), the game's *code* (bundle, CSS, `project.json`, icon, and a few tiny
 //! essentials) is extracted once to a per-user cache folder and the game runs from there.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The typed window messages (`postMessage<T>`, `onMessage<T>`, `request<R>`, the named events
 //! `emit` / `on` / `ask<R>` / `answer`, `Window.broadcast` / `emitAll`; docs/windows.md) over the
 //! JSON natives of `iron_engine_api::window` (`postMessageJson`, `emitJson`, `requestJson`,

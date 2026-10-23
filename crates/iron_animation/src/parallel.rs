@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Animators posed on several threads. The frame's walk (in turn) lists what runs, in order; the
 //! animators then advance their state machines, blend their clips and work out their bones' new
 //! local transforms in parallel, each into its own lists, reading the scene only; last, in the

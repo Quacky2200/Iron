@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The project folder for the editor: `iron_editor [project]` answers `editor.listDir`,
 // `editor.copyIn` and `editor.move` through `__iron_editor_fs`, a frame later. Paths
 // are relative to the project, `/` separated, "" for its root.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron <game> --bench`: a windowless, uncapped frame loop that times every frame and writes
 //! the result as JSON (`docs/iron-build.md`, "Benchmarks").
 //!

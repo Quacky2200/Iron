@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Test harness for the native code `iron_ts` generates from `sim.ts`: the generated bindings
 //! (layouts, tags, extern functions) plus helpers to build state from Rust.
 #![allow(non_snake_case, clippy::not_unsafe_ptr_arg_deref)] // a test harness: every pointer comes from the generated code

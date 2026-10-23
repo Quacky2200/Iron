@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Color`: linear RGBA, as `js/engine`'s `Color` (same constants, same `hex` with the sRGB to
 //! linear conversion). `Color.white`, `Color.hex("#ff0000")`, `new Color(r, g, b, a)`, `c.lerp(d, t)`.
 

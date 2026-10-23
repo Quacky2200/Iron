@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Fog blocks: a hill of grass blocks in pale sky-blue fog, after foggy Minecraft, drawn like
 // examples/fog-world: pixel-art tiles from a texture made in code, each 16×16-column chunk one
 // mesh of the faces you can see. Distance fog

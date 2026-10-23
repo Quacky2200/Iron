@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M2 showcase: React UI rendered by Iron. Flexbox and grid layout, gradients,
 // images, borders, per-corner radii, box shadows, blur filters, frosted glass and
 // group opacity, plus a timer-driven counter that adds and removes boxes.

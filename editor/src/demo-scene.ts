@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A scene to look at in the Scene view until scenes open from the project: a few
 // shapes on a floor, the three kinds of light, a camera, an audio source and a
 // reflection probe (so every SceneIcon shows).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Rigidbody`, `BoxCollider`, `SphereCollider`, `CapsuleCollider`, `MeshCollider` and
 //! `CharacterController` for compiled scripts: `go.addComponent(Rigidbody, { mass: 2 })` and
 //! `go.getComponent(BoxCollider)`. The behaviour is `physics-components.ts`'s; the data and the

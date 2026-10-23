@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Accessors in object literals: `{ sfx: .., get scene() { return self.effects; } }`.
 //!
 //! The getter runs on every read, so it cannot be a value stored when the object is made (the

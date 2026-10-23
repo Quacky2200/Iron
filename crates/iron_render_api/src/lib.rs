@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The data side of rendering for scripts: `js/engine/src/rendering.ts`, `textures.ts`,
 //! `models.ts`, `particles.ts`, `lines.ts`, `cloth.ts`, `primitives.ts` and `cursor.ts` as
 //! `#[iron_api]` classes over per-thread registries. Nothing here draws: the app reads the

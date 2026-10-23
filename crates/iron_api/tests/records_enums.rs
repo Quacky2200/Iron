@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Enums, records, lists, rest parameters, option objects after a parameter, doc comments and `like`
 //! in `#[iron_api]` (docs/iron-api.md, "Enums, records and lists"). IDs are in TESTS.md (M9-API-16xx).
 use iron_api::{Handle, Ty, ValueType, iron_api};

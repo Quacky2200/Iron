@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The bridge between compiled TypeScript UI code and the native reconciler (`iron_ui_native`).
 //!
 //! Compiled code builds element descriptions through the `Ui` namespace (`Ui.begin("box")`,

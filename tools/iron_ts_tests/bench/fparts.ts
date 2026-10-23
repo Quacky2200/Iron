@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Intl.NumberFormat / DateTimeFormat formatToParts. Every exported function without parameters
 // returns a string; `gen_fparts_expected.ts` runs this file in bun.
 

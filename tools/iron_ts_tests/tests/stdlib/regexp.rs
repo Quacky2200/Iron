@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Regular expressions in compiled code (`bench/regexp.ts`): literals, `new RegExp`, `test`,
 //! `exec`, `lastIndex`, flags, named groups and match objects. `bench/gen_regexp_expected.ts` ran
 //! the same file in bun; every function here must return what bun returned, in the normal, stress

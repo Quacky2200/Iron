@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Crowd: two busy sidewalks. Two city blocks far apart, each a ring of pavement round a block of
 // buildings with a road round that, and on each a crowd of Quaternius's mannequin (CC0, see
 // assets/CREDITS.md) walking round in both directions: each figure its own Animator (idle, walk

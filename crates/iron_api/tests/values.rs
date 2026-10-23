@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Value classes in `#[iron_api]`: a few numbers that scripts see as an object, passed across the
 //! C ABI as one scalar per field (a result through a trailing pointer). IDs are in TESTS.md
 //! (M9-API-*).

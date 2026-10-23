@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `Window` API in QuickJS: options objects, static properties, listeners. IDs are in TESTS.md
 //! (M9-API-14xx, M9-TS-28xx).
 mod common;

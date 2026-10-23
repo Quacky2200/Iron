@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The light meter (`Light.illuminanceAt`, `Light.measureIlluminance`): how much light every light
 //! sheds on a point, in lux with physical light units. The same sums as `js/engine`'s
 //! `rendering.ts`, in the same order of operations.

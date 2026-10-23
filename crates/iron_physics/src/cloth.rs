@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cloth (Unity's `Cloth`): a mesh's vertices as particles, simulated with position-based
 //! dynamics (Verlet integration, then constraint passes). Edges keep their length
 //! (stretching), pairs across shared edges keep theirs (bending), pinned vertices stay

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Cases of the TypeScript-semantics fixes: `flat(depth)` with a run-time depth, `this` in object
 // literal methods and accessors, `Object.assign` into objects by key, string array parameters.
 // Each case (split at `//## name`) defines `function t(): string` and is compared with bun.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A clip's bindings resolved once per animated root (Unity's `Animator.Rebind`): each curve gets
 //! the bone slot it moves and a channel number, so a frame does no path walks or string compares.
 //! A root's bindings are kept against its [`Scene::tree_version`] (renames, re-parenting, objects

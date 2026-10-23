@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strings, part two, against JavaScript: trimming, case mapping, `at`, `repeat`, padding,
 //! `split` / `join`, and number <-> string conversion. `tests/strings_more_expected.json` is what
 //! bun answers (second half of `tests/gen_strings.ts`). IDs are in TESTS.md (M9-TS-173..).

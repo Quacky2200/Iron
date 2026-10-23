@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The tables in `iron_ui::tables` against what this crate implements: every style property, attribute,
 //! element and event the tables declare (and so the compiler writes into `types/iron.d.ts`) is
 //! handled, and what the code handles is declared.

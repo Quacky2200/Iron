@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! TypeScript source compiled in front of a program that mentions errors: the `Error` classes.
 //! They are ordinary classes of the program (the collector, `instanceof` and field access treat them
 //! like any other), so `throw new TypeError("x")` and `catch (e) { e.message }` need no special

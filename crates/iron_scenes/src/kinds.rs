@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The component kinds of the engine components that are native: `Camera`, `Animation` and
 //! `Animator`. Other engine components register their own as they are ported.
 

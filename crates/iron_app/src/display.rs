@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The window's mode and size as scripts and saved settings see them: `screen.set`
 //! ops, the manifest's `iron.display` defaults, the player's saved choice
 //! (`iron.display` in prefs) and the state scripts read (`__iron_info.display`).

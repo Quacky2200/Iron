@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Dialogs (M3-DLG-01): closed dialogs are hidden, open ones centre in their
 //! containing block, modal ones go in the top layer over a `::backdrop`, trap focus
 //! and close on Escape or backdrop clicks (`cancel`, then `close`).

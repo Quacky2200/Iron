@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Promise`, `async` and `await` by source rewriting plus classes written per value type, the way
 //! generators are (`generators.rs`).
 //!

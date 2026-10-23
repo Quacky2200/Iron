@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use glam::{Quat, Vec3};
 use iron_scene::{Scene, Transform};
 

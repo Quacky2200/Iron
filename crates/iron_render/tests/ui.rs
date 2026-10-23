@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! UI renderer tests (M2-DRW-01..08): scenes are built through the real UiTree
 //! from styles, rendered offscreen, and checked with pixel assertions that
 //! encode the CSS behaviour, plus golden images for regressions.

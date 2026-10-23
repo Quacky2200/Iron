@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Asset `.meta` files, Unity's way: every asset in a game folder gets `<file>.meta` next
 // to it holding a GUID (stable across renames, so scenes can refer to assets by it)
 // and its importer settings (how a texture is filtered, whether a model gets colliders,

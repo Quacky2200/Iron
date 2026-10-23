@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M2-INT-01/02: a React UI rendered through @iron/react inside the engine's runtime.
 // After 100ms (engine time) a timer adds two more grid cells.
 import { createRoot } from "@iron/react";

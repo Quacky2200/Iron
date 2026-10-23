@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // `boolean | undefined`: optional boolean fields and parameters, `??`, truthiness, and passing them on.
 // Every exported function without parameters returns a string; `gen_nullbool_expected.ts` runs this
 // in bun.

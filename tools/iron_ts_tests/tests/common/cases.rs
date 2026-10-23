@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared by the bun-compared language tests: a program of `//## name` cases (each defines
 //! `function t(): string`) is compiled in the process, run in the normal, stress GC and
 //! collection-off modes, and compared with what bun gives for the same case.

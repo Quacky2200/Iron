@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Environment cube maps for reflections and sky light: HDR (`Rgba16Float`) cubes with
 //! a mip chain, each mip blurrier, so rough surfaces sample a lower mip. The sky's is
 //! drawn procedurally ([`Sky`]); reflection probes copy six renders into theirs.

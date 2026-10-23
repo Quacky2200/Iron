@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The player's saved settings (Unity's `PlayerPrefs`): numbers and strings by key, kept
 // in a file in the user's settings folder (the engine picks it per OS; see
 // crates/iron_app/src/prefs.rs). Reads come from a copy made at startup; writes go to the

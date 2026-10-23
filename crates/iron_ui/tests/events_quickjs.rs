@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! UI events end to end (M3-EVT-02, M3-EVT-03, M3-EVT-04): [`Interaction`] hit-tests
 //! and tracks focus, `@iron/react` runs the handlers inside QuickJS, and re-renders
 //! come back as commits; `ref.focus()` / `ref.blur()` come back as ops. Uses

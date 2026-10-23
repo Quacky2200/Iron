@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The 3D world pass (M5): what the cameras see, drawn before the screen UI.
 //!
 //! The world is lit meshes ([`MeshInstance`], built-in primitives or meshes set with

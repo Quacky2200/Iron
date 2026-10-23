@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Strings in compiled code. Every exported function takes no arguments and returns a number or a
 // string; `gen_strings_expected.ts` runs the same file in bun and `tests/strings.rs` compares.
 

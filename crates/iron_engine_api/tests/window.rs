@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `Window` API's host side: requests, events, closing. IDs are in TESTS.md (M9-API-14xx).
 //! The Rust API and the generated shims are called directly: no display, no GPU, no script runtime.
 use iron_api::Callback;

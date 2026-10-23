@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The pack build of `iron-build package --packs`: the data files of a game written as `.irpk`
 //! packs (`iron_pack`) instead of a loose `data/` folder.
 //!

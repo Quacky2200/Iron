@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The engine's script API, declared once in Rust.
 //!
 //! A module marked `#[iron_api(namespace = "Time", quickjs)]` holds ordinary `pub fn`s. The macro

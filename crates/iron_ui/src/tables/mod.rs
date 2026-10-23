@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tables of what a script can say to the UI: style properties, element attributes, elements,
 //! events and the React names. Plain data (the module has no dependencies on the rest of the crate), read by
 //!

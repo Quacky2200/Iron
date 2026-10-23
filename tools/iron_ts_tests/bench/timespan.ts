@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // TimeSpan, compiled against the native API and run in bun against js/engine/src/time.ts.
 
 function ms(t: TimeSpan): string {

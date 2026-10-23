@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // `ParticleSystem` (Unity's, with its main, emission, shape, over-lifetime, texture
 // sheet and renderer settings as plain fields). The engine simulates and draws the
 // particles; settings are sent when the component is added and again before a frame

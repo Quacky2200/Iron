@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Syntax highlighting for code blocks: a small single-pass tokenizer per language
 // (TypeScript / JavaScript, Rust, WGSL, CSS, JSON, TOML, shell). It only has to look
 // right, not parse: keywords, strings, comments, numbers, types, function calls.

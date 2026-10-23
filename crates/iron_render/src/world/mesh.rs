@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Triangle meshes for the world pass: vertex data, and the primitives Unity has
 //! (cube, sphere, capsule, cylinder, plane, quad) built in code.
 //!

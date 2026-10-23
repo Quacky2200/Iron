@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Iron script prelude: timers on top of engine-driven time.
 //
 // Timers live entirely in JS so Rust never holds references to JS functions

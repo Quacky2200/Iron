@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The player's saved settings (Unity's `PlayerPrefs`): one JSON file per game in the
 //! user's settings folder, read at startup (scripts get it in `__iron_info.prefs`) and
 //! written on `prefs.save` and when the game closes. The engine keeps its own entries

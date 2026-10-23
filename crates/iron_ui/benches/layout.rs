@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! M2-BEN-01..03: layout and commit costs on an editor-like UI of ~2,000 nodes.
 //!
 //! Run with `cargo bench -p iron_ui`.

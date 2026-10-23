@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Lists the examples for the launcher: each one's folder, title and description (from its
 // project.json) go into src/games.gen.ts, and its screenshot from `bun run screenshots`
 // (tests/output/examples-<name>.png) is copied into content/shots/, where `image` elements

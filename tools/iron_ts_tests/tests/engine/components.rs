@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compiled components driven by `iron_ts_rt::NativeHost` over the real scene
 //! (`bench/components.ts`): `class X extends Component` + `register(X)`, the lifecycle the
 //! QuickJS `ComponentHost` has, no script engine. IDs are in TESTS.md (M9-TS-556..).

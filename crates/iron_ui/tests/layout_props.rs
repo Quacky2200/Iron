@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Layout properties from M3d group 2: `place-*` shorthands, grid extras
 //! (`grid-template-areas`, `grid-area`, `grid-template`, auto tracks, line
 //! longhands) and logical properties.

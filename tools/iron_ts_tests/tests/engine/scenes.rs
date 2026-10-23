@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scene files, `instantiate`, prefabs and `SceneManager` for compiled programs
 //! (`bench/scenes.ts`, `iron_scenes`). IDs are in TESTS.md (M9-TS-712..).
 use iron_api::Handle;

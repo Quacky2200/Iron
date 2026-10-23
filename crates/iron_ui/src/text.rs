@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Text layout with Parley: fonts (bundled Inter, system fallback, game fonts),
 //! building a Parley `Layout` for each text block, and measuring it for Taffy.
 

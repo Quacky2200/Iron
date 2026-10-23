@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Clips (`AnimationClip` in `js/engine/src/animation.ts`) and the arenas that hold curves and
 //! clips. A clip binds curves (by id, shared: changing a curve later changes every clip that uses
 //! it) to a property of an object under the animated one.

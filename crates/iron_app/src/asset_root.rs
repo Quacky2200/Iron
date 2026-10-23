@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where a game's assets are read from, apart from where its code is.
 //!
 //! A game folder has both (`dist/game.irbundle` and `assets/`), so the asset root is the game

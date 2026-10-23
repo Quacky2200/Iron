@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Scenes: the game starts in `scenes/level1.scene.json` (`iron.startScene` in
 // project.json). The menu loads the other level from its file (single: everything else
 // goes), adds or removes a bonus room (additive), copies a spinner (`instantiate`) and

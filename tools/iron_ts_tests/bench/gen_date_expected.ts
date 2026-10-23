@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of date.ts in bun, once per time zone, and writes what they return.
 //   bun bench/gen_date_expected.ts
 // The same zone list is in tests/date.rs.

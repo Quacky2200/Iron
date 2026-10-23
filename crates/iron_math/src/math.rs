@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Mathf`, `Vector2`, `Vector3` and `Vector4` as `js/engine/src/math.ts` has them. The values are
 //! doubles (like the TypeScript's), computed in the same order, so results are bit for bit the
 //! same. Units: metres, degrees for angles, y up, right-handed (-z forward).

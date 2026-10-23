@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Physics components from compiled code: Rigidbody, colliders, joints, Rope, CharacterController and 2D.
 
 function floorBox(): GameObject {

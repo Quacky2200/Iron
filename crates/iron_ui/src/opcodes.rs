@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Opcodes for UI commits, shared with `@iron/react` (`js/react/src/opcodes.ts`
 //! must match). Each op is an array `[opcode, ...args]`; node IDs are numbers.
 //!

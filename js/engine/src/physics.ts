@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Physics for gameplay code: rigid bodies, colliders, a character controller and
 // raycasts, simulated by rapier in Rust (crates/iron_physics). Scripts hold handles
 // with numeric IDs; changes go to the engine as `physics.*` ops and apply before the

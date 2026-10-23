@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Auto exposure: a road tunnel through a hill. The camera drives in from a bright summer
 // day: the tunnel mouth looks black at first and only slowly opens up as the eyes adapt to
 // the sodium lamps (`RenderSettings.autoExposure`, slower from light to dark). Deep inside,

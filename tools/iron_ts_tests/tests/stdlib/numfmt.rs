@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl.NumberFormat` and `Number.prototype.toLocaleString` in compiled code (`bench/numfmt.ts`).
 //! `bench/gen_numfmt_expected.ts` ran the same file in bun; every function here must return what
 //! bun returned, in the normal, stress GC and collection-off modes. IDs are in TESTS.md

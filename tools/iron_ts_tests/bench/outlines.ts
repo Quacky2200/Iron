@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Differential oracle for the native `Shapes` and `Spline`: the TypeScript the compiled facade used
 // (`tools/iron_ts/src/lower/facade.ts` before they became native Rust, renamed `Ref*`), run next to
 // the native API on the same inputs. Every point must be the same double (bit for bit). Test

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The elements a script can create: `<box>`, `<text>`, ... and the capitalised components
 //! (`Text`, `Span`, ...) that stand for them.
 

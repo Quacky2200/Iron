@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Skinned renderers' bone matrices (each bone's world matrix times its inverse bind pose), kept
 //! between frames: a skeleton's run is worked out again only when one of its bones moved
 //! (`Scene::moved_since`), so a culled crowd, whose animators write nothing, costs a check per

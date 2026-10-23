@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A windowed program, like `iron`.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 //! `iron_editor`: the Iron editor. The same program as `iron` (main.rs, included as a

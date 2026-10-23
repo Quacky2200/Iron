@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The rest of the Component / GameObject surface of scene.ts as compiled code sees it: the
 // object tree (children, roots, scene), the components on an object, the component's own
 // helpers and the find family.

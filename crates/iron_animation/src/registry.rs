@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which component classes have number properties an animation may drive, registered by the code
 //! that owns the component (the engine API, the host). A curve for `("Camera", "fieldOfView")` writes
 //! through the setter registered under that pair; a value field is a property of its own

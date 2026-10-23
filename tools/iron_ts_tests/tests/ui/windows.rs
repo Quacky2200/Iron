@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Window API from compiled programs (`bench/windows.ts`, prefix `win_`), in the normal, stress GC
 //! and collection-off modes. The test plays the host: it reads the requests and reports `opened`,
 //! `resized`, `close_requested` and `closed`. IDs are in TESTS.md (M9-TS-2800..).

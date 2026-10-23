@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Registers a bun-compared test program that calls the native engine API (`iron_engine_api`):
 #   python bench/add_engine_module.py <name> <prefix> <struct_base> <first_test_id> <engine ts files...>
 # The engine files are modules of js/engine/src (for example `random.ts`): the generator imports

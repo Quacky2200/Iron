@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Animation culling's eyes (`Animator.cullingMode`, `Animation.cullingType`): which renderers
 //! under culled animated objects the renderer saw. Each frame the animation update asks about the
 //! last frame's drawing (one frame late), then the renderers under culled objects are watched while

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl`, step I3a: `Intl.DateTimeFormat` and `Date.prototype.toLocaleString/DateString/TimeString`
 //! on ICU4X field sets (the `icu-lite` backend; see `docs/research/iron-ts-intl-datetime.md`).
 //! ECMA-402 options are mapped to the nearest ICU4X field set: `dateStyle`/`timeStyle` exactly;

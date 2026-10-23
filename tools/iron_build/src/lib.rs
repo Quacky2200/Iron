@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron-build`: builds a game written in TypeScript into `dist/` for `iron_app`, with no bun and no
 //! `node_modules` (see `docs/iron-build.md`).
 //!

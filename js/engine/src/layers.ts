@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Layers: 32 render groups a GameObject belongs to one of (Unity's `layer`). Cameras
 // draw the layers in their `cullingMask`, a bit per layer. Unity's built-in names come
 // first; the game names the rest in its `package.json`: `"iron": { "layers": { "8":

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `AudioSource` and `AudioListener`, the Unity-style components over [`crate::audio`]
 //! (`js/engine/src/audio-components.ts`). An `AudioSource` plays sounds from its GameObject (an
 //! emitter that follows it); the `AudioListener` puts the player's ears on its object.

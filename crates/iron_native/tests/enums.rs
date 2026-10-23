@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Enums, nullables and aliases of the real engine namespaces from QuickJS: the same native code
 //! compiled games call (`tools/iron_ts_tests/tests/engine_api/facade.rs`, M9-TS-3340). IDs are in
 //! TESTS.md (M9-API-162x).

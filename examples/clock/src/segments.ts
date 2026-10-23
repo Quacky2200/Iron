@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The bedside alarm clock: red seven-segment digits glowing through bloom. Lit segments are
 // brighter than white (linear colour above 1), so only they bloom; unlit ones stay faintly
 // visible, as on a real display. The colon blinks with the seconds.

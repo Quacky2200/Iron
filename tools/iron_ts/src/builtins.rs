@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the compiler itself gives a program, beyond the engine manifests: the component base class,
 //! `register` and `@property`, timers, the generic `GameObject` members, the typed window
 //! messages, `Random.pick<T>`, and a few members whose script type is wider than the native one.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `calc()` / `min()` / `max()` / `clamp()` that involve percentages, evaluated by
 //! Taffy during layout once the percentage basis is known (`calc(100% - 20px)`).
 //!

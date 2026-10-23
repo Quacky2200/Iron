@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which variables do closures capture?
 //!
 //! Before a function is lowered, its body is scanned for closures created in script: arrow and

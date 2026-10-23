@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! UI events (DESIGN D6). [`Pointer`] turns pointer input into DOM-style events and
 //! keeps `:hover` / `:active` up to date; [`crate::Interaction`] adds focus and keys
 //! and runs default actions. Dispatching to scripts is the caller's job:

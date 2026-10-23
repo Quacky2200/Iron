@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The component class table as data. The generated bindings' `classes()` is Rust text, so only a
 //! program linked at build time can use it; a host that JIT-compiles a game reads this instead.
 

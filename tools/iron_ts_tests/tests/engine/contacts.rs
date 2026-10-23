@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Contact hooks on compiled components (`bench/contacts.ts`): the physics step queues contacts
 //! and `NativeHost::dispatch_physics` calls `onCollisionEnter` and friends by name. IDs are in
 //! TESTS.md (M9-TS-1000..).

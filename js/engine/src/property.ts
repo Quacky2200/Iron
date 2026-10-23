@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // `@property`: marks what a component saves with its scene (s&box's `[Property]`, Unity's
 // serialized fields). Works on fields and on getters (or setters) of get/set pairs, with
 // standard decorators. Subclasses inherit their parents' properties.

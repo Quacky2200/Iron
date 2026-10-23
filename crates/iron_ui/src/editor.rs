@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Text fields: `<input>` (one line) and `<textarea>` (wrapping lines), each backed by
 //! a Parley `PlainEditor` that owns the text, the selection and IME composition
 //! (DESIGN D7). The tree feeds it styles and sizes; [`crate::Interaction`] feeds it

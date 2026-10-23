@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The chandelier face: a classic clock (white dial, Roman numerals, black spline hands, a gold
 // seconds hand) hung in front of an ornament: two spirograph rosettes turning slowly against
 // each other, curling gold arms ending in flickering candle flames, and crystal drops swinging

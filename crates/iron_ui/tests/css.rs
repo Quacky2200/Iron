@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Stylesheets applied to the UI tree: selectors, cascade and restyle
 //! (M3-CSS-02, -03, -04, -08, -09, -10, -11).
 

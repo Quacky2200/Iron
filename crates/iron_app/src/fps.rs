@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The FPS counter overlay: raw measured frame rate in the top right corner, drawn by the
 //! app over everything (the world, the game's UI) for every game, whatever its backend.
 //! The counting and text are plain functions; `FpsOverlay` is a tiny UI tree for the text.

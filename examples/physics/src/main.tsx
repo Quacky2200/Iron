@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M4 physics showcase, seen from the side: crates and balls fall onto a floor and a
 // ramp (rapier in Rust), drawn as UI boxes from each body's last-tick pose. Click to
 // drop another; a sensor zone counts what passes through it. Impacts knock (kira),

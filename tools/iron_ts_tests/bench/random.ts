@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The seedable generator and Unity's static `Random`, compiled against the native API and run in
 // bun against js/engine/src/random.ts. The shared generator is reseeded first, so both runs see the
 // same numbers.

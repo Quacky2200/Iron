@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The attributes (`IronProps`) of an element. `iron_ui::Attrs::set` implements the [`Scope::Html`]
 //! ones, SVG elements take any name (`Attrs::set_svg`); the JSX lowering handles [`Scope::Core`].
 

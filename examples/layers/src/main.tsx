@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Layers and culling: a forest with a walker. The main camera skips the "Minimap" layer
 // (bright map markers over everything) and draws the "Detail" layer (rocks and
 // flowers) only out to 14 m; a top-down minimap camera draws just the ground, the

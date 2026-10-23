@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Generators, part 2: throw(), return() running finally blocks, return values.
 // Every exported function without parameters returns a string; `gen_generators2_expected.ts` runs
 // this file in bun.

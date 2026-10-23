@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tuples (`.length`, writes through `t[0]`, rest patterns, spreading a tuple into an array or a
 //! call), destructuring assignment (`[a, b] = [b, a]`) and defaulted boolean closure parameters.
 //! The programs of `bench/tuples_cases.ts` run in the normal, stress GC and collection-off modes and

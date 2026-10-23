@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Module-level `let` variables compiled by `iron_ts` (`bench/globals.ts`). The expected numbers
 //! are what bun computes from the same file, one fresh process per scenario. Every test runs three
 //! times (normally, with a collection at every allocation, with collection off), and calls

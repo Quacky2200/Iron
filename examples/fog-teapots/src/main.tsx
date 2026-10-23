@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Teapots in the fog: the classic distance-fog picture. A row of shiny orange teapots
 // recedes into grey fog over a glossy checkerboard that reflects them (a `Mirror` on the
 // floor), seen from low down; the far ones fade until the last are only ghosts.

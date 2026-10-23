@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `JSON.stringify` and `JSON.parse` from the program's types.
 //!
 //! The program is typed and closed, so the compiler describes the static type of the value in a

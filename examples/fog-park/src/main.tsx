@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Fog park: an old London park in a painted, storybook look, built from primitives. Gravel
 // paths curve between lawns edged with low hoop-top railings; a pond with lily pads and
 // reeds narrows under an arched green footbridge; big clumpy trees and two weeping willows,

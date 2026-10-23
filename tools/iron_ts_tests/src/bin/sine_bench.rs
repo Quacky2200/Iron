@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `sine_bench [frames]`: one frame of the sine-circle demo is the curve (361 points a degree,
 //! Catmull-Rom smoothed to 1,083 points) flattened to the list `render.stroke` takes. Compared:
 //! QuickJS computing it, QuickJS computing it and sending it to Rust through `__iron_op`

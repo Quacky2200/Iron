@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron-build package <game>`: one executable for a game. A copy of the engine host
 //! (`iron_app`) gets the game's icon and version info (Windows PE resources, `pe.rs`) and the
 //! game's code (bundle, CSS, metadata, icon) as a payload at its end (`iron_core::payload`). The

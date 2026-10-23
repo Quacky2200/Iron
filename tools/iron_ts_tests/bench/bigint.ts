@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // BigInt: literals, operators, comparison, conversions, BigInt(), asIntN/asUintN. Every exported
 // function without parameters returns a string; `gen_bigint_expected.ts` runs this file in bun.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Asset `.meta` files (a port of `scripts/assets.ts`): every asset in a game folder gets
 //! `<file>.meta` next to it holding a GUID and its importer settings. Existing files are kept; a file
 //! moved with its `.meta` left behind keeps its GUID when the move is unambiguous.

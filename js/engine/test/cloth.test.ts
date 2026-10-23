@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, beforeEach, expect, test } from "bun:test";
 
 import { Cloth, GameObject, Mesh, MeshRenderer, SphereCollider, Vector3 } from "../src/index.ts";

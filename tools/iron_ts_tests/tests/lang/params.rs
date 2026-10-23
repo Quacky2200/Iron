@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Default, optional and rest parameters and spread compiled by `iron_ts` (`bench/params.ts`).
 //! The expected numbers are what bun computes from the same file. Every test runs three times:
 //! normally, with a collection at every allocation, and with collection off.

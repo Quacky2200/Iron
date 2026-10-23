@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `encodeURI`, `encodeURIComponent`, `decodeURI`, `decodeURIComponent`, `escape` and `unescape`.
 //! The errors are `URIError`s with JavaScriptCore's texts (kind 4 of `__rtThrow`).
 

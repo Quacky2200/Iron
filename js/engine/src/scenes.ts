@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Scenes (Unity's `SceneManager`, s&box's scene files): every root GameObject belongs to
 // a scene. Scenes save to plain JSON (`SceneData`): objects with their transforms,
 // children and components, each component with its `@property` values, plus the

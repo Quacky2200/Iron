@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // UI events from the engine (DESIGN D6). Rust hit-tests and calls
 // `__iron_ui_event(type, path, data)` with the target's path (target first, then
 // its ancestors); this runs React-style capture and bubble phases over the

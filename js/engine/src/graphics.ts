@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Project-wide graphics settings (Unity's `GraphicsSettings`). Iron has one render pipeline,
 // as Unity 7 does (its URP, which takes over HDRP's features as HDRP and the Built-in
 // pipeline go away); what it runs is set per quality level (`QualitySettings`: light shafts,

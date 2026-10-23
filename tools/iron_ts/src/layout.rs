@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Rust bindings generated from the IR: `#[repr(C)]` structs with the exact layouts the
 //! generated code uses, string-literal tag constants, and `extern "C"` declarations of the
 //! exported functions. A host links the object file and includes this text.

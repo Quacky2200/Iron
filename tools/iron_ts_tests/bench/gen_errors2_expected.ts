@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of errors2.ts in bun and writes what they return.
 //   bun bench/gen_errors2_expected.ts
 import * as m from "./errors2.ts";

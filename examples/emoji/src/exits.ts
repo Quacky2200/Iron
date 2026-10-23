@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Ways off the stage: most of the entrances played backwards, plus a few that only work going
 // out (turning round and waddling away, blasting off, freezing and sinking into a pool, ...).
 import { HEIGHT } from "./config.ts";

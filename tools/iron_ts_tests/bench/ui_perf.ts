@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The UI benchmark's app, as compiled TSX for the native reconciler. The same app is written for
 // React in `js/react/test/perf_entry.tsx`; keep the two in step. A list of `n` keyed rows, each a
 // box holding a number: mount it, change one row, change every row, reverse it.

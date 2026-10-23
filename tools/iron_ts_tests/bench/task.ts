@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Awaitable waits on engine time: Task.delay, Task.delaySeconds and Task.frame over the runtime's
 // timers. The test advances the timers like the host does each frame.
 

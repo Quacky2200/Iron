@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M5-RB-01: Rigidbody and collider components on GameObjects. The Rust test runs the
 // app's physics sync and reads the log back.
 import {

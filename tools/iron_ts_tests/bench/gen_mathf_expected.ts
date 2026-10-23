@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of mathf.ts in bun against the original engine TypeScript
 // (math.ts) and writes what they return.
 //   bun bench/gen_mathf_expected.ts

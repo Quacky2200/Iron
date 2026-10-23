@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A callback every frame for editor UI that follows the world (the Scene view's icons, a
 // live hierarchy): one hidden object with a component whose `onLateUpdate` (after
 // scripts and animation have moved things) calls the listeners.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Mathf, compiled against the native API and run in bun against js/engine/src/math.ts. Every
 // number is printed in full, so a different last bit is a failure.
 

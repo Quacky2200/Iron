@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `types/iron.d.ts` from the engine manifests: what `tsc` needs to type-check a game when there is no
 //! `node_modules` (no `@iron/engine`, `react` or `@types/react` packages).
 //!

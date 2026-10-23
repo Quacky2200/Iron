@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl`, step I4: `Intl.PluralRules`, `Intl.ListFormat` and `Intl.RelativeTimeFormat` on ICU4X.
 //! Options arrive as the compiler's `key=value;` string. Errors are `RangeError`s with
 //! JavaScriptCore's text.

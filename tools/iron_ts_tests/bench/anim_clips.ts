@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Curves, clips and sampling, compiled against the native API and run in bun against
 // js/engine/src/animation.ts and scene.ts. Every number is printed in full.
 

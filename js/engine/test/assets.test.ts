@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { expect, test } from "bun:test";
 
 import { Assets, GameObject, Material, MeshRenderer, SceneManager, Texture, audio } from "../src/index.ts";

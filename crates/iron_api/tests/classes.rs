@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Handle classes in `#[iron_api]`: methods, properties and statics declared in ordinary `impl`
 //! blocks of the handle's Rust type. IDs are in TESTS.md (M9-API-*).
 use iron_api::{FnKind, Handle, Ty, iron_api};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron-build build|types|assets|dev|check`: see `docs/iron-build.md`.
 
 use iron_build::{Options, Tsc, assets, build, dev, package, types_dts};

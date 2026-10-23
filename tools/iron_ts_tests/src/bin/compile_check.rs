@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `compile_check file.ts`: compiles a program with every engine API manifest (scene, colour, time,
 //! input, gizmos, camera, screen, quality settings) and prints the first error, or the number of
 //! functions. A development aid for the swap-out work (`docs/research/iron-ts-sine-demo.md`).

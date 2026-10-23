@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Time`: game time, scaled by `timeScale`. The host calls [`advance`] once per frame with the
 //! real frame length; scripts read the rest.
 

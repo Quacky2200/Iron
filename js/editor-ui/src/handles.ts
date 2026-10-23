@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Unity's transform handles (W move, E rotate, R scale) as plain math: where each part
 // is on screen, which part the pointer is over, and what a drag does to the object.
 // The view is abstract (`HandleView`: world to panel pixels and back), so the math is

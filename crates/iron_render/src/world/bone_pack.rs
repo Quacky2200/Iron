@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The bone matrices of the skinned meshes a frame draws, packed into one GPU list: a mesh's run
 //! of [`super::WorldView::bones`] is copied in the first time a pass draws it (the shadow maps,
 //! a mirror, a view) and every pass after that points at the same copy. Runs no pass draws (a

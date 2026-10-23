@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl.DisplayNames` on ICU4X (experimental display names): the names of regions, scripts and
 //! languages in a locale. Currencies, calendars and date-time fields are not built.
 

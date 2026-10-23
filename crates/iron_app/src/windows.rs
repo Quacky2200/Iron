@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Secondary windows in the app (design: `docs/research/iron-windows.md` section 8): the script's
 //! `Window` requests become platform commands, each opened window gets its own UI tree, interaction
 //! state and surface, and the platform's window events are routed to them.

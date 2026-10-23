@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Assets.exists` / `list` / `packOf` from compiled programs (`bench/assets_native.ts`), with the
 //! index the host fills, in the normal, stress GC and collection-off modes (M9-TS-2557).
 use iron_engine_api::assets;

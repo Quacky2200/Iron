@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Writes tests/strings_expected.json: what JavaScript (bun) answers for string operations over a
 // corpus of ASCII, Latin-1, BMP, CJK, astral and lone-surrogate strings. `tests/strings.rs` runs
 // the same operations in the same order on the runtime's strings and compares. Regenerate with:

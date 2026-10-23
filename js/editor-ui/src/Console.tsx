@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The console panel: the engine's and scripts' log with level colours, filter buttons
 // with counts, collapsing repeats, search, auto-scroll that pauses while you look
 // further up, and code links (`src/main.ts:12:5`) that open in your code editor.

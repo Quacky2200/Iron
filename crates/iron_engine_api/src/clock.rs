@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `TimeSince` and `TimeUntil` (s&box's), measured on the game clock of [`crate::time`]:
 //! `lastShot = TimeSince.now(); ... if (lastShot.seconds > 0.5) fire();` and
 //! `cooldown = TimeUntil.in(2); ... if (cooldown.done) ...`.

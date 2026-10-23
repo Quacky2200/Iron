@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shadow maps, drawn once a frame from the main view and shared by every view that
 //! frame (other cameras, mirrors, probe faces, render textures).
 //!

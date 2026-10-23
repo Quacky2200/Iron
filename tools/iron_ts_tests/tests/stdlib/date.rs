@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Date` in compiled code (`bench/date.ts`): construction, getters and setters in local time and
 //! UTC, parsing, ISO and UTC strings, arithmetic. `bench/gen_date_expected.ts` ran the same file in
 //! bun once per time zone; every function here must return what bun returned in every zone, in the

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Contact hooks: the physics step reports contacts and the host calls onCollisionEnter / Exit /
 // Stay and onTriggerEnter / Exit / Stay by name on the components of both objects.
 

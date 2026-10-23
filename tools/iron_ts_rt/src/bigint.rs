@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `BigInt`: an arbitrary-precision integer, a leaf GC object `[header][sign][byte count][magnitude
 //! bytes, little endian]` (sign -1, 0 or 1). Every operation reads its operands into
 //! `num_bigint::BigInt` values first and allocates the result last, so an unrooted temporary operand

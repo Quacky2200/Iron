@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Clips from a glTF file's animation channels (`Model.clips` in `js/engine/src/models.ts`): one
 //! curve per component, paths by node names from the copy's root.
 

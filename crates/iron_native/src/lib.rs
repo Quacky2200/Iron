@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The whole native script API in one place: what the app installs to run scripts in QuickJS.
 //!
 //! `register_quickjs(ctx)` installs every `#[iron_api(.., quickjs)]` namespace of the engine

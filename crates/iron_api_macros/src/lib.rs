@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `#[iron_api]`: see the `iron_api` crate.
 
 use proc_macro::TokenStream;

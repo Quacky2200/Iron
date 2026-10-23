@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use iron_audio::{Audio, OfflineBackend, PlayOptions, gain_to_db};
 use iron_core::Value;
 use kira::AudioManagerSettings;

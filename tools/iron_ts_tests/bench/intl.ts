@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Intl, step I1: localeCompare, Intl.Collator, normalize, toLocaleUpperCase/LowerCase. Every
 // exported function without parameters returns a string; `gen_intl_expected.ts` runs this file in
 // bun and `tests/intl.rs` compares.

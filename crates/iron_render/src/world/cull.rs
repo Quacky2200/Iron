@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Frustum culling: what a camera can't see isn't drawn. Meshes are tested by their
 //! bounding boxes, lights by the spheres they reach.
 

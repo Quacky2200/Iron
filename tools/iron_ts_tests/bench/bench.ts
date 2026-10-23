@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The benchmark scenario for sim.ts: one player auto-firing an MP5 (never dies, never runs dry),
 // ten zombies alive, 50 parked bullets (plus the MP5's own). `bench(n)` steps n times at 1/60 s and returns a checksum
 // so every engine can be checked against the others. Run with `bun bench.ts` or bundled into

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron-build dev`: rebuild when a source, stylesheet or asset changes and tell the running app.
 //!
 //! The protocol (agreed with the app side, `docs/iron-build.md`): after every build `dist/.iron-reload`

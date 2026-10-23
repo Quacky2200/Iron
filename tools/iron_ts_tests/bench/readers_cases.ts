@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Cases from the md-reader and launcher examples (merged from `md-reader-example`): TypeScript the
 // compiler learnt for them, each compared with bun. Each case (split at `//## name`) defines
 // `function t(): string`.

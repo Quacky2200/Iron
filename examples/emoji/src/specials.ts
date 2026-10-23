@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // What each emoji does: a heart blushes the room red with a heartbeat, the poop has a fart and
 // a sad trombone, the diamond is tapped with a pickaxe until it cracks, the alien is beamed up,
 // the zombie peeks round the curtain and screams, the pumpkin brings a haunted storm.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Full-screen passes for UI effects: separable Gaussian blur, compositing a
 // layer (with opacity and an optional clip from the clip table), and the final blit.
 // All passes draw one full-screen triangle; scissor rects limit the work.

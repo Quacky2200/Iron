@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `SceneManager`, `Scene` and `Prefab` from QuickJS: handles are opaque objects. IDs are in
 //! TESTS.md (M9-API-*).
 use iron_scene::{Scene, api::enter};

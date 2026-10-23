@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CSS transforms: parsing `transform` and the individual `translate` / `rotate` /
 //! `scale` properties into 4×4 matrices, and the 3×3 homographies the draw list uses.
 //!

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::{Color, Gpu, encode_clear};
 
 /// A window's swapchain. Tolerates 0×0 sizes (minimized windows) by skipping frames.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Selecting static text (M3-SEL-01): presses, double and triple clicks, drags,
 //! `user-select`, Ctrl+C; `::selection` and `::placeholder` styles (M3-SEL-02).
 

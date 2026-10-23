@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where a compiled game's render sync (`sync_native_render`) spends its time, for `--bench`
 //! (`syncParts` in the report). Off unless a bench run turns it on: a lap is then one clock read.
 

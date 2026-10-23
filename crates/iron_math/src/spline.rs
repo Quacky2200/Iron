@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Splines (Unity's Splines package, the core of it): a path through knots, smooth unless told
 //! otherwise. A knot's tangents are automatic (a cardinal spline through its neighbours; `tension`
 //! 0.5 is Catmull-Rom, like GDI's curves), set by hand as Bezier handles, or left out (straight

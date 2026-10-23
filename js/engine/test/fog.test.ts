@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { Camera, Color, FogVolume, GameObject, Light, RenderSettings, RenderStats, SceneManager, Vector3 } from "../src/index.ts";

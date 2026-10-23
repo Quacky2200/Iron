@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `@property` save and load, `getComponent` and `addComponent` for compiled components driven by
 //! `NativeHost` (`bench/components2.ts`). IDs are in TESTS.md (M9-TS-601..).
 use iron_api::Handle;

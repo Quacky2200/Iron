@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Runs every exported function of resolved.ts in bun and writes what they return.
 //   bun bench/gen_resolved_expected.ts
 import * as m from "./resolved.ts";

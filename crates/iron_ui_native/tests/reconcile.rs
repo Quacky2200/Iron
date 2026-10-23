@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The native reconciler against a real `UiTree`. IDs are in TESTS.md (M2-NAT-*).
 use iron_core::{NodeId, Value};
 use iron_ui::{ROOT, UiTree};

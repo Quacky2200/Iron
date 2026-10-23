@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The React front end of the examples (`M9-TS-1600..1649`): what `examples/*` write, compiled as
 //! written. These tests only compile; running is the host's business.
 

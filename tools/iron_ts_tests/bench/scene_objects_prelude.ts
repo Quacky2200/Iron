@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The original GameObject over a scene with no engine behind it, with the native API's names:
 // child count and indexer, a "no object" instead of null / undefined, `lookAtUp`, root listing.
 import "./hypot_patch.ts";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Small TypeScript conveniences for tests/lang/misc.rs: functions as values, casts of empty
 // literals, field types from constructor calls, `!` on assignment targets, closures over
 // destructured constants, spreading strings. Each case (split at `//## name`) defines

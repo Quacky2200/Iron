@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Custom cursor images (`cursor: url(x.png) 4 4, pointer`): decoding them for the
 //! platform, which turns them into OS cursors.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scenes (Unity's `SceneManager`): a scene is a set of root objects loaded, saved and unloaded
 //! together. The state is per thread. Objects remember the scene they were made in (a tag on the
 //! `iron_scene::Scene` object); an object with no tag belongs to the active scene.

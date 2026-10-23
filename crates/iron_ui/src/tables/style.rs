@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The style properties a script can set (`IronStyle`): name, TypeScript value type, documentation.
 //! `iron_ui::apply_style` implements them; `crates/iron_ui/tests/ui_tables.rs` checks that every entry
 //! here is applied and that nothing it applies is missing, and `tools/iron_ts` prints the table as

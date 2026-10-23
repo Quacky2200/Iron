@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compiled scripts calling the engine API directly (`bench/engine.ts`). The API is
 //! `iron_demo_api`, written with `#[iron_api]`: the compiler reads its JSON manifest, a call
 //! `Demo.scale(3, 4)` becomes a call of the shim `iron_Demo_scale`, and handles are plain ids.

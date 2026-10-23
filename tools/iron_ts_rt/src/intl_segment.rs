@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl.Segmenter` on ICU4X: grapheme clusters, words and sentences. A segmenter is just its
 //! granularity (0 grapheme, 1 word, 2 sentence); `ts_rt_segments_gc` returns the segments of a string
 //! as a flat `number[]` of `start, end, isWordLike` triples in UTF-16 units, which the prelude turns

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Tables: objects indexed by a key (`state[key] = !state[key]`) and `Record<string, V>` as a
 // dictionary, for tests/lang/tables.rs. Each case (split at `//## name`) defines `function t():
 // string`; the test compiles it with iron_ts (normal, GC-stress, GC-off) and compares the result

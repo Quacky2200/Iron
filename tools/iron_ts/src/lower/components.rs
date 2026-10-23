@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Components for the host: `class Player extends Component` and `register(Player)`.
 //!
 //! `Component` is a prelude class (an `id` and the object it is on). `register(Player)` is erased

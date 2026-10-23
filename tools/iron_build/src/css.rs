@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CSS bundling, what `bun build` did for the examples: the stylesheets a program imports are joined in
 //! import order (`@import` is inlined), and every `url()` is rewritten: a small file becomes a `data:`
 //! URL, a larger one is copied into `dist/` under a hashed name and the URL is relative to

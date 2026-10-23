@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Glyph atlas: glyphs rasterized with swash at physical pixel size into two
 //! texture pages (an R8 coverage page and an RGBA page for colour emoji),
 //! cached by font, glyph, size, subpixel offset and variation.

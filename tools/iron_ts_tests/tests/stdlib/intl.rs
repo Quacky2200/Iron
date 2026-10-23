@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Intl` step I1 in compiled code (`bench/intl.ts`): `localeCompare`, `Intl.Collator`, `normalize`
 //! and `toLocaleUpperCase`/`toLocaleLowerCase`. `bench/gen_intl_expected.ts` ran the same file in
 //! bun; every function here must return what bun returned, in the normal, stress GC and

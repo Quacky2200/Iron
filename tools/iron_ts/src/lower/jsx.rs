@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! JSX and hooks for the native UI (`iron_ui_native`), as a source rewrite before parsing.
 //!
 //! - `<box style={{ width: 10 }} onClick={f}>kids</box>` becomes builder calls of the `Ui`

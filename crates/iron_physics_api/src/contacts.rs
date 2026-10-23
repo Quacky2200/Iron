@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the contact hooks get, in Unity's shape: `Collision` / `Collision2D` (the other side of a
 //! contact, its velocity, impulse and contact points), `ContactPoint` / `ContactPoint2D`, and the
 //! collider classes every collider component also is, `Collider` / `Collider2D` (a `Collider` is the

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Compiled code calling the engine API beyond the scene (`iron_engine_api`): Color with its
 // statics and methods, Time and input properties, Gizmos with a camera, Screen and QualitySettings.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `switch` and enums compiled by `iron_ts` (`bench/switches.ts`). The expected numbers are what
 //! bun computes from the same file. Every test runs three times: normally, with a collection at
 //! every allocation, and with collection off. IDs are in TESTS.md (M9-TS-64..).

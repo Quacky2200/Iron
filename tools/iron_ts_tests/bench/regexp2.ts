@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // String methods that take a regular expression: match, matchAll, search, replace, replaceAll,
 // split. Every exported function without parameters returns a string; `gen_regexp2_expected.ts`
 // runs this file in bun and `tests/regexp2.rs` compares.

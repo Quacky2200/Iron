@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The JIT: the same code generation as the object writer, into the running process
 //! (`iron_ts::jit`). IDs are in TESTS.md (M9-TS-1900.., M9-API-600..).
 use iron_api::Handle;

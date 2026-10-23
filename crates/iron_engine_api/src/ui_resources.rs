@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `UiResources`: what a game asks of the UI from script: stylesheets from CSS text
 //! (`addStyleSheet` / `removeStyleSheet`) and fonts (`loadFont`). Nothing is drawn here: the host
 //! takes the requests with [`take_requests`] and applies them to the screen UI and every world

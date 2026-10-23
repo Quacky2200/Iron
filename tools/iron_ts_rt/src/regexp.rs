@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `RegExp`. The engine is the `regress` crate (ECMAScript regular expressions: lookahead and
 //! lookbehind, backreferences, named groups, the `i m s u v` flags, Unicode property escapes).
 //!

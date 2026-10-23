@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Transitions (M3-ANI-02): started by stylesheet and inline changes, timed with
 //! delays and easing, reversed mid-way, cancelled, and reported to scripts.
 

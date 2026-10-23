@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { beforeEach, expect, test } from "bun:test";
 
 import { _resetLogForTests, clearLog, logEntries, openInEditor, subscribeLog } from "../src/log.ts";

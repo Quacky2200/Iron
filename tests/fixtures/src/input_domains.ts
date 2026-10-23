@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // M9-API-1500: `input` follows the event domain whose code is running. The Rust test drives
 // `__iron_input` per domain and probes with `__probe()` from main and from an isolated window's `run`.
 import { input } from "@iron/engine";

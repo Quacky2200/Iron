@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Fish tank: an aquarium in the style of the aquarium channels — a calm, full-screen view into
 // deep water. A perspective camera drifts slowly through layers: a hazy back wall, distant rock
 // silhouettes, a sand floor that fades into the blue, light shafts, caustics shimmering on the

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scene files, prefabs and copies of the animation components.
 
 use crate::manager;

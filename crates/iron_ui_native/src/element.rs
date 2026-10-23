@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Element descriptions: what a component returns. Plain data; the reconciler diffs it against
 //! the previous tree.
 

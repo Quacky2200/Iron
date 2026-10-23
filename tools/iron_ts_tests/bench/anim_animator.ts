@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The Animator and its controller (parameters, states, transitions, blend trees, triggers), made
 // with the chained builder and with the explicit classes, compiled against the native API and run
 // in bun against js/engine/src/animation.ts (an adapter in the prelude gives the original the same

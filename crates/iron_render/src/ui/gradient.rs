@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Turning `iron_ui` gradients into the GPU representation the quad shader reads.
 
 use iron_ui::{BackgroundImage, ColorStop, GradientDirection, Len, RadialShape, Rect};

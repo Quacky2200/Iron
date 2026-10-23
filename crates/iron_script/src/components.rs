@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use iron_core::ComponentId;
 
 use crate::{ScriptError, ScriptRuntime, Value};

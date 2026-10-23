@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Component properties and lookups for the Rust host: `@property` values read and written through
 // the generated table, and `getComponent` / `addComponent` of classes of this program.
 import { property } from "./property_stub";

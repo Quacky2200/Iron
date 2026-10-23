@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `iron_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]
 //! [--prefix p_] [--struct-base N] [--manifest api.json]...`:
 //! compile a TypeScript module to an object file. `--time N` repeats the compile N times and

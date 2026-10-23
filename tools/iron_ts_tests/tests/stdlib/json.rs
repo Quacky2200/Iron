@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! JSON in compiled code (`bench/json.ts`): `JSON.stringify` and `JSON.parse` from the static types.
 //! `bench/gen_json_expected.ts` ran the same file in bun; every function here must return what bun
 //! returned, in the normal, stress GC and collection-off modes. IDs are in TESTS.md (M9-TS-215..).

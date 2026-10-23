@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The QuickJS backend is deprecated: `iron_app` refuses a QuickJS bundle unless `--force` is
 //! given, and leaves native bundles alone (headless `--screenshot` runs; they need a GPU, like
 //! the other rendering tests).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Assets`: the asset database (each asset `.meta` file gives it a GUID and importer settings),
 //! `"guid:<guid>"` sources, the index of every asset the game can load (`exists`, `list`,
 //! `packOf`) and the paths of files that changed on disk (hot reload). The host fills it

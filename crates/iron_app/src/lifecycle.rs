@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The game in the background (Unity's `Application.runInBackground`, focus and
 //! pause events) and the fixed-tick clock that pausing has to stop cleanly.
 

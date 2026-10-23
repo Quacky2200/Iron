@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Saving objects to scene data and building them back: the format of `js/engine/src/scenes.ts`
 //! (`iron.scene` version 1), over the component kinds in [`iron_kinds`].
 //!
