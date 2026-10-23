@@ -429,6 +429,8 @@ pub struct WorldViews {
     skins: HashMap<u32, Skin>,
     /// Loaded textures' sizes in pixels, for sprites.
     texture_sizes: HashMap<u32, (u32, u32)>,
+    /// Renderers watched for animation culling, and what the last frame saw of them.
+    pub(crate) culling: crate::anim_cull::Watch,
 }
 
 impl Default for WorldViews {
@@ -469,6 +471,7 @@ impl Default for WorldViews {
             render_textures: HashMap::new(),
             skins: HashMap::new(),
             texture_sizes: HashMap::new(),
+            culling: crate::anim_cull::Watch::default(),
         }
     }
 }
@@ -1603,6 +1606,17 @@ impl WorldViews {
         self.probe_requests.clear();
     }
 
+    /// What the last frame saw of animated objects that cull (`roots`), watching their
+    /// renderers this frame.
+    pub(crate) fn animation_sight(
+        &mut self,
+        scene: &ScriptScene,
+        roots: &[iron_scene::ObjectId],
+    ) -> crate::anim_cull::Sight {
+        let renderers = self.renderers.iter().map(|(id, r)| (*id, r.object));
+        self.culling.sight(scene, renderers, roots)
+    }
+
     /// Advances particle systems on active objects by `dt` (scaled) seconds, emitting
     /// from where their objects are now. Returns `[id, count, alive (0/1), ...]` for
     /// systems whose count or state changed, for `__iron_particles`.
@@ -1788,6 +1802,7 @@ impl WorldViews {
                     alpha_cutoff: r.extras.alpha_cutoff,
                     double_sided: r.extras.double_sided,
                     bones: skinned.get(&id).copied(),
+                    visibility_key: self.culling.key(id),
                 };
                 Some(Tagged {
                     renderer: Some(id),

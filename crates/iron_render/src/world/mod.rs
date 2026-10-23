@@ -404,6 +404,9 @@ pub struct MeshInstance {
     /// many. Its vertices go through them (`model` is then ignored: bones are in world
     /// space).
     pub bones: Option<(u32, u32)>,
+    /// Non-zero: report whether it was seen this frame ([`WorldRenderer::seen`]), drawn by a
+    /// view or into a shadow map. Animation culling asks.
+    pub visibility_key: u32,
 }
 
 impl Default for MeshInstance {
@@ -428,6 +431,7 @@ impl Default for MeshInstance {
             alpha_cutoff: 0.5,
             double_sided: false,
             bones: None,
+            visibility_key: 0,
         }
     }
 }
@@ -1255,6 +1259,8 @@ pub struct WorldRenderer {
     meshes: HashMap<u32, MeshBuffers>,
     /// What the last frame drew and culled.
     stats: WorldStats,
+    /// The visibility keys of the meshes the last frame saw, sorted.
+    seen: Vec<u32>,
     textures: HashMap<u32, AssetTexture>,
     samplers: HashMap<SamplerKey, wgpu::Sampler>,
     /// Material bind groups made from kept textures only, reused across frames (cleared
@@ -1705,6 +1711,7 @@ impl WorldRenderer {
             fills: Self::buffer(gpu, "world fills", 4096, wgpu::BufferUsages::VERTEX),
             meshes: HashMap::new(),
             stats: WorldStats::default(),
+            seen: Vec::new(),
             textures: HashMap::new(),
             samplers: HashMap::new(),
             material_groups: HashMap::new(),
@@ -1833,6 +1840,123 @@ impl WorldRenderer {
     /// What the last [`WorldRenderer::render_views`] drew and what culling skipped.
     pub fn stats(&self) -> WorldStats {
         self.stats
+    }
+
+    /// The [`MeshInstance::visibility_key`]s of the meshes the last frame saw (sorted, once
+    /// each): in a view's frustum (and not past its fog's cull distance), or a shadow caster
+    /// inside a shadow map's volume whose shadow can fall in a view (`shadow_reaches`). Skinned
+    /// meshes are judged by their bind-pose box under every bone (a box that holds them, larger
+    /// than they are).
+    pub fn seen(&self) -> &[u32] {
+        &self.seen
+    }
+
+    /// [`Self::seen`], emptied: a frame that draws no world reports nothing seen.
+    pub fn take_seen(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.seen)
+    }
+
+    /// Works out [`Self::seen`] for these views, after the shadow plan is made.
+    fn note_seen(&mut self, views: &[WorldView]) {
+        self.seen.clear();
+        if views
+            .iter()
+            .all(|v| v.meshes.iter().all(|m| m.visibility_key == 0))
+        {
+            return;
+        }
+        // Each shadow layer's volume, with the light it is of.
+        let plan = &self.shadow_plan;
+        let mut layers: Vec<(cull::Frustum, &Light)> = Vec::new();
+        for slot in &plan.slots {
+            let count = if slot.first == 0 {
+                plan.cascades
+            } else {
+                plan.slots
+                    .iter()
+                    .map(|s| s.first)
+                    .filter(|f| *f > slot.first)
+                    .min()
+                    .unwrap_or(shadows::MAX_CASCADES + plan.local_layers)
+                    - slot.first
+            };
+            for m in plan
+                .matrices
+                .iter()
+                .skip(slot.first as usize)
+                .take(count as usize)
+            {
+                layers.push((cull::Frustum::from_view_proj(*m), &slot.light));
+            }
+        }
+        let mut seen = std::mem::take(&mut self.seen);
+        for view in views {
+            let frustum = cull::Frustum::from_view_proj(view.camera.view_proj);
+            let fog_reach = view
+                .fog
+                .filter(|f| f.cull)
+                .and_then(|f| f.cull_distance())
+                .map(|d| cull::FogReach::new(&view.camera, d));
+            for m in view.meshes.iter().filter(|m| m.visibility_key != 0) {
+                let Some(b) = self.meshes.get(&m.mesh) else {
+                    continue;
+                };
+                let (lo, hi) = b.bounds;
+                let world_box = match m.bones {
+                    Some((start, n)) => {
+                        let bones = view
+                            .bones
+                            .get(start as usize..(start + n) as usize)
+                            .unwrap_or(&[]);
+                        cull::skinned_aabb(lo, hi, bones)
+                    }
+                    None => Some(cull::transform_aabb(lo, hi, m.model)),
+                };
+                let Some((lo, hi)) = world_box else {
+                    continue;
+                };
+                let in_view = frustum.aabb(lo, hi) && !fog_reach.is_some_and(|r| r.hides((lo, hi)));
+                // A caster counts when it is in a shadow map and its shadow can fall in view.
+                let casts = m.cast_shadows && !m.blended();
+                let in_shadow = casts
+                    && layers.iter().any(|(f, light)| {
+                        in_mask(light.culling_mask, m.layer)
+                            && f.aabb_past_near(lo, hi)
+                            && self.shadow_reaches(light, (lo, hi), &frustum, &view.camera)
+                    });
+                if in_view || in_shadow {
+                    seen.push(m.visibility_key);
+                }
+            }
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        self.seen = seen;
+    }
+
+    /// Whether a caster's shadow from `light` can reach the view: for the sun, the box swept
+    /// along the light past the shadow distance meets the frustum; for a local light, the light
+    /// reaches into the frustum and the box is within its range.
+    fn shadow_reaches(
+        &self,
+        light: &Light,
+        (lo, hi): (Vec3, Vec3),
+        frustum: &cull::Frustum,
+        camera: &WorldCamera,
+    ) -> bool {
+        match light.kind {
+            LightKind::Directional => {
+                let dir = light.direction.normalize_or_zero();
+                let reach = self.shadow_distance + ((lo + hi) * 0.5).distance(camera.position);
+                let step = dir * reach;
+                frustum.aabb(lo.min(lo + step), hi.max(hi + step))
+            }
+            _ => {
+                let nearest = light.position.clamp(lo, hi);
+                frustum.sphere(light.position, light.range)
+                    && nearest.distance(light.position) <= light.range
+            }
+        }
     }
 
     /// `fog` as the pipeline runs it: without its light shafts where they're not supported.
@@ -2677,6 +2801,7 @@ impl WorldRenderer {
             })
             .or_else(|| views.first());
         self.draw_shadows(gpu, main, textures);
+        self.note_seen(views);
         // Cameras with a target texture first, each texture's in order, so the screen's
         // cameras see this frame's render.
         let mut targets: Vec<u32> = Vec::new();

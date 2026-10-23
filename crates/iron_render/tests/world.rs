@@ -1460,7 +1460,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
     ];
     let mut world = WorldRenderer::new(&gpu);
     world.shadow_distance = 20.0;
-    world.render_views(&gpu, &rt, &[v], &[]);
+    world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
     assert_eq!(
         world.stats(),
         WorldStats {
@@ -1479,6 +1479,59 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
     // The plank shadows the floor below it (left of centre), not the right side.
     let (shade, lit) = (at(64 - 27, 64), at(64 + 27, 64));
     assert!(shade + 60 < lit, "shadow {shade} vs lit {lit}");
+
+    // M5-CUL-03: what was seen, for animation culling. The floor is in view; the plank is not,
+    // but casts into the sun's shadow map; the far sphere is neither, casting or not.
+    for (i, m) in v.meshes.iter_mut().enumerate() {
+        m.visibility_key = i as u32 + 1;
+    }
+    world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+    assert_eq!(world.seen(), [1, 2]);
+    v.meshes[2].cast_shadows = true;
+    v.meshes[1].cast_shadows = false;
+    world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+    assert_eq!(world.seen(), [1], "a plank casting nothing is unseen");
+    v.meshes[0].visibility_key = 0;
+    world.render_views(&gpu, &rt, std::slice::from_ref(&v), &[]);
+    assert!(world.seen().is_empty(), "untracked meshes are not reported");
+
+    // Looking along the ground under a high sun: a figure behind the camera is in the sun's
+    // shadow map (it covers round the camera) but its shadow falls behind it, out of view.
+    let camera = WorldCamera::perspective(
+        iron_core::glam::camera::rh::view::look_at_mat4(
+            Vec3::new(0.0, 1.5, 0.0),
+            Vec3::new(0.0, 1.0, -10.0),
+            Vec3::Y,
+        )
+        .inverse(),
+        60.0,
+        0.1,
+        50.0,
+        size,
+        Color::rgb(0.0, 0.0, 0.0),
+    );
+    let mut w = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    w.lights = vec![v.lights[0]];
+    w.meshes = vec![
+        mesh(
+            "cube",
+            Mat4::from_translation(Vec3::new(0.0, 0.5, -5.0)),
+            true,
+        ),
+        mesh(
+            "cube",
+            Mat4::from_translation(Vec3::new(0.0, 0.5, 8.0)),
+            true,
+        ),
+    ];
+    w.meshes[0].visibility_key = 1;
+    w.meshes[1].visibility_key = 2;
+    world.render_views(&gpu, &rt, std::slice::from_ref(&w), &[]);
+    assert_eq!(world.seen(), [1], "the figure behind is unseen");
+    // With a low sun behind the camera, its shadow stretches forward into view.
+    w.lights[0].direction = Vec3::new(0.0, -0.3, -1.0).normalize();
+    world.render_views(&gpu, &rt, std::slice::from_ref(&w), &[]);
+    assert_eq!(world.seen(), [1, 2]);
 }
 
 // M5-RND-16

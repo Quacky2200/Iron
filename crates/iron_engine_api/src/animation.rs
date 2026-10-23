@@ -492,14 +492,31 @@ pub fn update(
     dt: f64,
     other: Option<&mut dyn iron_animation::PropertySink>,
 ) -> Vec<iron_animation::FiredEvent> {
+    update_culled(dt, other, &mut iron_animation::AllVisible)
+}
+
+/// [`update`], with `visible` saying which animated objects were seen last frame (for those whose
+/// `cullingMode` / `cullingType` culls).
+pub fn update_culled(
+    dt: f64,
+    other: Option<&mut dyn iron_animation::PropertySink>,
+    visible: &mut dyn iron_animation::Visibility,
+) -> Vec<iron_animation::FiredEvent> {
     ensure_registered();
     let mut sink = RegistrySink { other };
     let events = with_world(|w| {
-        iron_scene::api::with_scene(|scene| iron_animation::update(w, scene, &mut sink, dt))
+        iron_scene::api::with_scene(|scene| {
+            iron_animation::update_culled(w, scene, &mut sink, dt, visible)
+        })
     })
     .unwrap_or_default();
     EVENTS.with(|e| e.borrow_mut().extend(events.iter().cloned()));
     events
+}
+
+/// The objects whose `Animator` or `Animation` may be culled (the host watches their renderers).
+pub fn culled_roots() -> Vec<ObjectId> {
+    with_world(|w| iron_animation::culled_roots(w))
 }
 
 /// Forgets every animation object and pending event (a test, or a new game).
@@ -509,11 +526,17 @@ pub fn reset() {
 }
 
 #[iron_api(namespace = "Animation", quickjs, handles(
-    Animation = AnimationRef, AnimationState = StateRef, AnimationClip = ClipRef, GameObject = ObjectId))]
+    Animation = AnimationRef, AnimationState = StateRef, AnimationClip = ClipRef, GameObject = ObjectId),
+    enums(
+        /// What an `Animation` does while none of its object's renderers was drawn (last frame):
+        /// `alwaysAnimate` (the default) or `basedOnRenderers` (paused until seen again).
+        AnimationCullingType = CullingType [AlwaysAnimate, BasedOnRenderers]
+    ))]
 pub mod animation_component_api {
     use super::{
         AnimationPlayer, AnimationRef, ClipId, ClipRef, ObjectId, StateRef, player, with_world,
     };
+    use iron_animation::CullingType;
 
     impl AnimationRef {
         /// Adds an `Animation` to a GameObject (what `go.addComponent(Animation)` does).
@@ -564,6 +587,16 @@ pub mod animation_component_api {
 
         pub fn set_play_automatically(self, on: bool) {
             player(self, |p, _| p.play_automatically = on);
+        }
+
+        /// Whether it pauses while its renderers are not seen (Unity's `cullingType`).
+        #[property]
+        pub fn culling_type(self) -> CullingType {
+            player(self, |p, _| p.culling_type).unwrap_or_default()
+        }
+
+        pub fn set_culling_type(self, culling: CullingType) {
+            player(self, |p, _| p.culling_type = culling);
         }
 
         /// How many clips were added.

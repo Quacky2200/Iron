@@ -3,6 +3,9 @@
 
 use iron_core::glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 
+/// The index of the near plane in [`Frustum`]'s planes.
+const NEAR: usize = 4;
+
 /// A camera's six clip planes in world space, each `xyz · p + w >= 0` inside.
 #[derive(Clone, Copy, Debug)]
 pub struct Frustum {
@@ -34,6 +37,16 @@ impl Frustum {
             let n = p.xyz();
             let far = Vec3::select(n.cmpge(Vec3::ZERO), max, min);
             n.dot(far) + p.w >= 0.0
+        })
+    }
+
+    /// [`Self::aabb`] ignoring the near plane: for a shadow map's view, where what lies between
+    /// the light and its near plane still casts into it.
+    pub fn aabb_past_near(&self, min: Vec3, max: Vec3) -> bool {
+        self.planes.iter().enumerate().all(|(i, p)| {
+            let n = p.xyz();
+            let far = Vec3::select(n.cmpge(Vec3::ZERO), max, min);
+            i == NEAR || n.dot(far) + p.w >= 0.0
         })
     }
 
@@ -90,6 +103,15 @@ pub fn transform_aabb(min: Vec3, max: Vec3, model: Mat4) -> (Vec3, Vec3) {
         + model.y_axis.xyz().abs() * half.y
         + model.z_axis.xyz().abs() * half.z;
     (center - extent, center + extent)
+}
+
+/// A box holding a skinned mesh: its bind-pose box under each bone matrix, together. Each vertex
+/// is a weighted mix of its bones' images of it, so it lies inside.
+pub fn skinned_aabb(min: Vec3, max: Vec3, bones: &[Mat4]) -> Option<(Vec3, Vec3)> {
+    bones
+        .iter()
+        .map(|b| transform_aabb(min, max, *b))
+        .reduce(|(lo, hi), (a, b)| (lo.min(a), hi.max(b)))
 }
 
 /// The box around a set of points (`None` when empty).
@@ -189,5 +211,28 @@ mod tests {
             Some((Vec3::new(-1.0, -2.0, 0.0), Vec3::new(1.0, 3.0, 2.0)))
         );
         assert_eq!(bounds(&[]), None);
+    }
+
+    // M5-CUL-03
+    #[test]
+    fn a_skinned_box_holds_every_bones_image_and_shadow_volumes_reach_back_past_near() {
+        let bones = [
+            Mat4::from_translation(Vec3::new(5.0, 0.0, 0.0)),
+            Mat4::from_scale(Vec3::splat(2.0)),
+        ];
+        let (lo, hi) = skinned_aabb(Vec3::splat(-1.0), Vec3::splat(1.0), &bones).unwrap();
+        assert_eq!((lo, hi), (Vec3::splat(-2.0), Vec3::new(6.0, 2.0, 2.0)));
+        assert_eq!(skinned_aabb(Vec3::ZERO, Vec3::ONE, &[]), None);
+        // An orthographic light 1 to 10 m down -z: a box behind its near plane still casts.
+        let light = iron_core::glam::camera::rh::proj::directx::orthographic(
+            -1.0, 1.0, -1.0, 1.0, 1.0, 10.0,
+        );
+        let f = Frustum::from_view_proj(light);
+        let behind = (Vec3::new(-0.5, -0.5, 1.0), Vec3::new(0.5, 0.5, 2.0));
+        assert!(!f.aabb(behind.0, behind.1) && f.aabb_past_near(behind.0, behind.1));
+        let aside = (Vec3::new(3.0, 0.0, -5.0), Vec3::new(4.0, 1.0, -4.0));
+        assert!(!f.aabb_past_near(aside.0, aside.1));
+        let beyond = (Vec3::new(0.0, 0.0, -20.0), Vec3::new(0.5, 0.5, -15.0));
+        assert!(!f.aabb_past_near(beyond.0, beyond.1));
     }
 }

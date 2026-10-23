@@ -95,12 +95,15 @@ impl App {
     pub(super) fn sync_native_render(&mut self) {
         let mut lap = crate::sync_profile::Lap::start();
         {
+            // Culling animators ask what the last frame saw of their renderers.
+            let roots = iron_engine_api::animation::culled_roots();
+            let mut sight = self.world_view.animation_sight(&self.scene, &roots);
             // `CameraFollow` and `CameraOrbit` move their cameras after every `onLateUpdate`.
             let _scope = iron_scene::api::enter(&mut self.scene.scene);
             let dt = iron_engine_api::time::state().delta_time;
             // `Animation` and `Animator` components pose their objects (events are not
             // delivered to components yet).
-            iron_engine_api::animation::update(dt, None);
+            iron_engine_api::animation::update_culled(dt, None, &mut sight);
             // `SplineAnimate` components put their objects on their paths.
             iron_engine_api::spline::update(dt);
             iron_render_api::late_update_camera_follows(dt);

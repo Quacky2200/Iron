@@ -8,6 +8,7 @@
 //! `iron-build build`; a QuickJS `dist/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
+pub(crate) mod anim_cull;
 pub(crate) mod asset_db;
 mod asset_root;
 mod bench;
@@ -2969,6 +2970,11 @@ impl PlatformApp for App {
             }
         });
         self.world_view.probes_rendered();
+        // What it saw of the renderers animation culling watches (nothing if no view drew).
+        if let Some(gfx) = &mut self.gfx {
+            let seen = gfx.world.take_seen();
+            self.world_view.culling.note_seen(&seen);
+        }
         self.draw_windows();
         self.render_time += render_started.elapsed();
         if self.fps_on {

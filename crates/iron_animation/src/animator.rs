@@ -3,6 +3,7 @@
 
 use crate::clip::{ClipId, World};
 use crate::controller::{ConditionMode, ControllerId, Motion, NodeId, Param, ParameterType};
+use crate::culling::CullingMode;
 use crate::curve::{WrapMode, wrap};
 use crate::player::{FiredEvent, fire_events};
 use crate::pose::{Pose, PropertySink};
@@ -42,6 +43,8 @@ pub struct AnimatorPlayer {
     pub controller: Option<ControllerId>,
     /// Multiplies every state speed.
     pub speed: f64,
+    /// What it does while not seen.
+    pub culling_mode: CullingMode,
     values: Vec<(String, Param)>,
     current: Option<Playing>,
     next: Option<Next>,
@@ -60,6 +63,7 @@ impl AnimatorPlayer {
             object,
             controller: None,
             speed: 1.0,
+            culling_mode: CullingMode::AlwaysAnimate,
             values: Vec::new(),
             current: None,
             next: None,
@@ -365,14 +369,14 @@ impl AnimatorPlayer {
         }
     }
 
-    /// Advances one state by `dt` and adds its clips to the pose.
+    /// Advances one state by `dt` and adds its clips to the pose (none: culled, only advanced).
     #[allow(clippy::too_many_arguments)]
     fn run(
         &mut self,
         world: &World,
         scene: &Scene,
         sink: &mut dyn PropertySink,
-        pose: &mut Pose,
+        mut pose: Option<&mut Pose>,
         events: &mut Vec<FiredEvent>,
         playing: &mut (NodeId, f64),
         dt: f64,
@@ -400,6 +404,9 @@ impl AnimatorPlayer {
             if c.weight * weight >= 0.5 {
                 fire_events(world, self.object, c.clip, t0, t, clip_len, mode, events);
             }
+            let Some(pose) = pose.as_deref_mut() else {
+                continue;
+            };
             let lap = crate::profile::start();
             pose.add_aligned(
                 scene,
@@ -423,6 +430,24 @@ impl AnimatorPlayer {
         dt: f64,
         events: &mut Vec<FiredEvent>,
     ) {
+        self.animate_seen(world, scene, sink, dt, events, true);
+    }
+
+    /// [`Self::animate`] for an object that was (or was not) seen last frame: unseen, its
+    /// `culling_mode` decides whether it advances without posing or stops altogether.
+    pub fn animate_seen(
+        &mut self,
+        world: &World,
+        scene: &mut Scene,
+        sink: &mut dyn PropertySink,
+        dt: f64,
+        events: &mut Vec<FiredEvent>,
+        seen: bool,
+    ) {
+        let write = seen || self.culling_mode == CullingMode::AlwaysAnimate;
+        if !write && self.culling_mode == CullingMode::CullCompletely {
+            return;
+        }
         self.ensure(world);
         if self.current.is_none() {
             return;
@@ -431,12 +456,15 @@ impl AnimatorPlayer {
         let mut pose = world.scratch.take();
         let cur = self.current.expect("checked");
         let mut cur = (cur.node, cur.norm);
+        let mut target = write.then_some(&mut pose);
         if let Some(mut next) = self.next {
             next.progress = jsnum::min(1.0, next.progress + dt / next.duration);
             let w = next.progress;
             let mut nx = (next.node, next.norm);
-            self.run(world, scene, sink, &mut pose, events, &mut cur, dt, 1.0 - w);
-            self.run(world, scene, sink, &mut pose, events, &mut nx, dt, w);
+            let p = target.as_deref_mut();
+            self.run(world, scene, sink, p, events, &mut cur, dt, 1.0 - w);
+            let p = target.as_deref_mut();
+            self.run(world, scene, sink, p, events, &mut nx, dt, w);
             if w >= 1.0 {
                 self.current = Some(Playing {
                     node: nx.0,
@@ -456,15 +484,17 @@ impl AnimatorPlayer {
                 });
             }
         } else {
-            self.run(world, scene, sink, &mut pose, events, &mut cur, dt, 1.0);
+            self.run(world, scene, sink, target, events, &mut cur, dt, 1.0);
             self.current = Some(Playing {
                 node: cur.0,
                 norm: cur.1,
             });
         }
-        let lap = crate::profile::start();
-        pose.apply(scene, sink);
-        crate::profile::stop("animation: pose apply", lap);
+        if write {
+            let lap = crate::profile::start();
+            pose.apply(scene, sink);
+            crate::profile::stop("animation: pose apply", lap);
+        }
         world.scratch.replace(pose);
     }
 }

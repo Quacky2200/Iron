@@ -21,6 +21,7 @@ declare class Animation :: clip: AnimationClip;
 declare class Animation :: clipAt(index: number): AnimationClip;
 declare class Animation :: crossFade(name: string, fadeLength?: number): void;
 declare class Animation :: crossFade(name: string, options?: { fadeLength?: number }): void;
+declare class Animation :: cullingType: AnimationCullingType;
 declare class Animation :: destroy(): void;
 declare class Animation :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class Animation :: isPlaying(name?: string): boolean;
@@ -177,6 +178,7 @@ declare class Animator
 declare class Animator :: controller: AnimationController;
 declare class Animator :: crossFade(stateName: string, duration?: number, normalizedTime?: number): void;
 declare class Animator :: crossFade(stateName: string, options?: { duration?: number; normalizedTime?: number }): void;
+declare class Animator :: cullingMode: AnimatorCullingMode;
 declare class Animator :: getBool(name: string): boolean;
 declare class Animator :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class Animator :: getCurrentAnimatorStateInfo(): AnimatorStateInfo;
@@ -1900,6 +1902,7 @@ declare module "@iron/engine" :: export import AnimationBuilder = globalThis.Ani
 declare module "@iron/engine" :: export import AnimationClip = globalThis.AnimationClip;
 declare module "@iron/engine" :: export import AnimationCondition = globalThis.AnimationCondition;
 declare module "@iron/engine" :: export import AnimationController = globalThis.AnimationController;
+declare module "@iron/engine" :: export import AnimationCullingType = globalThis.AnimationCullingType;
 declare module "@iron/engine" :: export import AnimationCurve = globalThis.AnimationCurve;
 declare module "@iron/engine" :: export import AnimationNode = globalThis.AnimationNode;
 declare module "@iron/engine" :: export import AnimationParameter = globalThis.AnimationParameter;
@@ -1908,6 +1911,7 @@ declare module "@iron/engine" :: export import AnimationTransition = globalThis.
 declare module "@iron/engine" :: export import Animations = globalThis.Animations;
 declare module "@iron/engine" :: export import Animator = globalThis.Animator;
 declare module "@iron/engine" :: export import AnimatorController = globalThis.AnimatorController;
+declare module "@iron/engine" :: export import AnimatorCullingMode = globalThis.AnimatorCullingMode;
 declare module "@iron/engine" :: export import AnimatorStateInfo = globalThis.AnimatorStateInfo;
 declare module "@iron/engine" :: export import Application = globalThis.Application;
 declare module "@iron/engine" :: export import Assets = globalThis.Assets;
@@ -2134,9 +2138,15 @@ declare module "react" :: export import useReducer = globalThis.useReducer;
 declare module "react" :: export import useRef = globalThis.useRef;
 declare module "react" :: export import useState = globalThis.useState;
 declare module "react" :: export import useSyncExternalStore = globalThis.useSyncExternalStore;
+declare namespace AnimationCullingType
+declare namespace AnimationCullingType :: function name(index: number): AnimationCullingType;
+declare namespace AnimationCullingType :: function parse(name: string): number;
 declare namespace Animations
 declare namespace Animations :: function takeEvents(): string;
 declare namespace Animations :: function updateAll(dt: number): void;
+declare namespace AnimatorCullingMode
+declare namespace AnimatorCullingMode :: function name(index: number): AnimatorCullingMode;
+declare namespace AnimatorCullingMode :: function parse(name: string): number;
 declare namespace Application
 declare namespace Application :: const args: string[];
 declare namespace Application :: const companyName: string;
@@ -2775,7 +2785,9 @@ declare namespace input :: function onGamepadConnected(f: (a0: number) => void):
 declare namespace input :: function onGamepadDisconnected(f: (a0: number) => void): number;
 declare namespace input :: function onKeyDown(f: (a0: string, a1: boolean) => void): number;
 declare namespace input :: function onKeyUp(f: (a0: string) => void): number;
+declare type AnimationCullingType = "alwaysAnimate" | "basedOnRenderers";
 declare type AnimatorController = AnimationController;
+declare type AnimatorCullingMode = "alwaysAnimate" | "cullUpdateTransforms" | "cullCompletely";
 declare type ExposureMetering = "average" | "centerWeighted" | "spot";
 declare type FilterMode = "point" | "bilinear" | "trilinear";
 declare type FogMode = "linear" | "exponential" | "exponentialSquared";

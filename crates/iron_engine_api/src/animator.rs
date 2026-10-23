@@ -12,7 +12,8 @@
 use crate::animation::ClipRef;
 use iron_animation::{
     AnimParameter, AnimatorPlayer, BlendChild, BlendTree, Condition, ConditionMode, Controller,
-    ControllerId, Motion, Node, NodeId, Param, ParameterType, Transition, TransitionId, with_world,
+    ControllerId, CullingMode, Motion, Node, NodeId, Param, ParameterType, Transition,
+    TransitionId, with_world,
 };
 use iron_api::{Handle, iron_api};
 use iron_scene::ObjectId;
@@ -887,6 +888,13 @@ pub struct StateSummary {
 
 #[iron_api(namespace = "Animator", quickjs, handles(
     Animator = AnimatorRef, AnimationController = ControllerRef, GameObject = ObjectId),
+    enums(
+        /// What an `Animator` does while none of its object's renderers was drawn (by a camera or
+        /// into a light's shadow map, last frame): `alwaysAnimate` (the default), `cullUpdateTransforms`
+        /// (the state machine, clock and events go on, nothing is posed) or `cullCompletely` (it
+        /// stops, holding its pose, and resumes from there).
+        AnimatorCullingMode = CullingMode [AlwaysAnimate, CullUpdateTransforms, CullCompletely]
+    ),
     records(
         /// The state an animator is in: its name, how far along it is (past 1 after loops) and its length in seconds.
         AnimatorStateInfo = StateSummary [name: string, normalized_time: f64, length: f64]
@@ -896,7 +904,7 @@ pub mod animator_api {
 
     impl AnimatorRef {
         /// Adds an `Animator` to a GameObject (what `go.addComponent(Animator)` does). Options:
-        /// `controller` and `speed`.
+        /// `controller`, `speed` and `cullingMode`.
         pub fn attach(object: ObjectId) -> AnimatorRef {
             AnimatorRef(with_world(|w| {
                 w.animators.push(AnimatorPlayer::new(object));
@@ -945,6 +953,16 @@ pub mod animator_api {
 
         pub fn set_speed(self, v: f64) {
             animator(self, |p, _| p.speed = v);
+        }
+
+        /// What it does while its renderers are not seen (Unity's `cullingMode`).
+        #[property]
+        pub fn culling_mode(self) -> CullingMode {
+            animator(self, |p, _| p.culling_mode).unwrap_or_default()
+        }
+
+        pub fn set_culling_mode(self, mode: CullingMode) {
+            animator(self, |p, _| p.culling_mode = mode);
         }
 
         pub fn set_float(self, name: &str, value: f64) {
@@ -1059,5 +1077,30 @@ pub mod animator_api {
         pub fn next_length(self) -> f64 {
             animator(self, |p, w| p.next_info(w).length).unwrap_or(0.0)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::animation::AnimationRef;
+    use iron_animation::CullingType;
+
+    // M5-ANI-12
+    #[test]
+    fn culling_modes_are_set_on_the_components_and_list_their_objects() {
+        crate::animation::reset();
+        let mut scene = iron_scene::Scene::new();
+        let (a, b) = (scene.create("a"), scene.create("b"));
+        let animator = AnimatorRef::attach(a);
+        let animation = AnimationRef::attach(b);
+        assert_eq!(animator.culling_mode(), CullingMode::AlwaysAnimate);
+        assert_eq!(animation.culling_type(), CullingType::AlwaysAnimate);
+        assert!(crate::animation::culled_roots().is_empty());
+        animator.set_culling_mode(CullingMode::CullCompletely);
+        animation.set_culling_type(CullingType::BasedOnRenderers);
+        assert_eq!(animator.culling_mode(), CullingMode::CullCompletely);
+        assert_eq!(crate::animation::culled_roots(), [a, b]);
+        crate::animation::reset();
     }
 }

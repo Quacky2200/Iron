@@ -3,6 +3,7 @@
 //! are collected as [`FiredEvent`]s for the host to deliver to the object's components.
 
 use crate::clip::{ClipId, Parameter, World};
+use crate::culling::{AllVisible, CullingMode, CullingType, Visibility};
 use crate::curve::{WrapMode, wrap};
 use crate::pose::PropertySink;
 use iron_scene::{ObjectId, Scene};
@@ -61,6 +62,8 @@ pub struct AnimationPlayer {
     pub play_automatically: bool,
     /// By name, in the order first made.
     pub states: Vec<AnimState>,
+    /// Paused while not visible, or not.
+    pub culling_type: CullingType,
     started: bool,
 }
 
@@ -72,6 +75,7 @@ impl AnimationPlayer {
             clips: Vec::new(),
             play_automatically: true,
             states: Vec::new(),
+            culling_type: CullingType::AlwaysAnimate,
             started: false,
         }
     }
@@ -303,22 +307,50 @@ pub fn update(
     sink: &mut dyn PropertySink,
     dt: f64,
 ) -> Vec<FiredEvent> {
+    update_culled(world, scene, sink, dt, &mut AllVisible)
+}
+
+/// [`update`], with culling: players and animators that cull ask `visible` about their object.
+pub fn update_culled(
+    world: &mut World,
+    scene: &mut Scene,
+    sink: &mut dyn PropertySink,
+    dt: f64,
+    visible: &mut dyn Visibility,
+) -> Vec<FiredEvent> {
     let lap = crate::profile::start();
     world.binds.get_mut().sweep(scene);
     let mut events = Vec::new();
     // Players of destroyed objects are dropped lazily: they are skipped here.
     let mut players = std::mem::take(&mut world.players);
     let mut animators = std::mem::take(&mut world.animators);
+    let owners: std::collections::HashSet<ObjectId> = players
+        .iter()
+        .map(|p| p.object)
+        .chain(animators.iter().map(|a| a.object))
+        .collect();
     let mut stack: Vec<ObjectId> = scene.roots().iter().rev().copied().collect();
     while let Some(go) = stack.pop() {
-        if !scene.active(go) {
+        // Only children of active objects are walked, so enabled here is active.
+        if !scene.enabled(go) {
             continue;
         }
-        for p in players.iter_mut().filter(|p| p.object == go) {
-            p.animate(world, scene, sink, dt, &mut events);
-        }
-        for a in animators.iter_mut().filter(|a| a.object == go) {
-            a.animate(world, scene, sink, dt, &mut events);
+        if owners.contains(&go) {
+            for p in players.iter_mut().filter(|p| p.object == go) {
+                if p.culling_type == CullingType::BasedOnRenderers && !visible.visible(scene, go) {
+                    continue;
+                }
+                p.animate(world, scene, sink, dt, &mut events);
+            }
+            for a in animators.iter_mut().filter(|a| a.object == go) {
+                let seen =
+                    a.culling_mode == CullingMode::AlwaysAnimate || visible.visible(scene, go);
+                a.animate_seen(world, scene, sink, dt, &mut events, seen);
+            }
+            // Its own clips may have switched it off (`active` on path "").
+            if !scene.enabled(go) {
+                continue;
+            }
         }
         stack.extend(scene.children(go).iter().rev().copied());
     }
