@@ -1,0 +1,49 @@
+{
+  "warmup": 120,
+  "segments": [
+    {
+      "name": "idle",
+      "frames": 300
+    },
+    {
+      "name": "jog, sprint, jump and roll",
+      "frames": 720,
+      "input": [
+        {
+          "frame": 0,
+          "kind": "keyDown",
+          "code": "KeyW"
+        },
+        {
+          "frame": 240,
+          "kind": "keyDown",
+          "code": "ShiftLeft"
+        },
+        {
+          "frame": 480,
+          "kind": "keyUp",
+          "code": "ShiftLeft"
+        },
+        {
+          "frame": 700,
+          "kind": "keyUp",
+          "code": "KeyW"
+        },
+        {
+          "frame": 120,
+          "kind": "key",
+          "code": "Space",
+          "hold": 6,
+          "count": 3,
+          "every": 200
+        },
+        {
+          "frame": 560,
+          "kind": "key",
+          "code": "KeyC",
+          "hold": 6
+        }
+      ]
+    }
+  ]
+}

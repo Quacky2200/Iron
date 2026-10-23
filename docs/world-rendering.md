@@ -239,6 +239,12 @@ sky in linear HDR colours (the sun is usually brighter than 1). Scripts set it w
 - **Background.** A camera with `clearFlags: "skybox"` (`render.camera` last argument `skybox`; the
   default `solidColor` sends `color`) sets `WorldView.skybox`. `fs_fill` unprojects each pixel with
   `inv_view_proj` and samples mip 0 along that ray. With no sky it falls back to the camera colour.
+- **Cloud layer.** `WorldView.clouds` (`CloudLayer { altitude, size, coverage, opacity, softness, color, offset, fade }`, HDRP's
+  cloud layer; `RenderSettings.cloudLayer` sends `render.clouds`) is drawn by `fs_fill` over the background colour or sky
+  (`with_clouds`): each ray looking up meets the deck at `altitude`, five octaves of value noise there (scaled by `size`, shifted
+  by the wind's `offset`) give cover past `1 - coverage` with soft edges, thick parts a little darker underneath, fading as
+  `exp(-t / fade)` along the ray. It is part of the background, so distance fog leaves it alone and height fog covers it.
+  `WorldViews::advance_clouds(dt)` moves `offset` by the wind each frame (`M7-CLOUD-01`..`04`).
 - **Reflections.** `environment(dir, roughness, ...)` samples the cube along the reflected view
   direction at `lod = sqrt(roughness) * last_mip`, so rough surfaces see the blurry mips. Without a sky it
   returns the view's ambient colour. Everything is multiplied by `environment_intensity`
@@ -549,7 +555,8 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
 and a lamp post, showing every kind of fog (menu or keys F, H, L, Q). `examples/fog-teapots` (teapots
 fading into fog), `fog-raider` (a PS1-style scene, renamed from `fog-ps1`), `fog-blocks` (a block hill in
-fog and cloud) and `fog-park` (a Victorian park in the fog) show it in scenes. `godrays-cell` (a barred prison window, dust; keys G/F/D/T), `godrays-room` (a broken roof, mullioned window and shutters; G/F/D) and `godrays-forest` (canopy beams; G/F/Space) show god rays. `fog-world` is an endless streamed block
+fog and cloud), `fog-park` (a Victorian park in the fog) and `fog-white-room` (the Animus's endless white room: a
+clear bubble in white fog under the cloud layer, an animated mannequin) show it in scenes. `godrays-cell` (a barred prison window, dust; keys G/F/D/T), `godrays-room` (a broken roof, mullioned window and shutters; G/F/D) and `godrays-forest` (canopy beams; G/F/Space) show god rays. `fog-world` is an endless streamed block
 world: 16x16-column chunk meshes, recycled around a wandering camera, with linear fog as the render
 distance and a spare ring of chunks past the fog to show fog culling. In a release build with vsync off,
 culling drew 45-50 meshes against 65-73 (16-20 hidden by fog), about 2.2 against 2.7 ms a frame. It has presets on 1-4 (very small, 2 chunks; medium, 6; large, 10; far: no fog, 14), Space to pause, a time budget for chunk building, and log lines with chunks, meshes drawn and culled and a pop-in count (chunks missing inside the fog). Chunks are built into reused typed arrays and `WorldStats` counts what the fog hid during culling itself.

@@ -1111,7 +1111,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     cached: 24.6 → 5.7 ms a frame for the room (~3.3 ms of it the figure)
   - [ ] Skeletal animation natively: sample glTF clips and blend poses in Rust (the
     `Animator`'s state machine stays in script), so a crowd of animated characters costs
-    little script time
+    little script time. Compiled games (iron_ts) do this already (2026-10-23: `Model.animations`
+    built by `iron_animation::gltf`, the `Animator` in `iron_animation`); still to do there:
+    group a clip's curves per bone once and cache resolved paths (`Pose` looks each path up by
+    name every frame), as `animation.ts` now does
 - [ ] **A profiler** (asked for 2026-10-21): today a slow frame is found by switching
   features off and timing runs. Wanted, in the window (an overlay or the editor) and as a
   capture to compare:

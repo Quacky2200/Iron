@@ -70,6 +70,15 @@ List properties (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` /
 | `Cloth.pinBox` | `ClothBox | null` (`{ min, max }` or `null` to clear), plain objects work | `ClothBox` with `Vector3` fields, `clearPinBox()` | One record property |
 | `Sprite.grid(.., pivot?, pixelsPerUnit?)` | A left-out (or `undefined`) pivot or pixels-per-unit keeps the sprite's own | The facade compared them with `null`, so a left-out value overwrote them with `undefined` | Fixed in the native version |
 | `QualitySettings.names`, `Scene.getRootGameObjects()` | Native lists; `levelCount`, `levelName(i)` are gone (`names.length`, `names[i]`) | Facade loops over those | |
+| `Model.materials`, `Model.animations` | Native lists of handles (2026-10-23); `materialCount` / `materialAt(i)` stay | Not built natively (no glTF animations) | `examples/fog-white-room` |
+
+## Models, animation and renderers (compiled games, 2026-10-23)
+
+| Area | Iron (native) | `js/engine` (QuickJS) | Why |
+|---|---|---|---|
+| `getComponent(MeshRenderer)` on a skinned part | Finds nothing: a `SkinnedMeshRenderer` is a renderer of its own, as in Unity | `SkinnedMeshRenderer extends MeshRenderer`, so it is found | Engine handles have no subclassing yet; Unity's shape. Ask for `SkinnedMeshRenderer` (`fog-white-room` does both) |
+| Options objects (`Material.create({ mainTextureScale })`, `new X({ .. })`) | A value-class key takes a plain object (`{ x: 4, y: 4 }`, `Vector2Like`), as the TypeScript's `MaterialOptions` did | - | Was declared as the class, so `tsc` refused plain objects |
+| `Animation.destroy()` | Empties the component's slot (players are numbered by place); `getComponent(Animation)` is then `undefined` | Removes the component | |
 
 ## Intl backends (compiled TypeScript)
 

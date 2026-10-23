@@ -36,9 +36,17 @@ Targets of a curve: `Transform` (`localPosition.x|y|z`, `localScale.x|y|z`, `loc
 `orthographicSize`, `orthographic`, `backgroundColor.r|g|b|a`). Register more with `iron_animation::register_type` and
 `register_setter`.
 
+An `Animator` state keeps its normalized time (Unity's), not seconds: a blend tree's length changes with its weights, so the
+phase stays put when they change (a walk breaking into a run carries on mid-stride) and then advances at the blend's pace
+(`M5-ANI-07`). `iron_animation::gltf` turns a glTF animation's channels into a looping clip (`Model.animations`), each rotation
+key flipped to its predecessor's side (`q` and `-q` are one turn; mixed sides sampled between them pass near zero, a wild pose
+for a frame), cubic keys flipping with their tangents (`M5-SKN-04`). `Animation.destroy()` empties the component's slot (players
+are numbered by place).
+
 ## Differences from `animation.ts`
 
 Object literals became classes and a builder; a clip target is a class-name string; an event parameter is a number; JSON is text;
-`addKey` has no tangents (`addKeyframe` does); `fromPoints` waits for arrays across the boundary; a parameter default is a number;
+`addKey` has no tangents (`addKeyframe` does); `fromPoints` waits for arrays across the boundary; a parameter default is a number
+(the controller's `addParameter(name, type, true)` takes a flag too);
 `getCurrentAnimatorStateInfo()` is properties; the default clip starts in the first update and events are delivered after the
 frame's pose is written; `Animator` objects update after `Animation` objects on the same object. Tests `M9-TS-676..697`.

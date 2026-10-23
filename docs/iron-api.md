@@ -488,7 +488,10 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `model_loaded(model, Some(json))` (`None`: it failed); copies asked for earlier are built then (a GameObject per node, a mesh renderer
   per primitive, or child objects when a node has several; skinned nodes get a `SkinnedMeshRenderer` with bones and bind poses; glTF
   materials). `colliders: "mesh" | "convex"` goes through `set_model_collider_hook`. Scene files carry a copy as the object's `"model"`
-  (`iron_kinds::ObjectExtra`: the model's own nodes are left out and built again on load). Not built: glTF animations.
+  (`iron_kinds::ObjectExtra`: the model's own nodes are left out and built again on load). `materials` and `animations` are lists
+  (handles); the file's animations become looping clips when it loads (`iron_animation::gltf::clip_from_channels`: paths by node
+  names from the copy's root, rotation keys made sign-continuous, cubic keys with the file's tangents), and a copy gets an
+  `Animation` holding them that plays the first, as `models.ts` does.
 - **Screen, QualitySettings, Gizmos** (`iron_engine_api`): `Screen` has `scale`, `aspect`, `fullScreenMode`, `setResolution(w, h, { mode,
   refreshRate })`, `windowWidth` / `windowHeight`, `resolutionCount` + `resolutionWidth(i)` ..., `currentResolution...`,
   `supportedFullScreenModes` (a `FullScreenMode[]`, an enum list) and `onChange(f)` (token, `offChange`). The host feeds it with `screen::update(w, h,
@@ -502,7 +505,7 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `skyboxEnabled` + `skyZenith` / `skyHorizon` / `skyGround` / `skySunDirection` / `skyHasSun` / `skySunColor` / `skySunSize`,
   `bloomEnabled` + `bloomThreshold` / `bloomIntensity` / `bloomScatter`, `tonemapping`, `postExposure`; the host reads
   `settings()` when `version()` changed). Scene files apply their `renderSettings` when the scene becomes active and the active scene
-  saves the current ones; the keys are the ones `scenes.ts` saves (`ambientLight`, `ambientMode`, `reflectionIntensity`, `skybox`, `bloom`, and the fog's `fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`, `fogEndDistance`, `heightFog`, `volumetricFog`, `fogCulling`; the TypeScript tier saves no exposure keys either). `Cursor` (`visible`, `lockState`, `setCursor(path, { hotspotX, hotspotY })`, `clearCursor()`;
+  saves the current ones; the keys are the ones `scenes.ts` saves (`ambientLight`, `ambientMode`, `reflectionIntensity`, `skybox`, `bloom`, and the fog's `fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`, `fogEndDistance`, `heightFog`, `cloudLayer`, `volumetricFog`, `fogCulling`; the TypeScript tier saves no exposure keys either). `Cursor` (`visible`, `lockState`, `setCursor(path, { hotspotX, hotspotY })`, `clearCursor()`;
   host: `iron_engine_api::cursor::state()`) with `CursorLockMode.None/Locked/Confined` strings. `CameraFollow` and `CameraOrbit` are
   components whose update the host runs: `late_update_camera_follows(dt)` and `late_update_camera_orbits(dt)` once a frame.
 - **Differences from the TypeScript.** `RenderSettings.skybox = { .. }` is the `sky...` properties; `Cursor.setCursor(texture)` takes a
@@ -673,7 +676,7 @@ the same code as the QuickJS ops, on the screen and every panel), `Cursor` (vers
 state and size changes), and world panels: `Native::take_panel_mounts` hands over `createRoot(panel).render(..)` roots; each panel has its
 own `UiTree` (`panels.rs`) and its own `iron_ui_native::Runtime` (flushed every frame); pointer and key events of a panel
 (`App::native_panel_events`) go to that runtime. `WorldPanel` components give the panel's size, density and tint through `Panels::apply`.
-Not done: glTF animation clips (`Model.animations`) are not turned into clips; animation events are not delivered to components;
+Not done: animation events are not delivered to components;
 colliders of models (`colliders: "mesh"`) need the physics hook (agent H).
 
 ## The FPS counter (`crates/iron_app/src/fps.rs`)
@@ -703,7 +706,10 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
   `Hold` + `clearAutoExposureCurve()` / `addAutoExposureCurvePoint(ev, stops)`; `fixedExposure` (`number | null`, an `Option<f64>`),
   `exposureTransition`, `freezeExposure()`. Setting a field of the height fog, light shafts or auto exposure turns it on with the
   defaults for the rest, as the sky does.
-- **Object-valued properties** are native records: `skybox`, `bloom`, `heightFog`, `volumetricFog` and `autoExposure` take an object or
+- **`cloudLayer`** (`CloudLayerSettings`, every key optional: `altitude`, `size`, `coverage`, `opacity`, `softness`, `tint`,
+  `windSpeed`, `windDirection`, `fadeDistance`): HDRP's cloud layer, drawn with the background behind the distance fog. The sync sends
+  it as the `clouds` op; `WorldViews::advance_clouds` carries it on the wind each frame (`M7-CLOUD-04`).
+- **Object-valued properties** are native records: `skybox`, `bloom`, `heightFog`, `volumetricFog`, `cloudLayer` and `autoExposure` take an object or
   `null` and read back as one (`Option<Record>`, JSON on the wire, see "Records as parameters" below); `fixedExposure` is native
   (`number | null`). `FogMode`, `VolumeDetail`, `VolumeDenoising` and `ExposureMetering` are enums (`#[iron_api]` `enums(..)`, string
   unions in the declarations). The per-field natives (`heightFogDensity`, `skyZenith`, ...) are still there.
@@ -726,7 +732,7 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
   missing; `x === false` on an optional boolean is false for a missing value; a typed array is copied where the engine takes
   `number[]`.
 - **Scene files** now save and apply the fog keys (`fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`,
-  `fogEndDistance`, `heightFog`, `volumetricFog`, `fogCulling`); `scenes.ts` saves no exposure keys, so neither do native scenes.
+  `fogEndDistance`, `heightFog`, `cloudLayer`, `volumetricFog`, `fogCulling`); `scenes.ts` saves no exposure keys, so neither do native scenes.
 
 ## 2D shapes, text in the world and splines in native games (2026-10-22)
 

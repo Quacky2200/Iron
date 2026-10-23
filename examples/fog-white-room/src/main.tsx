@@ -9,32 +9,6 @@
 // Keys: WASD or arrows to move, Shift to sprint, Alt to walk, Space to jump, C to roll; hold a
 // mouse button and drag (or Q / E) to turn the camera, the wheel to zoom. F: fog distance,
 // H: height fog, T: glowing tiles.
-import {
-  Animation,
-  AnimationClip,
-  Animator,
-  AnimatorController,
-  BoxCollider,
-  Camera,
-  CharacterController,
-  Color,
-  Component,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  Model,
-  QualitySettings,
-  Quaternion,
-  Random,
-  RenderSettings,
-  Texture,
-  Vector3,
-  input,
-  register,
-} from "@iron/engine";
-import { createRoot } from "@iron/react";
-import { useState } from "react";
 
 /** A floor tile's size, metres. */
 const TILE = 1.5;
@@ -263,9 +237,13 @@ class WhiteRoom extends Component {
     const [main, joints] = model.materials;
     const white = Material.create({ color: new Color(0.92, 0.93, 0.95, 1), smoothness: 0.55 });
     const glow = Material.create({ color: new Color(0.7, 0.85, 1, 1), emission: new Color(0.35, 0.6, 1.1, 1), smoothness: 0.7 });
+    const recolour = (m: Material | null) => (m === joints ? glow : m === main ? white : m);
+    // The figure's parts are skinned: a SkinnedMeshRenderer is a renderer of its own (Unity's).
     const paint = (go: GameObject) => {
+      const s = go.getComponent(SkinnedMeshRenderer);
+      if (s) s.material = recolour(s.material);
       const r = go.getComponent(MeshRenderer);
-      if (r) r.material = r.material === joints ? glow : r.material === main ? white : r.material;
+      if (r) r.material = recolour(r.material);
       for (const c of go.children) paint(c);
     };
     paint(figure);
