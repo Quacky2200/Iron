@@ -1617,7 +1617,8 @@ impl WorldViews {
         roots: &[iron_scene::ObjectId],
     ) -> crate::anim_cull::Sight {
         let renderers = self.renderers.iter().map(|(id, r)| (*id, r.object));
-        self.culling.sight(scene, renderers, roots)
+        self.culling
+            .sight(scene, renderers, roots, crate::anim_cull::blockers)
     }
 
     /// Advances particle systems on active objects by `dt` (scaled) seconds, emitting

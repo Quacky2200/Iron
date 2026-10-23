@@ -202,6 +202,7 @@ pub extern "C" fn ts_rt_component_find_any(sid: f64) -> *mut u8 {
 /// `onDestroy` runs when the calling hook returns.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_component_remove(ptr: *mut u8) {
+    iron_kinds::components_changed();
     REG.with(|r| {
         let mut r = r.borrow_mut();
         if let Some(i) = r.live.iter().position(|l| l.ptr == ptr) {
@@ -216,6 +217,18 @@ pub extern "C" fn ts_rt_component_remove(ptr: *mut u8) {
             }
         }
     });
+}
+
+/// Every live script component's object (a raw handle, 0: none) and class name, in the order they
+/// were made.
+pub fn live_components() -> Vec<(u64, &'static str)> {
+    REG.with(|r| {
+        let r = r.borrow();
+        r.live
+            .iter()
+            .map(|l| (l.object, r.classes[l.class].name))
+            .collect()
+    })
 }
 
 /// An array holding these pointers (an array of objects).
@@ -249,6 +262,7 @@ pub extern "C" fn ts_rt_component_add_gc(object: u64, sid: f64) -> *mut u8 {
     // SAFETY: the thunk was generated for this class; the registry is not borrowed while it runs.
     let ptr = unsafe { create(id as f64, object) };
     let root = ts_rt_root_add(ptr);
+    iron_kinds::components_changed();
     REG.with(|r| {
         let mut r = r.borrow_mut();
         r.live.push(Live {
@@ -418,6 +432,7 @@ impl NativeHost {
         // SAFETY: the thunk was generated for this class.
         let this = unsafe { (self.classes[ci].create)(id as f64, object.unwrap_or(0)) };
         let root = ts_rt_root_add(this);
+        iron_kinds::components_changed();
         REG.with(|r| {
             r.borrow_mut().live.push(Live {
                 id,
@@ -776,6 +791,7 @@ impl NativeHost {
     fn drop_entry(&mut self, i: usize) {
         let e = self.entries.remove(i);
         REG.with(|r| r.borrow_mut().live.retain(|l| l.id != e.id));
+        iron_kinds::components_changed();
         ts_rt_root_remove(e.root);
     }
 

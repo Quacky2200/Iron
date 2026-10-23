@@ -574,6 +574,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         w(&mut o, "");
         w(&mut o, "pub fn attach_{low}(object: ObjectId) -> {ref} {");
         w(&mut o, "    bump_{low}s();");
+        w(&mut o, "    iron_kinds::components_changed();");
         w(&mut o, "    let r = {store}.with(|v| {");
         w(&mut o, "        let mut v = v.borrow_mut();");
         w(&mut o, "        v.push(Some({data}::new(object)));");
@@ -599,6 +600,9 @@ fn gen_component(c: &Component) -> Vec<String> {
     w(&mut o, "        }");
     w(&mut o, "    });");
     w(&mut o, "    bump_{low}s();");
+    if !asset {
+        w(&mut o, "    iron_kinds::components_changed();");
+    }
     w(&mut o, "}");
     w(&mut o, "");
     if !asset {

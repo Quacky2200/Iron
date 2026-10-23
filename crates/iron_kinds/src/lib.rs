@@ -45,6 +45,18 @@ pub struct Kind {
 
 thread_local! {
     static KINDS: RefCell<Vec<Rc<Kind>>> = const { RefCell::new(Vec::new()) };
+    static COMPONENTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Owners call this when they add or remove a component (any kind): what is worked out from
+/// which components are on which objects is kept against [`components_version`].
+pub fn components_changed() {
+    COMPONENTS.with(|c| c.set(c.get() + 1));
+}
+
+/// A number that changes whenever a component is added or removed on this thread.
+pub fn components_version() -> u64 {
+    COMPONENTS.with(std::cell::Cell::get)
 }
 
 /// Registers a kind, replacing one of the same name (a reload registers its classes again).

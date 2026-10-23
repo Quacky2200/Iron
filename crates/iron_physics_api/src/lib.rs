@@ -24,7 +24,7 @@ pub mod physics2d;
 mod tests;
 
 pub use comp::{ColliderInfo, object_destroyed, start_pending};
-pub use kinds::register_kinds;
+pub use kinds::{component_objects, register_kinds};
 
 macro_rules! number_handle {
     ($($name:ident),*) => {$(

@@ -582,6 +582,17 @@ fn kind(class: &'static str) -> Kind {
     }
 }
 
+/// Every physics component with its object and class name (Rigidbody, colliders, joints, ropes),
+/// in the order they were added.
+pub fn component_objects() -> Vec<(ObjectId, &'static str)> {
+    comp::all_comps(|object, d| {
+        CLASSES
+            .iter()
+            .find(|c| is_class(c, d))
+            .map(|c| (object, *c))
+    })
+}
+
 /// Registers the physics component kinds on this thread (a later registration replaces an
 /// earlier one).
 pub fn register_kinds() {

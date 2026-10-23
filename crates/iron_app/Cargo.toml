@@ -24,6 +24,7 @@ iron_scenes = { path = "../iron_scenes" }
 iron_physics_api = { path = "../iron_physics_api" }
 iron_render_api = { path = "../iron_render_api" }
 iron_api = { path = "../iron_api" }
+iron_kinds = { path = "../iron_kinds" }
 # The AOT compiler used as a JIT (its own workspace under tools/).
 iron_ts = { path = "../../tools/iron_ts" }
 iron_ts_rt = { path = "../../tools/iron_ts_rt" }

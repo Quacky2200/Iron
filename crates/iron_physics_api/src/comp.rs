@@ -241,6 +241,7 @@ pub(crate) struct Comp {
 // ---- component slab -------------------------------------------------------------------------
 
 pub(crate) fn add_comp(object: ObjectId, data: Data) -> u32 {
+    iron_kinds::components_changed();
     st(|s| {
         s.comps.push(Some(Comp { object, data }));
         s.comps.len() as u32
@@ -305,6 +306,17 @@ pub(crate) fn comps_on(object: ObjectId, pick: impl Fn(&Data) -> bool) -> Vec<u3
                 let c = c.as_ref()?;
                 (c.object == object && pick(&c.data)).then_some(i as u32 + 1)
             })
+            .collect()
+    })
+}
+
+/// `f` over every live component, keeping what it returns.
+pub(crate) fn all_comps<T>(f: impl Fn(ObjectId, &Data) -> Option<T>) -> Vec<T> {
+    st(|s| {
+        s.comps
+            .iter()
+            .flatten()
+            .filter_map(|c| f(c.object, &c.data))
             .collect()
     })
 }
@@ -536,6 +548,7 @@ pub(crate) fn rb_destroy(h: u32) {
             *slot = None;
         }
     });
+    iron_kinds::components_changed();
     // The colliders stay, now static.
     if body != 0 {
         st(|s| s.kinds.insert(body, "fixed".into()));
@@ -878,6 +891,7 @@ pub(crate) fn col_destroy(h: u32) {
         }
         s.comps[h as usize - 1] = None;
     });
+    iron_kinds::components_changed();
     send_mass(object);
     release_physics(object);
 }
@@ -1095,6 +1109,7 @@ pub(crate) fn joint_destroy(h: u32) {
             *slot = None;
         }
     });
+    iron_kinds::components_changed();
 }
 
 // ---- rope -----------------------------------------------------------------------------------
@@ -1234,6 +1249,7 @@ pub(crate) fn rope_destroy(h: u32) {
             *slot = None;
         }
     });
+    iron_kinds::components_changed();
 }
 
 /// Removes an object's physics components and body, then the object.

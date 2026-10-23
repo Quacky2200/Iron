@@ -50,7 +50,20 @@ How it is wired: `culled_roots()` lists the objects whose components cull; the a
 watches only the renderers under them, giving their meshes a `MeshInstance::visibility_key`; `WorldRenderer::seen()` /
 `take_seen()` reports which were seen (skinned meshes judged by their bind-pose box under every bone, a box that holds
 them); the next frame's update asks through `iron_animation::Visibility` (`M5-ANI-13`, `M5-CUL-03`). This is one frame
-late. Cameras of secondary windows are not counted. Colliders and objects attached to bones are not moved while culled.
+late. Cameras of secondary windows are not counted.
+
+**The safeguard (Iron's; Unity has none).** A culled animator writes no bone transforms, so what hangs on its bones would
+be left behind. The exact rule: an animated object is never culled (it counts as always seen, and its renderers are not
+watched) while any object *strictly below it* has a physics component (`Rigidbody`, any collider, `CharacterController`, a
+joint or rope, 2D ones too), an `AudioSource`, a `ParticleSystem`, a `Light` or a script component (any class of the game).
+Components on the animated object itself do not count (culling never moves it unless a clip animates path `""`; a script
+driving the animator usually sits there). A warning on target `animation`, once per animated object, names the first such
+object and component: ``animation culling is off for `Figure`: `Hand` below it has a BoxCollider, which a culled animation
+would leave behind``. The answer is worked out from the registries (`anim_cull::blockers`: each component walks up its
+ancestors) only when a component is added or removed anywhere (`iron_kinds::components_version`, bumped by every owner) or
+the culled objects or their `Scene::tree_version`s change, so a frame costs one tree-version read per culled object
+(`M5-ANI-14`). Objects with none of these components (meshes, other renderers, cameras, empty bones) still go stale while
+culled.
 The renderer culls skinned meshes by that same box (`WorldRenderer::world_box`) in every view, so an unseen figure is also
 not drawn (`M5-CUL-05`). `MeshRenderer.isVisible` / `SkinnedMeshRenderer.isVisible` read the same answer: a renderer is
 watched once a script has asked, and the host reports the frame's seen renderers back with `set_seen_renderers`

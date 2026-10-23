@@ -300,6 +300,7 @@ pub fn playbacks_ended(ids: &[PlaybackRef]) {
 
 /// Removes the components of a destroyed object (stopping what its sources play).
 pub fn remove_on(object: ObjectId) {
+    iron_kinds::components_changed();
     st(|s| {
         for slot in s.sources.iter_mut() {
             if slot.as_ref().is_some_and(|d| d.object == object) {
@@ -329,6 +330,11 @@ pub fn sources_on(object: ObjectId) -> Vec<AudioSourceRef> {
     })
 }
 
+/// Every `AudioSource`'s object, in the order they were added.
+pub fn source_objects() -> Vec<ObjectId> {
+    st(|s| s.sources.iter().flatten().map(|d| d.object).collect())
+}
+
 /// The `AudioListener`s on an object.
 pub fn listeners_on(object: ObjectId) -> Vec<AudioListenerRef> {
     st(|s| {
@@ -342,6 +348,7 @@ pub fn listeners_on(object: ObjectId) -> Vec<AudioListenerRef> {
 }
 
 pub fn remove_source(s: AudioSourceRef) {
+    iron_kinds::components_changed();
     st(|st| {
         if let Some(slot) = st.sources.get_mut((s.0 as usize).wrapping_sub(1)) {
             if let Some(d) = slot.as_mut() {
@@ -373,6 +380,7 @@ pub fn object_of_listener(l: AudioListenerRef) -> Option<ObjectId> {
 }
 
 pub fn attach_source(object: ObjectId) -> AudioSourceRef {
+    iron_kinds::components_changed();
     st(|s| {
         s.sources.push(Some(SourceData::new(object)));
         AudioSourceRef(s.sources.len() as u32)
