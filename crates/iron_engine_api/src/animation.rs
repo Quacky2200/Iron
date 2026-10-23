@@ -455,8 +455,14 @@ thread_local! {
     static REGISTERED: Cell<bool> = const { Cell::new(false) };
 }
 
+/// Keeps clip events that came due outside the frame's update (`Animator.update`) for
+/// `Animations.takeEvents()`.
+pub(crate) fn keep_events(events: &[iron_animation::FiredEvent]) {
+    EVENTS.with(|e| e.borrow_mut().extend(events.iter().cloned()));
+}
+
 /// Makes the engine components animatable (their number properties).
-fn ensure_registered() {
+pub(crate) fn ensure_registered() {
     if REGISTERED.with(Cell::get) {
         return;
     }

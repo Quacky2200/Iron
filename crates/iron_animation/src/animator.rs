@@ -45,6 +45,9 @@ pub struct AnimatorPlayer {
     pub speed: f64,
     /// What it does while not seen.
     pub culling_mode: CullingMode,
+    /// Off: the frame's update skips it (Unity's `enabled = false`); `Animator.update(dt)` still
+    /// runs it by hand.
+    pub enabled: bool,
     values: Vec<(String, Param)>,
     current: Option<Playing>,
     next: Option<Next>,
@@ -64,6 +67,7 @@ impl AnimatorPlayer {
             controller: None,
             speed: 1.0,
             culling_mode: CullingMode::AlwaysAnimate,
+            enabled: true,
             values: Vec::new(),
             current: None,
             next: None,

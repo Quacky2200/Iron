@@ -349,6 +349,9 @@ pub fn update_culled(
             }
             for &i in anims {
                 let a = &mut animators[i];
+                if !a.enabled {
+                    continue;
+                }
                 let seen =
                     a.culling_mode == CullingMode::AlwaysAnimate || visible.visible(scene, go);
                 a.animate_seen(world, scene, sink, dt, &mut events, seen);

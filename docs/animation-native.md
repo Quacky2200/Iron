@@ -69,6 +69,13 @@ not drawn (`M5-CUL-05`). `MeshRenderer.isVisible` / `SkinnedMeshRenderer.isVisib
 watched once a script has asked, and the host reports the frame's seen renderers back with `set_seen_renderers`
 (`M5-CUL-04`). `update_culled` groups players and animators per object in a map, instead of scanning all of them for each.
 
+**Updating by hand (Unity's `Animator.Update(float)`).** `animator.update(dt)` advances the clock by `dt`, runs the
+transitions, fires the events (kept for `Animations.takeEvents()`) and writes the pose at once, whatever its culling mode and
+whether it was seen. The frame's update also advances an enabled animator, so calling `update` on one moves it twice as fast:
+the manual pattern is Unity's, `animator.enabled = false` (the frame's update then skips it, it holds its pose, and it is not
+watched for culling) plus `update(dt)` from a script (`M5-ANI-15`). There is no `updateMode` (Unity's `Normal` /
+`AnimatePhysics` / `UnscaledTime`): the frame's update uses the scaled frame time.
+
 **Bench timers.** With `--bench`, `profile.rs` adds `animation: update (all)`, `animation: pose add`, `animation: pose
 apply` and `animation: set_local` to `syncParts` (`sync_profile` merges them); each is a clock read per call, and
 `set_local` is timed per bone, so its own share is partly the timer.
@@ -84,7 +91,7 @@ apply` and `animation: set_local` to `syncParts` (`sync_profile` merges them); e
 | `AnimationParameter`, `AnimationCondition`, `AnimationTransition`, `AnimationBlendTree`, `AnimationNode` | `new X(..)` with `{ option }` setters | the pieces of a controller; `AnimationNode.blend(name, tree)` |
 | `AnimationController` | `new AnimationController()` or `AnimationController.build()...create()` | `addParameter/addNode/addTransition`, `defaultState`, counts and `...At(i)`, `toJson` / `fromJson` |
 | `AnimationBuilder` | `AnimationController.build()` | chained: `parameter`, `state`, `blendState` + `child`, `transition` + `when` / `exitTime` / `duration` / `offset`, `defaultState`, `create` |
-| `Animator` | `go.addComponent(Animator)` | `controller`, `speed`, `cullingMode`, `set/getFloat/Integer/Bool`, `setTrigger`, `resetTrigger`, `play`, `crossFade`, `isInTransition`, `currentStateName` / `currentNormalizedTime` / `currentLength` and `next...` |
+| `Animator` | `go.addComponent(Animator)` | `controller`, `speed`, `cullingMode`, `enabled`, `update(dt)`, `set/getFloat/Integer/Bool`, `setTrigger`, `resetTrigger`, `play`, `crossFade`, `isInTransition`, `currentStateName` / `currentNormalizedTime` / `currentLength` and `next...` |
 
 Targets of a curve: `Transform` (`localPosition.x|y|z`, `localScale.x|y|z`, `localRotation.x|y|z|w`, `localEulerAngles.x|y|z`),
 `GameObject` (`active`) and registered components (`Camera`: `fieldOfView`, `nearClipPlane`, `farClipPlane`, `depth`,

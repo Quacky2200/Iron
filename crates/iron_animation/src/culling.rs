@@ -47,7 +47,7 @@ pub fn culled_roots(world: &World) -> Vec<ObjectId> {
     let animators = world
         .animators
         .iter()
-        .filter(|a| a.culling_mode != CullingMode::AlwaysAnimate)
+        .filter(|a| a.enabled && a.culling_mode != CullingMode::AlwaysAnimate)
         .map(|a| a.object);
     let players = world
         .players

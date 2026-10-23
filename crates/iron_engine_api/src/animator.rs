@@ -965,6 +965,38 @@ pub mod animator_api {
             animator(self, |p, _| p.culling_mode = mode);
         }
 
+        /// Off, the frame's update leaves it alone (it holds its pose); `update(dt)` still runs
+        /// it (Unity's manual pattern).
+        #[property]
+        pub fn enabled(self) -> bool {
+            animator(self, |p, _| p.enabled).unwrap_or(false)
+        }
+
+        pub fn set_enabled(self, on: bool) {
+            animator(self, |p, _| p.enabled = on);
+        }
+
+        /// Unity's `Animator.Update(deltaTime)`: advances the clock by `deltaTime` seconds, runs
+        /// the transitions and writes the pose now, seen or not (culling is ignored). The frame's
+        /// own update advances it too unless `enabled` is false: call this on a disabled animator,
+        /// or it moves twice as fast.
+        pub fn update(self, delta_time: f64) {
+            crate::animation::ensure_registered();
+            let events = with_world(|w| {
+                let i = (self.0 as usize).checked_sub(1)?;
+                let mut p = w.animators.get(i)?.clone();
+                let mut events = Vec::new();
+                iron_scene::api::with_scene(|scene| {
+                    let mut sink = iron_animation::RegistrySink { other: None };
+                    p.animate_seen(w, scene, &mut sink, delta_time, &mut events, true);
+                });
+                w.animators[i] = p;
+                Some(events)
+            })
+            .unwrap_or_default();
+            crate::animation::keep_events(&events);
+        }
+
         pub fn set_float(self, name: &str, value: f64) {
             animator(self, |p, _| p.set_float(name, value));
         }
@@ -1101,6 +1133,68 @@ mod tests {
         animation.set_culling_type(CullingType::BasedOnRenderers);
         assert_eq!(animator.culling_mode(), CullingMode::CullCompletely);
         assert_eq!(crate::animation::culled_roots(), [a, b]);
+        crate::animation::reset();
+    }
+
+    /// Never seen.
+    struct Unseen;
+
+    impl iron_animation::Visibility for Unseen {
+        fn visible(&mut self, _: &iron_scene::Scene, _: ObjectId) -> bool {
+            false
+        }
+    }
+
+    // M5-ANI-15
+    #[test]
+    fn update_poses_a_culled_or_disabled_animator_by_hand() {
+        use crate::animation::{ClipRef, CurveRef};
+        crate::animation::reset();
+        let mut scene = iron_scene::Scene::new();
+        let go = scene.create("Figure");
+        let arm = scene.create("Arm");
+        scene.set_parent(arm, Some(go), false);
+        let _scope = iron_scene::api::enter(&mut scene);
+        // A looping 2 s clip moving the arm's x from 0 to 2, an event at 1 s.
+        let clip = ClipRef::create("swing");
+        clip.set_wrap_mode("loop");
+        clip.set_curve(
+            "Arm",
+            "Transform",
+            "localPosition.x",
+            CurveRef::linear(0.0, 0.0, 2.0, 2.0),
+        );
+        clip.add_event(1.0, "Step", f64::NAN);
+        let controller = ControllerRef::create();
+        controller.add_node(NodeRef::create("Swing", clip));
+        let animator = AnimatorRef::attach(go);
+        animator.set_controller(controller);
+        animator.set_culling_mode(CullingMode::CullCompletely);
+        let x = || iron_scene::api::with_scene(|s| s.local(arm).unwrap().position.x).unwrap();
+        let frame = |dt| {
+            crate::animation::update_culled(dt, None, &mut Unseen);
+        };
+        frame(0.5);
+        assert_eq!(x(), 0.0, "culled: the frame does not pose it");
+        animator.update(0.5);
+        assert_eq!(x(), 0.5, "update poses it anyway");
+        animator.update(0.75);
+        assert_eq!(x(), 1.25);
+        let events = crate::animation::animations_api::take_events();
+        assert_eq!(events, "Figure|Step|", "its events are kept");
+        // Disabled: the frame leaves it alone and it is not watched; update still runs it.
+        animator.set_culling_mode(CullingMode::AlwaysAnimate);
+        animator.set_enabled(false);
+        assert!(!animator.enabled());
+        frame(0.25);
+        assert_eq!(x(), 1.25);
+        animator.update(0.25);
+        assert_eq!(x(), 1.5);
+        // Enabled with automatic updates too: it advances twice.
+        animator.set_enabled(true);
+        frame(0.1);
+        animator.update(0.1);
+        assert!((x() - 1.7).abs() < 1e-6, "{}", x());
         crate::animation::reset();
     }
 }
