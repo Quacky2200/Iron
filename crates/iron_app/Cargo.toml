@@ -19,6 +19,7 @@ iron_ui = { version = "0.1.0", path = "../iron_ui" }
 iron_ui_native = { path = "../iron_ui_native" }
 iron_native = { path = "../iron_native" }
 iron_engine_api = { path = "../iron_engine_api" }
+iron_animation = { path = "../iron_animation" }
 iron_scenes = { path = "../iron_scenes" }
 iron_physics_api = { path = "../iron_physics_api" }
 iron_render_api = { path = "../iron_render_api" }

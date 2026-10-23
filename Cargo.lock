@@ -2157,6 +2157,7 @@ dependencies = [
  "arboard",
  "gltf",
  "image",
+ "iron_animation",
  "iron_api",
  "iron_audio",
  "iron_core",

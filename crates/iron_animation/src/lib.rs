@@ -9,6 +9,7 @@ pub mod curve;
 pub mod gltf;
 pub mod player;
 pub mod pose;
+pub mod profile;
 pub mod registry;
 
 pub use animator::{AnimatorPlayer, StateInfo};

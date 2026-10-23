@@ -313,6 +313,7 @@ impl Pose {
                 let e = avg("localEulerAngles", &t.e, &[e0.x, e0.y, e0.z]);
                 rotation = Q::euler(e[0], e[1], e[2]);
             }
+            let lap = crate::profile::start();
             scene.set_local(
                 *go,
                 Transform {
@@ -326,6 +327,7 @@ impl Pose {
                     scale: Vec3::new(scale[0] as f32, scale[1] as f32, scale[2] as f32),
                 },
             );
+            crate::profile::stop("animation: set_local", lap);
         }
         for p in &self.props {
             if !scene.contains(p.object) {

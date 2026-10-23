@@ -226,16 +226,21 @@ impl AnimationPlayer {
                 s.wrap_mode,
                 events,
             );
+            let lap = crate::profile::start();
             if s.wrap_mode == WrapMode::Once && s.time >= length {
                 // Holds the last frame this time, then stops.
                 pose.add_aligned(scene, world, sink, self.object, s.clip, length, s.weight);
+                crate::profile::stop("animation: pose add", lap);
                 s.enabled = false;
                 continue;
             }
             let t = wrap(s.time, length, s.wrap_mode);
             pose.add_aligned(scene, world, sink, self.object, s.clip, t, s.weight);
+            crate::profile::stop("animation: pose add", lap);
         }
+        let lap = crate::profile::start();
         pose.apply(scene, sink);
+        crate::profile::stop("animation: pose apply", lap);
     }
 }
 
@@ -297,6 +302,7 @@ pub fn update(
     sink: &mut dyn PropertySink,
     dt: f64,
 ) -> Vec<FiredEvent> {
+    let lap = crate::profile::start();
     let mut events = Vec::new();
     // Players of destroyed objects are dropped lazily: they are skipped here.
     let mut players = std::mem::take(&mut world.players);
@@ -316,5 +322,6 @@ pub fn update(
     }
     world.players = players;
     world.animators = animators;
+    crate::profile::stop("animation: update (all)", lap);
     events
 }

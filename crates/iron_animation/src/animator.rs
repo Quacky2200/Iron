@@ -400,6 +400,7 @@ impl AnimatorPlayer {
             if c.weight * weight >= 0.5 {
                 fire_events(world, self.object, c.clip, t0, t, clip_len, mode, events);
             }
+            let lap = crate::profile::start();
             pose.add_aligned(
                 scene,
                 world,
@@ -409,6 +410,7 @@ impl AnimatorPlayer {
                 wrap(t, clip_len, mode),
                 c.weight * weight,
             );
+            crate::profile::stop("animation: pose add", lap);
         }
     }
 
@@ -460,7 +462,9 @@ impl AnimatorPlayer {
                 norm: cur.1,
             });
         }
+        let lap = crate::profile::start();
         pose.apply(scene, sink);
+        crate::profile::stop("animation: pose apply", lap);
     }
 }
 

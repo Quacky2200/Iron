@@ -13,18 +13,21 @@ thread_local! {
 /// Turns the timers on (a bench run).
 pub(crate) fn enable() {
     ON.with(|o| o.set(true));
+    iron_animation::profile::enable();
 }
 
-/// The parts' times since the last call, and starts over.
+/// The parts' times since the last call (with the animation update's own), and starts over.
 pub(crate) fn take() -> Vec<(&'static str, f64)> {
-    PARTS.with(|p| {
+    let mut out = PARTS.with(|p| {
         let mut p = p.borrow_mut();
         let out = p.clone();
         for part in p.iter_mut() {
             part.1 = 0.0;
         }
         out
-    })
+    });
+    out.extend(iron_animation::profile::take());
+    out
 }
 
 /// Times the stretches between marks.
