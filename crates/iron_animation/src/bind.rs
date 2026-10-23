@@ -8,7 +8,7 @@ use crate::clip::{Clip, ClipId, CurveId, World};
 use crate::pose::resolve;
 use iron_scene::{ObjectId, Scene};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Transform channels per bone: position x y z, rotation x y z w, scale x y z, Euler angles x y z.
 pub(crate) const CHANNELS: usize = 13;
@@ -85,7 +85,7 @@ pub(crate) struct RootBinds {
     pub bones: Vec<ObjectId>,
     index: HashMap<ObjectId, u32>,
     /// Component properties' class and property names, by key.
-    pub prop_keys: Vec<(Rc<str>, Rc<str>)>,
+    pub prop_keys: Vec<(Arc<str>, Arc<str>)>,
     clips: Vec<(ClipId, BoundClip)>,
 }
 
@@ -211,8 +211,21 @@ impl World {
         f: impl FnOnce(&RootBinds, &BoundClip) -> R,
     ) -> Option<R> {
         let c = self.clip(clip)?;
-        let mut binds = self.binds.borrow_mut();
         let version = scene.tree_version(root);
+        // Bound already (every frame but the first): shared, so animators posing in parallel
+        // don't wait on each other.
+        {
+            let binds = self.binds.read().expect("not poisoned");
+            if let Some(rb) = binds.roots.get(&root).filter(|rb| rb.version == version)
+                && let Some((_, bound)) = rb
+                    .clips
+                    .iter()
+                    .find(|(id, b)| *id == clip && b.edits == self.edits)
+            {
+                return Some(f(rb, bound));
+            }
+        }
+        let mut binds = self.binds.write().expect("not poisoned");
         let rb = binds.roots.entry(root).or_default();
         if rb.version != version {
             *rb = RootBinds {

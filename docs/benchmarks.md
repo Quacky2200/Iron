@@ -628,3 +628,36 @@ modes cost the same. Render time does not drop with culling: bone matrices for e
 (about 18 ms for 2000 figures) and uploaded (about 6 ms) every frame, seen or not (a follow-up in TODO.md). Before this
 work the render took 14.6 ms for 500 figures (skinned meshes never culled, bone matrices per renderer) against 8.6-10 ms
 now. Animation is about 28 µs a figure.
+
+**Crowd costs, fixed (2026-10-23).** Same machine and flags, a shorter input (`warmup` 120, each segment 200 frames after
+its own warm-up: 250 a block in view 4 through the three modes and view 3, then 1000 a block likewise), run before the work
+(at `9778101e`), after the bone matrix changes (`a3dee1e0`) and after the parallel animation
+(threads: the machine's, up to 16; `IRON_ANIM_THREADS=1` for the update in turn). Frame mean / animation update / render, in ms:
+
+| Segment | Before | Bones kept, drawn ones sent once | + animators in parallel | In turn (`IRON_ANIM_THREADS=1`) |
+|---|---|---|---|---|
+| 250, view 4, `alwaysAnimate` | 25.4 / 14.0 / 10.0 | 18.4 / 13.5 / 4.1 | 8.6 / 2.9 / 4.6 | 18.6 / 12.9 / 4.7 |
+| 250, view 4, `cullUpdateTransforms` | 16.3 / 7.6 / 7.2 | 12.8 / 7.4 / 4.2 | 8.2 / 2.2 / 4.7 | 12.1 / 6.7 / 4.3 |
+| 250, view 4, `cullCompletely` | 17.0 / 7.6 / 7.8 | 11.4 / 7.1 / 3.2 | 7.9 / 2.1 / 4.6 | 11.1 / 6.5 / 3.4 |
+| 250, view 3, `cullCompletely` | 25.8 / 14.0 / 10.2 | 19.3 / 13.6 / 4.7 | 9.2 / 2.8 / 5.2 | 18.6 / 12.9 / 4.4 |
+| 1000, view 4, `cullCompletely` | 80.5 / 31.4 / 41.5 | 59.1 / 31.8 / 19.5 | 34.5 / 6.8 / 20.6 | 55.7 / 28.1 / 20.5 |
+| 1000, view 4, `alwaysAnimate` | 105.0 / 57.5 / 42.1 | 83.1 / 57.6 / 20.2 | 38.7 / 12.0 / 21.4 | 81.2 / 55.1 / 21.3 |
+| 1000, view 4, `cullUpdateTransforms` | 80.2 / 32.5 / 41.5 | 57.9 / 32.5 / 19.1 | 33.6 / 7.5 / 20.1 | 55.3 / 29.0 / 20.4 |
+| 1000, view 3, `cullUpdateTransforms` | 107.1 / 57.6 / 43.4 | 89.4 / 57.9 / 25.0 | 44.5 / 12.3 / 25.8 | 87.1 / 55.0 / 25.9 |
+
+In fps, 1000 a block: 9.5 → 25.9 (`alwaysAnimate`, view 4), 12.4 → 28.9 (`cullCompletely`, view 4), 9.3 → 22.5 (view 3).
+Where it went:
+
+- **Bone matrices** (`iron_app/src/bone_cache.rs`): kept between frames and worked out again per skeleton only when a bone
+  moved (`Scene::moved_since`); one shared list for every view instead of a copy each. Measured with temporary timers at 1000
+  a block: building them went from 15.2 to 3.1 ms with every figure moving (a bone's objects are looked up once, not hashed
+  every frame) and 2.7 ms with half culled (one check per bone); the world draw from 17.5 to 7.7 ms.
+- **Uploads** (`iron_render/src/world/bone_pack.rs`): only the runs of drawn skinned meshes (a view or a shadow map) are
+  converted and sent, once a frame for every pass.
+- **Animation** (`iron_animation/src/parallel.rs`): animators advance and blend on several threads, each working out its
+  bones' new local transforms; writing them stays in turn, in the walk's order (bit for bit as before, `M5-ANI-17`). At 1000 a
+  block: 6.7 ms in parallel (16 threads: 6.0) and about 4 ms writing. The walk now only goes where animated objects are
+  (it used to visit every bone of every figure), which also helps in turn.
+
+Frames rendered at the end of each segment are identical before and after, apart from the HUD's lines driven by the wall
+clock (fps and ms, and a stats line it samples on a timer).

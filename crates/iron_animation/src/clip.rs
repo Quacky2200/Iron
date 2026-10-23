@@ -5,6 +5,7 @@
 use crate::curve::{Curve, WrapMode, wrap};
 use serde_json::{Value, json};
 use std::cell::RefCell;
+use std::sync::{Mutex, RwLock};
 
 /// An index into the curve arena, plus one (0 is "none").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -77,12 +78,15 @@ pub struct World {
     pub graphs: crate::controller::Graphs,
     /// Counts changes to clips and curves: bindings made before one are made again.
     pub(crate) edits: u64,
-    /// Clips' bindings per animated root.
-    pub(crate) binds: RefCell<crate::bind::Binds>,
+    /// Clips' bindings per animated root (locked: animators may pose in parallel).
+    pub(crate) binds: RwLock<crate::bind::Binds>,
     /// The pose players fill and apply in turn, kept so its buffers are reused.
-    pub(crate) scratch: RefCell<crate::pose::Pose>,
+    pub(crate) scratch: Mutex<crate::pose::Pose>,
     /// Clip lengths by clip index, with the (edits, curve count) they were measured at.
-    lengths: RefCell<Vec<((u64, usize), f64)>>,
+    lengths: RwLock<Vec<((u64, usize), f64)>>,
+    /// Whether some clip moves more than transforms, with the (edits, clip count) it was
+    /// checked at: then animators are posed in turn.
+    pub(crate) not_only_transforms: Option<((u64, usize), bool)>,
 }
 
 thread_local! {
@@ -162,13 +166,13 @@ impl World {
     pub fn clip_length(&self, id: ClipId) -> f64 {
         let stamp = (self.edits, self.curves.len());
         let i = (id.0 as usize).wrapping_sub(1);
-        if let Some(&(s, len)) = self.lengths.borrow().get(i)
+        if let Some(&(s, len)) = self.lengths.read().expect("not poisoned").get(i)
             && s == stamp
         {
             return len;
         }
         let len = self.measure(id);
-        let mut lengths = self.lengths.borrow_mut();
+        let mut lengths = self.lengths.write().expect("not poisoned");
         if i < self.clips.len() {
             if lengths.len() <= i {
                 lengths.resize(i + 1, ((u64::MAX, 0), 0.0));
@@ -194,6 +198,23 @@ impl World {
             end = iron_math::jsnum::max(end, e.time);
         }
         end
+    }
+
+    /// Whether every clip moves transforms only (no `GameObject.active`, no component
+    /// property): then animators can be posed in parallel.
+    pub(crate) fn only_transforms(&mut self) -> bool {
+        let key = (self.edits, self.clips.len());
+        if let Some((k, other)) = self.not_only_transforms
+            && k == key
+        {
+            return !other;
+        }
+        let other = self
+            .clips
+            .iter()
+            .any(|c| c.bindings.iter().any(|b| b.type_name != "Transform"));
+        self.not_only_transforms = Some((key, other));
+        !other
     }
 
     pub fn add_event(&mut self, clip: ClipId, event: ClipEvent) {

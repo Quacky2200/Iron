@@ -448,19 +448,41 @@ impl AnimatorPlayer {
         events: &mut Vec<FiredEvent>,
         seen: bool,
     ) {
+        let mut pose = std::mem::take(&mut *world.scratch.lock().expect("not poisoned"));
+        if self.step(world, scene, sink, dt, events, seen, &mut pose) {
+            let lap = crate::profile::start();
+            pose.apply(scene, sink);
+            crate::profile::stop("animation: pose apply", lap);
+        }
+        *world.scratch.lock().expect("not poisoned") = pose;
+    }
+
+    /// Advances by `dt` and adds the pose to `pose` (empty), reading the scene only: true when
+    /// it is to be written ([`Self::animate_seen`] writes it at once; the parallel update later,
+    /// in order).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn step(
+        &mut self,
+        world: &World,
+        scene: &Scene,
+        sink: &mut dyn PropertySink,
+        dt: f64,
+        events: &mut Vec<FiredEvent>,
+        seen: bool,
+        pose: &mut Pose,
+    ) -> bool {
         let write = seen || self.culling_mode == CullingMode::AlwaysAnimate;
         if !write && self.culling_mode == CullingMode::CullCompletely {
-            return;
+            return false;
         }
         self.ensure(world);
         if self.current.is_none() {
-            return;
+            return false;
         }
         self.check_transitions(world);
-        let mut pose = world.scratch.take();
         let cur = self.current.expect("checked");
         let mut cur = (cur.node, cur.norm);
-        let mut target = write.then_some(&mut pose);
+        let mut target = write.then_some(pose);
         if let Some(mut next) = self.next {
             next.progress = jsnum::min(1.0, next.progress + dt / next.duration);
             let w = next.progress;
@@ -494,12 +516,7 @@ impl AnimatorPlayer {
                 norm: cur.1,
             });
         }
-        if write {
-            let lap = crate::profile::start();
-            pose.apply(scene, sink);
-            crate::profile::stop("animation: pose apply", lap);
-        }
-        world.scratch.replace(pose);
+        write
     }
 }
 

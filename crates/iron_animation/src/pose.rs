@@ -11,7 +11,7 @@ use crate::curve::Spot;
 use glam::{Quat, Vec3};
 use iron_math::{Q, V3};
 use iron_scene::{ObjectId, Scene, Transform};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// What the animation writes that is not a transform or an object's `active` flag: a number on a
 /// component. The host (or the engine API) supplies it.
@@ -67,8 +67,8 @@ impl BonePose {
 struct PropPose {
     object: ObjectId,
     key: u32,
-    type_name: Rc<str>,
-    property: Rc<str>,
+    type_name: Arc<str>,
+    property: Arc<str>,
     value: f64,
     weight: f64,
 }
@@ -286,62 +286,32 @@ impl Pose {
         self.root = None;
     }
 
+    /// Works out each bone's new local transform, in the order first added to, onto `out`, and
+    /// empties the pose (keeping its buffers): for the parallel update, which writes them later,
+    /// in order, when nothing else writes these bones in between. The pose must hold no property
+    /// values (the parallel update only runs clips that move transforms).
+    pub(crate) fn take_locals(&mut self, scene: &Scene, out: &mut Vec<(ObjectId, Transform)>) {
+        debug_assert!(self.props.is_empty(), "only transforms are taken");
+        for &(slot, go) in &self.order {
+            if let Some(cur) = scene.local(go) {
+                out.push((go, blended(cur, &self.bones[slot as usize])));
+            }
+            self.bones[slot as usize] = BonePose::ZERO;
+            self.touched[slot as usize] = false;
+        }
+        self.order.clear();
+        self.props.clear();
+        self.root = None;
+    }
+
     fn write(&self, scene: &mut Scene, sink: &mut dyn PropertySink) {
         for &(slot, go) in &self.order {
-            let t = &self.bones[slot as usize];
             let Some(cur) = scene.local(go) else {
                 continue;
             };
-            let cp = [
-                f64::from(cur.position.x),
-                f64::from(cur.position.y),
-                f64::from(cur.position.z),
-            ];
-            let position = if t.has(POS, 3) { t.avg(POS, cp) } else { cp };
-            let cs = [
-                f64::from(cur.scale.x),
-                f64::from(cur.scale.y),
-                f64::from(cur.scale.z),
-            ];
-            let scale = if t.has(SCALE, 3) {
-                t.avg(SCALE, cs)
-            } else {
-                cs
-            };
-            let mut rotation = Q {
-                x: f64::from(cur.rotation.x),
-                y: f64::from(cur.rotation.y),
-                z: f64::from(cur.rotation.z),
-                w: f64::from(cur.rotation.w),
-            };
-            if t.has(ROT, 4) {
-                let q = t.avg(ROT, [rotation.x, rotation.y, rotation.z, rotation.w]);
-                rotation = Q {
-                    x: q[0],
-                    y: q[1],
-                    z: q[2],
-                    w: q[3],
-                }
-                .normalized();
-            } else if t.has(EULER, 3) {
-                let e0: V3 = rotation.euler_angles();
-                let e = t.avg(EULER, [e0.x, e0.y, e0.z]);
-                rotation = Q::euler(e[0], e[1], e[2]);
-            }
+            let local = blended(cur, &self.bones[slot as usize]);
             let lap = crate::profile::start();
-            scene.set_local(
-                go,
-                Transform {
-                    position: Vec3::new(position[0] as f32, position[1] as f32, position[2] as f32),
-                    rotation: Quat::from_xyzw(
-                        rotation.x as f32,
-                        rotation.y as f32,
-                        rotation.z as f32,
-                        rotation.w as f32,
-                    ),
-                    scale: Vec3::new(scale[0] as f32, scale[1] as f32, scale[2] as f32),
-                },
-            );
+            scene.set_local(go, local);
             crate::profile::stop("animation: set_local", lap);
         }
         for p in &self.props {
@@ -357,6 +327,56 @@ impl Pose {
             }
             sink.set_number(p.object, &p.type_name, &p.property, value);
         }
+    }
+}
+
+/// A bone's blended local transform, over its current one where nothing was added.
+fn blended(cur: Transform, t: &BonePose) -> Transform {
+    let cp = [
+        f64::from(cur.position.x),
+        f64::from(cur.position.y),
+        f64::from(cur.position.z),
+    ];
+    let position = if t.has(POS, 3) { t.avg(POS, cp) } else { cp };
+    let cs = [
+        f64::from(cur.scale.x),
+        f64::from(cur.scale.y),
+        f64::from(cur.scale.z),
+    ];
+    let scale = if t.has(SCALE, 3) {
+        t.avg(SCALE, cs)
+    } else {
+        cs
+    };
+    let mut rotation = Q {
+        x: f64::from(cur.rotation.x),
+        y: f64::from(cur.rotation.y),
+        z: f64::from(cur.rotation.z),
+        w: f64::from(cur.rotation.w),
+    };
+    if t.has(ROT, 4) {
+        let q = t.avg(ROT, [rotation.x, rotation.y, rotation.z, rotation.w]);
+        rotation = Q {
+            x: q[0],
+            y: q[1],
+            z: q[2],
+            w: q[3],
+        }
+        .normalized();
+    } else if t.has(EULER, 3) {
+        let e0: V3 = rotation.euler_angles();
+        let e = t.avg(EULER, [e0.x, e0.y, e0.z]);
+        rotation = Q::euler(e[0], e[1], e[2]);
+    }
+    Transform {
+        position: Vec3::new(position[0] as f32, position[1] as f32, position[2] as f32),
+        rotation: Quat::from_xyzw(
+            rotation.x as f32,
+            rotation.y as f32,
+            rotation.z as f32,
+            rotation.w as f32,
+        ),
+        scale: Vec3::new(scale[0] as f32, scale[1] as f32, scale[2] as f32),
     }
 }
 

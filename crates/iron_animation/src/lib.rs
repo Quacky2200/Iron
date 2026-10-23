@@ -11,6 +11,9 @@ pub mod curve;
 pub mod gltf;
 #[cfg(test)]
 mod legacy_pose;
+mod parallel;
+#[cfg(test)]
+mod parallel_tests;
 pub mod player;
 pub mod pose;
 #[cfg(test)]
@@ -27,6 +30,7 @@ pub use controller::{
 };
 pub use culling::{AllVisible, CullingMode, CullingType, Visibility, culled_roots};
 pub use curve::{Curve, Keyframe, PointMode, WrapMode, wrap};
+pub use parallel::{set_threads, threads};
 pub use player::{AnimState, AnimationPlayer, FiredEvent, update, update_culled};
 pub use pose::{NoComponents, Pose, PropertySink, resolve, sample};
 pub use registry::{RegistrySink, register_setter, register_type};

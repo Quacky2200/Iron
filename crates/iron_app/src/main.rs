@@ -228,6 +228,15 @@ pub(crate) fn main() -> Result<()> {
     result
 }
 
+/// Threads the animation update poses animators on: `IRON_ANIM_THREADS` (1: in turn), else
+/// the machine's threads, up to 16 (more gain little: the writing stays in turn).
+fn animation_threads() -> usize {
+    std::env::var("IRON_ANIM_THREADS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get().min(16)))
+}
+
 fn run() -> Result<()> {
     let args = match parse_args() {
         Ok(a) => a,
@@ -240,6 +249,7 @@ fn run() -> Result<()> {
     if args.bench.is_some() {
         iron_ts::timing::enable();
     }
+    iron_animation::set_threads(animation_threads());
     let mut lap = iron_ts::timing::Lap::start();
     // The log file sits with the game's settings (not for screenshot runs, which leave
     // the player's files alone; `IRON_LOG_FILE` still works there).

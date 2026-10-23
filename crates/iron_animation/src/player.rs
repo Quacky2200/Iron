@@ -197,7 +197,7 @@ impl AnimationPlayer {
         events: &mut Vec<FiredEvent>,
     ) {
         self.start(world);
-        let mut pose = world.scratch.take();
+        let mut pose = std::mem::take(&mut *world.scratch.lock().expect("not poisoned"));
         for s in &mut self.states {
             if !s.enabled {
                 continue;
@@ -245,7 +245,7 @@ impl AnimationPlayer {
         let lap = crate::profile::start();
         pose.apply(scene, sink);
         crate::profile::stop("animation: pose apply", lap);
-        world.scratch.replace(pose);
+        *world.scratch.lock().expect("not poisoned") = pose;
     }
 }
 
@@ -311,6 +311,7 @@ pub fn update(
 }
 
 /// [`update`], with culling: players and animators that cull ask `visible` about their object.
+/// Animators are posed on [`crate::parallel::threads`] threads when that is more than one.
 pub fn update_culled(
     world: &mut World,
     scene: &mut Scene,
@@ -318,8 +319,23 @@ pub fn update_culled(
     dt: f64,
     visible: &mut dyn Visibility,
 ) -> Vec<FiredEvent> {
+    update_on(world, scene, sink, dt, visible, crate::parallel::threads())
+}
+
+/// [`update_culled`] on `threads` threads (0 or 1: in turn).
+pub(crate) fn update_on(
+    world: &mut World,
+    scene: &mut Scene,
+    sink: &mut dyn PropertySink,
+    dt: f64,
+    visible: &mut dyn Visibility,
+    threads: usize,
+) -> Vec<FiredEvent> {
     let lap = crate::profile::start();
-    world.binds.get_mut().sweep(scene);
+    world.binds.get_mut().expect("not poisoned").sweep(scene);
+    // In parallel only while no clip can switch objects off (which changes the walk) or set
+    // component properties (the sink is not shared).
+    let parallel = threads > 1 && world.only_transforms();
     let mut events = Vec::new();
     // Players of destroyed objects are dropped lazily: they are skipped here.
     let mut players = std::mem::take(&mut world.players);
@@ -333,7 +349,19 @@ pub fn update_culled(
     for (i, a) in animators.iter().enumerate() {
         owners.entry(a.object).or_default().1.push(i);
     }
-    let mut stack: Vec<ObjectId> = scene.roots().iter().rev().copied().collect();
+    // In parallel: what to run, in the order the walk meets it.
+    let mut jobs = Vec::new();
+    // The walk goes only where an animated object is (a crowd's bones are not walked): to the
+    // animated objects and the objects above them.
+    let mut above: std::collections::HashSet<ObjectId> = std::collections::HashSet::new();
+    for &o in owners.keys() {
+        let mut at = scene.parent(o);
+        while let Some(a) = at.filter(|&a| above.insert(a)) {
+            at = scene.parent(a);
+        }
+    }
+    let leads = |o: &ObjectId| owners.contains_key(o) || above.contains(o);
+    let mut stack: Vec<ObjectId> = scene.roots().iter().rev().copied().filter(leads).collect();
     while let Some(go) = stack.pop() {
         // Only children of active objects are walked, so enabled here is active.
         if !scene.enabled(go) {
@@ -345,7 +373,11 @@ pub fn update_culled(
                 if p.culling_type == CullingType::BasedOnRenderers && !visible.visible(scene, go) {
                     continue;
                 }
-                p.animate(world, scene, sink, dt, &mut events);
+                if parallel {
+                    jobs.push(crate::parallel::Job::Player(i));
+                } else {
+                    p.animate(world, scene, sink, dt, &mut events);
+                }
             }
             for &i in anims {
                 let a = &mut animators[i];
@@ -354,14 +386,28 @@ pub fn update_culled(
                 }
                 let seen =
                     a.culling_mode == CullingMode::AlwaysAnimate || visible.visible(scene, go);
-                a.animate_seen(world, scene, sink, dt, &mut events, seen);
+                if parallel {
+                    jobs.push(crate::parallel::Job::Animator(i, seen));
+                } else {
+                    a.animate_seen(world, scene, sink, dt, &mut events, seen);
+                }
             }
             // Its own clips may have switched it off (`active` on path "").
             if !scene.enabled(go) {
                 continue;
             }
         }
-        stack.extend(scene.children(go).iter().rev().copied());
+        stack.extend(scene.children(go).iter().rev().copied().filter(leads));
+    }
+    if parallel {
+        let mut run = crate::parallel::Run {
+            world: &*world,
+            players: &mut players,
+            animators: &mut animators,
+            dt,
+            threads,
+        };
+        run.go(scene, sink, &jobs, &mut events);
     }
     world.players = players;
     world.animators = animators;

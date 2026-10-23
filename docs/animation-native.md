@@ -71,6 +71,19 @@ not drawn (`M5-CUL-05`). `MeshRenderer.isVisible` / `SkinnedMeshRenderer.isVisib
 watched once a script has asked, and the host reports the frame's seen renderers back with `set_seen_renderers`
 (`M5-CUL-04`). `update_culled` groups players and animators per object in a map, instead of scanning all of them for each.
 
+**The walk and threads.** The update walks only towards animated objects: the objects with players or animators and the
+objects above them (a crowd's bones are not visited). With `iron_animation::set_threads(n)` above 1 (the app sets the
+machine's threads, up to 16; `IRON_ANIM_THREADS=1` turns it off) a frame runs in two halves (`parallel.rs`): the walk lists
+the jobs in order; animators advance their state machines, blend their clips and work out their bones' new local
+transforms on up to `n` threads (every n-th animator to a thread, at least 8 a thread), reading the scene only, each into
+its own lists of transforms and events; then, in the walk's order, players run and the animators' transforms are written
+and their events kept. The result is the same bit for bit as in turn (`M5-ANI-17`). The frame runs in turn instead while
+any clip moves more than transforms (`GameObject.active` changes the walk; component properties go through a sink that is
+not shared; `World::only_transforms`, kept by edit count) or an animated object is under another one (their bones could
+overlap). The world's caches are locks for this: `binds` (read on the frame's path, written only to bind), the clip
+lengths, the scratch pose; property names are `Arc<str>`. Bench timers: `animation: animators in parallel`; `pose add` and
+`pose apply` are only timed in turn.
+
 **Updating by hand (Unity's `Animator.Update(float)`).** `animator.update(dt)` advances the clock by `dt`, runs the
 transitions, fires the events (kept for `Animations.takeEvents()`) and writes the pose at once, whatever its culling mode and
 whether it was seen. The frame's update also advances an enabled animator, so calling `update` on one moves it twice as fast:
