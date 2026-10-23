@@ -157,7 +157,9 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
                 let mut m = crate::lower::lower_source_with(src, options.manifests)?;
                 m.prefix = options.prefix.to_string();
                 m.struct_base = options.struct_base;
+                let mut lap = crate::timing::Lap::start();
                 sroa::run(&mut m);
+                lap.mark("IR passes (sroa)");
                 Ok((m, t0.elapsed()))
             })
             .map_err(|e| e.to_string())?
@@ -166,6 +168,7 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
     })?;
 
     let t1 = std::time::Instant::now();
+    let mut lap = crate::timing::Lap::start();
     let mut known: HashMap<&'static str, usize> = HashMap::new();
     known.extend(libcalls());
     known.extend(iron_ts_rt::symbols());
@@ -189,6 +192,7 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
             .map(|a| a as *const u8)
     }));
     let mut jit = JITModule::new(builder);
+    lap.mark("JIT set-up (symbols, ISA)");
     // Code generation recurses over expressions as lowering does (a big JSX tree nests calls a few
     // hundred deep): it gets a big stack too, not the host's main thread.
     let exports = std::thread::scope(|s| {
@@ -199,11 +203,13 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
             .join()
             .map_err(|_| "code generation panicked".to_string())?
     })?;
+    lap.mark("Cranelift code generation");
     jit.finalize_definitions().map_err(|e| e.to_string())?;
     let funcs: HashMap<String, usize> = exports
         .into_iter()
         .map(|(name, id)| (name, jit.get_finalized_function(id) as usize))
         .collect();
+    lap.mark("JIT linking and finalising");
     Ok(Game {
         _module: std::mem::ManuallyDrop::new(JitModule(jit)),
         funcs,

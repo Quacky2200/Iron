@@ -218,6 +218,7 @@ impl Native {
         );
         register_kinds();
         let game = Self::compile(&bundle, generation)?;
+        let mut lap = iron_ts::timing::Lap::start();
         let mut rt = Runtime::new(FIRST_NODE);
         let screen_root = rt.create_root(iron_ui::ROOT);
         env();
@@ -226,6 +227,7 @@ impl Native {
             game.init().map_err(|e| anyhow!("{e}"))?;
             NativeHost::new(game.classes().map_err(|e| anyhow!("{e}"))?)
         };
+        lap.mark("program top level");
         let mut n = Native {
             game,
             host,
@@ -249,6 +251,7 @@ impl Native {
         };
         // Spawns the starting components now when the program has nothing to wait for.
         n.after_script(scene, ui);
+        lap.mark("starting components (onAwake, onStart)");
         tracing::info!(classes = ?n.host.class_names(), "compiled and started the game in {:.0} ms ({:.0} lower, {:.0} codegen)",
             (n.game.lower_time + n.game.codegen_time).as_secs_f64() * 1000.0,
             n.game.lower_time.as_secs_f64() * 1000.0,
@@ -257,13 +260,16 @@ impl Native {
     }
 
     fn compile(bundle: &Bundle, generation: u32) -> Result<Game> {
+        let mut lap = iron_ts::timing::Lap::start();
+        let manifests = manifests();
+        lap.mark("engine manifests (JSON)");
         compile_and_load(
             &bundle.source,
             &JitOptions {
                 prefix: "g_",
                 // Programs of different generations share one heap: their headers must differ.
                 struct_base: generation * 100_000,
-                manifests: &manifests(),
+                manifests: &manifests,
                 symbols: iron_ts_ui::symbols(),
                 ..Default::default()
             },

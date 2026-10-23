@@ -234,6 +234,11 @@ fn run() -> Result<()> {
             return Err(e);
         }
     };
+    // `--bench` reports where start-up goes (`startupParts`).
+    if args.bench.is_some() {
+        iron_ts::timing::enable();
+    }
+    let mut lap = iron_ts::timing::Lap::start();
     // The log file sits with the game's settings (not for screenshot runs, which leave
     // the player's files alone; `IRON_LOG_FILE` still works there).
     let manifest_dir = match resolve_bundle(&args.game) {
@@ -299,12 +304,14 @@ fn run() -> Result<()> {
     if let Ok(plan) = std::fs::read_to_string(code_root.join("dist/assets.plan")) {
         iron_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
     }
+    lap.mark("log, manifest, asset mount");
     // A compiled (native) game is JIT-compiled below; there is no JavaScript to read.
     let native_bundle = if native::is_native(&bundle_path) {
         Some(native::Bundle::read(&bundle_path)?)
     } else {
         None
     };
+    lap.mark("bundle read");
     let code = if native_bundle.is_some() {
         String::new()
     } else {
@@ -350,6 +357,7 @@ fn run() -> Result<()> {
     info.set("assetIndex", asset_db::index(&vfs));
     native_pump::seed_asset_index(&info);
     info.set("display", display::state(None, &display_settings));
+    lap.mark("prefs, asset index (.meta files)");
     let mut scripts = QuickJsRuntime::new();
     // The native API (`Window`, `Shapes`, `Spline`, ...) for bundled (JavaScript) games: the same
     // functions compiled games call. Compiled games have them natively.
@@ -396,11 +404,14 @@ fn run() -> Result<()> {
         .eval("typeof __iron_physics === 'function'")
         .is_ok_and(|v| v == iron_core::Value::Bool(true));
 
+    lap.mark("QuickJS runtime (info script; JS games: their bundle)");
     // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
+    lap.mark("UI tree and system fonts");
     let css_path = bundle_path.with_extension("css");
     let game_css = load_game_css(&mut ui, &asset_root, &code_root, &css_path);
     let game_css_source = game_css_source(&code_root, &css_path);
+    lap.mark("game CSS");
     let native = match native_bundle {
         Some(bundle) => {
             native_render::configure_engine(&asset_root);
@@ -420,6 +431,7 @@ fn run() -> Result<()> {
         }
         None => None,
     };
+    let mut lap = iron_ts::timing::Lap::start();
 
     // Rebuilds by `bun build --watch` reload the scripts (not for screenshot or bench runs).
     let watcher = if offline {
@@ -524,6 +536,7 @@ fn run() -> Result<()> {
         script_time: Duration::ZERO,
         render_time: Duration::ZERO,
         sync_time: Duration::ZERO,
+        ops_time: Duration::ZERO,
         done: false,
         info,
         editor: editor::EditorHost::default(),
@@ -539,6 +552,7 @@ fn run() -> Result<()> {
         display_settings.window_width,
         display_settings.window_height,
     );
+    lap.mark("app set-up");
     // A bench run makes no OS window at all: it draws offscreen, its own loop drives the frames.
     if let Some(bench) = args.bench {
         let size = bench.size.unwrap_or((width, height));
@@ -711,6 +725,9 @@ struct App {
     /// A compiled game's per-frame sync of its registries into the renderer
     /// (`sync_native_render`: animation, splines, cameras, `WorldViews` ops).
     sync_time: Duration,
+    /// Applying what scripts queued (React commits, ops: for a QuickJS game the `render.*`,
+    /// `scene.*`, ... ops), for `--bench`.
+    ops_time: Duration,
     /// The FPS counter overlay (drawn last, at window resolution).
     fps_on: bool,
     fps: fps::FpsCounter,
@@ -1325,6 +1342,12 @@ impl App {
 
     /// Applies React commits, then the ops scripts queued, in order.
     fn apply_script_output(&mut self) {
+        let t = Instant::now();
+        self.apply_script_output_now();
+        self.ops_time += t.elapsed();
+    }
+
+    fn apply_script_output_now(&mut self) {
         for (target, commit) in self.scripts.drain_targeted_commits() {
             if target >= iron_core::WINDOW_TARGET {
                 // A secondary window's tree; commits that come before the window opens wait.

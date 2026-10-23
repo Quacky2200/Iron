@@ -14,6 +14,7 @@ pub mod manifest;
 pub mod modules;
 pub mod sroa;
 pub mod throws;
+pub mod timing;
 pub mod types_dts;
 pub mod ui_dts;
 

@@ -11,7 +11,7 @@ use std::rc::Rc;
 pub use components::{ComponentHost, load_game, reload, spawn_each};
 pub use error::ScriptError;
 pub use iron_core::{Commit, OpBuffer, Value};
-pub use quickjs::QuickJsRuntime;
+pub use quickjs::{QuickJsRuntime, take_op_time, time_ops};
 
 /// Script-side support code every backend evaluates in a fresh context (timers).
 pub const PRELUDE: &str = include_str!("prelude.js");

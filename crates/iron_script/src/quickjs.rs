@@ -15,6 +15,26 @@ use crate::{
 /// `register_quickjs` (for example `iron_scene::api::scene_api::register_quickjs`).
 pub type NativeInit = for<'js> fn(&Ctx<'js>) -> rquickjs::Result<()>;
 
+thread_local! {
+    /// Whether `__iron_op` calls are timed (a bench run), and their milliseconds so far.
+    static OP_TIME: std::cell::Cell<(bool, f64)> = const { std::cell::Cell::new((false, 0.0)) };
+}
+
+/// Times the `__iron_op` calls from now on (`iron --bench`: the part of script time spent
+/// copying op arguments out of JavaScript).
+pub fn time_ops() {
+    OP_TIME.with(|o| o.set((true, o.get().1)));
+}
+
+/// The milliseconds `__iron_op` calls took since the last call.
+pub fn take_op_time() -> f64 {
+    OP_TIME.with(|o| {
+        let (on, ms) = o.get();
+        o.set((on, 0.0));
+        ms
+    })
+}
+
 /// The QuickJS backend (via `rquickjs`). Interpreter only, so it also works on iOS.
 pub struct QuickJsRuntime {
     // Field order matters: the context must drop before its runtime.
@@ -239,10 +259,15 @@ fn install_globals<'js>(ctx: &Ctx<'js>, shared: &Rc<RefCell<Shared>>) -> rquickj
     let op = Function::new(
         ctx.clone(),
         move |name: String, args: Rest<rquickjs::Value>| {
+            let t = OP_TIME.with(|o| o.get().0.then(std::time::Instant::now));
             s.borrow_mut().ops.push(Op {
                 name,
                 args: args.0.iter().map(from_js).collect(),
             });
+            if let Some(t) = t {
+                let ms = t.elapsed().as_secs_f64() * 1000.0;
+                OP_TIME.with(|o| o.set((true, o.get().1 + ms)));
+            }
         },
     )?;
     globals.set("__iron_op", op)?;

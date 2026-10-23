@@ -393,10 +393,12 @@ pub fn lower_source(src: &str) -> R<Module> {
 
 /// Like `lower_source`, with engine API manifests (JSON, one per namespace).
 pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
+    let mut lap = crate::timing::Lap::start();
     let mut manifest = crate::manifest::Manifest::default();
     for m in manifests {
         manifest.add_json(m)?;
     }
+    lap.mark("engine manifests");
     // Members of the TypeScript engine API that the compiler writes over the native one (`facade.rs`).
     let with_facade = facade::extend_source(src, &manifest);
     let src = with_facade.as_deref().unwrap_or(src);
@@ -530,13 +532,17 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     head += &async_templates;
     let prelude_lines = head.matches('\n').count();
+    crate::timing::add("prelude lines", prelude_lines as f64);
+    crate::timing::add("program lines", src.matches('\n').count() as f64);
     let full = format!("{head}{src}");
     let src = full.as_str();
     if std::env::var_os("IRON_TS_DUMP_SRC").is_some() {
         eprintln!("{full}");
     }
+    lap.mark("source rewrites (JSX, async, components, preludes)");
     let alloc = Allocator::default();
     let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
+    lap.mark("parse (oxc)");
     if !ret.diagnostics.is_empty() {
         let d = &ret.diagnostics[0];
         let line = d.labels.first().map(|l| {
@@ -612,10 +618,12 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         iface_tables: Vec::new(),
     };
     l.lower_program(&program)?;
+    lap.mark("type inference and lowering to IR");
     let mut m = l.m;
     m.value_structs = l.value_structs.values().copied().collect();
     m.value_structs.sort_unstable();
     crate::throws::analyze(&mut m);
+    lap.mark("throw analysis");
     Ok(m)
 }
 
