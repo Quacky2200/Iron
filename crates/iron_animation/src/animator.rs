@@ -428,7 +428,7 @@ impl AnimatorPlayer {
             return;
         }
         self.check_transitions(world);
-        let mut pose = Pose::new();
+        let mut pose = world.scratch.take();
         let cur = self.current.expect("checked");
         let mut cur = (cur.node, cur.norm);
         if let Some(mut next) = self.next {
@@ -465,6 +465,7 @@ impl AnimatorPlayer {
         let lap = crate::profile::start();
         pose.apply(scene, sink);
         crate::profile::stop("animation: pose apply", lap);
+        world.scratch.replace(pose);
     }
 }
 

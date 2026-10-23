@@ -87,12 +87,21 @@ fn paths(scene: &Scene, root: ObjectId) -> Vec<String> {
     out
 }
 
-fn random_curve(rng: &mut Rng) -> Curve {
-    let n = rng.below(5);
-    let mut t = rng.range(-0.5, 0.5);
-    let keys = (0..n)
-        .map(|_| {
-            t += rng.range(0.0, 0.7);
+/// Keys at random times, or at `times` (as a glTF channel's x, y, z, w curves share them).
+fn random_curve(rng: &mut Rng, times: Option<&[f64]>) -> Curve {
+    let own: Vec<f64> = {
+        let mut t = rng.range(-0.5, 0.5);
+        (0..rng.below(5))
+            .map(|_| {
+                t += rng.range(0.0, 0.7);
+                t
+            })
+            .collect()
+    };
+    let keys = times
+        .unwrap_or(&own)
+        .iter()
+        .map(|&t| {
             let tangent = |rng: &mut Rng| {
                 if rng.below(8) == 0 {
                     f64::INFINITY
@@ -113,6 +122,7 @@ fn random_curve(rng: &mut Rng) -> Curve {
 
 fn random_clip(rng: &mut Rng, world: &mut World, paths: &[String]) -> ClipId {
     let id = world.add_clip(Clip::new("random"));
+    let shared: Vec<f64> = (0..rng.below(6)).map(|i| i as f64 * 0.3).collect();
     for _ in 0..rng.below(40) {
         let path = if rng.below(10) == 0 {
             "Nowhere/Arm".to_string()
@@ -130,7 +140,12 @@ fn random_clip(rng: &mut Rng, world: &mut World, paths: &[String]) -> ClipId {
         let curve = if rng.below(15) == 0 {
             crate::clip::CurveId(9_999_999)
         } else {
-            world.add_curve(random_curve(rng))
+            let times = (rng.below(2) == 0).then_some(&shared[..]);
+            let mut c = random_curve(rng, times);
+            if rng.below(10) == 0 {
+                c.post_wrap = crate::WrapMode::Loop;
+            }
+            world.add_curve(c)
         };
         // Pushed directly, so duplicate bindings for one property happen too.
         world
@@ -220,6 +235,8 @@ fn snapshot(scene: &Scene) -> Vec<(ObjectId, [u32; 10], bool)> {
 // M5-ANI-08
 #[test]
 fn bound_poses_match_the_string_keyed_ones_bit_for_bit() {
+    // One pose for every frame and hierarchy: `apply` empties it.
+    let mut new = Pose::new();
     for seed in 1..=300u64 {
         let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15));
         let (mut old_scene, mut new_scene) = (Scene::new(), Scene::new());
@@ -239,7 +256,6 @@ fn bound_poses_match_the_string_keyed_ones_bit_for_bit() {
                 edit(&mut new_scene, root, &mut b);
             }
             let mut old = LegacyPose::default();
-            let mut new = Pose::new();
             for _ in 0..rng.below(4) + 1 {
                 let clip = clips[rng.below(clips.len())];
                 let time = rng.range(-1.0, 3.0);
@@ -321,4 +337,21 @@ fn a_rename_under_the_root_rebinds_its_curves() {
         0.5,
     );
     assert_eq!(x(&scene, other), 3.0);
+    // The kept length follows edits, and a curve added for a binding that named it early.
+    assert_eq!(world.clip_length(clip), 1.0);
+    world
+        .curve_mut(curve)
+        .unwrap()
+        .add_key(Keyframe::new(2.0, 0.0));
+    assert_eq!(world.clip_length(clip), 2.0);
+    let next = crate::clip::CurveId(world.curves.len() as u32 + 1);
+    world.clip_mut(clip).unwrap().bindings.push(crate::Binding {
+        path: String::new(),
+        type_name: "Transform".into(),
+        property: "localScale.y".into(),
+        curve: next,
+    });
+    assert_eq!(world.clip_length(clip), 2.0);
+    world.add_curve(Curve::constant(0.0, 4.0, 1.0));
+    assert_eq!(world.clip_length(clip), 4.0);
 }

@@ -46,6 +46,9 @@ pub(crate) struct Track {
     /// A `localRotation.*` property: flipped with its bone's quaternion when blends align.
     pub rotation: bool,
     pub curve: CurveId,
+    /// The track (this one or an earlier one on the same bone) whose key search this one reuses:
+    /// their curves have the same key times.
+    pub lead: u32,
 }
 
 /// A curve on a `GameObject` (`active`) or a component property.
@@ -109,8 +112,8 @@ impl RootBinds {
         (self.prop_keys.len() - 1) as u32
     }
 
-    fn bind(&mut self, scene: &Scene, root: ObjectId, clip: &Clip, edits: u64) -> BoundClip {
-        let mut tracks = Vec::new();
+    fn bind(&mut self, scene: &Scene, world: &World, root: ObjectId, clip: &Clip) -> BoundClip {
+        let mut tracks: Vec<Track> = Vec::new();
         let mut props = Vec::new();
         let mut track_of = vec![None; clip.bindings.len()];
         for (i, b) in clip.bindings.iter().enumerate() {
@@ -118,12 +121,24 @@ impl RootBinds {
                 continue;
             };
             if b.type_name == "Transform" {
-                track_of[i] = Some(tracks.len() as u32);
+                let at = tracks.len() as u32;
+                track_of[i] = Some(at);
+                let slot = self.slot(go);
+                // The first earlier curve on this bone with the same key times leads.
+                let lead = world.curve(b.curve).and_then(|c| {
+                    tracks.iter().enumerate().find_map(|(j, t)| {
+                        (t.slot == slot
+                            && t.lead == j as u32
+                            && world.curve(t.curve).is_some_and(|o| o.same_times(c)))
+                        .then_some(j as u32)
+                    })
+                });
                 tracks.push(Track {
-                    slot: self.slot(go),
+                    slot,
                     channel: channel(&b.property),
                     rotation: b.property.starts_with("localRotation."),
                     curve: b.curve,
+                    lead: lead.unwrap_or(at),
                 });
             } else {
                 props.push(PropTrack {
@@ -158,7 +173,7 @@ impl RootBinds {
             rotations.push(RotationSet { slot: t.slot, axes });
         }
         BoundClip {
-            edits,
+            edits: world.edits,
             tracks,
             props,
             rotations,
@@ -208,7 +223,7 @@ impl World {
         let at = match rb.clips.iter().position(|(id, _)| *id == clip) {
             Some(i) if rb.clips[i].1.edits == self.edits => i,
             found => {
-                let bound = rb.bind(scene, root, c, self.edits);
+                let bound = rb.bind(scene, self, root, c);
                 match found {
                     Some(i) => {
                         rb.clips[i].1 = bound;

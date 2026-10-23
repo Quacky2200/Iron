@@ -7,6 +7,7 @@
 
 use crate::bind::{CHANNELS, EULER, NO_CHANNEL, POS, ROT, SCALE};
 use crate::clip::{ClipId, World};
+use crate::curve::Spot;
 use glam::{Quat, Vec3};
 use iron_math::{Q, V3};
 use iron_scene::{ObjectId, Scene, Transform};
@@ -72,7 +73,8 @@ struct PropPose {
     weight: f64,
 }
 
-/// One frame of blended values, for one animated root.
+/// One frame of blended values, for one animated root. `apply` empties it for the next frame,
+/// keeping its buffers (the players share one: `World`'s scratch pose).
 #[derive(Default)]
 pub struct Pose {
     root: Option<ObjectId>,
@@ -82,6 +84,10 @@ pub struct Pose {
     /// Bones in the order first added to, with their objects.
     order: Vec<(u32, ObjectId)>,
     props: Vec<PropPose>,
+    /// Scratch for one clip: each track's value and key search, the bones flipped.
+    values: Vec<Option<f64>>,
+    spots: Vec<Spot>,
+    flips: Vec<u32>,
 }
 
 /// The object at a path ("" itself, "A/B" by child names) under `root`.
@@ -141,14 +147,30 @@ impl Pose {
         );
         self.root = Some(root);
         world.with_bound(scene, root, clip, |rb, bc| {
-            // Each curve sampled once.
-            let values: Vec<Option<f64>> = bc
-                .tracks
-                .iter()
-                .map(|t| world.curve(t.curve).map(|c| c.evaluate(time)))
-                .collect();
+            // Each curve sampled once; curves with the same key times share the key search.
+            let mut values = std::mem::take(&mut self.values);
+            let mut spots = std::mem::take(&mut self.spots);
+            let mut flips = std::mem::take(&mut self.flips);
+            values.clear();
+            spots.clear();
+            flips.clear();
+            for (i, t) in bc.tracks.iter().enumerate() {
+                let value = world.curve(t.curve).map(|c| {
+                    let lead = t.lead as usize;
+                    let spot = if lead == i {
+                        c.locate(time)
+                    } else {
+                        spots[lead]
+                    };
+                    spots.push(spot);
+                    c.at(spot)
+                });
+                if value.is_none() {
+                    spots.push(Spot::default());
+                }
+                values.push(value);
+            }
             // Which bones' quaternions go to the other side.
-            let mut flips: Vec<(u32, f64)> = Vec::new();
             if align {
                 for r in &bc.rotations {
                     let sum = match self.bones.get(r.slot as usize) {
@@ -166,7 +188,7 @@ impl Pose {
                         dot += v * sum[i];
                     }
                     if dot < 0.0 {
-                        flips.push((r.slot, -1.0));
+                        flips.push(r.slot);
                     }
                 }
             }
@@ -174,8 +196,8 @@ impl Pose {
                 let Some(v) = *value else {
                     continue;
                 };
-                let sign = if t.rotation {
-                    flips.iter().find(|f| f.0 == t.slot).map_or(1.0, |f| f.1)
+                let sign = if t.rotation && flips.contains(&t.slot) {
+                    -1.0
                 } else {
                     1.0
                 };
@@ -215,6 +237,9 @@ impl Pose {
                     }),
                 }
             }
+            self.values = values;
+            self.spots = spots;
+            self.flips = flips;
         });
     }
 
@@ -249,8 +274,19 @@ impl Pose {
         self.add_clip(scene, world, sink, root, clip, time, weight, true);
     }
 
-    /// Writes the blended values.
-    pub fn apply(self, scene: &mut Scene, sink: &mut dyn PropertySink) {
+    /// Writes the blended values and empties the pose (keeping its buffers).
+    pub fn apply(&mut self, scene: &mut Scene, sink: &mut dyn PropertySink) {
+        self.write(scene, sink);
+        for &(slot, _) in &self.order {
+            self.bones[slot as usize] = BonePose::ZERO;
+            self.touched[slot as usize] = false;
+        }
+        self.order.clear();
+        self.props.clear();
+        self.root = None;
+    }
+
+    fn write(&self, scene: &mut Scene, sink: &mut dyn PropertySink) {
         for &(slot, go) in &self.order {
             let t = &self.bones[slot as usize];
             let Some(cur) = scene.local(go) else {

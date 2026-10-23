@@ -4,7 +4,7 @@
 
 use crate::clip::{ClipId, Parameter, World};
 use crate::curve::{WrapMode, wrap};
-use crate::pose::{Pose, PropertySink};
+use crate::pose::PropertySink;
 use iron_scene::{ObjectId, Scene};
 
 /// A clip event that came due: call `function_name` on the object's components.
@@ -193,7 +193,7 @@ impl AnimationPlayer {
         events: &mut Vec<FiredEvent>,
     ) {
         self.start(world);
-        let mut pose = Pose::new();
+        let mut pose = world.scratch.take();
         for s in &mut self.states {
             if !s.enabled {
                 continue;
@@ -241,6 +241,7 @@ impl AnimationPlayer {
         let lap = crate::profile::start();
         pose.apply(scene, sink);
         crate::profile::stop("animation: pose apply", lap);
+        world.scratch.replace(pose);
     }
 }
 

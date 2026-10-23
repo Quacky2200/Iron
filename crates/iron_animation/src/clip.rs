@@ -79,6 +79,10 @@ pub struct World {
     pub(crate) edits: u64,
     /// Clips' bindings per animated root.
     pub(crate) binds: RefCell<crate::bind::Binds>,
+    /// The pose players fill and apply in turn, kept so its buffers are reused.
+    pub(crate) scratch: RefCell<crate::pose::Pose>,
+    /// Clip lengths by clip index, with the (edits, curve count) they were measured at.
+    lengths: RefCell<Vec<((u64, usize), f64)>>,
 }
 
 thread_local! {
@@ -153,8 +157,28 @@ impl World {
         }
     }
 
-    /// The last key's time over all curves (or the last event's).
+    /// The last key's time over all curves (or the last event's). Kept until a clip or curve
+    /// changes or a curve is added (players ask several times a frame).
     pub fn clip_length(&self, id: ClipId) -> f64 {
+        let stamp = (self.edits, self.curves.len());
+        let i = (id.0 as usize).wrapping_sub(1);
+        if let Some(&(s, len)) = self.lengths.borrow().get(i)
+            && s == stamp
+        {
+            return len;
+        }
+        let len = self.measure(id);
+        let mut lengths = self.lengths.borrow_mut();
+        if i < self.clips.len() {
+            if lengths.len() <= i {
+                lengths.resize(i + 1, ((u64::MAX, 0), 0.0));
+            }
+            lengths[i] = (stamp, len);
+        }
+        len
+    }
+
+    fn measure(&self, id: ClipId) -> f64 {
         let Some(c) = self.clip(id) else {
             return 0.0;
         };

@@ -104,6 +104,14 @@ impl PointMode {
     }
 }
 
+/// Where a time falls on a curve ([`Curve::locate`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Spot {
+    t: f64,
+    lo: usize,
+    hi: usize,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Curve {
     pub keys: Vec<Keyframe>,
@@ -216,12 +224,32 @@ impl Curve {
 
     /// The curve's value at `time`.
     pub fn evaluate(&self, time: f64) -> f64 {
+        self.at(self.locate(time))
+    }
+
+    /// Whether `locate` gives the same for both at any time: the same key times (bit for bit) and
+    /// wrap modes. glTF channels' curves (x, y, z, w of one bone) share them.
+    pub(crate) fn same_times(&self, other: &Curve) -> bool {
+        self.pre_wrap == other.pre_wrap
+            && self.post_wrap == other.post_wrap
+            && self.keys.len() == other.keys.len()
+            && self
+                .keys
+                .iter()
+                .zip(&other.keys)
+                .all(|(a, b)| a.time.to_bits() == b.time.to_bits())
+    }
+
+    /// Where `time` falls: the time folded by the wrap modes and the segment's keys. It depends
+    /// only on the key times and wrap modes, so curves with [`Self::same_times`] share it.
+    pub(crate) fn locate(&self, time: f64) -> Spot {
         let keys = &self.keys;
-        if keys.is_empty() {
-            return 0.0;
-        }
-        if keys.len() == 1 {
-            return keys[0].value;
+        if keys.len() < 2 {
+            return Spot {
+                t: time,
+                lo: 0,
+                hi: 0,
+            };
         }
         let first = keys[0].time;
         let last = keys[keys.len() - 1].time;
@@ -242,6 +270,19 @@ impl Curve {
                 hi = mid;
             }
         }
+        Spot { t, lo, hi }
+    }
+
+    /// The value at a spot `locate` found (on this curve or one with the same times).
+    pub(crate) fn at(&self, spot: Spot) -> f64 {
+        let keys = &self.keys;
+        if keys.is_empty() {
+            return 0.0;
+        }
+        if keys.len() == 1 {
+            return keys[0].value;
+        }
+        let Spot { t, lo, hi } = spot;
         let (a, b) = (keys[lo], keys[hi]);
         let dt = b.time - a.time;
         if dt <= 0.0 {
