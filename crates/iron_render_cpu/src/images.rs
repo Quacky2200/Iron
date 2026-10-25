@@ -1,29 +1,48 @@
-//! `url(...)` images for the CPU renderer: rasters decoded with `image`, SVGs drawn with resvg at
-//! the size they are shown at (cached by that size), both as premultiplied pixmaps.
+//! `url(...)` images for the CPU renderer. Like a browser's, they are decoded lazily and only at
+//! the size they are shown at: the encoded file is all that is kept per image, a decoded copy
+//! (downscaled to about its drawn size, or an SVG rasterized at it) is made when it is drawn, and
+//! copies not drawn for a while are dropped.
 
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use image::imageops::FilterType;
 use resvg::{tiny_skia, usvg};
 use vello_cpu::peniko::ImageAlphaType;
 use vello_cpu::{PixelMetadata, Pixmap};
 
+/// Draws a decoded copy may go unused for before it is dropped.
+const KEEP_DRAWS: u64 = 180;
+
+enum Source {
+    /// The encoded file (PNG, JPEG, ...).
+    Raster(Arc<Vec<u8>>),
+    Svg(Arc<usvg::Tree>),
+}
+
 struct Entry {
-    /// The decoded raster, or the SVG at its natural size.
-    pixmap: Arc<Pixmap>,
+    source: Source,
     /// Size in CSS pixels.
     natural: (u32, u32),
-    svg: Option<Arc<usvg::Tree>>,
+}
+
+/// A decoded copy at one size, and the draw it was last used in.
+struct Level {
+    pixmap: Arc<Pixmap>,
+    used: u64,
 }
 
 #[derive(Default)]
 pub struct Images {
     root: Option<PathBuf>,
     entries: HashMap<String, Option<Entry>>,
-    /// SVGs rasterized for a size: `url#WxH`.
-    rasters: HashMap<String, Arc<Pixmap>>,
+    /// Decoded copies by `url#WxH`.
+    levels: HashMap<String, Level>,
     svg_options: Option<usvg::Options<'static>>,
+    /// Draws so far (the clock for [`KEEP_DRAWS`]).
+    draw: u64,
 }
 
 fn is_svg(url: &str) -> bool {
@@ -42,7 +61,7 @@ fn short(url: &str) -> &str {
     }
 }
 
-fn to_pixmap(rgba: Vec<u8>, width: u32, height: u32) -> Option<Pixmap> {
+fn to_pixmap(rgba: Vec<u8>, width: u32, height: u32, alpha: ImageAlphaType) -> Option<Pixmap> {
     let (w, h) = (u16::try_from(width).ok()?, u16::try_from(height).ok()?);
     Some(Pixmap::from_parts(
         rgba,
@@ -50,7 +69,7 @@ fn to_pixmap(rgba: Vec<u8>, width: u32, height: u32) -> Option<Pixmap> {
         h,
         PixelMetadata {
             may_have_transparency: true,
-            alpha_type: ImageAlphaType::Alpha,
+            alpha_type: alpha,
         },
     ))
 }
@@ -59,7 +78,16 @@ impl Images {
     pub fn set_root(&mut self, root: PathBuf) {
         self.root = Some(root);
         self.entries.clear();
-        self.rasters.clear();
+        self.levels.clear();
+    }
+
+    /// Call once per drawn frame: drops decoded copies that have not been drawn for a while.
+    pub fn begin_draw(&mut self) {
+        self.draw += 1;
+        if self.draw.is_multiple_of(30) {
+            let now = self.draw;
+            self.levels.retain(|_, l| now - l.used <= KEEP_DRAWS);
+        }
     }
 
     fn options(&mut self) -> &usvg::Options<'static> {
@@ -97,6 +125,7 @@ impl Images {
             .ok()
     }
 
+    /// Reads the file and its size (from the header: nothing is decoded yet).
     fn load(&mut self, url: &str) -> Option<Entry> {
         let bytes = self.bytes(url)?;
         if is_svg(url) {
@@ -112,25 +141,22 @@ impl Images {
                 (size.width().ceil() as u32).max(1),
                 (size.height().ceil() as u32).max(1),
             );
-            let pixmap = Arc::new(rasterize(&tree, natural)?);
             return Some(Entry {
-                pixmap,
+                source: Source::Svg(tree),
                 natural,
-                svg: Some(tree),
             });
         }
-        let image = match image::load_from_memory(&bytes) {
-            Ok(i) => i.to_rgba8(),
-            Err(e) => {
-                tracing::warn!("image `{}` could not be loaded: {e}", short(url));
-                return None;
-            }
+        let natural = image::ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .ok()
+            .and_then(|r| r.into_dimensions().ok());
+        let Some(natural) = natural else {
+            tracing::warn!("image `{}` could not be read", short(url));
+            return None;
         };
-        let (w, h) = image.dimensions();
         Some(Entry {
-            pixmap: Arc::new(to_pixmap(image.into_raw(), w, h)?),
-            natural: (w, h),
-            svg: None,
+            source: Source::Raster(Arc::new(bytes)),
+            natural,
         })
     }
 
@@ -147,27 +173,67 @@ impl Images {
         self.entry(url).map(|e| e.natural)
     }
 
-    /// The pixels to draw `url` with at `px` physical pixels (an SVG is rasterized at about
-    /// that size), and the image's natural size.
+    /// The pixels to draw `url` with at `px` physical pixels (a raster is downscaled to about
+    /// that size, an SVG rasterized at it), and the image's natural size.
     pub fn get(&mut self, url: &str, px: (f32, f32)) -> Option<(Arc<Pixmap>, (u32, u32))> {
-        let (pixmap, natural, svg) = {
+        let (natural, source) = {
             let e = self.entry(url)?;
-            (e.pixmap.clone(), e.natural, e.svg.clone())
+            let source = match &e.source {
+                Source::Raster(b) => Source::Raster(b.clone()),
+                Source::Svg(t) => Source::Svg(t.clone()),
+            };
+            (e.natural, source)
         };
-        let Some(tree) = svg else {
-            return Some((pixmap, natural));
+        // Sizes round up to a multiple of 16, so small size changes reuse the copy.
+        let round = |v: f32| (v.ceil().clamp(1.0, 8192.0) as u32).div_ceil(16) * 16;
+        let size = match source {
+            Source::Raster(_) if px.0 > 0.0 && round(px.0) < natural.0 => {
+                let w = round(px.0);
+                let h = (w as f32 * natural.1 as f32 / natural.0 as f32)
+                    .round()
+                    .max(1.0) as u32;
+                (w, h)
+            }
+            Source::Raster(_) => natural,
+            Source::Svg(_) => (round(px.0), round(px.1)),
         };
-        // Rounded up to a multiple of 8, so small size changes reuse the raster.
-        let bucket = |v: f32| (v.ceil().clamp(1.0, 4096.0) as u32).div_ceil(8) * 8;
-        let size = (bucket(px.0), bucket(px.1));
         let key = format!("{url}#{}x{}", size.0, size.1);
-        if let Some(r) = self.rasters.get(&key) {
-            return Some((r.clone(), natural));
+        let draw = self.draw;
+        if let Some(level) = self.levels.get_mut(&key) {
+            level.used = draw;
+            return Some((level.pixmap.clone(), natural));
         }
-        let raster = Arc::new(rasterize(&tree, size)?);
-        self.rasters.insert(key, raster.clone());
-        Some((raster, natural))
+        let pixmap = Arc::new(match source {
+            Source::Raster(bytes) => decode(&bytes, size, natural, url)?,
+            Source::Svg(tree) => rasterize(&tree, size)?,
+        });
+        self.levels.insert(
+            key,
+            Level {
+                pixmap: pixmap.clone(),
+                used: draw,
+            },
+        );
+        Some((pixmap, natural))
     }
+}
+
+/// Decodes a raster, downscaled to `size` when that is smaller than its natural size.
+fn decode(bytes: &[u8], size: (u32, u32), natural: (u32, u32), url: &str) -> Option<Pixmap> {
+    let image = match image::load_from_memory(bytes) {
+        Ok(i) => i.to_rgba8(),
+        Err(e) => {
+            tracing::warn!("image `{}` could not be loaded: {e}", short(url));
+            return None;
+        }
+    };
+    let image = if size == natural || size.0 >= image.width() {
+        image
+    } else {
+        image::imageops::resize(&image, size.0, size.1, FilterType::Triangle)
+    };
+    let (w, h) = image.dimensions();
+    to_pixmap(image.into_raw(), w, h, ImageAlphaType::Alpha)
 }
 
 fn rasterize(tree: &usvg::Tree, (w, h): (u32, u32)) -> Option<Pixmap> {
@@ -180,14 +246,5 @@ fn rasterize(tree: &usvg::Tree, (w, h): (u32, u32)) -> Option<Pixmap> {
     resvg::render(tree, transform, &mut pixmap.as_mut());
     // tiny-skia's pixels are premultiplied RGBA8.
     let (w, h) = (pixmap.width(), pixmap.height());
-    let (w, h) = (u16::try_from(w).ok()?, u16::try_from(h).ok()?);
-    Some(Pixmap::from_parts(
-        pixmap.take(),
-        w,
-        h,
-        PixelMetadata {
-            may_have_transparency: true,
-            alpha_type: ImageAlphaType::AlphaPremultiplied,
-        },
-    ))
+    to_pixmap(pixmap.take(), w, h, ImageAlphaType::AlphaPremultiplied)
 }

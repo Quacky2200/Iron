@@ -44,6 +44,10 @@ redrawn or presented (the FPS counter still counts the paced frames). It draws b
 rounded corners), box shadows, text, clips, opacity layers and affine transforms. Gradients and images,
 backdrop blur, filters, blends, masks, per-side borders, inset shadows, perspective and the 3D world, world
 panels and secondary windows are not drawn (each skipped command is logged once).
+Images are handled as a browser does: a file is read but not decoded until it is drawn, its size comes from the
+header, a raster is kept only downscaled to about its drawn size (an SVG rasterized at it), and copies not drawn
+for ~180 draws are dropped. The launcher (41 screenshots of 1280x720) went from ~200 MB to ~75 MB after browsing
+it all.
 
 Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
 resizing jitter. `IRON_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On

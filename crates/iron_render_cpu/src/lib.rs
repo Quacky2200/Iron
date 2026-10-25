@@ -248,6 +248,7 @@ impl CpuRenderer {
         clear: Rgba,
         layers: &[(f32, &[DrawCmd])],
     ) -> &Pixmap {
+        self.images.begin_draw();
         let layers: Vec<(f32, (f32, f32), &[DrawCmd])> =
             layers.iter().map(|&(s, c)| (s, (0.0, 0.0), c)).collect();
         self.render_layers(size, clear, &layers)
@@ -328,8 +329,8 @@ impl CpuRenderer {
         let natural = match url {
             None => (q.rect.width, q.rect.height),
             Some(url) => {
-                let probe = (q.rect.width * scale, q.rect.height * scale);
-                let Some((_, natural)) = self.images.get(url, probe) else {
+                // The natural size is in the file's header: nothing is decoded for it.
+                let Some(natural) = self.images.size(url) else {
                     return;
                 };
                 (natural.0 as f32, natural.1 as f32)
