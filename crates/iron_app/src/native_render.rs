@@ -213,7 +213,7 @@ impl App {
             ]);
         }
         // What the window is now, for `Screen.resolutions`, `windowSize`, ...
-        let window = self.gfx.as_ref().and_then(|g| g.window.clone());
+        let window = self.main_window();
         let state = display::state(window.as_deref(), &self.display);
         let text = state.to_string();
         if st(|s| s.display.replace(text.clone())).as_deref() != Some(&text) {

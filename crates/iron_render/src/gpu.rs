@@ -98,6 +98,13 @@ impl Gpu {
                         | wgpu::Features::TEXTURE_COMPRESSION_BC),
                 required_limits:
                     wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+                // The default (Performance) reserves 32-64 MB blocks, ~240 MB for a UI-only
+                // game; a `ui_app_only` build asks for small ones.
+                memory_hints: if iron_core::UI_APP_ONLY {
+                    wgpu::MemoryHints::MemoryUsage
+                } else {
+                    wgpu::MemoryHints::default()
+                },
                 ..Default::default()
             }))?;
         tracing::info!(adapter = %adapter.get_info().name, "GPU ready");

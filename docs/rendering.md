@@ -29,6 +29,22 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 resolution limits. `WindowSurface` prefers an sRGB format, starts with `AutoNoVsync` (the app sets it per frame from `vSyncCount`), tolerates 0x0 sizes
 (minimized: frames are skipped) and reconfigures on `Outdated`/`Lost`/`Suboptimal`.
 
+The `ui_app_only` feature (`cargo build -p iron_app --features ui_app_only`, `iron_core::UI_APP_ONLY`, a compile-time constant) is for apps that are only UI: the device asks wgpu for
+`MemoryHints::MemoryUsage` (small allocation blocks) instead of the default `Performance`. For a clock
+that took private bytes from ~308 MB to ~143 MB on Vulkan (the working set stays ~125 MB). Without the
+feature the default is kept. What remains is mostly the NVIDIA driver (wgpu's own allocator
+holds ~28 MB, the Rust heap ~4 MB); the 3D world renderer is still built, so a lazy `WorldRenderer`
+is the next step.
+
+With the feature, the main window is drawn by the CPU instead (`crates/iron_render_cpu`, `vello_cpu` +
+`softbuffer`; `iron_app/src/cpu_gfx.rs`): no wgpu device, no GPU driver is loaded. The clock then uses
+~16 MB private / ~40 MB working set (GPU: ~135 / ~122 MB), about 1 ms per frame. Frames are capped at 60 Hz
+(`CPU_FRAME_CAP`, unless the game sets a rate) and a frame whose draw lists equal the last one's is not
+redrawn or presented (the FPS counter still counts the paced frames). It draws boxes (colour, uniform border,
+rounded corners), box shadows, text, clips, opacity layers and affine transforms. Gradients and images,
+backdrop blur, filters, blends, masks, per-side borders, inset shadows, perspective and the 3D world, world
+panels and secondary windows are not drawn (each skipped command is logged once).
+
 Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
 resizing jitter. `IRON_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On
 Windows the window class background is set to black (in `iron_platform`), so any area exposed by a

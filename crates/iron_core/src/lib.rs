@@ -9,6 +9,11 @@ pub use glam;
 /// (0 is the screen, smaller ids are world panels).
 pub const WINDOW_TARGET: u32 = 0x4000_0000;
 
+/// Built with the `ui_app_only` feature (`cargo build --features ui_app_only`, EXPERIMENTAL): the
+/// app is only UI (no 3D world), so the engine trades speed for memory (small GPU blocks, a lazy
+/// world renderer, the CPU renderer). A constant, so the other branches compile away.
+pub const UI_APP_ONLY: bool = cfg!(feature = "ui_app_only");
+
 mod assets;
 pub mod glob;
 mod ids;

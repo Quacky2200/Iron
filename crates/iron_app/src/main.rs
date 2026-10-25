@@ -17,6 +17,7 @@ mod bench;
 pub(crate) mod bone_cache;
 mod cloth_sync;
 pub(crate) mod cook;
+mod cpu_gfx;
 mod cursor;
 mod display;
 mod editor;
@@ -27,6 +28,7 @@ mod game_input;
 // `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
 // re-exports these at its root, for the `crate::` paths between modules.
 pub(crate) mod info;
+mod lazy_world;
 mod lifecycle;
 mod logging;
 pub(crate) mod models;
@@ -70,6 +72,8 @@ const MAX_TICKS_PER_FRAME: u32 = 5;
 const MAX_FRAME_DT: f64 = 0.1;
 /// Pixels per wheel notch ("line"), like browsers.
 const WHEEL_LINE: f32 = 40.0;
+/// The CPU renderer's frame cap (60 Hz).
+const CPU_FRAME_CAP: Duration = Duration::from_micros(16_667);
 const CLEAR: Color = Color::rgb(0.05, 0.06, 0.09);
 
 struct Args {
@@ -530,6 +534,7 @@ fn run() -> Result<()> {
         vfs,
         code_root: code_root.clone(),
         gfx: None,
+        cpu: None,
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, offline),
@@ -619,7 +624,62 @@ struct Gfx {
     /// The OS window; `None` for a windowless `--bench` run.
     window: Option<Arc<Window>>,
     renderer: UiRenderer,
-    world: WorldRenderer,
+    world: lazy_world::LazyWorld,
+}
+
+/// Hands the world renderer what scripts changed (meshes, textures, quality, sky, ...).
+fn apply_world_view(
+    world: &mut WorldRenderer,
+    gpu: &Gpu,
+    view: &mut world_view::WorldViews,
+    pipeline_warned: &mut bool,
+) {
+    for (id, data) in view.mesh_uploads.drain(..) {
+        match data {
+            Some(data) => {
+                world.set_mesh(gpu, id, &data);
+            }
+            None => world.remove_mesh(id),
+        }
+    }
+    world.bloom = view.bloom;
+    world.grading = view.grading;
+    for id in view.exposure_resets.drain(..) {
+        world.reset_exposure(id);
+    }
+    warn_pipeline(pipeline_warned, view);
+    (
+        world.shadow_distance,
+        world.shadow_resolution,
+        world.shadow_cascades,
+    ) = view.shadow_settings;
+    world.set_sky(view.sky);
+    let q = view.quality;
+    world.msaa = q.msaa;
+    world.render_scale = q.render_scale;
+    world.shadow_quality = q.shadows;
+    world.soft_shadow_radius = q.soft_radius;
+    world.anisotropic = q.anisotropic;
+    world.texture_mip_limit = q.texture_mip_limit;
+    world.pipeline = q.pipeline;
+    (world.environment_intensity, world.ambient_from_sky) = view.environment;
+    for (id, data) in view.texture_uploads.drain(..) {
+        match data {
+            Some(data) => {
+                world.set_texture(gpu, id, &data);
+            }
+            None => world.remove_texture(id),
+        }
+    }
+    for (id, size) in view.render_texture_uploads.drain(..) {
+        world.set_render_texture(gpu, id, size);
+    }
+    for (id, cooked) in view.cooked_uploads.drain(..) {
+        // GPUs without BC get the blocks decoded.
+        if !world.set_cooked_texture(gpu, id, &cooked) {
+            world.set_texture(gpu, id, &cook::uncook_texture(&cooked));
+        }
+    }
 }
 
 /// Draws one frame into `target`: the 3D world when a camera is active, with the
@@ -627,7 +687,7 @@ struct Gfx {
 fn draw_frame(
     gpu: &Gpu,
     renderer: &mut UiRenderer,
-    world: &mut WorldRenderer,
+    world: &mut lazy_world::LazyWorld,
     target: &RenderTarget<'_>,
     views: &[iron_render::WorldView],
     textures: &[&wgpu::TextureView],
@@ -635,7 +695,10 @@ fn draw_frame(
 ) {
     if views.is_empty() {
         renderer.render(gpu, target, CLEAR, cmds);
-    } else if iron_render::needs_backdrop(cmds) {
+        return;
+    }
+    let world = world.get(gpu);
+    if iron_render::needs_backdrop(cmds) {
         // Backdrop blurs and blend modes read the world: draw it where the UI can
         // sample it, then the UI over a copy of it into the target.
         let backdrop = renderer.backdrop_target(gpu, target.size, target.format);
@@ -654,6 +717,8 @@ fn draw_frame(
 }
 
 struct App {
+    /// The main window drawn by the CPU (`ui_app_only` builds), instead of `gfx`.
+    cpu: Option<cpu_gfx::CpuGfx>,
     /// The player's saved settings (`PlayerPrefs`), written on `prefs.save` and on exit.
     prefs: prefs::Prefs,
     /// The window's mode and size, as last applied.
@@ -797,15 +862,39 @@ struct App {
 }
 
 impl App {
+    /// Counts the frame and, in a `--screenshot` run, saves it when it's the wanted one.
+    fn count_frame(&mut self) {
+        self.frames += 1;
+        // `IRON_RELOAD_AT_FRAME=N`: a screenshot run reloads its scripts after frame N,
+        // to check hot reload without a window.
+        if self.screenshot.is_some()
+            && std::env::var("IRON_RELOAD_AT_FRAME")
+                .ok()
+                .and_then(|n| n.parse::<u32>().ok())
+                == Some(self.frames)
+        {
+            self.reload_scripts();
+        }
+        if let Some((path, frames)) = self.screenshot.clone()
+            && self.frames >= frames
+        {
+            match self.save_screenshot(&path) {
+                Ok(()) => tracing::info!("saved screenshot to {}", path.display()),
+                Err(e) => tracing::error!("screenshot failed: {e}"),
+            }
+            self.done = true;
+        }
+    }
+
     /// Sizes the UI to the window (in UI pixels: the window size divided by its DPI and UI
     /// scale) and tells scripts' `Screen` when that changes. Nothing before the window
     /// exists.
     fn sync_screen(&mut self) {
-        let Some(gfx) = &self.gfx else {
+        let Some((dpi, size)) = self.main_metrics() else {
             return;
         };
-        let scale = ui_factor(gfx, self.ui_scale);
-        let (width, height) = gfx.inner_size();
+        let scale = ui_factor_for(dpi, size, self.ui_scale);
+        let (width, height) = size;
         self.ui
             .set_size(width as f32 / scale, height as f32 / scale);
         // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
@@ -1989,7 +2078,7 @@ impl App {
     /// Puts the window in a mode (screenshot runs leave it alone) and updates
     /// `__iron_info.display`.
     fn apply_display(&mut self, wanted: iron_platform::DisplaySettings) {
-        let window = self.gfx.as_ref().and_then(|g| g.window.clone());
+        let window = self.main_window();
         self.display = match (&window, self.offline) {
             (Some(w), false) => iron_platform::display::apply(w, &wanted),
             _ => wanted,
@@ -2040,7 +2129,7 @@ impl App {
     /// Holds the cursor as scripts asked. Locking isn't available everywhere (Windows
     /// can only confine): it falls back to confining, with the cursor hidden.
     fn apply_cursor_lock(&mut self) {
-        let Some(window) = self.gfx.as_ref().and_then(|g| g.window.as_ref()) else {
+        let Some(window) = self.main_window() else {
             return;
         };
         use iron_platform::CursorGrabMode;
@@ -2060,7 +2149,7 @@ impl App {
     /// Where the UI asks for nothing special, scripts' `Cursor` image is the default.
     fn update_cursor(&mut self) {
         // No window, no cursor.
-        let Some(window) = self.gfx.as_ref().and_then(|g| g.window.clone()) else {
+        let Some(window) = self.main_window() else {
             return;
         };
         let (keyword, ui_images) = match self.pointer_on {
@@ -2131,10 +2220,7 @@ impl App {
     /// Allows IME input while an editable field has focus, and keeps the candidate
     /// window next to its caret.
     fn update_ime(&mut self) {
-        let Some(gfx) = &self.gfx else {
-            return;
-        };
-        let Some(window) = &gfx.window else {
+        let Some(window) = self.main_window() else {
             return;
         };
         // A field on a world panel takes IME text too; its candidate window stays where
@@ -2162,7 +2248,7 @@ impl App {
         {
             self.ime_area = Some(a);
             // UI pixels → the window's logical pixels.
-            let z = ui_factor(gfx, self.ui_scale) / gfx.dpi() as f32;
+            let z = self.scale() / self.main_metrics().map_or(1.0, |(dpi, _)| dpi as f32);
             window.set_ime_cursor_area(
                 iron_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
                 iron_platform::dpi::LogicalSize::new(
@@ -2201,9 +2287,8 @@ impl App {
 
     /// Physical pixels per UI pixel: the window's DPI scale times the UI scale.
     fn scale(&self) -> f32 {
-        self.gfx
-            .as_ref()
-            .map_or(1.0, |gfx| ui_factor(gfx, self.ui_scale))
+        self.main_metrics()
+            .map_or(1.0, |(dpi, size)| ui_factor_for(dpi, size, self.ui_scale))
     }
 
     fn now_ms(&self) -> f64 {
@@ -2327,11 +2412,7 @@ impl App {
         }
         let mut renderer = UiRenderer::new(&gpu);
         renderer.set_asset_root(&self.asset_root);
-        let mut world = WorldRenderer::new(&gpu);
-        world.physical_units = self.physical_units;
-        if self.physical_units {
-            tracing::info!("real-world light units");
-        }
+        let world = lazy_world::LazyWorld::new(&gpu, self.physical_units);
         // `Window.main` learns the real size and scale (its title may be the game's own).
         let title = iron_engine_api::window::state(iron_engine_api::window::MAIN)
             .map_or_else(String::new, |s| s.title);
@@ -2351,6 +2432,10 @@ impl App {
     }
 
     fn save_screenshot(&mut self, path: &Path) -> Result<()> {
+        #[cfg(feature = "ui_app_only")]
+        if self.cpu.is_some() {
+            return self.save_screenshot_cpu(path);
+        }
         let gfx = self.gfx.as_mut().context("no renderer")?;
         let (w, h) = gfx.surface.size();
         let target =
@@ -2359,53 +2444,15 @@ impl App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
-        for (id, data) in self.world_view.mesh_uploads.drain(..) {
-            match data {
-                Some(data) => {
-                    gfx.world.set_mesh(&gfx.gpu, id, &data);
-                }
-                None => gfx.world.remove_mesh(id),
-            }
-        }
-        gfx.world.bloom = self.world_view.bloom;
-        gfx.world.grading = self.world_view.grading;
-        for id in self.world_view.exposure_resets.drain(..) {
-            gfx.world.reset_exposure(id);
-        }
-        warn_pipeline(&mut self.pipeline_warned, &self.world_view);
-        (
-            gfx.world.shadow_distance,
-            gfx.world.shadow_resolution,
-            gfx.world.shadow_cascades,
-        ) = self.world_view.shadow_settings;
-        gfx.world.set_sky(self.world_view.sky);
-        let q = self.world_view.quality;
-        gfx.surface.set_vsync(&gfx.gpu, q.vsync);
-        gfx.world.msaa = q.msaa;
-        gfx.world.render_scale = q.render_scale;
-        gfx.world.shadow_quality = q.shadows;
-        gfx.world.soft_shadow_radius = q.soft_radius;
-        gfx.world.anisotropic = q.anisotropic;
-        gfx.world.texture_mip_limit = q.texture_mip_limit;
-        gfx.world.pipeline = q.pipeline;
-        (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
-        for (id, data) in self.world_view.texture_uploads.drain(..) {
-            match data {
-                Some(data) => {
-                    gfx.world.set_texture(&gfx.gpu, id, &data);
-                }
-                None => gfx.world.remove_texture(id),
-            }
-        }
-        for (id, size) in self.world_view.render_texture_uploads.drain(..) {
-            gfx.world.set_render_texture(&gfx.gpu, id, size);
-        }
-        for (id, cooked) in self.world_view.cooked_uploads.drain(..) {
-            // GPUs without BC get the blocks decoded.
-            if !gfx.world.set_cooked_texture(&gfx.gpu, id, &cooked) {
-                gfx.world
-                    .set_texture(&gfx.gpu, id, &cook::uncook_texture(&cooked));
-            }
+        gfx.surface
+            .set_vsync(&gfx.gpu, self.world_view.quality.vsync);
+        if let Some(world) = gfx.world.ensure(&gfx.gpu, self.world_view.needs_world()) {
+            apply_world_view(
+                world,
+                &gfx.gpu,
+                &mut self.world_view,
+                &mut self.pipeline_warned,
+            );
         }
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let (quads, textures) = self.panels.render(
@@ -2503,6 +2550,11 @@ impl PlatformApp for App {
         if !self.offline && self.display.mode != iron_platform::FullScreenMode::Windowed {
             self.display = iron_platform::display::apply(&window, &self.display);
         }
+        if iron_core::UI_APP_ONLY {
+            #[cfg(feature = "ui_app_only")]
+            self.install_cpu(window);
+            return;
+        }
         let size = window.inner_size();
         match Gpu::with_surface(window.clone(), size.width, size.height) {
             Ok((gpu, surface)) => {
@@ -2581,8 +2633,7 @@ impl PlatformApp for App {
             InputEvent::Occluded(o) => self.lifecycle.set_occluded(o),
             InputEvent::Resized { width, height } => {
                 self.lifecycle.set_size(width, height);
-                if let Some(gfx) = &self.gfx {
-                    let dpi = gfx.dpi();
+                if let Some((dpi, _)) = self.main_metrics() {
                     let size = windows::to_ui((width, height), dpi);
                     self.in_game(|| {
                         iron_engine_api::window::resized(
@@ -2594,8 +2645,7 @@ impl PlatformApp for App {
                 }
             }
             InputEvent::Moved { x, y } => {
-                if let Some(gfx) = &self.gfx {
-                    let dpi = gfx.dpi();
+                if let Some((dpi, _)) = self.main_metrics() {
                     let (lx, ly) = (f64::from(x) / dpi, f64::from(y) / dpi);
                     self.in_game(|| {
                         iron_engine_api::window::moved(iron_engine_api::window::MAIN, lx, ly)
@@ -2802,12 +2852,18 @@ impl PlatformApp for App {
         // Again, for a UI scale the scripts changed this frame.
         self.sync_screen();
         let render_started = Instant::now();
+        #[cfg(feature = "ui_app_only")]
+        if self.cpu.is_some() {
+            self.render_cpu(render_started);
+            self.count_frame();
+            return;
+        }
         let Some(gfx) = &mut self.gfx else {
             return;
         };
         let scale = ui_factor(gfx, self.ui_scale);
         // Scripts' `RenderStats`: what the last frame drew and culled, when it changes.
-        let stats = gfx.world.stats();
+        let stats = gfx.world.built().map(|w| w.stats()).unwrap_or_default();
         if self.render_stats != stats {
             self.render_stats = stats;
             let args = [
@@ -2837,7 +2893,7 @@ impl PlatformApp for App {
         }
         // Each camera's exposure (EV100 in use, and how bright it metered), when it changes.
         for id in self.world_view.camera_ids() {
-            let Some(r) = gfx.world.exposure(id) else {
+            let Some(r) = gfx.world.built().and_then(|w| w.exposure(id)) else {
                 continue;
             };
             let now = (r.ev, r.scene_ev);
@@ -2877,53 +2933,15 @@ impl PlatformApp for App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
-        for (id, data) in self.world_view.mesh_uploads.drain(..) {
-            match data {
-                Some(data) => {
-                    gfx.world.set_mesh(&gfx.gpu, id, &data);
-                }
-                None => gfx.world.remove_mesh(id),
-            }
-        }
-        gfx.world.bloom = self.world_view.bloom;
-        gfx.world.grading = self.world_view.grading;
-        for id in self.world_view.exposure_resets.drain(..) {
-            gfx.world.reset_exposure(id);
-        }
-        warn_pipeline(&mut self.pipeline_warned, &self.world_view);
-        (
-            gfx.world.shadow_distance,
-            gfx.world.shadow_resolution,
-            gfx.world.shadow_cascades,
-        ) = self.world_view.shadow_settings;
-        gfx.world.set_sky(self.world_view.sky);
-        let q = self.world_view.quality;
-        gfx.surface.set_vsync(&gfx.gpu, q.vsync);
-        gfx.world.msaa = q.msaa;
-        gfx.world.render_scale = q.render_scale;
-        gfx.world.shadow_quality = q.shadows;
-        gfx.world.soft_shadow_radius = q.soft_radius;
-        gfx.world.anisotropic = q.anisotropic;
-        gfx.world.texture_mip_limit = q.texture_mip_limit;
-        gfx.world.pipeline = q.pipeline;
-        (gfx.world.environment_intensity, gfx.world.ambient_from_sky) = self.world_view.environment;
-        for (id, data) in self.world_view.texture_uploads.drain(..) {
-            match data {
-                Some(data) => {
-                    gfx.world.set_texture(&gfx.gpu, id, &data);
-                }
-                None => gfx.world.remove_texture(id),
-            }
-        }
-        for (id, size) in self.world_view.render_texture_uploads.drain(..) {
-            gfx.world.set_render_texture(&gfx.gpu, id, size);
-        }
-        for (id, cooked) in self.world_view.cooked_uploads.drain(..) {
-            // GPUs without BC get the blocks decoded.
-            if !gfx.world.set_cooked_texture(&gfx.gpu, id, &cooked) {
-                gfx.world
-                    .set_texture(&gfx.gpu, id, &cook::uncook_texture(&cooked));
-            }
+        gfx.surface
+            .set_vsync(&gfx.gpu, self.world_view.quality.vsync);
+        if let Some(world) = gfx.world.ensure(&gfx.gpu, self.world_view.needs_world()) {
+            apply_world_view(
+                world,
+                &gfx.gpu,
+                &mut self.world_view,
+                &mut self.pipeline_warned,
+            );
         }
         let now = self
             .fake_now
@@ -2986,7 +3004,7 @@ impl PlatformApp for App {
         self.world_view.probes_rendered();
         // What it saw of the renderers animation culling watches (nothing if no view drew).
         if let Some(gfx) = &mut self.gfx {
-            let seen = gfx.world.take_seen();
+            let seen = gfx.world.built().map(|w| w.take_seen()).unwrap_or_default();
             self.world_view.culling.note_seen(&seen);
         }
         self.draw_windows();
@@ -2994,27 +3012,7 @@ impl PlatformApp for App {
         if self.fps_on {
             self.fps.frame(self.started.elapsed().as_secs_f64());
         }
-
-        self.frames += 1;
-        // `IRON_RELOAD_AT_FRAME=N`: a screenshot run reloads its scripts after frame N,
-        // to check hot reload without a window.
-        if self.screenshot.is_some()
-            && std::env::var("IRON_RELOAD_AT_FRAME")
-                .ok()
-                .and_then(|n| n.parse::<u32>().ok())
-                == Some(self.frames)
-        {
-            self.reload_scripts();
-        }
-        if let Some((path, frames)) = self.screenshot.clone()
-            && self.frames >= frames
-        {
-            match self.save_screenshot(&path) {
-                Ok(()) => tracing::info!("saved screenshot to {}", path.display()),
-                Err(e) => tracing::error!("screenshot failed: {e}"),
-            }
-            self.done = true;
-        }
+        self.count_frame();
     }
 
     fn should_exit(&self) -> bool {
@@ -3022,12 +3020,17 @@ impl PlatformApp for App {
     }
 
     fn frame_interval(&self) -> Option<Duration> {
-        lifecycle::frame_cap_with(
+        let cap = lifecycle::frame_cap_with(
             self.target_frame_rate,
             self.world_view.quality.vsync,
             self.offline,
             self.lifecycle.paused() && !self.paused(),
-        )
+        );
+        // The CPU renderer has no swapchain to pace frames: 60 Hz unless the game sets a rate.
+        if self.cpu.is_some() && !self.offline {
+            return Some(cap.unwrap_or(CPU_FRAME_CAP));
+        }
+        cap
     }
 
     /// Paused only when every event domain is (a live inspector window keeps the app running).
@@ -3076,8 +3079,12 @@ fn dispatch(scripts: &mut QuickJsRuntime, enabled: bool, event: &UiEvent) -> boo
 /// Physical pixels per UI pixel for `window`: its DPI scale times `ui_scale`'s factor
 /// for its logical size.
 fn ui_factor(gfx: &Gfx, ui_scale: ui_scale::UiScale) -> f32 {
-    let dpi = gfx.dpi() as f32;
-    let (width, height) = gfx.inner_size();
+    ui_factor_for(gfx.dpi(), gfx.inner_size(), ui_scale)
+}
+
+/// Physical pixels per UI pixel for a window with this DPI scale and physical size.
+fn ui_factor_for(dpi: f64, (width, height): (u32, u32), ui_scale: ui_scale::UiScale) -> f32 {
+    let dpi = dpi as f32;
     let (w, h) = (width as f32 / dpi, height as f32 / dpi);
     dpi * ui_scale.factor(w, h)
 }

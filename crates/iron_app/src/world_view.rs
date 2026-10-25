@@ -680,6 +680,15 @@ impl WorldViews {
     }
 
     /// The ids of every camera, for reading their exposure back.
+    /// Whether anything needs the 3D world renderer: a camera, or an upload waiting for it.
+    pub fn needs_world(&self) -> bool {
+        !self.cameras.is_empty()
+            || !self.mesh_uploads.is_empty()
+            || !self.texture_uploads.is_empty()
+            || !self.cooked_uploads.is_empty()
+            || !self.render_texture_uploads.is_empty()
+    }
+
     pub fn camera_ids(&self) -> Vec<u32> {
         self.cameras.keys().copied().collect()
     }

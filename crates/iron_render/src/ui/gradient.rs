@@ -2,7 +2,8 @@
 
 //! Turning `iron_ui` gradients into the GPU representation the quad shader reads.
 
-use iron_ui::{BackgroundImage, ColorStop, GradientDirection, Len, RadialShape, Rect};
+pub use iron_ui::resolve_stops;
+use iron_ui::{BackgroundImage, GradientDirection, RadialShape, Rect};
 
 const KIND_LINEAR: f32 = 0.0;
 const KIND_RADIAL: f32 = 1.0;
@@ -123,58 +124,10 @@ pub fn build(image: &BackgroundImage, rect: Rect) -> Option<GpuGradient> {
     Some(g)
 }
 
-/// CSS colour-stop fix-up: missing first/last positions become 0%/100%, positions
-/// never go backwards, and runs of missing positions are spaced evenly.
-/// Returns (straight-alpha sRGB colour, position as a fraction of the gradient line).
-pub fn resolve_stops(stops: &[ColorStop], line_length: f32) -> Vec<([f32; 4], f32)> {
-    let n = stops.len();
-    let mut pos: Vec<Option<f32>> = stops
-        .iter()
-        .map(|s| {
-            s.position.map(|p| match p {
-                Len::Percent(f) => f,
-                Len::Px(px) => px / line_length,
-            })
-        })
-        .collect();
-    if n == 0 {
-        return Vec::new();
-    }
-    pos[0] = Some(pos[0].unwrap_or(0.0));
-    pos[n - 1] = Some(pos[n - 1].unwrap_or(1.0));
-
-    let mut max_so_far = f32::NEG_INFINITY;
-    for p in pos.iter_mut().flatten() {
-        *p = p.max(max_so_far);
-        max_so_far = *p;
-    }
-
-    let mut i = 0;
-    while i < n {
-        if pos[i].is_some() {
-            i += 1;
-            continue;
-        }
-        let start = i - 1; // pos[0] is always set
-        let end = (i..n).find(|&j| pos[j].is_some()).expect("last is set");
-        let (a, b) = (pos[start].unwrap(), pos[end].unwrap());
-        for (k, slot) in pos.iter_mut().enumerate().take(end).skip(start + 1) {
-            *slot = Some(a + (b - a) * (k - start) as f32 / (end - start) as f32);
-        }
-        i = end;
-    }
-
-    stops
-        .iter()
-        .zip(pos)
-        .map(|(s, p)| ([s.color.r, s.color.g, s.color.b, s.color.a], p.unwrap()))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_ui::Rgba;
+    use iron_ui::{ColorStop, Len, Rgba};
 
     fn stop(p: Option<Len>) -> ColorStop {
         ColorStop {

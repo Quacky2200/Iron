@@ -7,7 +7,12 @@ edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
+[features]
+# A UI-only app: no GPU driver (see `iron_core::UI_APP_ONLY`).
+ui_app_only = ["iron_core/ui_app_only", "dep:iron_render_cpu"]
+
 [dependencies]
+iron_render_cpu = { path = "../iron_render_cpu", optional = true }
 anyhow = "1.0.104"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
