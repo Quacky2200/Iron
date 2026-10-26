@@ -29,8 +29,6 @@ const EXCLUDED: &[&str] = &[
     "tools/iron_ts_tests/bench/sine_demo_full.ts",
     "tools/iron_ts_tests/fixtures/sim.ts",
     "tools/iron_ts_tests/fixtures/sim.test.ts",
-    // After a CodePen by Corevision: left out until its origin is settled.
-    "examples/clock/src/lava.ts",
 ];
 
 fn excluded(path: &str) -> bool {

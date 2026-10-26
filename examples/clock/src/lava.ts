@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // The lava lamp: wax blobs rise when they're hot, cool at the top and sink. Each blob's outline
 // is a circle pushed in and out by a slow noise field, sampled where each point is in the lamp,
 // so the wax bulges and folds organically and neighbouring blobs bulge alike. The wax has a
