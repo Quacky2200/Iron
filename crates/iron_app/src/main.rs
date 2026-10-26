@@ -72,8 +72,8 @@ const MAX_TICKS_PER_FRAME: u32 = 5;
 const MAX_FRAME_DT: f64 = 0.1;
 /// Pixels per wheel notch ("line"), like browsers.
 const WHEEL_LINE: f32 = 40.0;
-/// The CPU renderer's frame cap (60 Hz).
-const CPU_FRAME_CAP: Duration = Duration::from_micros(16_667);
+/// The CPU renderer's frame cap (120 Hz).
+const CPU_FRAME_CAP: Duration = Duration::from_micros(8_333);
 const CLEAR: Color = Color::rgb(0.05, 0.06, 0.09);
 
 struct Args {
@@ -2632,6 +2632,7 @@ impl PlatformApp for App {
             }
             InputEvent::Occluded(o) => self.lifecycle.set_occluded(o),
             InputEvent::Resized { width, height } => {
+                native_render::display_dirty();
                 self.lifecycle.set_size(width, height);
                 if let Some((dpi, _)) = self.main_metrics() {
                     let size = windows::to_ui((width, height), dpi);
@@ -2645,6 +2646,7 @@ impl PlatformApp for App {
                 }
             }
             InputEvent::Moved { x, y } => {
+                native_render::display_dirty();
                 if let Some((dpi, _)) = self.main_metrics() {
                     let (lx, ly) = (f64::from(x) / dpi, f64::from(y) / dpi);
                     self.in_game(|| {
@@ -2653,6 +2655,7 @@ impl PlatformApp for App {
                 }
             }
             InputEvent::ScaleChanged(s) => {
+                native_render::display_dirty();
                 self.in_game(|| {
                     iron_engine_api::window::scale_changed(iron_engine_api::window::MAIN, s)
                 });
@@ -3026,7 +3029,7 @@ impl PlatformApp for App {
             self.offline,
             self.lifecycle.paused() && !self.paused(),
         );
-        // The CPU renderer has no swapchain to pace frames: 60 Hz unless the game sets a rate.
+        // The CPU renderer has no swapchain to pace frames: 120 Hz unless the game sets a rate.
         if self.cpu.is_some() && !self.offline {
             return Some(cap.unwrap_or(CPU_FRAME_CAP));
         }

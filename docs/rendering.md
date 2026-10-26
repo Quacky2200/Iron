@@ -38,7 +38,7 @@ is the next step.
 
 With the feature, the main window is drawn by the CPU instead (`crates/iron_render_cpu`, `vello_cpu` +
 `softbuffer`; `iron_app/src/cpu_gfx.rs`): no wgpu device, no GPU driver is loaded. The clock then uses
-~16 MB private / ~40 MB working set (GPU: ~135 / ~122 MB), about 1 ms per frame. Frames are capped at 60 Hz
+~16 MB private / ~40 MB working set (GPU: ~135 / ~122 MB), about 1 ms per frame. Frames are capped at 120 Hz
 (`CPU_FRAME_CAP`, unless the game sets a rate) and a frame whose draw lists equal the last one's is not
 redrawn or presented (the FPS counter still counts the paced frames). It draws boxes (colour, uniform border,
 rounded corners), box shadows, text, clips, opacity layers and affine transforms. Gradients and images,
