@@ -133,6 +133,8 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-GLES-04 | Integration | `overflow: hidden` clips with a rounded border (several children) match between the two executors. |
 | M2-GLES-05 | Integration | Text at two sizes and colours, including dark text on light, matches between the two executors (the shared glyph cache, uploaded into the GLES pages). |
 | M2-GLES-06 | Integration | Boxes and text at scale 2 and a rotated plane (the clip table's transforms) match between the two executors. |
+| M2-GLES-07 | Integration | Background images match between the GLES and wgpu executors: an unrepeated PNG, a tiled one at a set size, `cover` with rounded corners, nearest-neighbour upscaling, and SVGs (`contain`, a set size over a colour). |
+| M2-GLES-08 | Integration | Background images at scale 2 (a rounded tiled PNG and an SVG rasterized at twice the size) match between the two executors. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

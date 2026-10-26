@@ -16,7 +16,9 @@ pub use gpu::{Gpu, RenderError, set_low_memory};
 pub use offscreen::OffscreenTarget;
 pub use surface::WindowSurface;
 pub use ui::backend::UiBackend;
-pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, glyphs, needs_backdrop, plan};
+pub use ui::{
+    CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, glyphs, image_cache, needs_backdrop, plan,
+};
 pub use wgpu;
 pub use world::{
     ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, CloudLayer, CookedTexture,

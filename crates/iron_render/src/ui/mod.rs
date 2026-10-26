@@ -15,6 +15,7 @@ mod atlas;
 pub mod backend;
 pub mod glyphs;
 mod gradient;
+pub mod image_cache;
 mod images;
 pub mod plan;
 
@@ -28,7 +29,7 @@ use crate::{Color, Gpu};
 use atlas::GlyphAtlas;
 use glyphs::GlyphEntry;
 use gradient::GpuGradient;
-use images::ImageCache;
+use image_cache::ImageCache;
 pub use plan::needs_backdrop;
 use plan::{GpuClip, Instance, PxRect, Step};
 
@@ -109,6 +110,7 @@ pub struct UiRenderer {
     image_pipeline: wgpu::RenderPipeline,
     image_samplers: images::ImageSamplers,
     images: ImageCache,
+    image_textures: images::ImageTextures,
     atlas: GlyphAtlas,
     blur_pipeline: wgpu::RenderPipeline,
     blur_layout: wgpu::BindGroupLayout,
@@ -405,6 +407,7 @@ impl UiRenderer {
             image_pipeline,
             image_samplers,
             images: ImageCache::default(),
+            image_textures: images::ImageTextures::default(),
             atlas: GlyphAtlas::new(gpu),
             blur_pipeline,
             blur_layout,
@@ -443,9 +446,14 @@ impl UiRenderer {
     /// Loads the image at `url` (as `image` elements and `url(...)` use it) and returns
     /// its natural size in pixels, or `None` if it can't be loaded.
     pub fn image_size(&mut self, gpu: &Gpu, url: &str) -> Option<(u32, u32)> {
-        self.images
-            .get(gpu, &self.blit_layout, &self.image_samplers, url)
-            .map(|i| i.size)
+        let size = self.images.image(url).map(|(_, size)| size);
+        self.image_textures.apply(
+            gpu,
+            &self.blit_layout,
+            &self.image_samplers,
+            &mut self.images,
+        );
+        size
     }
 
     /// Draws `cmds` over `clear` into `target`.
@@ -561,11 +569,8 @@ impl UiRenderer {
                 seeded: backdrop.is_some(),
             },
             &mut WgpuResources {
-                gpu,
                 atlas: &mut self.atlas,
                 images: &mut self.images,
-                layout: &self.blit_layout,
-                samplers: &self.image_samplers,
             },
         );
         let plan::FramePlan {
@@ -578,8 +583,14 @@ impl UiRenderer {
         } = plan;
         stats.layers = layers;
         stats.clips = clip_table.len() as u32;
-        // The glyphs the plan placed reach the atlas before the frame's draws.
+        // The glyphs and images the plan loaded reach their textures before the frame's draws.
         self.atlas.flush(gpu);
+        self.image_textures.apply(
+            gpu,
+            &self.blit_layout,
+            &self.image_samplers,
+            &mut self.images,
+        );
         let frame_textures: Vec<PooledTexture> = (0..textures)
             .map(|_| self.take_texture(gpu, size))
             .collect();
@@ -733,16 +744,11 @@ impl UiRenderer {
                     image,
                 } => {
                     let image_bind_group = match image {
-                        Some((url, pixelated)) => {
-                            match self
-                                .images
-                                .get(gpu, &self.blit_layout, &self.image_samplers, url)
-                            {
-                                Some(loaded) if *pixelated => Some(&loaded.bind_group_nearest),
-                                Some(loaded) => Some(&loaded.bind_group),
-                                None => continue,
-                            }
-                        }
+                        Some((key, pixelated)) => match self.image_textures.get(key) {
+                            Some(loaded) if *pixelated => Some(&loaded.bind_group_nearest),
+                            Some(loaded) => Some(&loaded.bind_group),
+                            None => continue,
+                        },
                         None => None,
                     };
                     let load = load_for(&mut pending_clear, *target);
@@ -1072,13 +1078,11 @@ impl UiRenderer {
     }
 }
 
-/// The wgpu renderer's glyph atlas and image cache, for planning a frame.
+/// The wgpu renderer's glyph atlas and image cache, for planning a frame (their pixels
+/// reach the GPU after planning).
 struct WgpuResources<'a> {
-    gpu: &'a Gpu,
     atlas: &'a mut GlyphAtlas,
     images: &'a mut ImageCache,
-    layout: &'a wgpu::BindGroupLayout,
-    samplers: &'a images::ImageSamplers,
 }
 
 impl plan::PlanResources for WgpuResources<'_> {
@@ -1095,13 +1099,12 @@ impl plan::PlanResources for WgpuResources<'_> {
 
     fn image(&mut self, url: &str) -> Option<plan::ImageInfo> {
         self.images
-            .get(self.gpu, self.layout, self.samplers, url)
-            .map(|i| plan::ImageInfo { size: i.size })
+            .image(url)
+            .map(|(key, size)| plan::ImageInfo { size, key })
     }
 
     fn svg_at(&mut self, url: &str, px: (f32, f32)) -> Option<(String, (u32, u32))> {
-        self.images
-            .svg_at(self.gpu, self.layout, self.samplers, url, false, px)
+        self.images.svg_at(url, false, px)
     }
 }
 

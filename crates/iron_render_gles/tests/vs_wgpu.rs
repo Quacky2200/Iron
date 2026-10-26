@@ -3,12 +3,12 @@
 //! pixel. Needs an EGL driver (ANGLE's folder in `IRON_ANGLE_DIR`) and a GPU for wgpu; skipped
 //! without an EGL driver.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use glow::HasContext;
 use iron_core::{Commit, Value};
 use iron_render::testing::shared_gpu;
-use iron_render::{Color, OffscreenTarget, RenderTarget, UiRenderer, wgpu};
+use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiBackend, UiRenderer, wgpu};
 use iron_render_gles::egl::EglContext;
 use iron_render_gles::{GlesRenderer, Target};
 use iron_ui::UiTree;
@@ -69,10 +69,20 @@ impl Scene {
             .push(Value::Array(vec![n(APPEND_CHILD), n(parent), n(id)]));
     }
 
-    fn cmds(self, size: (f32, f32)) -> Vec<iron_ui::DrawCmd> {
+    /// The draw list, laid out with the images' natural sizes from `image_size`.
+    fn cmds(
+        self,
+        size: (f32, f32),
+        mut image_size: impl FnMut(&str) -> Option<(u32, u32)>,
+    ) -> Vec<iron_ui::DrawCmd> {
         let mut t = UiTree::new(size.0, size.1);
         let errors = t.apply_commit(&Commit { ops: self.ops });
         assert!(errors.is_empty(), "{errors:?}");
+        t.layout_if_needed();
+        for src in t.take_image_requests() {
+            let size = image_size(&src);
+            t.set_image_size(&src, size);
+        }
         t.layout_if_needed();
         t.draw_list()
     }
@@ -103,14 +113,18 @@ fn gles() -> Option<Gles> {
 }
 
 /// The wgpu renderer's pixels (RGBA8, top row first).
-fn wgpu_pixels(cmds: &[iron_ui::DrawCmd], size: (u32, u32), scale: f32) -> Vec<u8> {
-    let gpu = shared_gpu();
+fn wgpu_pixels(
+    gpu: &Gpu,
+    ui: &mut UiRenderer,
+    cmds: &[iron_ui::DrawCmd],
+    size: (u32, u32),
+    scale: f32,
+) -> Vec<u8> {
     let target =
-        OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
-    let mut ui = UiRenderer::new(&gpu);
+        OffscreenTarget::with_format(gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
     let view = target.view().unwrap();
     ui.render(
-        &gpu,
+        gpu,
         &RenderTarget {
             view: &view,
             format: target.format(),
@@ -120,7 +134,7 @@ fn wgpu_pixels(cmds: &[iron_ui::DrawCmd], size: (u32, u32), scale: f32) -> Vec<u
         CLEAR,
         cmds,
     );
-    target.read_pixels(&gpu).unwrap()
+    target.read_pixels(gpu).unwrap()
 }
 
 /// The GLES renderer's pixels, top row first.
@@ -211,13 +225,34 @@ fn same(
     tolerance: u8,
     allowed_off: f32,
 ) {
+    same_with(name, scene, None, logical, scale, tolerance, allowed_off);
+}
+
+/// [`same`] with a folder `url(...)` images are read from.
+fn same_with(
+    name: &str,
+    scene: Scene,
+    assets: Option<&Path>,
+    logical: (u32, u32),
+    scale: f32,
+    tolerance: u8,
+    allowed_off: f32,
+) {
     let Some(mut g) = gles() else { return };
+    let gpu = shared_gpu();
+    let mut ui = UiRenderer::new(&gpu);
+    if let Some(dir) = assets {
+        ui.set_asset_root(dir);
+        g.renderer.set_asset_root(dir.to_path_buf());
+    }
     let size = (
         (logical.0 as f32 * scale) as u32,
         (logical.1 as f32 * scale) as u32,
     );
-    let cmds = scene.cmds((logical.0 as f32, logical.1 as f32));
-    let a = wgpu_pixels(&cmds, size, scale);
+    let cmds = scene.cmds((logical.0 as f32, logical.1 as f32), |url| {
+        ui.image_size(&gpu, url)
+    });
+    let a = wgpu_pixels(&gpu, &mut ui, &cmds, size, scale);
     let b = gles_pixels(&mut g, &cmds, size, scale);
     // Two blank images would match: the scene has to have drawn something.
     let blank = a.chunks(4).filter(|p| *p == &a[..4]).count();
@@ -438,4 +473,120 @@ fn text_and_boxes_at_scale_two_and_a_transformed_plane_match_wgpu() {
         &[("backgroundColor", "gold"), ("transform", "rotate(12deg)")],
     );
     same("scale 2 + transform", s, (150, 90), 2.0, 8, 0.01);
+}
+
+/// A folder with a checkerboard PNG (with transparent cells) and an SVG.
+fn assets() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("iron_gles_assets_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut img = image::RgbaImage::new(16, 16);
+    for (x, y, p) in img.enumerate_pixels_mut() {
+        *p = match ((x / 4) + (y / 4)) % 3 {
+            0 => image::Rgba([230, 60, 60, 255]),
+            1 => image::Rgba([40, 80, 200, 255]),
+            _ => image::Rgba([255, 255, 255, 0]),
+        };
+    }
+    img.save(dir.join("checker.png")).unwrap();
+    std::fs::write(
+        dir.join("logo.svg"),
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="orange"/><rect x="4" y="4" width="10" height="10" fill="blue"/></svg>"#,
+    )
+    .unwrap();
+    dir
+}
+
+// M2-GLES-07
+#[test]
+fn background_images_match_wgpu() {
+    let dir = assets();
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [6.0, 6.0, 40.0, 40.0],
+        &[
+            ("backgroundImage", "url(checker.png)"),
+            ("backgroundRepeat", "no-repeat"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [54.0, 6.0, 60.0, 40.0],
+        &[
+            ("backgroundImage", "url(checker.png)"),
+            ("backgroundSize", "20px 20px"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [122.0, 6.0, 40.0, 40.0],
+        &[
+            ("backgroundImage", "url(checker.png)"),
+            ("backgroundSize", "cover"),
+            ("borderRadius", "14px"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [6.0, 54.0, 56.0, 40.0],
+        &[
+            ("backgroundImage", "url(checker.png)"),
+            ("backgroundSize", "48px 32px"),
+            ("imageRendering", "pixelated"),
+            ("backgroundRepeat", "no-repeat"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [70.0, 54.0, 40.0, 40.0],
+        &[
+            ("backgroundImage", "url(logo.svg)"),
+            ("backgroundSize", "contain"),
+            ("backgroundRepeat", "no-repeat"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [118.0, 54.0, 44.0, 40.0],
+        &[
+            ("backgroundImage", "url(logo.svg)"),
+            ("backgroundSize", "20px 20px"),
+            ("backgroundColor", "#303040"),
+        ],
+    );
+    same_with("images", s, Some(&dir), (170, 100), 1.0, 8, 0.01);
+}
+
+// M2-GLES-08
+#[test]
+fn background_images_at_scale_two_match_wgpu() {
+    let dir = assets();
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [4.0, 4.0, 50.0, 40.0],
+        &[
+            ("backgroundImage", "url(checker.png)"),
+            ("backgroundSize", "16px 16px"),
+            ("borderRadius", "8px"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [60.0, 4.0, 36.0, 40.0],
+        &[
+            ("backgroundImage", "url(logo.svg)"),
+            ("backgroundSize", "contain"),
+            ("backgroundRepeat", "no-repeat"),
+        ],
+    );
+    same_with("images x2", s, Some(&dir), (100, 48), 2.0, 8, 0.01);
 }

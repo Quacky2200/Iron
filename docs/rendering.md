@@ -22,7 +22,8 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 | [ui/effects.wgsl](../crates/iron_render/src/ui/effects.wgsl) | Fullscreen passes: blur, composite, blit |
 | [ui/atlas.rs](../crates/iron_render/src/ui/atlas.rs) | The wgpu glyph atlas: the page textures a `GlyphCache` fills |
 | [ui/gradient.rs](../crates/iron_render/src/ui/gradient.rs) | `iron_ui` gradients to the GPU struct |
-| [ui/images.rs](../crates/iron_render/src/ui/images.rs) | `url()` image cache, `background-size/position` math |
+| [ui/image_cache.rs](../crates/iron_render/src/ui/image_cache.rs) | `ImageCache`, GPU-free: `url()` images decoded, SVGs rasterized at a size, keys, eviction, a queue of `ImageUpload`s |
+| [ui/images.rs](../crates/iron_render/src/ui/images.rs) | The wgpu side: `ImageTextures` (a texture and both samplers' bind groups per key) |
 | [testing.rs](../crates/iron_render/src/testing.rs) | Golden helpers and the shared test GPU |
 
 ## GPU setup
@@ -63,11 +64,12 @@ What differs from the wgpu executor (`shaders.rs` is a GLSL ES 3.00 port of `qua
 - **`gl_FragCoord` is y up**; the fragment shader turns it into the plan's y-down logical pixels.
 
 Done: the quad pass (boxes, borders and their styles, gradients, outer and inset shadows, glyphs, wavy
-decorations, clips and polygon clips, transforms) and the glyph atlas. Not yet (each skipped step is logged
-once): images (`Step::Draw` with an image: its textures need the image cache split like the glyph cache),
-layers (`Copy`, `Blur`, `Composite`: opacity groups, blur, filters, blend modes, masks, backdrop
+decorations, clips and polygon clips, transforms), the glyph atlas, and images (`fs_image`: repeat, space,
+`cover`/`contain`, rounded clips, `image-rendering: pixelated`, tints, border-image pieces; PNG and JPEG
+from the shared `ImageCache`, SVGs rasterized at their drawn size; `SRGB8_ALPHA8` textures). Not yet (each
+skipped step is logged once): layers (`Copy`, `Blur`, `Composite`: opacity groups, blur, filters, blend modes, masks, backdrop
 filters) and `render_overlay` over existing content. `tests/vs_wgpu.rs` draws scenes through both
-executors and compares pixels (`M2-GLES-02..06`: within 1/255 so far); it and `tests/context.rs` need an EGL
+executors and compares pixels (`M2-GLES-02..08`: within 1/255 so far); it and `tests/context.rs` need an EGL
 driver (`IRON_ANGLE_DIR` on Windows) and skip without one.
 
 `crates/iron_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all (the clock: ~16 MB
@@ -99,7 +101,8 @@ count of frame-sized `textures`) and holds no GPU object. What planning needs fr
 comes through `PlanResources`: `glyph` (place a glyph in the atlas), `image` (an image's natural
 size) and `svg_at` (an SVG rasterized for a size). `WgpuResources` in mod.rs is the wgpu one; a
 second renderer (the GLES one for `iron-app`, through ANGLE) supplies its own, uses the same
-`GlyphCache` for the glyphs, and executes the same `Step`s over its own textures. `UiBackend`
+`GlyphCache` and `ImageCache` (their pixels are queued as uploads, written by the renderer after planning;
+`ImageInfo::key` names an image's texture in `Step::Draw`), and executes the same `Step`s over its own textures. `UiBackend`
 (backend.rs) is the app-facing trait; the wgpu `UiRenderer` implements it. The planner is tested
 without a GPU (`tests/plan.rs`, `M2-PLN-01..07`); the golden tests (`tests/ui.rs`) check the wgpu
 executor.

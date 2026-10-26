@@ -125,10 +125,8 @@ void main() {
     )
 }
 
-pub fn quad_fragment() -> String {
-    format!(
-        "{QUAD_COMMON}{}",
-        r#"
+/// The fragment helpers both quad programs share: shapes, clips, gradients, glyphs, `shade`.
+const FRAGMENT_BODY: &str = r#"
 flat in vec4 v_rect;
 flat in vec4 v_radii;
 flat in vec4 v_p0;
@@ -594,7 +592,9 @@ vec4 shade(vec2 p) {
     return border + base * (1.0 - border.a);
 }
 
-void main() {
+"#;
+
+const QUAD_MAIN: &str = r#"void main() {
     // gl_FragCoord is y up; the plan's pixels are y down from the top left.
     vec2 world = vec2(gl_FragCoord.x, u_globals.y - gl_FragCoord.y) / u_globals.z;
     float clip = clip_coverage(world, v_params);
@@ -603,8 +603,71 @@ void main() {
     }
     o_color = shade(local_point(world)) * clip;
 }
-"#
-    )
+"#;
+
+/// Background and border images (`fs_image`): one texture per draw; `rect` and `radii` are the
+/// box (the clip shape), `p0` one tile of the image in logical px, `params.yz` say whether it
+/// repeats along x and y. The texture wraps by repeating; the shader clamps on the axes that
+/// don't repeat.
+const IMAGE_MAIN: &str = r#"
+uniform sampler2D u_image;
+
+// `background-image-tint` / `border-image-tint` (linear, premultiplied); all zeros means no tint.
+vec4 image_tint(vec4 t) {
+    return all(equal(t, vec4(0.0))) ? vec4(1.0) : t;
+}
+
+void main() {
+    vec2 world = vec2(gl_FragCoord.x, u_globals.y - gl_FragCoord.y) / u_globals.z;
+    vec2 p = local_point(world);
+    float clip = shape_coverage(p, v_rect, v_radii, v_radii_y) * clip_coverage(world, v_params);
+    if (clip <= 0.0) {
+        discard;
+    }
+    vec4 tile = v_p0;
+    vec2 uv = (p - tile.xy) / tile.zw;
+    bool repeat_x = v_params.y > 0.5;
+    bool repeat_y = v_params.z > 0.5;
+    // `background-repeat: space`: tiles are `p1.xy` apart; nothing shows in the gaps.
+    vec2 gap = v_p1.xy;
+    vec2 period = tile.zw + gap;
+    vec2 local = p - tile.xy;
+    vec2 wrapped = local - floor(local / period) * period;
+    bool gap_x = repeat_x && gap.x > 0.0;
+    bool gap_y = repeat_y && gap.y > 0.0;
+    if ((gap_x && wrapped.x > tile.z) || (gap_y && wrapped.y > tile.w)) {
+        discard;
+    }
+    uv = vec2(gap_x ? wrapped.x / tile.z : uv.x, gap_y ? wrapped.y / tile.w : uv.y);
+    if ((!repeat_x && (uv.x < 0.0 || uv.x > 1.0)) || (!repeat_y && (uv.y < 0.0 || uv.y > 1.0))) {
+        discard;
+    }
+    vec2 half_texel = 0.5 / vec2(textureSize(u_image, 0));
+    if (v_color0.z > 0.0) {
+        // A border-image piece: `color0` is its part of the texture (uv). Wrap within the
+        // piece and keep filtering inside it.
+        vec4 sub = v_color0;
+        vec2 t = vec2(repeat_x ? fract(uv.x) : uv.x, repeat_y ? fract(uv.y) : uv.y);
+        vec2 at = clamp(sub.xy + t * sub.zw, sub.xy + half_texel, sub.xy + sub.zw - half_texel);
+        vec4 c = textureLod(u_image, at, 0.0);
+        o_color = vec4(c.rgb * c.a, c.a) * image_tint(v_color1) * clip;
+        return;
+    }
+    // The sampler repeats. On axes that don't repeat, keep bilinear filtering from wrapping
+    // around to the opposite edge. sRGB textures sample as linear.
+    vec2 clamped = clamp(uv, half_texel, vec2(1.0) - half_texel);
+    vec2 sample_uv = vec2(repeat_x ? uv.x : clamped.x, repeat_y ? uv.y : clamped.y);
+    vec4 c = textureLod(u_image, sample_uv, 0.0);
+    o_color = vec4(c.rgb * c.a, c.a) * image_tint(v_color1) * clip;
+}
+"#;
+
+pub fn quad_fragment() -> String {
+    format!("{QUAD_COMMON}{FRAGMENT_BODY}{QUAD_MAIN}")
+}
+
+pub fn image_fragment() -> String {
+    format!("{QUAD_COMMON}{FRAGMENT_BODY}{IMAGE_MAIN}")
 }
 
 /// A full-screen triangle.

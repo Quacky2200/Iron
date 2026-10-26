@@ -36,7 +36,10 @@ impl PlanResources for Fake {
     }
 
     fn image(&mut self, url: &str) -> Option<ImageInfo> {
-        self.images.get(url).map(|&size| ImageInfo { size })
+        self.images.get(url).map(|&size| ImageInfo {
+            size,
+            key: url.to_owned(),
+        })
     }
 
     fn svg_at(&mut self, _: &str, _: (f32, f32)) -> Option<(String, (u32, u32))> {

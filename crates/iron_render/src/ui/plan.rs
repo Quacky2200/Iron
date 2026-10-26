@@ -231,11 +231,14 @@ pub enum Step {
     },
 }
 
-/// An image the plan draws: its natural size.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// An image the plan draws: its natural size and the key of its texture (what `Step::Draw`
+/// names it by).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImageInfo {
     /// Natural size in pixels.
     pub size: (u32, u32),
+    /// The renderer's texture key for the image.
+    pub key: String,
 }
 
 /// What planning a frame needs from the renderer that will draw it.
@@ -441,9 +444,9 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                         let key = if is_svg(url) {
                             let px = (tile.width * scale, tile.height * scale);
                             res.svg_at(url, px)
-                                .map_or_else(|| url.clone(), |(key, _)| key)
+                                .map_or_else(|| loaded.key.clone(), |(key, _)| key)
                         } else {
-                            url.clone()
+                            loaded.key.clone()
                         };
                         flush(&mut steps, &instances, &mut batch_start, current);
                         instances.push(Instance {
@@ -746,7 +749,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                             steps.push(Step::Draw {
                                 target: current,
                                 range: batch_start..end,
-                                image: Some((url.clone(), *pixelated)),
+                                image: Some((loaded.key.clone(), *pixelated)),
                             });
                             batch_start = end;
                         }

@@ -5,17 +5,20 @@
 //! in a vertex buffer, the gradient and clip tables in float data textures (GLES 3.0 has no
 //! storage buffers), glyph pixels from the shared `GlyphCache` into two page textures, and the
 //! `Clear` and `Draw` steps draw into `SRGB8_ALPHA8` canvases, like wgpu's, so blending is in
-//! linear light. Not done yet: images, layers (`Copy`, `Blur`, `Composite` steps) and the
-//! effects built on them (blur, opacity groups, backdrop filters, masks); each skipped step is
-//! logged once.
+//! linear light. Images come from the shared `ImageCache` (decoded and rasterized without a
+//! GPU), as `SRGB8_ALPHA8` textures. Not done yet: layers (`Copy`, `Blur`, `Composite` steps) and
+//! the effects built on them (blur, opacity groups, backdrop filters, masks); each skipped step
+//! is logged once.
 
 pub mod egl;
 mod shaders;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use glow::HasContext;
 use iron_render::glyphs::{COLOR_SIZE, GlyphCache, GlyphEntry, MASK_SIZE};
+use iron_render::image_cache::{ImageCache, ImageUpload};
 use iron_render::plan::{self, FramePlan, ImageInfo, Instance, PlanParams, PlanResources, Step};
 use iron_render::{Color, RenderStats, UiBackend};
 use iron_ui::DrawCmd;
@@ -53,6 +56,7 @@ struct Program {
 pub struct GlesRenderer {
     gl: glow::Context,
     quad: Program,
+    image: Program,
     blit: Program,
     vao: glow::VertexArray,
     instances: glow::Buffer,
@@ -63,15 +67,18 @@ pub struct GlesRenderer {
     canvases: Vec<Canvas>,
     canvas_size: (u32, u32),
     glyphs: GlyphCache,
-    asset_root: Option<PathBuf>,
+    images: ImageCache,
+    /// Image textures by the cache's key.
+    image_textures: HashMap<String, glow::Texture>,
     /// Things already reported as not drawn.
     reported: Vec<&'static str>,
 }
 
-/// What planning asks of this renderer: glyphs from the shared cache; no images yet.
+/// What planning asks of this renderer: glyphs and images from the shared caches (their pixels
+/// reach the textures in `execute`).
 struct Resources<'a> {
     glyphs: &'a mut GlyphCache,
-    missing_images: bool,
+    images: &'a mut ImageCache,
 }
 
 impl PlanResources for Resources<'_> {
@@ -86,13 +93,14 @@ impl PlanResources for Resources<'_> {
         self.glyphs.glyph(run, glyph, size_px, subpixel, stroke_px)
     }
 
-    fn image(&mut self, _: &str) -> Option<ImageInfo> {
-        self.missing_images = true;
-        None
+    fn image(&mut self, url: &str) -> Option<ImageInfo> {
+        self.images
+            .image(url)
+            .map(|(key, size)| ImageInfo { size, key })
     }
 
-    fn svg_at(&mut self, _: &str, _: (f32, f32)) -> Option<(String, (u32, u32))> {
-        None
+    fn svg_at(&mut self, url: &str, px: (f32, f32)) -> Option<(String, (u32, u32))> {
+        self.images.svg_at(url, false, px)
     }
 }
 
@@ -169,6 +177,7 @@ impl GlesRenderer {
     pub fn new(gl: glow::Context) -> Result<Self, String> {
         unsafe {
             let quad = compile(&gl, &shaders::quad_vertex(), &shaders::quad_fragment())?;
+            let image = compile(&gl, &shaders::quad_vertex(), &shaders::image_fragment())?;
             let blit = compile(&gl, shaders::BLIT_VERTEX, shaders::BLIT_FRAGMENT)?;
             let vao = gl.create_vertex_array()?;
             let instances = gl.create_buffer()?;
@@ -179,6 +188,7 @@ impl GlesRenderer {
             Ok(Self {
                 gl,
                 quad: Program { program: quad },
+                image: Program { program: image },
                 blit: Program { program: blit },
                 vao,
                 instances,
@@ -189,7 +199,8 @@ impl GlesRenderer {
                 canvases: Vec::new(),
                 canvas_size: (0, 0),
                 glyphs: GlyphCache::new(),
-                asset_root: None,
+                images: ImageCache::default(),
+                image_textures: HashMap::new(),
                 reported: Vec::new(),
             })
         }
@@ -208,9 +219,10 @@ impl GlesRenderer {
             return RenderStats::default();
         }
         self.glyphs.begin_frame();
+        self.images.begin_frame();
         let mut resources = Resources {
             glyphs: &mut self.glyphs,
-            missing_images: false,
+            images: &mut self.images,
         };
         let frame = plan::plan(
             cmds,
@@ -222,9 +234,6 @@ impl GlesRenderer {
             },
             &mut resources,
         );
-        if resources.missing_images {
-            self.report("images");
-        }
         self.execute(target, &frame)
     }
 
@@ -307,6 +316,76 @@ impl GlesRenderer {
         }
     }
 
+    /// Creates the textures of images loaded since the last frame and drops the ones the cache
+    /// let go of.
+    fn upload_images(&mut self) {
+        let gl = &self.gl;
+        for key in self.images.take_dropped() {
+            if let Some(texture) = self.image_textures.remove(&key) {
+                unsafe { gl.delete_texture(texture) };
+            }
+        }
+        for ImageUpload {
+            key,
+            width,
+            height,
+            pixels,
+        } in self.images.take_uploads()
+        {
+            unsafe {
+                let Ok(texture) = gl.create_texture() else {
+                    continue;
+                };
+                gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 4);
+                gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+                gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::SRGB8_ALPHA8 as i32,
+                    width as i32,
+                    height as i32,
+                    0,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(&pixels)),
+                );
+                // Images repeat (the shader clamps where they shouldn't); the filter follows
+                // `image-rendering` at each draw.
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
+                if let Some(old) = self.image_textures.insert(key, texture) {
+                    gl.delete_texture(old);
+                }
+            }
+        }
+    }
+
+    /// Points a quad-family program at the frame's globals and tables.
+    unsafe fn bind_quad_uniforms(&self, program: glow::Program, size: (u32, u32), scale: f32) {
+        let gl = &self.gl;
+        unsafe {
+            gl.use_program(Some(program));
+            gl.uniform_4_f32(
+                gl.get_uniform_location(program, "u_globals").as_ref(),
+                size.0 as f32,
+                size.1 as f32,
+                scale,
+                0.0,
+            );
+            for (name, unit, texture) in [
+                ("u_clips", 0, self.clip_table),
+                ("u_grads", 1, self.gradient_table),
+                ("u_mask", 2, self.glyph_mask),
+                ("u_color", 3, self.glyph_color),
+            ] {
+                gl.active_texture(glow::TEXTURE0 + unit);
+                gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+                gl.uniform_1_i32(gl.get_uniform_location(program, name).as_ref(), unit as i32);
+            }
+            gl.uniform_1_i32(gl.get_uniform_location(program, "u_image").as_ref(), 4);
+        }
+    }
+
     /// Runs a plan: uploads its tables, draws its steps into the canvases and copies canvas 0
     /// to the target.
     pub fn execute(&mut self, target: &Target, frame: &FramePlan) -> RenderStats {
@@ -321,6 +400,7 @@ impl GlesRenderer {
             return stats;
         }
         self.upload_glyphs();
+        self.upload_images();
         let size = target.size;
         let gl = &self.gl;
         unsafe {
@@ -380,32 +460,12 @@ impl GlesRenderer {
                 glow::ONE,
                 glow::ONE_MINUS_SRC_ALPHA,
             );
-            gl.use_program(Some(self.quad.program));
-            gl.uniform_4_f32(
-                gl.get_uniform_location(self.quad.program, "u_globals")
-                    .as_ref(),
-                size.0 as f32,
-                size.1 as f32,
-                target.scale,
-                0.0,
-            );
-            for (name, unit, texture) in [
-                ("u_clips", 0, self.clip_table),
-                ("u_grads", 1, self.gradient_table),
-                ("u_mask", 2, self.glyph_mask),
-                ("u_color", 3, self.glyph_color),
-            ] {
-                gl.active_texture(glow::TEXTURE0 + unit);
-                gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-                gl.uniform_1_i32(
-                    gl.get_uniform_location(self.quad.program, name).as_ref(),
-                    unit as i32,
-                );
-            }
+            self.bind_quad_uniforms(self.quad.program, size, target.scale);
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instances));
         }
 
+        let scale = target.scale;
         let mut pending_clear: Vec<Option<Color>> = vec![None; self.canvases.len()];
         for step in &frame.steps {
             match step {
@@ -415,12 +475,35 @@ impl GlesRenderer {
                     range,
                     image,
                 } => {
-                    if image.is_some() {
-                        self.report("images");
-                        continue;
-                    }
+                    let (program, texture, pixelated) = match image {
+                        Some((key, pixelated)) => match self.image_textures.get(key) {
+                            Some(t) => (self.image.program, Some(*t), *pixelated),
+                            None => continue,
+                        },
+                        None => (self.quad.program, None, false),
+                    };
                     let gl = &self.gl;
                     unsafe {
+                        self.bind_quad_uniforms(program, size, scale);
+                        if let Some(t) = texture {
+                            gl.active_texture(glow::TEXTURE4);
+                            gl.bind_texture(glow::TEXTURE_2D, Some(t));
+                            let filter = if pixelated {
+                                glow::NEAREST
+                            } else {
+                                glow::LINEAR
+                            };
+                            gl.tex_parameter_i32(
+                                glow::TEXTURE_2D,
+                                glow::TEXTURE_MIN_FILTER,
+                                filter as i32,
+                            );
+                            gl.tex_parameter_i32(
+                                glow::TEXTURE_2D,
+                                glow::TEXTURE_MAG_FILTER,
+                                filter as i32,
+                            );
+                        }
                         gl.bind_framebuffer(
                             glow::FRAMEBUFFER,
                             Some(self.canvases[*target].framebuffer),
@@ -496,11 +579,11 @@ impl UiBackend for GlesRenderer {
     type Target<'a> = Target;
 
     fn set_asset_root(&mut self, root: PathBuf) {
-        self.asset_root = Some(root);
+        self.images.set_root(root);
     }
 
-    fn image_size(&mut self, _: &(), _: &str) -> Option<(u32, u32)> {
-        None
+    fn image_size(&mut self, _: &(), url: &str) -> Option<(u32, u32)> {
+        self.images.image(url).map(|(_, size)| size)
     }
 
     fn render(&mut self, _: &(), target: &Target, clear: Color, cmds: &[DrawCmd]) -> RenderStats {
