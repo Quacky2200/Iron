@@ -37,6 +37,7 @@ pub(crate) mod models;
 mod native;
 mod native_pump;
 mod native_render;
+mod notice;
 mod panels;
 pub(crate) mod particles;
 mod payload;
@@ -3042,7 +3043,7 @@ impl PlatformApp for App {
             self.offline,
             self.lifecycle.paused() && !self.paused(),
         );
-        // A frame that changed nothing isn't swapped, so nothing waits for the display: 120 Hz
+        // A frame that changed nothing isn't swapped, so nothing waits for the display: 60 Hz
         // unless the game sets a rate.
         if self.gles.is_some() && !self.offline {
             return Some(cap.unwrap_or(gles_gfx::FRAME_CAP));

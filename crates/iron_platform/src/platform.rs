@@ -408,7 +408,13 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
             WindowEvent::RedrawRequested => {
                 // The other windows are drawn by the app after each main frame.
                 if key == WindowKey::MAIN {
-                    self.last_frame = Some(Instant::now());
+                    // Under a frame cap, stay on the schedule when a wake-up is a little late
+                    // (else every overshoot lowers the rate, e.g. 59 for 60).
+                    let now = Instant::now();
+                    self.last_frame = Some(match (self.app.frame_interval(), self.last_frame) {
+                        (Some(i), Some(last)) if now < last + i * 2 => last + i,
+                        _ => now,
+                    });
                     self.app.frame();
                     self.update_cursor(event_loop);
                     self.pump_windows(event_loop);

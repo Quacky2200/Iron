@@ -17,7 +17,7 @@ use super::App;
 
 /// Frames the loop runs at most per second when the swap interval doesn't pace it (a frame that
 /// changed nothing is not swapped, so nothing waits for the display).
-pub(crate) const FRAME_CAP: Duration = Duration::from_micros(8_333);
+pub(crate) const FRAME_CAP: Duration = Duration::from_micros(16_667);
 
 pub(crate) struct GlesGfx {
     pub(crate) window: Arc<Window>,
@@ -28,6 +28,8 @@ pub(crate) struct GlesGfx {
     report: (u32, Duration, Instant),
     /// What the window shows now (size, scale, draw lists), so an unchanged frame isn't redrawn.
     shown: Option<Shown>,
+    /// Shown instead of the UI once the game asks for the 3D world (built on first use).
+    notice: Option<super::notice::Notice>,
 }
 
 type Shown = (
@@ -56,6 +58,7 @@ impl GlesGfx {
             context,
             report: (0, Duration::ZERO, Instant::now()),
             shown: None,
+            notice: None,
         })
     }
 
@@ -133,6 +136,23 @@ impl App {
         })
     }
 
+    /// The UI's draw list, or the "3D not supported" screen when the game uses the world.
+    fn gles_ui_commands(&mut self, size: (u32, u32), scale: f32) -> Vec<iron_ui::DrawCmd> {
+        if self.world_view.needs_world()
+            && let Some(gles) = &mut self.gles
+        {
+            return gles
+                .notice
+                .get_or_insert_with(|| {
+                    super::notice::Notice::new(
+                        "3D is not supported by iron-app: run this with iron-game",
+                    )
+                })
+                .draw_list(size.0, size.1, scale);
+        }
+        self.ui.draw_list()
+    }
+
     /// Draws the UI (and the FPS counter over it) into the window's back buffer.
     fn draw_gles(
         &mut self,
@@ -157,7 +177,7 @@ impl App {
         let (dpi, size) = self.main_metrics().context("no window")?;
         let scale = super::ui_factor_for(dpi, size, self.ui_scale);
         self.load_gles_images();
-        let cmds = self.ui.draw_list();
+        let cmds = self.gles_ui_commands(size, scale);
         let fps_cmds = self.gles_fps_commands(size, dpi);
         self.draw_gles(size, scale, dpi, &cmds, fps_cmds.as_deref())?;
         let gles = self.gles.as_ref().context("no renderer")?;
@@ -184,7 +204,7 @@ impl App {
             ..self.ui.media_env()
         });
         self.load_gles_images();
-        let cmds = self.ui.draw_list();
+        let cmds = self.gles_ui_commands(size, scale);
         self.scene.scene.update_world();
         let fps_cmds = self.gles_fps_commands(size, dpi);
         let Some(gles) = &self.gles else {
