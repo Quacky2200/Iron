@@ -3,7 +3,8 @@
 
 use crate::Rect;
 use crate::paint::{
-    BackgroundPosition, BackgroundRepeat, BackgroundSize, ColorStop, Len, RepeatAxis,
+    BackgroundPosition, BackgroundRepeat, BackgroundSize, BorderImageRepeat, ColorStop, Len,
+    RepeatAxis,
 };
 
 /// Where one tile of an image of `natural` size goes in `area`, following CSS
@@ -124,4 +125,46 @@ pub fn resolve_stops(stops: &[ColorStop], line_length: f32) -> Vec<([f32; 4], f3
         .zip(pos)
         .map(|(s, p)| ([s.color.r, s.color.g, s.color.b, s.color.a], p.unwrap()))
         .collect()
+}
+
+/// Whether `url` names an SVG image.
+pub fn is_svg(url: &str) -> bool {
+    let url = url.trim();
+    if url.starts_with("data:") {
+        return url.starts_with("data:image/svg+xml");
+    }
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    path.to_ascii_lowercase().ends_with(".svg")
+}
+
+/// Lays tiles of size `tile` along one axis of a border image piece starting at
+/// `start` with length `len`: (tile start, tile size, gap, repeats), or `None`
+/// when `space` can't fit a single tile (CSS then draws nothing).
+pub fn border_image_axis(
+    start: f32,
+    len: f32,
+    tile: f32,
+    mode: BorderImageRepeat,
+) -> Option<(f32, f32, f32, bool)> {
+    if tile <= 0.0 {
+        return Some((start, len, 0.0, false));
+    }
+    Some(match mode {
+        BorderImageRepeat::Stretch => (start, len, 0.0, false),
+        // Centred, so the cut-off tiles at both ends match.
+        BorderImageRepeat::Repeat => (start + (len - tile) / 2.0, tile, 0.0, true),
+        BorderImageRepeat::Round => {
+            let n = (len / tile).round().max(1.0);
+            (start, len / n, 0.0, true)
+        }
+        BorderImageRepeat::Space => {
+            let n = (len / tile).floor();
+            if n < 1.0 {
+                return None;
+            }
+            // The leftover space goes around the tiles, ends included.
+            let gap = (len - n * tile) / (n + 1.0);
+            (start + gap, tile, gap, true)
+        }
+    })
 }

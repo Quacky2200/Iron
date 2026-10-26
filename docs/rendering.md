@@ -13,10 +13,13 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 | [surface.rs](../crates/iron_render/src/surface.rs) | `WindowSurface`: swapchain, resize, `present_with` |
 | [offscreen.rs](../crates/iron_render/src/offscreen.rs) | `OffscreenTarget`: texture + `read_pixels` (tests, screenshots) |
 | [lib.rs](../crates/iron_render/src/lib.rs) | `Color`, re-exports, `encode_clear` |
-| [ui/mod.rs](../crates/iron_render/src/ui/mod.rs) | `UiRenderer` and `render()` (the plan/record/submit pipeline) |
+| [ui/mod.rs](../crates/iron_render/src/ui/mod.rs) | `UiRenderer`, the **wgpu executor**: uploads a `FramePlan`, records and submits it |
+| [ui/plan.rs](../crates/iron_render/src/ui/plan.rs) | The **backend-neutral plan**: `plan()` turns a draw list into a `FramePlan` (no GPU object); `PlanResources` |
+| [ui/backend.rs](../crates/iron_render/src/ui/backend.rs) | The `UiBackend` trait the app-facing renderers implement (`UiRenderer` today) |
+| [ui/glyphs.rs](../crates/iron_render/src/ui/glyphs.rs) | `GlyphCache`: GPU-free glyph rasterizing and packing, with a queue of pixel uploads |
 | [ui/quad.wgsl](../crates/iron_render/src/ui/quad.wgsl) | Instanced shader: boxes, shadows, glyphs, gradients, clips, images |
 | [ui/effects.wgsl](../crates/iron_render/src/ui/effects.wgsl) | Fullscreen passes: blur, composite, blit |
-| [ui/atlas.rs](../crates/iron_render/src/ui/atlas.rs) | Glyph atlas (swash) |
+| [ui/atlas.rs](../crates/iron_render/src/ui/atlas.rs) | The wgpu glyph atlas: the page textures a `GlyphCache` fills |
 | [ui/gradient.rs](../crates/iron_render/src/ui/gradient.rs) | `iron_ui` gradients to the GPU struct |
 | [ui/images.rs](../crates/iron_render/src/ui/images.rs) | `url()` image cache, `background-size/position` math |
 | [testing.rs](../crates/iron_render/src/testing.rs) | Golden helpers and the shared test GPU |
@@ -60,9 +63,18 @@ resize before the next frame is black, not white.
 ## `UiRenderer::render`
 
 One call per frame: `render(gpu, &RenderTarget, clear, &[DrawCmd]) -> RenderStats`. It has three
-stages. Planning never touches the GPU encoder, which keeps the logic easy to reason about.
+stages, and the first is **backend-neutral**: `plan::plan(cmds, &PlanParams, &mut dyn PlanResources)`
+returns a `FramePlan` (`instances`, `gradients`, the clip/transform `clips` table, `steps`, and the
+count of frame-sized `textures`) and holds no GPU object. What planning needs from a renderer
+comes through `PlanResources`: `glyph` (place a glyph in the atlas), `image` (an image's natural
+size) and `svg_at` (an SVG rasterized for a size). `WgpuResources` in mod.rs is the wgpu one; a
+second renderer (the GLES one for `iron-app`, through ANGLE) supplies its own, uses the same
+`GlyphCache` for the glyphs, and executes the same `Step`s over its own textures. `UiBackend`
+(backend.rs) is the app-facing trait; the wgpu `UiRenderer` implements it. The planner is tested
+without a GPU (`tests/plan.rs`, `M2-PLN-01..07`); the golden tests (`tests/ui.rs`) check the wgpu
+executor.
 
-### 1. Plan: commands to instances and steps
+### 1. Plan: commands to instances and steps (`plan.rs`)
 
 Walk `cmds` once, producing:
 
@@ -230,7 +242,7 @@ in both shader files; keep them in sync with `GpuClip` in mod.rs.
 
 ## Glyph atlas and images
 
-- [atlas.rs](../crates/iron_render/src/ui/atlas.rs): two pages (2048 R8 coverage, 1024 RGBA colour),
+- [glyphs.rs](../crates/iron_render/src/ui/glyphs.rs) (GPU-free) and [atlas.rs](../crates/iron_render/src/ui/atlas.rs) (wgpu): `GlyphCache` places glyphs and queues their pixels as `GlyphUpload`s, `GlyphAtlas` writes them into two page textures before the frame's draws. Two pages (2048 R8 coverage, 1024 RGBA colour),
   `etagere` bucketed allocation, 1 px padding. Keys include font blob id, glyph id, size x 4,
   subpixel bin, variable-font coordinates, synthetic bold/skew, stroke width (x4; 0 for the fill). Strokes use swash's `Stroke`. Rasterized with `swash`. When a page
   fills, the whole atlas is cleared at the start of the next frame and visible glyphs re-rasterize.

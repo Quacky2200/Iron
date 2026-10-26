@@ -120,6 +120,13 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-07 | Golden | `filter: blur` blurs a box and its children; nothing outside the layer bounds changes. |
 | M2-DRW-08 | Golden | `backdropFilter: blur` blurs only what's behind the box, clipped to its rounded shape. |
 | M2-DRW-09 | Integration | Drawing skips subtrees scrolled out of a clipping container (beyond a margin), also below intermediate boxes; scrolling brings them back; a far-off box with a shadow is still drawn. |
+| M2-PLN-01 | Unit | The frame plan of two boxes: two instances in one `Draw` step after a `Clear` of the canvas, one texture, no layers or clips (no GPU). |
+| M2-PLN-02 | Unit | A plan for a canvas seeded with the world has no `Clear` step. |
+| M2-PLN-03 | Unit | A blurred, translucent layer: three textures (canvas, layer, blur scratch), a `Blur` step at the scaled sigma and a `Composite` onto the canvas at its opacity. |
+| M2-PLN-04 | Unit | An `overflow: hidden` clip is one clip-table entry and its children's instances carry its index. |
+| M2-PLN-05 | Unit | Text plans one glyph instance per visible glyph and queues the glyph pixels in the `GlyphCache` (not again on a second plan). |
+| M2-PLN-06 | Unit | An image fill plans a `Draw` step naming its texture; an image the resources don't know is skipped. |
+| M2-PLN-07 | Unit | `needs_backdrop` finds backdrop filters without planning. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

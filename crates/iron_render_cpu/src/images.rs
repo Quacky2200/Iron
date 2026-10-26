@@ -45,15 +45,6 @@ pub struct Images {
     draw: u64,
 }
 
-fn is_svg(url: &str) -> bool {
-    let url = url.trim();
-    if url.starts_with("data:") {
-        return url.starts_with("data:image/svg+xml");
-    }
-    let path = url.split(['?', '#']).next().unwrap_or(url);
-    path.to_ascii_lowercase().ends_with(".svg")
-}
-
 fn short(url: &str) -> &str {
     match url.char_indices().nth(60) {
         Some((i, _)) => &url[..i],
@@ -128,7 +119,7 @@ impl Images {
     /// Reads the file and its size (from the header: nothing is decoded yet).
     fn load(&mut self, url: &str) -> Option<Entry> {
         let bytes = self.bytes(url)?;
-        if is_svg(url) {
+        if iron_ui::is_svg(url) {
             let tree = match usvg::Tree::from_data(&bytes, self.options()) {
                 Ok(t) => Arc::new(t),
                 Err(e) => {
