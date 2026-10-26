@@ -17,6 +17,14 @@ pub enum RenderError {
     Unsupported(String),
 }
 
+static LOW_MEMORY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Asks the GPU allocator for small blocks (`MemoryHints::MemoryUsage`) instead of fast ones,
+/// for apps that are only UI. Call before the first [`Gpu`] is made.
+pub fn set_low_memory(on: bool) {
+    LOW_MEMORY.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The GPU device and queue every renderer shares.
 pub struct Gpu {
     pub instance: wgpu::Instance,
@@ -99,8 +107,8 @@ impl Gpu {
                 required_limits:
                     wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
                 // The default (Performance) reserves 32-64 MB blocks, ~240 MB for a UI-only
-                // game; a `ui_app_only` build asks for small ones.
-                memory_hints: if iron_core::UI_APP_ONLY {
+                // app; `iron-app` asks for small ones ([`set_low_memory`]).
+                memory_hints: if LOW_MEMORY.load(std::sync::atomic::Ordering::Relaxed) {
                     wgpu::MemoryHints::MemoryUsage
                 } else {
                     wgpu::MemoryHints::default()

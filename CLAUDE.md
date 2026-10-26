@@ -34,9 +34,9 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/iron_app` (render_sync.rs, native_render.rs) | The render side of the native backend: registries to `WorldViews` ops each frame, world panels with their own reconciler, cloth, `UiResources`, cursor, screen and quality; see `docs/iron-api.md` |
 | `crates/iron_app` (windows.rs) | Secondary windows (`Window.create`): a UI tree, interaction and surface (or offscreen target in screenshot runs) per window, event routing, per-domain dispatch of isolated families, `--screenshot` writing `out-<slug>.png`; the platform side is `iron_platform/src/windows.rs` + the runner, the API `iron_engine_api::window`; guide `docs/windows.md` |
 | `crates/iron_native` | `register_quickjs` / `install`: every native `#[iron_api]` namespace (math, scene, engine services, scenes, physics, rendering data) installed in a QuickJS context |
-| `crates/iron_render_cpu` | CPU renderer for the UI draw list (`vello_cpu` + `softbuffer`), used by `iron_app`'s `ui_app_only` feature (no GPU driver; experimental, see `docs/rendering.md`) |
+| `crates/iron_render_cpu` | CPU renderer for the UI draw list (`vello_cpu` + `softbuffer`, images decoded lazily at drawn size). Not used by the hosts (UI apps are to use a GLES renderer through ANGLE); kept as a reference renderer and for the shared-draw-list work (`docs/rendering.md`) |
 | `crates/iron_pack` | Asset packs (`.irpk`): `PackWriter`, `Pack`, `Vfs` over loose folders and packs; design `docs/research/iron-asset-packs.md` |
-| `crates/iron_app` | The `iron` binary: `iron [game folder] [--screenshot out.png] [--frames N] [--fps|--no-fps]` (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `IRON_FPS=0` or `"fps": false` in `project.json`). Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer. `iron_editor` is a second binary of the same code that runs `editor/` |
+| `crates/iron_app` | The engine host, three binaries of one source told apart by name (`host.rs`): `iron-game` (games, the default of `cargo run -p iron_app`), `iron-app` (projects with `"type": "app"` in `project.json`: UI only, the 3D world renderer is never built, small GPU allocations; to move to a GLES renderer through ANGLE) and `iron_editor`. `iron-game [game folder] [--screenshot out.png] [--frames N] [--fps|--no-fps]` (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `IRON_FPS=0` or `"fps": false` in `project.json`). Loads `dist/game.js` + `dist/game.css` and wires scripts → UI → renderer. `iron_editor` is a second binary of the same code that runs `editor/` |
 | `js/engine` | `@iron/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random`; 2D shapes: `LineRenderer2D` (SDF strokes, fills, `sortingOrder`) and `Shapes` (lines.ts), `TextMesh`, `Spline`/`SplineAnimate` (spline.ts), `Gizmos` (gizmos.ts). Transforms reach Rust batched (`flushTransforms` → one `scene.locals` op per script turn) |
 | `js/editor-ui` | `@iron/editor-ui`: editor components drawn by Iron's UI (`MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`), logic in plain modules (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) |
 | `editor/` | The editor's UI, run by `iron_editor` (`crates/iron_app/src/bin/iron_editor.rs`, `editor.rs`); see `docs/editor.md` |
@@ -90,7 +90,7 @@ cargo run -p iron_app -- examples/world --cook
 ```bash
 cd tools && cargo run -p iron_build -- package ../examples/boxes --icon icon.png
 ```
-`iron-build package <game>` writes `<game>/dist/<name>.exe`: one file holding `iron_app` (the host, from `target/{release,debug}` or `--host`),
+`iron-build package <game>` writes `<game>/dist/<name>.exe`: one file holding the host (`iron-game`, or `iron-app` for `"type": "app"`, from `target/{release,debug}` or `--host`),
 the game's bundle, CSS and assets, and the icon and version info from `project.json` (`docs/iron-build.md`).
 
 - Examples are games compiled by `iron-build` (no bun, no `node_modules`; engine and UI names are the globals of the generated,
@@ -141,10 +141,10 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
 - **Modules:** a bare import (`from "foo"`) is a file of `src/modules/` (next to the entry); there is no `node_modules` resolution, so a TypeScript package is used by copying its `.ts` source in (`docs/iron-build.md`, "Modules and packages"). A module may not capture engine global names (it is renamed internally); unreferenced top-level functions are not compiled.
 - **Shell edits:** never create or change files with bash heredocs, `echo`/`cat` redirects or `python -c` strings, even though the tools are installed: they mangle apostrophes and backslashes on this machine. Always use the Edit/Write tools, or a Python script saved as a file (written with Write, then run).
 - **Interrupted builds:** if cargo was killed mid-build, delete the corrupt `.pdb` files under `target/` before rebuilding.
-- **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/iron_app.exe`.
+- **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/iron-game.exe` (and `iron-app.exe`).
   Run `cargo build -p iron_app` before any manual check in the window. A running window locks the
   exe, so close it before rebuilding.
-- **Logs:** `iron` is a GUI-subsystem program. Its log goes to `Player.log` (last run:
+- **Logs:** `iron-game` / `iron-app` are GUI-subsystem programs. Its log goes to `Player.log` (last run:
   `Player-prev.log`) next to the game's `prefs.json`, with ANSI colours, and to stderr when
   started from a terminal or piped. Screenshot runs write no file unless `IRON_LOG_FILE` is set.
 - **Graphics backend:** Vulkan by default on Windows; `WGPU_BACKEND=dx12` switches.

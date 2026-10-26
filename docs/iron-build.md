@@ -43,6 +43,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
   one warning per empty metadata field (`title`, `company`, `identifier`, `version`, `description`, `copyright`, `license`), e.g.
   `warning: C:\Games\fox\project.json: "company" is empty (the exe's version info will have no company)`. `iron-build check` never does.
   `package` also warns (it never blocks) when `company`, `copyright` or `license` were left out and so still hold their defaults.
+- **`type`: `game` (default) or `app`.** Which host runs and packages the project (`iron_core::project::ProjectType`). A **game** runs on `iron-game`: the full engine (Vulkan, DX12 or Metal through wgpu, the 3D world). An **app** runs on `iron-app`: only UI, so the 3D world renderer is never built and the GPU allocates small blocks (the clock went from ~306 MB to ~135 MB private); it is the light host, whose renderer is planned to be GLES through ANGLE. The three programs are one source, told apart by their name at compile time (`iron_app/src/host.rs`, as `iron_editor` is). `iron-build package` reads `type` first and embeds the matching host (`--host` and `$IRON_HOST` still override); `iron-game` and `iron-app` warn or note at start when a project's type is not theirs but run it anyway. Any other value of `type` is an error naming it.
 - **Deprecated fallback:** a folder with no `project.json` but a `package.json` with an `iron` section still works: the loader reads that
   section (without templates) plus the file's `name`, `version`, `author` and `description` (and the old defaults: title `${name}`, empty
   company, version `0.0.0`). It is found as a game by `check` too. With a `project.json`, `package.json` is not read at all.
@@ -148,7 +149,7 @@ as the templates resolve now:
    GUID when the move is unambiguous). Every string literal of the program that names an existing asset file under the game folder
    (`Texture.load("assets/x.png")`, `Model.load`, `loadFont`, `scenes/*.scene.json`, sounds) is copied with its `.meta` to the same
    relative path in `dist/`. Paths follow `iron_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then
-   runs `iron <game> --cook` (the engine's cooker) when `target/{release,debug}/iron_app` is found.
+   runs `iron-game <game> --cook` (the engine's cooker) when `target/{release,debug}/iron-game` is found.
 7. **`dist/game.irbundle`**, written atomically (temporary file and rename).
 
 ## Dynamic asset paths and `dist/assets.plan`
@@ -329,7 +330,7 @@ bundle is untouched). Hot reload keeps state the way the QuickJS reload does (sc
 ## Packaging a single executable (`iron-build package`)
 
 ```
-iron-build package <game> [--host iron_app.exe] [--out file] [--no-build] [--no-tsc]
+iron-build package <game> [--host iron-game.exe] [--out file] [--no-build] [--no-tsc]
     [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d]
     [--icon file.png|.ico] [--sign-cmd "signtool sign /fd sha256 ... {exe}"] [--data-dir name] [--no-data]
     [--packs [--report]]
@@ -384,7 +385,7 @@ codec, GUID, path).
 default stays loose; flipping it is a TODO (`tools/iron_ts/TODO.md`, asset packs). `emoji` with `--packs`: one `assets.dat`, 157
 entries, 6.41 MB raw, 5.93 MB on disk.
 
-**The host** is `--host`, else `$IRON_HOST`, else the newest of `iron_app` next to `iron-build` and `target/{release,debug}/iron_app`
+**The host** is `--host`, else `$IRON_HOST`, else the newest of the project type's host (`iron-game`, or `iron-app` for `"type": "app"`) next to `iron-build` and in `target/{release,debug}/`
 found going up from the game folder and the current folder, by modified time (a stale release build no longer wins over a fresh
 debug one; it lacked payload support and died with a missing `game.js`). `package` prints `host: <path>` first. A host that already carries a payload is stripped first, so
 a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much smaller: ship release.

@@ -6,13 +6,13 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
-
-[features]
-# A UI-only app: no GPU driver (see `iron_core::UI_APP_ONLY`).
-ui_app_only = ["iron_core/ui_app_only", "dep:iron_render_cpu"]
+# `iron-game` (the default), `iron-app` and `iron_editor` are the same program told apart by
+# their name (`host.rs`); `iron-game` runs `project.json` projects of type `game`, `iron-app`
+# those of type `app`.
+default-run = "iron-game"
+autobins = false
 
 [dependencies]
-iron_render_cpu = { path = "../iron_render_cpu", optional = true }
 anyhow = "1.0.104"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
@@ -49,8 +49,21 @@ gltf = { version = "1.4.1", default-features = false, features = ["utils", "name
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 
+
+# Games: the full engine (Vulkan / DX12 / Metal through wgpu, the 3D world).
+[[bin]]
+name = "iron-game"
+path = "src/main.rs"
+
+# Apps: only UI, with a lighter renderer (`src/bin/iron_ui_app.rs`: main.rs again, see `host.rs`).
+[[bin]]
+name = "iron-app"
+path = "src/bin/iron_ui_app.rs"
+test = false
+
 # The editor (`src/bin/iron_editor.rs`): the same program loading the editor's UI.
 # Its tests are iron_app's, so they don't run twice.
 [[bin]]
 name = "iron_editor"
+path = "src/bin/iron_editor.rs"
 test = false

@@ -33,7 +33,7 @@ Screenshot run: `iron_app examples/crowd --screenshot out.png --frames 150` (the
 GPUs; the screenshot run is safest). A windowless benchmark of every view, count and mode:
 
 ```bash
-target/release/iron_app.exe examples/crowd --bench --bench-input tools/bench/inputs/crowd.json \
+target/release/iron-game.exe examples/crowd --bench --bench-input tools/bench/inputs/crowd.json \
   --fixed-dt 0.0166667 --size 1280x720 --bench-out out.json
 ```
 

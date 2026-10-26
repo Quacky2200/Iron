@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron-build`: builds a game written in TypeScript into `dist/` for `iron_app`, with no bun and no
+//! `iron-build`: builds a game written in TypeScript into `dist/` for the engine hosts (`iron-game`, `iron-app`), with no bun and no
 //! `node_modules` (see `docs/iron-build.md`).
 //!
 //! A build reads `project.json` (deprecated fallback: the `iron` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
@@ -598,7 +598,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
                 }
             }
             None => warnings
-                .push("--cook: the `iron` binary was not found (cargo build -p iron_app)".into()),
+                .push("--cook: the `iron-game` binary was not found (cargo build -p iron_app --bin iron-game)".into()),
         }
     }
     Ok(Report {
@@ -614,15 +614,15 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     })
 }
 
-/// The engine binary, for `--cook`: next to the repo's `target/`, or on the PATH.
+/// The `iron-game` binary, for `--cook`: next to the repo's `target/`, or on the PATH.
 pub fn find_iron(root: &Path) -> Option<PathBuf> {
     let mut p = root.canonicalize().ok()?;
     while p.pop() {
         for rel in [
-            "target/release/iron_app.exe",
-            "target/debug/iron_app.exe",
-            "target/release/iron_app",
-            "target/debug/iron_app",
+            "target/release/iron-game.exe",
+            "target/debug/iron-game.exe",
+            "target/release/iron-game",
+            "target/debug/iron-game",
         ] {
             let c = p.join(rel);
             if c.exists() {

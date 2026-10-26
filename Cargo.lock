@@ -2275,7 +2275,6 @@ dependencies = [
  "iron_platform",
  "iron_render",
  "iron_render_api",
- "iron_render_cpu",
  "iron_scene",
  "iron_scenes",
  "iron_script",

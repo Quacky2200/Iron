@@ -40,6 +40,8 @@ pub struct Manifest {
     /// `iron.lightUnits`: `physical` for real-world units (the sun in lux, lamps in lumens,
     /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Iron's own).
     pub physical_units: bool,
+    /// `type`: `game` or `app` (which host is meant to run it).
+    pub project_type: iron_core::project::ProjectType,
 }
 
 impl Manifest {
@@ -85,6 +87,7 @@ impl Manifest {
             run_in_background: p.run_in_background,
             fps: p.fps,
             physical_units,
+            project_type: p.project_type,
         }
     }
 }

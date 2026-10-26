@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn an_exe_without_a_payload_is_the_plain_host() {
         let d = temp("plain");
-        let exe = d.join("iron_app.exe");
+        let exe = d.join("iron-game.exe");
         std::fs::write(&exe, vec![0u8; 4096]).unwrap();
         assert_eq!(prepare(&exe, &d).unwrap(), None);
     }

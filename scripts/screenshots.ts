@@ -25,9 +25,9 @@ function run(cmd: string[]): boolean {
   return result.exitCode === 0;
 }
 
-// QuickJS bundles (deprecated) need `iron_app --force`; iron_editor forces itself. Examples are native.
+// QuickJS bundles (deprecated) need `iron-game --force`; iron_editor forces itself. Examples are native.
 // The app binaries aren't rebuilt by `cargo test`, so build them once up front.
-if (!run(["cargo", "build", "-p", "iron_app"])) process.exit(1);
+if (!run(["cargo", "build", "-p", "iron_app", "--bin", "iron-game", "--bin", "iron_editor"])) process.exit(1);
 const bin = (name: string) => join(root, "target", "debug", process.platform === "win32" ? `${name}.exe` : name);
 
 let failed = 0;
@@ -35,7 +35,7 @@ for (const name of names) {
   const editor = name === "editor";
   const out = join(output, editor ? "editor.png" : `examples-${name}.png`);
   const game = editor ? [] : [join("examples", name)];
-  const ok = run([bin(editor ? "iron_editor" : "iron_app"), ...game, "--screenshot", out, "--frames", "30"]);
+  const ok = run([bin(editor ? "iron_editor" : "iron-game"), ...game, "--screenshot", out, "--frames", "30"]);
   console.log(ok ? `wrote ${out}` : `failed: ${name}`);
   if (!ok) failed++;
 }

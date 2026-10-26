@@ -18,8 +18,8 @@ note once and runs). Porting the editor to iron_ts is part of the removal plan i
 
 ## One program, two binaries
 
-`crates/iron_app` has two binary targets. `iron_app` is `src/main.rs`. `iron_editor` is
-`src/bin/iron_editor.rs`, which includes main.rs with `#[path = "../main.rs"] mod app;` and
+`crates/iron_app` has three binary targets. `iron-game` is `src/main.rs`. `iron-app` and `iron_editor` are
+`src/bin/iron_ui_app.rs` and `src/bin/iron_editor.rs`, which include main.rs with `#[path = "../main.rs"] mod app;` and
 re-exports the modules that reach each other through `crate::` (`info`, `models`, `particles`,
 which main.rs declares `pub(crate)`). The `[[bin]]` entry sets `test = false`, so the tests don't
 run twice.

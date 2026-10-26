@@ -29,25 +29,19 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 resolution limits. `WindowSurface` prefers an sRGB format, starts with `AutoNoVsync` (the app sets it per frame from `vSyncCount`), tolerates 0x0 sizes
 (minimized: frames are skipped) and reconfigures on `Outdated`/`Lost`/`Suboptimal`.
 
-The `ui_app_only` feature (`cargo build -p iron_app --features ui_app_only`, `iron_core::UI_APP_ONLY`, a compile-time constant) is for apps that are only UI: the device asks wgpu for
-`MemoryHints::MemoryUsage` (small allocation blocks) instead of the default `Performance`. For a clock
-that took private bytes from ~308 MB to ~143 MB on Vulkan (the working set stays ~125 MB). Without the
-feature the default is kept. What remains is mostly the NVIDIA driver (wgpu's own allocator
-holds ~28 MB, the Rust heap ~4 MB); the 3D world renderer is still built, so a lazy `WorldRenderer`
-is the next step.
+`iron-app` (`project.json` `"type": "app"`, `docs/iron-build.md`) is the host for apps that are only UI. It asks the GPU allocator
+for `MemoryHints::MemoryUsage` (small allocation blocks, `iron_render::set_low_memory`) instead of the default `Performance`, and its
+3D `WorldRenderer` is built only if something asks for it (`lazy_world.rs`; `iron-game` builds it at once). For a clock that took private
+bytes from ~306 MB to ~135 MB on Vulkan (NVIDIA, Windows); the working set stays ~122 MB. What remains is mostly the driver (wgpu's
+own allocator holds ~28 MB, the Rust heap ~4 MB). The renderer for apps is planned to be GLES through ANGLE (a bare ANGLE/D3D11 context
+measured ~61 MB private against ~138 MB for NVIDIA's OpenGL driver and ~135 MB for wgpu on Vulkan); wgpu cannot use ANGLE on Windows
+(its Windows GL backend is WGL only), so that is a native GLES renderer behind the same draw list (`iron_ui::DrawCmd`).
 
-With the feature, the main window is drawn by the CPU instead (`crates/iron_render_cpu`, `vello_cpu` +
-`softbuffer`; `iron_app/src/cpu_gfx.rs`): no wgpu device, no GPU driver is loaded. The clock then uses
-~16 MB private / ~40 MB working set (GPU: ~135 / ~122 MB), about 1 ms per frame. Frames are capped at 120 Hz
-(`CPU_FRAME_CAP`, unless the game sets a rate) and a frame whose draw lists equal the last one's is not
-redrawn or presented (the FPS counter still counts the paced frames). It draws boxes (colour, uniform border,
-rounded corners), box shadows, text, clips, opacity layers and affine transforms. Gradients and images,
-backdrop blur, filters, blends, masks, per-side borders, inset shadows, perspective and the 3D world, world
-panels and secondary windows are not drawn (each skipped command is logged once).
-Images are handled as a browser does: a file is read but not decoded until it is drawn, its size comes from the
-header, a raster is kept only downscaled to about its drawn size (an SVG rasterized at it), and copies not drawn
-for ~180 draws are dropped. The launcher (41 screenshots of 1280x720) went from ~200 MB to ~75 MB after browsing
-it all.
+`crates/iron_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all (the clock: ~16 MB
+private). It draws boxes, borders (also per side), gradients, images and SVGs (decoded lazily, downscaled to the size drawn,
+dropped when unused), shadows, text, clips, layers, blur and backdrop blur, and affine and perspective transforms (a perspective
+subtree is drawn flat, cached and warped); not `border-image`, masks, layer colour matrices and drop shadows, nor the 3D world. It is
+not wired into either host: apps are meant to be accelerated.
 
 Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
 resizing jitter. `IRON_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On

@@ -13,7 +13,7 @@ fn run(name: &str, flag: &str) -> (PathBuf, String) {
     let game = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello.js");
     let png = dir.join("out.png");
     let log = dir.join("run.log");
-    let status = Command::new(env!("CARGO_BIN_EXE_iron_app"))
+    let status = Command::new(env!("CARGO_BIN_EXE_iron-game"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)

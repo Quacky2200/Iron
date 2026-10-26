@@ -17,7 +17,6 @@ mod bench;
 pub(crate) mod bone_cache;
 mod cloth_sync;
 pub(crate) mod cook;
-mod cpu_gfx;
 mod cursor;
 mod display;
 mod editor;
@@ -25,12 +24,14 @@ mod file_drop;
 mod fps;
 mod frame_target;
 mod game_input;
+mod host;
 // `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
 // re-exports these at its root, for the `crate::` paths between modules.
 pub(crate) mod info;
 mod lazy_world;
 mod lifecycle;
 mod logging;
+mod main_window;
 pub(crate) mod models;
 mod native;
 mod native_pump;
@@ -72,8 +73,6 @@ const MAX_TICKS_PER_FRAME: u32 = 5;
 const MAX_FRAME_DT: f64 = 0.1;
 /// Pixels per wheel notch ("line"), like browsers.
 const WHEEL_LINE: f32 = 40.0;
-/// The CPU renderer's frame cap (120 Hz).
-const CPU_FRAME_CAP: Duration = Duration::from_micros(8_333);
 const CLEAR: Color = Color::rgb(0.05, 0.06, 0.09);
 
 struct Args {
@@ -344,6 +343,16 @@ fn run() -> Result<()> {
     // The game's manifest and the machine, for `Application` and `SystemInfo`, before
     // the bundle's top level runs.
     let manifest = info::Manifest::load(&code_root);
+    // The host is whichever program was started; `type` says which one the project is for.
+    let wanted = manifest.project_type;
+    if host::IS_UI_APP && wanted != iron_core::project::ProjectType::App {
+        tracing::warn!(
+            "this project's type is `game`: iron-app draws only its UI (no 3D world); run it with iron-game"
+        );
+    } else if !host::IS_UI_APP && !editor::ENABLED && wanted == iron_core::project::ProjectType::App
+    {
+        tracing::info!("this project's type is `app`: iron-app is its lighter host");
+    }
     // `Window.main` starts with the manifest's title; the real size and scale come with the window.
     iron_engine_api::window::set_main(&manifest.title, (1280.0, 720.0), 1.0);
     iron_engine_api::window::set_supported(iron_platform::Os::current().supports_windows());
@@ -534,7 +543,6 @@ fn run() -> Result<()> {
         vfs,
         code_root: code_root.clone(),
         gfx: None,
-        cpu: None,
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, offline),
@@ -717,8 +725,6 @@ fn draw_frame(
 }
 
 struct App {
-    /// The main window drawn by the CPU (`ui_app_only` builds), instead of `gfx`.
-    cpu: Option<cpu_gfx::CpuGfx>,
     /// The player's saved settings (`PlayerPrefs`), written on `prefs.save` and on exit.
     prefs: prefs::Prefs,
     /// The window's mode and size, as last applied.
@@ -2432,10 +2438,6 @@ impl App {
     }
 
     fn save_screenshot(&mut self, path: &Path) -> Result<()> {
-        #[cfg(feature = "ui_app_only")]
-        if self.cpu.is_some() {
-            return self.save_screenshot_cpu(path);
-        }
         let gfx = self.gfx.as_mut().context("no renderer")?;
         let (w, h) = gfx.surface.size();
         let target =
@@ -2550,10 +2552,9 @@ impl PlatformApp for App {
         if !self.offline && self.display.mode != iron_platform::FullScreenMode::Windowed {
             self.display = iron_platform::display::apply(&window, &self.display);
         }
-        if iron_core::UI_APP_ONLY {
-            #[cfg(feature = "ui_app_only")]
-            self.install_cpu(window);
-            return;
+        if host::IS_UI_APP {
+            // Small GPU blocks; the world renderer is built only if something asks for it.
+            iron_render::set_low_memory(true);
         }
         let size = window.inner_size();
         match Gpu::with_surface(window.clone(), size.width, size.height) {
@@ -2855,12 +2856,6 @@ impl PlatformApp for App {
         // Again, for a UI scale the scripts changed this frame.
         self.sync_screen();
         let render_started = Instant::now();
-        #[cfg(feature = "ui_app_only")]
-        if self.cpu.is_some() {
-            self.render_cpu(render_started);
-            self.count_frame();
-            return;
-        }
         let Some(gfx) = &mut self.gfx else {
             return;
         };
@@ -3023,17 +3018,12 @@ impl PlatformApp for App {
     }
 
     fn frame_interval(&self) -> Option<Duration> {
-        let cap = lifecycle::frame_cap_with(
+        lifecycle::frame_cap_with(
             self.target_frame_rate,
             self.world_view.quality.vsync,
             self.offline,
             self.lifecycle.paused() && !self.paused(),
-        );
-        // The CPU renderer has no swapchain to pace frames: 120 Hz unless the game sets a rate.
-        if self.cpu.is_some() && !self.offline {
-            return Some(cap.unwrap_or(CPU_FRAME_CAP));
-        }
-        cap
+        )
     }
 
     /// Paused only when every event domain is (a live inspector window keeps the app running).

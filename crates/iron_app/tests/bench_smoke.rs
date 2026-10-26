@@ -35,7 +35,7 @@ fn a_bench_run_times_a_native_game_without_a_window() {
     std::fs::write(&spec, SPEC).unwrap();
     let out = dir.join("out.json");
     let log = dir.join("run.log");
-    let status = Command::new(env!("CARGO_BIN_EXE_iron_app"))
+    let status = Command::new(env!("CARGO_BIN_EXE_iron-game"))
         .arg(&game)
         .args(["--bench", "--fixed-dt", "0.02", "--size", "320x200"])
         .arg("--bench-input")

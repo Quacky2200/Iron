@@ -19,7 +19,7 @@ fn run(name: &str, game: PathBuf, extra: &[&str]) -> Run {
     std::fs::create_dir_all(&dir).unwrap();
     let png = dir.join("out.png");
     let log = dir.join("run.log");
-    let output = Command::new(env!("CARGO_BIN_EXE_iron_app"))
+    let output = Command::new(env!("CARGO_BIN_EXE_iron-game"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)

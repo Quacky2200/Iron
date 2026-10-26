@@ -1406,7 +1406,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2550 | Unit | Globs (`iron_core::glob`): `*` stays inside one path part, `**` crosses parts, `?`, case-sensitive; a plain path in `include` means the folder below it. |
 | M9-TS-2551 | Unit | Dynamic path inference (`iron_ts::assetpaths`): templates and `+` chains become globs, one `*` per hole (nested holes too); prefix-less paths, paths without a file name, URLs and text with spaces are refused; whole literals and lines are reported. |
 | M9-TS-2552 | Unit | `include` / `exclude` selection (`iron_build::include`) and `collect_files`: globs work, a pattern's matches are copied under a narrowed `include`, `exclude` removes files, an unmatched `include` is a warning not a silent drop. |
-| M9-TS-2553 | Manual | `iron-build package examples/emoji --host target/debug/iron_app.exe --out <dir>/emoji.exe`, then `emoji.exe --screenshot out.png --frames 150` from that folder with `IRON_LOG_FILE`: no `not found`, the sounds decode and the SVG emoji are drawn (checked 2026-10-22). |
+| M9-TS-2553 | Manual | `iron-build package examples/emoji --host target/debug/iron-game.exe --out <dir>/emoji.exe`, then `emoji.exe --screenshot out.png --frames 150` from that folder with `IRON_LOG_FILE`: no `not found`, the sounds decode and the SVG emoji are drawn (checked 2026-10-22). |
 | M9-TS-2554 | Unit | Pack placement (`iron_build::packs`): an asset only one scene names goes to that scene's pack, one two scenes name, or the code, a dynamic path or `include` takes goes to `assets.dat`; prefabs are followed; the scene file is the first entry of its own pack; scene slugs stay distinct. |
 | M9-TS-2556 | Unit | Two builds of the same files write identical bytes and remove an old pack; two keys that differ only in case are an error. |
 | M9-TS-2558 | Unit | A pack written by the build reads back byte-identical through `iron_pack::Pack` and `Vfs` (GUIDs and importer text from `.meta`, LZ4 for text, mp3 stored, `verify`), and `pack-info` lists it. |
@@ -1439,6 +1439,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1318 | Unit | `license` defaults to `private`, is validated case-insensitively against the list, `custom` takes `licenseFile`, the npm mapping. |
 | M9-API-1321 | Unit | `name` is the only required field: missing or empty is an error naming `project.json`; a command-line override counts. |
 | M9-API-1322 | Unit | An explicitly empty string field stays empty (no default), is listed in `empty_fields` with a warning text, and round-trips through the resolved project. |
+| M9-API-1330 | Unit | `type` in `project.json`: `game` by default, `app` runs on the `iron-app` host (`ProjectType::host`), is a known key (not in `extra`) and round-trips through `to_json` (the default is not written); any other value is an error naming `type`. |
 | M9-API-1320 | Unit | `iron_app` `Manifest::load` of a folder uses `project.json` (title, identifier, startScene, layers, platform fps); a broken template leaves the defaults. |
 | M9-TS-2700 | Unit | `init` writes the default templates, `src/main.ts`, and the resolved preview for a given user; the result builds. |
 | M9-TS-2701 | Unit | `init` flags replace only their own fields. |
@@ -1493,7 +1494,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1148 | Unit | `load_sound` loads a WAV whole and streamed from a pack-only `Vfs` (offline mixer, no GPU) and a miss says `not found in assets.dat` (`iron_app/src/main.rs`). |
 | M9-API-1149 | Unit | A UI SVG image loads from the installed asset file system, not the folder (`iron_render::ui::images`). |
 | M9-API-1205 | Unit | `asset_root::mount`: loose folder, packs from `index.json` in any manifest order (scene packs above `assets.dat`), packs found by name without a manifest, a manifest path outside the folder or a missing pack is an error. |
-| M9-API-1150 | Manual | `iron-build package examples/emoji --packs --host target/debug/iron_app.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
+| M9-API-1150 | Manual | `iron-build package examples/emoji --packs --host target/debug/iron-game.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
 | M9-API-1151 | Unit | `Assets.exists` / `list` / `packOf` in QuickJS answer from the host's index: sorted keys, the `project.json` glob rules, `guid:` and `data:` sources, the pack of each path, nothing without an index (`iron_engine_api/tests/batch1.rs`). |
 | M9-API-1107 | Unit | Stored, LZ4 and deflate packs read back the same bytes; compressed text shrinks over 4x. |
 | M9-API-1108 | Unit | A pack inside a larger file (an APK asset) opens at its offset, mapped and read. |
@@ -1691,6 +1692,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2917 | Integration | A rejection handled in the same drain is not reported; a `then` chain reports only its last promise. |
 | M9-TS-2918 | Integration | An exception escaping a `setTimeout` or `queueMicrotask` callback is reported and the other timers still run. |
 | M9-TS-2919 | Integration | Clear compile errors: `Promise.all` of promises of different types, top-level `await`, `Promise<Promise<T>>`, async generators, a generic promise of a type no `Promise<..>` names (alias). |
+| M9-TS-2600 | Unit | `iron-build package` reads the project's `type` before choosing the host: `game` (default, also when `project.json` can't be read) or `app`; a missing explicit host is an error. |
 | M9-TS-3000 | Integration | `let mode: M = "a"; if (o.mode !== undefined) mode = o.mode;` (a union local assigned from an optional field; formerly a Cranelift panic) equals bun's (`iron_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |
 | M9-TS-3001 | Integration | The same with `as M`, a `const` copy and `o.mode as M` equals bun's (`iron_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |
 | M9-TS-3002 | Integration | `??` over optional and nullable union members equals bun's (`iron_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |

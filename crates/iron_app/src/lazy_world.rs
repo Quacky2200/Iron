@@ -1,8 +1,8 @@
-//! The 3D world renderer, built on first use in a `ui_app_only` build (EXPERIMENTAL).
+//! The 3D world renderer, built on first use in `iron-app`.
 //!
 //! `WorldRenderer::new` compiles the world shaders and pipelines, which costs the GPU driver
 //! tens of MB even when a game is only UI. A UI-only game never has a camera or a mesh upload,
-//! so it never asks for the renderer. Without the flag the renderer is built at once, as before.
+//! so it never asks for the renderer. In `iron-game` the renderer is built at once, as before.
 //! To undo the experiment: make `Gfx.world` a `WorldRenderer` again (see `git log` for this file).
 
 use iron_render::{Gpu, WorldRenderer};
@@ -18,7 +18,7 @@ impl LazyWorld {
             inner: None,
             physical_units,
         };
-        if !iron_core::UI_APP_ONLY {
+        if !super::host::IS_UI_APP {
             world.get(gpu);
         }
         world
