@@ -590,3 +590,284 @@ fn background_images_at_scale_two_match_wgpu() {
     );
     same_with("images x2", s, Some(&dir), (100, 48), 2.0, 8, 0.01);
 }
+
+// M2-GLES-09
+#[test]
+fn opacity_groups_and_blur_match_wgpu() {
+    let mut s = Scene::new();
+    // A translucent group over a backdrop: the children composite once, as a group.
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 200.0, 60.0],
+        &[("backgroundColor", "#204060")],
+    );
+    let g = s.at(0, "box", [10.0, 10.0, 80.0, 40.0], &[("opacity", "0.5")]);
+    s.at(
+        g,
+        "box",
+        [0.0, 0.0, 50.0, 40.0],
+        &[("backgroundColor", "red")],
+    );
+    s.at(
+        g,
+        "box",
+        [30.0, 10.0, 50.0, 30.0],
+        &[("backgroundColor", "blue")],
+    );
+    s.at(
+        0,
+        "box",
+        [110.0, 8.0, 40.0, 44.0],
+        &[
+            ("backgroundColor", "white"),
+            ("borderRadius", "10px"),
+            ("filter", "blur(4px)"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [160.0, 8.0, 30.0, 44.0],
+        &[
+            ("backgroundColor", "orange"),
+            ("filter", "blur(1.5px)"),
+            ("opacity", "0.8"),
+        ],
+    );
+    same("opacity + blur", s, (200, 64), 1.0, 8, 0.01);
+}
+
+// M2-GLES-10
+#[test]
+fn drop_shadows_and_colour_filters_match_wgpu() {
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 240.0, 120.0],
+        &[("backgroundColor", "#40506a")],
+    );
+    s.at(
+        0,
+        "box",
+        [10.0, 10.0, 30.0, 30.0],
+        &[
+            ("backgroundColor", "gold"),
+            ("borderRadius", "15px"),
+            ("filter", "drop-shadow(8px 8px 0 lime)"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [60.0, 10.0, 30.0, 30.0],
+        &[
+            ("backgroundColor", "white"),
+            ("borderRadius", "6px"),
+            ("filter", "drop-shadow(4px 6px 5px rgba(0,0,0,0.9))"),
+        ],
+    );
+    let filters = [
+        "grayscale(1)",
+        "brightness(1.6)",
+        "contrast(0.5)",
+        "hue-rotate(90deg)",
+        "sepia(1)",
+        "invert(1)",
+        "saturate(3)",
+        "opacity(0.4)",
+    ];
+    for (i, f) in filters.iter().enumerate() {
+        let x = 10.0 + (i % 4) as f64 * 40.0;
+        let y = 52.0 + (i / 4) as f64 * 34.0;
+        s.at(
+            0,
+            "box",
+            [x, y, 32.0, 28.0],
+            &[
+                (
+                    "backgroundImage",
+                    "linear-gradient(to right, #ff3030, #3060ff)",
+                ),
+                ("filter", f),
+            ],
+        );
+    }
+    same("drop shadow + filters", s, (240, 120), 1.0, 8, 0.01);
+    // A fractional device scale shifts the shadow between texels: the linear sampling matters.
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 80.0, 60.0],
+        &[("backgroundColor", "#40506a")],
+    );
+    s.at(
+        0,
+        "box",
+        [10.0, 10.0, 30.0, 30.0],
+        &[
+            ("backgroundColor", "gold"),
+            ("borderRadius", "15px"),
+            ("filter", "drop-shadow(5px 5px 3px black)"),
+        ],
+    );
+    same("drop shadow x1.5", s, (80, 60), 1.5, 8, 0.01);
+}
+
+// M2-GLES-11
+#[test]
+fn blend_modes_match_wgpu() {
+    let modes = [
+        "multiply",
+        "screen",
+        "overlay",
+        "darken",
+        "lighten",
+        "color-dodge",
+        "color-burn",
+        "hard-light",
+        "soft-light",
+        "difference",
+        "exclusion",
+        "hue",
+        "saturation",
+        "color",
+        "luminosity",
+    ];
+    let mut s = Scene::new();
+    for (i, mode) in modes.iter().enumerate() {
+        let x = 4.0 + (i % 5) as f64 * 44.0;
+        let y = 4.0 + (i / 5) as f64 * 32.0;
+        s.at(
+            0,
+            "box",
+            [x, y, 40.0, 28.0],
+            &[(
+                "backgroundImage",
+                "linear-gradient(to right, rgb(200,100,50), rgb(40,160,220))",
+            )],
+        );
+        s.at(
+            0,
+            "box",
+            [x + 12.0, y, 28.0, 28.0],
+            &[
+                ("backgroundColor", "rgb(180, 90, 200)"),
+                ("mixBlendMode", mode),
+            ],
+        );
+    }
+    same("blend modes", s, (228, 100), 1.0, 8, 0.01);
+}
+
+// M2-GLES-12
+#[test]
+fn backdrop_filters_match_wgpu() {
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 200.0, 80.0],
+        &[(
+            "backgroundImage",
+            "linear-gradient(to right, #ff4040, #40ff80, #4060ff)",
+        )],
+    );
+    for i in 0..5 {
+        s.at(
+            0,
+            "box",
+            [i as f64 * 40.0, 0.0, 8.0, 80.0],
+            &[("backgroundColor", "white")],
+        );
+    }
+    s.at(
+        0,
+        "box",
+        [20.0, 15.0, 70.0, 50.0],
+        &[
+            ("backdropFilter", "blur(6px)"),
+            ("borderRadius", "12px"),
+            ("backgroundColor", "rgba(255,255,255,0.15)"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [110.0, 15.0, 70.0, 50.0],
+        &[("backdropFilter", "grayscale(1)")],
+    );
+    same("backdrop filters", s, (200, 80), 1.0, 8, 0.01);
+}
+
+// M2-GLES-13
+#[test]
+fn masks_and_layers_inside_clips_match_wgpu() {
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 240.0, 70.0],
+        &[("backgroundColor", "#303848")],
+    );
+    s.at(
+        0,
+        "box",
+        [5.0, 5.0, 60.0, 60.0],
+        &[
+            ("backgroundColor", "orange"),
+            ("maskImage", "linear-gradient(to right, black, transparent)"),
+        ],
+    );
+    s.at(
+        0,
+        "box",
+        [75.0, 5.0, 60.0, 60.0],
+        &[
+            ("backgroundColor", "white"),
+            ("maskImage", "linear-gradient(to right, white, black)"),
+            ("maskMode", "luminance"),
+        ],
+    );
+    let dots = s.at(
+        0,
+        "box",
+        [145.0, 5.0, 60.0, 60.0],
+        &[
+            ("backgroundColor", "teal"),
+            (
+                "maskImage",
+                "radial-gradient(circle, black 40%, transparent 42%)",
+            ),
+            ("maskSize", "10px 10px"),
+        ],
+    );
+    s.at(
+        dots,
+        "box",
+        [10.0, 10.0, 30.0, 30.0],
+        &[("backgroundColor", "crimson")],
+    );
+    // A translucent layer inside a rounded clip is clipped when it is composited.
+    let clip = s.at(
+        0,
+        "box",
+        [212.0, 5.0, 26.0, 60.0],
+        &[("overflow", "hidden"), ("borderRadius", "13px")],
+    );
+    let layer = s.at(
+        clip,
+        "box",
+        [-10.0, 10.0, 60.0, 40.0],
+        &[("opacity", "0.6")],
+    );
+    s.at(
+        layer,
+        "box",
+        [0.0, 0.0, 60.0, 40.0],
+        &[("backgroundColor", "lime")],
+    );
+    same("masks + clipped layer", s, (240, 70), 1.0, 8, 0.01);
+}

@@ -64,13 +64,19 @@ What differs from the wgpu executor (`shaders.rs` is a GLSL ES 3.00 port of `qua
 - **`gl_FragCoord` is y up**; the fragment shader turns it into the plan's y-down logical pixels.
 
 Done: the quad pass (boxes, borders and their styles, gradients, outer and inset shadows, glyphs, wavy
-decorations, clips and polygon clips, transforms), the glyph atlas, and images (`fs_image`: repeat, space,
+decorations, clips and polygon clips, transforms), the glyph atlas, images (`fs_image`: repeat, space,
 `cover`/`contain`, rounded clips, `image-rendering: pixelated`, tints, border-image pieces; PNG and JPEG
-from the shared `ImageCache`, SVGs rasterized at their drawn size; `SRGB8_ALPHA8` textures). Not yet (each
-skipped step is logged once): layers (`Copy`, `Blur`, `Composite`: opacity groups, blur, filters, blend modes, masks, backdrop
-filters) and `render_overlay` over existing content. `tests/vs_wgpu.rs` draws scenes through both
-executors and compares pixels (`M2-GLES-02..08`: within 1/255 so far); it and `tests/context.rs` need an EGL
-driver (`IRON_ANGLE_DIR` on Windows) and skip without one.
+from the shared `ImageCache`, SVGs rasterized at their drawn size; `SRGB8_ALPHA8` textures) and layers
+(`effects.rs`, a port of `effects.wgsl`): `Copy` is a `glBlitFramebuffer`, `Blur` two passes of the
+separable Gaussian (reads clamp at the edge), `Composite` opacity, clip, the `filter` colour matrix, drop
+shadow tint and shift, the mask texture and the 15 blend modes (a separate program that mixes the layer with a
+copy of its parent), so opacity groups, `filter`, drop shadows, masks, `mix-blend-mode` and `backdrop-filter`
+work. Scissor rectangles are flipped to GL's bottom-left origin; a clear wipes the whole canvas as a wgpu load op
+does; canvases filter linearly (a shifted drop shadow samples between texels). Not yet: `render_overlay` over
+what the target already holds (a seeded canvas, for UI over the 3D world) and a window surface (the context
+is a pbuffer). `tests/vs_wgpu.rs` draws scenes through both executors and compares pixels
+(`M2-GLES-02..13`: identical so far, 0 to 1 in 255); it and `tests/context.rs` need an EGL driver
+(`IRON_ANGLE_DIR` on Windows) and skip without one.
 
 `crates/iron_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all (the clock: ~16 MB
 private). It draws boxes, borders (also per side), gradients, images and SVGs (decoded lazily, downscaled to the size drawn,

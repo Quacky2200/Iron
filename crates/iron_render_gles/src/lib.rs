@@ -6,10 +6,12 @@
 //! storage buffers), glyph pixels from the shared `GlyphCache` into two page textures, and the
 //! `Clear` and `Draw` steps draw into `SRGB8_ALPHA8` canvases, like wgpu's, so blending is in
 //! linear light. Images come from the shared `ImageCache` (decoded and rasterized without a
-//! GPU), as `SRGB8_ALPHA8` textures. Not done yet: layers (`Copy`, `Blur`, `Composite` steps) and
-//! the effects built on them (blur, opacity groups, backdrop filters, masks); each skipped step
-//! is logged once.
+//! GPU), as `SRGB8_ALPHA8` textures. Layers run as the plan says: `Copy` (a framebuffer blit),
+//! `Blur` (two passes of `effects.rs`' separable Gaussian) and `Composite` (opacity, clip,
+//! `filter` matrix, drop-shadow tint and shift, mask, and the blend modes), which carry opacity
+//! groups, blur, filters, drop shadows, masks and backdrop filters.
 
+mod effects;
 pub mod egl;
 mod shaders;
 
@@ -19,7 +21,9 @@ use std::path::PathBuf;
 use glow::HasContext;
 use iron_render::glyphs::{COLOR_SIZE, GlyphCache, GlyphEntry, MASK_SIZE};
 use iron_render::image_cache::{ImageCache, ImageUpload};
-use iron_render::plan::{self, FramePlan, ImageInfo, Instance, PlanParams, PlanResources, Step};
+use iron_render::plan::{
+    self, FramePlan, ImageInfo, Instance, PlanParams, PlanResources, PxRect, Step,
+};
 use iron_render::{Color, RenderStats, UiBackend};
 use iron_ui::DrawCmd;
 
@@ -28,6 +32,8 @@ use iron_ui::DrawCmd;
 const GRADIENT_TEXELS: i32 = 12;
 const CLIP_TEXELS: i32 = 5;
 const INSTANCE_BYTES: i32 = std::mem::size_of::<Instance>() as i32;
+/// Largest blur kernel (taps either side) a single pass uses, as in the wgpu executor.
+const MAX_BLUR_RADIUS: f32 = 128.0;
 
 /// Where a frame is drawn.
 #[derive(Clone, Copy, Debug)]
@@ -57,6 +63,9 @@ pub struct GlesRenderer {
     gl: glow::Context,
     quad: Program,
     image: Program,
+    blur: Program,
+    composite: Program,
+    composite_blend: Program,
     blit: Program,
     vao: glow::VertexArray,
     instances: glow::Buffer,
@@ -70,8 +79,6 @@ pub struct GlesRenderer {
     images: ImageCache,
     /// Image textures by the cache's key.
     image_textures: HashMap<String, glow::Texture>,
-    /// Things already reported as not drawn.
-    reported: Vec<&'static str>,
 }
 
 /// What planning asks of this renderer: glyphs and images from the shared caches (their pixels
@@ -178,6 +185,13 @@ impl GlesRenderer {
         unsafe {
             let quad = compile(&gl, &shaders::quad_vertex(), &shaders::quad_fragment())?;
             let image = compile(&gl, &shaders::quad_vertex(), &shaders::image_fragment())?;
+            let blur = compile(&gl, shaders::BLIT_VERTEX, effects::BLUR_FRAGMENT)?;
+            let composite = compile(&gl, shaders::BLIT_VERTEX, &effects::composite_fragment())?;
+            let composite_blend = compile(
+                &gl,
+                shaders::BLIT_VERTEX,
+                &effects::composite_blend_fragment(),
+            )?;
             let blit = compile(&gl, shaders::BLIT_VERTEX, shaders::BLIT_FRAGMENT)?;
             let vao = gl.create_vertex_array()?;
             let instances = gl.create_buffer()?;
@@ -189,6 +203,11 @@ impl GlesRenderer {
                 gl,
                 quad: Program { program: quad },
                 image: Program { program: image },
+                blur: Program { program: blur },
+                composite: Program { program: composite },
+                composite_blend: Program {
+                    program: composite_blend,
+                },
                 blit: Program { program: blit },
                 vao,
                 instances,
@@ -201,15 +220,7 @@ impl GlesRenderer {
                 glyphs: GlyphCache::new(),
                 images: ImageCache::default(),
                 image_textures: HashMap::new(),
-                reported: Vec::new(),
             })
-        }
-    }
-
-    fn report(&mut self, what: &'static str) {
-        if !self.reported.contains(&what) {
-            self.reported.push(what);
-            tracing::warn!("GLES renderer: {what} is not drawn yet");
         }
     }
 
@@ -261,8 +272,8 @@ impl GlesRenderer {
                     size.1 as i32,
                 );
                 for (p, v) in [
-                    (glow::TEXTURE_MIN_FILTER, glow::NEAREST),
-                    (glow::TEXTURE_MAG_FILTER, glow::NEAREST),
+                    (glow::TEXTURE_MIN_FILTER, glow::LINEAR),
+                    (glow::TEXTURE_MAG_FILTER, glow::LINEAR),
                     (glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE),
                     (glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE),
                 ] {
@@ -386,6 +397,75 @@ impl GlesRenderer {
         }
     }
 
+    /// Applies a clear still pending on `canvas`, before something reads it.
+    unsafe fn settle(&self, pending: &mut [Option<Color>], canvas: usize, stats: &mut RenderStats) {
+        let Some(c) = pending[canvas].take() else {
+            return;
+        };
+        let gl = &self.gl;
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.canvases[canvas].framebuffer));
+            gl.disable(glow::SCISSOR_TEST);
+            gl.clear_color(c.r as f32, c.g as f32, c.b as f32, c.a as f32);
+            gl.clear(glow::COLOR_BUFFER_BIT);
+        }
+        stats.passes += 1;
+    }
+
+    /// Starts a full-screen pass into canvas `dst`, limited to `area`. `clear` wipes the whole
+    /// canvas first (a wgpu load op does not stop at the scissor); `blend` is premultiplied
+    /// source-over, else the pass replaces what it covers.
+    unsafe fn begin_pass(
+        &self,
+        program: glow::Program,
+        dst: usize,
+        area: &PxRect,
+        clear: Option<Color>,
+        blend: bool,
+        size: (u32, u32),
+    ) {
+        let gl = &self.gl;
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.canvases[dst].framebuffer));
+            gl.viewport(0, 0, size.0 as i32, size.1 as i32);
+            gl.disable(glow::SCISSOR_TEST);
+            if let Some(c) = clear {
+                gl.clear_color(c.r as f32, c.g as f32, c.b as f32, c.a as f32);
+                gl.clear(glow::COLOR_BUFFER_BIT);
+            }
+            if blend {
+                gl.enable(glow::BLEND);
+                gl.blend_func_separate(
+                    glow::ONE,
+                    glow::ONE_MINUS_SRC_ALPHA,
+                    glow::ONE,
+                    glow::ONE_MINUS_SRC_ALPHA,
+                );
+            } else {
+                gl.disable(glow::BLEND);
+            }
+            // The plan's rectangles are y down; GL's scissor starts at the bottom left.
+            gl.enable(glow::SCISSOR_TEST);
+            gl.scissor(
+                area.x as i32,
+                (size.1 - area.y - area.h) as i32,
+                area.w as i32,
+                area.h as i32,
+            );
+            gl.use_program(Some(program));
+        }
+    }
+
+    /// Binds canvas `canvas` to texture `unit` and points the sampler `name` at it.
+    unsafe fn bind_canvas(&self, program: glow::Program, name: &str, unit: u32, canvas: usize) {
+        let gl = &self.gl;
+        unsafe {
+            gl.active_texture(glow::TEXTURE0 + unit);
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.canvases[canvas].texture));
+            gl.uniform_1_i32(gl.get_uniform_location(program, name).as_ref(), unit as i32);
+        }
+    }
+
     /// Runs a plan: uploads its tables, draws its steps into the canvases and copies canvas 0
     /// to the target.
     pub fn execute(&mut self, target: &Target, frame: &FramePlan) -> RenderStats {
@@ -484,6 +564,14 @@ impl GlesRenderer {
                     };
                     let gl = &self.gl;
                     unsafe {
+                        gl.disable(glow::SCISSOR_TEST);
+                        gl.enable(glow::BLEND);
+                        gl.blend_func_separate(
+                            glow::ONE,
+                            glow::ONE_MINUS_SRC_ALPHA,
+                            glow::ONE,
+                            glow::ONE_MINUS_SRC_ALPHA,
+                        );
                         self.bind_quad_uniforms(program, size, scale);
                         if let Some(t) = texture {
                             gl.active_texture(glow::TEXTURE4);
@@ -537,20 +625,142 @@ impl GlesRenderer {
                     stats.draw_calls += 1;
                     stats.passes += 1;
                 }
-                Step::Copy { .. } => self.report("layers (copies)"),
-                Step::Blur { .. } => self.report("blur"),
-                Step::Composite { .. } => self.report("layers (composites)"),
+                Step::Copy { src, dst } => unsafe {
+                    self.settle(&mut pending_clear, *src, &mut stats);
+                    pending_clear[*dst] = None;
+                    let gl = &self.gl;
+                    let (w, h) = (size.0 as i32, size.1 as i32);
+                    gl.disable(glow::SCISSOR_TEST);
+                    gl.bind_framebuffer(
+                        glow::READ_FRAMEBUFFER,
+                        Some(self.canvases[*src].framebuffer),
+                    );
+                    gl.bind_framebuffer(
+                        glow::DRAW_FRAMEBUFFER,
+                        Some(self.canvases[*dst].framebuffer),
+                    );
+                    // Same format both sides: the pixels are copied as they are.
+                    gl.blit_framebuffer(
+                        0,
+                        0,
+                        w,
+                        h,
+                        0,
+                        0,
+                        w,
+                        h,
+                        glow::COLOR_BUFFER_BIT,
+                        glow::NEAREST,
+                    );
+                },
+                Step::Blur {
+                    tex,
+                    temp,
+                    area,
+                    sigma,
+                } => unsafe {
+                    self.settle(&mut pending_clear, *tex, &mut stats);
+                    pending_clear[*temp] = None;
+                    let radius = (3.0 * sigma).ceil().min(MAX_BLUR_RADIUS);
+                    // Horizontal into `temp` (taller than `area`, so the vertical pass has valid
+                    // rows to read), then vertical back into `tex`.
+                    let r = radius as u32;
+                    let top = area.y.saturating_sub(r);
+                    let tall = PxRect {
+                        x: area.x,
+                        y: top,
+                        w: area.w,
+                        h: (area.y + area.h + r).min(size.1) - top,
+                    };
+                    let program = self.blur.program;
+                    for (from, to, dir, rect, clear) in [
+                        (*tex, *temp, [1.0, 0.0], tall, Some(Color::TRANSPARENT)),
+                        (*temp, *tex, [0.0, 1.0], *area, None),
+                    ] {
+                        self.begin_pass(program, to, &rect, clear, false, size);
+                        self.bind_canvas(program, "u_src", 5, from);
+                        let gl = &self.gl;
+                        gl.uniform_4_f32(
+                            gl.get_uniform_location(program, "u_blur").as_ref(),
+                            dir[0],
+                            dir[1],
+                            sigma.max(0.01),
+                            radius,
+                        );
+                        gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                        stats.passes += 1;
+                    }
+                },
+                Step::Composite {
+                    src,
+                    dst,
+                    area,
+                    opacity,
+                    clip,
+                    blend,
+                    matrix,
+                    tint,
+                    shift,
+                    mask,
+                } => unsafe {
+                    self.settle(&mut pending_clear, *src, &mut stats);
+                    if let Some((m, _)) = mask {
+                        self.settle(&mut pending_clear, *m, &mut stats);
+                    }
+                    if let Some((_, backdrop)) = blend {
+                        self.settle(&mut pending_clear, *backdrop, &mut stats);
+                    }
+                    let backdrop = blend.map_or(*src, |(_, b)| b);
+                    let program = if blend.is_some() {
+                        self.composite_blend.program
+                    } else {
+                        self.composite.program
+                    };
+                    let clear = pending_clear[*dst].take();
+                    self.begin_pass(program, *dst, area, clear, blend.is_none(), size);
+                    self.bind_quad_uniforms(program, size, scale);
+                    self.bind_canvas(program, "u_src", 5, *src);
+                    self.bind_canvas(program, "u_backdrop", 6, backdrop);
+                    self.bind_canvas(program, "u_mask_tex", 7, mask.map_or(*src, |(m, _)| m));
+                    let gl = &self.gl;
+                    let loc = |name: &str| gl.get_uniform_location(program, name);
+                    gl.uniform_4_f32(
+                        loc("u_comp").as_ref(),
+                        *opacity,
+                        scale,
+                        *clip as f32,
+                        blend.map_or(0.0, |(mode, _)| mode as f32),
+                    );
+                    let m = matrix.unwrap_or_default();
+                    // Row-major 4x5 to the columns of a mat4 and its offset column.
+                    let columns: [f32; 16] = std::array::from_fn(|i| m[(i % 4) * 5 + i / 4]);
+                    gl.uniform_matrix_4_f32_slice(loc("u_matrix").as_ref(), false, &columns);
+                    gl.uniform_4_f32(loc("u_offset").as_ref(), m[4], m[9], m[14], m[19]);
+                    let t = tint.unwrap_or_default();
+                    gl.uniform_4_f32(loc("u_tint").as_ref(), t[0], t[1], t[2], t[3]);
+                    gl.uniform_4_f32(
+                        loc("u_shift").as_ref(),
+                        shift[0],
+                        shift[1],
+                        f32::from(u8::from(matrix.is_some())),
+                        f32::from(u8::from(tint.is_some())),
+                    );
+                    let mode = match mask {
+                        None => 0.0,
+                        Some((_, iron_ui::MaskMode::Alpha)) => 1.0,
+                        Some((_, iron_ui::MaskMode::Luminance)) => 2.0,
+                    };
+                    gl.uniform_4_f32(loc("u_maskmode").as_ref(), mode, 0.0, 0.0, 0.0);
+                    gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                    stats.passes += 1;
+                },
             }
         }
         let gl = &self.gl;
         unsafe {
             // A canvas nothing drew into still shows its clear.
-            if let Some(c) = pending_clear.first_mut().and_then(Option::take) {
-                gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.canvases[0].framebuffer));
-                gl.clear_color(c.r as f32, c.g as f32, c.b as f32, c.a as f32);
-                gl.clear(glow::COLOR_BUFFER_BIT);
-                stats.passes += 1;
-            }
+            self.settle(&mut pending_clear, 0, &mut stats);
+            gl.disable(glow::SCISSOR_TEST);
             // The canvas, pixel for pixel, onto the target.
             gl.bind_framebuffer(glow::FRAMEBUFFER, target.framebuffer);
             gl.viewport(0, 0, size.0 as i32, size.1 as i32);

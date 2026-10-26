@@ -7,7 +7,7 @@
 //! the fragment shader turns `gl_FragCoord` (y up) back into logical pixels.
 
 /// What both quad stages read: uniforms, the table accessors and the clip transforms.
-const QUAD_COMMON: &str = r#"#version 300 es
+pub(crate) const QUAD_COMMON: &str = r#"#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -125,21 +125,9 @@ void main() {
     )
 }
 
-/// The fragment helpers both quad programs share: shapes, clips, gradients, glyphs, `shade`.
-const FRAGMENT_BODY: &str = r#"
-flat in vec4 v_rect;
-flat in vec4 v_radii;
-flat in vec4 v_p0;
-flat in vec4 v_p1;
-flat in vec4 v_color0;
-flat in vec4 v_color1;
-flat in vec4 v_params;
-flat in vec4 v_radii_y;
-flat in vec4 v_xf;
-
-layout(location = 0) out vec4 o_color;
-
-// Picks the corner radius for the quadrant `q` (relative to the centre, y down).
+/// Pure helpers (no instance varyings) the quad and effect fragment programs share: shape
+/// coverage and the clip table's coverage.
+pub(crate) const GEOMETRY: &str = r#"// Picks the corner radius for the quadrant `q` (relative to the centre, y down).
 float corner_radius(vec2 q, vec4 radii) {
     float top = q.x > 0.0 ? radii.y : radii.x;
     float bottom = q.x > 0.0 ? radii.z : radii.w;
@@ -173,6 +161,104 @@ float shape_coverage(vec2 p, vec4 rect, vec4 rx, vec4 ry) {
     }
     return coverage(sd_rounded_box(p, rect, rx, ry));
 }
+
+// --- Clips (overflow, clip-path) -----------------------------------------------------
+// A table of rounded rectangles with elliptical corners, or polygons. Entries chain to
+// their parent (1-based index, 0 = none); coverage is the product along the chain.
+
+struct Clip {
+    vec4 rect;   // logical px
+    vec4 rx;     // corner radii x: top-left, top-right, bottom-right, bottom-left
+    vec4 ry;     // corner radii y
+    vec4 bounds; // the whole chain's bounding box (x, y, w, h)
+    vec4 info;   // x: parent; y: kind (0 box, 1 nonzero polygon, 2 evenodd) + 4 x transform; z: first point; w: point count
+};
+
+Clip get_clip(uint i) {
+    return Clip(clip_texel(i, 0u), clip_texel(i, 1u), clip_texel(i, 2u), clip_texel(i, 3u), clip_texel(i, 4u));
+}
+
+// Approximate signed distance (logical px) to a box with elliptical corners.
+float sd_clip(vec2 p, Clip c) {
+    return sd_rounded_box(p, c.rect, c.rx, c.ry);
+}
+
+// Polygon clips: the points follow the entry in the table, one vec4 each (x, y, and their
+// contour's point range), read as a flat array of vec4s.
+vec4 clip_word(uint i) {
+    return clip_texel(i / 5u, i % 5u);
+}
+
+// Signed distance to the polygon's edges: negative inside, by its fill rule.
+float sd_polygon(vec2 p, Clip c, bool even_odd) {
+    uint first = uint(c.info.z);
+    uint count = uint(c.info.w);
+    float d = 1e9;
+    int winding = 0;
+    uint crossings = 0u;
+    for (uint k = 0u; k < count; k++) {
+        vec4 a4 = clip_word(first + k);
+        uint next = (k + 1u < uint(a4.w)) ? k + 1u : uint(a4.z);
+        vec2 a = a4.xy;
+        vec2 b = clip_word(first + next).xy;
+        vec2 e = b - a;
+        vec2 w = p - a;
+        float t = clamp(dot(w, e) / max(dot(e, e), 1e-8), 0.0, 1.0);
+        d = min(d, length(w - e * t));
+        float left = e.x * w.y - e.y * w.x;
+        if (a.y <= p.y && b.y > p.y && left > 0.0) {
+            winding += 1;
+        } else if (a.y > p.y && b.y <= p.y && left < 0.0) {
+            winding -= 1;
+        }
+        if ((a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) * e.x / e.y) {
+            crossings += 1u;
+        }
+    }
+    bool inside = even_odd ? ((crossings & 1u) == 1u) : (winding != 0);
+    return inside ? -d : d;
+}
+
+float clip_coverage_with(vec2 p, uint index) {
+    uint i = index;
+    float cover = 1.0;
+    for (int n = 0; n < 32 && i > 0u && cover > 0.0; n++) {
+        Clip c = get_clip(i - 1u);
+        // info.y: the shape kind (0 box, 1 nonzero polygon, 2 evenodd) + 4 x the transform
+        // its shape is in.
+        uint kind = uint(c.info.y) % 4u;
+        uint t = uint(c.info.y) / 4u;
+        vec2 q = p;
+        if (t > 0u) {
+            q = xf_unapply(t, p);
+        }
+        float d;
+        if (kind > 0u) {
+            d = sd_polygon(q, c, kind == 2u);
+        } else {
+            d = sd_clip(q, c);
+        }
+        cover *= clamp(0.5 - d * u_globals.z, 0.0, 1.0);
+        i = uint(c.info.x);
+    }
+    return cover;
+}
+
+"#;
+
+/// The fragment helpers both quad programs share: shapes, clips, gradients, glyphs, `shade`.
+const FRAGMENT_BODY: &str = r#"
+flat in vec4 v_rect;
+flat in vec4 v_radii;
+flat in vec4 v_p0;
+flat in vec4 v_p1;
+flat in vec4 v_color0;
+flat in vec4 v_color1;
+flat in vec4 v_params;
+flat in vec4 v_radii_y;
+flat in vec4 v_xf;
+
+layout(location = 0) out vec4 o_color;
 
 // Inner edge radii, as CSS: horizontal radii lose the left/right width, vertical ones the
 // top/bottom (`b` is top, right, bottom, left).
@@ -422,86 +508,8 @@ vec4 glyph(vec2 p) {
     return v_color0 * text_coverage(a, v_color0);
 }
 
-// --- Clips (overflow, clip-path) -----------------------------------------------------
-// A table of rounded rectangles with elliptical corners, or polygons. Entries chain to
-// their parent (1-based index, 0 = none); coverage is the product along the chain.
-
-struct Clip {
-    vec4 rect;   // logical px
-    vec4 rx;     // corner radii x: top-left, top-right, bottom-right, bottom-left
-    vec4 ry;     // corner radii y
-    vec4 bounds; // the whole chain's bounding box (x, y, w, h)
-    vec4 info;   // x: parent; y: kind (0 box, 1 nonzero polygon, 2 evenodd) + 4 x transform; z: first point; w: point count
-};
-
-Clip get_clip(uint i) {
-    return Clip(clip_texel(i, 0u), clip_texel(i, 1u), clip_texel(i, 2u), clip_texel(i, 3u), clip_texel(i, 4u));
-}
-
-// Approximate signed distance (logical px) to a box with elliptical corners.
-float sd_clip(vec2 p, Clip c) {
-    return sd_rounded_box(p, c.rect, c.rx, c.ry);
-}
-
-// Polygon clips: the points follow the entry in the table, one vec4 each (x, y, and their
-// contour's point range), read as a flat array of vec4s.
-vec4 clip_word(uint i) {
-    return clip_texel(i / 5u, i % 5u);
-}
-
-// Signed distance to the polygon's edges: negative inside, by its fill rule.
-float sd_polygon(vec2 p, Clip c, bool even_odd) {
-    uint first = uint(c.info.z);
-    uint count = uint(c.info.w);
-    float d = 1e9;
-    int winding = 0;
-    uint crossings = 0u;
-    for (uint k = 0u; k < count; k++) {
-        vec4 a4 = clip_word(first + k);
-        uint next = (k + 1u < uint(a4.w)) ? k + 1u : uint(a4.z);
-        vec2 a = a4.xy;
-        vec2 b = clip_word(first + next).xy;
-        vec2 e = b - a;
-        vec2 w = p - a;
-        float t = clamp(dot(w, e) / max(dot(e, e), 1e-8), 0.0, 1.0);
-        d = min(d, length(w - e * t));
-        float left = e.x * w.y - e.y * w.x;
-        if (a.y <= p.y && b.y > p.y && left > 0.0) {
-            winding += 1;
-        } else if (a.y > p.y && b.y <= p.y && left < 0.0) {
-            winding -= 1;
-        }
-        if ((a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) * e.x / e.y) {
-            crossings += 1u;
-        }
-    }
-    bool inside = even_odd ? ((crossings & 1u) == 1u) : (winding != 0);
-    return inside ? -d : d;
-}
-
 float clip_coverage(vec2 p, vec4 params) {
-    uint i = uint(params.w);
-    float cover = 1.0;
-    for (int n = 0; n < 32 && i > 0u && cover > 0.0; n++) {
-        Clip c = get_clip(i - 1u);
-        // info.y: the shape kind (0 box, 1 nonzero polygon, 2 evenodd) + 4 x the transform
-        // its shape is in.
-        uint kind = uint(c.info.y) % 4u;
-        uint t = uint(c.info.y) / 4u;
-        vec2 q = p;
-        if (t > 0u) {
-            q = xf_unapply(t, p);
-        }
-        float d;
-        if (kind > 0u) {
-            d = sd_polygon(q, c, kind == 2u);
-        } else {
-            d = sd_clip(q, c);
-        }
-        cover *= clamp(0.5 - d * u_globals.z, 0.0, 1.0);
-        i = uint(c.info.x);
-    }
-    return cover;
+    return clip_coverage_with(p, uint(params.w));
 }
 
 // The fragment in the instance's own plane.
@@ -663,11 +671,11 @@ void main() {
 "#;
 
 pub fn quad_fragment() -> String {
-    format!("{QUAD_COMMON}{FRAGMENT_BODY}{QUAD_MAIN}")
+    format!("{QUAD_COMMON}{GEOMETRY}{FRAGMENT_BODY}{QUAD_MAIN}")
 }
 
 pub fn image_fragment() -> String {
-    format!("{QUAD_COMMON}{FRAGMENT_BODY}{IMAGE_MAIN}")
+    format!("{QUAD_COMMON}{GEOMETRY}{FRAGMENT_BODY}{IMAGE_MAIN}")
 }
 
 /// A full-screen triangle.

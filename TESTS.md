@@ -135,6 +135,11 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-GLES-06 | Integration | Boxes and text at scale 2 and a rotated plane (the clip table's transforms) match between the two executors. |
 | M2-GLES-07 | Integration | Background images match between the GLES and wgpu executors: an unrepeated PNG, a tiled one at a set size, `cover` with rounded corners, nearest-neighbour upscaling, and SVGs (`contain`, a set size over a colour). |
 | M2-GLES-08 | Integration | Background images at scale 2 (a rounded tiled PNG and an SVG rasterized at twice the size) match between the two executors. |
+| M2-GLES-09 | Integration | A translucent group (children composited once at 50%) and two blurred boxes match between the GLES and wgpu executors. |
+| M2-GLES-10 | Integration | `drop-shadow()` (hard, and blurred) and eight colour filter functions (grayscale, brightness, contrast, hue-rotate, sepia, invert, saturate, opacity) match; a drop shadow at scale 1.5 (a shift between texels) too. |
+| M2-GLES-11 | Integration | All 15 `mix-blend-mode`s over a gradient match between the two executors. |
+| M2-GLES-12 | Integration | `backdrop-filter` blur on a rounded translucent box and `backdrop-filter: grayscale()` match between the two executors. |
+| M2-GLES-13 | Integration | Alpha, luminance and repeated-dot `mask-image`s and a translucent layer inside a rounded `overflow: hidden` clip match between the two executors. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |
