@@ -1586,6 +1586,18 @@ dependencies = [
 
 [[package]]
 name = "glow"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5e5ea60d70410161c8bf5da3fdfeaa1c72ed2c15f8bbb9d19fe3a4fad085f08"
+dependencies = [
+ "js-sys",
+ "slotmap",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "glow"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29038e1c483364cc6bb3cf78feee1816002e127c331a1eec55a4d202b9e1adb5"
@@ -2458,6 +2470,21 @@ dependencies = [
  "tracing",
  "vello_common",
  "vello_cpu",
+]
+
+[[package]]
+name = "iron_render_gles"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glow 0.16.0",
+ "image",
+ "iron_core",
+ "iron_render",
+ "iron_ui",
+ "khronos-egl",
+ "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6024,7 +6051,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "cfg_aliases",
- "glow",
+ "glow 0.17.0",
  "glutin_wgl_sys",
  "gpu-allocator",
  "hashbrown 0.17.1",

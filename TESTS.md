@@ -127,6 +127,12 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-PLN-05 | Unit | Text plans one glyph instance per visible glyph and queues the glyph pixels in the `GlyphCache` (not again on a second plan). |
 | M2-PLN-06 | Unit | An image fill plans a `Draw` step naming its texture; an image the resources don't know is skipped. |
 | M2-PLN-07 | Unit | `needs_backdrop` finds backdrop filters without planning. |
+| M2-GLES-01 | Integration | A GLES 3 context through EGL (ANGLE via `IRON_ANGLE_DIR`) clears an `SRGB8_ALPHA8` framebuffer and reads it back; skipped without an EGL driver. |
+| M2-GLES-02 | Integration | Boxes with borders (solid, dashed, dotted, per-side colours), per-corner radii and linear, radial and conic gradients: the GLES executor matches the wgpu one pixel for pixel (within 6/255 on all but 0.2% of pixels). |
+| M2-GLES-03 | Integration | Outer and inset box shadows match between the GLES and wgpu executors. |
+| M2-GLES-04 | Integration | `overflow: hidden` clips with a rounded border (several children) match between the two executors. |
+| M2-GLES-05 | Integration | Text at two sizes and colours, including dark text on light, matches between the two executors (the shared glyph cache, uploaded into the GLES pages). |
+| M2-GLES-06 | Integration | Boxes and text at scale 2 and a rotated plane (the clip table's transforms) match between the two executors. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

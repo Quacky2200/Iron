@@ -17,7 +17,8 @@ use iron_ui::text_style::DecorationStyle;
 use iron_ui::{ClipShape, DrawCmd, Rect, Rgba, border_image_axis, is_svg, repeat_tiles, tile_rect};
 
 use super::glyphs::{GlyphEntry, SUBPIXEL_BINS};
-use super::gradient::{self, GpuGradient};
+use super::gradient;
+pub use super::gradient::GpuGradient;
 use crate::Color;
 
 pub const KIND_QUAD: f32 = 0.0;

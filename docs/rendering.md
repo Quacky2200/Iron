@@ -16,6 +16,7 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 | [ui/mod.rs](../crates/iron_render/src/ui/mod.rs) | `UiRenderer`, the **wgpu executor**: uploads a `FramePlan`, records and submits it |
 | [ui/plan.rs](../crates/iron_render/src/ui/plan.rs) | The **backend-neutral plan**: `plan()` turns a draw list into a `FramePlan` (no GPU object); `PlanResources` |
 | [ui/backend.rs](../crates/iron_render/src/ui/backend.rs) | The `UiBackend` trait the app-facing renderers implement (`UiRenderer` today) |
+| [iron_render_gles](../crates/iron_render_gles/src/lib.rs) | `GlesRenderer`: executes a `FramePlan` with GLES 3 through EGL / ANGLE (`egl.rs`, `shaders.rs`) |
 | [ui/glyphs.rs](../crates/iron_render/src/ui/glyphs.rs) | `GlyphCache`: GPU-free glyph rasterizing and packing, with a queue of pixel uploads |
 | [ui/quad.wgsl](../crates/iron_render/src/ui/quad.wgsl) | Instanced shader: boxes, shadows, glyphs, gradients, clips, images |
 | [ui/effects.wgsl](../crates/iron_render/src/ui/effects.wgsl) | Fullscreen passes: blur, composite, blit |
@@ -39,6 +40,35 @@ bytes from ~306 MB to ~135 MB on Vulkan (NVIDIA, Windows); the working set stays
 own allocator holds ~28 MB, the Rust heap ~4 MB). The renderer for apps is planned to be GLES through ANGLE (a bare ANGLE/D3D11 context
 measured ~61 MB private against ~138 MB for NVIDIA's OpenGL driver and ~135 MB for wgpu on Vulkan); wgpu cannot use ANGLE on Windows
 (its Windows GL backend is WGL only), so that is a native GLES renderer behind the same draw list (`iron_ui::DrawCmd`).
+
+### The GLES executor (`crates/iron_render_gles`)
+
+`GlesRenderer` executes the same `FramePlan` with GLES 3 (`glow`), for `iron-app`. Its context comes
+from EGL (`egl.rs`, `khronos-egl` loaded at run time): ANGLE's `libEGL.dll` on Windows, which draws
+through Direct3D 11 (a bare context measured ~61 MB private against ~138 MB for NVIDIA's OpenGL
+driver); Mesa's EGL elsewhere. `EglContext::headless(Some(dir))` loads ANGLE from `dir`
+(`SetDllDirectoryW`), else the usual search (next to the program).
+
+What differs from the wgpu executor (`shaders.rs` is a GLSL ES 3.00 port of `quad.wgsl`):
+
+- **Tables are float data textures.** GLES 3.0 has no storage buffers, so the gradient table
+  (`u_grads`, 12 texels per `GpuGradient`) and the clip/transform table (`u_clips`, 5 per `GpuClip`) are
+  `RGBA32F` textures read with `texelFetch`, one entry per row (polygon clips read their points as a flat
+  `vec4` array across rows, as in WGSL).
+- **Instances** are instanced vertex attributes re-pointed at the draw's byte range (ES 3.0 has no
+  base-instance draw); six vertices per instance, positions from `gl_VertexID`.
+- **Canvases** are `SRGB8_ALPHA8` textures, so blending is in linear light like wgpu's; the glyph pages are
+  `R8` and `SRGB8_ALPHA8`, filled from the shared `GlyphCache`'s upload queue. The final blit applies
+  the sRGB transfer itself (`Target::srgb`) for a default framebuffer that doesn't encode on write.
+- **`gl_FragCoord` is y up**; the fragment shader turns it into the plan's y-down logical pixels.
+
+Done: the quad pass (boxes, borders and their styles, gradients, outer and inset shadows, glyphs, wavy
+decorations, clips and polygon clips, transforms) and the glyph atlas. Not yet (each skipped step is logged
+once): images (`Step::Draw` with an image: its textures need the image cache split like the glyph cache),
+layers (`Copy`, `Blur`, `Composite`: opacity groups, blur, filters, blend modes, masks, backdrop
+filters) and `render_overlay` over existing content. `tests/vs_wgpu.rs` draws scenes through both
+executors and compares pixels (`M2-GLES-02..06`: within 1/255 so far); it and `tests/context.rs` need an EGL
+driver (`IRON_ANGLE_DIR` on Windows) and skip without one.
 
 `crates/iron_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all (the clock: ~16 MB
 private). It draws boxes, borders (also per side), gradients, images and SVGs (decoded lazily, downscaled to the size drawn,
