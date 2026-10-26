@@ -11,6 +11,8 @@
 //
 // The blob look (outlines pushed by noise sampled in the scene, blobs growing from the ends and
 // merging) is after "Lava Lamp" by Corevision: https://codepen.io/corevision/pen/ZYzBqxx
+// (inspiration only; the pen is published under CodePen's default MIT licence, and no other
+// licence is stated on it. This file is written for Iron and is under Apache-2.0.)
 
 import { Face, label, mix, shape, two, under } from "./common.ts";
 
