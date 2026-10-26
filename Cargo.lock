@@ -2287,6 +2287,7 @@ dependencies = [
  "iron_platform",
  "iron_render",
  "iron_render_api",
+ "iron_render_gles",
  "iron_scene",
  "iron_scenes",
  "iron_script",
@@ -2483,6 +2484,7 @@ dependencies = [
  "iron_render",
  "iron_ui",
  "khronos-egl",
+ "raw-window-handle",
  "tracing",
  "windows-sys 0.61.2",
 ]

@@ -24,6 +24,7 @@ mod file_drop;
 mod fps;
 mod frame_target;
 mod game_input;
+mod gles_gfx;
 mod host;
 // `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
 // re-exports these at its root, for the `crate::` paths between modules.
@@ -543,6 +544,7 @@ fn run() -> Result<()> {
         vfs,
         code_root: code_root.clone(),
         gfx: None,
+        gles: None,
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, offline),
@@ -793,6 +795,8 @@ struct App {
     /// Where the game's code, `package.json` and CSS are (the asset root, except in a packaged exe).
     code_root: PathBuf,
     gfx: Option<Gfx>,
+    /// The main window drawn by the GLES executor (`iron-app`), instead of `gfx`.
+    gles: Option<gles_gfx::GlesGfx>,
     started: Instant,
     clock: lifecycle::FixedClock,
     /// Focus, and pausing in the background (`Application.runInBackground`).
@@ -2438,6 +2442,9 @@ impl App {
     }
 
     fn save_screenshot(&mut self, path: &Path) -> Result<()> {
+        if self.gles.is_some() {
+            return self.save_screenshot_gles(path);
+        }
         let gfx = self.gfx.as_mut().context("no renderer")?;
         let (w, h) = gfx.surface.size();
         let target =
@@ -2553,7 +2560,13 @@ impl PlatformApp for App {
             self.display = iron_platform::display::apply(&window, &self.display);
         }
         if host::IS_UI_APP {
-            // Small GPU blocks; the world renderer is built only if something asks for it.
+            // GLES through EGL (ANGLE) first; wgpu with small GPU blocks (the world renderer is
+            // built only if something asks for it) when that isn't available.
+            if std::env::var_os("IRON_GLES").is_none_or(|v| v != "0")
+                && self.install_gles(window.clone())
+            {
+                return;
+            }
             iron_render::set_low_memory(true);
         }
         let size = window.inner_size();
@@ -2856,6 +2869,11 @@ impl PlatformApp for App {
         // Again, for a UI scale the scripts changed this frame.
         self.sync_screen();
         let render_started = Instant::now();
+        if self.gles.is_some() {
+            self.render_gles(render_started);
+            self.count_frame();
+            return;
+        }
         let Some(gfx) = &mut self.gfx else {
             return;
         };
@@ -3018,12 +3036,18 @@ impl PlatformApp for App {
     }
 
     fn frame_interval(&self) -> Option<Duration> {
-        lifecycle::frame_cap_with(
+        let cap = lifecycle::frame_cap_with(
             self.target_frame_rate,
             self.world_view.quality.vsync,
             self.offline,
             self.lifecycle.paused() && !self.paused(),
-        )
+        );
+        // A frame that changed nothing isn't swapped, so nothing waits for the display: 120 Hz
+        // unless the game sets a rate.
+        if self.gles.is_some() && !self.offline {
+            return Some(cap.unwrap_or(gles_gfx::FRAME_CAP));
+        }
+        cap
     }
 
     /// Paused only when every event domain is (a live inspector window keeps the app running).

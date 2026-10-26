@@ -22,6 +22,7 @@ iron_physics = { path = "../iron_physics" }
 iron_scene = { path = "../iron_scene" }
 iron_platform = { path = "../iron_platform" }
 iron_render = { path = "../iron_render" }
+iron_render_gles = { path = "../iron_render_gles" }
 iron_script = { path = "../iron_script" }
 iron_ui = { version = "0.1.0", path = "../iron_ui" }
 iron_ui_native = { path = "../iron_ui_native" }

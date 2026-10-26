@@ -226,6 +226,22 @@ impl GlesRenderer {
 
     /// Draws `cmds` over `clear` into `target`.
     pub fn render(&mut self, target: &Target, clear: Color, cmds: &[DrawCmd]) -> RenderStats {
+        self.draw(target, clear, cmds, false)
+    }
+
+    /// Draws `cmds` over what `target` already holds (the canvas starts transparent and is
+    /// blended on, premultiplied).
+    pub fn render_overlay(&mut self, target: &Target, cmds: &[DrawCmd]) -> RenderStats {
+        self.draw(target, Color::TRANSPARENT, cmds, true)
+    }
+
+    fn draw(
+        &mut self,
+        target: &Target,
+        clear: Color,
+        cmds: &[DrawCmd],
+        overlay: bool,
+    ) -> RenderStats {
         if target.size.0 == 0 || target.size.1 == 0 {
             return RenderStats::default();
         }
@@ -245,7 +261,33 @@ impl GlesRenderer {
             },
             &mut resources,
         );
-        self.execute(target, &frame)
+        self.run(target, &frame, overlay)
+    }
+
+    /// The pixels of `framebuffer` (`None`: the window's back buffer), RGBA, top row first.
+    pub fn read_back(&self, framebuffer: Option<glow::Framebuffer>, size: (u32, u32)) -> Vec<u8> {
+        let gl = &self.gl;
+        let mut bottom_up = vec![0u8; (size.0 * size.1 * 4) as usize];
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, framebuffer);
+            gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);
+            gl.read_pixels(
+                0,
+                0,
+                size.0 as i32,
+                size.1 as i32,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(Some(&mut bottom_up)),
+            );
+        }
+        let row = (size.0 * 4) as usize;
+        bottom_up
+            .chunks_exact(row)
+            .rev()
+            .flatten()
+            .copied()
+            .collect()
     }
 
     /// (Re)creates `count` canvases of `size`, keeping the ones that fit.
@@ -469,6 +511,10 @@ impl GlesRenderer {
     /// Runs a plan: uploads its tables, draws its steps into the canvases and copies canvas 0
     /// to the target.
     pub fn execute(&mut self, target: &Target, frame: &FramePlan) -> RenderStats {
+        self.run(target, frame, false)
+    }
+
+    fn run(&mut self, target: &Target, frame: &FramePlan, overlay: bool) -> RenderStats {
         let mut stats = RenderStats {
             layers: frame.layers,
             instances: frame.instances.len() as u32,
@@ -764,7 +810,12 @@ impl GlesRenderer {
             // The canvas, pixel for pixel, onto the target.
             gl.bind_framebuffer(glow::FRAMEBUFFER, target.framebuffer);
             gl.viewport(0, 0, size.0 as i32, size.1 as i32);
-            gl.disable(glow::BLEND);
+            if overlay {
+                gl.enable(glow::BLEND);
+                gl.blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
+            } else {
+                gl.disable(glow::BLEND);
+            }
             gl.use_program(Some(self.blit.program));
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(self.canvases[0].texture));
@@ -801,7 +852,6 @@ impl UiBackend for GlesRenderer {
     }
 
     fn render_overlay(&mut self, _: &(), target: &Target, cmds: &[DrawCmd]) -> RenderStats {
-        // Over what the target holds: not done yet (the canvas is cleared, then copied).
-        GlesRenderer::render(self, target, Color::TRANSPARENT, cmds)
+        GlesRenderer::render_overlay(self, target, cmds)
     }
 }

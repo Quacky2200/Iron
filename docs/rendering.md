@@ -72,9 +72,14 @@ separable Gaussian (reads clamp at the edge), `Composite` opacity, clip, the `fi
 shadow tint and shift, the mask texture and the 15 blend modes (a separate program that mixes the layer with a
 copy of its parent), so opacity groups, `filter`, drop shadows, masks, `mix-blend-mode` and `backdrop-filter`
 work. Scissor rectangles are flipped to GL's bottom-left origin; a clear wipes the whole canvas as a wgpu load op
-does; canvases filter linearly (a shifted drop shadow samples between texels). Not yet: `render_overlay` over
-what the target already holds (a seeded canvas, for UI over the 3D world) and a window surface (the context
-is a pbuffer). `tests/vs_wgpu.rs` draws scenes through both executors and compares pixels
+does; canvases filter linearly (a shifted drop shadow samples between texels). `render_overlay` clears
+the canvas transparent and blends it onto what the target holds (premultiplied, `ONE`/`ONE_MINUS_SRC_ALPHA`).
+`EglContext::window` makes a context on a winit window (Win32 HWND, Xlib; anything else is an error). Its
+surface is plain, not ANGLE's sRGB one (reading that back returned unencoded bytes, so colours were off), so
+`Target::srgb` is false and the blit encodes itself. `iron-app` (`gles_gfx.rs`) draws its one window this way
+(no 3D world, world panels or secondary windows), swaps with vsync, skips a frame whose draw lists equal the
+last one's, and falls back to wgpu when EGL is missing (`IRON_ANGLE_DIR` names ANGLE's folder; `IRON_GLES=0`
+forces wgpu). `tests/vs_wgpu.rs` draws scenes through both executors and compares pixels
 (`M2-GLES-02..13`: identical so far, 0 to 1 in 255); it and `tests/context.rs` need an EGL driver
 (`IRON_ANGLE_DIR` on Windows) and skip without one.
 

@@ -703,7 +703,9 @@ vec3 srgb_encode(vec3 c) {
 void main() {
     vec4 c = texelFetch(u_src, ivec2(gl_FragCoord.xy), 0);
     if (u_encode > 0.5) {
-        c.rgb = srgb_encode(c.rgb);
+        // The canvas is premultiplied: encode the straight colour.
+        vec3 straight = c.a > 0.0 ? c.rgb / c.a : vec3(0.0);
+        c.rgb = srgb_encode(straight) * c.a;
     }
     o_color = c;
 }

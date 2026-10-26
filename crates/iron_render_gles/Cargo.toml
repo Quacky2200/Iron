@@ -10,6 +10,7 @@ glow = "0.16"
 iron_render = { path = "../iron_render" }
 iron_ui = { version = "0.1.0", path = "../iron_ui" }
 khronos-egl = { version = "6", features = ["dynamic"] }
+raw-window-handle = "0.6"
 tracing = "0.1.44"
 
 [target.'cfg(windows)'.dependencies]
