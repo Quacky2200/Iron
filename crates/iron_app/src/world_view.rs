@@ -392,6 +392,8 @@ pub struct WorldViews {
     pub quality: Quality,
     /// Exposure and tonemapping (`render.post`).
     pub grading: Grading,
+    /// The script's `PostProcess` passes, which each camera's view carries.
+    pub(crate) post: crate::postfx::PostSet,
     /// Cameras whose auto exposure jumps to what they see next frame (`render.exposureReset`),
     /// applied by the app.
     pub exposure_resets: Vec<u32>,
@@ -455,6 +457,7 @@ impl Default for WorldViews {
             shadow_settings: (25.0, 2048, 1),
             quality: Quality::default(),
             grading: Grading::default(),
+            post: Default::default(),
             exposure_resets: Vec::new(),
             physical_units: false,
             sky: None,
@@ -2049,6 +2052,7 @@ impl WorldViews {
                     clip_plane: None,
                     probes: probes.clone(),
                     fxaa: camera.fxaa,
+                    post: self.post.for_camera(camera_id),
                     target_texture: target,
                     bones: bones.clone(),
                     grid: camera.grid,

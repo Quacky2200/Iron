@@ -13,7 +13,7 @@ mod app;
 
 // The shared modules reach each other through `crate::`.
 use app::{
-    anim_cull, asset_db, bone_cache, cook, info, models, particles, reload, sync_profile,
+    anim_cull, asset_db, bone_cache, cook, info, models, particles, postfx, reload, sync_profile,
     world_view,
 };
 

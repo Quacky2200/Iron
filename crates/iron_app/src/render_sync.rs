@@ -71,6 +71,8 @@ struct Cache {
     /// Inverse bind poses of model meshes (flat, 16 per bone), by mesh id.
     bindposes: HashMap<u32, Vec<f64>>,
     settings_version: Option<u64>,
+    /// The `PostProcess` registry's version as last sent.
+    post_version: Option<u64>,
     quality_version: Option<u64>,
     /// Counts the frames [`resources`] uploaded something (meshes, models: what renderers and
     /// skins may wait for).
@@ -941,6 +943,10 @@ fn components(
 
 /// `RenderSettings` and `QualitySettings`, when they changed.
 fn settings(views: &mut WorldViews) {
+    let post = iron_render_api::post_version();
+    if cache(|c| c.post_version.replace(post)) != Some(post) {
+        views.post.set(iron_render_api::post_passes());
+    }
     let v = iron_render_api::version();
     let settings_changed = cache(|c| c.settings_version.replace(v)) != Some(v);
     if settings_changed {
@@ -1694,6 +1700,62 @@ mod tests {
         sync(&mut views, &mut scene, Path::new("."));
         scene.scene.update_world();
         assert_eq!(views.views(&scene, (200, 100), &[])[0].quads.len(), 1);
+    }
+
+    // M7-FX-09
+    #[test]
+    fn post_process_passes_reach_their_cameras_views_in_order() {
+        iron_render_api::reset();
+        iron_engine_api::screen::reset();
+        reset();
+        let mut scene = ScriptScene::new();
+        let mut ui = UiTree::new(100.0, 100.0);
+        let bundle = Bundle {
+            source: "class Stage extends Component {
+                override onStart(): void {
+                  const a = new GameObject(\"A\").addComponent(Camera, {});
+                  const b = new GameObject(\"B\").addComponent(Camera, { depth: 1 });
+                  const vignette = PostProcess.create(\"vignette\");
+                  vignette.setFloat(\"intensity\", 0.9);
+                  const blur = PostProcess.create(\"blur\");
+                  blur.order = -1;
+                  const mine = PostProcess.createCustom(
+                    \"fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> { return color * tint; }\",
+                    [\"tint:color\"]);
+                  mine.setColor(\"tint\", new Color(1, 0.5, 0.25, 1));
+                  mine.camera = b;
+                  PostProcess.create(\"pixelate\").enabled = false;
+                }
+              }
+              register(Stage);"
+                .into(),
+            ..Default::default()
+        };
+        let mut native = Native::load(bundle, &mut scene.scene, &mut ui).unwrap();
+        native.frame(&mut scene.scene, &mut ui, 0.016, 16.0);
+        let mut views = WorldViews::default();
+        sync(&mut views, &mut scene, Path::new("."));
+        scene.scene.update_world();
+        let v = views.views(&scene, (200, 100), &[]);
+        assert_eq!(v.len(), 2);
+        let names = |view: &iron_render::WorldView| -> Vec<String> {
+            view.post.iter().map(|e| e.shader.name.clone()).collect()
+        };
+        // The disabled pass is left out; blur runs first by its order; the custom one is aimed
+        // at the second camera only.
+        assert_eq!(names(&v[0]), ["blur", "vignette"]);
+        assert_eq!(names(&v[1]), ["blur", "vignette", "custom"]);
+        assert_eq!(v[0].post[1].params[0][0], 0.9);
+        assert_eq!(v[1].post[2].params[0], [1.0, 0.5, 0.25, 1.0]);
+        assert_eq!(v[1].post[2].shader.params[0].0, "tint");
+        // The renderer's shader is the same one next frame (its pipeline stays cached).
+        let id = v[0].post[0].shader.id;
+        native.frame(&mut scene.scene, &mut ui, 0.016, 32.0);
+        sync(&mut views, &mut scene, Path::new("."));
+        assert_eq!(
+            views.views(&scene, (200, 100), &[])[0].post[0].shader.id,
+            id
+        );
     }
 
     // M9-API-1501

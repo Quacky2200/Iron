@@ -1130,6 +1130,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M7-FX-05 | Golden + GPU | `scene_depth` (metres along the view, background far) and `scene_normal` (world space, rebuilt from depth, zero on the background) reach a custom shader. |
 | M7-FX-06 | GPU | A custom WGSL pass runs (inverted light); a source with no `effect`, a type error or a syntax error is logged and skipped, the picture unchanged and later passes still running. |
 | M7-FX-07 | GPU | Passes run in order (pixelate then blur differs from blur then pixelate); with two cameras side by side an effect on the left camera stays in its half and the right half is untouched. |
+| M7-FX-09 | Integration | A script's `PostProcess.create` / `createCustom` passes reach each camera's `WorldView.post`: disabled ones left out, ordered by `order`, one aimed at a camera only on that camera's view, parameters in their slots, and the renderer's shader is the same one next frame (its pipeline stays cached). |
 | M7-FX-08 | GPU | Depth-reading passes work with 4x MSAA (multisampled depth) and behind exposure / tonemapping (the HDR path). |
 
 ---

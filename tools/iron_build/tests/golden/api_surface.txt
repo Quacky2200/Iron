@@ -1076,6 +1076,28 @@ declare class Pose :: readonly rotation: Quaternion;
 declare class Pose :: readonly up: Vector3;
 declare class Pose :: transformPoint(point: Vector3): Vector3;
 declare class Pose :: transformedBy(parent: Pose): Pose;
+declare class PostProcess
+declare class PostProcess :: camera: Camera | null;
+declare class PostProcess :: constructor(effect: PostEffect);
+declare class PostProcess :: constructor(effect: PostEffect, options: { enabled?: boolean; order?: number; camera?: Camera | null; passes?: number; usesDepth?: boolean });
+declare class PostProcess :: destroy(): void;
+declare class PostProcess :: enabled: boolean;
+declare class PostProcess :: getColor(name: string): Color;
+declare class PostProcess :: getFloat(name: string): number;
+declare class PostProcess :: order: number;
+declare class PostProcess :: passes: number;
+declare class PostProcess :: readonly effect: string;
+declare class PostProcess :: readonly isValid: boolean;
+declare class PostProcess :: readonly parameters: string[];
+declare class PostProcess :: setColor(name: string, color: Color): void;
+declare class PostProcess :: setFloat(name: string, value: number): void;
+declare class PostProcess :: setVector(name: string, x: number, options?: { y?: number; z?: number; w?: number }): void;
+declare class PostProcess :: setVector(name: string, x: number, y?: number, z?: number, w?: number): void;
+declare class PostProcess :: static all(): PostProcess[];
+declare class PostProcess :: static create(effect: PostEffect): PostProcess;
+declare class PostProcess :: static createCustom(source: string, options?: { parameters?: readonly string[] }): PostProcess;
+declare class PostProcess :: static createCustom(source: string, parameters?: readonly string[]): PostProcess;
+declare class PostProcess :: usesDepth: boolean;
 declare class Prefab
 declare class Prefab :: instantiate(options?: { px?: number; py?: number; pz?: number; qx?: number; qy?: number; qz?: number; qw?: number; parent?: GameObject }): GameObject;
 declare class Prefab :: instantiate(px?: number, py?: number, pz?: number, qx?: number, qy?: number, qz?: number, qw?: number, parent?: GameObject): GameObject;
@@ -2046,6 +2068,8 @@ declare module "@iron/engine" :: export import Playback = globalThis.Playback;
 declare module "@iron/engine" :: export import PlayerPrefs = globalThis.PlayerPrefs;
 declare module "@iron/engine" :: export import PolygonCollider2D = globalThis.PolygonCollider2D;
 declare module "@iron/engine" :: export import Pose = globalThis.Pose;
+declare module "@iron/engine" :: export import PostEffect = globalThis.PostEffect;
+declare module "@iron/engine" :: export import PostProcess = globalThis.PostProcess;
 declare module "@iron/engine" :: export import Prefab = globalThis.Prefab;
 declare module "@iron/engine" :: export import PrimitiveMesh = globalThis.PrimitiveMesh;
 declare module "@iron/engine" :: export import PrimitiveType = globalThis.PrimitiveType;
@@ -2410,6 +2434,9 @@ declare namespace PlayerPrefs :: function setString(key: string, value: string):
 declare namespace Pose
 declare namespace Pose :: const identity: Pose;
 declare namespace Pose :: function create(position: Vector3, rotation: Quaternion): Pose;
+declare namespace PostEffect
+declare namespace PostEffect :: function name(index: number): PostEffect;
+declare namespace PostEffect :: function parse(name: string): number;
 declare namespace PrimitiveType
 declare namespace PrimitiveType :: const Capsule: PrimitiveType;
 declare namespace PrimitiveType :: const Cube: PrimitiveType;
@@ -2828,6 +2855,7 @@ declare type FogMode = "linear" | "exponential" | "exponentialSquared";
 declare type FullScreenMode = "ExclusiveFullScreen" | "FullScreenWindow" | "MaximizedWindow" | "Windowed";
 declare type InputEventType = "keydown" | "keyup" | "gamepadconnected" | "gamepaddisconnected" | "gamepadbuttondown" | "gamepadbuttonup" | "gamepadaxis";
 declare type LoadSceneMode = "single" | "additive";
+declare type PostEffect = "chromaticAberration" | "blur" | "depthOfField" | "tiltShift" | "outline" | "vignette" | "pixelate" | "filmGrain" | "colorGrading" | "crt" | "posterize";
 declare type PrimitiveMesh = PrimitiveType;
 declare type PrimitiveType = "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad";
 declare type ShadowQualityMode = "disable" | "hardOnly" | "all";
