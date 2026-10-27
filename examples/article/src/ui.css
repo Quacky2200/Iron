@@ -48,9 +48,9 @@
 .cell { display: block; padding: 6px 12px; border-bottom: 1px solid #ece7dc; }
 .head .cell { background: #4a3f33; color: white; font-weight: bold; border-bottom: none; cursor: pointer; }
 .head .cell:hover { background: #5f5142; }
-/* A line under the whole header; the sorted column's part is brighter. */
-.head .cell { border-bottom: 3px solid #6b5b4a; }
-.head .sorted { border-bottom-color: #e0a56b; }
+/* One line under the whole header row; the sorted column has a lighter background. */
+.head .cell { border-bottom: 3px solid #e0a56b; }
+.head .sorted, .head .sorted:hover { background: #65564a; }
 .row:nth-child(even) .cell { background: #f6f2e9; }
 .row:hover .cell { background: #f1e1c8; }
 .num { text-align: right; }

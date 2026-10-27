@@ -40,9 +40,9 @@
   user-select: none;
 }
 .head .cell:hover { background: #3d4c6b; }
-/* A line under the whole header; the sorted column's part is brighter. */
-.head .cell { border-bottom: 3px solid #4a5a7a; }
-.head .sorted { border-bottom-color: #8fb2ff; }
+/* One line under the whole header row; the sorted column has a lighter background. */
+.head .cell { border-bottom: 3px solid #8fb2ff; }
+.head .sorted, .head .sorted:hover { background: #46577a; }
 .row:nth-child(even) .cell { background: #f1f4f9; }
 .row:hover .cell { background: #d6e4ff; }
 .row.selected .cell { background: #b9d1ff; }
