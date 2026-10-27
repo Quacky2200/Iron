@@ -3,7 +3,8 @@
 Passes over a camera's finished picture: chromatic aberration, blur, depth of field, ink outlines, vignette,
 pixelate, film grain, colour grading and more, plus your own WGSL. Scripts use `PostProcess`; the renderer side
 is [post.rs](../crates/iron_render/src/world/post.rs); the built-ins (their WGSL and parameters) are in
-[postfx.rs](../crates/iron_render_api/src/postfx.rs) and `postfx/*.wgsl`. Example: `examples/postfx`. Tests
+[postfx.rs](../crates/iron_render_api/src/postfx.rs) and `postfx/*.wgsl`. Examples: `examples/postfx` (every effect, a menu) and the small ones, each a copy of one scene (`modules/stage.ts`):
+`postfx-look` (stacked looks), `postfx-aberration`, `postfx-focus`, `postfx-outline`, `postfx-film`. Tests
 `M7-FX-01`..`09`.
 
 ## Using it

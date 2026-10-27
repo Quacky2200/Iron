@@ -201,9 +201,11 @@ fn to_linear(c: vec3<f32>) -> vec3<f32> {
 }
 // A hash of a point: white noise in 0..1.
 fn hash21(p: vec2<f32>) -> f32 {
-    var q = fract(p * vec2<f32>(123.34, 456.21));
-    q += dot(q, q + 45.32);
-    return fract(q.x * q.y);
+    // An integer hash of the float's bits: the usual fract-of-sine style hashes streak at large p.
+    var h = bitcast<u32>(p.x) * 747796405u + bitcast<u32>(p.y) * 2891336453u + 2891336453u;
+    h = ((h >> ((h >> 28u) + 4u)) ^ h) * 277803737u;
+    h = (h >> 22u) ^ h;
+    return f32(h >> 8u) / 16777216.0;
 }
 "#;
 
