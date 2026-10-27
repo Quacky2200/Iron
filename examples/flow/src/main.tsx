@@ -31,7 +31,7 @@ function App() {
       <Text className="caption">A picture inside a paragraph of bare text</Text>
       <box className="article" onClick={() => setSide(side === "left" ? "right" : "left")}>
         <Image className="small" src={PHOTO} style={{ float: side === "left" ? "right" : "left" }} />
-        {LOREM} {LOREM} (Click to swap sides.)
+        {LOREM + " " + LOREM + " (Click to swap sides.)"}
       </box>
     </box>
   );

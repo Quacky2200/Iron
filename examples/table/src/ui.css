@@ -40,6 +40,7 @@
   user-select: none;
 }
 .head .cell:hover { background: #3d4c6b; }
+.head .sorted { box-shadow: inset 0 -3px 0 #8fb2ff; }
 .row:nth-child(even) .cell { background: #f1f4f9; }
 .row:hover .cell { background: #d6e4ff; }
 .row.selected .cell { background: #b9d1ff; }

@@ -263,6 +263,91 @@ fn text_with_padding_wraps_around_a_float_inside_its_padding_box() {
     assert!(rect(&tree, t).height > rows.len() as f32 * 15.0);
 }
 
+// M3-FLT-14
+#[test]
+fn a_later_paragraph_stays_clear_of_the_floats_bottom_margin() {
+    // Two paragraphs after a float whose margin box ends at 6 + 60 + 40 = 106. The second
+    // paragraph starts below the first, and its lines that reach into the margin stay narrow.
+    let mut d = Dom::new();
+    let root = d.add(0, "box", &block(300.0));
+    // Its height comes from its text (five lines in 100px), as a pull-quote's does.
+    let f = vec![
+        ("display", "block".into()),
+        ("float", "right".into()),
+        ("width", px(100.0)),
+        ("padding", "8px 0px 8px 8px".into()),
+        ("margin", "6px 0 40px 20px".into()),
+    ];
+    let fl = d.add(root, "box", &f);
+    let q = d.add(fl, "text", &[]);
+    d.text(
+        q,
+        "one two three four five six seven eight nine ten eleven twelve",
+    );
+    let a = d.add(root, "text", &[("marginBottom", px(10.0))]);
+    d.text(
+        a,
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa",
+    );
+    let b = d.add(root, "text", &[]);
+    d.text(b, WORDS);
+    let mut tree = d.build("");
+    let second = rect(&tree, b);
+    let cmds: Vec<_> = tree
+        .draw_list()
+        .into_iter()
+        .filter_map(|c| match c {
+            DrawCmd::Text(t) => Some(t),
+            _ => None,
+        })
+        .collect();
+    let mut tops: Vec<(f32, f32)> = Vec::new();
+    for g in cmds[1].runs.iter().flat_map(|r| &r.glyphs) {
+        if !tops.iter().any(|t| (t.0 - g.y).abs() < 1.0) {
+            tops.push((g.y, 0.0));
+        }
+        let t = tops.iter_mut().find(|t| (t.0 - g.y).abs() < 1.0).unwrap();
+        t.1 = t.1.max(g.x + g.advance);
+    }
+    let fr = rect(&tree, fl);
+    let bottom = fr.y + fr.height + 40.0;
+    assert!(bottom > 130.0, "{fr:?}");
+    for (y, right) in &tops {
+        if *y < bottom - 14.0 {
+            assert!(
+                *right <= fr.x - 20.0 + 0.5,
+                "line at {y} (text at {}) ends at {right}, float {fr:?}",
+                second.y
+            );
+        }
+    }
+}
+
+// M3-FLT-15
+#[test]
+fn the_taller_of_two_floats_keeps_narrowing_lines_after_the_shorter_ends() {
+    let mut d = Dom::new();
+    let root = d.add(0, "box", &block(300.0));
+    d.add(root, "box", &float_box("left", 80.0, 40.0));
+    let mut tall = float_box("right", 80.0, 120.0);
+    tall.push(("marginBottom", px(20.0)));
+    d.add(root, "box", &tall);
+    let t = d.add(root, "text", &[]);
+    d.text(t, WORDS);
+    let mut tree = d.build("");
+    let rows = lines(&mut tree);
+    for (top, left, right) in &rows {
+        if *top < 130.0 {
+            // (a trailing space may hang a few px past the room)
+            assert!(*right <= 226.0, "line at {top} ends at {right}");
+        }
+        if *top > 65.0 && *top < 130.0 {
+            assert!(*left < 1.0, "line at {top} starts at {left}");
+        }
+    }
+    assert!(rows.iter().any(|r| r.0 > 45.0), "{rows:?}");
+}
+
 // M3-FLT-13
 #[test]
 fn an_image_floats_inside_a_paragraph_of_bare_text() {

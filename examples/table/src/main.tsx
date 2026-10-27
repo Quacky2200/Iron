@@ -30,10 +30,20 @@ const COLUMNS: { key: keyof Item; title: string; numeric?: boolean }[] = [
   { key: "price", title: "Price", numeric: true },
 ];
 
+// A cell's text. The fields differ in type, so a column is read through its key one case at a time.
+function text(item: Item, key: keyof Item): string {
+  if (key === "name") return item.name;
+  if (key === "kind") return item.kind;
+  if (key === "note") return item.note;
+  return String(key === "qty" ? item.qty : item.price);
+}
+
 function App() {
   const [sortBy, setSortBy] = useState<keyof Item>("name");
   const [selected, setSelected] = useState("Potion");
-  const rows = [...ITEMS].sort((a, b) => (a[sortBy] < b[sortBy] ? -1 : a[sortBy] > b[sortBy] ? 1 : 0));
+  const rows = [...ITEMS].sort((a, b) =>
+    sortBy === "qty" ? a.qty - b.qty : sortBy === "price" ? a.price - b.price : text(a, sortBy).localeCompare(text(b, sortBy)),
+  );
   const total = ITEMS.reduce((sum, item) => sum + item.qty * item.price, 0);
   return (
     <box className="page">
@@ -42,8 +52,8 @@ function App() {
       <box className="table">
         <box className="row head">
           {COLUMNS.map((c) => (
-            <box key={c.key} className={c.numeric ? "cell num" : "cell"} onClick={() => setSortBy(c.key)}>
-              <Text>{c.title + (c.key === sortBy ? " ▾" : "")}</Text>
+            <box key={c.key} className={(c.numeric ? "cell num" : "cell") + (c.key === sortBy ? " sorted" : "")} onClick={() => setSortBy(c.key)}>
+              <Text>{c.title}</Text>
             </box>
           ))}
         </box>
@@ -51,7 +61,7 @@ function App() {
           <box key={item.name} className={item.name === selected ? "row selected" : "row"} onClick={() => setSelected(item.name)}>
             {COLUMNS.map((c) => (
               <box key={c.key} className={c.numeric ? "cell num" : "cell"}>
-                <Text>{String(item[c.key])}</Text>
+                <Text>{text(item, c.key)}</Text>
               </box>
             ))}
           </box>
