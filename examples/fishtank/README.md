@@ -25,7 +25,7 @@ cargo run -p platypus_app -- examples/fishtank
 ```
 
 Package with `platypus-build package ../examples/fishtank`. A screenshot run is
-`platypus_app examples/fishtank --screenshot out.png --frames N`; it is the safest check, since the window has
+`platypus examples/fishtank --screenshot out.png --frames N`; it is the safest check, since the window has
 crashed some GPUs.
 
 ## Structure

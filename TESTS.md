@@ -41,7 +41,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|
 | M1-PLT-01 | Integration | The `Platform` layer can be created and destroyed without opening a window (headless mode). |
 | M1-PLT-02 | Unit | winit events convert to Platypus input events (key down/up, mouse move, resize, close). |
-| M1-PLT-03 | Manual | `cargo run -p platypus -- examples/hello` opens a window; closing it exits cleanly with code 0. |
+| M1-PLT-03 | Manual | `cargo run -p platypus_app -- examples/hello` opens a window; closing it exits cleanly with code 0. |
 
 ### Rendering
 | ID | Kind | Checks |

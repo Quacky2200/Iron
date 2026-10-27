@@ -21,7 +21,7 @@ cd tools && cargo run -q -p platypus_build -- build ../examples/fog-teapots
 cd .. && cargo run -p platypus_app -- examples/fog-teapots
 ```
 
-Packaged: `platypus-build package ../examples/fog-teapots`. Screenshot run: `platypus_app examples/fog-teapots --screenshot out.png --frames 60`
+Packaged: `platypus-build package ../examples/fog-teapots`. Screenshot run: `platypus examples/fog-teapots --screenshot out.png --frames 60`
 (the interactive window has crashed some GPUs; the screenshot run is safest).
 
 ## Structure
