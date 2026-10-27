@@ -262,3 +262,32 @@ fn text_with_padding_wraps_around_a_float_inside_its_padding_box() {
     let rows = lines(&mut tree);
     assert!(rect(&tree, t).height > rows.len() as f32 * 15.0);
 }
+
+// M3-FLT-13
+#[test]
+fn an_image_floats_inside_a_paragraph_of_bare_text() {
+    // The text is a child of the block itself (an anonymous text block), the way a
+    // paragraph holding an image is written.
+    let mut d = Dom::new();
+    let p = d.add(0, "box", &block(300.0));
+    let img = d.add(
+        p,
+        "image",
+        &[
+            ("float", "right".into()),
+            ("width", px(90.0)),
+            ("height", px(60.0)),
+            ("margin", px(6.0)),
+        ],
+    );
+    d.text(p, WORDS);
+    let mut tree = d.build("");
+    assert_eq!(rect(&tree, img), Rect::new(204.0, 6.0, 90.0, 60.0));
+    let rows = lines(&mut tree);
+    assert!(rows[0].2 <= 204.0 + 6.0, "{:?}", rows[0]);
+    // A line that touches the float's margin box stays beside it; later ones are wide.
+    assert!(
+        rows.iter().any(|r| r.2 > 250.0),
+        "below the image: {rows:?}"
+    );
+}

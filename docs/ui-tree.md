@@ -161,7 +161,7 @@ are resolved to pixels at restyle before `apply_style` sees them (so are the abs
 ## Layout
 
 [layout.rs](../crates/iron_ui/src/layout.rs) hides Taffy behind `trait LayoutEngine`
-(`create_node`, `set_style`, `set_children`, `set_measured`, `mark_dirty`, `compute`, `layout`).
+(`create_node`, `set_style`, `set_children`, `set_measured`, `set_text_block`, `mark_dirty`, `compute`, `layout`).
 `taffy::Style` doubles as the backend-neutral style type. Why the trait: DESIGN.md section 5.3 keeps
 Yoga as a fallback, and the JSON fixtures in `tests/layout` are generic over the engine (see
 [testing.md](testing.md)). `TaffyLayout` keeps its own node storage and runs Taffy's algorithms over it; layout results are
@@ -180,6 +180,38 @@ re-measured every sibling's text). `cache_get` tries Taffy's cache, then `sizes`
 both (`M2-LAY-07`). `View` resolves calc handles through
 `crate::calc::resolve`, for containers (`resolve_calc_value`) and for measured leaves
 (`compute_leaf_layout`; the measure callback sizes text content).
+
+### Floats (`float`, `clear`; `M3-FLT-*`)
+
+Taffy's `float_layout` feature does the box side: a `float: left | right` child of a block container
+(`display: block` or `flow-root`; every Iron element is `flex` unless set) is placed beside the line
+flow, floats of one side stack and wrap down, margins count, `clear` adds clearance, and a block
+formatting context root (`flow-root`, a scroller, a flex item) contains its floats. Flex and grid items
+ignore `float`. Text is the part Taffy cannot do, so `layout.rs` adds two things:
+
+- A text root (a measured leaf that is a text block, `set_text_block`) lays out as a block item whatever
+  its `display`, so it stays in the container's formatting context instead of being pushed beside the
+  floats like a new one. `get_block_child_style` gives the container a copy of its style with `display: block`.
+- When a measured leaf is laid out inside a formatting context that has floats, `float_bands` asks the
+  context's `find_content_slot` for each float segment and turns them into `text::Band`s (`y`, `x`,
+  `width` in the leaf's content box). The measure callback gets them as `Around { bands, layout_pass }`;
+  the final layout pass records them in `UiTree::text_bands` so `text::finish` (drawing) breaks the
+  same way.
+
+`text::break_in_bands` drives Parley's `BreakLines` line by line: `room(bands, y, height)` is the left
+edge and width every band the line's height touches leaves in common (a float anywhere in the line
+pushes the whole line, as in CSS), found by breaking the line once and again when its height reaches a
+narrower band; a line whose word is wider than the room moves to the next band
+(`set_line_y`). Alignment is then per line within its own room (Parley's `inline_min_coord` /
+`inline_max_coord`), and hit testing and selection follow without changes. `text_height` takes the bottom
+of the last line as the block's height, since Parley sums line heights and a pushed-down line leaves a gap.
+
+Taffy's per-node cache is keyed on sizes only, not on the floats placed before a block, so while any
+node sets `float` or `clear` (`TaffyLayout::floats`) blocks inside a formatting context skip the cache.
+
+An image (or any box) floated in a block that also holds bare text is the "image in a paragraph" case;
+the text is an anonymous text block beside it. A float between runs of one `text` element is not
+supported (text children are flattened to runs; it would need in-flow inline boxes).
 
 ### calc ([calc.rs](../crates/iron_ui/src/calc.rs))
 

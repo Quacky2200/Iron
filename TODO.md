@@ -724,6 +724,18 @@ and `@font-face`.
 
 Accessibility and drag and drop moved to M5.e, as UI requirements before the editor starts.
 
+#### Floats and tables (2026-10-27)
+
+- [x] `float: left | right` and `clear` on blocks (Taffy's `float_layout`): floated boxes sit beside
+  the line flow, several stack and wrap down, `clear` moves a block below them, margins count. Text
+  blocks lay out as block items of their container, and their lines break band by band around the
+  floats (Parley `BreakLines`: a line's room is what every float its height touches leaves; a word
+  wider than the room moves below the float). An image floated inside a block of bare text is the
+  "image in a paragraph" case: no richtext element is needed — `M3-FLT-01`..`13`, golden `M3-FLT-20`
+- [ ] A float inside a `text` element (a floated child between runs of one paragraph): needs in-flow
+  inline boxes in text (Parley `InlineBox`); only block-level floats before the text exist
+- [ ] Table example, then table elements if it is not enough (below)
+
 ## M4 — Hot reload, physics and audio
 
 Physics and audio come ahead of the scene work (M5), so its object model is designed with them in

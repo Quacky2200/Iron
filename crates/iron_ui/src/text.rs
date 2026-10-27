@@ -302,35 +302,54 @@ fn text_height(layout: &Layout<Brush>) -> f32 {
     layout.height().max(last)
 }
 
-/// Line breaking with a different start and width for each band. A line that doesn't fit
-/// the band it starts in (too tall, or a word wider than the room) moves down to the next
-/// one, as in CSS, unless the band is as wide as the whole block.
+/// What the bands leave of the width for a line spanning `y..y + height`: its left edge and
+/// width, the part every band the line touches has room in (a float anywhere in the line's
+/// height pushes the whole line, as in CSS).
+fn room(bands: &[Band], y: f32, height: f32) -> (f32, f32) {
+    let bottom = y + height.max(0.1);
+    let (mut left, mut right) = (0.0_f32, f32::MAX);
+    for (i, band) in bands.iter().enumerate() {
+        let end = bands.get(i + 1).map_or(f32::MAX, |next| next.y);
+        if end > y + 0.01 && band.y < bottom - 0.01 {
+            left = left.max(band.x);
+            right = right.min(band.x + band.width);
+        }
+    }
+    (left, (right - left).max(0.0))
+}
+
+/// Line breaking with a different start and width for each line, from the room `bands`
+/// leave at its height. A line whose word is wider than the room moves down to the next
+/// band, as in CSS, unless the room is as wide as the whole block.
 fn break_in_bands(layout: &mut Layout<Brush>, width: f32, bands: &[Band]) {
     let mut lines = layout.break_lines();
     lines.state_mut().set_layout_max_advance(width);
-    while !lines.is_done() {
+    'lines: while !lines.is_done() {
         let y = lines.committed_y() as f32;
-        let i = bands.iter().rposition(|b| b.y <= y + 0.01).unwrap_or(0);
-        let band = bands[i];
-        let below = bands.get(i + 1).map(|b| b.y);
-        let saved = {
+        let below = bands.iter().map(|b| b.y).find(|by| *by > y + 0.01);
+        // A first guess from the line's top; its height (known once it is broken) can
+        // reach into a narrower band, so break it again with that room.
+        let (mut x, mut w) = room(bands, y, 0.0);
+        let mut saved = None;
+        let (data, w) = loop {
             let state = lines.state_mut();
-            state.set_line_x(band.x);
-            state.set_line_max_advance(band.width.min(width));
-            state.set_line_max_height(below.map_or(f32::MAX, |b| b - y));
-            state.clone()
-        };
-        let moved = match lines.break_next() {
-            None => break,
-            Some(YieldData::LineBreak(data)) => {
-                let used = data.metrics.advance - data.metrics.hanging_advance;
-                used > band.width + 0.5 && band.width + 0.5 < width
+            state.set_line_x(x);
+            state.set_line_max_advance(w.min(width));
+            let before = saved.get_or_insert_with(|| state.clone()).clone();
+            let Some(YieldData::LineBreak(data)) = lines.break_next() else {
+                break 'lines;
+            };
+            let (nx, nw) = room(bands, y, data.metrics.line_height);
+            if (nx > x + 0.5 || nw < w - 0.5) && (nx, nw) != (x, w) {
+                lines.revert_to(before);
+                (x, w) = (nx, nw);
+                continue;
             }
-            Some(YieldData::MaxHeightExceeded(_)) => true,
-            // Only in-flow inline content exists, so the breaker never yields a box.
-            Some(YieldData::InlineBoxBreak(_)) => false,
+            break (data, w);
         };
-        if let (true, Some(below)) = (moved, below) {
+        let used = data.metrics.advance - data.metrics.hanging_advance;
+        if let (true, Some(below), Some(saved)) = (used > w + 0.5 && w + 0.5 < width, below, saved)
+        {
             lines.revert_to(saved);
             lines.state_mut().set_line_y(f64::from(below));
         }

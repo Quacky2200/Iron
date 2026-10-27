@@ -301,6 +301,25 @@ layout pass):
 | M3-PAD-02 | Unit | Each pad connection reaches scripts once: pads already plugged in are announced on the first poll, a repeated `Connected` for a known pad is dropped, and one that disconnects and comes back is announced again. |
 | M3-MAN-01 | Manual | `iron examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
 
+### M3d — Floats and tables
+
+| ID | Kind | What |
+|---|---|---|
+| M3-FLT-01 | Integration | A text block beside a left float starts its lines after the float while they touch it, and returns to the edge below it; its box keeps the full width. |
+| M3-FLT-02 | Integration | A right float sits at the right edge and the lines end before it. |
+| M3-FLT-03 | Integration | Floats on both sides leave the middle for the lines. |
+| M3-FLT-04 | Integration | Floats of one side sit next to each other, then wrap below the first. |
+| M3-FLT-05 | Integration | `clear` moves a block below the floats; a block without it keeps its place. |
+| M3-FLT-06 | Integration | A float sticks out of a plain block; a `flow-root` (and a formatting context root) contains it. |
+| M3-FLT-07 | Integration | A word wider than the room beside a float moves the line below the float. |
+| M3-FLT-08 | Integration | `text-align` aligns each line within the room beside a float. |
+| M3-FLT-09 | Integration | `float` is ignored on flex and grid items. |
+| M3-FLT-10 | Integration | Removing, changing or resizing a float relayouts the text beside it (no stale cache). |
+| M3-FLT-11 | Integration | A float's margins keep text away from it. |
+| M3-FLT-12 | Integration | Text with padding and a background wraps around a float inside its padding box. |
+| M3-FLT-13 | Integration | An `image` floated in a block of bare text: the paragraph wraps around it. |
+| M3-FLT-20 | Golden | A page with a left picture, a right pull-quote, a paragraph flowing between and under them, and a `clear: both` bar. |
+
 ---
 
 ## M4 — Hot reload
