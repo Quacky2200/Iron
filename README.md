@@ -28,6 +28,28 @@ The idea
   numeric IDs, never engine references. The engine API is Rust annotated with `#[iron_api]`, which also generates
   the game's TypeScript declarations, so the types always match the engine.
 
+A web-style UI, with React
+--------------------------
+
+Iron takes its inspiration from S&box's web-style UI (HTML-like elements styled with CSS) and goes one step
+further: UI is written as React components and hooks. React is the most widely used UI library on the web, and its
+component model is where much of today's UI practice comes from, so web designers and developers already know how to
+build the menus, HUDs and tools of a game this way.
+
+Why TypeScript, and why a compiler
+----------------------------------
+
+Iron started on QuickJS, a small JavaScript interpreter. It is easy to embed, but without a JIT its performance
+is poor, and shipping a JIT runtime (V8, or Bun's JavaScriptCore) inside every game is heavy. The goal was
+performance in the range of ahead-of-time compiled C#, so instead of embedding a runtime we wrote a compiler:
+`iron_ts` turns a typed subset of TypeScript into native code ([docs/iron-ts-native.md](docs/iron-ts-native.md)).
+Perhaps it is the first game engine to do this: TypeScript compiled natively as its scripting language, an
+alternative to the .NET route taken by Unity, Godot's C# support and Stride.
+
+How close is it? On the one micro-benchmark we compared across engines (a game-rules simulation, 10,000 steps) it
+takes 9.1 ms, against 36.1 ms for Bun's JIT and 391 ms for QuickJS. We have not benchmarked it against C#, so "close
+to C#" is the aim, not a measured result. Details: [docs/benchmarks.md](docs/benchmarks.md).
+
 Technologies
 ------------
 
