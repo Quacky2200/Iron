@@ -225,12 +225,13 @@ impl Saver {
         if unsaved(object) {
             return None;
         }
-        let (name, t, enabled, layer) = sc(|s| {
+        let (name, t, enabled, layer, tag) = sc(|s| {
             (
                 s.name(object).unwrap_or_default().to_owned(),
                 s.local(object).unwrap_or(Transform::IDENTITY),
                 s.enabled(object),
                 s.layer(object),
+                s.tag_name(object).to_owned(),
             )
         })?;
         let f = f64::from;
@@ -255,6 +256,9 @@ impl Saver {
         }
         if layer != 0 {
             d.insert("layer".into(), json!(layer));
+        }
+        if tag != "Untagged" {
+            d.insert("tag".into(), json!(tag));
         }
         for extra in iron_kinds::object_extras() {
             if let Some(v) = (extra.save)(object.to_raw()) {
@@ -394,6 +398,9 @@ impl Loader {
         sc(|s| s.set_local(object, local));
         if let Some(layer) = d.get("layer").and_then(Value::as_u64) {
             sc(|s| s.set_layer(object, layer as u8));
+        }
+        if let Some(tag) = d.get("tag").and_then(Value::as_str) {
+            sc(|s| s.set_tag_name(object, tag));
         }
         if d.get("enabled") == Some(&Value::Bool(false)) {
             self.disabled.push(object);

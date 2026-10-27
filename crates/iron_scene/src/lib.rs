@@ -74,6 +74,8 @@ struct Object {
     layer: u8,
     /// `HideFlags` bits: what the editor shows and saves.
     hide_flags: u32,
+    /// Unity's `tag` (empty: "Untagged").
+    tag_name: String,
     /// The scene (a loader's handle) the object was made in; 0 for none.
     tag: u32,
     parent: Option<ObjectId>,
@@ -152,6 +154,7 @@ impl Scene {
             enabled: true,
             layer: 0,
             hide_flags: 0,
+            tag_name: String::new(),
             tag: self.new_tag,
             parent: None,
             children: Vec::new(),
@@ -282,6 +285,32 @@ impl Scene {
     }
 
     /// The object's `HideFlags` bits (0 for unknown objects).
+    /// Unity's `tag` of an object: "Untagged" when it has none.
+    pub fn tag_name(&self, id: ObjectId) -> &str {
+        self.get(id)
+            .map_or("Untagged", |o| match o.tag_name.as_str() {
+                "" => "Untagged",
+                t => t,
+            })
+    }
+
+    pub fn set_tag_name(&mut self, id: ObjectId, tag: &str) {
+        if let Some(o) = self.get_mut(id) {
+            o.tag_name = if tag == "Untagged" {
+                String::new()
+            } else {
+                tag.to_owned()
+            };
+        }
+    }
+
+    /// The active objects with this tag, depth-first from the roots (Unity's `FindGameObjectsWithTag`).
+    pub fn find_with_tag(&self, tag: &str) -> Vec<ObjectId> {
+        self.walk()
+            .filter(|id| self.tag_name(*id) == tag && self.active(*id))
+            .collect()
+    }
+
     /// The scene tag of an object (0 when it has none).
     pub fn tag(&self, id: ObjectId) -> u32 {
         self.get(id).map_or(0, |o| o.tag)

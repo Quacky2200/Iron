@@ -440,6 +440,26 @@ fn raycasts_filter_by_layer_and_name_the_hit_object() {
     assert_eq!(cast(0.0, 1 << 3), Some((near, 4.5)));
     // Starting inside the near box skips it, so the far box is the hit.
     assert_eq!(cast(5.0, u32::MAX), Some((far, 4.5)));
+    // An infinite distance (the default) reaches far targets.
+    let far_ray = |dist: f64| {
+        crate::do_raycast_masked(
+            V3 {
+                x: -1.0e6,
+                y: 0.0,
+                z: 0.0,
+            },
+            V3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            dist,
+            u32::MAX,
+        )
+    };
+    assert_ne!(far_ray(f64::INFINITY), 0);
+    assert_ne!(far_ray(1.0e30), 0);
+    assert_eq!(far_ray(100.0), 0);
     // A mask that matches nothing is a miss.
     assert_eq!(
         crate::do_raycast_masked(

@@ -205,7 +205,7 @@ pub(crate) fn do_raycast_masked(
         let hit = s.physics.raycast_now(
             [origin.x as f32, origin.y as f32, origin.z as f32],
             [direction.x as f32, direction.y as f32, direction.z as f32],
-            max_distance as f32,
+            max_distance.min(f64::from(f32::MAX)) as f32,
             &accept,
         );
         let Some((collider, distance, normal)) = hit else {
@@ -443,10 +443,11 @@ pub mod physics_api {
         add_collider(0, "mesh", flat(points), Some(indices.to_vec()))
     }
 
-    /// Casts a ray at once and answers the first collider hit within `maxDistance`, or no hit.
+    /// Casts a ray at once and answers the first collider hit within `maxDistance` (unlimited by
+    /// default, as in Unity), or no hit.
     /// `layerMask` (a bit per layer, `LayerMask.getMask`) keeps the colliders whose GameObject
     /// is on those layers; a collider the origin is inside is not hit (as in Unity).
-    #[optional(max_distance = 1000, layer_mask = 4294967295)]
+    #[optional(max_distance = 1e30, layer_mask = 4294967295)]
     #[nullable]
     pub fn raycast(origin: V3, direction: V3, max_distance: f64, layer_mask: u32) -> HitRef {
         HitRef(do_raycast_masked(

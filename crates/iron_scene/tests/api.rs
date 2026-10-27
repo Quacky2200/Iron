@@ -225,3 +225,27 @@ fn value_classes_have_constructors_methods_and_getters_in_quickjs() {
         assert_eq!(out, "[3,4,6,6,true,1,9]");
     });
 }
+
+// M9-API-211
+//
+// Unity's tags: objects are "Untagged" until tagged; `find_with_tag` lists the active objects with a
+// tag in scene order, and tagging "Untagged" clears the tag.
+#[test]
+fn objects_are_found_by_tag() {
+    let mut scene = Scene::new();
+    let a = scene.create("a");
+    let b = scene.create("b");
+    let c = scene.create("c");
+    assert_eq!(scene.tag_name(a), "Untagged");
+    scene.set_tag_name(a, "Enemy");
+    scene.set_tag_name(c, "Enemy");
+    scene.set_tag_name(b, "Player");
+    assert_eq!(scene.find_with_tag("Enemy"), vec![a, c]);
+    assert_eq!(scene.find_with_tag("Player"), vec![b]);
+    // An inactive object is not found (Unity's FindGameObjectsWithTag).
+    scene.set_enabled(a, false);
+    assert_eq!(scene.find_with_tag("Enemy"), vec![c]);
+    scene.set_tag_name(c, "Untagged");
+    assert!(scene.find_with_tag("Enemy").is_empty());
+    assert_eq!(scene.tag_name(c), "Untagged");
+}

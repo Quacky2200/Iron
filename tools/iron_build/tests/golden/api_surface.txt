@@ -611,6 +611,7 @@ declare class FogVolume :: static findOn(object: GameObject): FogVolume;
 declare class GameObject
 declare class GameObject :: addComponent<T>(cls: ClassOf<T>, props?: Partial<T>): T;
 declare class GameObject :: childAt(index: number): GameObject;
+declare class GameObject :: compareTag(tag: string): boolean;
 declare class GameObject :: constructor(name?: string, options?: GameObjectOptions);
 declare class GameObject :: destroy(): void;
 declare class GameObject :: enabled: boolean;
@@ -637,15 +638,18 @@ declare class GameObject :: setParent(parent: GameObject, keepWorld?: boolean): 
 declare class GameObject :: setParent(parent: GameObject, options?: { keepWorld?: boolean }): void;
 declare class GameObject :: static byId(id: number): GameObject;
 declare class GameObject :: static create(): GameObject;
-declare class GameObject :: static create(options: { name?: string; enabled?: boolean; layer?: number; hideFlags?: number }): GameObject;
+declare class GameObject :: static create(options: { name?: string; enabled?: boolean; layer?: number; tag?: string; hideFlags?: number }): GameObject;
 declare class GameObject :: static createPrimitive(type: PrimitiveType, options?: GameObjectOptions & { name?: string }): GameObject;
 declare class GameObject :: static dontDestroyOnLoad(go: GameObject): void;
 declare class GameObject :: static find(name: string): GameObject;
+declare class GameObject :: static findGameObjectsWithTag(tag: string): GameObject[];
 declare class GameObject :: static findObjectOfType<T>(cls: ClassOf<T>): T | undefined;
+declare class GameObject :: static findWithTag(tag: string): GameObject | null;
 declare class GameObject :: static instantiate(original: GameObject | Prefab, options?: InstantiateObjectOptions): GameObject;
 declare class GameObject :: static readonly roots: readonly GameObject[];
 declare class GameObject :: static rootAt(index: number): GameObject;
 declare class GameObject :: static rootCount(): number;
+declare class GameObject :: tag: string;
 declare class HingeJoint
 declare class HingeJoint :: anchor: Vector3;
 declare class HingeJoint :: autoConfigureConnectedAnchor: boolean;

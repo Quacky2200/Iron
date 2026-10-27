@@ -112,7 +112,7 @@ same module (see [iron-api.md](iron-api.md#handle-classes)):
 
 | Class | Rust type | Members |
 |---|---|---|
-| `GameObject` | `ObjectId` | static `create()`, `find(name)` (the first object with that name, or null); methods `destroy()`, `exists()`; properties `transform` (read-only), `name`, `enabled`, `activeInHierarchy` (read-only), `layer` |
+| `GameObject` | `ObjectId` | static `create()`, `find(name)` (the first object with that name, or null); static `findWithTag(tag)` (the first active object with the tag, or null), `findGameObjectsWithTag(tag)`; methods `destroy()`, `exists()`, `compareTag(tag)`; properties `transform` (read-only), `name`, `enabled`, `activeInHierarchy` (read-only), `layer`, `tag` (Unity's tag, "Untagged" by default; saved as `tag` in scene files and copied by `instantiate`) |
 | `Transform` | `TransformRef(ObjectId)` | `gameObject` (read-only), `position`, `rotation` (world), `localPosition`, `localRotation`, `localScale`, `parent` (read-only, a `Transform`, 0 for a root), method `setParent(parent, keepWorld)` |
 
 `TransformRef` shares the object's raw handle, so `go.transform` is the same number as `go` seen as

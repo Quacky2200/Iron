@@ -237,6 +237,34 @@ pub mod scene_api {
             with(|s| s.set_layer(self, layer.min(31) as u8));
         }
 
+        /// Unity's tag, a name for finding objects ("Untagged" by default).
+        #[property]
+        pub fn tag(self) -> String {
+            with(|s| s.tag_name(self).to_owned()).unwrap_or_else(|| "Untagged".to_owned())
+        }
+
+        pub fn set_tag(self, tag: &str) {
+            with(|s| s.set_tag_name(self, tag));
+        }
+
+        /// Has it this tag?
+        pub fn compare_tag(self, tag: &str) -> bool {
+            with(|s| s.tag_name(self) == tag).unwrap_or(false)
+        }
+
+        /// The first active object with this tag, or `null`.
+        #[nullable]
+        pub fn find_with_tag(tag: &str) -> ObjectId {
+            with(|s| s.find_with_tag(tag).first().copied())
+                .flatten()
+                .unwrap_or_else(none)
+        }
+
+        /// Every active object with this tag.
+        pub fn find_game_objects_with_tag(tag: &str) -> Vec<ObjectId> {
+            with(|s| s.find_with_tag(tag)).unwrap_or_default()
+        }
+
         /// The object it is under (no object at the root).
         #[property]
         pub fn parent(self) -> ObjectId {

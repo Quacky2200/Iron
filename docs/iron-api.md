@@ -401,7 +401,7 @@ world colliders, `raycast` that answers at once, `createJoint`, `step`) and the 
 `go.getComponent(BoxCollider)` through the static `findOn`). `Physics.raycast(origin, direction, maxDistance?, layerMask?)`
 answers a `RaycastHit` (`gameObject`, `transform`, `rigidbody`, `collider`, `point`, `normal`, `distance`) or `null` on a miss; the
 mask keeps the colliders whose GameObject is on those layers, and a collider the origin starts inside is not hit (as in Unity).
-Differences: no `out` parameter or bool, no `raycastAll`, and `maxDistance` defaults to 1000 m, not infinity. Layout: `comp.rs` (component data, the one body per
+`maxDistance` is unlimited by default. Differences: no `out` parameter or bool, and no `raycastAll`. Layout: `comp.rs` (component data, the one body per
 GameObject shared by its Rigidbody and colliders, joints, rope, per-step sync), `components.rs`, `joints.rs`,
 `physics2d.rs` (the generated-looking class impls: same members repeated per class), `kinds.rs` (`register_kinds()`
 puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
