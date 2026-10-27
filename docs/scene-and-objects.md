@@ -216,7 +216,8 @@ s&box.
   `eulerAngles`, `translate`, `rotate`, `lookAt`, `transformPoint`, `inverseTransformPoint`,
   `transformDirection`. Native games (the `#[iron_api]` `Transform`) also have Unity's hierarchy:
   `parent` (`null` at a root, as on `GameObject`), `childCount`, `getChild(i)`, `root`,
-  `find("a/b")`, `isChildOf`, `detachChildren`, `siblingIndex` with `setAsFirstSibling` /
+  `find("a/b")` (also `..`, `.` and a leading `/` from the roots), `localToWorldMatrix` /
+  `worldToLocalMatrix` (position, rotation and world scale, no shear), `isChildOf`, `detachChildren`, `siblingIndex` with `setAsFirstSibling` /
   `setAsLastSibling`, `setParent(parent, keepWorld = true)` (keeps the world scale too),
   `transformVector` / `inverseTransformVector` / `inverseTransformDirection`,
   `setPositionAndRotation`, `setLocalPositionAndRotation` and `rotateAround`. `transform.parent = x`

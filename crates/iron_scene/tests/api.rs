@@ -115,7 +115,7 @@ fn the_manifest_declares_the_handle_and_both_value_classes() {
     assert_eq!(m.name, "Scene");
     assert_eq!(m.handles, &["GameObject", "Transform"]);
     let names: Vec<&str> = m.values.iter().map(|v| v.name).collect();
-    assert_eq!(names, ["Vector3", "Quaternion"]);
+    assert_eq!(names, ["Vector3", "Quaternion", "Matrix4x4"]);
     let d = m.to_dts();
     assert!(d.contains("function create(): GameObject;"), "{d}");
     assert!(
@@ -327,6 +327,29 @@ fn transforms_walk_and_reshape_the_hierarchy_like_unity() {
     ring_t.set_parent(T(ObjectId::from_raw(0)), true);
     assert!(near(ring_t.lossy_scale(), v(2.0, 2.0, 2.0)));
     assert!(near(ring_t.local_scale(), v(2.0, 2.0, 2.0)));
+    // Matrices: the translation column is the world position, and the two undo each other.
+    ring_t.set_parent(hand_t, false);
+    ring_t.set_local_position(v(0.0, 3.0, 0.0));
+    let m = ring_t.local_to_world_matrix();
+    let at = ring_t.position();
+    assert!(near(v(m.m[12], m.m[13], m.m[14]), at));
+    let id = ring_t.world_to_local_matrix().mul(m);
+    for (i, want) in iron_math::M4::IDENTITY.m.iter().enumerate() {
+        assert!((id.m[i] - want).abs() < 1e-6, "element {i}: {}", id.m[i]);
+    }
+
+    // `find`: `..` goes up, `.` stays, and a leading `/` starts at the roots.
+    assert_eq!(ring_t.find("..").0, hand);
+    assert_eq!(ring_t.find("../../other"), T(other));
+    assert_eq!(arm_t.find("./hand/ring"), ring_t);
+    assert_eq!(hand_t.find("/arm/hand"), hand_t);
+    assert_eq!(arm_t.find("/nope").0, ObjectId::from_raw(0));
+    assert_eq!(
+        arm_t.find("..").0,
+        ObjectId::from_raw(0),
+        "a root has no parent"
+    );
+
     ring_t.detach_children();
     arm_t.detach_children();
     assert_eq!(arm_t.child_count(), 0.0);

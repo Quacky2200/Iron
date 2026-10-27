@@ -10,7 +10,7 @@
 use crate::{ObjectId, Scene, Transform};
 use glam::{Quat, Vec3};
 use iron_api::{Handle, context, iron_api};
-use iron_math::{Q, V3};
+use iron_math::{M4, Q, V3};
 use std::cell::Cell;
 
 thread_local! {
@@ -160,13 +160,15 @@ fn none() -> ObjectId {
     handles(GameObject = ObjectId, Transform = TransformRef),
     values(
         Vector3 = V3 [x: f64, y: f64, z: f64],
-        Quaternion = Q [x: f64, y: f64, z: f64, w: f64]
+        Quaternion = Q [x: f64, y: f64, z: f64, w: f64],
+        Matrix4x4 = M4 [m0: f64, m1: f64, m2: f64, m3: f64, m4: f64, m5: f64, m6: f64, m7: f64,
+                        m8: f64, m9: f64, m10: f64, m11: f64, m12: f64, m13: f64, m14: f64, m15: f64]
     )
 )]
 pub mod scene_api {
     use super::{
-        ObjectId, Q, Transform, TransformRef, V3, none, parent_pose, q_of, quat, v3_of, vec3, with,
-        world_pose,
+        M4, ObjectId, Q, Transform, TransformRef, V3, none, parent_pose, q_of, quat, v3_of, vec3,
+        with, world_pose,
     };
     use glam::{Quat, Vec3};
     use iron_api::Handle;
@@ -617,21 +619,56 @@ pub mod scene_api {
             )
         }
 
-        /// A transform under it by name, or by a path of names ("arm/hand"); null if there is none.
+        /// A transform by a path of names ("arm/hand"), null if there is none. Each step is a child
+        /// of the one before; `..` goes up to the parent and `.` stays; a leading `/` starts at
+        /// the world root, where the first name is a root object.
         #[nullable]
         pub fn find(self, path: &str) -> TransformRef {
             TransformRef(
                 with(|s| {
-                    path.split('/').try_fold(self.0, |at, name| {
-                        s.children(at)
-                            .iter()
-                            .copied()
-                            .find(|c| s.name(*c) == Some(name))
-                    })
+                    let (absolute, rest) = match path.strip_prefix('/') {
+                        Some(rest) => (true, rest),
+                        None => (false, path),
+                    };
+                    let mut at = (!absolute).then_some(self.0);
+                    for name in rest.split('/').filter(|n| !n.is_empty()) {
+                        at = match name {
+                            "." => at,
+                            ".." => Some(at.and_then(|a| s.parent(a))?),
+                            _ => {
+                                let list = match at {
+                                    Some(a) => s.children(a),
+                                    None => s.roots(),
+                                };
+                                Some(list.iter().copied().find(|c| s.name(*c) == Some(name))?)
+                            }
+                        };
+                    }
+                    at
                 })
                 .flatten()
                 .unwrap_or_else(none),
             )
+        }
+
+        /// The matrix from the object's local space to the world (position, rotation and world
+        /// scale, no shear).
+        #[property]
+        pub fn local_to_world_matrix(self) -> M4 {
+            with(|s| {
+                s.contains(self.0).then(|| {
+                    let (p, r, sc) = world_pose(s, self.0);
+                    M4::trs(p, r, sc)
+                })
+            })
+            .flatten()
+            .unwrap_or(M4::IDENTITY)
+        }
+
+        /// The matrix from the world to the object's local space.
+        #[property]
+        pub fn world_to_local_matrix(self) -> M4 {
+            self.local_to_world_matrix().inverse()
         }
 
         /// Is it `parent` or anywhere under it?
