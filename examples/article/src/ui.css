@@ -48,9 +48,19 @@
 .cell { display: block; padding: 6px 12px; border-bottom: 1px solid #ece7dc; }
 .head .cell { background: #4a3f33; color: white; font-weight: bold; border-bottom: none; cursor: pointer; }
 .head .cell:hover { background: #5f5142; }
-/* One line under the whole header row; the sorted column has a lighter background. */
-.head .cell { border-bottom: 3px solid #e0a56b; }
-.head .sorted, .head .sorted:hover { background: #65564a; }
+/* One line under the whole header row. The sorted column gets a triangle after its title: up for
+   ascending, down for descending (drawn with borders, the font has no arrow glyphs). */
+.head .cell { display: flex; align-items: center; gap: 6px; border-bottom: 3px solid #e0a56b; }
+.head .num { justify-content: flex-end; }
+.head .asc::after, .head .desc::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+.head .asc::after { border-bottom: 5px solid white; }
+.head .desc::after { border-top: 5px solid white; }
 .row:nth-child(even) .cell { background: #f6f2e9; }
 .row:hover .cell { background: #f1e1c8; }
 .num { text-align: right; }

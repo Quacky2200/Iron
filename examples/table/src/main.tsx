@@ -40,10 +40,18 @@ function text(item: Item, key: keyof Item): string {
 
 function App() {
   const [sortBy, setSortBy] = useState<keyof Item>("name");
+  const [desc, setDesc] = useState(false);
   const [selected, setSelected] = useState("Potion");
-  const rows = [...ITEMS].sort((a, b) =>
-    sortBy === "qty" ? a.qty - b.qty : sortBy === "price" ? a.price - b.price : text(a, sortBy).localeCompare(text(b, sortBy)),
+  const rows = [...ITEMS].sort(
+    (a, b) =>
+      (desc ? -1 : 1) *
+      (sortBy === "qty" ? a.qty - b.qty : sortBy === "price" ? a.price - b.price : text(a, sortBy).localeCompare(text(b, sortBy))),
   );
+  // A click on the sorted column flips the direction; another column starts ascending.
+  const sort = (key: keyof Item) => {
+    setDesc(key === sortBy && !desc);
+    setSortBy(key);
+  };
   const total = ITEMS.reduce((sum, item) => sum + item.qty * item.price, 0);
   return (
     <box className="page">
@@ -52,7 +60,7 @@ function App() {
       <box className="table">
         <box className="row head">
           {COLUMNS.map((c) => (
-            <box key={c.key} className={(c.numeric ? "cell num" : "cell") + (c.key === sortBy ? " sorted" : "")} onClick={() => setSortBy(c.key)}>
+            <box key={c.key} className={(c.numeric ? "cell num" : "cell") + (c.key === sortBy ? (desc ? " desc" : " asc") : "")} onClick={() => sort(c.key)}>
               <Text>{c.title}</Text>
             </box>
           ))}

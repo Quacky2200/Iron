@@ -40,9 +40,19 @@
   user-select: none;
 }
 .head .cell:hover { background: #3d4c6b; }
-/* One line under the whole header row; the sorted column has a lighter background. */
-.head .cell { border-bottom: 3px solid #8fb2ff; }
-.head .sorted, .head .sorted:hover { background: #46577a; }
+/* One line under the whole header row. The sorted column gets a triangle after its title: up for
+   ascending, down for descending (drawn with borders, the font has no arrow glyphs). */
+.head .cell { display: flex; align-items: center; gap: 6px; border-bottom: 3px solid #8fb2ff; }
+.head .num { justify-content: flex-end; }
+.head .asc::after, .head .desc::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+.head .asc::after { border-bottom: 5px solid white; }
+.head .desc::after { border-top: 5px solid white; }
 .row:nth-child(even) .cell { background: #f1f4f9; }
 .row:hover .cell { background: #d6e4ff; }
 .row.selected .cell { background: #b9d1ff; }

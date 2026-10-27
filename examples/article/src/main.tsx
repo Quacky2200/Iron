@@ -37,15 +37,23 @@ const COLUMNS: { key: keyof Hut; title: string; numeric?: boolean }[] = [
 
 function App() {
   const [sortBy, setSortBy] = useState<keyof Hut>("metres");
-  const rows = [...HUTS].sort((a, b) =>
-    sortBy === "name"
-      ? a.name.localeCompare(b.name)
-      : sortBy === "metres"
-        ? a.metres - b.metres
-        : sortBy === "beds"
-          ? a.beds - b.beds
-          : a.price - b.price,
+  const [desc, setDesc] = useState(false);
+  const rows = [...HUTS].sort(
+    (a, b) =>
+      (desc ? -1 : 1) *
+      (sortBy === "name"
+        ? a.name.localeCompare(b.name)
+        : sortBy === "metres"
+          ? a.metres - b.metres
+          : sortBy === "beds"
+            ? a.beds - b.beds
+            : a.price - b.price),
   );
+  // A click on the sorted column flips the direction; another column starts ascending.
+  const sort = (key: keyof Hut) => {
+    setDesc(key === sortBy && !desc);
+    setSortBy(key);
+  };
   return (
     <box className="page">
       <box className="article">
@@ -69,7 +77,7 @@ function App() {
         <box className="table">
           <box className="row head">
             {COLUMNS.map((c) => (
-              <box key={c.key} className={(c.numeric ? "cell num" : "cell") + (c.key === sortBy ? " sorted" : "")} onClick={() => setSortBy(c.key)}>
+              <box key={c.key} className={(c.numeric ? "cell num" : "cell") + (c.key === sortBy ? (desc ? " desc" : " asc") : "")} onClick={() => sort(c.key)}>
                 <Text>{c.title}</Text>
               </box>
             ))}
