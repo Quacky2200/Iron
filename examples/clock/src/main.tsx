@@ -18,7 +18,7 @@
 // - Alarm clock: red seven-segment digits glowing through bloom (`segments.ts`).
 //
 // The 2D faces are GameObjects under one root each; switching turns roots on and off.
-// V toggles vsync (the FPS readout is top right).
+// V toggles vsync (the engine's FPS counter is top right).
 
 import { AnalogFace } from "./analog.ts";
 import { ChandelierFace } from "./chandelier.ts";
@@ -47,9 +47,8 @@ class Clocks extends Component {
   now: DateTime = DateTime.now;
   t = 0;
   private camera!: Camera;
-  private fps = 60;
-  private fpsLabel!: TextMesh;
-  private fpsTimer = 0;
+  private vsyncLabel!: TextMesh;
+  private vsyncTimer = 0;
 
   override onAwake(): void {
     clocks = this;
@@ -58,7 +57,7 @@ class Clocks extends Component {
       orthographicSize: 5,
       backgroundColor: BG,
     });
-    this.fpsLabel = label("FPS", { fontSize: 16, color: DIM }, new Vector3(7.5, 4.75, 0));
+    this.vsyncLabel = label("vsync", { fontSize: 16, color: DIM }, new Vector3(7.5, 4.75, 0));
     this.faces = [new AnalogFace(), new DialsFace(), new MeterFace(), new SundialFace(), new HourglassFace(), new LavaFace(), new UnderwaterFace(), new ChandelierFace(), new RainbowFace(), new MorphFace(), new FlipFace(), new SegmentFace()];
     this.faces.forEach((f, i) => {
       f.root.enabled = i === this.current;
@@ -85,11 +84,10 @@ class Clocks extends Component {
   override onUpdate(dt: number): void {
     this.t += dt;
     this.now = DateTime.now;
-    this.fps += (1 / Math.max(dt, 1e-3) - this.fps) * 0.1;
-    this.fpsTimer += dt;
-    if (this.fpsTimer > 0.25) {
-      this.fpsTimer = 0;
-      this.fpsLabel.text = `${Math.round(this.fps)} FPS · vsync ${QualitySettings.vSyncCount > 0 ? "on" : "off"} (V)`;
+    this.vsyncTimer += dt;
+    if (this.vsyncTimer > 0.25) {
+      this.vsyncTimer = 0;
+      this.vsyncLabel.text = `vsync ${QualitySettings.vSyncCount > 0 ? "on" : "off"} (V)`;
     }
     if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
     if (input.getKeyDown("ArrowLeft") || input.getKeyDown("Comma")) this.select(this.current - 1);

@@ -376,9 +376,7 @@ class World extends Component {
   private heading = 0;
   private altitude = 40;
   private t = 0;
-  fps = 60;
   blocks = 0;
-  private sampleTime = 0;
   private sampleFrames = 0;
   /** Chunks built since the last log line (a sample with any isn't steady). */
   private built = 0;
@@ -476,7 +474,6 @@ class World extends Component {
 
   override onUpdate(dt: number): void {
     this.t += dt;
-    this.fps += (1 / Math.max(dt, 1e-3) - this.fps) * 0.05;
     for (let i = 0; i < PRESETS.length; i++) if (input.getKeyDown(`Digit${i + 1}`)) setPreset(i);
     if (input.getKeyDown("Space")) {
       state.paused = !state.paused;
@@ -490,7 +487,6 @@ class World extends Component {
       QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
       refreshHud();
     }
-    this.sampleTime += dt;
     if (++this.sampleFrames === 300) {
       const preset = PRESETS[state.preset]!;
       const ccx = Math.floor(this.pos.x / CHUNK);
@@ -502,9 +498,8 @@ class World extends Component {
       Debug.log(
         `fog-world: ${preset.name}, ${state.distance} chunks, fog ${state.fog ? "on" : "off"}, culling ${state.culling ? "on" : "off"}: ` +
           `${this.chunks.size} chunks, ${(this.blocks / 1e6).toFixed(2)}M blocks, ${RenderStats.meshes} drawn, ${RenderStats.culledMeshes} culled ` +
-          `(${RenderStats.fogCulled} by fog), ${gaps} chunks missing in view range, ${((this.sampleTime / 300) * 1000).toFixed(2)} ms a frame${this.built > 0 ? `, still loading (${this.built} built)` : ""}`,
+          `(${RenderStats.fogCulled} by fog), ${gaps} chunks missing in view range, ${Application.fps.toFixed(0)} fps${this.built > 0 ? `, still loading (${this.built} built)` : ""}`,
       );
-      this.sampleTime = 0;
       this.sampleFrames = 0;
       this.built = 0;
     }
@@ -579,7 +574,7 @@ function Hud() {
         <Row label="Chunks loaded" value={`${w?.loaded ?? 0} (${Math.round((w?.blocks ?? 0) / 1000)}k blocks)`} keyName="" />
         <Row label="Meshes drawn" value={`${RenderStats.meshes} (culled ${RenderStats.culledMeshes})`} keyName="" />
         <Row label="Hidden by fog" value={`${RenderStats.fogCulled}`} keyName="" />
-        <Row label="Frame rate" value={`${Math.round(w?.fps ?? 0)} FPS (vsync ${QualitySettings.vSyncCount > 0 ? "on" : "off"})`} keyName="V" />
+        <Row label="Frame rate" value={`${Math.round(Application.fps)} FPS (vsync ${QualitySettings.vSyncCount > 0 ? "on" : "off"})`} keyName="V" />
       </box>
     </box>
   );

@@ -260,10 +260,9 @@ class Crowd extends Component {
   private fromPos = Vector3.zero;
   private fromRot = Quaternion.identity;
   private ease = 1;
-  /** Frame time from the real clock (not the game's, which a bench run fixes). */
+  /** The HUD's figures refresh every quarter second, as the engine's counter does. */
   private lastReal = 0;
   private sampleTime = 0;
-  private sampleFrames = 0;
   fps = 0;
   frameMs = 0;
 
@@ -507,14 +506,12 @@ class Crowd extends Component {
     const now = Time.realtimeSinceStartup;
     if (this.lastReal > 0) {
       this.sampleTime += now - this.lastReal;
-      this.sampleFrames++;
     }
     this.lastReal = now;
     if (this.sampleTime < 0.25) return;
-    this.fps = this.sampleFrames / this.sampleTime;
-    this.frameMs = (this.sampleTime / this.sampleFrames) * 1000;
+    this.fps = Application.fps;
+    this.frameMs = this.fps > 0 ? 1000 / this.fps : 0;
     this.sampleTime = 0;
-    this.sampleFrames = 0;
     for (const b of this.blocks) {
       let seen = 0;
       for (const w of b.walkers) if (w.body?.isVisible) seen++;

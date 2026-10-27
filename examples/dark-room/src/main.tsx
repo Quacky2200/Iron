@@ -464,15 +464,6 @@ class Bedroom extends Component {
       tab = input.getKeyDown("Digit1") ? 0 : 1;
       refreshMenu();
     }
-    // Frame rate, over half a second.
-    timing.frames++;
-    timing.time += dt;
-    if (timing.time >= 0.5) {
-      timing.fps = timing.frames / timing.time;
-      timing.ms = (1000 * timing.time) / timing.frames;
-      timing.frames = 0;
-      timing.time = 0;
-    }
     if (input.getKeyDown("KeyB")) toggle("lamp");
     if (input.getKeyDown("KeyV")) toggle("tv");
     if (input.getKeyDown("KeyA")) toggleAuto();
@@ -670,9 +661,6 @@ function MeteringZone() {
 /** Which page of the menu shows: the exposure settings or the scene's. */
 let tab = 0;
 
-/** Frames a second and milliseconds a frame, measured over half a second. */
-const timing = { fps: 0, ms: 0, frames: 0, time: 0 };
-
 function Tab(props: { label: string; index: number; keyName: string }) {
   const on = tab === props.index;
   return (
@@ -750,12 +738,7 @@ function Menu() {
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <MeteringZone />
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(12, 14, 18, 0.72)", flexDirection: "column" }}>
-        <box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
-          <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Eye adaptation: the bedroom</text>
-          <text style={{ color: timing.fps >= 200 ? "#7ad08a" : timing.fps >= 60 ? "#e0c060" : "#e07060", fontSize: 13 }}>
-            {timing.fps.toFixed(0)} fps · {timing.ms.toFixed(2)} ms
-          </text>
-        </box>
+        <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>Eye adaptation: the bedroom</text>
         <Graph />
         <box style={{ flexDirection: "row", gap: 4 }}>
           <Tab label="Exposure" index={0} keyName="1" />

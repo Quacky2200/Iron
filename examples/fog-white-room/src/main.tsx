@@ -330,14 +330,6 @@ class WhiteRoom extends Component {
     this.updateFloor(dt);
     this.updateFragments(dt);
     this.placeCamera(dt);
-    timing.frames++;
-    timing.time += dt;
-    if (timing.time >= 0.5) {
-      timing.fps = timing.frames / timing.time;
-      timing.frames = 0;
-      timing.time = 0;
-      refreshHud();
-    }
   }
 
   /** Turning the camera: drag with a mouse button held, Q / E, the wheel to zoom. */
@@ -485,9 +477,6 @@ class WhiteRoom extends Component {
 
 register({ WhiteRoom });
 
-/** Frames a second, measured over half a second. */
-const timing = { fps: 0, frames: 0, time: 0 };
-
 function Row(props: { label: string; value: string; keyName: string }) {
   return (
     <box style={{ flexDirection: "row", gap: 10, alignItems: "baseline" }}>
@@ -504,10 +493,7 @@ function Hud() {
   return (
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ alignSelf: "flex-start", padding: 14, gap: 6, borderRadius: 10, backgroundColor: "rgba(255, 255, 255, 0.55)", flexDirection: "column" }}>
-        <box style={{ flexDirection: "row", justifyContent: "space-between", gap: 16 }}>
-          <text style={{ color: "#20242c", fontSize: 16, fontWeight: 600 }}>Fog: the white room</text>
-          <text style={{ color: "#5a6270", fontSize: 13 }}>{timing.fps.toFixed(0)} fps</text>
-        </box>
+        <text style={{ color: "#20242c", fontSize: 16, fontWeight: 600 }}>Fog: the white room</text>
         <Row label="Fog" value={FOGS[state.fog]!.name} keyName="F" />
         <Row label="Height fog" value={state.heightFog ? "On" : "Off"} keyName="H" />
         <Row label="Lit tiles" value={state.tiles ? "On" : "Off"} keyName="T" />

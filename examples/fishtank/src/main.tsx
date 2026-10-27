@@ -309,7 +309,6 @@ class Tank extends Component {
   private mouse: Vector3 | null = null;
   private lastMouse = new Vector2(-1, -1);
   private t = 0;
-  fps = 60;
   hudUntil = 3;
   now = 0;
 
@@ -480,7 +479,6 @@ class Tank extends Component {
     const step = Math.min(dt, 1 / 30);
     this.t += dt;
     this.now = this.t;
-    this.fps += (1 / Math.max(dt, 1e-3) - this.fps) * 0.1;
     if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
 
     // The camera drifts slowly, like a camera on a slow dolly in front of the glass.
@@ -591,7 +589,6 @@ function Hud() {
         <text style={{ color: "#e8f6ff", fontSize: 18, fontWeight: 700 }}>{`${t.fish.length} fish · ${eaten} pellets eaten`}</text>
         <text style={{ color: "rgba(232, 246, 255, 0.7)", fontSize: 13 }}>Click: feed · Right-click: add a fish · Space: tap the glass · V: vsync</text>
       </box>
-      <text className="hud" style={{ position: "absolute", right: 18, top: 14, color: "rgba(232, 246, 255, 0.5)", fontSize: 12, opacity: shown ? 1 : 0 }}>{`${Math.round(t.fps)} FPS`}</text>
     </box>
   );
 }

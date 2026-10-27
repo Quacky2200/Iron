@@ -888,6 +888,18 @@ struct App {
 
 impl App {
     /// Counts the frame and, in a `--screenshot` run, saves it when it's the wanted one.
+    /// One frame was presented: the counter counts it whether or not it is drawn, and
+    /// scripts read its number as `Application.fps`.
+    fn tick_fps(&mut self) {
+        if self
+            .fps
+            .frame(self.started.elapsed().as_secs_f64())
+            .is_some()
+        {
+            platypus_engine_api::app::set_fps(self.fps.value());
+        }
+    }
+
     fn count_frame(&mut self) {
         self.frames += 1;
         // `PLATYPUS_RELOAD_AT_FRAME=N`: a screenshot run reloads its scripts after frame N,
@@ -3086,9 +3098,7 @@ impl PlatformApp for App {
         }
         self.draw_windows();
         self.render_time += render_started.elapsed();
-        if self.fps_on {
-            self.fps.frame(self.started.elapsed().as_secs_f64());
-        }
+        self.tick_fps();
         self.count_frame();
     }
 

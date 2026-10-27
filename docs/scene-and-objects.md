@@ -267,7 +267,7 @@ pointer events use), `scale` and `aspect`, set by `__platypus_screen`. Window mo
 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
 `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
-`args` (the command line's arguments after `--`, `platypus-game game -- --level 2`, from `__platypus_info.app.args`), `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
+`args` (the command line's arguments after `--`, `platypus-game game -- --level 2`, from `__platypus_info.app.args`), `isMobilePlatform`, `fps` (the measured frame rate: the number the `--fps` counter shows, counted by the host whether or not it is drawn; games should read it rather than time frames themselves), `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
 `quit(exitCode)`, which `platypus-game` exits with; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__platypus_info` from the
 game's `project.json` (see docs/platypus-build.md; formerly the `platypus` section of `package.json`:  `title`, `company`, `identifier`

@@ -2155,6 +2155,7 @@ declare namespace Application
 declare namespace Application :: const args: string[];
 declare namespace Application :: const companyName: string;
 declare namespace Application :: const engineVersion: string;
+declare namespace Application :: const fps: number;
 declare namespace Application :: const identifier: string;
 declare namespace Application :: const isEditor: boolean;
 declare namespace Application :: const isFocused: boolean;

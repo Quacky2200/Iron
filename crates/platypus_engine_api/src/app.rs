@@ -125,6 +125,8 @@ struct State {
     run_in_background: Option<bool>,
     focused: bool,
     paused: bool,
+    /// The host's frame counter (the `--fps` overlay's number); 0 before its first window.
+    fps: f64,
     requests: Vec<Request>,
     focus_listeners: platypus_api::callback::Listeners<(bool,)>,
 }
@@ -137,9 +139,15 @@ thread_local! {
         run_in_background: None,
         focused: true,
         paused: false,
+        fps: 0.0,
         requests: Vec::new(),
         focus_listeners: Default::default(),
     });
+}
+
+/// The measured frame rate, from the host's frame counter (`Application.fps`).
+pub fn set_fps(fps: f64) {
+    STATE.with(|s| s.borrow_mut().fps = fps);
 }
 
 pub fn set_app(info: AppInfo) {
@@ -273,6 +281,14 @@ pub mod application_api {
             s.target_frame_rate = Some(fps);
             s.requests.push(Request::TargetFrameRate(fps));
         });
+    }
+
+    /// Frames presented per second, measured by the host over about a quarter second of real
+    /// time: the number the `--fps` counter shows, whether or not that is drawn. 0 until the
+    /// first window has closed.
+    #[property]
+    pub fn fps() -> f64 {
+        STATE.with(|s| s.borrow().fps)
     }
 
     /// Keep running while the window is in the background (unfocused or minimised). Off by

@@ -72,8 +72,8 @@ const SHEET = { outer: 1.5, inner: 1, aspect: 40 };
 
 /** Which page of the menu shows: the scan's settings or exposure. */
 let tab = 0;
-/** Frames a second and milliseconds a frame, measured over half a second. */
-const timing = { fps: 0, ms: 0, frames: 0, time: 0 };
+/** Seconds since the menu's live exposure value was last redrawn. */
+let menuClock = 0;
 
 /**
  * The haze's quality (`RenderSettings.volumetricFog`): the finest volume, its noise cleaned
@@ -478,13 +478,9 @@ class Shed extends Component {
       tab = input.getKeyDown("Digit1") ? 0 : 1;
       refreshMenu();
     }
-    timing.frames++;
-    timing.time += dt;
-    if (timing.time >= 0.5) {
-      timing.fps = timing.frames / timing.time;
-      timing.ms = (1000 * timing.time) / timing.frames;
-      timing.frames = 0;
-      timing.time = 0;
+    menuClock += dt;
+    if (menuClock >= 0.5) {
+      menuClock = 0;
       // The live EV on the exposure page.
       if (tab === 1) refreshMenu();
     }
@@ -646,12 +642,7 @@ function Menu() {
   return (
     <box style={{ width: "100%", height: "100%", padding: 18, pointerEvents: "none" }}>
       <box style={{ pointerEvents: "auto", alignSelf: "flex-start", padding: 14, gap: 8, borderRadius: 10, backgroundColor: "rgba(8, 12, 10, 0.72)", flexDirection: "column" }}>
-        <box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
-          <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>God rays: the alien scan</text>
-          <text style={{ color: timing.fps >= 200 ? "#7ad08a" : timing.fps >= 60 ? "#e0c060" : "#e07060", fontSize: 13 }}>
-            {timing.fps.toFixed(0)} fps · {timing.ms.toFixed(2)} ms
-          </text>
-        </box>
+        <text style={{ color: "#ffffff", fontSize: 16, fontWeight: 600 }}>God rays: the alien scan</text>
         <box style={{ flexDirection: "row", gap: 4 }}>
           <Tab label="Scan" index={0} keyName="1" />
           <Tab label="Exposure" index={1} keyName="2" />

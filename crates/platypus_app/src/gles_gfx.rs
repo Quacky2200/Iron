@@ -222,9 +222,7 @@ impl App {
             *sz == size && *sc == scale.to_bits() && *c == cmds && *f == fps_cmds
         }) {
             // The counter still counts the frame: it shows the loop's pace, not the redraws.
-            if self.fps_on {
-                self.fps.frame(self.started.elapsed().as_secs_f64());
-            }
+            self.tick_fps();
             return;
         }
         if let Err(e) = self.draw_gles(size, scale, dpi, &cmds, fps_cmds.as_deref()) {
@@ -250,8 +248,6 @@ impl App {
             );
             gles.report = (0, Duration::ZERO, Instant::now());
         }
-        if self.fps_on {
-            self.fps.frame(self.started.elapsed().as_secs_f64());
-        }
+        self.tick_fps();
     }
 }

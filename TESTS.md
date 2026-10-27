@@ -1502,6 +1502,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-913 | Unit | `Quality::default()` has vsync off and the `render.quality` op turns it on only with a vSyncCount of 1 or more. |
 | M9-API-914 | Integration | Quality levels start with `vSyncCount` 0, and a saved `platypus.quality` with `vSyncCount: 1` is applied without it. |
 | M9-API-915 | JS | `QualitySettings.vSyncCount` is 0 by default and a saved vsync is ignored when the saved choice is applied. |
+| M9-API-916 | Unit | `FpsCounter::value` is the last closed window's unrounded rate (0 before one closed); the host publishes it as `Application.fps` whether or not the overlay is drawn. |
 | M9-APP-01 | Unit | `--force` parses and is off by default (`platypus_app`). |
 | M9-APP-02 | Unit | The QuickJS gate: native bundles run, QuickJS ones are refused unless forced, and the editor counts as forced. |
 | M9-APP-03 | Integration | `platypus_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `platypus-build build` (`crates/platypus_app/tests/quickjs_deprecated.rs`). |

@@ -113,9 +113,8 @@ function nearKnot(s: Spline, m: Vector3, r: number): number {
 class SplineDemo extends Component {
   private camera!: Camera;
   private t = 0;
-  private fps = 60;
-  private fpsLabel!: TextMesh;
-  private fpsTimer = 0;
+  private vsyncLabel!: TextMesh;
+  private vsyncTimer = 0;
 
   // Moving: the ribbon and its riders, and the wave.
   private ribbon!: Spline;
@@ -150,7 +149,7 @@ class SplineDemo extends Component {
     shape("divider", { points: [new Vector2(0, -4.6), new Vector2(0, 4.6)], width: 0.02, color: Color.hex("#2a3442") });
     label("Splines that move", new Vector3(-4.5, 4.3, 0), { fontSize: 34, fontWeight: 700, color: INK });
     label("A spline to edit", new Vector3(4.5, 4.3, 0), { fontSize: 34, fontWeight: 700, color: INK });
-    this.fpsLabel = label("", new Vector3(7.5, 4.75, 0), { fontSize: 16 });
+    this.vsyncLabel = label("", new Vector3(7.5, 4.75, 0), { fontSize: 16 });
 
     // The ribbon: six knots round an ellipse; they drift in onUpdate.
     const centre = new Vector3(-4.5, 1.1, 0);
@@ -190,11 +189,10 @@ class SplineDemo extends Component {
 
   override onUpdate(dt: number): void {
     this.t += dt;
-    this.fps += (1 / Math.max(dt, 1e-3) - this.fps) * 0.1;
-    this.fpsTimer += dt;
-    if (this.fpsTimer > 0.25) {
-      this.fpsTimer = 0;
-      this.fpsLabel.text = `${Math.round(this.fps)} FPS · vsync ${QualitySettings.vSyncCount > 0 ? "on" : "off"} (V)`;
+    this.vsyncTimer += dt;
+    if (this.vsyncTimer > 0.25) {
+      this.vsyncTimer = 0;
+      this.vsyncLabel.text = `vsync ${QualitySettings.vSyncCount > 0 ? "on" : "off"} (V)`;
     }
     if (input.getKeyDown("KeyV")) QualitySettings.vSyncCount = QualitySettings.vSyncCount > 0 ? 0 : 1;
     this.moveRibbon();

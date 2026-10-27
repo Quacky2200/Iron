@@ -28,15 +28,22 @@ pub struct FpsCounter {
     start: f64,
     frames: u32,
     text: String,
+    value: f64,
 }
 
 impl FpsCounter {
+    /// The last full window's frame rate (unrounded); 0 before one closed.
+    pub fn value(&self) -> f64 {
+        self.value
+    }
+
     /// One frame was presented at `now` (seconds). Returns the new text when a window
     /// closed with this frame.
     pub fn frame(&mut self, now: f64) -> Option<&str> {
         self.frames += 1;
         let elapsed = now - self.start;
         if elapsed >= WINDOW {
+            self.value = f64::from(self.frames) / elapsed;
             self.text = format_fps(self.frames, elapsed);
             self.start = now;
             self.frames = 0;
@@ -184,6 +191,19 @@ mod tests {
         // Windows close at 0.25 s and 0.50 s (the 25th and 50th frames).
         assert_eq!(shown.len(), 2);
         assert!(shown.iter().all(|t| t == "100 FPS"), "{shown:?}");
+    }
+
+    // M9-API-916
+    #[test]
+    fn the_last_windows_rate_is_kept_unrounded_for_scripts() {
+        let mut c = FpsCounter::default();
+        assert_eq!(c.value(), 0.0);
+        // 3 frames in 0.3 s: 10 FPS, not yet a closed window for the first two.
+        c.frame(0.1);
+        c.frame(0.2);
+        assert_eq!(c.value(), 0.0);
+        c.frame(0.3);
+        assert!((c.value() - 10.0).abs() < 1e-9, "{}", c.value());
     }
 
     // M9-API-903
