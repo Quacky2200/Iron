@@ -3,7 +3,10 @@
 Platypus
 ========
 
-Platypus is a game engine with a Rust core in which games, and their UI, are written in TypeScript and React.
+**Indie Game Engine for Unity and S&Box enthusiasts featuring Rust, TypeScript and React.**
+
+Platypus is a game engine with a Rust core in which games, and their UI, are written in TypeScript and React. Its
+scripting API follows Unity's names and units, and its UI and styling take their cue from S&box's web-style UI.
 
 <p align="center">
 <img src="docs/progress/godrays-forest.jpg" width="400" alt="God rays through a forest canopy">
