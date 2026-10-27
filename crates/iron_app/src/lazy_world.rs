@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The 3D world renderer, built on first use in `iron-app`.
 //!
 //! `WorldRenderer::new` compiles the world shaders and pipelines, which costs the GPU driver

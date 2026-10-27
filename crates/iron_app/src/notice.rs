@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A full-window message: a black screen with red centred text. `iron-app` shows it instead of
 //! the UI when a game asks for the 3D world, which its GLES renderer doesn't draw.
 

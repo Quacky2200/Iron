@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The GLES executor against the wgpu one (M2-GLES-02..06): the same scenes, built through the
 //! real `UiTree`, drawn by both renderers into `SRGB8_ALPHA8` targets and compared pixel for
 //! pixel. Needs an EGL driver (ANGLE's folder in `IRON_ANGLE_DIR`) and a GPU for wgpu; skipped

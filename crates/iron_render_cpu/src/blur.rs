@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A Gaussian blur and colour matrix over a region of a premultiplied RGBA8 buffer, for
 //! `backdrop-filter` (the scene so far is read back once the backdrop is needed).
 

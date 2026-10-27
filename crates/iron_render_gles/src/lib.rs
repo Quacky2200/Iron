@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A GLES 3 executor for the UI frame plan (`iron_render::plan`), for `iron-app`: the same
 //! draw list and plan as the wgpu renderer, drawn with GLES through EGL (ANGLE on Windows).
 //!

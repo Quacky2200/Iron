@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! GLSL ES 3.00 ports of `effects.wgsl`: the separable blur and the layer composite (opacity,
 //! a clip from the clip table, a `filter` colour matrix, a drop-shadow tint and shift, a mask
 //! texture, and the W3C blend modes). All draw one full-screen triangle (`shaders::BLIT_VERTEX`).

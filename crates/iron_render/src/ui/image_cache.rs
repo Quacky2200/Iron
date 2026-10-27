@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Images for the UI renderers, without a GPU: `url(...)` files from the game's folder decoded,
 //! SVG images (and inline `<svg>` elements) rasterized with resvg at the size they're drawn so
 //! they stay sharp, all cached by key. Loading queues the pixels as an [`ImageUpload`]; whichever

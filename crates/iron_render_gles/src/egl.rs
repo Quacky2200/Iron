@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A GLES 3 context through EGL: ANGLE on Windows (`libEGL.dll`, which draws through Direct3D
 //! 11), the system's EGL (Mesa) elsewhere. The library is loaded here, not linked, so a program
 //! that never asks for it needs no EGL, and ANGLE can come from a folder of the caller's choice.

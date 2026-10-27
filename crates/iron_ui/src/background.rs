@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Paint placement shared by the renderers (GPU and CPU): where a background tile goes in its
 //! box, how it repeats, and a gradient's colour stops resolved to positions along its line.
 

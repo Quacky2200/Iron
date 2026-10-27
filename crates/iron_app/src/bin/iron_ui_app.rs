@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // A windowed program, like `iron-game`.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 //! `iron-app`: runs Iron projects of type `app` (only UI). The same program as `iron-game`

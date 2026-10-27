@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the app needs from a UI renderer, whichever draws it.
 //!
 //! A backend draws `iron_ui` draw lists ([`DrawCmd`]) into a target. The draw list and the

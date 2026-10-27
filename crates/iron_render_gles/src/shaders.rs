@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! GLSL ES 3.00 ports of the UI shaders (`iron_render/src/ui/quad.wgsl`, `effects.wgsl`).
 //!
 //! GLES 3.0 has no storage buffers, so the gradient and clip tables the wgpu shaders read as

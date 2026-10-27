@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The backend-neutral half of the UI renderer: a draw list ([`iron_ui::DrawCmd`]s) turned into a
 //! [`FramePlan`], which any renderer can execute (wgpu in `mod.rs`; a GLES one is to follow).
 //!

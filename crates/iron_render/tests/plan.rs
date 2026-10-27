@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The backend-neutral frame plan (`iron_render::plan`): draw lists from the real `UiTree`,
 //! planned with fake resources: no GPU, no wgpu device, the same plan any renderer executes
 //! (M2-PLN-01..06).

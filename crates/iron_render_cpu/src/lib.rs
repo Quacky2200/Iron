@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! A CPU renderer for the UI draw list (`vello_cpu`), shown through `softbuffer`: no GPU API, no
 //! GPU driver. Used by the `ui_app_only` build of `iron_app` (EXPERIMENTAL).
 //!

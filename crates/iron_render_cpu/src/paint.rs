@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CSS gradients as `vello_cpu` gradients, in the draw list's logical pixels.
 
 use iron_ui::{BackgroundImage, GradientDirection, RadialShape, Rect, resolve_stops};

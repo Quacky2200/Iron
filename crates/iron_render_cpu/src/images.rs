@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `url(...)` images for the CPU renderer. Like a browser's, they are decoded lazily and only at
 //! the size they are shown at: the encoded file is all that is kept per image, a decoded copy
 //! (downscaled to about its drawn size, or an SVG rasterized at it) is made when it is drawn, and

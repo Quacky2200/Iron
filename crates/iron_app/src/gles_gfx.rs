@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The main window drawn by the GLES executor (`iron_render_gles`) through EGL: ANGLE on
 //! Windows, Mesa and friends elsewhere. This is `iron-app`'s renderer, so a UI-only program
 //! loads no Vulkan or wgpu. There is no 3D world, world panels or secondary windows on this

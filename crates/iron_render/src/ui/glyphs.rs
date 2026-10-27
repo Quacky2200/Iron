@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The GPU-free half of the glyph atlas: glyphs rasterized with swash at physical pixel size,
 //! packed into two pages (an R8 coverage page and an RGBA page for colour emoji) and cached by
 //! font, glyph, size, subpixel offset and variation. Placing a glyph queues its pixels as a
