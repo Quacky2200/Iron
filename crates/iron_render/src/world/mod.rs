@@ -19,6 +19,7 @@ mod fill;
 mod fxaa;
 pub mod mesh;
 pub mod pipeline;
+mod post;
 mod shadows;
 pub mod texture;
 mod upscale;
@@ -28,6 +29,8 @@ use bytemuck::{Pod, Zeroable};
 use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 use std::collections::HashMap;
 use std::ops::Range;
+
+pub use post::{POST_PARAMS, PostEffect, PostParamType, PostShader};
 
 use crate::{Color, Gpu, RenderTarget};
 pub use bloom::{
@@ -532,6 +535,9 @@ pub struct WorldView {
     /// FXAA over the whole target after it's drawn, when the main view (the biggest)
     /// asks for it (Unity's camera `antialiasing`).
     pub fxaa: bool,
+    /// Post-process passes over this view's picture, in order, after tonemapping and FXAA
+    /// ([`PostEffect`]).
+    pub post: Vec<PostEffect>,
     /// Draws into this render texture ([`WorldRenderer::set_render_texture`]) instead
     /// of the target (Unity's `Camera.targetTexture`); its viewport is within the texture.
     pub target_texture: Option<u32>,
@@ -863,6 +869,7 @@ impl WorldView {
             clip_plane: None,
             probes: Vec::new(),
             fxaa: false,
+            post: Vec::new(),
             target_texture: None,
             bones: Default::default(),
             grid: false,
@@ -1311,6 +1318,11 @@ pub struct WorldRenderer {
     pub physical_units: bool,
     /// Made the first time a view asks for FXAA.
     fxaa: Option<fxaa::Fxaa>,
+    /// Made the first time a view has post-process passes.
+    post_chain: Option<post::PostChain>,
+    /// Seconds the post-process passes have run for, and the frames (their `post_time()`).
+    post_time: f32,
+    post_frame: u32,
 }
 
 /// A depth texture array of shadow maps: one view of it all to sample, one per layer to
@@ -1751,6 +1763,9 @@ impl WorldRenderer {
             pipeline: PipelineAsset::default(),
             physical_units: false,
             fxaa: None,
+            post_chain: None,
+            post_time: 0.0,
+            post_frame: 0,
         };
         for (i, name) in PRIMITIVES.iter().enumerate() {
             let data = primitive(name).expect("built in");
@@ -2794,7 +2809,8 @@ impl WorldRenderer {
             sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            // Post-process passes that read depth bind it.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let view = texture.create_view(&Default::default());
@@ -2831,6 +2847,8 @@ impl WorldRenderer {
         textures: &[&wgpu::TextureView],
     ) {
         self.stats = WorldStats::default();
+        self.post_time += self.grading.delta_time;
+        self.post_frame = self.post_frame.wrapping_add(1);
         self.skin_boxes.get_mut().clear();
         self.bone_pack.get_mut().clear();
         // Shadow maps once, from the biggest screen view, for every view this frame.
@@ -3257,7 +3275,11 @@ impl WorldRenderer {
         }
         // Auto exposure fading out keeps the pass going until it has.
         let fading = self.bloom_pass.as_ref().is_some_and(|b| b.fading());
-        let post = final_pass && (bloom.is_some() || fxaa || fading || !grading.is_identity());
+        let chain = final_pass && views.iter().any(|v| !v.post.is_empty());
+        // Whether any pass reads depth, which the world pass then keeps.
+        let keep_depth = chain && views.iter().any(|v| v.post.iter().any(|e| e.shader.depth));
+        let post =
+            final_pass && (bloom.is_some() || fxaa || fading || chain || !grading.is_identity());
         let hdr = post.then(|| {
             self.bloom_pass
                 .get_or_insert_with(|| bloom::BloomPass::new(gpu))
@@ -3267,6 +3289,12 @@ impl WorldRenderer {
         let fxaa_input = fxaa.then(|| {
             self.fxaa
                 .get_or_insert_with(|| fxaa::Fxaa::new(gpu))
+                .input(gpu, size, target.format)
+        });
+        // Post-process passes read the finished picture from a texture of their own.
+        let chain_input = chain.then(|| {
+            self.post_chain
+                .get_or_insert_with(|| post::PostChain::new(gpu))
                 .input(gpu, size, target.format)
         });
         let (color_view, color_format) = match &hdr {
@@ -3979,7 +4007,11 @@ impl WorldRenderer {
                     view: &depth,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Discard,
+                        store: if keep_depth {
+                            wgpu::StoreOp::Store
+                        } else {
+                            wgpu::StoreOp::Discard
+                        },
                     }),
                     stencil_ops: None,
                 }),
@@ -4108,7 +4140,10 @@ impl WorldRenderer {
             }
         }
         if post && let Some(pass) = self.bloom_pass.as_mut() {
-            let out = fxaa_input.as_ref().unwrap_or(target.view);
+            let out = fxaa_input
+                .as_ref()
+                .or(chain_input.as_ref())
+                .unwrap_or(target.view);
             let out = RenderTarget {
                 view: out,
                 format: target.format,
@@ -4140,7 +4175,24 @@ impl WorldRenderer {
                 &exposure_views,
             );
             if fxaa && let Some(f) = self.fxaa.as_mut() {
-                f.encode(gpu, &mut encoder, target.view, size, target.format);
+                let to = chain_input.as_ref().unwrap_or(target.view);
+                f.encode(gpu, &mut encoder, to, size, target.format);
+            }
+            if chain && let Some(c) = self.post_chain.as_mut() {
+                c.encode(
+                    gpu,
+                    &mut encoder,
+                    &post::PostFrame {
+                        views,
+                        target: target.view,
+                        format: target.format,
+                        size,
+                        depth: &depth,
+                        multisampled: samples > 1,
+                        time: self.post_time,
+                        frame: self.post_frame,
+                    },
+                );
             }
         }
         gpu.queue.submit([encoder.finish()]);

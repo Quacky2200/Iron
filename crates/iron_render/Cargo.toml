@@ -24,3 +24,5 @@ lyon_tessellation = "1.0.22"
 
 [dev-dependencies]
 iron_core = { path = "../iron_core" }
+# The built-in post-process effects (their WGSL and parameters) live there.
+iron_render_api = { path = "../iron_render_api" }

@@ -47,6 +47,7 @@ mod effects;
 mod generated;
 mod light_meter;
 mod models;
+mod postfx;
 mod render_settings;
 mod resources;
 mod visibility;
@@ -54,6 +55,7 @@ mod visibility;
 pub use effects::*;
 pub use generated::*;
 pub use models::*;
+pub use postfx::*;
 pub use render_settings::*;
 pub use resources::*;
 pub(crate) use visibility::is_visible;
@@ -145,6 +147,7 @@ pub fn reset() {
     reset_resources();
     render_settings::reset_render_settings();
     effects::reset_effects();
+    postfx::reset_postfx();
     models::reset_models();
     visibility::reset_visibility();
 }
@@ -158,6 +161,7 @@ pub fn manifests() -> Vec<String> {
     all.push(render_settings::graphics_settings_api::MANIFEST.to_json());
     all.extend(effects::effect_manifests());
     all.extend(models::model_manifests());
+    all.extend(postfx::postfx_manifests());
     all
 }
 
@@ -197,5 +201,6 @@ pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rq
     effects::primitives_api::register_quickjs(ctx)?;
     effects::primitive_type_api::register_quickjs(ctx)?;
     models::model_api::register_quickjs(ctx)?;
+    postfx::post_process_api::register_quickjs(ctx)?;
     Ok(())
 }
