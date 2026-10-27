@@ -13,7 +13,7 @@ use parley::fontique::{
 use parley::{
     Alignment, AlignmentOptions, BaseDirection, FontContext, FontFamily, FontStyle, FontWeight,
     Layout, LayoutContext, LineHeight as PLineHeight, PositionedLayoutItem, TextStyle,
-    TextWrapMode, WhiteSpaceCollapse,
+    TextWrapMode, WhiteSpaceCollapse, YieldData,
 };
 
 use crate::Rgba;
@@ -242,12 +242,24 @@ pub fn decode_web_font(data: Vec<u8>) -> Result<Vec<u8>, String> {
     }
 }
 
+/// A strip of a text block's content box where floats leave room: lines whose top is at
+/// or below `y` (and above the next band's `y`) start at `x` and are at most `width` wide.
+/// The first band starts at 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Band {
+    pub y: f32,
+    pub x: f32,
+    pub width: f32,
+}
+
 /// Measures `layout` for a width constraint, returning (width, height). Also
-/// leaves the layout broken into lines for that width.
+/// leaves the layout broken into lines for that width. `bands` (see [`Band`]) make the
+/// lines avoid floats; they only apply to a definite width.
 pub fn measure(
     layout: &mut Layout<Brush>,
     known_width: Option<f32>,
     available: AvailableWidth,
+    bands: &[Band],
 ) -> (f32, f32) {
     let max_width = match (known_width, available) {
         (Some(w), _) => Some(w),
@@ -255,20 +267,75 @@ pub fn measure(
         (None, AvailableWidth::MinContent) => Some(0.0),
         (None, AvailableWidth::MaxContent) => None,
     };
-    layout.break_all_lines(max_width);
+    let around_floats = !bands.is_empty() && matches!(available, AvailableWidth::Definite(_));
+    match max_width {
+        Some(w) if around_floats => break_in_bands(layout, w, bands),
+        _ => layout.break_all_lines(max_width),
+    }
     let width = match known_width {
         Some(w) => w,
         // Shrink-to-fit: never wider than the constraint, never narrower than the
         // longest word.
         None => layout.width().ceil(),
     };
-    (width, layout.height().ceil())
+    (width, text_height(layout).ceil())
 }
 
-/// Breaks lines at the block's final content width and aligns them.
-pub fn finish(layout: &mut Layout<Brush>, content_width: f32, align: TextAlign) {
-    layout.break_all_lines(Some(content_width));
+/// Breaks lines at the block's final content width, around the floats `bands` describe,
+/// and aligns them (each line within its own band).
+pub fn finish(layout: &mut Layout<Brush>, content_width: f32, align: TextAlign, bands: &[Band]) {
+    if bands.is_empty() {
+        layout.break_all_lines(Some(content_width));
+    } else {
+        break_in_bands(layout, content_width, bands);
+    }
     layout.align(alignment(align), AlignmentOptions::default());
+}
+
+/// The bottom of the last line. Lines pushed below a float leave a gap Parley's own
+/// height (the sum of the line heights) doesn't count.
+fn text_height(layout: &Layout<Brush>) -> f32 {
+    let last = layout
+        .lines()
+        .last()
+        .map_or(0.0, |l| l.metrics().block_max_coord);
+    layout.height().max(last)
+}
+
+/// Line breaking with a different start and width for each band. A line that doesn't fit
+/// the band it starts in (too tall, or a word wider than the room) moves down to the next
+/// one, as in CSS, unless the band is as wide as the whole block.
+fn break_in_bands(layout: &mut Layout<Brush>, width: f32, bands: &[Band]) {
+    let mut lines = layout.break_lines();
+    lines.state_mut().set_layout_max_advance(width);
+    while !lines.is_done() {
+        let y = lines.committed_y() as f32;
+        let i = bands.iter().rposition(|b| b.y <= y + 0.01).unwrap_or(0);
+        let band = bands[i];
+        let below = bands.get(i + 1).map(|b| b.y);
+        let saved = {
+            let state = lines.state_mut();
+            state.set_line_x(band.x);
+            state.set_line_max_advance(band.width.min(width));
+            state.set_line_max_height(below.map_or(f32::MAX, |b| b - y));
+            state.clone()
+        };
+        let moved = match lines.break_next() {
+            None => break,
+            Some(YieldData::LineBreak(data)) => {
+                let used = data.metrics.advance - data.metrics.hanging_advance;
+                used > band.width + 0.5 && band.width + 0.5 < width
+            }
+            Some(YieldData::MaxHeightExceeded(_)) => true,
+            // Only in-flow inline content exists, so the breaker never yields a box.
+            Some(YieldData::InlineBoxBreak(_)) => false,
+        };
+        if let (true, Some(below)) = (moved, below) {
+            lines.revert_to(saved);
+            lines.state_mut().set_line_y(f64::from(below));
+        }
+    }
+    lines.finish();
 }
 
 /// Parley's alignment for `text-align`; `start` / `end` follow the layout's base direction.

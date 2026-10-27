@@ -248,6 +248,31 @@ pub const STYLE_PROPS: &[StyleProp] = &[
     ),
     sp(
         "",
+        "float",
+        &[
+            Lit("none"),
+            Lit("left"),
+            Lit("right"),
+            Lit("inline-start"),
+            Lit("inline-end"),
+        ],
+        r#"Takes the box out of the line flow to the left or right of a block container; the text that follows wraps around it. Only blocks (`display: block` / `flow-root`) lay floats out; flex and grid items ignore it."#,
+    ),
+    sp(
+        "",
+        "clear",
+        &[
+            Lit("none"),
+            Lit("left"),
+            Lit("right"),
+            Lit("both"),
+            Lit("inline-start"),
+            Lit("inline-end"),
+        ],
+        r#"Moves the box below the floats on that side."#,
+    ),
+    sp(
+        "",
         "boxSizing",
         &[Lit("border-box"), Lit("content-box")],
         r#"Iron defaults to `border-box` (sizes include padding and border), unlike CSS."#,
