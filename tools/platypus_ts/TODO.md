@@ -488,14 +488,15 @@ two examples needed (M9-TS-3361..3382), `b7730d0` the examples as platypus-build
 
 ## Resume point (2026-10-27, the rename to Platypus)
 
-**In progress:** the project is renamed Iron -> Platypus, in five steps, a commit or more each: (1) the rename (script
-`rename.py` in the session scratchpad: crates/tools/docs moved in one commit, names inside files in the next; compatibility:
-`game.irbundle`, `package.json` `iron` section, `iron.scene`/`iron.prefab`, `@iron/*` imports, PlayerPrefs `iron.quality`,
-the old "Iron" settings folder are still read; magics `IRONPAYL`/`IRPK`/`IRTX`/`IRMD` kept; tests `M9-REN-01..04`);
-(2) `Copyright 2026 The Platypus Authors` + SPDX headers, `NOTICE`; (3) the icon `resources/icon/icon.png` as the default
-for packaged games, the host window and the host exe; (4) README rewrite; (5) `docs/PROGRESS.md` with a screenshot of
-every example under `docs/progress/`. Check `git log` for which steps have landed.
-Last green before the rename (2026-10-22): root 1042 tests, tools 1208, examples `--tsc` 43/0, `bun test` 225.
+**Done:** the project is renamed Iron -> Platypus (`c3b976a6` paths, `b738528a` names; compatibility: `game.irbundle`,
+a `package.json` `iron` section, `iron.scene`/`iron.prefab`, `@iron/*` imports, PlayerPrefs `iron.quality` and the old
+"Iron" settings folder are still read; magics `IRONPAYL`/`IRPK`/`IRTX`/`IRMD` kept; `M9-REN-01..04`, see
+`docs/platypus-build.md`). `db7695fc` `Copyright 2026 The Platypus Authors` above every SPDX line, `NOTICE`.
+`e0974f90` the Platypus icon (`resources/icon/icon.png`) is the default: packaged exes, the host's window icon, and the
+host exes' own icon and version info (`crates/platypus_app/build.rs` links a `.res`; `M9-ICO-01..06`). `3422c791` README
+rewrite; `91d825d7` `docs/PROGRESS.md` and `docs/progress/` (`bun scripts/progress-shots.ts`).
+**Left:** the user's `feature/cpu-renderer` branch still uses the old names (rename it with the same script before
+merging); `cargo build` binaries are `platypus.exe` / `platypus_editor.exe` now (package `platypus_app`).
 
 **Run:** one area `cargo test -p platypus_ts_tests --test <lang|stdlib|engine|engine_api|ui> [filter]`; all of them
 `cargo test -p platypus_ts_tests`. Keep one command shape: `-p platypus_ts_tests` and `--workspace` unify features differently

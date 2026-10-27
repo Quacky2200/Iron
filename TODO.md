@@ -13,7 +13,8 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] Layout: Taffy first, Yoga fallback behind `LayoutEngine`
 - [x] **First script backend:** QuickJS (`rquickjs` 0.14). `deno_core` follows as a second backend.
 - [x] Rust edition 2024, latest stable (1.99 at time of writing)
-- [x] Licence: Apache-2.0 (see `LICENSE` and the README; it lets people modify anywhere and keep their changes with less friction). It was private until a working demo. Done with it: `license = "Apache-2.0"` in the Cargo manifests and package.json files, an `SPDX-License-Identifier: Apache-2.0` header on our source files, checked by `M9-LIC-01`. Open: the copyright holder line for the headers, if one is wanted
+- [x] Licence: Apache-2.0 (see `LICENSE` and the README; it lets people modify anywhere and keep their changes with less friction). It was private until a working demo. Done with it: `license = "Apache-2.0"` in the Cargo manifests and package.json files, an `SPDX-License-Identifier: Apache-2.0` header on our source files, checked by `M9-LIC-01`. The holder line came with the rename: `Copyright 2026 The Platypus Authors` above it, and `NOTICE`
+- [x] Name: **Platypus** (2026-10-27, was Iron): crates `platypus_*`, binaries `platypus` / `platypus_editor` / `platypus-build`, `PLATYPUS_*` variables, `@platypus/*` packages, `game.pbundle`, `.ppk`; files of the old names are still read (`M9-REN-01..04`). The icon `resources/icon/icon.png` is the default for every game without one (`M9-ICO-01..06`)
 
 ---
 
