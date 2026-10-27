@@ -15,21 +15,6 @@ scripting API follows Unity's names and units, and its UI and styling take their
 <img src="docs/progress/css.png" width="400" alt="The CSS example">
 </p>
 
-The idea
---------
-
-- **Game code and UI in one place.** A game is a folder of TypeScript: components on GameObjects with a Unity-style API
-  (`Transform`, `Rigidbody`, `Camera`, `SceneManager`, ...) and its menus and HUD as React components styled with CSS, in
-  the same program.
-- **TypeScript compiled to native code.** `platypus_ts` compiles the game's TypeScript ahead of time (oxc parser, a typed
-  IR, Cranelift code generation, a precise garbage collector) and the host runs it in process, JIT-compiled at start.
-  No JavaScript engine runs a game.
-- **React on a native reconciler.** UI is written with React components and hooks; the reconciler that diffs them is
-  native, and the result is laid out by Taffy, set by Parley and drawn by Platypus's own wgpu renderer, not a browser.
-- **Rust owns the world, scripts own behaviour.** The scene, physics, audio and rendering live in Rust. Scripts hold
-  numeric IDs, never engine references. The engine API is Rust annotated with `#[platypus_api]`, which also generates
-  the game's TypeScript declarations, so the types always match the engine.
-
 A web-style UI, with React
 --------------------------
 
@@ -58,6 +43,21 @@ alternative to the .NET route taken by Unity, Godot's C# support and Stride.
 How close is it? On the one micro-benchmark we compared across engines (a game-rules simulation, 10,000 steps) it
 takes 9.1 ms, against 36.1 ms for Bun's JIT and 391 ms for QuickJS. We have not benchmarked it against C#, so "close
 to C#" is the aim, not a measured result. Details: [docs/benchmarks.md](docs/benchmarks.md).
+
+The idea
+--------
+
+- **Game code and UI in one place.** A game is a folder of TypeScript: components on GameObjects with a Unity-style API
+  (`Transform`, `Rigidbody`, `Camera`, `SceneManager`, ...) and its menus and HUD as React components styled with CSS, in
+  the same program.
+- **TypeScript compiled to native code.** `platypus_ts` compiles the game's TypeScript ahead of time (oxc parser, a typed
+  IR, Cranelift code generation, a precise garbage collector) and the host runs it in process, JIT-compiled at start.
+  No JavaScript engine runs a game.
+- **React on a native reconciler.** UI is written with React components and hooks; the reconciler that diffs them is
+  native, and the result is laid out by Taffy, set by Parley and drawn by Platypus's own wgpu renderer, not a browser.
+- **Rust owns the world, scripts own behaviour.** The scene, physics, audio and rendering live in Rust. Scripts hold
+  numeric IDs, never engine references. The engine API is Rust annotated with `#[platypus_api]`, which also generates
+  the game's TypeScript declarations, so the types always match the engine.
 
 Technologies
 ------------
