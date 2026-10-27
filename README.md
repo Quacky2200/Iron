@@ -41,7 +41,7 @@ the `Component` class that runs on a GameObject next to the JSX that shows its H
 sit together naturally (see [examples/arcade](examples/arcade/src/main.tsx)).
 
 Game and UI development use the same language, TypeScript, and the same tooling: no scripting language for
-gameplay next to a separate UI toolkit or markup language, so one person can work on both.
+gameplay next to a separate UI toolkit or markup language, so one person can work on both without context switching.
 
 Why TypeScript, and why a compiler
 ----------------------------------
