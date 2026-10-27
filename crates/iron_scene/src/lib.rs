@@ -236,6 +236,28 @@ impl Scene {
         }
     }
 
+    /// Where `id` stands among its siblings (the roots for a root).
+    pub fn sibling_index(&self, id: ObjectId) -> usize {
+        let list = match self.get(id).and_then(|o| o.parent) {
+            Some(p) => self.children(p),
+            None => &self.roots,
+        };
+        list.iter().position(|c| *c == id).unwrap_or(0)
+    }
+
+    /// Moves `id` to place `index` among its siblings (past the end: last).
+    pub fn set_sibling_index(&mut self, id: ObjectId, index: usize) {
+        let parent = self.get(id).and_then(|o| o.parent);
+        let list = match parent.and_then(|p| self.get_mut(p)) {
+            Some(p) => &mut p.children,
+            None => &mut self.roots,
+        };
+        if let Some(at) = list.iter().position(|c| *c == id) {
+            list.remove(at);
+            list.insert(index.min(list.len()), id);
+        }
+    }
+
     pub fn name(&self, id: ObjectId) -> Option<&str> {
         self.get(id).map(|o| o.name.as_str())
     }

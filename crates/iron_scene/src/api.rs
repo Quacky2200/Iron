@@ -265,8 +265,9 @@ pub mod scene_api {
             with(|s| s.find_with_tag(tag)).unwrap_or_default()
         }
 
-        /// The object it is under (no object at the root).
+        /// The object it is under (`null` at the root).
         #[property]
+        #[nullable]
         pub fn parent(self) -> ObjectId {
             parent(self)
         }
@@ -526,8 +527,56 @@ pub mod scene_api {
             rotation(self.0).rotate(d)
         }
 
-        /// The parent transform, or no object for a root.
+        /// A direction from the world to local space (rotation only).
+        pub fn inverse_transform_direction(self, d: V3) -> V3 {
+            rotation(self.0).inverse().rotate(d)
+        }
+
+        /// A vector from local space to the world: rotated and scaled, not moved.
+        pub fn transform_vector(self, v: V3) -> V3 {
+            let s = lossy_scale(self.0);
+            rotation(self.0).rotate(V3 {
+                x: s.x * v.x,
+                y: s.y * v.y,
+                z: s.z * v.z,
+            })
+        }
+
+        /// A vector from the world to local space: unrotated and unscaled, not moved.
+        pub fn inverse_transform_vector(self, v: V3) -> V3 {
+            let s = lossy_scale(self.0);
+            let q = rotation(self.0).inverse().rotate(v);
+            V3 {
+                x: q.x / s.x,
+                y: q.y / s.y,
+                z: q.z / s.z,
+            }
+        }
+
+        /// Puts the object at a world position and rotation at once.
+        pub fn set_position_and_rotation(self, position: V3, rotation: Q) {
+            set_position(self.0, position);
+            set_rotation(self.0, rotation);
+        }
+
+        /// Puts the object at a position and rotation relative to its parent at once.
+        pub fn set_local_position_and_rotation(self, position: V3, rotation: Q) {
+            set_local_position(self.0, position);
+            set_local_rotation(self.0, rotation);
+        }
+
+        /// Turns the object about an axis through a world point, by `angle` degrees: it orbits the
+        /// point and turns with it.
+        pub fn rotate_around(self, point: V3, axis: V3, angle: f64) {
+            let q = Q::angle_axis(angle, axis);
+            let at = position(self.0);
+            set_position(self.0, point.add(q.rotate(at.sub(point))));
+            set_rotation(self.0, q.mul(rotation(self.0)));
+        }
+
+        /// The parent transform (`null` for a root).
         #[property]
+        #[nullable]
         pub fn parent(self) -> TransformRef {
             TransformRef(parent(self.0))
         }
@@ -535,6 +584,87 @@ pub mod scene_api {
         /// Moves the object under a parent (none: to the root), optionally keeping its world pose.
         pub fn set_parent(self, parent: TransformRef, keep_world: bool) {
             set_parent(self.0, parent.0, keep_world);
+        }
+
+        /// How many children it has.
+        #[property]
+        pub fn child_count(self) -> f64 {
+            with(|s| s.children(self.0).len() as f64).unwrap_or(0.0)
+        }
+
+        /// The i-th child (null past the end).
+        #[nullable]
+        pub fn get_child(self, index: f64) -> TransformRef {
+            TransformRef(
+                with(|s| s.children(self.0).get(index as usize).copied())
+                    .flatten()
+                    .unwrap_or_else(none),
+            )
+        }
+
+        /// The topmost transform above it (itself at the root).
+        #[property]
+        pub fn root(self) -> TransformRef {
+            TransformRef(
+                with(|s| {
+                    let mut o = self.0;
+                    while let Some(p) = s.parent(o) {
+                        o = p;
+                    }
+                    o
+                })
+                .unwrap_or(self.0),
+            )
+        }
+
+        /// A transform under it by name, or by a path of names ("arm/hand"); null if there is none.
+        #[nullable]
+        pub fn find(self, path: &str) -> TransformRef {
+            TransformRef(
+                with(|s| {
+                    path.split('/').try_fold(self.0, |at, name| {
+                        s.children(at)
+                            .iter()
+                            .copied()
+                            .find(|c| s.name(*c) == Some(name))
+                    })
+                })
+                .flatten()
+                .unwrap_or_else(none),
+            )
+        }
+
+        /// Is it `parent` or anywhere under it?
+        pub fn is_child_of(self, parent: TransformRef) -> bool {
+            with(|s| s.is_descendant(self.0, parent.0)).unwrap_or(false)
+        }
+
+        /// Frees every child to the world root, where it is.
+        pub fn detach_children(self) {
+            let kids = with(|s| s.children(self.0).to_vec()).unwrap_or_default();
+            for k in kids {
+                set_parent(k, none(), true);
+            }
+        }
+
+        /// Where it stands among its siblings, first is 0.
+        #[property]
+        pub fn sibling_index(self) -> f64 {
+            with(|s| s.sibling_index(self.0) as f64).unwrap_or(0.0)
+        }
+
+        pub fn set_sibling_index(self, index: f64) {
+            with(|s| s.set_sibling_index(self.0, index.max(0.0) as usize));
+        }
+
+        /// Moves it before its siblings.
+        pub fn set_as_first_sibling(self) {
+            with(|s| s.set_sibling_index(self.0, 0));
+        }
+
+        /// Moves it after its siblings.
+        pub fn set_as_last_sibling(self) {
+            with(|s| s.set_sibling_index(self.0, usize::MAX));
         }
     }
 
@@ -572,9 +702,21 @@ pub mod scene_api {
             let p = s.contains(parent).then_some(parent);
             s.set_parent(object, p, false)
         });
-        if keep_world && let Some((pos, rot, _)) = pose {
+        if keep_world && let Some((pos, rot, scale)) = pose {
             set_position(object, pos);
             set_rotation(object, rot);
+            // Unity keeps the world scale too: the local scale is what the parents leave over.
+            let (_, _, ps) =
+                with(|s| parent_pose(s, object)).unwrap_or((V3::ZERO, Q::IDENTITY, scale));
+            let div = |a: f64, b: f64| if b == 0.0 { a } else { a / b };
+            set_local_scale(
+                object,
+                V3 {
+                    x: div(scale.x, ps.x),
+                    y: div(scale.y, ps.y),
+                    z: div(scale.z, ps.z),
+                },
+            );
         }
     }
 

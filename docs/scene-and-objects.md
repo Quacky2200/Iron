@@ -214,7 +214,15 @@ s&box.
   primitive; [primitives.ts](../js/engine/src/primitives.ts) registers the factory).
 - `Transform`: `position`, `rotation`, `scale` (world) and local versions, `forward`, `right`, `up`,
   `eulerAngles`, `translate`, `rotate`, `lookAt`, `transformPoint`, `inverseTransformPoint`,
-  `transformDirection`.
+  `transformDirection`. Native games (the `#[iron_api]` `Transform`) also have Unity's hierarchy:
+  `parent` (`null` at a root, as on `GameObject`), `childCount`, `getChild(i)`, `root`,
+  `find("a/b")`, `isChildOf`, `detachChildren`, `siblingIndex` with `setAsFirstSibling` /
+  `setAsLastSibling`, `setParent(parent, keepWorld = true)` (keeps the world scale too),
+  `transformVector` / `inverseTransformVector` / `inverseTransformDirection`,
+  `setPositionAndRotation`, `setLocalPositionAndRotation` and `rotateAround`. `transform.parent = x`
+  is not an assignment: call `setParent`. `getComponentInChildren`, `getComponentsInChildren`,
+  `getComponentInParent` and `getComponentsInParent` take a class of the game (the walk is a
+  generated helper per class).
 - `Component`: `id`, `gameObject`, `transform`, `getComponent`, `destroy`, and the optional hooks
   `onStart`, `onUpdate(dt)`, `onLateUpdate(dt)`, `onFixedUpdate(dt)`, `onPreRender()`, `onDestroy()`.
 - Optional hooks `onAwake()` and `onReload()` (above) too.

@@ -729,10 +729,9 @@ impl<'a> Lowerer<'a> {
             {
                 return self.lower_promise_method(recv, &key, value, m, c);
             }
-            if matches!(
-                m,
-                "getComponent" | "addComponent" | "getComponents" | "getComponentInChildren"
-            ) && let Some(go) = self.component_target(recv.clone())
+            if (matches!(m, "getComponent" | "addComponent" | "getComponents")
+                || components::is_hierarchy_search(m))
+                && let Some(go) = self.component_target(recv.clone())
                 && let Some(e) = self.lower_user_component_call(&go, m, c)?
             {
                 return Ok(e);
@@ -853,10 +852,8 @@ impl<'a> Lowerer<'a> {
             if m == "addComponent" {
                 return self.lower_add_component(recv, c);
             }
-            if matches!(
-                m,
-                "getComponent" | "getComponents" | "getComponentInChildren"
-            ) && let Some(e) = self.lower_user_component_call(&recv, m, c)?
+            if (matches!(m, "getComponent" | "getComponents") || components::is_hierarchy_search(m))
+                && let Some(e) = self.lower_user_component_call(&recv, m, c)?
             {
                 return Ok(e);
             }
