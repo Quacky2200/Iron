@@ -1,39 +1,166 @@
 Iron
-====
-
-Iron is new game engine built (you guessed it) in rust. We hope you enjoy it.
-
-Our goal is focusing on utilising Open Source toolkits to bring you the latest
-game development from all the latest technology. We acknoledge Rust can be a
-controversial yet it's also one of the most popular and growing languages today
-due to its memory safety and the amount of projects created within it.
-
-What Iron has to offer:
-=======================
-
-One of the problems in the current game engine arena in recent history was
-Unity's plan to introduce per-install licensing costs and had upset the
-indie game industry, given that Unity is most popular engine, potentially
-argued as a near-monopoly. Godot had been no-real comparison. There became
-a panic about alternative game engines, especially for 3D with wide support.
-
-Additionally when S&box came out in early testing and paid beta, there were
-awful reviews (as seen in [https://sbox.game/news/rethinking](S&Box blogpost
-- Rethinking by Garry). We hope that the next improvements will help their
-platform tremendously.
-
-In the immediate future this is partly why Iron exists so that we can make
-games immediately without licensing issues, with Open Source software and
-with the same greatness as other game engines.
-
-We also wish to provide a game engine that utilises some of the technology
-frontiered by the web so that we can provide better experiences just as the
-web had done, potentially allowing web designers/developers chances to work
-on games for those who have the interest - following similar footsteps to
-S&Box who impressed me with their Razor flexbox system.
-
-Licence:
 ========
+
+**Indie Game Engine for Unity and S&Box enthusiasts featuring Rust, TypeScript and React.**
+
+Iron is a game engine with a Rust core in which games, and their UI, are written in TypeScript and React. Its
+scripting API follows Unity's names and units, and its UI and styling take their cue from S&box's web-style UI.
+
+<p align="center">
+<img src="docs/progress/godrays-forest.jpg" width="400" alt="God rays through a forest canopy">
+<img src="docs/progress/fog-park.jpg" width="400" alt="A Victorian park in the fog">
+<img src="docs/progress/crowd.jpg" width="400" alt="Animated mannequins on two sidewalks">
+<img src="docs/progress/css.png" width="400" alt="The CSS example">
+</p>
+
+The idea
+--------
+
+- **Game code and UI in one place.** A game is a folder of TypeScript: components on GameObjects with a Unity-style API
+  (`Transform`, `Rigidbody`, `Camera`, `SceneManager`, ...) and its menus and HUD as React components styled with CSS, in
+  the same program.
+- **TypeScript compiled to native code.** `iron_ts` compiles the game's TypeScript ahead of time (oxc parser, a typed
+  IR, Cranelift code generation, a precise garbage collector) and the host runs it in process, JIT-compiled at start.
+  No JavaScript engine runs a game.
+- **React on a native reconciler.** UI is written with React components and hooks; the reconciler that diffs them is
+  native, and the result is laid out by Taffy, set by Parley and drawn by Iron's own wgpu renderer, not a browser.
+- **Rust owns the world, scripts own behaviour.** The scene, physics, audio and rendering live in Rust. Scripts hold
+  numeric IDs, never engine references. The engine API is Rust annotated with `#[iron_api]`, which also generates
+  the game's TypeScript declarations, so the types always match the engine.
+
+Technologies
+------------
+
+- **Rust 2024** for the engine and the tools.
+- **wgpu** for rendering (Vulkan by default on Windows, DX12 optional): PBR materials, cascaded and spot / point shadows,
+  bloom, tonemapping and auto exposure, distance and height fog, volumetric light shafts.
+- **Taffy** (flexbox and grid layout), **Parley** (text layout), **swash** (glyphs), **resvg** (SVG), **cssparser** and
+  **selectors** (stylesheets).
+- **rapier** (3D and 2D physics), **kira** (audio), **glTF** models.
+- **oxc** (TypeScript parser) and **Cranelift** (code generation) in `iron_ts`, with its own runtime and precise GC.
+- **React** components and hooks on Iron's native reconciler (`iron_ui_native`).
+- **winit** (windows and input) and **gilrs** (gamepads).
+- **ICU4X** for `Intl` (see below).
+
+What it can do
+--------------
+
+What exists today.
+
+**Scripting and language**
+- TypeScript compiled natively: classes, closures, generics, async / await and promises, Map / Set, JSON, RegExp,
+  template literals, modules (`src/modules/` for copied-in packages), checked by `tsc` against generated declarations.
+- Not yet: a dynamic `any` / `unknown` (designed, not built). QuickJS, the first script backend, is deprecated.
+
+**UI and CSS**
+- `box`, `text`, `input`, `textarea`, `image`, `list`, `dialog` and inline `svg` elements; flex and grid layout.
+- Stylesheets with the cascade, specificity and `!important`, custom properties, `@media`, `@font-face`, transitions,
+  `@keyframes`, pseudo-classes and pseudo-elements, gradients, shadows, filters, masks, blend modes, backdrop blur.
+- Pointer, keyboard and focus, gamepad navigation, scrolling, text fields with clipboard and IME, drag and drop.
+- UI on planes in the 3D world (`WorldPanel`). Known differences from browsers: [docs/differences.md](docs/differences.md).
+
+**2D and 3D rendering**
+- PBR (metallic and specular), material maps, cutout / fade / transparent modes, a procedural sky, reflection probes,
+  planar mirrors, render textures.
+- Shadows, bloom and glows, tonemapping, exposure, auto exposure and real-world light units, MSAA, FXAA, render scale,
+  quality levels.
+- Layers, culling masks, frustum culling, LOD groups, particles.
+- 2D: sprites, thick lines and filled shapes, `TextMesh`, sorting order.
+
+**Physics**
+- Rigidbodies, colliders (mesh colliders from models), a character controller, joints and rope in 3D and 2D; cloth.
+
+**Audio**
+- Decoded and streamed sounds, buses, spatial emitters, `AudioSource` / `AudioListener`.
+
+**Animation and skinned meshes**
+- Curves and clips, `Animation`, `Animator` with blend trees and transitions, glTF skinned meshes with GPU skinning,
+  animation culling, splines and `SplineAnimate`.
+
+**Scenes and prefabs**
+- JSON scene files, `SceneManager` (single, additive, async), prefabs, `instantiate`, `dontDestroyOnLoad`, hot reload
+  that keeps the scene.
+
+**Windows**
+- More OS windows from TypeScript (tools, dialogs, isolated windows talking by messages), each with its own UI. Checked
+  with a fake platform and screenshot runs only: the multi-window runner has not been run on a real display.
+
+**Assets and packs**
+- GUID `.meta` files, asset hot reload, cooked textures (BC1/BC3) and models, `.irpk` packs (LZ4 or zstd) under a
+  virtual file system.
+
+**Build and packaging**
+- `iron-build`: `build`, `types`, `assets`, `dev` (rebuild on save, the running game reloads), `check`, `package`
+  (one `.exe` holding the host and the game, with its icon and version info; the Iron icon when the game has none),
+  `bench`.
+
+**Tooling and benchmarks**
+- Screenshot runs and windowless bench runs, golden image tests, a test plan with IDs ([TESTS.md](TESTS.md)).
+- The editor (`iron_editor`) is in progress: menubar, docking, console, project browser and a Scene view; no
+  Inspector or undo yet.
+
+**Platforms**
+- Developed and tested on Windows. Linux and macOS are untested.
+
+Performance
+-----------
+
+Each example was measured natively and, where one exists, as its QuickJS original in the same release host
+(windowless, 1280x720, fixed step).
+Script-heavy examples run up to 7.2x faster natively (raindrop-demo 7.22x, fishtank 5.37x, godrays-room 4.88x, world
+4.45x), with 20-75x less script time; nothing is slower beyond the noise between runs. On a pure script micro-benchmark
+(a game-rules simulation, 10,000 steps) QuickJS takes 391 ms, bun (JavaScriptCore JIT) 36.1 ms and `iron_ts` 9.1 ms.
+Tables, start-up times and the method: [docs/benchmarks.md](docs/benchmarks.md).
+
+Quick start
+-----------
+
+Windows, with Rust (1.99 or later) and its MSVC toolchain. Bun is only needed for the editor and the JavaScript tests.
+
+```bash
+# The host (iron_app.exe) and the build tool
+cargo build --release -p iron_app
+cd tools && cargo build --release -p iron_build && cd ..
+
+# Build an example and run it
+tools/target/release/iron-build build examples/fog-park
+target/release/iron_app examples/fog-park
+
+# Render one frame to a PNG and exit
+target/release/iron_app examples/css --screenshot out.png --frames 30
+
+# Package a game as one executable (examples/boxes/dist/<name>.exe)
+tools/target/release/iron-build package examples/boxes
+```
+
+A game is a folder with `project.json` (only `name` is required), `tsconfig.json` and `src/main.ts(x)`; start from
+[examples/hello](examples/hello). Engine and UI names are globals declared in the generated `types/iron.d.ts`
+(`iron-build types`). Building, the manifest and packaging: [docs/iron-build.md](docs/iron-build.md).
+
+Documentation
+-------------
+
+- [docs/README.md](docs/README.md): how the code works, page by page.
+- [DESIGN.md](DESIGN.md): the design and the decisions. [TODO.md](TODO.md): the plan by milestone.
+- [examples/](examples): 45 example games.
+
+Languages, dates and numbers (Intl)
+-----------------------------------
+
+TypeScript games get the usual JavaScript `Intl` features natively (string comparison, number and date formatting,
+time zones) through ICU4X, the Unicode Consortium's Rust library, rather than ICU4C, the C++ library browsers use:
+
+- ICU4X is plain Rust, so it links into the game with the rest of Iron: no C++ toolchain and no separate native
+  library to ship.
+- Its data is split by locale and feature, so a game can carry only the languages it lists. Today the build still
+  links every locale's data; trimming it to the game's list is planned.
+- ICU4X has no `availableFormats` table: common date options give the same text as the browsers (compared against bun
+  in the tests), but unusual combinations can differ or be refused ([docs/differences.md](docs/differences.md)). An
+  optional ICU4C build for exact browser behaviour is planned
+  ([docs/research/iron-ts-intl-datetime.md](docs/research/iron-ts-intl-datetime.md)).
+
+Licence
+-------
 
 Iron is licensed under the Apache License, Version 2.0 (Apache-2.0). The full
 text is in [LICENSE](LICENSE). (It was private until there was a working demo;
@@ -47,33 +174,10 @@ and TOML), after a `#!` line if there is one. New files need it too: the
 source file without it. Generated files, built fixtures and third-party code
 are left out; the test's exclusion list says which.
 
-Languages, dates and numbers (Intl):
-====================================
+Credits and third-party notices
+-------------------------------
 
-Scripts written in TypeScript get the usual JavaScript Intl features natively
-(string comparison, number and date formatting, time zones). For this we use
-ICU4X, the Unicode Consortium's Rust library, instead of ICU4C, the C++
-library the browsers use. The reasons are space and simplicity:
-
- - ICU4X is plain Rust, so it links into the game executable with the rest of
-   Iron: no C++ toolchain, no separate native library to ship, and the same
-   build on Windows, Linux, macOS and (later) consoles and the web.
- - Its data is split by locale and by feature, so a game only carries the
-   languages it lists in its package.json (a set of main markets such as US,
-   UK and the EU languages is the default). ICU4C ships one big data file
-   (tens of megabytes) for everything. Today the build still links ICU4X's
-   data for every locale; trimming it to the game's list is planned.
-
-The structural difference: ICU4C finds the best date pattern for any mix of
-options ({ weekday: "long", hour: "numeric" } and so on) from a table called
-availableFormats. ICU4X has no such table; it formats from a fixed set of
-field combinations. The common cases give the same text as the browsers
-(they are compared against Bun in the tests), but unusual combinations of date
-options can differ or be refused. docs/differences.md lists them.
-
-If a game needs the exact browser behaviour and every locale, an optional
-build (the icu-full feature, using ICU4C through rust_icu) is planned. It needs
-a native ICU installed at build time and makes the executable larger, so it
-is off by default. The plan and its status are in
-docs/research/iron-ts-intl-datetime.md.
-
+Iron builds on many open-source crates and packages; their licences are in their own sources (`Cargo.lock`,
+`bun.lock`). The Inter font is under the SIL Open Font License (`crates/iron_ui/fonts/Inter-LICENSE.txt`). Examples
+that use outside art or music list it in their `assets/CREDITS.md` (crowd, emoji, fog-white-room, sine-circle-demo);
+ports of other projects (the MiniGameEngine demos, the clock's lava lamp) say so in their source headers.
