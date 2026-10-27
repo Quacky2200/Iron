@@ -2,7 +2,7 @@
 
 //! CSS gradients as `vello_cpu` gradients, in the draw list's logical pixels.
 
-use iron_ui::{BackgroundImage, GradientDirection, RadialShape, Rect, resolve_stops};
+use platypus_ui::{BackgroundImage, GradientDirection, RadialShape, Rect, resolve_stops};
 use vello_cpu::kurbo::{Affine, Point};
 use vello_cpu::peniko::{Color, Extend, Gradient};
 
@@ -11,7 +11,7 @@ use vello_cpu::peniko::{Color, Extend, Gradient};
 pub fn gradient(image: &BackgroundImage, tile: Rect) -> Option<(Gradient, Affine)> {
     let (w, h) = (tile.width.max(0.0), tile.height.max(0.0));
     let center = Point::new(f64::from(tile.x + w / 2.0), f64::from(tile.y + h / 2.0));
-    let color = |c: iron_ui::Rgba| Color::new([c.r, c.g, c.b, c.a]);
+    let color = |c: platypus_ui::Rgba| Color::new([c.r, c.g, c.b, c.a]);
     let extend = |repeating: bool| {
         if repeating {
             Extend::Repeat
@@ -21,7 +21,7 @@ pub fn gradient(image: &BackgroundImage, tile: Rect) -> Option<(Gradient, Affine
     };
     // The stops' positions along the gradient line (a fraction of its length), rebased so the
     // first is 0 and the last 1: repeating gradients repeat that span, the others pad.
-    let rebase = |stops: &[iron_ui::ColorStop], length: f32| {
+    let rebase = |stops: &[platypus_ui::ColorStop], length: f32| {
         let resolved = resolve_stops(stops, length);
         let first = resolved.first().map_or(0.0, |s| s.1);
         let last = resolved.last().map_or(1.0, |s| s.1).max(first + 1e-4);
@@ -30,7 +30,7 @@ pub fn gradient(image: &BackgroundImage, tile: Rect) -> Option<(Gradient, Affine
             .map(|(c, p)| {
                 (
                     (p - first) / (last - first),
-                    color(iron_ui::Rgba::new(c[0], c[1], c[2], c[3])),
+                    color(platypus_ui::Rgba::new(c[0], c[1], c[2], c[3])),
                 )
             })
             .collect();

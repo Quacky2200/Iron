@@ -14,7 +14,7 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] **First script backend:** QuickJS (`rquickjs` 0.14). `deno_core` follows as a second backend.
 - [x] Rust edition 2024, latest stable (1.99 at time of writing)
 - [x] Licence: Apache-2.0 (see `LICENSE` and the README; it lets people modify anywhere and keep their changes with less friction). It was private until a working demo. Done with it: `license = "Apache-2.0"` in the Cargo manifests and package.json files, an `SPDX-License-Identifier: Apache-2.0` header on our source files, checked by `M9-LIC-01`. The holder line came with the rename: `Copyright 2026 The Platypus Authors` above it, and `NOTICE`
-- [x] Name: **Platypus** (2026-10-27, was Iron): crates `platypus_*`, binaries `platypus` / `platypus_editor` / `platypus-build`, `PLATYPUS_*` variables, `@platypus/*` packages, `game.pbundle`, `.ppk`; files of the old names are still read (`M9-REN-01..04`). The icon `resources/icon/icon.png` is the default for every game without one (`M9-ICO-01..06`)
+- [x] Name: **Platypus** (2026-10-27, was Iron): crates `platypus_*`, binaries `platypus-game` / `platypus-app` (the two hosts, picked by `project.json` `type`; until main's two-host work it was one `platypus`) / `platypus_editor` / `platypus-build`, the renderer crates `platypus_render_cpu` / `platypus_render_gles`, `PLATYPUS_*` variables, `@platypus/*` packages, `game.pbundle`, `.ppk`; files of the old names are still read (`M9-REN-01..04`). The icon `resources/icon/icon.png` is the default for every game without one (`M9-ICO-01..06`)
 
 ---
 
@@ -31,7 +31,7 @@ Platypus/
 │  ├─ platypus_render/         # wgpu device, surfaces, offscreen targets
 │  ├─ platypus_script/         # ScriptRuntime trait + QuickJS backend + shared test suite
 │  ├─ platypus_ui/             # (M2) UI tree, LayoutEngine trait, Taffy backend, UI renderer
-│  └─ platypus_app/            # the `platypus` binary: main loop wiring everything together
+│  └─ platypus_app/            # the `platypus-game` / `platypus-app` binaries: main loop wiring everything together
 ├─ js/
 │  ├─ engine/              # @platypus/engine: Component base class, engine API, .d.ts
 │  └─ react/               # (M2) @platypus/react: custom reconciler

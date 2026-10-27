@@ -108,7 +108,7 @@ impl Gpu {
                 required_limits:
                     wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
                 // The default (Performance) reserves 32-64 MB blocks, ~240 MB for a UI-only
-                // app; `iron-app` asks for small ones ([`set_low_memory`]).
+                // app; `platypus-app` asks for small ones ([`set_low_memory`]).
                 memory_hints: if LOW_MEMORY.load(std::sync::atomic::Ordering::Relaxed) {
                     wgpu::MemoryHints::MemoryUsage
                 } else {

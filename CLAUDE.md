@@ -102,7 +102,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
 - `bun run build` builds the editor (`editor/`, still bundled by Bun for QuickJS); `bun run build:fixtures` is the same for
   `tests/fixtures`.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
-- Examples: `platypus-build dev <game>` rebuilds on every edit and signals the running `platypus` window. `bun run dev` in `editor/`
+- Examples: `platypus-build dev <game>` rebuilds on every edit and signals the running `platypus-game` window. `bun run dev` in `editor/`
   (`scripts/dev.ts`) is the Bun dev build (vendor.js + game.js, React Fast Refresh) that remains for the editor and QuickJS
   bundles. Other reloads keep state through scene serialization.
 - The `cargo run` line renders a screenshot and exits; check it by eye. `--cook` prepares a
@@ -238,7 +238,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
   - `examples/arcade` (2026-10-17): a coin collector with a React HUD, FPS counter and
     settings menu; Classic and Deluxe arenas as separate scenes (Style button), the round
     and positions kept across the switch.
-  - App (2026-10-17): `platypus` with no folder runs the current one; a GUI-subsystem program
+  - App (2026-10-17): `platypus-game` with no folder runs the current one; a GUI-subsystem program
     logging to `Player.log`; exclusive fullscreen at the monitor's resolution;
     `Application.runInBackground`, focus events and pause hooks (`lifecycle.rs`).
   - M5.c done (2026-10-17): material maps (normal, metallic, occlusion, emission,
@@ -249,7 +249,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
   - M5.d done (2026-10-17): animation (`animation.ts`: curves, clips, `Animation`,
     `Animator` with blend trees and transitions), skinned meshes and glTF animations
     (GPU skinning), prefabs, asset hot reload, GUID `.meta` files (`scripts/assets.ts`,
-    `asset_db.rs`), cooking (`platypus --cook`, BC1/BC3), cloth (`platypus_physics::cloth`);
+    `asset_db.rs`), cooking (`platypus-game --cook`, BC1/BC3), cloth (`platypus_physics::cloth`);
     `examples/animation`, `examples/cloth`.
   - M5.e started (2026-10-17, built by a background agent, cherry-picked here: work from
     agents' worktrees comes in as linear commits, no merges): `platypus_editor` (a second

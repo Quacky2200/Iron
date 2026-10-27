@@ -346,7 +346,7 @@ platypus-build package <game> [--host platypus-game.exe] [--out file] [--no-buil
 It builds the game (unless `--no-build`), then writes `<game>/dist/<exe>.exe` (no extension on other systems): a copy of the
 engine host (`platypus_app`) with the game's **icon and version info** written into its PE resources (Windows hosts only) and the game's
 **code appended as a payload**, and copies the **assets into a `data/` folder beside it**. Assets are never embedded: games have
-gigabytes of them. The result runs from any folder as long as `data/` is next to it; `platypus <game folder>` is unchanged.
+gigabytes of them. The result runs from any folder as long as `data/` is next to it; `platypus-game <game folder>` is unchanged.
 
 ```
 dist/                      (or the folder of --out)
@@ -421,9 +421,9 @@ section is parsed and rebuilt; no `rc.exe`, no other tool). The version info is 
 **The Platypus icon is the default.** `resources/icon/icon.png` (1254 x 1254, built into `platypus_core::icon::DEFAULT_PNG` with
 `include_bytes!`, so no file is needed at run time) is used wherever a game has none: `package` writes it as the exe's icon
 (replacing the host's), and the host's build script (`crates/platypus_app/build.rs`) turns it into a 256 x 256 window icon that
-`platypus` sets for a game without `icon`, and, on Windows with the MSVC linker, into a `.res` file (`platypus_core::icon::windows_res`:
+both hosts set for a game without `icon`, and, on Windows with the MSVC linker, into a `.res` file (`platypus_core::icon::windows_res`:
 the seven sizes as the `MAINICON` group and version info with `ProductName` / `FileDescription` `Platypus`) linked into
-`platypus.exe` and `platypus_editor.exe`, so plain `cargo build` binaries show it too. Tests `M9-ICO-01..06`.
+`platypus-game.exe`, `platypus-app.exe` and `platypus_editor.exe`, so plain `cargo build` binaries show it too. Tests `M9-ICO-01..06`.
 
 **The payload** (`platypus_core::payload`, format version 1) is appended after the host (and after the resource edit):
 
@@ -530,9 +530,9 @@ Nothing here is built yet. The inputs are the same: `game.pbundle` (or the `--ao
 - Both need the `--aot` path to cover all of the engine API first (today the examples run through the JIT) and a mobile windowing and
   input layer in `platypus_platform`.
 
-## Benchmarks (`platypus --bench`, `platypus-build bench`)
+## Benchmarks (`platypus-game --bench`, `platypus-build bench`)
 
-`platypus <game> --bench` runs a game with **no OS window**: the main window is an offscreen texture
+`platypus-game <game> --bench` runs a game with **no OS window**: the main window is an offscreen texture
 (`platypus_app/src/frame_target.rs`), the platform is `platypus_platform::FakePlatform` (secondary windows virtual, as in screenshot
 runs), and there is no vsync or frame cap. Each frame waits for the GPU work of the frame before it (like a swapchain queueing one
 frame), so GPU time counts. It warms up, measures, and writes JSON (`--bench-out file`, else stdout): fps, mean / median / p95 /

@@ -10,7 +10,7 @@
 // tabs, LT / RT, Tab). Opening a game shows its details and a Play button;
 // playing shows a loading spinner, then says launching isn't implemented yet.
 //
-// `platypus examples/launcher -- --select <example> --show details|loading|alert|menu|context
+// `platypus-game examples/launcher -- --select <example> --show details|loading|alert|menu|context
 // --view grid --category favourites --favourites a,b --pad xbox|playstation|nintendo` starts
 // on that game, screen, view, category and pad icons, and `--step-at <ms> [--steps n]` moves on
 // a game (n games, 60 ms apart) at that time, for screenshot runs of the transitions.
@@ -80,7 +80,7 @@ const START_VIEW: View = (arg("--view") ?? PlayerPrefs.getString("view", "carous
 const cantStart = (game: Game): Alert => ({
   title: `Can't start ${game.title}`,
   body: "Launching games from here isn't implemented yet. Run it with the platypus binary instead.",
-  code: `platypus examples/${game.name}`,
+  code: `platypus-game examples/${game.name}`,
   then: "details",
 });
 

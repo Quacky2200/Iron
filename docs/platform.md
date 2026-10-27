@@ -69,7 +69,7 @@ physical size from `__platypus_info.display`.
 
 ## Log file
 
-`platypus` is a Windows GUI-subsystem program, so it has no console of its own. `logging::init` sends the log
+`platypus-game` is a Windows GUI-subsystem program, so it has no console of its own. `logging::init` sends the log
 (`tracing`, default filter `info,wgpu_core=warn,wgpu_hal=error`, `RUST_LOG` overrides it) to `Player.log`
 in the game's settings folder, next to `prefs.json`, with the same ANSI colours a terminal shows. The
 previous run's file is kept as `Player-prev.log`. `PLATYPUS_LOG_FILE` names another file. Started from a

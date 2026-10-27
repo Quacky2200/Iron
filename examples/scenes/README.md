@@ -24,7 +24,7 @@ cargo run -p platypus_app -- examples/scenes
 ```
 
 Package with `platypus-build package ../examples/scenes`. A screenshot run is
-`platypus examples/scenes --screenshot out.png --frames N`; it is the safest check, since the window has crashed
+`platypus-game examples/scenes --screenshot out.png --frames N`; it is the safest check, since the window has crashed
 some GPUs.
 
 ## Structure

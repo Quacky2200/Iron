@@ -4,7 +4,7 @@
 // A windowed program: no console window of its own (the log goes to a file, see
 // `logging`); tests keep the console harness.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
-//! `platypus [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
+//! `platypus-game [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
 //! game's script bundle and runs it.
 //!
 //! `[game]` is either a game folder (loads `<game>/dist/game.pbundle`, built with

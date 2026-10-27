@@ -117,7 +117,7 @@ own UI is still QuickJS, forces implicitly. Nothing is deleted yet. The removal 
 
 ### Method
 
-Every example runs in the same release host without a window (`platypus --bench`: an offscreen target, no vsync or frame
+Every example runs in the same release host without a window (`platypus-game --bench`: an offscreen target, no vsync or frame
 cap; each frame waits for the GPU work of the frame before it), at 1280x720, with a fixed step of 1/60 s per frame and the
 same scripted input (`tools/bench/inputs/<name>.json`). The QuickJS side is the same example on `main`, built with its own
 `bun run build`. `platypus-build bench` runs the whole batch and writes [benchmarks.md](benchmarks.md) and the raw

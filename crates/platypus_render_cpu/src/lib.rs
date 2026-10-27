@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A CPU renderer for the UI draw list (`vello_cpu`), shown through `softbuffer`: no GPU API, no
-//! GPU driver. Used by the `ui_app_only` build of `iron_app` (EXPERIMENTAL).
+//! GPU driver. Used by the `ui_app_only` build of `platypus_app` (EXPERIMENTAL).
 //!
 //! It draws what the UI draw list holds, except `border-image`, `mask`s (their layer is drawn
 //! unmasked), drop shadows and colour matrices on layers, perspective (the affine part is used) and
@@ -15,8 +15,8 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use iron_ui::transform::Homography;
-use iron_ui::{BackgroundImage, BlendMode, DrawCmd, ImageFill, Quad, Rgba};
+use platypus_ui::transform::Homography;
+use platypus_ui::{BackgroundImage, BlendMode, DrawCmd, ImageFill, Quad, Rgba};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use vello_common::filter_effects::{Filter, FilterFunction};
 use vello_cpu::kurbo::{Affine, BezPath, Rect, RoundedRect, RoundedRectRadii, Shape};
@@ -27,7 +27,7 @@ fn color(c: Rgba) -> Color {
     Color::new([c.r, c.g, c.b, c.a])
 }
 
-fn rect(r: iron_ui::Rect) -> Rect {
+fn rect(r: platypus_ui::Rect) -> Rect {
     Rect::new(
         f64::from(r.x),
         f64::from(r.y),
@@ -37,7 +37,7 @@ fn rect(r: iron_ui::Rect) -> Rect {
 }
 
 /// A rounded box (elliptical corners are drawn circular, at the horizontal radius).
-fn rounded(r: iron_ui::Rect, radii: [f32; 4]) -> RoundedRect {
+fn rounded(r: platypus_ui::Rect, radii: [f32; 4]) -> RoundedRect {
     RoundedRect::from_rect(
         rect(r),
         RoundedRectRadii::new(
@@ -101,9 +101,9 @@ fn is_perspective(h: &Homography) -> bool {
 }
 
 /// The area the commands can paint (a little generous), or `None` when they paint nothing.
-fn cmds_bounds(cmds: &[DrawCmd]) -> Option<iron_ui::Rect> {
-    let mut bounds: Option<iron_ui::Rect> = None;
-    let mut add = |r: iron_ui::Rect| {
+fn cmds_bounds(cmds: &[DrawCmd]) -> Option<platypus_ui::Rect> {
+    let mut bounds: Option<platypus_ui::Rect> = None;
+    let mut add = |r: platypus_ui::Rect| {
         if r.width > 0.0 && r.height > 0.0 {
             bounds = Some(bounds.map_or(r, |b| b.union(r)));
         }
@@ -127,7 +127,7 @@ fn cmds_bounds(cmds: &[DrawCmd]) -> Option<iron_ui::Rect> {
 }
 
 /// A text run's glyphs, filled with the context's current paint.
-fn fill_run(ctx: &mut RenderContext, resources: &mut Resources, run: &iron_ui::GlyphRun) {
+fn fill_run(ctx: &mut RenderContext, resources: &mut Resources, run: &platypus_ui::GlyphRun) {
     let skew = run.skew.map_or(Affine::IDENTITY, |deg| {
         Affine::skew(-f64::from(deg).to_radians().tan(), 0.0)
     });
@@ -338,8 +338,8 @@ impl CpuRenderer {
                 (natural.0 as f32, natural.1 as f32)
             }
         };
-        let tile = iron_ui::tile_rect(q.rect, natural, fill.size, fill.position);
-        let (tile, gap, repeat) = iron_ui::repeat_tiles(tile, q.rect, fill.repeat);
+        let tile = platypus_ui::tile_rect(q.rect, natural, fill.size, fill.position);
+        let (tile, gap, repeat) = platypus_ui::repeat_tiles(tile, q.rect, fill.repeat);
         // An SVG is rasterized at the tile's size on screen.
         let image = match url {
             None => None,
@@ -376,7 +376,7 @@ impl CpuRenderer {
         };
         for &y in &ys {
             for &x in &xs {
-                let t = iron_ui::Rect::new(x, y, tile.width, tile.height);
+                let t = platypus_ui::Rect::new(x, y, tile.width, tile.height);
                 let visible = t.intersect(fill.area);
                 if visible.is_empty() {
                     continue;
@@ -412,15 +412,15 @@ impl CpuRenderer {
     /// of the ring between the outer and the inner edge.
     fn border(
         &mut self,
-        r: iron_ui::Rect,
-        radii: iron_ui::Radii,
+        r: platypus_ui::Rect,
+        radii: platypus_ui::Radii,
         widths: [f32; 4],
         colors: [Rgba; 4],
-        styles: [iron_ui::BorderStyle; 4],
+        styles: [platypus_ui::BorderStyle; 4],
     ) {
-        use iron_ui::BorderStyle;
+        use platypus_ui::BorderStyle;
         let [t, rt, b, l] = widths;
-        let inner_rect = iron_ui::Rect::new(
+        let inner_rect = platypus_ui::Rect::new(
             r.x + l,
             r.y + t,
             (r.width - l - rt).max(0.0),
@@ -475,8 +475,8 @@ impl CpuRenderer {
     /// transform), as the scene can't be read back otherwise.
     fn backdrop(
         &mut self,
-        r: iron_ui::Rect,
-        radii: iron_ui::Radii,
+        r: platypus_ui::Rect,
+        radii: platypus_ui::Radii,
         blur: f32,
         matrix: Option<[f32; 20]>,
     ) {
@@ -714,7 +714,7 @@ impl CpuRenderer {
                 }
                 if q.border_color.a > 0.0 && q.border.iter().any(|w| *w > 0.0) {
                     let [t, r, b, l] = q.border;
-                    let inner_rect = iron_ui::Rect::new(
+                    let inner_rect = platypus_ui::Rect::new(
                         q.rect.x + l,
                         q.rect.y + t,
                         (q.rect.width - l - r).max(0.0),
@@ -741,7 +741,7 @@ impl CpuRenderer {
             }
             DrawCmd::InsetShadow { shadow: s, border } => {
                 let [t, r, b, l] = *border;
-                let inner = iron_ui::Rect::new(
+                let inner = platypus_ui::Rect::new(
                     s.rect.x + l,
                     s.rect.y + t,
                     (s.rect.width - l - r).max(0.0),

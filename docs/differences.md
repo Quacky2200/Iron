@@ -6,7 +6,7 @@ a known gap, not an accident. When you fix one, delete its entry; when you add o
 
 ## QuickJS backend (deprecated)
 
-QuickJS games run only with `platypus --force` (see `docs/platypus-build.md`). Parity with the native backend is no longer pursued: the QuickJS
+QuickJS games run only with `platypus-game --force` (see `docs/platypus-build.md`). Parity with the native backend is no longer pursued: the QuickJS
 rows below describe how it behaved when it was maintained, and are not updated.
 
 ## Script API vs Unity, s&box and C# (M5.a)

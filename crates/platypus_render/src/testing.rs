@@ -79,7 +79,7 @@ pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance
     }
 }
 
-/// Writes RGBA8 `pixels` as a PNG (used for goldens and `platypus --screenshot`).
+/// Writes RGBA8 `pixels` as a PNG (used for goldens and `platypus-game --screenshot`).
 pub fn write_png(path: &Path, width: u32, height: u32, pixels: &[u8]) -> std::io::Result<()> {
     let file = std::fs::File::create(path)?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The main window drawn by the GLES executor (`iron_render_gles`) through EGL: ANGLE on
-//! Windows, Mesa and friends elsewhere. This is `iron-app`'s renderer, so a UI-only program
+//! The main window drawn by the GLES executor (`platypus_render_gles`) through EGL: ANGLE on
+//! Windows, Mesa and friends elsewhere. This is `platypus-app`'s renderer, so a UI-only program
 //! loads no Vulkan or wgpu. There is no 3D world, world panels or secondary windows on this
-//! path; if EGL (or the windowing system) is unavailable `iron-app` falls back to wgpu.
+//! path; if EGL (or the windowing system) is unavailable `platypus-app` falls back to wgpu.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
-use iron_platform::Window;
-use iron_render::UiBackend as _;
-use iron_render_gles::egl::EglContext;
-use iron_render_gles::{GlesRenderer, Target};
+use platypus_platform::Window;
+use platypus_render::UiBackend as _;
+use platypus_render_gles::egl::EglContext;
+use platypus_render_gles::{GlesRenderer, Target};
 
 use super::App;
 
@@ -37,13 +37,13 @@ pub(crate) struct GlesGfx {
 type Shown = (
     (u32, u32),
     u32,
-    Vec<iron_ui::DrawCmd>,
-    Option<Vec<iron_ui::DrawCmd>>,
+    Vec<platypus_ui::DrawCmd>,
+    Option<Vec<platypus_ui::DrawCmd>>,
 );
 
-/// Where ANGLE's DLLs are looked for first (`IRON_ANGLE_DIR`).
+/// Where ANGLE's DLLs are looked for first (`PLATYPUS_ANGLE_DIR`).
 fn angle_dir() -> Option<PathBuf> {
-    std::env::var_os("IRON_ANGLE_DIR").map(PathBuf::from)
+    std::env::var_os("PLATYPUS_ANGLE_DIR").map(PathBuf::from)
 }
 
 impl GlesGfx {
@@ -77,7 +77,7 @@ impl GlesGfx {
 impl App {
     /// Starts drawing `window` with the GLES executor. `false`: it can't (the caller falls back).
     pub(crate) fn install_gles(&mut self, window: Arc<Window>) -> bool {
-        use iron_script::ScriptRuntime as _;
+        use platypus_script::ScriptRuntime as _;
         let gles = match GlesGfx::new(window.clone(), &self.asset_root) {
             Ok(g) => g,
             Err(e) => {
@@ -104,9 +104,9 @@ impl App {
         if let Err(e) = self.scripts.eval(&self.info.script()) {
             tracing::error!("system info: {e}");
         }
-        let title = iron_engine_api::window::state(iron_engine_api::window::MAIN)
+        let title = platypus_engine_api::window::state(platypus_engine_api::window::MAIN)
             .map_or_else(String::new, |s| s.title);
-        iron_engine_api::window::set_main(
+        platypus_engine_api::window::set_main(
             &title,
             super::windows::to_ui((size.width, size.height), dpi),
             dpi,
@@ -130,7 +130,11 @@ impl App {
     }
 
     /// The FPS counter's commands: at window resolution and scale, over the UI.
-    fn gles_fps_commands(&mut self, size: (u32, u32), dpi: f64) -> Option<Vec<iron_ui::DrawCmd>> {
+    fn gles_fps_commands(
+        &mut self,
+        size: (u32, u32),
+        dpi: f64,
+    ) -> Option<Vec<platypus_ui::DrawCmd>> {
         self.fps_on.then(|| {
             let text = self.fps.text(self.started.elapsed().as_secs_f64());
             self.fps_overlay
@@ -139,7 +143,7 @@ impl App {
     }
 
     /// The UI's draw list, or the "3D not supported" screen when the game uses the world.
-    fn gles_ui_commands(&mut self, size: (u32, u32), scale: f32) -> Vec<iron_ui::DrawCmd> {
+    fn gles_ui_commands(&mut self, size: (u32, u32), scale: f32) -> Vec<platypus_ui::DrawCmd> {
         if self.world_view.needs_world()
             && let Some(gles) = &mut self.gles
         {
@@ -147,7 +151,7 @@ impl App {
                 .notice
                 .get_or_insert_with(|| {
                     super::notice::Notice::new(
-                        "3D is not supported by iron-app: run this with iron-game",
+                        "3D is not supported by platypus-app: run this with platypus-game",
                     )
                 })
                 .draw_list(size.0, size.1, scale);
@@ -161,8 +165,8 @@ impl App {
         size: (u32, u32),
         scale: f32,
         dpi: f64,
-        cmds: &[iron_ui::DrawCmd],
-        fps_cmds: Option<&[iron_ui::DrawCmd]>,
+        cmds: &[platypus_ui::DrawCmd],
+        fps_cmds: Option<&[platypus_ui::DrawCmd]>,
     ) -> Result<()> {
         let gles = self.gles.as_mut().context("no renderer")?;
         let target = gles.target(size, scale);
@@ -199,8 +203,8 @@ impl App {
         let Some(gles) = &self.gles else {
             return;
         };
-        let dark = gles.window.theme() == Some(iron_platform::Theme::Dark);
-        self.ui.set_media_env(iron_ui::media::MediaEnv {
+        let dark = gles.window.theme() == Some(platypus_platform::Theme::Dark);
+        self.ui.set_media_env(platypus_ui::media::MediaEnv {
             resolution: scale,
             dark,
             ..self.ui.media_env()

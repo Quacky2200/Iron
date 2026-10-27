@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use resvg::{tiny_skia, usvg};
 
-use iron_ui::is_svg;
+use platypus_ui::is_svg;
 
 /// An image's pixels for a renderer's texture: straight-alpha RGBA8, sRGB-encoded.
 #[derive(Clone, Debug, PartialEq)]
@@ -147,14 +147,17 @@ impl ImageCache {
         let options = self.svg_options.get_or_insert_with(|| {
             let mut options = usvg::Options::default();
             let db = Arc::make_mut(&mut options.fontdb);
-            db.load_font_data(iron_ui::text::INTER.to_vec());
-            db.load_font_data(iron_ui::text::INTER_ITALIC.to_vec());
-            // The file's own family name ("Inter Variable"), whatever Iron calls it.
+            db.load_font_data(platypus_ui::text::INTER.to_vec());
+            db.load_font_data(platypus_ui::text::INTER_ITALIC.to_vec());
+            // The file's own family name ("Inter Variable"), whatever Platypus calls it.
             let family = db
                 .faces()
                 .next()
                 .and_then(|f| f.families.first())
-                .map_or_else(|| iron_ui::text::DEFAULT_FAMILY.to_owned(), |f| f.0.clone());
+                .map_or_else(
+                    || platypus_ui::text::DEFAULT_FAMILY.to_owned(),
+                    |f| f.0.clone(),
+                );
             db.set_sans_serif_family(family.clone());
             db.set_serif_family(family.clone());
             options.font_family = family;
@@ -163,10 +166,10 @@ impl ImageCache {
         let data = if inline {
             Some(text.as_bytes().to_vec())
         } else if text.trim_start().starts_with("data:") {
-            iron_core::decode_data_url(text)
+            platypus_core::decode_data_url(text)
         } else {
             self.root.as_ref().and_then(|root| {
-                iron_core::read_asset(root, text)
+                platypus_core::read_asset(root, text)
                     .inspect_err(|e| tracing::warn!("{e}"))
                     .ok()
             })
@@ -226,7 +229,7 @@ impl ImageCache {
         }
         let decoded = if url.trim_start().starts_with("data:") {
             // Inlined by the bundler (small images referenced from CSS).
-            let Some(bytes) = iron_core::decode_data_url(url) else {
+            let Some(bytes) = platypus_core::decode_data_url(url) else {
                 tracing::warn!("background image data URL couldn't be decoded");
                 return None;
             };
@@ -236,7 +239,7 @@ impl ImageCache {
                 tracing::warn!("background image `{url}` ignored: no asset folder set");
                 return None;
             };
-            let bytes = match iron_core::read_asset(root, url) {
+            let bytes = match platypus_core::read_asset(root, url) {
                 Ok(b) => b,
                 Err(e) => {
                     tracing::warn!("background image `{url}`: {e}");
@@ -315,7 +318,7 @@ mod tests {
 
     struct MapFs(HashMap<String, Vec<u8>>);
 
-    impl iron_core::AssetFs for MapFs {
+    impl platypus_core::AssetFs for MapFs {
         fn read(&self, path: &str) -> std::io::Result<Vec<u8>> {
             self.0.get(path).cloned().ok_or_else(|| {
                 std::io::Error::new(
@@ -324,7 +327,7 @@ mod tests {
                 )
             })
         }
-        fn open_range(&self, _: &str) -> std::io::Result<Arc<dyn iron_core::RangeRead>> {
+        fn open_range(&self, _: &str) -> std::io::Result<Arc<dyn platypus_core::RangeRead>> {
             Err(std::io::ErrorKind::Unsupported.into())
         }
         fn exists(&self, path: &str) -> bool {
@@ -345,7 +348,7 @@ mod tests {
         let fs = MapFs(HashMap::from([("assets/a.svg".to_owned(), svg.to_vec())]));
         let mut cache = ImageCache::default();
         cache.set_root(PathBuf::from("no-such-folder"));
-        iron_core::with_asset_fs(Arc::new(fs), || {
+        platypus_core::with_asset_fs(Arc::new(fs), || {
             let tree = cache
                 .svg_tree("assets/a.svg", "assets/a.svg", false)
                 .unwrap();

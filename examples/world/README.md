@@ -25,7 +25,7 @@ cargo run -p platypus_app -- examples/world
 ```
 
 Assets can be prepared with `cargo run -p platypus_app -- examples/world --cook` (textures and models into
-`.platypus/cooked/`). A screenshot run is `platypus examples/world --screenshot out.png --frames N`; use it first, as
+`.platypus/cooked/`). A screenshot run is `platypus-game examples/world --screenshot out.png --frames N`; use it first, as
 the interactive window has crashed some GPUs.
 
 ## Structure

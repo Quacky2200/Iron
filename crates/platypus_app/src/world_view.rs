@@ -569,7 +569,7 @@ impl WorldViews {
         reuse: &[u32],
     ) -> Result<serde_json::Value, String> {
         self.model_ids.record(reuse);
-        // A cooked model (`platypus --cook`) when there's a fresh one.
+        // A cooked model (`platypus-game --cook`) when there's a fresh one.
         let model = match crate::cook::cooked_model(root, src, &mut self.model_ids) {
             Some(m) => Ok(m),
             None => crate::models::load(root, src, &mut self.model_ids),
@@ -778,7 +778,7 @@ impl WorldViews {
         };
         let mipmaps = !matches!(args.get(4), Some(Value::Bool(false)));
         let srgb = !matches!(args.get(9), Some(Value::Bool(true)));
-        // A cooked texture (`platypus --cook`) when there's a fresh one made the same way.
+        // A cooked texture (`platypus-game --cook`) when there's a fresh one made the same way.
         if let Some(Value::String(src)) = args.get(1)
             && !src.trim_start().starts_with("data:")
             && let Some(mut cooked) = crate::cook::cooked_texture(root, src, srgb, mipmaps)

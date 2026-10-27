@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A windowed program, like `iron-game`.
+// A windowed program, like `platypus-game`.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
-//! `iron-app`: runs Iron projects of type `app` (only UI). The same program as `iron-game`
+//! `platypus-app`: runs Platypus projects of type `app` (only UI). The same program as `platypus-game`
 //! (main.rs, included as a module), which sees `host::IS_UI_APP` and takes the light path:
 //! no 3D world renderer, small GPU allocations.
 

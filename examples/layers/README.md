@@ -21,7 +21,7 @@ cd tools && cargo run -q -p platypus_build -- build ../examples/layers
 cd .. && cargo run -p platypus_app -- examples/layers
 ```
 
-Packaged: `platypus-build package ../examples/layers`. Screenshot run: `platypus examples/layers --screenshot out.png --frames 30`
+Packaged: `platypus-build package ../examples/layers`. Screenshot run: `platypus-game examples/layers --screenshot out.png --frames 30`
 (the interactive window has crashed some GPUs; the screenshot run is safest).
 
 ## Structure

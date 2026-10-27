@@ -2,19 +2,19 @@
 
 //! The GLES executor against the wgpu one (M2-GLES-02..06): the same scenes, built through the
 //! real `UiTree`, drawn by both renderers into `SRGB8_ALPHA8` targets and compared pixel for
-//! pixel. Needs an EGL driver (ANGLE's folder in `IRON_ANGLE_DIR`) and a GPU for wgpu; skipped
+//! pixel. Needs an EGL driver (ANGLE's folder in `PLATYPUS_ANGLE_DIR`) and a GPU for wgpu; skipped
 //! without an EGL driver.
 
 use std::path::{Path, PathBuf};
 
 use glow::HasContext;
-use iron_core::{Commit, Value};
-use iron_render::testing::shared_gpu;
-use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiBackend, UiRenderer, wgpu};
-use iron_render_gles::egl::EglContext;
-use iron_render_gles::{GlesRenderer, Target};
-use iron_ui::UiTree;
-use iron_ui::opcodes::*;
+use platypus_core::{Commit, Value};
+use platypus_render::testing::shared_gpu;
+use platypus_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiBackend, UiRenderer, wgpu};
+use platypus_render_gles::egl::EglContext;
+use platypus_render_gles::{GlesRenderer, Target};
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::*;
 
 const CLEAR: Color = Color::rgb(0.02, 0.03, 0.05);
 
@@ -76,7 +76,7 @@ impl Scene {
         self,
         size: (f32, f32),
         mut image_size: impl FnMut(&str) -> Option<(u32, u32)>,
-    ) -> Vec<iron_ui::DrawCmd> {
+    ) -> Vec<platypus_ui::DrawCmd> {
         let mut t = UiTree::new(size.0, size.1);
         let errors = t.apply_commit(&Commit { ops: self.ops });
         assert!(errors.is_empty(), "{errors:?}");
@@ -98,7 +98,7 @@ struct Gles {
 }
 
 fn gles() -> Option<Gles> {
-    let dir = std::env::var_os("IRON_ANGLE_DIR").map(PathBuf::from);
+    let dir = std::env::var_os("PLATYPUS_ANGLE_DIR").map(PathBuf::from);
     let cx = match EglContext::headless(dir.as_deref()) {
         Ok(c) => c,
         Err(e) => {
@@ -118,7 +118,7 @@ fn gles() -> Option<Gles> {
 fn wgpu_pixels(
     gpu: &Gpu,
     ui: &mut UiRenderer,
-    cmds: &[iron_ui::DrawCmd],
+    cmds: &[platypus_ui::DrawCmd],
     size: (u32, u32),
     scale: f32,
 ) -> Vec<u8> {
@@ -140,7 +140,12 @@ fn wgpu_pixels(
 }
 
 /// The GLES renderer's pixels, top row first.
-fn gles_pixels(g: &mut Gles, cmds: &[iron_ui::DrawCmd], size: (u32, u32), scale: f32) -> Vec<u8> {
+fn gles_pixels(
+    g: &mut Gles,
+    cmds: &[platypus_ui::DrawCmd],
+    size: (u32, u32),
+    scale: f32,
+) -> Vec<u8> {
     let gl = &g.gl;
     unsafe {
         let texture = gl.create_texture().unwrap();
@@ -262,7 +267,7 @@ fn same_with(
         blank < a.len() / 4 * 9 / 10,
         "{name}: the wgpu image is blank"
     );
-    if let Some(dir) = std::env::var_os("IRON_GLES_DUMP") {
+    if let Some(dir) = std::env::var_os("PLATYPUS_GLES_DUMP") {
         for (which, pixels) in [("wgpu", &a), ("gles", &b)] {
             let path = PathBuf::from(&dir).join(format!(
                 "{}-{which}.png",
@@ -433,7 +438,7 @@ fn text_matches_wgpu() {
         [8.0, 36.0, 200.0, 40.0],
         &[("color", "#ffcc44"), ("fontSize", "32")],
     );
-    s.text(b, "Iron UI");
+    s.text(b, "Platypus UI");
     let c = s.at(
         0,
         "box",
@@ -479,7 +484,7 @@ fn text_and_boxes_at_scale_two_and_a_transformed_plane_match_wgpu() {
 
 /// A folder with a checkerboard PNG (with transparent cells) and an SVG.
 fn assets() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("iron_gles_assets_{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("platypus_gles_assets_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut img = image::RgbaImage::new(16, 16);
     for (x, y, p) in img.enumerate_pixels_mut() {

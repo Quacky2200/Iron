@@ -42,7 +42,7 @@ pub struct Manifest {
     /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Platypus's own).
     pub physical_units: bool,
     /// `type`: `game` or `app` (which host is meant to run it).
-    pub project_type: iron_core::project::ProjectType,
+    pub project_type: platypus_core::project::ProjectType,
 }
 
 impl Manifest {

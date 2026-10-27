@@ -2,7 +2,7 @@
 
 //! What the app needs from a UI renderer, whichever draws it.
 //!
-//! A backend draws `iron_ui` draw lists ([`DrawCmd`]) into a target. The draw list and the
+//! A backend draws `platypus_ui` draw lists ([`DrawCmd`]) into a target. The draw list and the
 //! frame plan built from it (`plan.rs`) are backend-neutral: a backend owns only the GPU
 //! side, the resources a plan names (glyph atlas pages, images, offscreen textures) and how
 //! its [`plan::Step`](super::plan::Step)s run. The wgpu renderer is [`UiRenderer`](super::UiRenderer);
@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use iron_ui::DrawCmd;
+use platypus_ui::DrawCmd;
 
 use super::RenderStats;
 use crate::Color;

@@ -2,7 +2,7 @@
 
 Frame times of every example on the native backend (platypus_ts, JIT-compiled `game.pbundle`) against the QuickJS original
 of the same example on `main` (its own `bun run build`), measured before this branch is merged back. Both run in the
-same release host, without a window (`platypus --bench`: an offscreen target, no vsync, no frame cap; each frame waits for
+same release host, without a window (`platypus-game --bench`: an offscreen target, no vsync, no frame cap; each frame waits for
 the GPU work of the frame before it), at 1280x720 and a fixed step of 1/60 s, with the same scripted input
 (`tools/bench/inputs/<name>.json`). How it works and the flags: `docs/platypus-build.md`, "Benchmarks". Raw numbers:
 `docs/benchmarks/results.json`.

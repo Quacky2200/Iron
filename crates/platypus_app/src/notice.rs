@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! A full-window message: a black screen with red centred text. `iron-app` shows it instead of
+//! A full-window message: a black screen with red centred text. `platypus-app` shows it instead of
 //! the UI when a game asks for the 3D world, which its GLES renderer doesn't draw.
 
-use iron_core::{NodeId, Value};
-use iron_ui::opcodes::Op;
-use iron_ui::{DrawCmd, ROOT, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_ui::opcodes::Op;
+use platypus_ui::{DrawCmd, ROOT, UiTree};
 
 pub struct Notice {
     tree: UiTree,

@@ -23,7 +23,7 @@ cargo run -p platypus_app -- examples/physics
 ```
 
 Or package one exe with `platypus-build package ../examples/physics`. A screenshot run is
-`platypus examples/physics --screenshot out.png --frames N`; prefer it, since the interactive window has crashed
+`platypus-game examples/physics --screenshot out.png --frames N`; prefer it, since the interactive window has crashed
 some GPUs.
 
 ## Structure

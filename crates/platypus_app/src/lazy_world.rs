@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The 3D world renderer, built on first use in `iron-app`.
+//! The 3D world renderer, built on first use in `platypus-app`.
 //!
 //! `WorldRenderer::new` compiles the world shaders and pipelines, which costs the GPU driver
 //! tens of MB even when a game is only UI. A UI-only game never has a camera or a mesh upload,
-//! so it never asks for the renderer. In `iron-game` the renderer is built at once, as before.
+//! so it never asks for the renderer. In `platypus-game` the renderer is built at once, as before.
 //! To undo the experiment: make `Gfx.world` a `WorldRenderer` again (see `git log` for this file).
 
-use iron_render::{Gpu, WorldRenderer};
+use platypus_render::{Gpu, WorldRenderer};
 
 pub(crate) struct LazyWorld {
     inner: Option<WorldRenderer>,

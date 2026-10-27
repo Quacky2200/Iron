@@ -23,7 +23,7 @@ cd tools && cargo run -q -p platypus_build -- build ../examples/light-units
 cd .. && cargo run -p platypus_app -- examples/light-units
 ```
 
-Packaged: `platypus-build package ../examples/light-units`. Screenshot run: `platypus examples/light-units --screenshot out.png --frames 120`
+Packaged: `platypus-build package ../examples/light-units`. Screenshot run: `platypus-game examples/light-units --screenshot out.png --frames 120`
 (the interactive window has crashed some GPUs; the screenshot run is safest).
 
 ## Structure

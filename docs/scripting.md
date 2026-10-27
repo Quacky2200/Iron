@@ -185,7 +185,7 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
    --define process.env.NODE_ENV='"development"'`. Bun strips types, bundles React and the `@platypus/*`
    workspace packages into one IIFE, and (when CSS is imported) writes `dist/game.css` next to it.
    The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
-2. `platypus <folder>` ([main.rs](../crates/platypus_app/src/main.rs)) runs the current folder when no game is
+2. `platypus-game <folder>` ([main.rs](../crates/platypus_app/src/main.rs)) runs the current folder when no game is
    given (`parse_args_from`; the folder may come before or after the options, `M5-APP-03`). It calls
    `resolve_bundle`: a directory
    means `<dir>/dist/game.js` with the directory as the asset root; a `.js` path uses its parent.
@@ -234,7 +234,7 @@ Flow, from an edit to the new code running:
 1. `bun run dev` in `editor/` runs `scripts/dev.ts` (see "Dev builds" above), which builds
    `dist/vendor.js` once and runs `bun build --watch` for the game's code, so every save
    rewrites `dist/game.js` and, when CSS is imported, `dist/game.css`.
-2. `platypus <folder>` starts a `BundleWatcher` ([reload.rs](../crates/platypus_app/src/reload.rs)). It uses
+2. `platypus-game <folder>` starts a `BundleWatcher` ([reload.rs](../crates/platypus_app/src/reload.rs)). It uses
    `notify` on the `dist` folder (not the files: Bun may replace them) and only counts events for
    the bundle, its CSS and `vendor.js` by file name. Access events are ignored.
 3. `App::tick` polls the watcher first thing. `poll` reports a change once the files have been quiet
@@ -252,7 +252,7 @@ Those reload in place without touching the scripts: see
 [assets-and-models.md](assets-and-models.md#hot-reload-of-assets). `bun run dev` also writes `.meta` files
 for new assets before building ([assets-and-models.md](assets-and-models.md#the-asset-database)).
 
-**`--cook`.** `platypus <folder> --cook` doesn't load any scripts: it prepares textures and models into
+**`--cook`.** `platypus-game <folder> --cook` doesn't load any scripts: it prepares textures and models into
 `.platypus/cooked/` and exits ([assets-and-models.md](assets-and-models.md#cooking)).
 
 **In place (dev builds, Fast Refresh).** When only `game.js` changed, `reload_in_place` runs the new
@@ -367,7 +367,7 @@ benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 componen
 - **A reload restores objects; it doesn't rebuild them.** What `onStart` (or `onAwake`) built comes
   back from the saved state, and `onStart` doesn't run again, so a change to what it builds
   (geometry, materials, colours, lights) doesn't show after a reload, only changed behaviour
-  (`onUpdate`, handlers) does. Restart the game to see it (close the window and run `platypus` again).
+  (`onUpdate`, handlers) does. Restart the game to see it (close the window and run `platypus-game` again).
   There's no key or option to force a fresh start yet; a reload starts over only when a saved
   component class isn't registered any more (the fallback above). Code at the bundle's top level
   runs again on every reload (module-level variables start fresh), and `onReload` runs on restored

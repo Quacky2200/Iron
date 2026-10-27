@@ -5,7 +5,7 @@ dist/
 *.log
 # Test renders (crates/platypus_render/src/testing.rs); goldens live in tests/golden.
 tests/output/
-# Cooked assets (`platypus --cook`), rebuilt from the sources.
+# Cooked assets (`platypus-game --cook`), rebuilt from the sources.
 .platypus/
 # The same, from before the rename to Platypus.
 .iron/

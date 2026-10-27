@@ -1,6 +1,6 @@
 # The editor
 
-The editor is `platypus_editor` (`platypus_editor.exe` on Windows): the same program as `platypus`, running
+The editor is `platypus_editor` (`platypus_editor.exe` on Windows): the same program as `platypus-game`, running
 an editor UI written with Platypus's own React UI, like a game. Its components live in a shared
 library, `@platypus/editor-ui`, so games and tools can use them too.
 
@@ -35,7 +35,7 @@ is true:
   the title and window size), so `--screenshot`, hot reload and `bun run dev` work as for games.
 - `main` turns on log capture before anything logs.
 - `__platypus_info.app.isEditor` is true (`Application.isEditor`).
-- `editor.*` ops run. In `platypus` they log a warning and do nothing, so games can't use them.
+- `editor.*` ops run. In `platypus-game` they log a warning and do nothing, so games can't use them.
 
 ## The log feed
 

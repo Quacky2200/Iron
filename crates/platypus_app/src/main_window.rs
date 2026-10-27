@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use iron_platform::Window;
+use platypus_platform::Window;
 
 use super::App;
 

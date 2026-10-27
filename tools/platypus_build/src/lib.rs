@@ -251,7 +251,7 @@ pub struct Options {
     pub no_tsc: bool,
     /// Also write the AOT object `dist/game.o` (release builds).
     pub aot: bool,
-    /// Run `platypus <game> --cook` afterwards (needs the `platypus` binary; see `find_platypus`).
+    /// Run `platypus-game <game> --cook` afterwards (needs the `platypus-game` binary; see `find_platypus`).
     pub cook: bool,
     /// Skip compiling the bundle (module graph, CSS and assets only).
     pub no_compile: bool,

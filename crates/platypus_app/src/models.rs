@@ -22,7 +22,7 @@ pub const ENGINE_IDS: u32 = 1 << 30;
 pub struct Model {
     pub meshes: Vec<(u32, MeshData)>,
     pub textures: Vec<(u32, TextureData)>,
-    /// From a cooked model (`platypus --cook`): textures ready to upload.
+    /// From a cooked model (`platypus-game --cook`): textures ready to upload.
     pub cooked_textures: Vec<(u32, platypus_render::CookedTexture)>,
     /// `{ nodes, roots, materials }` for `Model.instantiate`.
     pub description: Value,

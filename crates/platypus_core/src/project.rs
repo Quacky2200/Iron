@@ -264,10 +264,10 @@ pub enum Source {
 /// What a project is (`type` in `project.json`): the host program that runs it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ProjectType {
-    /// A game (the default): the full engine, with the 3D world (`iron-game`).
+    /// A game (the default): the full engine, with the 3D world (`platypus-game`).
     #[default]
     Game,
-    /// An application that is only UI, on a lighter renderer (`iron-app`).
+    /// An application that is only UI, on a lighter renderer (`platypus-app`).
     App,
 }
 
@@ -288,11 +288,11 @@ impl ProjectType {
         }
     }
 
-    /// The host program's name, without extension (`iron-game`, `iron-app`).
+    /// The host program's name, without extension (`platypus-game`, `platypus-app`).
     pub fn host(self) -> &'static str {
         match self {
-            ProjectType::Game => "iron-game",
-            ProjectType::App => "iron-app",
+            ProjectType::Game => "platypus-game",
+            ProjectType::App => "platypus-app",
         }
     }
 }
@@ -1744,14 +1744,14 @@ mod tests {
     fn type_is_game_by_default_and_app_runs_on_the_app_host() {
         let game = load_ok("type-default", r#"{ "name": "x" }"#);
         assert_eq!(game.project_type, ProjectType::Game);
-        assert_eq!(game.project_type.host(), "iron-game");
+        assert_eq!(game.project_type.host(), "platypus-game");
         assert!(
             game.to_json().get("type").is_none(),
             "the default isn't written"
         );
         let app = load_ok("type-app", r#"{ "name": "x", "type": "app" }"#);
         assert_eq!(app.project_type, ProjectType::App);
-        assert_eq!(app.project_type.host(), "iron-app");
+        assert_eq!(app.project_type.host(), "platypus-app");
         assert_eq!(app.to_json()["type"], "app");
         assert!(app.extra.is_empty(), "`type` is a known key");
     }

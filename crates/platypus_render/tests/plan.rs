@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The backend-neutral frame plan (`iron_render::plan`): draw lists from the real `UiTree`,
+//! The backend-neutral frame plan (`platypus_render::plan`): draw lists from the real `UiTree`,
 //! planned with fake resources: no GPU, no wgpu device, the same plan any renderer executes
 //! (M2-PLN-01..06).
 
 use std::collections::HashMap;
 
-use iron_core::{Commit, Value};
-use iron_render::Color;
-use iron_render::glyphs::{GlyphCache, GlyphEntry};
-use iron_render::plan::{
+use platypus_core::{Commit, Value};
+use platypus_render::Color;
+use platypus_render::glyphs::{GlyphCache, GlyphEntry};
+use platypus_render::plan::{
     FramePlan, ImageInfo, KIND_GLYPH, PlanParams, PlanResources, Step, needs_backdrop, plan,
 };
-use iron_ui::opcodes::*;
-use iron_ui::{DrawCmd, UiTree};
+use platypus_ui::opcodes::*;
+use platypus_ui::{DrawCmd, UiTree};
 
 /// Resources with no GPU behind them: a real glyph cache (swash and packing run; the pixels
 /// are queued, nobody writes them), images of fixed sizes, no SVG.
@@ -27,7 +27,7 @@ struct Fake {
 impl PlanResources for Fake {
     fn glyph(
         &mut self,
-        run: &iron_ui::GlyphRun,
+        run: &platypus_ui::GlyphRun,
         glyph: u32,
         size_px: f32,
         subpixel: u8,

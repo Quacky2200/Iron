@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! A GLES 3 executor for the UI frame plan (`iron_render::plan`), for `iron-app`: the same
+//! A GLES 3 executor for the UI frame plan (`platypus_render::plan`), for `platypus-app`: the same
 //! draw list and plan as the wgpu renderer, drawn with GLES through EGL (ANGLE on Windows).
 //!
 //! [`GlesRenderer`] plans a draw list with `plan::plan`, then runs the plan: the instances go
@@ -21,13 +21,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use glow::HasContext;
-use iron_render::glyphs::{COLOR_SIZE, GlyphCache, GlyphEntry, MASK_SIZE};
-use iron_render::image_cache::{ImageCache, ImageUpload};
-use iron_render::plan::{
+use platypus_render::glyphs::{COLOR_SIZE, GlyphCache, GlyphEntry, MASK_SIZE};
+use platypus_render::image_cache::{ImageCache, ImageUpload};
+use platypus_render::plan::{
     self, FramePlan, ImageInfo, Instance, PlanParams, PlanResources, PxRect, Step,
 };
-use iron_render::{Color, RenderStats, UiBackend};
-use iron_ui::DrawCmd;
+use platypus_render::{Color, RenderStats, UiBackend};
+use platypus_ui::DrawCmd;
 
 /// Floats per gradient table entry (`GpuGradient`: 12 `vec4`s) and per clip table entry
 /// (`GpuClip`: 5), as texels of the data textures.
@@ -93,7 +93,7 @@ struct Resources<'a> {
 impl PlanResources for Resources<'_> {
     fn glyph(
         &mut self,
-        run: &iron_ui::GlyphRun,
+        run: &platypus_ui::GlyphRun,
         glyph: u32,
         size_px: f32,
         subpixel: u8,
@@ -539,7 +539,7 @@ impl GlesRenderer {
                 bytemuck::cast_slice(&frame.instances),
                 glow::DYNAMIC_DRAW,
             );
-            let default_gradient = [iron_render::plan::GpuGradient::default()];
+            let default_gradient = [platypus_render::plan::GpuGradient::default()];
             let gradients: &[_] = if frame.gradients.is_empty() {
                 &default_gradient
             } else {
@@ -558,7 +558,7 @@ impl GlesRenderer {
                 glow::FLOAT,
                 glow::PixelUnpackData::Slice(Some(bytemuck::cast_slice(gradients))),
             );
-            let default_clip = [iron_render::plan::GpuClip::default()];
+            let default_clip = [platypus_render::plan::GpuClip::default()];
             let clips: &[_] = if frame.clips.is_empty() {
                 &default_clip
             } else {
@@ -795,8 +795,8 @@ impl GlesRenderer {
                     );
                     let mode = match mask {
                         None => 0.0,
-                        Some((_, iron_ui::MaskMode::Alpha)) => 1.0,
-                        Some((_, iron_ui::MaskMode::Luminance)) => 2.0,
+                        Some((_, platypus_ui::MaskMode::Alpha)) => 1.0,
+                        Some((_, platypus_ui::MaskMode::Luminance)) => 2.0,
                     };
                     gl.uniform_4_f32(loc("u_maskmode").as_ref(), mode, 0.0, 0.0, 0.0);
                     gl.draw_arrays(glow::TRIANGLES, 0, 3);

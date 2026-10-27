@@ -158,7 +158,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|
 | M2-INT-01 | Integration | The `boxes` fixture bundle runs in `QuickJsRuntime`; applying its commits to `UiTree` gives the expected tree and layout rects. |
 | M2-INT-02 | Integration | A `setTimeout`-driven state change produces only incremental ops (no recreation of unchanged nodes). |
-| M2-MAN-01 | Manual | `platypus examples/boxes`: resizing the window relayouts smoothly; the counter adds and removes boxes. |
+| M2-MAN-01 | Manual | `platypus-game examples/boxes`: resizing the window relayouts smoothly; the counter adds and removes boxes. |
 
 ### Performance
 Benches: `cargo bench -p platypus_ui` (layout) and `cargo bench -p platypus_script` (commits). The tree is an
@@ -299,7 +299,7 @@ layout pass):
 | M3-INP-02 | Integration | Text-field shortcuts (Ctrl/Cmd+A/C/X/V) follow the physical key `code` when the layout's `key` isn't a Latin letter (Russian layout: `key` "ф", `code` "KeyA" selects all); AltGr (Ctrl+Alt) still types. |
 | M3-PAD-01 | Integration | Gamepad button events from `gilrs` reach scripts (using a simulated device where possible). |
 | M3-PAD-02 | Unit | Each pad connection reaches scripts once: pads already plugged in are announced on the first poll, a repeated `Connected` for a known pad is dropped, and one that disconnects and comes back is announced again. |
-| M3-MAN-01 | Manual | `platypus examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
+| M3-MAN-01 | Manual | `platypus-game examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
 
 ---
 
@@ -412,9 +412,9 @@ layout pass):
 | M5-APP-01 | Unit | The game's manifest comes from its `package.json` (`name`, `version`, `author`, and `platypus.title` / `company` / `identifier` / `icon`), with the folder name and defaults when missing; `__platypus_info` carries the app and system sections and later GPU / screen additions. |
 | M5-APP-02 | JS unit | `Application` and `SystemInfo` read `__platypus_info` (defaults before it exists); `Application.quit()` is an op. |
 | M5-APP-04 | Unit | The log goes to `Player.log` in the game's settings folder (or `PLATYPUS_LOG_FILE`); the last run's is kept as `Player-prev.log`. |
-| M5-APP-11 | Unit + JS unit | Arguments after `--` on `platypus`'s command line go to scripts as `Application.args` (Platypus's own options before it still apply); a copy each read. |
-| M5-APP-12 | JS unit + Manual | `Application.quit(code)` sends `app.quit` with a whole exit code (0 by default) and `platypus` exits with it (checked by hand: the md-reader's `--root` exits with 2). |
-| M5-APP-03 | Unit | `platypus` without a game argument runs the current folder; the game folder may come before or after the options, and a second folder or an unknown option is an error. |
+| M5-APP-11 | Unit + JS unit | Arguments after `--` on `platypus-game`'s command line go to scripts as `Application.args` (Platypus's own options before it still apply); a copy each read. |
+| M5-APP-12 | JS unit + Manual | `Application.quit(code)` sends `app.quit` with a whole exit code (0 by default) and `platypus-game` exits with it (checked by hand: the md-reader's `--root` exits with 2). |
+| M5-APP-03 | Unit | `platypus-game` without a game argument runs the current folder; the game folder may come before or after the options, and a second folder or an unknown option is an error. |
 | M5-APP-05 | Unit | winit's `Focused` and `Occluded` window events become `InputEvent::Focused` / `Occluded`. |
 | M5-APP-06 | Integration | Muting the mixer for the background silences everything and fades back to the scripts' master volume, including a master set while muted. |
 | M5-APP-07 | Unit | Losing focus or minimising (0 × 0 or occluded) pauses unless `runInBackground` (or a screenshot run); pause and focus changes are reported once each, and again to reloaded scripts; the fixed clock caps catch-up at five ticks and restarts after a pause with a single tick. |
@@ -1483,7 +1483,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-ICO-01 | Unit | The Platypus icon (`resources/icon/icon.png`, built into `platypus_core::icon::DEFAULT_PNG`) is a 1254 x 1254 PNG. |
 | M9-ICO-02 | Unit | `write_ico` lists its sizes; `windows_res` writes a `.res` file of aligned entries: an empty first entry, 7 icons, the `MAINICON` group and a version block with `ProductName`. |
 | M9-ICO-03 | Unit | The host's default window icon is 256 x 256 RGBA with transparent corners and an opaque middle. |
-| M9-ICO-04 | Integration | `platypus.exe` (built by cargo, Windows MSVC) carries the `MAINICON` group, PNG icon images and `ProductName` = `Platypus`. |
+| M9-ICO-04 | Integration | `platypus-game.exe` and `platypus-app.exe` (built by cargo, Windows MSVC) each carry the `MAINICON` group, PNG icon images and `ProductName` = `Platypus`. |
 | M9-ICO-05 | Unit | The default icon decodes and converts to an `.ico` with all seven sizes. |
 | M9-ICO-06 | Unit | `package` of a game without an icon and with empty title and description gives the exe the Platypus icon (all seven sizes, the same 16 px image) and `ProductName` / `FileDescription` = `Platypus`; a game with its own icon keeps it (`M9-TS-2412`). |
 | M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
@@ -1497,7 +1497,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-908 | Unit | `FpsOverlay` draws commands for its text (and fewer for no text). |
 | M9-API-909 | Unit | `--fps` and `--no-fps` parse. |
 | M9-API-910 | Unit | `platypus.fps` is read from the manifest. |
-| M9-API-911 | Integration | `platypus <fixture> --screenshot --frames 3 --fps` saves the file and the log has no errors (needs a GPU). |
+| M9-API-911 | Integration | `platypus-game <fixture> --screenshot --frames 3 --fps` saves the file and the log has no errors (needs a GPU). |
 | M9-API-912 | Integration | The same with `--no-fps`. |
 | M9-API-913 | Unit | `Quality::default()` has vsync off and the `render.quality` op turns it on only with a vSyncCount of 1 or more. |
 | M9-API-914 | Integration | Quality levels start with `vSyncCount` 0, and a saved `platypus.quality` with `vSyncCount: 1` is applied without it. |
@@ -1507,7 +1507,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-APP-03 | Integration | `platypus_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `platypus-build build` (`crates/platypus_app/tests/quickjs_deprecated.rs`). |
 | M9-APP-04 | Integration | The same with `--force` runs, saves the screenshot and logs the deprecation note exactly once. |
 | M9-APP-05 | Integration | A native game (a bare `.ts` source) runs without `--force` and logs no deprecation note. |
-| M9-BEN-01 | Unit | `platypus --bench`: a bench file becomes segments of timed platform events (keys held, clicks, `clickText`, `count`/`every` repeats, unknown kinds refused), and frame stats give fps, median, p99, worst and the script share (`crates/platypus_app/src/bench.rs`). |
+| M9-BEN-01 | Unit | `platypus-game --bench`: a bench file becomes segments of timed platform events (keys held, clicks, `clickText`, `count`/`every` repeats, unknown kinds refused), and frame stats give fps, median, p99, worst and the script share (`crates/platypus_app/src/bench.rs`). |
 | M9-BEN-02 | Unit | `platypus-build bench` writes the summary table with speed-ups, marks games the base branch lacks as n/a, and keeps hand-written text around the generated part of `docs/benchmarks.md`. |
 | M9-BEN-03 | Integration | `platypus_app game.ts --bench --bench-input spec.json` runs a native game with no window (offscreen target, fake platform), the scripted keys reach it, and the JSON report has the segments, frame counts, fps and start-up time (needs a GPU; `crates/platypus_app/tests/bench_smoke.rs`). |
 | M9-API-1100 | Unit | Asset pack hashes are fixed functions of the bytes (SipHash-1-3 128 content hash, FNV-1a path hash, CRC-32 vectors) and game paths normalize like `resolve_asset` (`crates/platypus_pack/src/hash.rs`). |

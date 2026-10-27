@@ -243,7 +243,7 @@ changes through `on("select", ..)`, and emits its edits back to `Window.main`.
 
 ## Screenshots
 
-`platypus <game> --screenshot out.png --frames N` writes the main window to `out.png` and every open secondary window to
+`platypus-game <game> --screenshot out.png --frames N` writes the main window to `out.png` and every open secondary window to
 `out-<slug>.png`, drawn offscreen at its own size. The slug is the title lowercased with each run of characters other than `a-z0-9`
 turned into `-` (an empty slug is `window<handle>`; a clash appends `-<handle>`). `examples/windows` produces `windows-palette.png`,
 `windows-counter-1.png` and `windows-inspector.png`.

@@ -217,7 +217,7 @@ and calls `reload_assets`:
 
 ## Cooking
 
-`platypus --cook <game folder>` ([cook.rs](../crates/platypus_app/src/cook.rs)) prepares textures and models so the
+`platypus-game --cook <game folder>` ([cook.rs](../crates/platypus_app/src/cook.rs)) prepares textures and models so the
 game loads them without decoding images, making mip levels or parsing glTF. It needs only the folder, not
 a build. It logs how many files it cooked, lists the ones that failed, then exits.
 

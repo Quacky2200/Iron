@@ -267,8 +267,8 @@ pointer events use), `scale` and `aspect`, set by `__platypus_screen`. Window mo
 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
 `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
-`args` (the command line's arguments after `--`, `platypus game -- --level 2`, from `__platypus_info.app.args`), `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
-`quit(exitCode)`, which `platypus` exits with; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
+`args` (the command line's arguments after `--`, `platypus-game game -- --level 2`, from `__platypus_info.app.args`), `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
+`quit(exitCode)`, which `platypus-game` exits with; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__platypus_info` from the
 game's `project.json` (see docs/platypus-build.md; formerly the `platypus` section of `package.json`:  `title`, `company`, `identifier`
 `icon`, a PNG used for the window icon, and `display`, the default window mode and size; the title is the window title) and the machine

@@ -2060,7 +2060,7 @@ impl WorldRenderer {
             .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
     }
 
-    /// Sets texture `id` from a cooked texture (`platypus --cook`): its levels upload as they
+    /// Sets texture `id` from a cooked texture (`platypus-game --cook`): its levels upload as they
     /// are. Refused when invalid, too big, or block-compressed on a GPU without BC.
     pub fn set_cooked_texture(&mut self, gpu: &Gpu, id: u32, data: &CookedTexture) -> bool {
         let max = gpu.device.limits().max_texture_dimension_2d;

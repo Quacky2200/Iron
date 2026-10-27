@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The EGL context (M2-GLES-01). Needs an EGL driver: ANGLE's folder in `IRON_ANGLE_DIR` on
+//! The EGL context (M2-GLES-01). Needs an EGL driver: ANGLE's folder in `PLATYPUS_ANGLE_DIR` on
 //! Windows, Mesa's EGL elsewhere; the test passes without saying anything when there is none.
 
 use std::path::PathBuf;
 
 use glow::HasContext;
-use iron_render_gles::egl::EglContext;
+use platypus_render_gles::egl::EglContext;
 
 fn context() -> Option<EglContext> {
-    let dir = std::env::var_os("IRON_ANGLE_DIR").map(PathBuf::from);
+    let dir = std::env::var_os("PLATYPUS_ANGLE_DIR").map(PathBuf::from);
     match EglContext::headless(dir.as_deref()) {
         Ok(c) => Some(c),
         Err(e) => {

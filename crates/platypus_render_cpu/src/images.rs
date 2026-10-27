@@ -87,13 +87,16 @@ impl Images {
         self.svg_options.get_or_insert_with(|| {
             let mut options = usvg::Options::default();
             let db = Arc::make_mut(&mut options.fontdb);
-            db.load_font_data(iron_ui::text::INTER.to_vec());
-            db.load_font_data(iron_ui::text::INTER_ITALIC.to_vec());
+            db.load_font_data(platypus_ui::text::INTER.to_vec());
+            db.load_font_data(platypus_ui::text::INTER_ITALIC.to_vec());
             let family = db
                 .faces()
                 .next()
                 .and_then(|f| f.families.first())
-                .map_or_else(|| iron_ui::text::DEFAULT_FAMILY.to_owned(), |f| f.0.clone());
+                .map_or_else(
+                    || platypus_ui::text::DEFAULT_FAMILY.to_owned(),
+                    |f| f.0.clone(),
+                );
             db.set_sans_serif_family(family.clone());
             db.set_serif_family(family.clone());
             options.font_family = family;
@@ -103,7 +106,7 @@ impl Images {
 
     fn bytes(&self, url: &str) -> Option<Vec<u8>> {
         if url.trim_start().starts_with("data:") {
-            let bytes = iron_core::decode_data_url(url);
+            let bytes = platypus_core::decode_data_url(url);
             if bytes.is_none() {
                 tracing::warn!("image data URL couldn't be decoded");
             }
@@ -113,7 +116,7 @@ impl Images {
             tracing::warn!("image `{url}` ignored: no asset folder set");
             return None;
         };
-        iron_core::read_asset(root, url)
+        platypus_core::read_asset(root, url)
             .inspect_err(|e| tracing::warn!("image `{url}`: {e}"))
             .ok()
     }
@@ -121,7 +124,7 @@ impl Images {
     /// Reads the file and its size (from the header: nothing is decoded yet).
     fn load(&mut self, url: &str) -> Option<Entry> {
         let bytes = self.bytes(url)?;
-        if iron_ui::is_svg(url) {
+        if platypus_ui::is_svg(url) {
             let tree = match usvg::Tree::from_data(&bytes, self.options()) {
                 Ok(t) => Arc::new(t),
                 Err(e) => {

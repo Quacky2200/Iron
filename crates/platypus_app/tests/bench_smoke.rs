@@ -1,7 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus <game> --bench` runs a native game without a window, sends its scripted input and
+//! `platypus-game <game> --bench` runs a native game without a window, sends its scripted input and
 //! writes the timings (needs a GPU, like the other rendering tests; no window opens).
 
 use std::path::PathBuf;
