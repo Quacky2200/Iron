@@ -42,6 +42,9 @@ A GameObject component and the React component that draws its UI can live in the
 the `Component` class that runs on a GameObject next to the JSX that shows its HUD or panel, and JSX makes the two
 sit together naturally (see [examples/arcade](examples/arcade/src/main.tsx)).
 
+Game and UI development use the same language, TypeScript, and the same tooling: no scripting language for
+gameplay next to a separate UI toolkit or markup language, so one person can work on both.
+
 Why TypeScript, and why a compiler
 ----------------------------------
 
