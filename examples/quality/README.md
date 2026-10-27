@@ -16,11 +16,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/quality
-cd .. && cargo run -p iron_app -- examples/quality
+cd tools && cargo run -q -p platypus_build -- build ../examples/quality
+cd .. && cargo run -p platypus_app -- examples/quality
 ```
 
-Packaged: `iron-build package ../examples/quality`. Screenshot run: `iron examples/quality --screenshot out.png --frames 30`
+Packaged: `platypus-build package ../examples/quality`. Screenshot run: `platypus_app examples/quality --screenshot out.png --frames 30`
 (the interactive window has crashed some GPUs; the screenshot run is safest). Screenshots after the first two
 seconds of frames come from the cycled levels, so compare by level with the menu, not by frame count.
 

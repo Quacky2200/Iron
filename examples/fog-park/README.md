@@ -18,11 +18,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/fog-park
-cd .. && cargo run -p iron_app -- examples/fog-park
+cd tools && cargo run -q -p platypus_build -- build ../examples/fog-park
+cd .. && cargo run -p platypus_app -- examples/fog-park
 ```
 
-Packaged: `iron-build package ../examples/fog-park`. Screenshot run: `iron examples/fog-park --screenshot out.png --frames 60`
+Packaged: `platypus-build package ../examples/fog-park`. Screenshot run: `platypus_app examples/fog-park --screenshot out.png --frames 60`
 (the interactive window has crashed some GPUs; the screenshot run is safest). The scene creates many objects; the start-up log
 prints `fog-park: N mesh renderers`.
 

@@ -1,27 +1,27 @@
 # boxes
 
-A UI-only showcase of the box model as Iron draws it: flexbox and grid layout, linear and radial
+A UI-only showcase of the box model as Platypus draws it: flexbox and grid layout, linear and radial
 gradients, background images, per-corner radii, box shadows (outer and inset), `filter: blur`, a
 frosted-glass header with `backdropFilter`, group `opacity`, and a timer-driven counter that adds and
 removes circles. It is the M2 milestone demo (React -> Taffy layout -> renderer).
 
-APIs used: `createRoot().render`, the `box` element, `IronStyle`, `useState` / `useEffect`, `setTimeout`.
+APIs used: `createRoot().render`, the `box` element, `PlatypusStyle`, `useState` / `useEffect`, `setTimeout`.
 
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/boxes
+cd tools && cargo run -q -p platypus_build -- build ../examples/boxes
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/boxes
+cargo run -p platypus_app -- examples/boxes
 ```
 
-A screenshot run is `cargo run -p iron_app -- examples/boxes --screenshot out.png --frames 30`; it is the
+A screenshot run is `cargo run -p platypus_app -- examples/boxes --screenshot out.png --frames 30`; it is the
 safest option because the interactive window may crash some GPUs. For one executable use
-`iron-build package ../examples/boxes`.
+`platypus-build package ../examples/boxes`.
 
 ## Structure
 
@@ -34,11 +34,11 @@ safest option because the interactive window may crash some GPUs. For one execut
 
 ## How it works
 
-1. **Shared style object.** `card` is a `IronStyle` (radius, border, shadow, padding, column flex); the
+1. **Shared style object.** `card` is an `PlatypusStyle` (radius, border, shadow, padding, column flex); the
    `Card` component spreads it and lets callers override:
 
 ```tsx
-function Card({ style, children }: { style?: IronStyle; children?: ReactNode }) {
+function Card({ style, children }: { style?: PlatypusStyle; children?: ReactNode }) {
   return <box style={{ ...card, ...style }}>{children}</box>;
 }
 ```
@@ -85,7 +85,7 @@ None.
 
 - Styles are inline objects; there is no stylesheet here.
 - Image paths such as `url(assets/stripes.png)` are relative to the game folder.
-- Blur and backdrop filters are the most expensive effects here; `docs/differences.md` lists where Iron's
+- Blur and backdrop filters are the most expensive effects here; `docs/differences.md` lists where Platypus's
   filter order and defaults differ from a browser.
 
 Related examples: css, text, form

@@ -7,14 +7,14 @@ Engine features used: a `Light` of `type: "spot"` (`spotAngle: 120`, `innerSpotA
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/godrays-lift
-cd .. && cargo run -p iron_app -- examples/godrays-lift
+cd tools && cargo run -q -p platypus_build -- build ../examples/godrays-lift
+cd .. && cargo run -p platypus_app -- examples/godrays-lift
 ```
 
-To package one exe: `cd tools && cargo run -p iron_build -- package ../examples/godrays-lift`. A screenshot run (safest; the interactive window can crash some GPUs) needs enough frames to reach the open phase, since the doors open about 4 s in:
+To package one exe: `cd tools && cargo run -p platypus_build -- package ../examples/godrays-lift`. A screenshot run (safest; the interactive window can crash some GPUs) needs enough frames to reach the open phase, since the doors open about 4 s in:
 
 ```bash
-cargo run -p iron_app -- examples/godrays-lift --screenshot out.png --frames 360
+cargo run -p platypus_app -- examples/godrays-lift --screenshot out.png --frames 360
 ```
 
 (The frame count assumes roughly 60 frames a second; the source does not say how a screenshot run advances time, so adjust if the doors are still shut.)

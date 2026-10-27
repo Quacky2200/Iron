@@ -1,35 +1,35 @@
 # hello
 
-The smallest Iron game: one component that logs a greeting once and "tick" every frame. It also shows
+The smallest Platypus game: one component that logs a greeting once and "tick" every frame. It also shows
 how a game splits code into modules: `src/main.ts` imports a function from `src/modules/greet.ts` by its
 bare name. There is no UI and no 3D scene; it is a check that the build and the component lifecycle work.
 
 APIs used: `Component` (`onStart`, `onUpdate`), `register({ Hello })`, `console.log`, and the
-`modules/` folder import rule of the module graph (`docs/iron-build.md`, "Module graph").
+`modules/` folder import rule of the module graph (`docs/platypus-build.md`, "Module graph").
 
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/hello
+cd tools && cargo run -q -p platypus_build -- build ../examples/hello
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/hello
+cargo run -p platypus_app -- examples/hello
 ```
 
-A screenshot run (`cargo run -p iron_app -- examples/hello --screenshot out.png --frames 30`) renders an empty
+A screenshot run (`cargo run -p platypus_app -- examples/hello --screenshot out.png --frames 30`) renders an empty
 window and exits; it is the safest way to run on a machine whose GPU is unstable with an open window. To
-read the output, start `iron_app` from a terminal: the log goes to stderr (and to `Player.log` next to the
+read the output, start `platypus_app` from a terminal: the log goes to stderr (and to `Player.log` next to the
 game's `prefs.json` for a normal run). You can also build one executable with
-`iron-build package ../examples/hello` (see `docs/iron-build.md`, "Packaging a single executable").
+`platypus-build package ../examples/hello` (see `docs/platypus-build.md`, "Packaging a single executable").
 
 ## Structure
 
 | File | What |
 |---|---|
-| `project.json` | `{ "name": "hello", "title": "Iron - Hello" }`: only `name` is required; everything else takes its default |
+| `project.json` | `{ "name": "hello", "title": "Platypus - Hello" }`: only `name` is required; everything else takes its default |
 | `tsconfig.json` | Extends `../../tsconfig.base.json`; `paths` maps bare names to `./src/modules/*` for `tsc` |
 | `src/main.ts` | The entry (a `.ts` file, no JSX): the `Hello` component and `register` |
 | `src/modules/greet.ts` | `greeting(name, times)`, a module of this game |
@@ -38,8 +38,8 @@ No assets, scenes or CSS.
 
 ## How it works
 
-1. `iron-build` finds the entry (`src/main.tsx`, `src/main.ts`, ...), follows its imports and compiles the
-   whole module graph with iron_ts. The import below resolves to `src/modules/greet.ts` because bare
+1. `platypus-build` finds the entry (`src/main.tsx`, `src/main.ts`, ...), follows its imports and compiles the
+   whole module graph with platypus_ts. The import below resolves to `src/modules/greet.ts` because bare
    imports are files of the `modules/` folder next to the entry:
 
 ```ts
@@ -89,8 +89,8 @@ None.
 
 - Relative imports (`./foo`) work too; the `modules/` folder is only for bare names.
 - The game is compiled TypeScript, not run in a JS engine: only the supported subset compiles (see
-  `docs/iron-ts.md`). This example uses nothing outside it.
-- `tsc` (optional type check) needs the generated `types/iron.d.ts`; use `iron-build check --tsc` or
-  `iron-build types` rather than plain `tsc`, because the engine names are globals.
+  `docs/platypus-ts.md`). This example uses nothing outside it.
+- `tsc` (optional type check) needs the generated `types/platypus.d.ts`; use `platypus-build check --tsc` or
+  `platypus-build types` rather than plain `tsc`, because the engine names are globals.
 
 Related examples: text, boxes, scenes

@@ -1,4 +1,4 @@
-# Iron examples
+# Platypus examples
 
 Each folder is a complete game (`project.json`, `tsconfig.json`, `src/`, optional `assets/`) with its own README that explains how it is built and run.
 
@@ -50,9 +50,9 @@ Each folder is a complete game (`project.json`, `tsconfig.json`, `src/`, optiona
 
 Start from [hello](./hello/README.md). A game is a folder with `project.json` (only `name` is required), `tsconfig.json`, `src/main.ts(x)` and optional `src/modules/`, `assets/`, `scenes/`. Engine and UI names are globals, so sources import only relative files and `.css`.
 
-- Build, `project.json` fields, modules and packaging a single exe: [docs/iron-build.md](../docs/iron-build.md)
-- Engine API (`#[iron_api]` classes available to scripts): [docs/iron-api.md](../docs/iron-api.md)
+- Build, `project.json` fields, modules and packaging a single exe: [docs/platypus-build.md](../docs/platypus-build.md)
+- Engine API (`#[platypus_api]` classes available to scripts): [docs/platypus-api.md](../docs/platypus-api.md)
 - Multiple OS windows: [docs/windows.md](../docs/windows.md)
-- Limits of the compiled TypeScript subset: [docs/iron-ts.md](../docs/iron-ts.md)
+- Limits of the compiled TypeScript subset: [docs/platypus-ts.md](../docs/platypus-ts.md)
 
 Note: the example sources may be restored to their original form later, so the code excerpts in the per-example READMEs should be re-checked then.

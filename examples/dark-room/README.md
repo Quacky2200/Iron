@@ -21,11 +21,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/dark-room
-cd .. && cargo run -p iron_app -- examples/dark-room
+cd tools && cargo run -q -p platypus_build -- build ../examples/dark-room
+cd .. && cargo run -p platypus_app -- examples/dark-room
 ```
 
-Packaged: `iron-build package ../examples/dark-room`. Screenshot run: `iron examples/dark-room --screenshot out.png --frames 300`
+Packaged: `platypus-build package ../examples/dark-room`. Screenshot run: `platypus_app examples/dark-room --screenshot out.png --frames 300`
 (the interactive window has crashed some GPUs; the screenshot run is safest). The shutters open 10 s into the cycle,
 close at 25 s.
 

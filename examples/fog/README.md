@@ -18,12 +18,12 @@ Engine features exercised (all real names from `src/main.tsx`):
 From the repo root:
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/fog
-cd .. && cargo run -p iron_app -- examples/fog
+cd tools && cargo run -q -p platypus_build -- build ../examples/fog
+cd .. && cargo run -p platypus_app -- examples/fog
 ```
 
-Or make one executable with `iron-build package ../examples/fog` (see `docs/iron-build.md`). To check it without
-opening the interactive window, render a screenshot: `iron examples/fog --screenshot out.png --frames 60`.
+Or make one executable with `platypus-build package ../examples/fog` (see `docs/platypus-build.md`). To check it without
+opening the interactive window, render a screenshot: `platypus_app examples/fog --screenshot out.png --frames 60`.
 The interactive window has crashed some GPUs; the screenshot run is the safest check.
 
 ## Structure

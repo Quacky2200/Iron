@@ -12,18 +12,18 @@ APIs used: `import "./ui.css"`, `addStyleSheet` / `removeStyleSheet`, `Input`, `
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/css
+cd tools && cargo run -q -p platypus_build -- build ../examples/css
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/css
+cargo run -p platypus_app -- examples/css
 ```
 
 Screenshot run (safest; the interactive window may crash some GPUs):
-`cargo run -p iron_app -- examples/css --screenshot out.png --frames 30`. Package with
-`iron-build package ../examples/css`.
+`cargo run -p platypus_app -- examples/css --screenshot out.png --frames 30`. Package with
+`platypus-build package ../examples/css`.
 
 ## Structure
 

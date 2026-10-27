@@ -14,18 +14,18 @@ APIs used: `Component` with `@property`, `GameObject.findObjectOfType`, `GameObj
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/arcade
+cd tools && cargo run -q -p platypus_build -- build ../examples/arcade
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/arcade
+cargo run -p platypus_app -- examples/arcade
 ```
 
-Screenshot run: `cargo run -p iron_app -- examples/arcade --screenshot out.png --frames 60`. The
+Screenshot run: `cargo run -p platypus_app -- examples/arcade --screenshot out.png --frames 60`. The
 interactive window may crash some GPUs; prefer the screenshot run. Package with
-`iron-build package ../examples/arcade`.
+`platypus-build package ../examples/arcade`.
 
 ## Structure
 

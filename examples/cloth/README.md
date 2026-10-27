@@ -12,18 +12,18 @@ APIs used: `Mesh.create({ vertices, uv, triangles })`, `Cloth` (`pinBox`, `pins`
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/cloth
+cd tools && cargo run -q -p platypus_build -- build ../examples/cloth
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/cloth
+cargo run -p platypus_app -- examples/cloth
 ```
 
-Screenshot run: `cargo run -p iron_app -- examples/cloth --screenshot out.png --frames 120` (use enough
+Screenshot run: `cargo run -p platypus_app -- examples/cloth --screenshot out.png --frames 120` (use enough
 frames for the cloth to settle). The interactive window may crash some GPUs; the screenshot run is
-safest. Package with `iron-build package ../examples/cloth`.
+safest. Package with `platypus-build package ../examples/cloth`.
 
 ## Structure
 
@@ -33,7 +33,7 @@ safest. Package with `iron-build package ../examples/cloth`.
 | `tsconfig.json` | Base config plus `"jsx": "react-jsx"` |
 | `src/main.tsx` | `sheet()` mesh builder, the `Stage` component, a caption in React |
 
-No assets. The physics behind `Cloth` is `iron_physics::cloth` (`docs/physics-and-audio.md`).
+No assets. The physics behind `Cloth` is `platypus_physics::cloth` (`docs/physics-and-audio.md`).
 
 ## How it works
 

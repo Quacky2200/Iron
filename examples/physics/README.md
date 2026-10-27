@@ -13,17 +13,17 @@ and the UI element `box` / `text`, CSS gradient, `transform: rotate()`, `box-sha
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/physics
+cd tools && cargo run -q -p platypus_build -- build ../examples/physics
 ```
 
 Then, from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/physics
+cargo run -p platypus_app -- examples/physics
 ```
 
-Or package one exe with `iron-build package ../examples/physics`. A screenshot run is
-`iron examples/physics --screenshot out.png --frames N`; prefer it, since the interactive window has crashed
+Or package one exe with `platypus-build package ../examples/physics`. A screenshot run is
+`platypus_app examples/physics --screenshot out.png --frames N`; prefer it, since the interactive window has crashed
 some GPUs.
 
 ## Structure
@@ -31,7 +31,7 @@ some GPUs.
 | File | What |
 |---|---|
 | `src/main.tsx` | Components `Thing`, `Zone`, `Spawner`; `buildLevel`, `drop`; the React `World` view |
-| `project.json` | `name: physics`, `title: Iron - Physics` |
+| `project.json` | `name: physics`, `title: Platypus - Physics` |
 | `assets/thud.wav` | The impact sound |
 
 ## How it works

@@ -19,11 +19,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/light-units
-cd .. && cargo run -p iron_app -- examples/light-units
+cd tools && cargo run -q -p platypus_build -- build ../examples/light-units
+cd .. && cargo run -p platypus_app -- examples/light-units
 ```
 
-Packaged: `iron-build package ../examples/light-units`. Screenshot run: `iron examples/light-units --screenshot out.png --frames 120`
+Packaged: `platypus-build package ../examples/light-units`. Screenshot run: `platypus_app examples/light-units --screenshot out.png --frames 120`
 (the interactive window has crashed some GPUs; the screenshot run is safest).
 
 ## Structure
@@ -35,10 +35,10 @@ Packaged: `iron-build package ../examples/light-units`. Screenshot run: `iron ex
 | `src/main.tsx` | 206 lines: constants, `apply()`, helpers (`shape`, `slab`, `solid`, `mat`), the `Courtyard` component, the readout `Menu`. |
 
 ```json
-{ "name": "light-units", "title": "Iron - Real-world light units", "lightUnits": "physical" }
+{ "name": "light-units", "title": "Platypus - Real-world light units", "lightUnits": "physical" }
 ```
 
-The header comment in the source says the setting lives in `package.json` (`"iron": { "lightUnits": ... }`), but this
+The header comment in the source says the setting lives in `package.json` (`"platypus": { "lightUnits": ... }`), but this
 folder has no `package.json`; the setting is in `project.json`, so that comment is out of date.
 
 ## How it works

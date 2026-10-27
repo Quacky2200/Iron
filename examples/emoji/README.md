@@ -15,17 +15,17 @@ Engine features used: orthographic `Camera`, `WorldPanel` (React UI on a plane, 
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/emoji
+cd tools && cargo run -q -p platypus_build -- build ../examples/emoji
 ```
 
 Then, from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/emoji
+cargo run -p platypus_app -- examples/emoji
 ```
 
-Package with `iron-build package ../examples/emoji`. A screenshot run is
-`iron examples/emoji --screenshot out.png --frames N` (the show is random; a screenshot catches a random
+Package with `platypus-build package ../examples/emoji`. A screenshot run is
+`platypus_app examples/emoji --screenshot out.png --frames N` (the show is random; a screenshot catches a random
 moment). It is the safest check, since the interactive window has crashed some GPUs.
 
 ## Structure

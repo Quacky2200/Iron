@@ -5,23 +5,23 @@ keyboard- and gamepad-operable toggles and buttons with `:hover` / `:active` / `
 `:disabled` styles, and a scrolling list of saved profiles that you can click to load. The source comment says
 it is the example behind manual check `M3-MAN-01`.
 
-APIs used: `Input`, `TextArea`, `useRef<IronElement>` with `.focus()` and `.scrollTo()`, `IronKeyboardEvent`,
+APIs used: `Input`, `TextArea`, `useRef<PlatypusElement>` with `.focus()` and `.scrollTo()`, `PlatypusKeyboardEvent`,
 `input.gamepads()` and `input.on("gamepadconnected", ...)`, `import "./form.css"`.
 
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/form
+cd tools && cargo run -q -p platypus_build -- build ../examples/form
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/form
+cargo run -p platypus_app -- examples/form
 ```
 
-Screenshot run: `cargo run -p iron_app -- examples/form --screenshot out.png --frames 30` (the
-interactive window may crash some GPUs). Package with `iron-build package ../examples/form`.
+Screenshot run: `cargo run -p platypus_app -- examples/form --screenshot out.png --frames 30` (the
+interactive window may crash some GPUs). Package with `platypus-build package ../examples/form`.
 
 ## Structure
 
@@ -55,7 +55,7 @@ const set = <K extends keyof Profile>(key: K, value: Profile[K]) => setForm((f) 
    gamepad navigation, A to activate) a gamepad:
 
 ```tsx
-onKeyDown={(e: IronKeyboardEvent) => {
+onKeyDown={(e: PlatypusKeyboardEvent) => {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
     press();

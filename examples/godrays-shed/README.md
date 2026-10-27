@@ -7,14 +7,14 @@ Engine features used: `Light` `type: "spot"` with `spotShape: "pyramid"`, `aspec
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/godrays-shed
-cd .. && cargo run -p iron_app -- examples/godrays-shed
+cd tools && cargo run -q -p platypus_build -- build ../examples/godrays-shed
+cd .. && cargo run -p platypus_app -- examples/godrays-shed
 ```
 
-To package one exe: `cd tools && cargo run -p iron_build -- package ../examples/godrays-shed`. Screenshot run (safest; the interactive window can crash some GPUs):
+To package one exe: `cd tools && cargo run -p platypus_build -- package ../examples/godrays-shed`. Screenshot run (safest; the interactive window can crash some GPUs):
 
 ```bash
-cargo run -p iron_app -- examples/godrays-shed --screenshot out.png --frames 90
+cargo run -p platypus_app -- examples/godrays-shed --screenshot out.png --frames 90
 ```
 
 ## Structure
@@ -22,7 +22,7 @@ cargo run -p iron_app -- examples/godrays-shed --screenshot out.png --frames 90
 | File | What it holds |
 |---|---|
 | `src/main.tsx` (662 lines) | Shed constants, option tables (`HAZE`, `SPEEDS`, `SCANS`), `apply()`, `inScan`, `scanAt`, the `Shed` component, key handlers, two-page menu |
-| `project.json` | `name` and `title` ("Iron - God rays: the alien scan") only |
+| `project.json` | `name` and `title` ("Platypus - God rays: the alien scan") only |
 | `tsconfig.json` | Compiler settings |
 
 No asset files; geometry is boxes, cylinders and spheres.

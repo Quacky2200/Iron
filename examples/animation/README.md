@@ -13,18 +13,18 @@ APIs used: `AnimationCurve.fromPoints`, `AnimationClip.setCurve`, `AnimatorContr
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/animation
+cd tools && cargo run -q -p platypus_build -- build ../examples/animation
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/animation
+cargo run -p platypus_app -- examples/animation
 ```
 
-Screenshot run: `cargo run -p iron_app -- examples/animation --screenshot out.png --frames 60`. The
+Screenshot run: `cargo run -p platypus_app -- examples/animation --screenshot out.png --frames 60`. The
 interactive window may crash some GPUs; the screenshot run is safest. Package with
-`iron-build package ../examples/animation`.
+`platypus-build package ../examples/animation`.
 
 ## Structure
 

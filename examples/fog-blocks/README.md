@@ -16,12 +16,12 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/fog-blocks
-cd .. && cargo run -p iron_app -- examples/fog-blocks
+cd tools && cargo run -q -p platypus_build -- build ../examples/fog-blocks
+cd .. && cargo run -p platypus_app -- examples/fog-blocks
 ```
 
-Packaged executable: `iron-build package ../examples/fog-blocks`. Screenshot run (safest on GPUs that crash with the
-window): `iron examples/fog-blocks --screenshot out.png --frames 60`.
+Packaged executable: `platypus-build package ../examples/fog-blocks`. Screenshot run (safest on GPUs that crash with the
+window): `platypus_app examples/fog-blocks --screenshot out.png --frames 60`.
 
 ## Structure
 

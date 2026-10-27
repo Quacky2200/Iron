@@ -16,11 +16,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/fog-raider
-cd .. && cargo run -p iron_app -- examples/fog-raider
+cd tools && cargo run -q -p platypus_build -- build ../examples/fog-raider
+cd .. && cargo run -p platypus_app -- examples/fog-raider
 ```
 
-Packaged: `iron-build package ../examples/fog-raider`. Screenshot run: `iron examples/fog-raider --screenshot out.png --frames 60`
+Packaged: `platypus-build package ../examples/fog-raider`. Screenshot run: `platypus_app examples/fog-raider --screenshot out.png --frames 60`
 (the interactive window has crashed some GPUs; the screenshot run is safest).
 
 ## Structure

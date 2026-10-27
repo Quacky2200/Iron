@@ -2,7 +2,7 @@
 
 The Cornell box (Cornell University Program of Computer Graphics, 1984) built from cube primitives: a
 2 m room with a red left wall, green right wall, white floor, ceiling and back, a tall and a short block,
-and a light in the ceiling. Iron has no global illumination or area lights yet (the source comment points
+and a light in the ceiling. Platypus has no global illumination or area lights yet (the source comment points
 to TODO.md M7), so the example approximates the look with an emissive panel plus bloom, a point light,
 a soft-shadow directional light and several tinted "bounce" point lights.
 
@@ -12,24 +12,24 @@ APIs used: `GameObject`, `MeshRenderer`, `Material`, `Light` (point and directio
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/cornell
+cd tools && cargo run -q -p platypus_build -- build ../examples/cornell
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/cornell
+cargo run -p platypus_app -- examples/cornell
 ```
 
-Screenshot run: `cargo run -p iron_app -- examples/cornell --screenshot out.png --frames 30`. This
+Screenshot run: `cargo run -p platypus_app -- examples/cornell --screenshot out.png --frames 30`. This
 is the safest way to run; the interactive window may crash some GPUs. Package with
-`iron-build package ../examples/cornell`.
+`platypus-build package ../examples/cornell`.
 
 ## Structure
 
 | File | What |
 |---|---|
-| `project.json` | `name` and `title` ("Iron - Cornell box") only; no quality or layer settings |
+| `project.json` | `name` and `title` ("Platypus - Cornell box") only; no quality or layer settings |
 | `tsconfig.json` | Base config plus `"jsx": "react-jsx"` |
 | `src/main.tsx` | `box()` and `bounce()` helpers, the `CornellBox` component, a one-line caption in React |
 

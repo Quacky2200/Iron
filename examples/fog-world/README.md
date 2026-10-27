@@ -17,11 +17,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/fog-world
-cd .. && cargo run -p iron_app -- examples/fog-world
+cd tools && cargo run -q -p platypus_build -- build ../examples/fog-world
+cd .. && cargo run -p platypus_app -- examples/fog-world
 ```
 
-Packaged: `iron-build package ../examples/fog-world`. Screenshot run: `iron examples/fog-world --screenshot out.png --frames 120`
+Packaged: `platypus-build package ../examples/fog-world`. Screenshot run: `platypus_app examples/fog-world --screenshot out.png --frames 120`
 (the interactive window has crashed some GPUs; the screenshot run is safest).
 
 ## Structure

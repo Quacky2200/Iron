@@ -1,33 +1,33 @@
 # text
 
-A single-screen showcase of Iron's text rendering: font weights and styles, wrapping and alignment, a
+A single-screen showcase of Platypus's text rendering: font weights and styles, wrapping and alignment, a
 font loaded at run time, text shadows, CJK/Greek/Cyrillic/emoji through system font fallback, and text that
-updates through React state. The UI is React drawn by Iron's own renderer; there is no 3D scene.
+updates through React state. The UI is React drawn by Platypus's own renderer; there is no 3D scene.
 
-APIs used: `createRoot().render(...)`, the `box`, `Text` and `Span` elements, `IronStyle` objects,
+APIs used: `createRoot().render(...)`, the `box`, `Text` and `Span` elements, `PlatypusStyle` objects,
 `loadFont`, and the hooks `useState` / `useEffect`.
 
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/text
+cd tools && cargo run -q -p platypus_build -- build ../examples/text
 ```
 
 Then from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/text
+cargo run -p platypus_app -- examples/text
 ```
 
-For a still image: `cargo run -p iron_app -- examples/text --screenshot out.png --frames 30`. The
+For a still image: `cargo run -p platypus_app -- examples/text --screenshot out.png --frames 30`. The
 interactive window may crash some GPUs; the screenshot run is the safest. A packaged exe comes from
-`iron-build package ../examples/text`.
+`platypus-build package ../examples/text`.
 
 ## Structure
 
 | File | What |
 |---|---|
-| `project.json` | `name` and `title` only (window title "Iron - Text") |
+| `project.json` | `name` and `title` only (window title "Platypus - Text") |
 | `tsconfig.json` | Extends the base config with `"jsx": "react-jsx"` |
 | `src/main.tsx` | Everything: `loadFont` calls, `Card`, `Clock`, `App`, `createRoot().render(<App />)` |
 
@@ -48,7 +48,7 @@ loadFont({ family: "Charm", src: "assets/fonts/Charm-Bold.ttf", weight: 700 });
 2. **Layout.** `App` is a column box filling the window (`width: "100%"`, `height: "100%"`) with a
    gradient background (`backgroundImage: "linear-gradient(160deg, #141a24, #0b0e14)"`), a title and a
    `display: "grid"` box with `gridTemplateColumns: "repeat(3, 1fr)"`. Layout is Taffy (flexbox and grid).
-3. **Cards.** `Card` spreads a shared `IronStyle` object into a `box` and puts an upper-cased,
+3. **Cards.** `Card` spreads a shared `PlatypusStyle` object into a `box` and puts an upper-cased,
    letter-spaced `Text` heading over its children.
 4. **Weights and styles.** Four `fontWeight` values (300, 400, 600, 800) are mapped over an array, then
    `fontStyle: "italic"` and `textDecoration` `underline` / `line-through`.
@@ -58,7 +58,7 @@ loadFont({ family: "Charm", src: "assets/fonts/Charm-Bold.ttf", weight: 700 });
 
 ```tsx
 <Text style={{ fontSize: 34, fontWeight: 800 }}>
-  Text in <Span style={{ color: "#ff8a5e" }}>Iron</Span>
+  Text in <Span style={{ color: "#ff8a5e" }}>Platypus</Span>
 </Text>
 ```
 

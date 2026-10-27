@@ -2,7 +2,7 @@
 
 Twelve different clock faces for the wall-clock time, switched with side arrows, dots at the bottom or the keyboard. Most are
 drawn in 2D with `LineRenderer2D` and `TextMesh`; two use 3D (a perspective camera for the mileage-style meter, and meshes, a
-directional light with shadows and a procedural skybox for the sundial); one (Flip) is drawn by Iron's UI with 3D CSS
+directional light with shadows and a procedural skybox for the sundial); one (Flip) is drawn by Platypus's UI with 3D CSS
 transforms. Several faces glow through bloom by using colours brighter than white. It is the largest 2D example and shows how to
 organise many scenes in one game.
 
@@ -14,17 +14,17 @@ glyph morphing), `DateTime.now`, `Camera` (orthographic and perspective), `Rende
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/clock
+cd tools && cargo run -q -p platypus_build -- build ../examples/clock
 ```
 
 then from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/clock
+cargo run -p platypus_app -- examples/clock
 ```
 
-Or package one exe with `iron-build package ../examples/clock`. A screenshot run is
-`cargo run -p iron_app -- examples/clock --screenshot out.png --frames N`; it always shows the first face (Analog), because
+Or package one exe with `platypus-build package ../examples/clock`. A screenshot run is
+`cargo run -p platypus_app -- examples/clock --screenshot out.png --frames N`; it always shows the first face (Analog), because
 switching needs input. The interactive window may crash some GPUs; screenshots are safest.
 
 ## Structure

@@ -7,14 +7,14 @@ Engine features used: a directional `Light` re-aimed per frame, `RenderSettings.
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/godrays-room
-cd .. && cargo run -p iron_app -- examples/godrays-room
+cd tools && cargo run -q -p platypus_build -- build ../examples/godrays-room
+cd .. && cargo run -p platypus_app -- examples/godrays-room
 ```
 
-To package one exe: `cd tools && cargo run -p iron_build -- package ../examples/godrays-room`. Screenshot run (safest; the interactive window can crash some GPUs):
+To package one exe: `cd tools && cargo run -p platypus_build -- package ../examples/godrays-room`. Screenshot run (safest; the interactive window can crash some GPUs):
 
 ```bash
-cargo run -p iron_app -- examples/godrays-room --screenshot out.png --frames 60
+cargo run -p platypus_app -- examples/godrays-room --screenshot out.png --frames 60
 ```
 
 ## Structure

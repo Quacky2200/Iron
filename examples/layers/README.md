@@ -17,11 +17,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/layers
-cd .. && cargo run -p iron_app -- examples/layers
+cd tools && cargo run -q -p platypus_build -- build ../examples/layers
+cd .. && cargo run -p platypus_app -- examples/layers
 ```
 
-Packaged: `iron-build package ../examples/layers`. Screenshot run: `iron examples/layers --screenshot out.png --frames 30`
+Packaged: `platypus-build package ../examples/layers`. Screenshot run: `platypus_app examples/layers --screenshot out.png --frames 30`
 (the interactive window has crashed some GPUs; the screenshot run is safest).
 
 ## Structure

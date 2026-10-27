@@ -14,17 +14,17 @@ decorator, `register(..., { spawn: false })`, `onReload`, `Log.info`.
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/scenes
+cd tools && cargo run -q -p platypus_build -- build ../examples/scenes
 ```
 
 Then, from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/scenes
+cargo run -p platypus_app -- examples/scenes
 ```
 
-Package with `iron-build package ../examples/scenes`. A screenshot run is
-`iron examples/scenes --screenshot out.png --frames N`; it is the safest check, since the window has crashed
+Package with `platypus-build package ../examples/scenes`. A screenshot run is
+`platypus_app examples/scenes --screenshot out.png --frames N`; it is the safest check, since the window has crashed
 some GPUs.
 
 ## Structure
@@ -35,9 +35,9 @@ some GPUs.
 | `scenes/level1.scene.json` | "Courtyard": camera, sun, objects (642 lines) |
 | `scenes/level2.scene.json` | "Night garden": camera, a directional light, 6 point lights, 7 mesh renderers, 6 `Bobber`s |
 | `scenes/bonus.scene.json` | "Bonus": a platform, trophy and spot, loaded additively |
-| `project.json` | `name: scenes`, `title: Iron - Scenes`, `startScene: scenes/level1.scene.json` |
+| `project.json` | `name: scenes`, `title: Platypus - Scenes`, `startScene: scenes/level1.scene.json` |
 
-Scene files have `"format": "iron.scene"`, a `version`, a `name`, optional `renderSettings` (level1 sets a skybox
+Scene files have `"format": "platypus.scene"`, a `version`, a `name`, optional `renderSettings` (level1 sets a skybox
 sun direction and `ambientMode`) and `objects`, each with `id`, `name`, `position`, `rotation` (quaternion),
 `scale` and `components` (a `type` plus `properties`). There are no assets: shapes are primitive meshes.
 

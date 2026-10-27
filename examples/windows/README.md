@@ -1,6 +1,6 @@
 # windows
 
-A showcase of Iron's multi-window API. The main window has a small React UI with four buttons and an event log. From it you
+A showcase of Platypus's multi-window API. The main window has a small React UI with four buttons and an event log. From it you
 open owned tool windows (a palette and any number of counters) and an isolated Inspector window with no parent. The Inspector
 shares no state with the main window: it receives the selected object through named events and edits it by sending events
 back. Nothing is drawn in 3D; this is all UI.
@@ -13,17 +13,17 @@ APIs used: `Window.main`, `Window.create({ title, style, parent, width, height, 
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/windows
+cd tools && cargo run -q -p platypus_build -- build ../examples/windows
 ```
 
 then from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/windows
+cargo run -p platypus_app -- examples/windows
 ```
 
-Or package it with `iron-build package ../examples/windows`. A screenshot run is
-`cargo run -p iron_app -- examples/windows --screenshot out.png --frames N`. In screenshot runs `docs/windows.md` says
+Or package it with `platypus-build package ../examples/windows`. A screenshot run is
+`cargo run -p platypus_app -- examples/windows --screenshot out.png --frames N`. In screenshot runs `docs/windows.md` says
 secondary windows are virtual (offscreen, no OS window), so only the main window is in the image. `docs/windows.md` also says
 the real winit multi-window runner "has not been run on a real display", so treat the interactive run as experimental; the
 interactive window may crash some GPUs.
@@ -32,7 +32,7 @@ interactive window may crash some GPUs.
 
 | File | What |
 |---|---|
-| `project.json` | `name` "windows", `title` "Iron - Windows". |
+| `project.json` | `name` "windows", `title` "Platypus - Windows". |
 | `tsconfig.json` | Extends the base config, `jsx: "react-jsx"`, a `paths` entry, includes `src`. |
 | `src/main.tsx` | All 245 lines: data, the shared log, selection, `Palette`, `Counter`, `Inspector`, `App`, start-up. |
 
@@ -101,6 +101,6 @@ main window's Events box shows the last six log lines.
 - Gotcha: an isolated window (no parent) shares nothing with the main window except messages; module variables here are used only
   from main-domain callbacks, and the Inspector gets data through `ask`/`emit`.
 - Gotcha: `thingAt(i)` exists because indexed reads may be `undefined`; `things[i] ?? {...}` supplies a fallback.
-- Style objects use `IronStyle`; `palette` is spread into several boxes (`{ ...palette, flexGrow: 1 }`).
+- Style objects use `PlatypusStyle`; `palette` is spread into several boxes (`{ ...palette, flexGrow: 1 }`).
 
 Related examples: form, arcade, hello (for plain React UI); clock (`flip.tsx` for UI effects)

@@ -14,18 +14,18 @@ in script), `input.getAxis` / `getButtonDown`, `Application` and `SystemInfo`, `
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/platformer
+cd tools && cargo run -q -p platypus_build -- build ../examples/platformer
 ```
 
 Then, from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/platformer
+cargo run -p platypus_app -- examples/platformer
 ```
 
-A single-file executable can be made with `iron-build package ../examples/platformer` (it uses `icon` from
-`project.json`; see `docs/iron-build.md`). A screenshot run is
-`iron examples/platformer --screenshot out.png --frames N`. It is the safest way to check the result: the
+A single-file executable can be made with `platypus-build package ../examples/platformer` (it uses `icon` from
+`project.json`; see `docs/platypus-build.md`). A screenshot run is
+`platypus_app examples/platformer --screenshot out.png --frames N`. It is the safest way to check the result: the
 interactive window has crashed some GPUs.
 
 ## Structure

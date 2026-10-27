@@ -1,6 +1,6 @@
 # splines
 
-A two-panel demo of Iron's `Spline` class. The left half has splines that move (a drifting closed ribbon with a car and a ball
+A two-panel demo of Platypus's `Spline` class. The left half has splines that move (a drifting closed ribbon with a car and a ball
 riding it, and a wave whose tension swings between straight lines and loose curves). The right half is a small spline editor:
 drag knots and handles, add, insert and remove knots, change modes and tension.
 
@@ -12,17 +12,17 @@ APIs used: `Spline` (constructor with `{ closed }`, `knots`, `count`, `segmentCo
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/splines
+cd tools && cargo run -q -p platypus_build -- build ../examples/splines
 ```
 
 then from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/splines
+cargo run -p platypus_app -- examples/splines
 ```
 
-Or package one exe with `iron-build package ../examples/splines`. A screenshot run is
-`cargo run -p iron_app -- examples/splines --screenshot out.png --frames N`. The interactive window may crash some GPUs; the
+Or package one exe with `platypus-build package ../examples/splines`. A screenshot run is
+`cargo run -p platypus_app -- examples/splines --screenshot out.png --frames N`. The interactive window may crash some GPUs; the
 screenshot run is safest (the editor half needs the mouse, so a screenshot only shows the moving half and the initial curve).
 
 ## Structure

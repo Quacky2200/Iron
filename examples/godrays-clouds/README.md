@@ -7,14 +7,14 @@ Engine features used: `RenderSettings.skybox` (procedural sky with `sunDirection
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/godrays-clouds
-cd .. && cargo run -p iron_app -- examples/godrays-clouds
+cd tools && cargo run -q -p platypus_build -- build ../examples/godrays-clouds
+cd .. && cargo run -p platypus_app -- examples/godrays-clouds
 ```
 
-Or package a single exe with `cd tools && cargo run -p iron_build -- package ../examples/godrays-clouds`. A screenshot run is safest, since the interactive window can crash some GPUs:
+Or package a single exe with `cd tools && cargo run -p platypus_build -- package ../examples/godrays-clouds`. A screenshot run is safest, since the interactive window can crash some GPUs:
 
 ```bash
-cargo run -p iron_app -- examples/godrays-clouds --screenshot out.png --frames 60
+cargo run -p platypus_app -- examples/godrays-clouds --screenshot out.png --frames 60
 ```
 
 ## Structure

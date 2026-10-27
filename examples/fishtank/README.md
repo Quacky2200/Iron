@@ -15,17 +15,17 @@ Engine features used: `LineRenderer2D` (`points`, `loop`, `width`, `color`, `fil
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/fishtank
+cd tools && cargo run -q -p platypus_build -- build ../examples/fishtank
 ```
 
 Then, from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/fishtank
+cargo run -p platypus_app -- examples/fishtank
 ```
 
-Package with `iron-build package ../examples/fishtank`. A screenshot run is
-`iron examples/fishtank --screenshot out.png --frames N`; it is the safest check, since the window has
+Package with `platypus-build package ../examples/fishtank`. A screenshot run is
+`platypus_app examples/fishtank --screenshot out.png --frames N`; it is the safest check, since the window has
 crashed some GPUs.
 
 ## Structure

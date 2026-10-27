@@ -11,17 +11,17 @@ loop: true })`, `Playback.pause/resume`, `input`, `Screen.fullScreen`, `Camera` 
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/raindrop-demo
+cd tools && cargo run -q -p platypus_build -- build ../examples/raindrop-demo
 ```
 
 then from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/raindrop-demo
+cargo run -p platypus_app -- examples/raindrop-demo
 ```
 
-Or package it with `iron-build package ../examples/raindrop-demo`. A screenshot run is
-`cargo run -p iron_app -- examples/raindrop-demo --screenshot out.png --frames N` (the default weather is Stormy, so a few
+Or package it with `platypus-build package ../examples/raindrop-demo`. A screenshot run is
+`cargo run -p platypus_app -- examples/raindrop-demo --screenshot out.png --frames N` (the default weather is Stormy, so a few
 dozen frames already show drops). The interactive window may crash some GPUs; screenshots are safest.
 
 ## Structure

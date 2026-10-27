@@ -12,17 +12,17 @@ true })`, `Sound.play({ loop: true })`, `Playback.pause/resume`, `input.getKeyDo
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/sine-circle-demo
+cd tools && cargo run -q -p platypus_build -- build ../examples/sine-circle-demo
 ```
 
 then from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/sine-circle-demo
+cargo run -p platypus_app -- examples/sine-circle-demo
 ```
 
-Or package it with `iron-build package ../examples/sine-circle-demo`. A screenshot run is
-`cargo run -p iron_app -- examples/sine-circle-demo --screenshot out.png --frames N`. The demo starts paused (see below), so a
+Or package it with `platypus-build package ../examples/sine-circle-demo`. A screenshot run is
+`cargo run -p platypus_app -- examples/sine-circle-demo --screenshot out.png --frames N`. The demo starts paused (see below), so a
 screenshot shows the initial curve and the "[paused]" prompt. The interactive window may crash some GPUs; screenshots are safest.
 
 ## Structure

@@ -15,17 +15,17 @@ Engine features used: `GameObject` and `parent` hierarchies, `Camera` (perspecti
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/world
+cd tools && cargo run -q -p platypus_build -- build ../examples/world
 ```
 
 Then, from the repo root:
 
 ```bash
-cargo run -p iron_app -- examples/world
+cargo run -p platypus_app -- examples/world
 ```
 
-Assets can be prepared with `cargo run -p iron_app -- examples/world --cook` (textures and models into
-`.iron/cooked/`). A screenshot run is `iron examples/world --screenshot out.png --frames N`; use it first, as
+Assets can be prepared with `cargo run -p platypus_app -- examples/world --cook` (textures and models into
+`.platypus/cooked/`). A screenshot run is `platypus_app examples/world --screenshot out.png --frames N`; use it first, as
 the interactive window has crashed some GPUs.
 
 ## Structure
@@ -33,7 +33,7 @@ the interactive window has crashed some GPUs.
 | File | What |
 |---|---|
 | `src/main.tsx` | Components `Spin`, `Thud`, `SpriteAnimation`, `World` (builds the scene in `onStart`), the `Menu` and `Hud` |
-| `project.json` | `name: world`, `title: Iron - World` |
+| `project.json` | `name: world`, `title: Platypus - World` |
 | `assets/house.glb` | The glTF model |
 | `assets/coin.png` | A 4-frame, 16 px coin sprite sheet |
 | `assets/thud.wav` | Impact sound for the falling primitives |

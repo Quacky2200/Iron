@@ -9,14 +9,14 @@ Engine features used (all in `src/main.tsx`): `RenderSettings.volumetricFog` (wi
 From the repo root:
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/godrays-cell
-cd .. && cargo run -p iron_app -- examples/godrays-cell
+cd tools && cargo run -q -p platypus_build -- build ../examples/godrays-cell
+cd .. && cargo run -p platypus_app -- examples/godrays-cell
 ```
 
-A packaged single exe is also possible: `cd tools && cargo run -p iron_build -- package ../examples/godrays-cell`. For a screenshot instead of a window (the safest option, since the interactive window can crash some GPUs):
+A packaged single exe is also possible: `cd tools && cargo run -p platypus_build -- package ../examples/godrays-cell`. For a screenshot instead of a window (the safest option, since the interactive window can crash some GPUs):
 
 ```bash
-cargo run -p iron_app -- examples/godrays-cell --screenshot out.png --frames 60
+cargo run -p platypus_app -- examples/godrays-cell --screenshot out.png --frames 60
 ```
 
 ## Structure
@@ -24,7 +24,7 @@ cargo run -p iron_app -- examples/godrays-cell --screenshot out.png --frames 60
 | File | What it holds |
 |---|---|
 | `src/main.tsx` (556 lines) | Everything: constants, the `Cell` component, helpers, the menu |
-| `project.json` | Only `name` and `title` ("Iron - God rays: the cell"); no quality overrides, no scenes |
+| `project.json` | Only `name` and `title` ("Platypus - God rays: the cell"); no quality overrides, no scenes |
 | `tsconfig.json` | Compiler settings |
 
 No assets: all geometry is primitives (`cube`, `cylinder`, `capsule`, `sphere`) and colours; there are no textures or models.

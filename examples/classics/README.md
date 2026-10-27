@@ -11,18 +11,18 @@ APIs used: `Model.load(path).instantiate(...)`, `Material`, `Light` (directional
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/classics
+cd tools && cargo run -q -p platypus_build -- build ../examples/classics
 ```
 
 Then, from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/classics
+cargo run -p platypus_app -- examples/classics
 ```
 
-Screenshot run: `cargo run -p iron_app -- examples/classics --screenshot out.png --frames 30`. The
+Screenshot run: `cargo run -p platypus_app -- examples/classics --screenshot out.png --frames 30`. The
 interactive window may crash some GPUs, so the screenshot run is safest. Package with
-`iron-build package ../examples/classics`.
+`platypus-build package ../examples/classics`.
 
 ## Structure
 
@@ -80,7 +80,7 @@ None; the camera orbits by itself. (`CameraOrbit` may also respond to input; the
 ## Gotchas
 
 - Model paths are relative to the game folder. `.meta` files (GUIDs, import settings) sit beside the assets and
-  are written by `iron-build assets`.
+  are written by `platypus-build assets`.
 - The example keeps the models' credits in an overlay; keep that if you reuse them.
 - The spoon is small in the file, so the example scales it per piece (`scale: 3`) instead of editing the model.
 - `Material` has a positional form `new Material(color, emission, smoothness)` (used here) and an options form
