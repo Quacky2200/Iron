@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus_ts`: an ahead-of-time compiler for Platypus's TypeScript gameplay code.

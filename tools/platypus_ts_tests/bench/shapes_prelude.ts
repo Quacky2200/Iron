@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Three-argument hypot as the native math does it, and NaN where the original answers null.

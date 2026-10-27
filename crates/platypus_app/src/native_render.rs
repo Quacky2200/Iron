@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The app's side of rendering a compiled game: what [`render_sync::sync`] cannot do on its own

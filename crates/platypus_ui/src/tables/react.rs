@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The React names a game uses without importing them, and the module they are re-exported from

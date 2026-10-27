@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Color`: linear RGBA, as `js/engine`'s `Color` (same constants, same `hex` with the sRGB to

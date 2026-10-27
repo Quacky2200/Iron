@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Full-screen passes for UI effects: separable Gaussian blur, compositing a

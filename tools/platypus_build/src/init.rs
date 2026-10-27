@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus-build init [<dir>]`: writes a default `project.json` whose templates take their values

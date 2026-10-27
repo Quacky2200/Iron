@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The menubar's model: menus, accelerators and keyboard movement, without React, so

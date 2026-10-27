@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Clips (`AnimationClip` in `js/engine/src/animation.ts`) and the arenas that hold curves and

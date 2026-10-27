@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Every function of every manifest exists in QuickJS. IDs are in TESTS.md (M9-API-*).

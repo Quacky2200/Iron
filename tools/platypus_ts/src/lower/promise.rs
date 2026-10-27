@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Promises in the lowerer: routing `await`, `.then/.catch/.finally`, `Promise.*` and the value an

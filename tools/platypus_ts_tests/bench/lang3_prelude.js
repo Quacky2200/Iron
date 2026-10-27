@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // What the `Words` test API of tests/lang/lang3.rs does, for bun.

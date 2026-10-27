@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The saved file, installed the way the engine does (and read again: the module read it at import).

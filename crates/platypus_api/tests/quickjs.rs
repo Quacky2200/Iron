@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Typed QuickJS bindings for value classes and strings: a JS string is a Rust `&str`/`String`, a

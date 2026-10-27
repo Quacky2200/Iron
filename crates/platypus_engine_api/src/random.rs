@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Rng` (a seedable generator, C#'s `System.Random` shaped) and Unity's static `Random`. The

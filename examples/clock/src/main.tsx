@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Clocks: twelve faces, switched with the arrows at the sides, the dots at the bottom, the arrow

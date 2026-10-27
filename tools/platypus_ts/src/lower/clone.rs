@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `structuredClone(x)`: a deep copy of data, one lifted function per type (so a recursive type such

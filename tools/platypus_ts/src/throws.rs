@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Which functions can throw. Exceptions unwind by returning: after a call that can throw, the

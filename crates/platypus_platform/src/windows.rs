@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Window types for games with more than one window: what a window asks for ([`WindowSpec`]), what that

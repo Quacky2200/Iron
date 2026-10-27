@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Windows showcase: a main window with a small UI, owned tool windows (a palette and counters,

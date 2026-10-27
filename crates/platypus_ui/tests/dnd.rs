@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Drag and drop (M5-DND): `draggable` elements, the drag events and their order,

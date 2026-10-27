@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Two frames: the first as in inputs_prelude.ts, then a key released, another pressed, a gamepad

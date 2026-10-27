@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M3a showcase: text and fonts. Sizes and weights, italics, mixed spans,

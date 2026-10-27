@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M4 physics showcase, seen from the side: crates and balls fall onto a floor and a

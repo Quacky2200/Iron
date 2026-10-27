@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A Markdown reader for Platypus's own docs, drawn by Platypus's UI: a file tree of docs/ and the

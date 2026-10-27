@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // `@property`: marks what a component saves with its scene (s&box's `[Property]`, Unity's

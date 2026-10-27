@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Awaitable waits on engine time: Task.delay, Task.delaySeconds and Task.frame over the runtime's

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Shapes`: GDI-style outlines (rectangles, ellipses, arcs, pies, polygons, Beziers, cardinal

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Keeps GameObjects and their physics bodies together (`Rigidbody` / collider

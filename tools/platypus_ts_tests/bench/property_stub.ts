@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A stand-in for `property` from @platypus/engine, so bun can run bench/props.ts. The compiler never

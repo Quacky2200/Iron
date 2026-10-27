@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Plain classes: fields, constructors, methods, getters and setters, statics, private members.

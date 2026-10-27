@@ -1,3 +1,4 @@
+# Copyright 2026 The Platypus Authors
 # SPDX-License-Identifier: Apache-2.0
 
 # Builds bench/promises.ts from bench/promises_src.ts: every `async function t_NAME(): Promise<string>`

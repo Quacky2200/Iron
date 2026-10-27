@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Ways off the stage: most of the entrances played backwards, plus a few that only work going

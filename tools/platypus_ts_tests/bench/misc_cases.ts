@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Small TypeScript conveniences for tests/lang/misc.rs: functions as values, casts of empty

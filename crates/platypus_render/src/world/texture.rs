@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Textures for the world pass (Unity's `Texture2D` settings): sRGB pixels with a

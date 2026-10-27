@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Regular expressions in compiled code (`bench/regexp.ts`): literals, `new RegExp`, `test`,

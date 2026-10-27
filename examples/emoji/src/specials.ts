@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // What each emoji does: a heart blushes the room red with a heartbeat, the poop has a fart and

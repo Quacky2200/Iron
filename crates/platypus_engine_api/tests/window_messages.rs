@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Messages between windows (design section 3b): the queue per domain, delivery order, requests and

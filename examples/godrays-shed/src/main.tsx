@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // God rays: the alien scan. A garden shed at night, dusty and dark but for the moon through

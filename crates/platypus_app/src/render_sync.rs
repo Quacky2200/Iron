@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Feeds the 3D renderer from what a compiled game left in the `platypus_render_api` registries.

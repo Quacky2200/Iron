@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Compiled components driven by the Rust host (`platypus_ts_rt::NativeHost`) with no script engine:

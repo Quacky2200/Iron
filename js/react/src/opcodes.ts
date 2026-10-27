@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // UI commit opcodes. Must match crates/platypus_ui/src/opcodes.rs.

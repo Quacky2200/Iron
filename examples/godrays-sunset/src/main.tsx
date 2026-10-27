@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // God rays: a high-rise flat at sunset. Floor-to-ceiling windows on the 25th floor look west

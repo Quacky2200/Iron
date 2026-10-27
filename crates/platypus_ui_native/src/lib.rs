@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A native reconciler with React's re-render semantics, replacing `react-reconciler` for UI that

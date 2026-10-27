@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The virtual list's arithmetic: which rows to mount for a scroll position, where to

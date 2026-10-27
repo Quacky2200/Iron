@@ -1,3 +1,4 @@
+# Copyright 2026 The Platypus Authors
 # SPDX-License-Identifier: Apache-2.0
 
 # Registers a bun-compared test program that calls the native engine API (`platypus_engine_api`):

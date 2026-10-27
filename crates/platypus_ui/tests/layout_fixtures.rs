@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Runs the data-driven layout fixtures in `tests/layout/*.json` (M2-LAY-01..03, M2-LAY-05).

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The native audio API from compiled code: sounds, playbacks, buses, emitters, and the

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Inline SVG (M3-SVG-02): `svg` elements size from their attributes, serialize their

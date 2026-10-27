@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M3-EVT-02/03/04: UI events from Rust reach React handlers. The button counts its

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A game launcher mock-up, to see whether a store / launcher front end works in Platypus's UI: the

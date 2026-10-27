@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M2-INT-01/02: a React UI rendered through @platypus/react inside the engine's runtime.

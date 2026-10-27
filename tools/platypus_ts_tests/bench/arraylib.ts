@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The array library: pop shift unshift slice splice concat reverse sort fill indexOf lastIndexOf

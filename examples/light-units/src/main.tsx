@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Real-world light units (Unity 7's and HDRP's). A sunlit stone courtyard on a clear day (the sun

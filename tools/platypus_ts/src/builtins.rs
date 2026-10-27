@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! What the compiler itself gives a program, beyond the engine manifests: the component base class,

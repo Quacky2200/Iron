@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Saving objects to scene data and building them back: the format of `js/engine/src/scenes.ts`

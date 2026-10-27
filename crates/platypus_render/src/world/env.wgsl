@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Environment cube maps: a procedural sky drawn into each face, faces copied in from 2D

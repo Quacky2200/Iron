@@ -1,3 +1,4 @@
+# Copyright 2026 The Platypus Authors
 # SPDX-License-Identifier: Apache-2.0
 
 # Writes bench/typed.ts: typed arrays, one block per element kind. Run from tools/platypus_ts_tests:

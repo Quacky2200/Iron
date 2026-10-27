@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The analog face: three rings sweep round with the seconds, minutes and hours (`Shapes.arc`,

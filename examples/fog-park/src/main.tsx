@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Fog park: an old London park in a painted, storybook look, built from primitives. Gravel

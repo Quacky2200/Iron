@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Splines (Unity's Splines package, the core of it): a path through knots, smooth unless told

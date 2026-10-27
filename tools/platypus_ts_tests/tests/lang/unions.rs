@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! String-literal unions as real types: locals, parameters, returns, fields, arrays, maps,

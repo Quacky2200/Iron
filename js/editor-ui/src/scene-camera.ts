@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The Scene view's camera, as Unity's works: it looks at a pivot from `distance` away,

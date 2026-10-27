@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // ArrayBuffer, typed arrays over a buffer, subarray, .buffer and DataView. Every exported function

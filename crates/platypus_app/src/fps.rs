@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The FPS counter overlay: raw measured frame rate in the top right corner, drawn by the

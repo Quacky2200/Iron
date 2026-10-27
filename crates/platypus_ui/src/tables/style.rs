@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The style properties a script can set (`PlatypusStyle`): name, TypeScript value type, documentation.

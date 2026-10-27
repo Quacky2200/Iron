@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! JSX and hooks need no manifest from the caller (`M9-TS-1500..1519`): the compiler brings the

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Top-level `await`: the module's code runs as an implicit async function started by `ts_init`.

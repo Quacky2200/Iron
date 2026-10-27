@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M5.a showcase: GameObjects in 3D. A camera orbits a floor with standing coloured

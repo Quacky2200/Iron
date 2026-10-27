@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Endless blocks in the fog: a Minecraft-like world that never ends. Terrain comes from

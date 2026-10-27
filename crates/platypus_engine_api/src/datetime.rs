@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! C#-style `TimeSpan` and `DateTime` (as in s&box), as `js/engine/src/time.ts` has them: whole

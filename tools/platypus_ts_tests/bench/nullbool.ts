@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // `boolean | undefined`: optional boolean fields and parameters, `??`, truthiness, and passing them on.

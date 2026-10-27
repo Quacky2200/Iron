@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `bench [steps]`: step() on a busy state for QuickJS (the engine's runtime), bun (a JIT

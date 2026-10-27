@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A small Markdown parser: the subset Platypus's docs use (CommonMark blocks plus GitHub

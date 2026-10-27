@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The render pipeline's settings, after Unity 7: one pipeline (Unity's URP, which takes

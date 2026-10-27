@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Map, Set, WeakMap and WeakSet in compiled code. Every exported function without parameters returns

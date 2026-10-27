@@ -1,3 +1,4 @@
+# Copyright 2026 The Platypus Authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Writes house.glb, the glTF test model (M5-GLB-01), next to this script.

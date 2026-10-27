@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Test harness for the native code `platypus_ts` generates from `sim.ts`: the generated bindings

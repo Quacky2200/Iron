@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The Window API from compiled programs (`bench/windows.ts`, prefix `win_`), in the normal, stress GC

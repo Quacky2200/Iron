@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // `Math.hypot` of three or more numbers: the engines differ in the last bit, so the original

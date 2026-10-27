@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // 2D physics the Unity way: `Rigidbody2D` and `BoxCollider2D` / `CircleCollider2D` /

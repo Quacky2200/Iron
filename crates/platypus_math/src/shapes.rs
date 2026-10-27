@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Vector2Int`, `Vector3Int`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds` and `Pose` as

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Engine objects made the way gameplay code writes them: `new GameObject("Main Camera", {

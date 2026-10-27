@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Shared by the `build.rs` of `platypus_ts_rt` and `platypus_ts_ui` (`include!`): writes `symbols.rs`, a

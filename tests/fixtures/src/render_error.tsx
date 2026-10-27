@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A React render error after the first mount (M2-LAY-06): React unmounts the root,

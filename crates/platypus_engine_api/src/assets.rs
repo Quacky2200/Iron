@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Assets`: the asset database (each asset `.meta` file gives it a GUID and importer settings),

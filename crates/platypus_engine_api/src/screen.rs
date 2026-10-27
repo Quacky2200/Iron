@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Screen` and `QualitySettings` (`js/engine/src/screen.ts`, `quality.ts`): the window as

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! 2D physics for compiled scripts: `Rigidbody2D`, `BoxCollider2D`, `CircleCollider2D`,

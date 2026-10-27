@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A small engine API written with `#[platypus_api]`, to prove the whole path: Rust functions, the

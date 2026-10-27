@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `@property` reflection tables (`bench/props.ts`): the generated `PROPS_<Class>` constants tell a

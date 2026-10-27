@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Strings in compiled code. Every exported function takes no arguments and returns a number or a

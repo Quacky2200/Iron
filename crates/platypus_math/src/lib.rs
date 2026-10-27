@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The math types of the script API: `Mathf`, `Vector2/3/4` (and the grid, quaternion, matrix and

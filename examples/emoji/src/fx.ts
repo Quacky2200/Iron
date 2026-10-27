@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Sparks, dust, speed lines and confetti: a pool of short LineRenderer2D capsules.

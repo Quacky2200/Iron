@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Tuples and destructuring assignment for tests/lang/tuples.rs. Each case (split at `//## name`)

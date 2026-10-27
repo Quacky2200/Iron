@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Keyboard, mouse and gamepad input after the engine delivered events and ticked, compiled against

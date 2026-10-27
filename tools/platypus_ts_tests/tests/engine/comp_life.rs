@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The lifecycle of components script adds and removes (`bench/comp_life.ts`): `onAwake` and

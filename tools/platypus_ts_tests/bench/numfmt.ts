@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Intl, step I2: Number.prototype.toLocaleString and Intl.NumberFormat. Every exported function

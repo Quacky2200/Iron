@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! UI renderer tests (M2-DRW-01..08): scenes are built through the real UiTree

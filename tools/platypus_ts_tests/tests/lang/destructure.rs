@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Destructuring compiled by `platypus_ts` (`bench/destructure.ts`). The expected numbers are what bun

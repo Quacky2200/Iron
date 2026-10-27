@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Cloth (Unity's `Cloth`): a mesh's vertices as particles, simulated with position-based

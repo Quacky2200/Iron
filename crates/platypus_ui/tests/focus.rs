@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Focus and keyboard (M3-EVT-04): Tab order from `tabIndex`, focus by pointer and

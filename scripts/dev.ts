@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Dev builds with React Fast Refresh. Run in a game's folder (its `bun run dev`):

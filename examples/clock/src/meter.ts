@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The meter face: a mileage counter with the case taken away. Each digit sits on an invisible

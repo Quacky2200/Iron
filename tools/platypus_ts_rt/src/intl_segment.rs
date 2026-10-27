@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Intl.Segmenter` on ICU4X: grapheme clusters, words and sentences. A segmenter is just its

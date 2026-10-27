@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Strings: WTF-8 bytes with JavaScript's UTF-16 behaviour (design: `docs/research/platypus-ts-strings.md`).

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Handle classes in `#[platypus_api]`: methods, properties and statics declared in ordinary `impl`

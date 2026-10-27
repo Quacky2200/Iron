@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Runs every test of promises.ts in bun, one after the other, lets timers and microtasks finish,

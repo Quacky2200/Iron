@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Engine API shapes the original (QuickJS-era) example sources use, from compiled code

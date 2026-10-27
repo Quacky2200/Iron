@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Compiled scripts driving the real engine scene (`bench/scene.ts`): `platypus_scene`'s `Scene`

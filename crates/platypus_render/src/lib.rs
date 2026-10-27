@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! GPU access through wgpu: device setup, window surfaces and offscreen targets.

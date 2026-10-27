@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Asset `.meta` files (a port of `scripts/assets.ts`): every asset in a game folder gets

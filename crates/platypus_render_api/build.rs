@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Generates `generated.rs` (into `OUT_DIR`): the plain data of platypus_render_api. A *component* is a

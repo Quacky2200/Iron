@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Application` and `SystemInfo` (Unity's): the game's manifest (its `package.json`) and what the

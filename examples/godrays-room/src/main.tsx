@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // God rays: a derelict hall on a late afternoon. The sun pours in through a tall window with a

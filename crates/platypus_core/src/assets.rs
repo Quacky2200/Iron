@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Resolving asset paths (`url(...)` images, fonts) that scripts give the engine.

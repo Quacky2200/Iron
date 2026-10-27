@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Teapots in the fog: the classic distance-fog picture. A row of shiny orange teapots

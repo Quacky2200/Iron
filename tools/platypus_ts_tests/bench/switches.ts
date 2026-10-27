@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // switch (numbers, enums, string unions, fall-through, default in the middle) and enums.

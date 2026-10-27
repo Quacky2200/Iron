@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Generics by monomorphisation: `function id<T>(x: T): T`, `class Box<T>`, `interface Pair<A, B>`,

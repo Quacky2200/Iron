@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Gamepads through gilrs, as [`InputEvent::Gamepad`] events with stable names for

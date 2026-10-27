@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // God rays: the lift. A dark hotel corridor late at night: a carpet, doors to rooms, the

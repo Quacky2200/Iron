@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The data of the generated components, for `build.rs`. Converted from the former Python generator.

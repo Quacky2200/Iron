@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Temporal (ISO calendar): Duration, PlainDate, PlainTime, PlainDateTime, Instant. Every exported

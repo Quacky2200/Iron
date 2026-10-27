@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Window families and event domains (design section 3a): roots, domains, the cross-family guard and

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Hot reload: [`BundleWatcher`] watches the bundle (and its CSS) for rebuilds by `bun

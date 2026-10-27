@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Object.keys / values / entries / assign / freeze / hasOwn`, the `in` operator, object spread and

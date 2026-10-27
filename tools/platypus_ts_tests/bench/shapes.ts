@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Rect, RectInt, Ray, Plane, Bounds and Pose, compiled against the native API and run in bun

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Text in the world without a UI panel of your own (Unity's `TextMesh`, GDI's `DrawString`):

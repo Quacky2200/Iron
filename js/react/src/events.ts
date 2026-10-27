@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // UI events from the engine (DESIGN D6). Rust hit-tests and calls

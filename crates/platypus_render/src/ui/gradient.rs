@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Turning `platypus_ui` gradients into the GPU representation the quad shader reads.

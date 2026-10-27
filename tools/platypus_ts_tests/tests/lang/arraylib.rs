@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The array library compiled by `platypus_ts` (`bench/arraylib.ts`). The expected numbers are what

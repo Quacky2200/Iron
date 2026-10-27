@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M5-RB2D-01: 2D physics components. The Rust test runs the app's physics sync and

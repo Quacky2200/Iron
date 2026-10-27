@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Quality settings: the same scene at Low, Medium, High and Ultra. Thin things show

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Unity's transform handles (W move, E rotate, R scale) as plain math: where each part

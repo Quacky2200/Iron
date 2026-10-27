@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Partial / Required / Pick / Omit / Readonly for tests/lang/utility.rs. Each case (split at

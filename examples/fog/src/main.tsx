@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Fog: a misty clearing at dusk. A low sun shines through a slatted pergola and between the

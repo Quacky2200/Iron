@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `bigint`: literals (`10n`), the operators, comparison (also against numbers), `BigInt(x)`,

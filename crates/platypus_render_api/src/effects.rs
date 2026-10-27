@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The hand-written parts of the particle, line, cloth and primitive components: JSON helpers

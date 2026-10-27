@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! M2-BEN-01..03: layout and commit costs on an editor-like UI of ~2,000 nodes.

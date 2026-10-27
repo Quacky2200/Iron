@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Task.delay`, `Task.delaySeconds` and `Task.frame` (`bench/task.ts`): awaitable waits on the

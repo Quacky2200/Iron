@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The first batch of modules moved from `js/engine` to Rust (random, layers, log, prefs, assets,

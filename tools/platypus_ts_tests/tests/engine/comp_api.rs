@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The component / GameObject surface of scene.ts from compiled code (`bench/comp_api.ts`). IDs

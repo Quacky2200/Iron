@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Runs the cases of promises2_cases.ts in bun and writes promises2_expected.json.

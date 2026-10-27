@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The lava lamp: wax blobs rise when they're hot, cool at the top and sink. Each blob's outline

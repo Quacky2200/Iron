@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Temporal (ISO calendar): the classes are TypeScript in `temporal.ts`, compiled in front of

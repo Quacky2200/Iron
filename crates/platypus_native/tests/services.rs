@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Engine services from QuickJS: input and listener callbacks, time, random numbers, scenes and

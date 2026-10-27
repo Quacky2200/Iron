@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // God rays: the forest. Morning sun slants through gaps in a dense canopy of tall trees, so

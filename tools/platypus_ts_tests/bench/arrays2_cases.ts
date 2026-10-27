@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Array and spread features for tests/lang/arrays2.rs. Each case (split at `//## name`) defines

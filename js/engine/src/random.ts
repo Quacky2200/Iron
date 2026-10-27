@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Random numbers, Unity style (`Random.value`, `Random.range`, `Random.insideUnitSphere`,

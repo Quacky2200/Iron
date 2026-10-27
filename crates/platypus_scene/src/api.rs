@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The scene's script API, declared once with `#[platypus_api]` (see `docs/platypus-api.md`): the

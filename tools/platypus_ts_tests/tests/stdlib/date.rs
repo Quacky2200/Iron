@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Date` in compiled code (`bench/date.ts`): construction, getters and setters in local time and

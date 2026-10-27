@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Intl, step I1: localeCompare, Intl.Collator, normalize, toLocaleUpperCase/LowerCase. Every

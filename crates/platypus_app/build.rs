@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The main thread runs the game's compiled code and the UI reconciler, which recurse over the

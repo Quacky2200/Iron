@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The seedable generator and Unity's static `Random`, compiled against the native API and run in

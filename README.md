@@ -39,13 +39,18 @@ Platypus is licensed under the Apache License, Version 2.0 (Apache-2.0). The ful
 text is in [LICENSE](LICENSE). (It was private until there was a working demo;
 there now is one.)
 
-Every source file we write starts with the line
-`SPDX-License-Identifier: Apache-2.0` in that file's comment syntax (`//` for
-Rust, TypeScript, JavaScript and WGSL, `/* */` for CSS, `#` for Python, shell
-and TOML), after a `#!` line if there is one. New files need it too: the
-`M9-LIC-01` test (`tools/platypus_build/tests/spdx_headers.rs`) fails for a tracked
-source file without it. Generated files, built fixtures and third-party code
-are left out; the test's exclusion list says which.
+Every source file we write starts with two lines in that file's comment syntax
+(`//` for Rust, TypeScript, JavaScript and WGSL, `/* */` for CSS, `#` for
+Python, shell and TOML), after a `#!` line if there is one:
+
+    Copyright 2026 The Platypus Authors
+    SPDX-License-Identifier: Apache-2.0
+
+then a blank line. New files need them too: the `M9-LIC-01` test
+(`tools/platypus_build/tests/spdx_headers.rs`) fails for a tracked source file
+without both lines in its first four. Generated files, built fixtures and
+third-party code are left out; the test's exclusion list says which. The
+[NOTICE](NOTICE) file is the Apache-2.0 notice that goes with copies.
 
 Languages, dates and numbers (Intl):
 ====================================

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The QuickJS backend is deprecated: `platypus_app` refuses a QuickJS bundle unless `--force` is

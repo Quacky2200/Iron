@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The underwater face: a brass porthole clock lying on the sea bed, slightly tilted, its second

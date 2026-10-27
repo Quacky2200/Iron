@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Value classes in `#[platypus_api]`: a few numbers that scripts see as an object, passed across the

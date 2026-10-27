@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The Platypus editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,

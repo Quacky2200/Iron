@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! CSS stylesheets: parsing with `cssparser` and selectors with Servo's `selectors`

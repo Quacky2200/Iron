@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Generators: function*, yield, yield*, methods, [Symbol.iterator], next(sent), try/finally,

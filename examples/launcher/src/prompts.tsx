@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Button prompts that follow the last input device, as most PC games do: a key or mouse move

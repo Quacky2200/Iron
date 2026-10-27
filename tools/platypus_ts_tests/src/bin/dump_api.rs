@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `dump_api`: prints every engine API manifest (the ones `compile_check` loads) as a compact

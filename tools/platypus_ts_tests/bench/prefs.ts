@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // PlayerPrefs: numbers and strings by key, with and without fallbacks, compiled against the native

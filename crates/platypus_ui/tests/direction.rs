@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Right-to-left text (M3-TXT-09): CSS `direction`, the `dir` attribute, `text-align`

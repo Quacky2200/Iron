@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The player's saved settings (Unity's `PlayerPrefs`): numbers and strings by key, kept

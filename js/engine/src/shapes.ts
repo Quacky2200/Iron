@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // GDI-style shape outlines for `LineRenderer2D.points`: rectangles, ellipses, arcs, pies,

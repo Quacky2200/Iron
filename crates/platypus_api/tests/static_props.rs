@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Static properties of handle classes: `Demo.current` is a getter on the class in the manifest and in

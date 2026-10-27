@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Camera`: a component on a GameObject. Scripts make one with `Camera.attach(go)` (what

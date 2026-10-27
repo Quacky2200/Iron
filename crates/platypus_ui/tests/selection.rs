@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Selecting static text (M3-SEL-01): presses, double and triple clicks, drags,

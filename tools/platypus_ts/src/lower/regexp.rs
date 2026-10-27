@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `RegExp`: literals, `new RegExp`, `test` and `exec`, and the match object. A regular expression

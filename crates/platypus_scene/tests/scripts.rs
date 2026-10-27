@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! GameObjects and components driven by a real script bundle in QuickJS, the way the

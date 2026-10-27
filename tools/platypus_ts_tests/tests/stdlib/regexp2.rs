@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! String methods that take a regular expression (`bench/regexp2.ts`): `match`, `matchAll`, `search`,

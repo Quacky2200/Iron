@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Generics by monomorphisation: functions, classes, interfaces and aliases with type parameters.

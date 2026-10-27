@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A tree view on the virtual list: only the rows in view are mounted, so hierarchies

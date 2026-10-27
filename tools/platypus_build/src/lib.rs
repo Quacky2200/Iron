@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus-build`: builds a game written in TypeScript into `dist/` for `platypus_app`, with no bun and no

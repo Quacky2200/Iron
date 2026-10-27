@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // glTF models (`.glb` / `.gltf`), Unity-prefab style: `Model.load` reads one (the engine

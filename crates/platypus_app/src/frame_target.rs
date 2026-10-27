@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Where the main window's frames go: its swapchain, or (for `--bench`) an offscreen texture

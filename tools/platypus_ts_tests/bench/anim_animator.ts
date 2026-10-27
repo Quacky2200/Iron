@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The Animator and its controller (parameters, states, transitions, blend trees, triggers), made

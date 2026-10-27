@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Texture` and `Mesh`: the assets a host uploads. Scripts make them; every change is queued as a

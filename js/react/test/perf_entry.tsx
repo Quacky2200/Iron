@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The UI benchmark's app for React (the native one is `tools/platypus_ts_tests/bench/ui_perf.ts`; keep

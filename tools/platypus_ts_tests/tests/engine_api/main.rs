@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! platypus_ts tests: engine services and maths from compiled code (time, input, assets, audio,

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Fog, light shafts, exposure, `RenderStats` and `GraphicsSettings` in `platypus_render_api`

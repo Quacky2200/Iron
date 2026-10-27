@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Arcade: a small game with a React HUD. Steer the ball (WASD / arrow keys / left stick)

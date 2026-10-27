@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The React side: what the emoji panel shows (a Noto SVG, or a face drawn in code whose eyes

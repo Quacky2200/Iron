@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Date formatting in compiled code (`bench/datefmt.ts`): `toLocale*String` and

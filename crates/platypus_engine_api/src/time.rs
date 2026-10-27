@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Time`: game time, scaled by `timeScale`. The host calls [`advance`] once per frame with the

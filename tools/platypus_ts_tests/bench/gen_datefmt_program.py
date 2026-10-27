@@ -1,3 +1,4 @@
+# Copyright 2026 The Platypus Authors
 # SPDX-License-Identifier: Apache-2.0
 
 # Writes bench/datefmt.ts and bench/gen_datefmt_expected.ts (the option sets are written out here

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The typed window messages (`postMessage<T>`, `onMessage<T>`, `request<R>`, the named events

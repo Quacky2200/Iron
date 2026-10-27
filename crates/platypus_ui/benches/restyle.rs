@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! M3-BEN-01: CSS restyle cost on an editor-like UI of ~2,250 nodes with a

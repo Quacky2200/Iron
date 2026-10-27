@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Date`: a time value is milliseconds since the epoch as an `f64` (NaN for an invalid date), and the

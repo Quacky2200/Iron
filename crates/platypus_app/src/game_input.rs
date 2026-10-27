@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Gamepad glue: events for the game's `input` API (`__platypus_input` in @platypus/engine)

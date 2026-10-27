@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M3-PAD-01: gameplay code listening to gamepads and keys through @platypus/engine's

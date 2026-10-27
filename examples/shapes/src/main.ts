@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Shapes: Platypus's GDI-style 2D drawing in one place. Each shape is a LineRenderer2D (an

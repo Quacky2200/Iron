@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Native physics from compiled programs (`bench/physics.ts`, `platypus_physics_api`). IDs are in

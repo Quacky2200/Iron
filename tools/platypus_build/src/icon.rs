@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Icon conversion: a PNG (or any image the `image` crate reads) becomes an `.ico` with the

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Build-time colours for the launcher's backgrounds: a screenshot's top and bottom tones and

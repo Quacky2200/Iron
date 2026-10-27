@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Clipping (M3-EVT-05, M3-EVT-01): `overflow` clips children to the padding box with

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The chandelier face: a classic clock (white dial, Roman numerals, black spline hands, a gold

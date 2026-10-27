@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Strings, part two: trimming, padding, repetition, case mapping, `split`/`join`, and the

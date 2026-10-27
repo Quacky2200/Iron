@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The `Animation` component (`js/engine/src/animation.ts`): named states that play clips, with

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Intl`, step I3a: `Intl.DateTimeFormat` and `Date.prototype.toLocaleString/DateString/TimeString`

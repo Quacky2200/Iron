@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! glTF models (`js/engine/src/models.ts`), Unity-prefab style. `Model.load(path)` asks the host to

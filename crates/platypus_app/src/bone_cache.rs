@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Skinned renderers' bone matrices (each bone's world matrix times its inverse bind pose), kept

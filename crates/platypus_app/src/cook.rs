@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Cooking (`platypus --cook [game]`): textures and models prepared ahead of time, so games

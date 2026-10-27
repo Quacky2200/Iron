@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Timers per event domain in the QuickJS runtime. IDs are in TESTS.md (M9-TS-28xx).

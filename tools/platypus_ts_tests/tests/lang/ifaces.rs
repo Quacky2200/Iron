@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Interfaces implemented by classes (and by plain objects): dispatch through the interface,

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Objects indexed by a key (`state[key] = !state[key]`, `TINTS[tint]`) and `Record<string, V>` as a

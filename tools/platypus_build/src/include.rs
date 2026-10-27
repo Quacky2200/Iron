@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Which files of a game folder a packaged build takes: `include` / `exclude` of `project.json`

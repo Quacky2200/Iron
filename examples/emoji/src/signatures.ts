@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Signature poses: what each emoji does when it's on stage that nobody else would. Tears for the

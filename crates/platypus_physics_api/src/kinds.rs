@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Component kinds (`platypus_kinds`) of the physics components, so scene files with them load and

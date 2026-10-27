@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Numbers the stage, the curtain and the motion all agree on (world units unless noted).

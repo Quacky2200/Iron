@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Spline` (a path through knots, `platypus_math::spline`) and `SplineAnimate` (a component that moves

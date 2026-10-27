@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Writes tests/strings_expected.json: what JavaScript (bun) answers for string operations over a

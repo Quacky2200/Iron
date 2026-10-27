@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Closures compiled by `platypus_ts` (`bench/closures.ts`). The expected numbers are what bun

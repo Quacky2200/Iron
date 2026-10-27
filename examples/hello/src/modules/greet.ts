@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A module of this game: imported by its bare name, `import { greeting } from "greet"`.

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The rainbow face: lots of colour. Seven bands chase each other round the outside, sixty

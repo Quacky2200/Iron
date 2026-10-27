@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The physics components (`Rigidbody`, the colliders, joints, `Rope`, and their 2D twins) as

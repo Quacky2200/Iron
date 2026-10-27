@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The game world's objects (DESIGN.md §7.5): GameObjects in a generational arena,

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M4-PHY-02: a component drops a ball onto a floor through @platypus/engine's `physics`

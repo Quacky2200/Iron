@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The set: floor, spotlight beam and pool of light, drifting dust, the dark around the spot,

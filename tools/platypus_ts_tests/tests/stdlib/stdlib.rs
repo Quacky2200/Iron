@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Standard library pieces in compiled code (`bench/stdlib.ts`): `typeof`, `Number` statics, `Math`

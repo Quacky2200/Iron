@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Window`: the game's windows as scripts see them (design: `docs/research/platypus-windows.md`). The

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Typed arrays (`Int8Array` .. `Float64Array`). An array object with the `HDR_BYTES` header: `len`

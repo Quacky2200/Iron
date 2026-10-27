@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M2 showcase: React UI rendered by Platypus. Flexbox and grid layout, gradients,

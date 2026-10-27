@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus-build bench <examples>`: every example timed by `platypus --bench` (windowless) on the native

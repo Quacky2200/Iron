@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `compile_check file.ts`: compiles a program with every engine API manifest (scene, colour, time,

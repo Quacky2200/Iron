@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Text fields (M3-INP-01; the IME part is M3-IME-01): sizing, typing

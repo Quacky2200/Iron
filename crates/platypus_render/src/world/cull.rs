@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Frustum culling: what a camera can't see isn't drawn. Meshes are tested by their

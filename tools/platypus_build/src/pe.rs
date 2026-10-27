@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Windows resources of the packaged executable: the icon and the VERSIONINFO block, written

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Date`: an object of the prelude class `Date` whose one field `t` is the time value (milliseconds

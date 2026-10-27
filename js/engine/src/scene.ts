@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // GameObjects and components, the s&box / Unity way. Rust owns the objects (crates/

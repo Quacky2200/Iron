@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // structuredClone of data: nested objects and arrays, nullable fields, a recursive tree, typed

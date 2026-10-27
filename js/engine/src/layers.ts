@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Layers: 32 render groups a GameObject belongs to one of (Unity's `layer`). Cameras

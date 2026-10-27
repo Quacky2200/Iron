@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M3b showcase: stylesheets. `ui.css` is bundled by Bun into dist/game.css and

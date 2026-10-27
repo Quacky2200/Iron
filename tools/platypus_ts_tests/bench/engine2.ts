@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Compiled code calling the engine API beyond the scene (`platypus_engine_api`): Color with its

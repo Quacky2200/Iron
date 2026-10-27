@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Quaternion and Matrix4x4, compiled against the native API and run in bun against

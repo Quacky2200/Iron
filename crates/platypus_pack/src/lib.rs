@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Asset packs: how a release build ships its assets (design: `docs/research/platypus-asset-packs.md`).

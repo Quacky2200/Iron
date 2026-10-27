@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enums. A numeric enum is a `number` whose members are constants; a string enum is a union of

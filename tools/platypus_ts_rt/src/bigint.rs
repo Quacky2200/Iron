@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `BigInt`: an arbitrary-precision integer, a leaf GC object `[header][sign][byte count][magnitude

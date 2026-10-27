@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Cursor`: the OS mouse cursor (`js/engine/src/cursor.ts`): show or hide it, hold it in the

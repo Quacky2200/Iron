@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The data side of rendering for scripts: `js/engine/src/rendering.ts`, `textures.ts`,

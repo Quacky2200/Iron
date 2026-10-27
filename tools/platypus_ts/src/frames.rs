@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Planning the shadow-stack frame of a function: which locals are mirrored, and how many

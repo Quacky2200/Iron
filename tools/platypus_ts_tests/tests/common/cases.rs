@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Shared by the bun-compared language tests: a program of `//## name` cases (each defines

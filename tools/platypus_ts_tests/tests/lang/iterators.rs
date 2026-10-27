@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `bench/iterators.ts` against bun (`bench/gen_iterators_expected.ts`), in the normal, stress GC and

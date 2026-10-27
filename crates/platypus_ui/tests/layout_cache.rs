@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Incremental layout (M2-LAY-07): appending to a long column lays out the new child,

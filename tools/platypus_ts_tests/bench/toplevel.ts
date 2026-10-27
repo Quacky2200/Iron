@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Top-level control-flow statements (`if`, `for`, `while`, `switch`, `try`, blocks, labels) run in

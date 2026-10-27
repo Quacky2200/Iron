@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Runs every exported function of timespan.ts in bun against the original engine TypeScript

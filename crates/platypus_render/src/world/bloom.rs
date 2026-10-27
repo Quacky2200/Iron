@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Post-processing for the world pass: with bloom, exposure or tonemapping on, the world

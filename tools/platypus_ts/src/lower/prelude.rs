@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! TypeScript source compiled in front of a program that mentions errors: the `Error` classes.

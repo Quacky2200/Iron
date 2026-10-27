@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // PS1 fog: a blocky tomb in the style of the first Tomb Raider games. A long corridor of

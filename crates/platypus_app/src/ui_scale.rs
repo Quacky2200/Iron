@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! UI scale (s&box's ScreenPanel scaling): screen UI is laid out in "UI pixels" and

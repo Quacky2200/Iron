@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Bundles the docs into the reader: every Markdown file goes into src/docs.gen.ts, and the

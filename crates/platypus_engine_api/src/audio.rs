@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `audio`: sounds, playbacks, buses, emitters and the listener, as `js/engine/src/audio.ts` has

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Intl.NumberFormat / DateTimeFormat formatToParts. Every exported function without parameters

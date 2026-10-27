@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Syntax highlighting for code blocks: a small single-pass tokenizer per language

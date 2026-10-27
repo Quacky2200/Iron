@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The benchmark scenario for sim.ts: one player auto-firing an MP5 (never dies, never runs dry),

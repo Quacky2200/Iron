@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The native backend: a game compiled by `platypus_ts` (TypeScript to machine code) and run in this

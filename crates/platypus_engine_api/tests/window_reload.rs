@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Hot reload and windows: keyed windows stay, the rest close. IDs are in TESTS.md (M9-API-148x).

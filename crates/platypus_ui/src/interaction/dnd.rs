@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Drag and drop, like HTML's: a primary press on a `draggable` element that moves

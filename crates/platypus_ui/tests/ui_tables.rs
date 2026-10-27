@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The tables in `platypus_ui::tables` against what this crate implements: every style property, attribute,

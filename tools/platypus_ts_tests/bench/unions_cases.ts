@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // String-literal unions for tests/lang/unions.rs. Each case (split at `//## name`) defines

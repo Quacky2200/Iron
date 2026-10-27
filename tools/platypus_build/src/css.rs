@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! CSS bundling, what `bun build` did for the examples: the stylesheets a program imports are joined in

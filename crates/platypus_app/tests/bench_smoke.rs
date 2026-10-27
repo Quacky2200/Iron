@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus <game> --bench` runs a native game without a window, sends its scripted input and

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The microtask queue and the timers behind `Promise`, `queueMicrotask`, `setTimeout` and

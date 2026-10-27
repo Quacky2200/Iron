@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Clips from a glTF file's animation channels (`Model.clips` in `js/engine/src/models.ts`): one

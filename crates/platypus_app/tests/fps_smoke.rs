@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A `--screenshot --fps` run saves the file and logs no errors (needs a GPU, like the

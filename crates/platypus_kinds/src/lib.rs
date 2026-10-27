@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The registry of component kinds: how the scene loader, `instantiate` and the editor make,

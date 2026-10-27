@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Small conveniences: functions as values (`Util.twice`, `Math.abs`), casts of empty literals,

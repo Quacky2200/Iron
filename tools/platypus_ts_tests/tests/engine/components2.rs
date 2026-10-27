@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `@property` save and load, `getComponent` and `addComponent` for compiled components driven by

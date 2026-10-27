@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Promise`, `async` and `await` by source rewriting plus classes written per value type, the way

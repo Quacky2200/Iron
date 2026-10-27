@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `RegExp`. The engine is the `regress` crate (ECMAScript regular expressions: lookahead and

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The native rendering data API from compiled programs (`bench/render_native.ts`) and its

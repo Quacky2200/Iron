@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The attributes (`PlatypusProps`) of an element. `platypus_ui::Attrs::set` implements the [`Scope::Html`]

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The game's database, and the native API's shape over the original `Assets` (no undefined, an

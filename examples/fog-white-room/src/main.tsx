@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Fog: the white room, after Assassin's Creed's loading screen (the Animus). A figure on a

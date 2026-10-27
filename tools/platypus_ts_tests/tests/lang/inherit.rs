@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Inheritance compiled by `platypus_ts` (`bench/inherit.ts`). The expected numbers are what bun

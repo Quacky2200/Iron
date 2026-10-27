@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Properties on a namespace: `Time.deltaTime`, `Gizmos.color = c`. A `#[property]` function without

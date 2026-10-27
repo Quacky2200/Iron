@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Intl`, step I2: `Intl.NumberFormat` and `Number.prototype.toLocaleString`, on ICU4X's decimal,

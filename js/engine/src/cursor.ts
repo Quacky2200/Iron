@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The OS mouse cursor (Unity's `Cursor`): show or hide it, hold it in the window, and

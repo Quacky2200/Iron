@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Guard rails for "every declaration is generated from Rust" (docs/research/platypus-generated-dts-plan.md):

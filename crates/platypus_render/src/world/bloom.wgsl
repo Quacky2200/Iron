@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Bloom: bright parts of the HDR world image, blurred over a chain of half-size

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Closure parameters (`Callback`), their manifest type and the listener table (`M9-API-300..302`).

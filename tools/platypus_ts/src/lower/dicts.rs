@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Objects and dictionaries as collections of entries: `Object.entries` and `Object.fromEntries` as

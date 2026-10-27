@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Cases from the md-reader and launcher examples (merged from `md-reader-example`): TypeScript the

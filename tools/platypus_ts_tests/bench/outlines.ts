@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Differential oracle for the native `Shapes` and `Spline`: the TypeScript the compiled facade used

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // resolvedOptions of Intl.DateTimeFormat and Intl.NumberFormat (the common fields). Every exported

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Well-known symbols as member names and the iterator protocol for classes: `[Symbol.iterator]()`

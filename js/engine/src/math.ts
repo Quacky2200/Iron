@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Value types for gameplay code, named and behaving like Unity's (and s&box's):

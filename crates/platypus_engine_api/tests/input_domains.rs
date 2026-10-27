@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `input` per event domain (windows design 3a). IDs are in TESTS.md (M9-API-14xx).

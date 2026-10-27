@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Crowd: two busy sidewalks. Two city blocks far apart, each a ring of pavement round a block of

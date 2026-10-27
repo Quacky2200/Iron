@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The runtime's strings against JavaScript: `tests/strings_expected.json` holds what bun answers

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The string-keyed `Pose` from before bindings were cached (`bind.rs`): every frame it walked each

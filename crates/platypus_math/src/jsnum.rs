@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! JavaScript number semantics the math types need: `Math.min` / `Math.max` / `Math.sign` with

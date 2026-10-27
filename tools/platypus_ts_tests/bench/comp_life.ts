@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The lifecycle of a component a script removes or destroys: onDestroy runs when the calling hook

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Docking panels: splits with draggable splitters, tab groups, and tabs dragged onto

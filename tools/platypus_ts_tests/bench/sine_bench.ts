@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Frame loop for the QuickJS and bun runs of the sine-circle curve: the demo's per-frame work.

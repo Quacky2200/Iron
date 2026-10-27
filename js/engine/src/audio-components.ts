@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Unity-style audio components over the handles in audio.ts: an `AudioSource` plays

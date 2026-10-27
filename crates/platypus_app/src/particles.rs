@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `ParticleSystem` components (Unity's main, emission, shape, over-lifetime and

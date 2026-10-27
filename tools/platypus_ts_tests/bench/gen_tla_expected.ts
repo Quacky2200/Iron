@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Runs the cases of tla_cases.ts in bun, as the body of an async function (so the top-level

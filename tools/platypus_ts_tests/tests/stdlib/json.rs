@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! JSON in compiled code (`bench/json.ts`): `JSON.stringify` and `JSON.parse` from the static types.

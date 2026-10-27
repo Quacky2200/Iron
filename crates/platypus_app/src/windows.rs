@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Secondary windows in the app (design: `docs/research/platypus-windows.md` section 8): the script's

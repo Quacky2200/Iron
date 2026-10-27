@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // `GameObject.createPrimitive`, like Unity's: an object with a built-in mesh and the

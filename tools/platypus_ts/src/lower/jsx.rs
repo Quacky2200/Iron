@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! JSX and hooks for the native UI (`platypus_ui_native`), as a source rewrite before parsing.

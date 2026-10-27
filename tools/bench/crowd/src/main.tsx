@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A bench scene (not an example): 50 mannequins jogging in a grid in front of the camera, each

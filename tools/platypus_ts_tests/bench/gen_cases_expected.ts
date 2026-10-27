@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Runs the cases (`//## name`, each defining `function t(): string`) of a cases file in bun and

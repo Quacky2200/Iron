@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Writes platypus_ts_rt/src/intl_pad.rs: for each main-market locale, whether ICU4C pads a numeric

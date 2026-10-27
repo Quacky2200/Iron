@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Gamepad-style UI navigation (M3-PAD-01, UI side): the d-pad moves focus to the

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The pack build of `platypus-build package --packs`: the data files of a game written as `.ppk`

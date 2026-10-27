@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Path globs for `include` / `exclude` in `project.json` (and later `Assets.list`).

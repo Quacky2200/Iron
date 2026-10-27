@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The iterator protocol on classes: [Symbol.iterator](), next(), for...of, spread, Array.from.

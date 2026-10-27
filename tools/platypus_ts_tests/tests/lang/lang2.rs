@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Language leftovers: `for...in` over arrays, `Object.assign` into dictionaries and objects,

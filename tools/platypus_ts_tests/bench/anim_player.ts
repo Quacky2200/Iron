@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The Animation component (named clip states, play, crossFade, stop, events, the default clip,

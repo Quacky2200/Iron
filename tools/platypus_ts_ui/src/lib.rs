@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The bridge between compiled TypeScript UI code and the native reconciler (`platypus_ui_native`).

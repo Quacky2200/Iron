@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Environment cube maps for reflections and sky light: HDR (`Rgba16Float`) cubes with

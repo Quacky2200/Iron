@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The TypeScript `@platypus/engine` shapes the examples use, over the native API: object-valued

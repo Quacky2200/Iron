@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `UiResources`: what a game asks of the UI from script: stylesheets from CSS text

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Relative units and math in styles (M3d step 1): `em`, `rem`, viewport units and

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M4-HOT-06: Fast Refresh in QuickJS. Built twice as a dev game bundle (`LABEL` "v1" and

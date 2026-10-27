@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `createRoot(target?).render(<App/>)` for compiled games: the program hands its root element to

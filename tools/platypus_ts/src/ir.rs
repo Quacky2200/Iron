@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Platypus IR: a small typed, structured IR between the TypeScript AST and Cranelift.

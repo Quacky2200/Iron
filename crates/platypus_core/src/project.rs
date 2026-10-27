@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `project.json`: a game's project and product metadata (name, title, company, identifier, icon,

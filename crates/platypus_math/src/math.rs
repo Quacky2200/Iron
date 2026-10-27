@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Mathf`, `Vector2`, `Vector3` and `Vector4` as `js/engine/src/math.ts` has them. The values are

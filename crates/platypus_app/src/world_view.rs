@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! What scripts put in the 3D world for the renderer: `Camera`, `PlaneRenderer`,

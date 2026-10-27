@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The UI half of the generated declarations, written from the tables of `platypus_ui::tables` (style

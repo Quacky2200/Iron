@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Text fields: `<input>` (one line) and `<textarea>` (wrapping lines), each backed by

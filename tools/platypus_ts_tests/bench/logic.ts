@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // `&&` and `||` give the operand (not a boolean) when both sides have one type; in conditions they

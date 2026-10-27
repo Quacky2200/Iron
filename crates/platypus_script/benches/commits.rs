@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! M2-BEN-04: cost of sending UI commits from JS to Rust through QuickJS.

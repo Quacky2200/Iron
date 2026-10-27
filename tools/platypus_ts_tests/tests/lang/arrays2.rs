@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Array and spread features: `Array.from`, `new Array(n)`, `fill`, `flat`, `indexOf`, spread

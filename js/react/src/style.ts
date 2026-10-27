@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Style properties understood by the engine (crates/platypus_ui/src/style.rs).

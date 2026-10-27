@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! TypeScript-semantics fixes: `flat(depth)` with a depth known only at run time, `this` in

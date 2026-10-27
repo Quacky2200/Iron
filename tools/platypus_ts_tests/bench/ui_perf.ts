@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The UI benchmark's app, as compiled TSX for the native reconciler. The same app is written for

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The data of an `AnimatorController` (`js/engine/src/animation.ts`, one layer): parameters, states

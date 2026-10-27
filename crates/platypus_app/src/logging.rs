@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Where the engine's log goes. `platypus` is a windowed (GUI) program, so there's no

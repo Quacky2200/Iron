@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Filled shapes for [`WorldView::fills`](super::WorldView::fills): a closed polygon

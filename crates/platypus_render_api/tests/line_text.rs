@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `LineRenderer2D` fills and draw order, and the `TextMesh` component, as data (the host reads

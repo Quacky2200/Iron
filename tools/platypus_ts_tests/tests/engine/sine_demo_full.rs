@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The whole sine-circle demo component (`bench/sine_demo_full.ts`: the `SineDemo` class and its

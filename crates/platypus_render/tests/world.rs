@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The 3D world pass (M5.a): planes through a perspective camera, with screen UI

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! World panels: React UI drawn on planes in the world (`WorldPanel` components, s&box's

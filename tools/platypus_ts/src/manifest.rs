@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The engine API as the compiler sees it: the JSON manifest `platypus_api` generates

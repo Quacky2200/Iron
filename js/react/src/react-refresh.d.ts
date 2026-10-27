@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The parts of `react-refresh/runtime` refresh.ts uses (the package ships no types).

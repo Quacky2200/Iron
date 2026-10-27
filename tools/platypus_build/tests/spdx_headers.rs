@@ -1,11 +1,14 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Every tracked source file we wrote starts with `SPDX-License-Identifier: Apache-2.0`
-//! (README.md, "Licence"). New files need the line in their comment syntax, after a `#!` line.
+//! Every tracked source file we wrote starts with two comment lines,
+//! `Copyright 2026 The Platypus Authors` then `SPDX-License-Identifier: Apache-2.0` (README.md,
+//! "Licence"). New files need them in their comment syntax, after a `#!` line.
 
 use std::path::Path;
 use std::process::Command;
 
+const COPYRIGHT: &str = "Copyright 2026 The Platypus Authors";
 const ID: &str = "SPDX-License-Identifier: Apache-2.0";
 const EXTENSIONS: &[&str] = &[
     "rs", "ts", "tsx", "js", "mts", "wgsl", "css", "py", "toml", "sh",
@@ -42,6 +45,23 @@ fn excluded(path: &str) -> bool {
             .any(|e| path == *e || (e.ends_with('/') && path.starts_with(e)))
 }
 
+/// The copyright line, then the licence line right below it, within the first 4 lines.
+fn has_header(text: &str) -> bool {
+    let head: Vec<&str> = text.lines().take(4).collect();
+    head.windows(2)
+        .any(|w| w[0].contains(COPYRIGHT) && w[1].contains(ID))
+}
+
+// M9-LIC-01
+#[test]
+fn the_header_is_both_lines_in_order() {
+    assert!(has_header(&format!(
+        "#!/bin/sh\n# {COPYRIGHT}\n# {ID}\n\necho"
+    )));
+    assert!(!has_header(&format!("// {ID}\n// {COPYRIGHT}\n")));
+    assert!(!has_header(&format!("// {ID}\n\nfn main() {{}}\n")));
+}
+
 // M9-LIC-01
 #[test]
 fn every_tracked_source_file_has_the_spdx_header() {
@@ -70,14 +90,14 @@ fn every_tracked_source_file_has_the_spdx_header() {
             continue; // deleted in the working tree
         };
         checked += 1;
-        if !text.lines().take(3).any(|l| l.contains(ID)) {
+        if !has_header(&text) {
             missing.push(path);
         }
     }
     assert!(checked > 500, "only {checked} source files found");
     assert!(
         missing.is_empty(),
-        "{} file(s) lack `{ID}` in their first lines:\n  {}",
+        "{} file(s) lack `{COPYRIGHT}` then `{ID}` in their first 4 lines:\n  {}",
         missing.len(),
         missing.join("\n  ")
     );

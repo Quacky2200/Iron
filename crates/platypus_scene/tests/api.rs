@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The scene's `#[platypus_api]` namespace: handles, values and the current scene. IDs are in

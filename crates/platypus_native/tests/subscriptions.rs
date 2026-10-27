@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Functions that return an unsubscribe function (`#[subscription(off = ..)]`) from QuickJS: the

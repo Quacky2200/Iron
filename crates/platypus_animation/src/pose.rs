@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Blended values for one frame (`Pose` in `js/engine/src/animation.ts`): per object, transform

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Stackful coroutines for generators (and, next, `async`/`await`). A coroutine runs a `() => void`

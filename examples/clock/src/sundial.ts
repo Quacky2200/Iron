@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The sundial face: a garden sundial under a sun placed for today's date and the time. The

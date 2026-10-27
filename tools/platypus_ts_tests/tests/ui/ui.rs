@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Compiled TSX components rendered by the native reconciler (`bench/ui.ts`): JSX, hooks, keyed

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Transitions (M3-ANI-02): started by stylesheet and inline changes, timed with

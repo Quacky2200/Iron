@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! UI events (DESIGN D6). [`Pointer`] turns pointer input into DOM-style events and

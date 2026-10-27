@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! QuickJS side of the boundary: opaque handle objects and value-class argument reading.

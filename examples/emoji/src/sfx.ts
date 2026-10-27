@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Sound effects: the WAV files in assets/sfx, made by tools/make_sfx.py.

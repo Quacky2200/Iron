@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Where compiling a program spends its time, by phase (`platypus --bench` reports it as start-up

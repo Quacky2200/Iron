@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // C#-style `DateTime` and `TimeSpan` (as in s&box), on top of JS `Date`.

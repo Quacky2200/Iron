@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The bound `Pose` against the string-keyed one it replaced (`legacy_pose.rs`): random hierarchies,

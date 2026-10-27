@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The bone matrices of the skinned meshes a frame draws, packed into one GPU list: a mesh's run

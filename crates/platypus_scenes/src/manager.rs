@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Scenes (Unity's `SceneManager`): a scene is a set of root objects loaded, saved and unloaded

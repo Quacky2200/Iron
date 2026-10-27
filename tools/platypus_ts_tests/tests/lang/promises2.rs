@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Promises beyond `bench/promises.ts`: generic promise-returning functions and classes,

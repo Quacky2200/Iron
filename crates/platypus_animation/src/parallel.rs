@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Animators posed on several threads. The frame's walk (in turn) lists what runs, in order; the

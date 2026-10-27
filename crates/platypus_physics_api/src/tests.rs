@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Unit tests of the physics components (`M9-API-200..`): they work on `comp.rs` and the kinds

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `bench/logic.ts` against bun (`bench/gen_logic_expected.ts`), in the normal, stress GC and

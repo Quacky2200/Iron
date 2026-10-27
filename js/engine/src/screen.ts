@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The window as scripts see it (Unity's `Screen`). Sizes are in UI pixels, the units

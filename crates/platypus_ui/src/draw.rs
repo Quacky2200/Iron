@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The draw list: GPU-free paint commands produced by [`crate::UiTree::draw_list`]

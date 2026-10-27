@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Hit testing (M3-EVT-01): the topmost element under a point, respecting paint

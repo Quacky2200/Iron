@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! M4-HOT-07: a hot reload that keeps state, with 1,000 script components (each with a

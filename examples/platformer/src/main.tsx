@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M5.a2 2D showcase: a side-on platformer. An orthographic camera follows a fox

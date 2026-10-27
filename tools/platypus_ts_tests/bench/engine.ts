@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Scripts calling the engine API directly: `Demo.fn(..)` is a call of the Rust shim

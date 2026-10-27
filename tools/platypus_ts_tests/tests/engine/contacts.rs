@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Contact hooks on compiled components (`bench/contacts.ts`): the physics step queues contacts

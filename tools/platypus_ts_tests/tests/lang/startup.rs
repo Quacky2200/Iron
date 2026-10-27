@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `register(Class)` as an ordinary run-time call (in a branch, a loop, a function, after an

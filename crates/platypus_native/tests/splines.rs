@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Spline` and `SplineAnimate` from QuickJS: the same native code compiled games call (the numbers

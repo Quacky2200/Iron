@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Scrolling (M3-EVT-05): scroll offsets shift content (drawing and hit testing

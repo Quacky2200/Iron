@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Map`, `Set`, `WeakMap` and `WeakSet` (runtime: `platypus_ts_rt/src/map.rs`). Keys are numbers,

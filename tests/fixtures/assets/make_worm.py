@@ -1,3 +1,4 @@
+# Copyright 2026 The Platypus Authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Writes worm.glb, the skinned glTF test model (M5-SKN-01), next to this script.

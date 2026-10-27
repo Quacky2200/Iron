@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Module-level `let` variables compiled by `platypus_ts` (`bench/globals.ts`). The expected numbers

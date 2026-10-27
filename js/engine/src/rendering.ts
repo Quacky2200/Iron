@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The engine's rendering components (M5.a): cameras and planes, plus camera helpers.

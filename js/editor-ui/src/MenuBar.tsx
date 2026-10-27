@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A desktop-style menubar drawn by Platypus's UI: click or Alt+letter opens a menu, hover

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Accessors in object literals: `{ sfx: .., get scene() { return self.effects; } }`.

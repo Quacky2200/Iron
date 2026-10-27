@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Fog blocks: a hill of grass blocks in pale sky-blue fog, after foggy Minecraft, drawn like

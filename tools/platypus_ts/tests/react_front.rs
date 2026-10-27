@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The React front end of the examples (`M9-TS-1600..1649`): what `examples/*` write, compiled as

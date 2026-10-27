@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Sprite particles and props: a pool of small world panels, each showing one Noto emoji, that

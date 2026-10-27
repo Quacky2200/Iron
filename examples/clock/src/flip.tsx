@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The flip clock, drawn by Platypus's UI: each digit is a card split across the middle. When it

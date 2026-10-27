@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // A callback every frame for editor UI that follows the world (the Scene view's icons, a

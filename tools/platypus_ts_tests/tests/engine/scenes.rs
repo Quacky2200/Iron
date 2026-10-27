@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Scene files, `instantiate`, prefabs and `SceneManager` for compiled programs

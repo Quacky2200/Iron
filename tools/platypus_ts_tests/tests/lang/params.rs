@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Default, optional and rest parameters and spread compiled by `platypus_ts` (`bench/params.ts`).

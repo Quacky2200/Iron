@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // React Fast Refresh for dev builds (`vendor.ts`). This must run before React and the

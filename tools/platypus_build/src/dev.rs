@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus-build dev`: rebuild when a source, stylesheet or asset changes and tell the running app.

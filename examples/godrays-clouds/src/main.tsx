@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // God rays: the clouds. Late afternoon from high on a hillside, looking towards the sun over rolling

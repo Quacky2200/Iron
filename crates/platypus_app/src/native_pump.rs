@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! What compiled games hand to the app each frame, apart from drawing: audio commands for the

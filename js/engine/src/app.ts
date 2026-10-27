@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The game and the machine it runs on (Unity's `Application` and `SystemInfo`). The

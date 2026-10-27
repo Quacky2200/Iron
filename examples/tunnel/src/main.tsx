@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Auto exposure: a road tunnel through a hill. The camera drives in from a bright summer

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The morphing face, after Android's Material clock: each digit is one thick, round-capped

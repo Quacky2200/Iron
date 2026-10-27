@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Emoji parade: a spinner wheel picks an emoji, the red curtain opens and it comes on in one

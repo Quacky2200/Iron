@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Intl`, step I4: `Intl.PluralRules`, `Intl.ListFormat` and `Intl.RelativeTimeFormat` on ICU4X.

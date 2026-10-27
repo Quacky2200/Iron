@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The native reconciler against a real `UiTree`. IDs are in TESTS.md (M2-NAT-*).

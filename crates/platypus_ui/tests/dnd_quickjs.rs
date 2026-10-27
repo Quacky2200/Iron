@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Drag and drop end to end (M5-DND-09): [`Interaction`] runs the drag, `@platypus/react`

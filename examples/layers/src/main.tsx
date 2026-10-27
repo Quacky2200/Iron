@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Layers and culling: a forest with a walker. The main camera skips the "Minimap" layer

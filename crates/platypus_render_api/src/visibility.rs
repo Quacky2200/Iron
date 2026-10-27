@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Renderer.isVisible` (Unity's): whether a renderer was seen in the last frame drawn, by a

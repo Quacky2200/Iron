@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The standard library in compiled code: `typeof`, `Number` statics, `Math` extras, `Array`

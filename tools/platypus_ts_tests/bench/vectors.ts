@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Vector2, Vector3, Vector4 and the integer grid vectors, compiled against the native API and run

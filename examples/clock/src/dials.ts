@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The dials face: three rings (hours, minutes, seconds) carry their numbers round and turn to

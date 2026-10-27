@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The `Window` API's host side: requests, events, closing. IDs are in TESTS.md (M9-API-14xx).

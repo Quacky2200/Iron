@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Ways on to the stage. Each is an `Act` over time `t`, ending still at the centre (apart from

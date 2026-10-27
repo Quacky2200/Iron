@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The `Window` API in QuickJS: options objects, static properties, listeners. IDs are in TESTS.md

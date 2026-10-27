@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Intl.Locale` on ICU4X: parsing and canonicalising a tag, its parts, `maximize` and `minimize`.

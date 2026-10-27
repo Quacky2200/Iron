@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Cloth` components: each simulates a copy of its object's mesh (`platypus_physics::cloth`)

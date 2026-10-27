@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Things that happen to the whole stage: rain and storms (rain is a CSS overlay drawn over the

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Inline SVG (M3d step 5.1b): an `svg` element is a box; the SVG elements inside it

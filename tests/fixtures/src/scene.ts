@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M5-OBJ-06: GameObjects and components through @platypus/engine in QuickJS. The Rust

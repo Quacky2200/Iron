@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `#[platypus_api]`: the manifest, the `.d.ts`, the `extern "C"` shims and the QuickJS bindings all

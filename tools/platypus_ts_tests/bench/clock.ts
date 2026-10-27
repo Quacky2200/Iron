@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // TimeSince and TimeUntil on the game clock, and Time's real-time reads, compiled against the

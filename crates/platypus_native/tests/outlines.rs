@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Shapes` from QuickJS: the same native functions compiled code calls (their numbers are compared

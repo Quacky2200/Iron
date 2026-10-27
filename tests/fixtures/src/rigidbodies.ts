@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M5-RB-01: Rigidbody and collider components on GameObjects. The Rust test runs the

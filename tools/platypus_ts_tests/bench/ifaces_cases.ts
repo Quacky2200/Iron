@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Interfaces implemented by classes, for tests/lang/ifaces.rs. Each case (split at `//## name`)

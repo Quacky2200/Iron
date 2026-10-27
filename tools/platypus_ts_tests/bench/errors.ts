@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Exceptions in compiled code: `throw`, `try` / `catch`, error classes, unwinding through calls

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `SceneManager`, `Scene` and `Prefab` from QuickJS: handles are opaque objects. IDs are in

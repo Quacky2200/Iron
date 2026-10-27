@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Dates: construction, getters and setters in local time and UTC, parsing, ISO and UTC strings,

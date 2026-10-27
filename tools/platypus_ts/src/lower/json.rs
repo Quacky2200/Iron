@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `JSON.stringify` and `JSON.parse`. The program is typed, so the compiler describes the static

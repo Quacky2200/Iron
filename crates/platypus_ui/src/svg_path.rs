@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! SVG path data (`path("M 0 0 L 10 0 ...")` in `clip-path`), flattened to

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Prints what `#[platypus_api]` generated for the demo namespace: the JSON manifest the compiler reads

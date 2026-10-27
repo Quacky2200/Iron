@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The `.ppk` layout, version 1. Everything is little-endian; offsets are `u64` from the start of

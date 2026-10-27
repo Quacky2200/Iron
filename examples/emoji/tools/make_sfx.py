@@ -1,3 +1,4 @@
+# Copyright 2026 The Platypus Authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Writes assets/sfx/*.wav for the emoji example: every sound is synthesised here in plain Python

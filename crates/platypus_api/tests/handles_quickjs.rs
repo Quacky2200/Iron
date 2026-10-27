@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Handle classes in QuickJS: opaque objects with the numeric id in an internal slot, members on the

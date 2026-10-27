@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `LayerMask`: the 32 render layers. Unity's built-in names come first; the game names the rest in

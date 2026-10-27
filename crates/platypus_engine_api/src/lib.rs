@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The engine's script API beyond the scene, declared with `#[platypus_api]`: `Color`, `Time`, `input`,

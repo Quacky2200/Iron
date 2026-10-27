@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! UI events end to end (M3-EVT-02, M3-EVT-03, M3-EVT-04): [`Interaction`] hit-tests

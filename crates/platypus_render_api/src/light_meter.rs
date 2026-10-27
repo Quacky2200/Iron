@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The light meter (`Light.illuminanceAt`, `Light.measureIlluminance`): how much light every light

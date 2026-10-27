@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enums, records, lists, rest parameters, option objects after a parameter, doc comments and `like`

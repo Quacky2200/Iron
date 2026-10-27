@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Strings: literals, `+` and template literals, methods, `length`, and the conversions between

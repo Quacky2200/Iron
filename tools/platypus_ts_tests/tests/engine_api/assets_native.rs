@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Assets.exists` / `list` / `packOf` from compiled programs (`bench/assets_native.ts`), with the

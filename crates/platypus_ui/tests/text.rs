@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Text layout through the UI tree (M3-TXT-02, M3-TXT-03, M3-FNT-01, M3-FNT-02).

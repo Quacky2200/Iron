@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `PlayerPrefs`: numbers and strings by key (Unity's). The host loads the saved values at start

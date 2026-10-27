@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Runs the cases of tla_modules_cases.txt in bun as real ES modules (each case's files go into a

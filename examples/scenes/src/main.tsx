@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Scenes: the game starts in `scenes/level1.scene.json` (`platypus.startScene` in

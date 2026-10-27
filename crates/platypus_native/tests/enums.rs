@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enums, nullables and aliases of the real engine namespaces from QuickJS: the same native code

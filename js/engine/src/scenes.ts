@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Scenes (Unity's `SceneManager`, s&box's scene files): every root GameObject belongs to

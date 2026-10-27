@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The engine's log for the editor: `platypus_editor` sends new records to `__platypus_log`

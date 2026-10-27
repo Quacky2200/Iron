@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // encodeURI, encodeURIComponent, decodeURI, decodeURIComponent, escape, unescape. Every exported

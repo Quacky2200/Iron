@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Compiled UI components for the native reconciler (`platypus_ui_native` through `platypus_ts_ui`): JSX,

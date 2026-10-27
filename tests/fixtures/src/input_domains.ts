@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // M9-API-1500: `input` follows the event domain whose code is running. The Rust test drives

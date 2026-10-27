@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Fish tank: an aquarium in the style of the aquarium channels — a calm, full-screen view into
