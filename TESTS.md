@@ -318,6 +318,12 @@ layout pass):
 | M3-FLT-11 | Integration | A float's margins keep text away from it. |
 | M3-FLT-12 | Integration | Text with padding and a background wraps around a float inside its padding box. |
 | M3-FLT-13 | Integration | An `image` floated in a block of bare text: the paragraph wraps around it. |
+| M3-TBL-01 | Golden | The table of `examples/table`: content-sized columns, header, striping, a wrapping note, right-aligned numbers, a column-span footer. |
+| M3-TBL-02 | Integration | In a grid of `display: contents` rows the columns line up across rows and are sized from every row's content; the `1fr` column takes the rest. |
+| M3-TBL-03 | Integration | A long cell wraps and every cell of its row grows to the row's height. |
+| M3-TBL-04 | Integration | `text-align: right` aligns numbers to the cell's edge. |
+| M3-TBL-05 | Integration | `grid-column` / `grid-row` spans act as colspan and rowspan and following rows' cells skip the spanned column. |
+| M3-TBL-06 | Integration | A `display: contents` row is hovered through its cells, and `.row:hover .cell` styles only that row's cells. |
 | M3-FLT-20 | Golden | A page with a left picture, a right pull-quote, a paragraph flowing between and under them, and a `clear: both` bar. |
 
 ---

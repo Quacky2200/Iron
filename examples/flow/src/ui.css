@@ -1,0 +1,29 @@
+.page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 24px 32px;
+  background: #f4f1ea;
+  color: #333;
+  font-size: 15px;
+}
+.title { font-size: 26px; font-weight: bold; color: #222; margin-bottom: 8px; }
+.caption { margin: 18px 0 6px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #7a746a; }
+.article { display: block; max-width: 640px; line-height: 1.45; }
+.article > .body { margin-bottom: 8px; }
+
+.figure { float: left; width: 140px; height: 100px; margin: 4px 16px 8px 0; border-radius: 8px; object-fit: cover; }
+.small { width: 90px; height: 64px; margin: 4px 12px 6px; border-radius: 6px; object-fit: cover; }
+.quote {
+  display: block;
+  float: right;
+  width: 150px;
+  margin: 4px 0 8px 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #d9a441;
+  color: #222;
+  font-size: 18px;
+}
+.rule { clear: both; height: 4px; margin-top: 8px; background: #7a9e7e; }

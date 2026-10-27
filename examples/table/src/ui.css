@@ -1,0 +1,53 @@
+/* A table from a grid. `.row` is `display: contents`, so the grid sizes each column from
+   the content of every row; the row's cells are the grid items. Row styles go through
+   descendant selectors (`.row:hover .cell`), since a `contents` row has no box of its own. */
+.page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 24px 32px;
+  background: #f6f7fa;
+  color: #222;
+  font-size: 14px;
+}
+.title { font-size: 24px; font-weight: bold; margin-bottom: 4px; }
+.hint { color: #6b7385; margin-bottom: 14px; }
+
+.table {
+  display: grid;
+  /* Item and Kind from their content, Notes takes what is left (and wraps), Qty and Price
+     from their content. */
+  grid-template-columns: auto auto 1fr auto auto;
+  max-width: 720px;
+  border: 1px solid #b8bec9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+.row { display: contents; }
+.cell {
+  display: block;
+  padding: 7px 12px;
+  border-bottom: 1px solid #e3e6ec;
+}
+.head .cell {
+  background: #2f3b52;
+  color: white;
+  font-weight: bold;
+  border-bottom: none;
+  cursor: pointer;
+  user-select: none;
+}
+.head .cell:hover { background: #3d4c6b; }
+.row:nth-child(even) .cell { background: #f1f4f9; }
+.row:hover .cell { background: #d6e4ff; }
+.row.selected .cell { background: #b9d1ff; }
+.num { text-align: right; }
+
+/* colspan / rowspan are grid spans on a cell. */
+.span-2 { grid-column: span 2; }
+.span-3 { grid-column: span 3; }
+.span-rows { grid-row: span 2; }
+.foot .cell { font-weight: bold; border-bottom: none; background: #e9edf5; }
+.middle { display: grid; align-content: center; }

@@ -734,7 +734,11 @@ Accessibility and drag and drop moved to M5.e, as UI requirements before the edi
   "image in a paragraph" case: no richtext element is needed — `M3-FLT-01`..`13`, golden `M3-FLT-20`
 - [ ] A float inside a `text` element (a floated child between runs of one paragraph): needs in-flow
   inline boxes in text (Parley `InlineBox`); only block-level floats before the text exist
-- [ ] Table example, then table elements if it is not enough (below)
+- [x] Table: `examples/table` builds one from a grid of `display: contents` rows (content-sized columns,
+  header, striping, hover, wrapping, right-aligned numbers, `grid-column` / `grid-row` spans); it works
+  well, so no table elements — `M3-TBL-01`..`05`. Not covered (revisit if a game needs them):
+  `display: table*` on arbitrary elements, `border-collapse`, `<col>` widths, `position: sticky` headers,
+  a rect for the row itself
 
 ## M4 — Hot reload, physics and audio
 

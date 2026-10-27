@@ -213,6 +213,18 @@ An image (or any box) floated in a block that also holds bare text is the "image
 the text is an anonymous text block beside it. A float between runs of one `text` element is not
 supported (text children are flattened to runs; it would need in-flow inline boxes).
 
+### Tables
+
+There are no table elements. A table is a grid whose rows are `display: contents` boxes
+(`examples/table`, tests `M3-TBL-*`): `grid-template-columns: auto auto 1fr auto` sizes the columns from
+the content of every row (one grid, the rows' cells are its items), the `1fr` column takes the rest and
+wraps its text, `grid-column: span n` / `grid-row: span n` on a cell are colspan and rowspan, cells take
+borders, backgrounds and `text-align`, and row styling goes through descendant selectors
+(`.row:nth-child(even) .cell`, `.row:hover .cell`) since a `contents` row paints nothing and has no rect
+(clicks still bubble through it, so `onClick` on the row works). Cells must be `display: block`, or their
+text blocks shrink-wrap and `text-align` does nothing. Auto columns share spare width equally up to their
+content size (grid), not in proportion to it (HTML tables); see `docs/differences.md`.
+
 ### calc ([calc.rs](../crates/iron_ui/src/calc.rs))
 
 Math that still has `%` after relative units are resolved is parsed into an `Expr` tree (`Px`,

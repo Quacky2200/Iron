@@ -227,6 +227,14 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `shape-outside`, `float: inline-start/end` in rtl | Not supported; `inline-start/end` mean left/right | Shaped wrap; logical sides | Taffy places rectangles |
 | Minimum content width | Sizing a container by its text (`min-content`) ignores floats beside it | Counts floats | Intrinsic sizes are measured without a formatting context |
 
+## Tables (`docs/ui-tree.md`, "Tables")
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Elements | None: a grid of `display: contents` rows (`examples/table`) | `table`, `tr`, `td`, `display: table*` | The grid already covers content-sized columns, wrapping, spans and striping |
+| Not available | `display: table*`, `border-collapse` / `border-spacing`, `<col>` widths, `position: sticky` headers, `vertical-align` on cells (use `align-content` on a grid cell), a box for the row (`contents` rows have no rect, background or border) | Yes | — |
+| Spare width | Auto columns grow equally up to their content size | In proportion to their max-content widths | Grid track sizing |
+
 ## Scrolling extras (M3d group 8)
 
 | Area | Iron | Browsers / spec | Why |
