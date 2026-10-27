@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A Gaussian blur and colour matrix over a region of a premultiplied RGBA8 buffer, for

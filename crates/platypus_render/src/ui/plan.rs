@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The backend-neutral half of the UI renderer: a draw list ([`platypus_ui::DrawCmd`]s) turned into a

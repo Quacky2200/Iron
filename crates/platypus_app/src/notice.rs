@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A full-window message: a black screen with red centred text. `platypus-app` shows it instead of

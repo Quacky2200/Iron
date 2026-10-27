@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A CPU renderer for the UI draw list (`vello_cpu`), shown through `softbuffer`: no GPU API, no

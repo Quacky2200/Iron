@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! CSS gradients as `vello_cpu` gradients, in the draw list's logical pixels.

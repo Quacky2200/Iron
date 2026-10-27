@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The GLES executor against the wgpu one (M2-GLES-02..06): the same scenes, built through the

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Images for the UI renderers, without a GPU: `url(...)` files from the game's folder decoded,

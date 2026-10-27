@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The main OS window and its DPI scale and size, for the code that doesn't need the renderer.

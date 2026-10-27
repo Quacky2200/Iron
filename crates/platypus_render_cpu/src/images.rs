@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! `url(...)` images for the CPU renderer. Like a browser's, they are decoded lazily and only at

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A GLES 3 executor for the UI frame plan (`platypus_render::plan`), for `platypus-app`: the same

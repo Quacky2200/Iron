@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The main window drawn by the GLES executor (`platypus_render_gles`) through EGL: ANGLE on

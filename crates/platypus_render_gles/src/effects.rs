@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! GLSL ES 3.00 ports of `effects.wgsl`: the separable blur and the layer composite (opacity,

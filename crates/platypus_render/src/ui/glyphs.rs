@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The GPU-free half of the glyph atlas: glyphs rasterized with swash at physical pixel size,

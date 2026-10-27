@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! A GLES 3 context through EGL: ANGLE on Windows (`libEGL.dll`, which draws through Direct3D

@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! GLSL ES 3.00 ports of the UI shaders (`platypus_render/src/ui/quad.wgsl`, `effects.wgsl`).

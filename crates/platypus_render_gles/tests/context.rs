@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! The EGL context (M2-GLES-01). Needs an EGL driver: ANGLE's folder in `PLATYPUS_ANGLE_DIR` on
