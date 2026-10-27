@@ -8,7 +8,7 @@ section 11. Background: `iron-ts-spike.md` (IR, GC, closures), section 11 there 
 
 Gameplay code is classes. In `js/engine/src` there are 87 `class` and 58 `extends`, 1,416 uses of
 `this`, 212 getters/setters and 187 `@property` decorators; every example game's behaviour is a
-class that `extends Component`. The zombie game's `sim.ts` is plain functions only because its
+class that `extends Component`. A game's `sim.ts` is plain functions only because its
 author separated it from `main.tsx` on purpose.
 
 Three levels, each shippable alone:

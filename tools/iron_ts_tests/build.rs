@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compiles the zombie game's sim.ts and the programs in `bench/` with `iron_ts` and links the
+//! Compiles the `sim.ts` fixture and the programs in `bench/` with `iron_ts` and links the
 //! objects into this crate's targets.
 //!
 //! Each program's object is cached in OUT_DIR under a key: a hash of its source, symbol prefix,

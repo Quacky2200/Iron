@@ -1,8 +1,7 @@
 # Spike: `iron_ts`, TypeScript gameplay code compiled ahead of time
 
 Status: spike done (2026-10-18), then a garbage collector (same day). It proves the pipeline on one real file,
-the zombie game's `sim.ts` (678 lines of pure game rules, kept as `tools/iron_ts_tests/fixtures/sim.ts`
-since the game moved to the zombie-horders repository's `iron` branch). It is not wired into
+a game's `sim.ts` (678 lines of pure game rules, kept as `tools/iron_ts_tests/fixtures/sim.ts`). It is not wired into
 `iron` or the build scripts, and it lives outside the engine workspace in `tools/`.
 
 Context: QuickJS is an interpreter (no JIT, which iOS requires). A sine demo that built meshes in
@@ -425,7 +424,7 @@ cargo run --release -p iron_ts_tests --bin bench
 Line and feature counts, to order the work after the spike. Counted with `grep` over non-test
 `.ts`/`.tsx` files; approximate (a count is lines that match, not uses).
 
-| Feature | `js/engine/src` (11,468 lines) | arcade (799) | zombie game (1,375) | platformer (274) |
+| Feature | `js/engine/src` (11,468 lines) | arcade (799) | a 2D game (1,375) | platformer (274) |
 |---|---|---|---|---|
 | `class` / `extends` | 87 / 58 | 4 / 4 | 1 / 1 | 4 / 4 |
 | `@property` decorators | 187 | 7 | 0 | 0 |
@@ -446,7 +445,7 @@ Reading it:
 
 - **Classes dominate.** A game's gameplay is classes that extend the engine's `Component`, with
   `@property` fields and `override`d lifecycle methods. A compiler without classes compiles
-  helpers like `sim.ts` (which the zombie game deliberately separated from `main.tsx`) and not the
+  helpers like `sim.ts` (which its game deliberately separated from `main.tsx`) and not the
   game. Classes and the engine boundary have to be designed together (`Component` and `Vector3` are
   themselves TypeScript classes today).
 - **Strings and templates** are everywhere in the engine and a little in games; the UTF-16
