@@ -4,10 +4,6 @@
 resolver = "3"
 members = ["crates/*"]
 
-# Taffy 0.15.0 with a float fix (docs/upstream/taffy-float-tail.md); drop once upstream has it.
-[patch.crates-io]
-taffy = { path = "third_party/taffy" }
-
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

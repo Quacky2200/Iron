@@ -319,7 +319,7 @@ layout pass):
 | M3-FLT-12 | Integration | Text with padding and a background wraps around a float inside its padding box. |
 | M3-FLT-13 | Integration | An `image` floated in a block of bare text: the paragraph wraps around it. |
 | M3-FLT-14 | Integration | A later paragraph stays clear of an auto-height float's bottom margin. |
-| M3-FLT-15 | Integration | The taller of two floats keeps narrowing lines after the shorter one ends (patched Taffy, `docs/upstream/taffy-float-tail.md`). |
+| M3-FLT-15 | Integration | The taller of two floats keeps narrowing lines after the shorter one ends (needs taffy 0.15.1: 0.15.0 lost the tail of the taller float). |
 | M3-TBL-01 | Golden | The table of `examples/table`: content-sized columns, header, striping, a wrapping note, right-aligned numbers, a column-span footer. |
 | M3-TBL-02 | Integration | In a grid of `display: contents` rows the columns line up across rows and are sized from every row's content; the `1fr` column takes the rest. |
 | M3-TBL-03 | Integration | A long cell wraps and every cell of its row grows to the row's height. |
