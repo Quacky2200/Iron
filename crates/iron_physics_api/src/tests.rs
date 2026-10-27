@@ -401,3 +401,61 @@ fn destroying_an_object_removes_its_physics() {
     run(1);
     assert_eq!(down(()), 0);
 }
+
+// M9-API-210
+//
+// A raycast answers the GameObject it hit, only counts colliders on the layers of its mask, and
+// skips a collider the origin starts inside (as Unity does).
+#[test]
+fn raycasts_filter_by_layer_and_name_the_hit_object() {
+    let mut scene = setup();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let far = make("far");
+    place(far, 10.0, 0.0, 0.0);
+    comp::col_attach(far, unit_box());
+    let near = make("near");
+    place(near, 5.0, 0.0, 0.0);
+    comp::col_attach(near, unit_box());
+    iron_scene::api::with_scene(|s| s.set_layer(near, 3));
+    run(1);
+    let cast = |x: f64, mask: u32| {
+        let n = crate::do_raycast_masked(
+            V3 { x, y: 0.0, z: 0.0 },
+            V3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            100.0,
+            mask,
+        );
+        let hit = crate::st(|s| s.hits.get(n as usize - 1).map(|h| (h.object, h.distance)));
+        hit.map(|(o, d)| (o.unwrap(), (d * 100.0).round() / 100.0))
+    };
+    // Every layer: the near box, its face at 4.5 m.
+    assert_eq!(cast(0.0, u32::MAX), Some((near, 4.5)));
+    // Layer 0 only (Default): the far box, at 9.5 m.
+    assert_eq!(cast(0.0, 1), Some((far, 9.5)));
+    // Layer 3 only: the near box again.
+    assert_eq!(cast(0.0, 1 << 3), Some((near, 4.5)));
+    // Starting inside the near box skips it, so the far box is the hit.
+    assert_eq!(cast(5.0, u32::MAX), Some((far, 4.5)));
+    // A mask that matches nothing is a miss.
+    assert_eq!(
+        crate::do_raycast_masked(
+            V3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0
+            },
+            V3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            },
+            100.0,
+            1 << 7
+        ),
+        0
+    );
+}

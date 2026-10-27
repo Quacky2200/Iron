@@ -984,6 +984,8 @@ declare class PhysicsBody :: velocity: Vector3;
 declare class PhysicsBody :: wakeUp(): void;
 declare class PhysicsCollider
 declare class PhysicsCollider :: readonly body: PhysicsBody;
+declare class PhysicsCollider :: readonly gameObject: GameObject | null;
+declare class PhysicsCollider :: readonly transform: Transform | null;
 declare class PhysicsCollider :: remove(): void;
 declare class PhysicsCollider :: setFriction(friction: number): void;
 declare class PhysicsCollider :: setRestitution(restitution: number): void;
@@ -1102,8 +1104,11 @@ declare class Ray :: readonly origin: Vector3;
 declare class RaycastHit
 declare class RaycastHit :: readonly collider: PhysicsCollider;
 declare class RaycastHit :: readonly distance: number;
+declare class RaycastHit :: readonly gameObject: GameObject | null;
 declare class RaycastHit :: readonly normal: Vector3;
 declare class RaycastHit :: readonly point: Vector3;
+declare class RaycastHit :: readonly rigidbody: Rigidbody | null;
+declare class RaycastHit :: readonly transform: Transform | null;
 declare class RaycastHit2D
 declare class RaycastHit2D :: readonly colliderObject: GameObject;
 declare class RaycastHit2D :: readonly distance: number;
@@ -2344,8 +2349,8 @@ declare namespace Physics :: function addMesh(points: readonly Vector3[], indice
 declare namespace Physics :: function afterNextStep(f: () => void): void;
 declare namespace Physics :: function createBody(kind: string): PhysicsBody;
 declare namespace Physics :: function createJoint(kind: string, a: PhysicsBody, b: PhysicsBody, anchorA: Vector3, anchorB: Vector3, params: readonly number[]): PhysicsJoint;
-declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, maxDistance?: number): RaycastHit;
-declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, options?: { maxDistance?: number }): RaycastHit;
+declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, maxDistance?: number, layerMask?: number): RaycastHit | null;
+declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, options?: { maxDistance?: number; layerMask?: number }): RaycastHit | null;
 declare namespace Physics :: function step(): void;
 declare namespace Physics :: let gravity: Vector3;
 declare namespace Physics2D

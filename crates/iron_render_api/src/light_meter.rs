@@ -86,7 +86,7 @@ pub(crate) fn illuminance(point: V3, normal: Option<V3>, shadows: bool) -> f64 {
                 y: point.y + (dir.y / len) * 0.02,
                 z: point.z + (dir.z / len) * 0.02,
             };
-            if iron_physics_api::physics_api::raycast(from, dir, distance).0 != 0 {
+            if iron_physics_api::physics_api::raycast(from, dir, distance, u32::MAX).0 != 0 {
                 lit = 0.0;
             }
         }
