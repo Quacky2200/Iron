@@ -1,4 +1,4 @@
-# iron_ts: `Intl.DateTimeFormat` and the Date strings (design note, for review)
+# platypus_ts: `Intl.DateTimeFormat` and the Date strings (design note, for review)
 
 Step I3 of the Intl work. Not built; this note exists because the choice below changes what the
 compiled code prints and how much data ships. Steps I1 (collation, normalize, case) and I2
@@ -88,7 +88,7 @@ can be enabled. In short:
    which the tests already cover) with `icu4x-datagen` into a baked data crate. **Today the build
    links ICU4X's compiled data for every locale** (nothing is trimmed yet); the per-game locale list
    only decides which tags are accepted.
-2. **`icu-full` (cargo feature of `iron_ts_rt`, off by default).** The same `ts_rt_*` functions
+2. **`icu-full` (cargo feature of `platypus_ts_rt`, off by default).** The same `ts_rt_*` functions
    backed by ICU4C through `rust_icu` (`udat`, and the pattern generator `udatpg_getBestPattern`
    through `rust_icu_sys`, since no safe crate wraps it): exact `availableFormats`, every locale,
    `formatToParts`, `formatRange`, calendars. The compiler and the generated bindings do not change;

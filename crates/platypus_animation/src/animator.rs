@@ -9,8 +9,8 @@ use crate::culling::CullingMode;
 use crate::curve::{WrapMode, wrap};
 use crate::player::{FiredEvent, fire_events};
 use crate::pose::{Pose, PropertySink};
-use iron_math::jsnum;
-use iron_scene::{ObjectId, Scene};
+use platypus_math::jsnum;
+use platypus_scene::{ObjectId, Scene};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Playing {

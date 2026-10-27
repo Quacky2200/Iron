@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Iron IR: a small typed, structured IR between the TypeScript AST and Cranelift.
+//! Platypus IR: a small typed, structured IR between the TypeScript AST and Cranelift.
 //!
 //! Structured on purpose (blocks, loops, labelled break/continue instead of a CFG): lowering
 //! from TypeScript stays simple, and `cranelift-frontend` builds the CFG in one pass. Every
 //! expression carries its type, so codegen never guesses a machine type.
 //!
-//! Value representation (all object fields live in 8-byte slots, see `docs/research/iron-ts-spike.md`):
+//! Value representation (all object fields live in 8-byte slots, see `docs/research/platypus-ts-spike.md`):
 //! - `Num` f64, `Bool` i8, `Lit` (string-literal union member) i32, everything else a 64-bit pointer.
 //! - `Nullable(ptr)` is the pointer with 0 as null; `Nullable(Num)` is an f64 with one reserved NaN
 //!   payload as null (`NULL_NUM_BITS`), so arithmetic on a narrowed value needs no unboxing.
@@ -242,7 +242,7 @@ pub enum CmpOp {
     Ge,
 }
 
-/// Calls into `iron_ts_rt` that are not inlined.
+/// Calls into `platypus_ts_rt` that are not inlined.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RtFn {
     /// A string function of the runtime by symbol (`ts_rt_str_slice_gc`): arguments and result
@@ -398,7 +398,7 @@ pub struct VTable {
     pub entries: Vec<(StructId, FuncId)>,
 }
 
-/// A type at the engine boundary (the C ABI of an `iron_api` function).
+/// A type at the engine boundary (the C ABI of a `platypus_api` function).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExtTy {
     Void,
@@ -427,11 +427,11 @@ pub enum ExtTy {
     /// An array of a value class (`Vector3[]`): the engine reads each element's fields.
     ValueArr(String),
     /// An enum (`TangentMode`): a string to scripts, the index of the name (`i32`, -1 for none) on
-    /// the wire. The lowering converts (`iron_<Enum>_parse` / `_name`, or at compile time for a
+    /// the wire. The lowering converts (`platypus_<Enum>_parse` / `_name`, or at compile time for a
     /// constant).
     Enum(String),
     /// A result record (`SplineHit`): a plain object of the manifest's fields. The call leaves its
-    /// numbers in `iron_api`'s buffer and the lowering reads them with `iron_api_result`.
+    /// numbers in `platypus_api`'s buffer and the lowering reads them with `platypus_api_result`.
     Record(String),
     /// A result `Vec` of a value class: the call returns the count and leaves the numbers in the
     /// buffer.
@@ -439,7 +439,7 @@ pub enum ExtTy {
     /// A result `Vec` of records.
     RecordList(String),
     /// A result `Vec<String>`: the call returns the count and keeps the strings; the lowering
-    /// reads them with `iron_api_result_str`.
+    /// reads them with `platypus_api_result_str`.
     StrList,
     /// A result `Vec` of an enum: the count, and the indexes in the buffer.
     EnumList(String),
@@ -447,10 +447,10 @@ pub enum ExtTy {
     RecordsJson(String),
     /// A result `Vec<f64>`: the count, and the numbers in the buffer.
     F64List,
-    /// A result `Vec` of handles: the count, and the ids read with `iron_api_result_id`.
+    /// A result `Vec` of handles: the count, and the ids read with `platypus_api_result_id`.
     HandleList(String),
     /// A value that may be `null`: `Option<f64>` (NaN is none), `Option<String>` (a result; the
-    /// call leaves a flag read with `iron_api_result_none`) or `Option<V>` of a value class (NaN
+    /// call leaves a flag read with `platypus_api_result_none`) or `Option<V>` of a value class (NaN
     /// in every field is none).
     Opt(Box<ExtTy>),
 }
@@ -568,7 +568,7 @@ pub struct Module {
     pub value_structs: Vec<StructId>,
 }
 
-// ---- A readable dump (for `iron_ts --dump-ir` and the doc) ----
+// ---- A readable dump (for `platypus_ts --dump-ir` and the doc) ----
 
 impl fmt::Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

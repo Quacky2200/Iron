@@ -158,7 +158,7 @@ pub const COMPONENTS: &[Component] = &[
         ) {
             // Nothing makes it fail.
             drop(reject);
-            iron_physics_api::physics_api::after_next_step(Callback::from_fn(move |()| {
+            platypus_physics_api::physics_api::after_next_step(Callback::from_fn(move |()| {
                 resolve.call((crate::light_meter::illuminance(point, normal, true),));
             }));
         }
@@ -687,7 +687,7 @@ pub const COMPONENTS: &[Component] = &[
                 rs: r#"font"#,
                 ty: r#"string"#,
                 default: Dv::Str(r#""#),
-                doc: r#"A family loaded with `loadFont` (empty: Iron's default, Inter)."#,
+                doc: r#"A family loaded with `loadFont` (empty: Platypus's default, Inter)."#,
             },
             Field {
                 ts: r#"fontWeight"#,
@@ -1104,10 +1104,10 @@ pub struct LodLevel {
 /// Runs every `CameraFollow`: follows its target from an offset, easing into place, and looks at
 /// it. The host calls it once a frame after the other late updates (`onLateUpdate`).
 pub fn late_update_camera_follows(dt: f64) {
-    use iron_math::mathf_api::smooth_damp;
-    use iron_scene::api::scene_api as scene;
+    use platypus_math::mathf_api::smooth_damp;
+    use platypus_scene::api::scene_api as scene;
     for (r, d) in camera_follows() {
-        let Some(target) = d.target.filter(|t| iron_scene::api::with_scene(|s| s.contains(*t)).unwrap_or(false)) else {
+        let Some(target) = d.target.filter(|t| platypus_scene::api::with_scene(|s| s.contains(*t)).unwrap_or(false)) else {
             continue;
         };
         let offset = if d.offset_in_target_space {
@@ -1133,7 +1133,7 @@ pub fn late_update_camera_follows(dt: f64) {
             with_camera_follow(r, |d| d.velocity = velocity);
         }
         if d.look_at_target {
-            iron_scene::api::TransformRef(d.object).look_at(target_pos);
+            platypus_scene::api::TransformRef(d.object).look_at(target_pos);
         }
     }
 }
@@ -1226,8 +1226,8 @@ pub fn late_update_camera_follows(dt: f64) {
             r#"
 /// Runs every `CameraOrbit` (once a frame after the other late updates).
 pub fn late_update_camera_orbits(dt: f64) {
-    use iron_math::{Q, mathf_api::repeat};
-    use iron_scene::api::scene_api as scene;
+    use platypus_math::{Q, mathf_api::repeat};
+    use platypus_scene::api::scene_api as scene;
     for (r, d) in camera_orbits() {
         let yaw = repeat(d.yaw + d.auto_rotate * dt, 360.0);
         let pitch = d.pitch.clamp(d.min_pitch.min(d.max_pitch), d.max_pitch.max(d.min_pitch));
@@ -1236,13 +1236,13 @@ pub fn late_update_camera_orbits(dt: f64) {
             d.pitch = pitch;
         });
         let center = match d.target {
-            Some(t) if iron_scene::api::with_scene(|s| s.contains(t)).unwrap_or(false) => scene::position(t),
+            Some(t) if platypus_scene::api::with_scene(|s| s.contains(t)).unwrap_or(false) => scene::position(t),
             _ => d.center,
         };
         let rotation = Q::euler(-pitch, yaw, 0.0);
         let back = V3 { x: 0.0, y: 0.0, z: 1.0 };
         scene::set_position(d.object, center.add(rotation.rotate(back).scale(d.distance)));
-        iron_scene::api::TransformRef(d.object).look_at(center);
+        platypus_scene::api::TransformRef(d.object).look_at(center);
     }
 }
 "#,

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Where the engine's log goes. `iron` is a windowed (GUI) program, so there's no
+//! Where the engine's log goes. `platypus` is a windowed (GUI) program, so there's no
 //! console of its own: the log is written to `Player.log` in the game's settings folder
 //! (next to `prefs.json`; the last run's is kept as `Player-prev.log`, like Unity's),
 //! with the same ANSI colours a terminal shows (`less -R`, or `cat` in a terminal, shows
 //! them). Started from a terminal, it also writes there: on Windows it attaches to the
 //! parent's console, and piped output (scripts, tests) gets it as before.
 //!
-//! `IRON_LOG_FILE` names another file; `RUST_LOG` filters as usual.
+//! `PLATYPUS_LOG_FILE` names another file; `RUST_LOG` filters as usual.
 //!
 //! The editor's console reads the log too: with [`capture`] on, every record (engine
 //! and scripts' `console.*`, which log with target `script`) also goes into a ring
@@ -59,9 +59,9 @@ fn has_stderr() -> bool {
     }
 }
 
-/// The log file for a settings folder: `IRON_LOG_FILE`, else `<dir>/Player.log`.
+/// The log file for a settings folder: `PLATYPUS_LOG_FILE`, else `<dir>/Player.log`.
 pub fn log_path(settings_dir: Option<&Path>) -> Option<PathBuf> {
-    std::env::var_os("IRON_LOG_FILE")
+    std::env::var_os("PLATYPUS_LOG_FILE")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .or_else(|| settings_dir.map(|d| d.join("Player.log")))
@@ -90,7 +90,7 @@ pub fn init(file: Option<PathBuf>) -> Option<PathBuf> {
     let opened = file.and_then(|p| match open(&p) {
         Ok(f) => Some((p, Arc::new(f))),
         Err(e) => {
-            eprintln!("iron: can't write the log to {}: {e}", p.display());
+            eprintln!("platypus: can't write the log to {}: {e}", p.display());
             None
         }
     });
@@ -269,7 +269,7 @@ mod tests {
     // M5-APP-04
     #[test]
     fn the_log_goes_next_to_prefs_and_keeps_the_last_one() {
-        let dir = std::env::temp_dir().join(format!("iron-log-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-log-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("Player.log");
         std::fs::create_dir_all(&dir).unwrap();
@@ -283,7 +283,7 @@ mod tests {
             "last run"
         );
         let _ = std::fs::remove_dir_all(&dir);
-        if std::env::var_os("IRON_LOG_FILE").is_none() {
+        if std::env::var_os("PLATYPUS_LOG_FILE").is_none() {
             assert_eq!(log_path(Some(&dir)), Some(dir.join("Player.log")));
         }
     }

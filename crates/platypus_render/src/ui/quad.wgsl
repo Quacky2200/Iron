@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Iron UI quads: rounded boxes with borders and fills (solid or gradient),
+// Platypus UI quads: rounded boxes with borders and fills (solid or gradient),
 // and analytic outer / inset box shadows. One instance per primitive.
 //
 // Geometry is in logical pixels; `globals.scale` converts to physical pixels.

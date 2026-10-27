@@ -3,21 +3,23 @@
 //! Contact hooks on compiled components (`bench/contacts.ts`): the physics step queues contacts
 //! and `NativeHost::dispatch_physics` calls `onCollisionEnter` and friends by name. IDs are in
 //! TESTS.md (M9-TS-1000..).
-use iron_api::Handle;
-use iron_scene::Scene;
-use iron_scene::api::scene_api as api;
-use iron_ts_rt::{ContactEvent, NativeHost, Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::contacts_t::*;
+use platypus_api::Handle;
+use platypus_scene::Scene;
+use platypus_scene::api::scene_api as api;
+use platypus_ts_rt::{
+    ContactEvent, NativeHost, Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress,
+};
+use platypus_ts_tests::contacts_t::*;
 
 fn all(_: u64) -> bool {
     true
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let run = || {
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
         unsafe { ts_cnt_init() };
         f();
     };
@@ -35,7 +37,7 @@ fn log() -> String {
     String::from_utf16_lossy(&unsafe { Str::from_raw(p as *const Str) }.to_utf16())
 }
 
-fn named(name: &str) -> iron_scene::ObjectId {
+fn named(name: &str) -> platypus_scene::ObjectId {
     let go = api::create();
     go.set_name(name);
     go
@@ -49,7 +51,7 @@ fn named(name: &str) -> iron_scene::ObjectId {
 fn a_collision_tells_both_objects() {
     in_every_gc_mode(|| unsafe {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         let mut host = NativeHost::new(classes());
         ts_cnt_clearLog();
         let floor = named("floor");
@@ -80,7 +82,7 @@ fn a_collision_tells_both_objects() {
 fn stay_runs_while_touching_and_exit_when_it_ends() {
     in_every_gc_mode(|| unsafe {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         let mut host = NativeHost::new(classes());
         ts_cnt_clearLog();
         let floor = named("floor");
@@ -118,7 +120,7 @@ fn stay_runs_while_touching_and_exit_when_it_ends() {
 fn a_sensor_calls_the_trigger_hooks() {
     in_every_gc_mode(|| unsafe {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         let mut host = NativeHost::new(classes());
         ts_cnt_clearLog();
         let floor = named("floor");
@@ -151,7 +153,7 @@ fn a_sensor_calls_the_trigger_hooks() {
 fn events_skip_inactive_objects_and_faults_are_reported() {
     in_every_gc_mode(|| unsafe {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         let mut host = NativeHost::new(classes());
         ts_cnt_clearLog();
         let a = named("a");
@@ -221,7 +223,7 @@ fn until(host: &mut NativeHost, head: &str) -> String {
 fn a_collision_hook_sees_unity_collision_members() {
     in_every_gc_mode(|| unsafe {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         let mut host = NativeHost::new(classes());
         ts_cnt_clearLog();
         let floor = named("floor");
@@ -268,7 +270,7 @@ fn a_collision_hook_sees_unity_collision_members() {
 fn a_2d_collision_hook_sees_unity_collision2d_members() {
     in_every_gc_mode(|| unsafe {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         let mut host = NativeHost::new(classes());
         ts_cnt_clearLog();
         let floor = named("floor");
@@ -311,7 +313,7 @@ fn a_2d_collision_hook_sees_unity_collision2d_members() {
 fn concrete_2d_colliders_have_attached_rigidbody() {
     in_every_gc_mode(|| unsafe {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         let floor = named("floor");
         let ball = named("ball");
         let zone = named("zone");

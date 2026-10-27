@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A game launcher mock-up, to see whether a store / launcher front end works in Iron's UI: the
+// A game launcher mock-up, to see whether a store / launcher front end works in Platypus's UI: the
 // examples' screenshots (gen-games.ts) as a cover-flow carousel or a grid, browsed with the
 // mouse (arrows, clicks, wheel), the keys (arrows, WASD) or a gamepad (d-pad, bumpers, left
 // stick). Button prompts follow the last device used (prompts.tsx). A sidebar menu (Menu /
@@ -9,7 +9,7 @@
 // tabs, LT / RT, Tab). Opening a game shows its details and a Play button;
 // playing shows a loading spinner, then says launching isn't implemented yet.
 //
-// `iron examples/launcher -- --select <example> --show details|loading|alert|menu|context
+// `platypus examples/launcher -- --select <example> --show details|loading|alert|menu|context
 // --view grid --category favourites --favourites a,b --pad xbox|playstation|nintendo` starts
 // on that game, screen, view, category and pad icons, and `--step-at <ms> [--steps n]` moves on
 // a game (n games, 60 ms apart) at that time, for screenshot runs of the transitions.
@@ -78,8 +78,8 @@ const START_VIEW: View = (arg("--view") ?? PlayerPrefs.getString("view", "carous
 /** `--show alert` starts on the alert Play leads to. */
 const cantStart = (game: Game): Alert => ({
   title: `Can't start ${game.title}`,
-  body: "Launching games from here isn't implemented yet. Run it with the iron binary instead.",
-  code: `iron examples/${game.name}`,
+  body: "Launching games from here isn't implemented yet. Run it with the platypus binary instead.",
+  code: `platypus examples/${game.name}`,
   then: "details",
 });
 
@@ -231,7 +231,7 @@ function Carousel({ games, index, favourites, select, open, context }: ViewProps
 }
 
 function Grid({ games, index, columns, favourites, select, open, context }: ViewProps & { columns: number }) {
-  const selected = useRef<IronElement>(null);
+  const selected = useRef<PlatypusElement>(null);
   useEffect(() => {
     selected.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [index, columns]);
@@ -590,7 +590,7 @@ function App() {
         <box className="icon-button" onClick={() => show("menu")}>
           <Burger />
         </box>
-        <Text className="logo">IRON</Text>
+        <Text className="logo">PLATYPUS</Text>
         <Text className="logo-sub">examples</Text>
         <box className="tabs">
           {pad ? <Trigger side={0} style={pad} /> : null}
@@ -636,7 +636,7 @@ function App() {
         <box key={`carousel-${category}`} className="view carousel-view">
           <box
             className="stage"
-            onWheel={(e: IronWheelEvent) => {
+            onWheel={(e: PlatypusWheelEvent) => {
               if (mode === "browse") move(Math.sign(e.deltaY || e.deltaX));
             }}
           >
@@ -709,7 +709,7 @@ function App() {
         <box className="side-scrim" onClick={() => setMode("browse")}>
           <box className="sidebar" onClick={(e) => e.stopPropagation()}>
             <box className="sidebar-head">
-              <Text className="logo">IRON</Text>
+              <Text className="logo">PLATYPUS</Text>
               <Text className="logo-sub">launcher</Text>
             </box>
             <Menu items={sidebarItems} focus={focus} setFocus={setFocus} />

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // GDI-style shape outlines for `LineRenderer2D.points`: rectangles, ellipses, arcs, pies,
-// polygons, Béziers and cardinal splines. The maths is native (`iron_math::outlines`, the same
+// polygons, Béziers and cardinal splines. The maths is native (`platypus_math::outlines`, the same
 // functions compiled games call); the app installs it as the global `Shapes`. y is up, angles are
 // degrees counter-clockwise from +x; closed shapes don't repeat their first point (set the
 // renderer's `loop`; a `fillColor` always closes the shape).

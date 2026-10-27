@@ -2,7 +2,7 @@
 
 //! Windows resources of the packaged executable: the icon and the VERSIONINFO block, written
 //! into a copy of the host's PE file with the `editpe` crate (no `rc.exe`, no external tool).
-//! Must run before the payload is appended and before any signing (`docs/research/iron-code-signing.md`).
+//! Must run before the payload is appended and before any signing (`docs/research/platypus-code-signing.md`).
 
 use crate::package::Metadata;
 use editpe::constants::RT_GROUP_ICON;
@@ -156,11 +156,11 @@ pub fn read_resources(pe: &[u8]) -> Result<Resources, String> {
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
-    use iron_core::project::Project;
+    use platypus_core::project::Project;
     use serde_json::json;
 
     fn meta() -> Metadata {
-        let pkg = json!({"name": "demo", "version": "1.2.3", "iron": {
+        let pkg = json!({"name": "demo", "version": "1.2.3", "platypus": {
             "title": "Demo Game", "company": "Acme Ltd", "copyright": "(c) 2026 Acme",
             "description": "A demo", "exe": "demo"}});
         Metadata::from_project(&Project::from_package_json(&pkg, "demo"))
@@ -199,8 +199,8 @@ mod tests {
         assert_eq!(r.icon_sizes, [(16, 16), (32, 32), (48, 48), (256, 256)]);
         // A payload appended after the edit is found again.
         let mut with = out;
-        iron_core::payload::write_payload(&mut with, &[("a".into(), vec![1])]).unwrap();
-        let found = iron_core::payload::Archive::new(std::io::Cursor::new(with)).unwrap();
+        platypus_core::payload::write_payload(&mut with, &[("a".into(), vec![1])]).unwrap();
+        let found = platypus_core::payload::Archive::new(std::io::Cursor::new(with)).unwrap();
         assert!(found.is_some());
     }
 }

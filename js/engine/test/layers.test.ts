@@ -12,12 +12,12 @@ beforeEach(() => {
   _resetSceneForTests();
   _resetCamerasForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
-  delete globalThis.__iron_info;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
+  delete globalThis.__platypus_info;
 });
 
 // M5-LAY-03
@@ -25,7 +25,7 @@ describe("layers", () => {
   test("LayerMask names Unity's built-ins and the manifest's layers", () => {
     expect(LayerMask.nameToLayer("UI")).toBe(5);
     expect(LayerMask.nameToLayer("Player")).toBe(-1);
-    globalThis.__iron_info = {
+    globalThis.__platypus_info = {
       app: { name: "g", productName: "g", version: "1", companyName: "", identifier: "", engineVersion: "0", layers: { 8: "Player", 40: "Bad", 9: 3 } },
       system: {} as never,
     };

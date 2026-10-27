@@ -5,7 +5,7 @@
 //! `bundle` starts at an entry file, follows relative imports (`./x`, `../y/z.ts`) and re-exports,
 //! and writes the files, dependencies first, into one text:
 //!
-//! - imports of `@iron/*` and `react` are erased (their names come from the engine manifests and the
+//! - imports of `@platypus/*` and `react` are erased (their names come from the engine manifests and the
 //!   ambient prelude, which is also what a program with no such import at all uses: the names are
 //!   globals, see `types_dts`); an aliased name (`import { Color as C }`) is renamed to the real one;
 //! - a bare import (`"foo"`, `"foo/sub"`) is a file of the game's `modules/` folder next to the entry
@@ -37,7 +37,7 @@ pub struct Bundle {
     pub files: Vec<String>,
     /// Stylesheets named by `import "./x.css"`, in import order, without duplicates.
     pub css: Vec<String>,
-    /// `@iron/*` / `react` names the program imports (module, name), sorted and distinct.
+    /// `@platypus/*` / `react` names the program imports (module, name), sorted and distinct.
     pub library_imports: Vec<(String, String)>,
     /// For each file: the 0-based line of `source` where its text starts, and its path.
     pub starts: Vec<(usize, String)>,
@@ -88,7 +88,7 @@ pub fn bundle_reserving(
     bundle_with_reserved(&entry, &|p| std::fs::read_to_string(p).ok(), reserved)
 }
 
-/// The top-level names a declarations file (`types/iron.d.ts`) declares: classes, namespaces,
+/// The top-level names a declarations file (`types/platypus.d.ts`) declares: classes, namespaces,
 /// functions, constants, enums, interfaces and type aliases.
 pub fn global_names(dts: &str) -> HashSet<String> {
     let mut out = HashSet::new();
@@ -199,8 +199,12 @@ fn candidates_of(base: &str) -> Vec<String> {
     candidates
 }
 
+/// The engine's packages (`@iron/*` is their name from before the rename to Platypus) and React.
 fn is_library(spec: &str) -> bool {
-    spec.starts_with("@iron/") || spec == "react" || spec.starts_with("react/")
+    spec.starts_with("@platypus/")
+        || spec.starts_with("@iron/")
+        || spec == "react"
+        || spec.starts_with("react/")
 }
 
 fn is_relative(spec: &str) -> bool {
@@ -532,7 +536,7 @@ impl Graph {
         let mut out = String::new();
         let mut starts: Vec<(usize, String)> = Vec::new();
         // With a top-level `await` somewhere, every file starts with a marker the lowering reads
-        // (`__iron_module(position, "path", own await, [late dependencies])`): a module that
+        // (`__platypus_module(position, "path", own await, [late dependencies])`): a module that
         // awaits, or imports one that does, finishes late, and the modules that import it wait.
         let pos_of: HashMap<usize, usize> = self
             .order
@@ -641,7 +645,7 @@ impl Graph {
                 let p = pos_of[&mi];
                 let deps: Vec<String> = late_deps[p].iter().map(|d| d.to_string()).collect();
                 out.push_str(&format!(
-                    "__iron_module({p}, {:?}, {}, [{}]); ",
+                    "__platypus_module({p}, {:?}, {}, [{}]); ",
                     m.path,
                     u8::from(m.tla),
                     deps.join(", ")
@@ -1136,7 +1140,7 @@ mod tests {
             "main.ts",
             &[(
                 "main.ts",
-                "import { Color as C, type Sound } from \"@iron/engine\";\nimport { useState } from \"react\";\nexport const c = C.white;",
+                "import { Color as C, type Sound } from \"@platypus/engine\";\nimport { useState } from \"react\";\nexport const c = C.white;",
             )],
         )
         .unwrap();
@@ -1144,8 +1148,22 @@ mod tests {
         assert!(b.source.contains("Color.white"), "{}", b.source);
         assert!(
             b.library_imports
-                .contains(&("@iron/engine".into(), "Color".into()))
+                .contains(&("@platypus/engine".into(), "Color".into()))
         );
+    }
+
+    // M9-REN-04
+    #[test]
+    fn imports_of_the_old_iron_package_names_are_erased_too() {
+        let b = run(
+            "main.ts",
+            &[(
+                "main.ts",
+                "import { Color } from \"@iron/engine\";\nexport const c = Color.white;",
+            )],
+        )
+        .unwrap();
+        assert!(!b.source.contains("import"), "{}", b.source);
     }
 
     // M9-TS-2312
@@ -1327,7 +1345,7 @@ export const v = lerp(0, 1, 0.5) + fmt() + new Stack().n;",
                 (
                     "src/main.ts",
                     "import { useState } from \"react\";
-import { Color } from \"@iron/engine\";
+import { Color } from \"@platypus/engine\";
 export const c = Color.white;",
                 ),
                 (

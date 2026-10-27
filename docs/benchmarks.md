@@ -1,17 +1,17 @@
 # Benchmarks
 
-Frame times of every example on the native backend (iron_ts, JIT-compiled `game.irbundle`) against the QuickJS original
+Frame times of every example on the native backend (platypus_ts, JIT-compiled `game.pbundle`) against the QuickJS original
 of the same example on `main` (its own `bun run build`), measured before this branch is merged back. Both run in the
-same release host, without a window (`iron --bench`: an offscreen target, no vsync, no frame cap; each frame waits for
+same release host, without a window (`platypus --bench`: an offscreen target, no vsync, no frame cap; each frame waits for
 the GPU work of the frame before it), at 1280x720 and a fixed step of 1/60 s, with the same scripted input
-(`tools/bench/inputs/<name>.json`). How it works and the flags: `docs/iron-build.md`, "Benchmarks". Raw numbers:
+(`tools/bench/inputs/<name>.json`). How it works and the flags: `docs/platypus-build.md`, "Benchmarks". Raw numbers:
 `docs/benchmarks/results.json`.
 
 Re-run (about 55 minutes for all 45, `crowd` alone about 7; `--only a,b` re-runs some and keeps the rest; `--timeout`
 is per run, 600 s by default):
 
 ```bash
-cd tools && cargo run -q -p iron_build -- bench ../examples --timeout 900
+cd tools && cargo run -q -p platypus_build -- bench ../examples --timeout 900
 ```
 
 The columns: fps over the measured frames, frame ms (mean, median, p95, p99, worst), and the mean frame split into
@@ -69,13 +69,13 @@ No build or run failed and no run logged errors.
   fast scenes. Native fps changes of 5-10%, and the attribution of a change to one optimisation below, are approximate.
 - **Start-up** is 0.42-0.67 s native and 0.43-0.85 s QuickJS for all but two: emoji 1.76 s native (QuickJS 1.11 s;
   cold file reads right after its native build, as in the previous batch, and its compile share is about 250 ms) and
-  md-reader 1.26 s. Breakdown and a compile cache: `docs/research/iron-ts-startup-and-hot-reload.md`.
+  md-reader 1.26 s. Breakdown and a compile cache: `docs/research/platypus-ts-startup-and-hot-reload.md`.
 - emoji is random (each run picks other performers), so its numbers move between runs.
 - css's original needs the Charm font, which is kept out of git; the runner copies it in from the checkout's `Charm/`
   folder.
 - **Like-for-like script time:** a QuickJS game's **script** column holds the JavaScript, the native API calls it makes
-  (math, scene, rendering data: QuickJS games call the same `#[iron_api]` functions) and its animation, spline and camera
-  follow components; native counts those components under **sync**. `opMarshalMs` (copying `__iron_op` arguments out of
+  (math, scene, rendering data: QuickJS games call the same `#[platypus_api]` functions) and its animation, spline and camera
+  follow components; native counts those components under **sync**. `opMarshalMs` (copying `__platypus_op` arguments out of
   JavaScript) and `opsApplyMs` (applying them, under **other**) stay at 0.3 ms or less.
 
 ## Stages
@@ -138,7 +138,7 @@ crowd-cost and skinned-culling commits matter only to skinned meshes.
 | windows | 1367 | - | 1906 | - | 1859 | n/a | - |  |
 | world | 1093 | 4.07x | 1112 | 3.94x | 1253 | 281 | 4.45x |  |
 
-<!-- bench:begin (written by `iron-build bench`) -->
+<!-- bench:begin (written by `platypus-build bench`) -->
 Machine: AMD Ryzen 9 5900X 12-Core Processor (32 GB RAM), NVIDIA GeForce RTX 5080 (Vulkan, DiscreteGpu), Microsoft Windows 11 Pro 10.0.22631.
 
 Commit 01c1daf1 against main (5b8aa521); every run 1280x720 px, a fixed step of 1/60 s per frame (`--fixed-dt`), no window, no vsync or frame cap, release host.
@@ -591,12 +591,12 @@ Input: each quality level clicked in the menu (this stops the demo's own cycling
 
 ## Animator
 
-Hand-written (kept by `iron-build bench`). The native `Animator` made cheap (2026-10-23), one commit per step, and
-Unity's animation culling. Measured with the release host (`cargo build --release -p iron_app`), no window, on the
+Hand-written (kept by `platypus-build bench`). The native `Animator` made cheap (2026-10-23), one commit per step, and
+Unity's animation culling. Measured with the release host (`cargo build --release -p platypus_app`), no window, on the
 machine above (AMD Ryzen 9 5900X, NVIDIA GeForce RTX 5080 on Vulkan, Windows 11 Pro 22631):
 
 ```bash
-target/release/iron_app.exe examples/fog-white-room --bench --bench-input tools/bench/inputs/fog-white-room.json \
+target/release/platypus.exe examples/fog-white-room --bench --bench-input tools/bench/inputs/fog-white-room.json \
   --fixed-dt 0.0166667 --bench-out out.json
 ```
 
@@ -664,9 +664,9 @@ now. Animation is about 28 µs a figure.
 **Crowd costs, fixed (2026-10-23).** Same machine and flags, a shorter input (`warmup` 120, each segment 200 frames after
 its own warm-up: 250 a block in view 4 through the three modes and view 3, then 1000 a block likewise), run before the work
 (at `9778101e`), after the bone matrix changes (`a3dee1e0`) and after the parallel animation
-(threads: the machine's, up to 16; `IRON_ANIM_THREADS=1` for the update in turn). Frame mean / animation update / render, in ms:
+(threads: the machine's, up to 16; `PLATYPUS_ANIM_THREADS=1` for the update in turn). Frame mean / animation update / render, in ms:
 
-| Segment | Before | Bones kept, drawn ones sent once | + animators in parallel | In turn (`IRON_ANIM_THREADS=1`) |
+| Segment | Before | Bones kept, drawn ones sent once | + animators in parallel | In turn (`PLATYPUS_ANIM_THREADS=1`) |
 |---|---|---|---|---|
 | 250, view 4, `alwaysAnimate` | 25.4 / 14.0 / 10.0 | 18.4 / 13.5 / 4.1 | 8.6 / 2.9 / 4.6 | 18.6 / 12.9 / 4.7 |
 | 250, view 4, `cullUpdateTransforms` | 16.3 / 7.6 / 7.2 | 12.8 / 7.4 / 4.2 | 8.2 / 2.2 / 4.7 | 12.1 / 6.7 / 4.3 |
@@ -680,13 +680,13 @@ its own warm-up: 250 a block in view 4 through the three modes and view 3, then 
 In fps, 1000 a block: 9.5 → 25.9 (`alwaysAnimate`, view 4), 12.4 → 28.9 (`cullCompletely`, view 4), 9.3 → 22.5 (view 3).
 Where it went:
 
-- **Bone matrices** (`iron_app/src/bone_cache.rs`): kept between frames and worked out again per skeleton only when a bone
+- **Bone matrices** (`platypus_app/src/bone_cache.rs`): kept between frames and worked out again per skeleton only when a bone
   moved (`Scene::moved_since`); one shared list for every view instead of a copy each. Measured with temporary timers at 1000
   a block: building them went from 15.2 to 3.1 ms with every figure moving (a bone's objects are looked up once, not hashed
   every frame) and 2.7 ms with half culled (one check per bone); the world draw from 17.5 to 7.7 ms.
-- **Uploads** (`iron_render/src/world/bone_pack.rs`): only the runs of drawn skinned meshes (a view or a shadow map) are
+- **Uploads** (`platypus_render/src/world/bone_pack.rs`): only the runs of drawn skinned meshes (a view or a shadow map) are
   converted and sent, once a frame for every pass.
-- **Animation** (`iron_animation/src/parallel.rs`): animators advance and blend on several threads, each working out its
+- **Animation** (`platypus_animation/src/parallel.rs`): animators advance and blend on several threads, each working out its
   bones' new local transforms; writing them stays in turn, in the walk's order (bit for bit as before, `M5-ANI-17`). At 1000 a
   block: 6.7 ms in parallel (16 threads: 6.0) and about 4 ms writing. The walk now only goes where animated objects are
   (it used to visit every bone of every figure), which also helps in turn.

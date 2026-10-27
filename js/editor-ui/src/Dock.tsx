@@ -5,7 +5,7 @@
 // (dock.ts) the parent keeps, so it can be saved and loaded as JSON. Drags use pointer
 // capture; where things are comes from `computeRects`, matching the flex layout below.
 
-import { type IronElement, type IronPointerEvent, Text } from "@iron/react";
+import { type PlatypusElement, type PlatypusPointerEvent, Text } from "@platypus/react";
 import { type ReactNode, useMemo, useRef, useState } from "react";
 
 import {
@@ -100,7 +100,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
       out.push(
         <box
           key={child.id}
-          className="iron-dock-cell"
+          className="platypus-dock-cell"
           style={{ flexGrow: node.sizes[i], flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 0 }}
         >
           {renderNode(child)}
@@ -108,7 +108,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
       );
     });
     return (
-      <box className="iron-dock-split" style={{ flexDirection: row ? "row" : "column", flexGrow: 1, minWidth: 0, minHeight: 0 }}>
+      <box className="platypus-dock-split" style={{ flexDirection: row ? "row" : "column", flexGrow: 1, minWidth: 0, minHeight: 0 }}>
         {out}
       </box>
     );
@@ -119,8 +119,8 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
     const box = { x: r.x, y: r.y + TAB_BAR, width: r.width, height: Math.max(0, r.height - TAB_BAR) };
     const panel = g.active ? panels[g.active] : undefined;
     return (
-      <box className={panel?.seeThrough ? "iron-dock-group see-through" : "iron-dock-group"}>
-        <box className="iron-dock-tabs" style={{ height: TAB_BAR }}>
+      <box className={panel?.seeThrough ? "platypus-dock-group see-through" : "platypus-dock-group"}>
+        <box className="platypus-dock-tabs" style={{ height: TAB_BAR }}>
           {g.tabs.map((tab) => (
             <DockTab
               key={tab}
@@ -147,7 +147,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
             />
           ))}
         </box>
-        <box className="iron-dock-content" style={{ flexGrow: 1, minHeight: 0, overflow: "hidden" }}>
+        <box className="platypus-dock-content" style={{ flexGrow: 1, minHeight: 0, overflow: "hidden" }}>
           {panel ? panel.render(box) : null}
         </box>
       </box>
@@ -164,11 +164,11 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
       <>
         {zone ? (
           <box
-            className="iron-dock-drop"
+            className="platypus-dock-drop"
             style={{ left: zone.x - rect.x, top: zone.y - rect.y, width: zone.width, height: zone.height }}
           />
         ) : null}
-        <box className="iron-dock-ghost" style={{ left: drag.x - rect.x + 12, top: drag.y - rect.y + 8 }}>
+        <box className="platypus-dock-ghost" style={{ left: drag.x - rect.x + 12, top: drag.y - rect.y + 8 }}>
           <Text>{panels[drag.tab]?.title ?? drag.tab}</Text>
         </box>
       </>
@@ -176,7 +176,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
   }
 
   return (
-    <box className="iron-dock" style={{ width: rect.width, height: rect.height, position: "relative" }}>
+    <box className="platypus-dock" style={{ width: rect.width, height: rect.height, position: "relative" }}>
       {renderNode(layout)}
       {preview}
     </box>
@@ -184,21 +184,21 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
 }
 
 function Splitter({ row, onStart, onMove, onEnd }: { row: boolean; onStart: (at: number) => void; onMove: (at: number) => void; onEnd: () => void }) {
-  const el = useRef<IronElement>(null);
+  const el = useRef<PlatypusElement>(null);
   const active = useRef(false);
   return (
     <box
       ref={el}
-      className={row ? "iron-splitter vertical" : "iron-splitter horizontal"}
+      className={row ? "platypus-splitter vertical" : "platypus-splitter horizontal"}
       style={row ? { width: SPLITTER, cursor: "col-resize" } : { height: SPLITTER, cursor: "row-resize" }}
-      onPointerDown={(e: IronPointerEvent) => {
+      onPointerDown={(e: PlatypusPointerEvent) => {
         if (e.button !== 0) return;
         e.preventDefault();
         active.current = true;
         el.current?.setPointerCapture();
         onStart(row ? e.clientX : e.clientY);
       }}
-      onPointerMove={(e: IronPointerEvent) => {
+      onPointerMove={(e: PlatypusPointerEvent) => {
         if (active.current) onMove(row ? e.clientX : e.clientY);
       }}
       onPointerUp={() => {
@@ -230,21 +230,21 @@ function DockTab({
   onMove: (x: number, y: number) => void;
   onRelease: () => void;
 }) {
-  const el = useRef<IronElement>(null);
+  const el = useRef<PlatypusElement>(null);
   const pressed = useRef(false);
-  const classes = ["iron-dock-tab", active && "active", dragging && "dragging"].filter(Boolean).join(" ");
+  const classes = ["platypus-dock-tab", active && "active", dragging && "dragging"].filter(Boolean).join(" ");
   return (
     <box
       ref={el}
       className={classes}
-      onPointerDown={(e: IronPointerEvent) => {
+      onPointerDown={(e: PlatypusPointerEvent) => {
         if (e.button !== 0) return;
         pressed.current = true;
         // Moves keep coming to the tab wherever the pointer goes.
         el.current?.setPointerCapture();
         onPress(e.clientX, e.clientY);
       }}
-      onPointerMove={(e: IronPointerEvent) => {
+      onPointerMove={(e: PlatypusPointerEvent) => {
         if (pressed.current) onMove(e.clientX, e.clientY);
       }}
       onPointerUp={() => {

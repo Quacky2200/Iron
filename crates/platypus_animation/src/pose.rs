@@ -11,8 +11,8 @@ use crate::bind::{CHANNELS, EULER, NO_CHANNEL, POS, ROT, SCALE};
 use crate::clip::{ClipId, World};
 use crate::curve::Spot;
 use glam::{Quat, Vec3};
-use iron_math::{Q, V3};
-use iron_scene::{ObjectId, Scene, Transform};
+use platypus_math::{Q, V3};
+use platypus_scene::{ObjectId, Scene, Transform};
 use std::sync::Arc;
 
 /// What the animation writes that is not a transform or an object's `active` flag: a number on a

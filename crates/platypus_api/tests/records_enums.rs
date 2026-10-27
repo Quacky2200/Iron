@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enums, records, lists, rest parameters, option objects after a parameter, doc comments and `like`
-//! in `#[iron_api]` (docs/iron-api.md, "Enums, records and lists"). IDs are in TESTS.md (M9-API-16xx).
-use iron_api::{Handle, Ty, ValueType, iron_api};
+//! in `#[platypus_api]` (docs/platypus-api.md, "Enums, records and lists"). IDs are in TESTS.md (M9-API-16xx).
+use platypus_api::{Handle, Ty, ValueType, platypus_api};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct P2 {
@@ -49,7 +49,7 @@ impl Handle for Thing {
 }
 
 /// Things that exist.
-#[iron_api(
+#[platypus_api(
     namespace = "Rec", quickjs, like,
     handles(Thing = Thing),
     values(Point = P2 [x: f64, y: f64]),
@@ -186,8 +186,8 @@ fn the_manifest_lists_enums_records_lists_rest_and_options_after() {
     let json: serde_json::Value = serde_json::from_str(&m.to_json()).unwrap();
     assert_eq!(json["like"], true);
     assert_eq!(json["enums"][0]["values"][1], "pingPong");
-    assert_eq!(json["enums"][0]["nameSymbol"], "iron_FillMode_name");
-    assert_eq!(json["enums"][0]["parseSymbol"], "iron_FillMode_parse");
+    assert_eq!(json["enums"][0]["nameSymbol"], "platypus_FillMode_name");
+    assert_eq!(json["enums"][0]["parseSymbol"], "platypus_FillMode_parse");
     assert_eq!(json["records"][0]["fields"][3]["type"], "enum:FillMode");
     assert_eq!(json["records"][0]["fields"][0]["type"], "value:Point");
     let fns = json["functions"].as_array().unwrap();
@@ -216,7 +216,7 @@ fn enum_helpers_convert_names_and_indexes_both_ways() {
 // M9-API-1612
 #[test]
 fn list_and_record_results_come_back_flat_through_the_result_buffer() {
-    let r = |i: u32| iron_api::iron_api_result(i);
+    let r = |i: u32| platypus_api::platypus_api_result(i);
     // Two points in, four spots out: at.x, at.y, weight, hard, fill (an index), per spot.
     let points = [P2 { x: 1.0, y: 2.0 }, P2 { x: 3.0, y: 4.0 }];
     #[repr(C)]
@@ -235,7 +235,7 @@ fn list_and_record_results_come_back_flat_through_the_result_buffer() {
         _cap: 2,
         data: ptrs.as_ptr() as *mut u8,
     };
-    let n = unsafe { rec_api::iron_Rec_spots(&arr as *const Arr as *const u8) };
+    let n = unsafe { rec_api::platypus_Rec_spots(&arr as *const Arr as *const u8) };
     assert_eq!(n, 4);
     let first: Vec<f64> = (0..5).map(r).collect();
     assert_eq!(first, [1.0, 2.0, 1.0, 1.0, 1.0]);
@@ -244,32 +244,32 @@ fn list_and_record_results_come_back_flat_through_the_result_buffer() {
     assert_eq!((r(15), r(16)), (3.0, 4.0), "the last element's at");
     assert_eq!(r(1000), 0.0, "past the end is 0");
     // One record, no count.
-    rec_api::iron_Rec_one(2.0);
+    rec_api::platypus_Rec_one(2.0);
     let one: Vec<f64> = (0..5).map(r).collect();
     assert_eq!(one, [2.0, -2.0, 2.0, 1.0, 0.0]);
     // Enums travel as indexes and unknown ones are the first value.
-    assert_eq!(rec_api::iron_Rec_next(1), 2);
-    assert_eq!(rec_api::iron_Rec_next(-1), 1);
-    assert_eq!(rec_api::iron_Rec_next(99), 1);
+    assert_eq!(rec_api::platypus_Rec_next(1), 2);
+    assert_eq!(rec_api::platypus_Rec_next(-1), 1);
+    assert_eq!(rec_api::platypus_Rec_next(99), 1);
     // Their names, for compiled code.
     let mut len = 0i64;
-    let p = unsafe { rec_api::iron_FillMode_name(1, &mut len) };
+    let p = unsafe { rec_api::platypus_FillMode_name(1, &mut len) };
     assert_eq!(
         unsafe { std::slice::from_raw_parts(p, len as usize) },
         b"pingPong"
     );
-    let p = unsafe { rec_api::iron_FillMode_name(7, &mut len) };
+    let p = unsafe { rec_api::platypus_FillMode_name(7, &mut len) };
     assert_eq!((p.is_null(), len), (false, 0));
     rec_api::MANIFEST.to_json();
-    assert!(iron_api::symbol("iron_FillMode_name").is_some());
-    assert!(iron_api::symbol("iron_FillMode_parse").is_some());
-    assert!(iron_api::symbol("iron_api_result").is_some());
+    assert!(platypus_api::symbol("platypus_FillMode_name").is_some());
+    assert!(platypus_api::symbol("platypus_FillMode_parse").is_some());
+    assert!(platypus_api::symbol("platypus_api_result").is_some());
 }
 
 // M9-API-1613
 #[test]
 fn quickjs_gets_arrays_objects_strings_rest_arguments_and_options_after_a_parameter() {
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
@@ -338,7 +338,7 @@ fn creating_with_an_options_object_reads_the_parameters_after_the_named_one() {
             _cap: p.len() as i64,
             data: ptrs.as_ptr() as *mut u8,
         };
-        rec_api::iron_Thing_create(&arr as *const Arr as *const u8, w, f)
+        rec_api::platypus_Thing_create(&arr as *const Arr as *const u8, w, f)
     };
     let two = [P2 { x: 0.0, y: 0.0 }, P2 { x: 1.0, y: 1.0 }];
     // 2 points, weight 3, `dotted` (index 2): 200 + 30 + 2.
@@ -349,14 +349,14 @@ fn creating_with_an_options_object_reads_the_parameters_after_the_named_one() {
 // M9-API-1620
 #[test]
 fn a_vec_of_strings_comes_back_through_the_string_list_and_as_a_quickjs_array() {
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     // The ABI: the count (a null prefix is an empty one), then the strings one by one.
-    let n = unsafe { rec_api::iron_Rec_words(std::ptr::null()) };
+    let n = unsafe { rec_api::platypus_Rec_words(std::ptr::null()) };
     assert_eq!(n, 3);
     let mut len = 0i64;
     let mut got = Vec::new();
     for i in 0..4 {
-        let p = unsafe { iron_api::iron_api_result_str(i, &mut len) };
+        let p = unsafe { platypus_api::platypus_api_result_str(i, &mut len) };
         got.push(
             String::from_utf8(unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec())
                 .unwrap(),
@@ -370,7 +370,7 @@ fn a_vec_of_strings_comes_back_through_the_string_list_and_as_a_quickjs_array() 
     // The manifest says `list:string`.
     let json = rec_api::MANIFEST.to_json();
     assert!(json.contains(r#""returns":"list:string""#), "{json}");
-    assert!(iron_api::symbol("iron_api_result_str").is_some());
+    assert!(platypus_api::symbol("platypus_api_result_str").is_some());
     // QuickJS: an array of JS strings.
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
@@ -398,7 +398,7 @@ fn script_string(text: &str) -> Vec<u8> {
 // M9-API-1621
 #[test]
 fn string_arrays_come_in_as_script_arrays_of_strings_and_as_quickjs_arrays() {
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     // The ABI: a script array is a header, a length, a capacity and a pointer to string pointers.
     let strings: Vec<Vec<u8>> = ["héllo", "", "wörld"]
         .iter()
@@ -412,13 +412,19 @@ fn string_arrays_come_in_as_script_arrays_of_strings_and_as_quickjs_arrays() {
     array.extend_from_slice(&(slots.as_ptr() as usize as u64).to_le_bytes());
     let sep = script_string(", ");
     let mut len = 0i64;
-    let p = unsafe { rec_api::iron_Rec_joinWords(array.as_ptr(), sep.as_ptr(), &mut len) };
+    let p = unsafe { rec_api::platypus_Rec_joinWords(array.as_ptr(), sep.as_ptr(), &mut len) };
     let out = unsafe { std::slice::from_raw_parts(p, len as usize) };
     assert_eq!(std::str::from_utf8(out).unwrap(), "héllo, , wörld");
-    assert_eq!(unsafe { rec_api::iron_Rec_countWords(array.as_ptr()) }, 2);
+    assert_eq!(
+        unsafe { rec_api::platypus_Rec_countWords(array.as_ptr()) },
+        2
+    );
     // A null array is an empty list.
-    assert_eq!(unsafe { rec_api::iron_Rec_countWords(std::ptr::null()) }, 0);
-    let p = unsafe { rec_api::iron_Rec_joinWords(std::ptr::null(), sep.as_ptr(), &mut len) };
+    assert_eq!(
+        unsafe { rec_api::platypus_Rec_countWords(std::ptr::null()) },
+        0
+    );
+    let p = unsafe { rec_api::platypus_Rec_joinWords(std::ptr::null(), sep.as_ptr(), &mut len) };
     assert_eq!(unsafe { std::slice::from_raw_parts(p, len as usize) }, b"");
     // The manifest says `strings`; the declarations say `string[]`.
     let json = rec_api::MANIFEST.to_json();

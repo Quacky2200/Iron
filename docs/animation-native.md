@@ -1,19 +1,19 @@
-# Native animation (`iron_animation`)
+# Native animation (`platypus_animation`)
 
-Animation without a script engine. Design and review: [research/iron-native-animation.md](research/iron-native-animation.md).
+Animation without a script engine. Design and review: [research/platypus-native-animation.md](research/platypus-native-animation.md).
 Behaviour and numbers follow `js/engine/src/animation.ts`, which stays as the oracle for the tests.
 
 ## Crates
 
-- `crates/iron_animation`: curves (`curve.rs`), clips and the arenas (`clip.rs`), bindings resolved per animated root
+- `crates/platypus_animation`: curves (`curve.rs`), clips and the arenas (`clip.rs`), bindings resolved per animated root
   (`bind.rs`), pose blending (`pose.rs`), the `Animation` component (`player.rs`), controller data (`controller.rs`), the
   `Animator` (`animator.rs`), culling (`culling.rs`), bench timers (`profile.rs`) and the property registry (`registry.rs`).
   No script engine in it.
-- `crates/iron_engine_api/src/animation.rs`, `animator.rs`: the script API (`#[iron_api]`), for compiled code and QuickJS.
+- `crates/platypus_engine_api/src/animation.rs`, `animator.rs`: the script API (`#[platypus_api]`), for compiled code and QuickJS.
 
 ## Frame
 
-The host calls `iron_engine_api::animation::update(dt, other)` after the components' updates. Players go depth first through the
+The host calls `platypus_engine_api::animation::update(dt, other)` after the components' updates. Players go depth first through the
 scene (inactive objects skipped); each blends its clips into one `Pose` (weighted sums per transform channel, quaternions
 sign-aligned then normalised, other properties weighted averages) and writes it once. Clip events that came due are returned
 as `FiredEvent { object, function_name, parameter }` for the host to deliver to the object's components (and kept for
@@ -46,15 +46,15 @@ events fire and the clock stops; it holds its last pose and resumes from there, 
 its fog's cull distance), or a shadow caster in a light's shadow map whose shadow can fall in a view (the box swept along
 a directional light meets the frustum; for spot and point lights, the light reaches the frustum and the box is in its
 range), so a figure off screen whose shadow is on screen keeps animating. An object with no renderers is always seen.
-How it is wired: `culled_roots()` lists the objects whose components cull; the app (`crates/iron_app/src/anim_cull.rs`)
+How it is wired: `culled_roots()` lists the objects whose components cull; the app (`crates/platypus_app/src/anim_cull.rs`)
 watches only the renderers under them, giving their meshes a `MeshInstance::visibility_key`; `WorldRenderer::seen()` /
 `take_seen()` reports which were seen (skinned meshes judged by their bind-pose box under every bone, a box that holds
-them); the next frame's update asks through `iron_animation::Visibility` (`M5-ANI-13`, `M5-CUL-03`). This is one frame
+them); the next frame's update asks through `platypus_animation::Visibility` (`M5-ANI-13`, `M5-CUL-03`). This is one frame
 late. Every camera counts, those drawing into render textures too (`M5-CUL-06`): secondary windows draw no world of their
 own (`Camera.targetWindow` is not built, `docs/windows.md`), so a window shows a 3D view through an `image` of a render
 texture, whose camera is drawn, and judged, with the main window's frame.
 
-**The safeguard (Iron's; Unity has none).** A culled animator writes no bone transforms, so what hangs on its bones would
+**The safeguard (Platypus's; Unity has none).** A culled animator writes no bone transforms, so what hangs on its bones would
 be left behind. The exact rule: an animated object is never culled (it counts as always seen, and its renderers are not
 watched) while any object *strictly below it* has a physics component (`Rigidbody`, any collider, `CharacterController`, a
 joint or rope, 2D ones too), an `AudioSource`, a `ParticleSystem`, a `Light` or a script component (any class of the game).
@@ -62,7 +62,7 @@ Components on the animated object itself do not count (culling never moves it un
 driving the animator usually sits there). A warning on target `animation`, once per animated object, names the first such
 object and component: ``animation culling is off for `Figure`: `Hand` below it has a BoxCollider, which a culled animation
 would leave behind``. The answer is worked out from the registries (`anim_cull::blockers`: each component walks up its
-ancestors) only when a component is added or removed anywhere (`iron_kinds::components_version`, bumped by every owner) or
+ancestors) only when a component is added or removed anywhere (`platypus_kinds::components_version`, bumped by every owner) or
 the culled objects or their `Scene::tree_version`s change, so a frame costs one tree-version read per culled object
 (`M5-ANI-14`). Objects with none of these components (meshes, other renderers, cameras, empty bones) still go stale while
 culled.
@@ -72,8 +72,8 @@ watched once a script has asked, and the host reports the frame's seen renderers
 (`M5-CUL-04`). `update_culled` groups players and animators per object in a map, instead of scanning all of them for each.
 
 **The walk and threads.** The update walks only towards animated objects: the objects with players or animators and the
-objects above them (a crowd's bones are not visited). With `iron_animation::set_threads(n)` above 1 (the app sets the
-machine's threads, up to 16; `IRON_ANIM_THREADS=1` turns it off) a frame runs in two halves (`parallel.rs`): the walk lists
+objects above them (a crowd's bones are not visited). With `platypus_animation::set_threads(n)` above 1 (the app sets the
+machine's threads, up to 16; `PLATYPUS_ANIM_THREADS=1` turns it off) a frame runs in two halves (`parallel.rs`): the walk lists
 the jobs in order; animators advance their state machines, blend their clips and work out their bones' new local
 transforms on up to `n` threads (every n-th animator to a thread, at least 8 a thread), reading the scene only, each into
 its own lists of transforms and events; then, in the walk's order, players run and the animators' transforms are written
@@ -110,12 +110,12 @@ apply` and `animation: set_local` to `syncParts` (`sync_profile` merges them); e
 
 Targets of a curve: `Transform` (`localPosition.x|y|z`, `localScale.x|y|z`, `localRotation.x|y|z|w`, `localEulerAngles.x|y|z`),
 `GameObject` (`active`) and registered components (`Camera`: `fieldOfView`, `nearClipPlane`, `farClipPlane`, `depth`,
-`orthographicSize`, `orthographic`, `backgroundColor.r|g|b|a`). Register more with `iron_animation::register_type` and
+`orthographicSize`, `orthographic`, `backgroundColor.r|g|b|a`). Register more with `platypus_animation::register_type` and
 `register_setter`.
 
 An `Animator` state keeps its normalized time (Unity's), not seconds: a blend tree's length changes with its weights, so the
 phase stays put when they change (a walk breaking into a run carries on mid-stride) and then advances at the blend's pace
-(`M5-ANI-07`). `iron_animation::gltf` turns a glTF animation's channels into a looping clip (`Model.animations`), each rotation
+(`M5-ANI-07`). `platypus_animation::gltf` turns a glTF animation's channels into a looping clip (`Model.animations`), each rotation
 key flipped to its predecessor's side (`q` and `-q` are one turn; mixed sides sampled between them pass near zero, a wild pose
 for a frame), cubic keys flipping with their tangents (`M5-SKN-04`). `Animation.destroy()` empties the component's slot (players
 are numbered by place).

@@ -1,6 +1,6 @@
-# Iron and Unity
+# Platypus and Unity
 
-Iron borrows Unity's workflow: GameObjects, components, scenes, prefabs, the inspector-driven
+Platypus borrows Unity's workflow: GameObjects, components, scenes, prefabs, the inspector-driven
 way of building a world. It differs in the language, the stack under it, and the business it
 sits in. This page covers those differences and what we want to keep from Unity.
 
@@ -10,15 +10,15 @@ sits in. This page covers those differences and what we want to keep from Unity.
   `CharacterController`, `AudioSource`, `Animator`, `SceneManager`, `Cursor` and the lifecycle
   hooks (`onAwake`, `onUpdate`, `onFixedUpdate`, `onLateUpdate`) work the way Unity developers
   expect. Names follow Unity where that's practical, with degrees for Euler angles.
-- **Portability.** Unity runs on many platforms, and that's a strong reason to be here. Iron
+- **Portability.** Unity runs on many platforms, and that's a strong reason to be here. Platypus
   aims for the same reach over time (M9.c: macOS, Linux, Android, iOS). Nothing ships on those
   platforms yet.
 - **Popularity and learning material.** Unity's large body of tutorials and its community are
-  valuable. Iron's API is close enough to Unity's that much of the knowledge carries over.
+  valuable. Platypus's API is close enough to Unity's that much of the knowledge carries over.
 
 ## The main difference: TypeScript, not C#
 
-Unity scripts are C#. Iron scripts are TypeScript, bundled by Bun and run in QuickJS in
+Unity scripts are C#. Platypus scripts are TypeScript, bundled by Bun and run in QuickJS in
 development and shipped builds, with an AOT path planned (M9.b).
 
 Why:
@@ -30,20 +30,20 @@ Why:
   models with the game client.
 
 What we're not claiming: TypeScript is not faster than C# for hot code, and the web tooling
-doesn't replace a mature game-profiling pipeline. The AOT compiler (`iron_ts`, on a branch) is
+doesn't replace a mature game-profiling pipeline. The AOT compiler (`platypus_ts`, on a branch) is
 the answer to speed, and it's not merged yet.
 
 ## Other differences
 
-| | Unity | Iron |
+| | Unity | Platypus |
 |---|---|---|
 | Scripting | C#, with IL2CPP or Mono | TypeScript, QuickJS now, AOT planned |
-| UI | uGUI and UI Toolkit (UXML/USS, a CSS-like system) | React components with CSS (`@iron/react` and a CSS cascade) |
-| Renderer | Built in, with SRP and HDRP/URP | Own wgpu renderer (`iron_render`) |
+| UI | uGUI and UI Toolkit (UXML/USS, a CSS-like system) | React components with CSS (`@platypus/react` and a CSS cascade) |
+| Renderer | Built in, with SRP and HDRP/URP | Own wgpu renderer (`platypus_render`) |
 | Engine code | Closed source (C++ runtime) | Planned open source, Rust core, TypeScript gameplay |
 | Licence | Free under a revenue threshold, paid seats above it (see below) | Planned: free, see the licence section |
 | Stability | Major versions change APIs; packages change often | Stable API boundaries are a goal (see below) |
-| Editor | A large, mature editor | Early; built with Iron's React UI |
+| Editor | A large, mature editor | Early; built with Platypus's React UI |
 
 ## Licensing and business model
 
@@ -52,9 +52,9 @@ and was reversed in 2024 in favour of a different pricing model. The episode is 
 care about this. A pricing model can change quickly, and a studio's costs can change with it,
 even when the software is the same.
 
-Iron's goal is to stay mostly free or very low cost, so that developers keep making games.
+Platypus's goal is to stay mostly free or very low cost, so that developers keep making games.
 Concretely, that means:
-- Iron is planned to be open source. **Its licence has not been chosen yet.** We will choose one before
+- Platypus is planned to be open source. **Its licence has not been chosen yet.** We will choose one before
   release and say what it allows and what it costs, and we won't charge per install.
 - No per-install fee, no revenue cut, and no approval step to publish a game.
 - Any future paid services (hosting, a store, support) are optional and separate from the engine.
@@ -71,7 +71,7 @@ no one should assume a licence.
 
 ## Our stability goal
 
-Unity has changed its APIs and packages often over the years. We want Iron to behave more like a
+Unity has changed its APIs and packages often over the years. We want Platypus to behave more like a
 long-lived Unreal release: a stable core that games can rely on for years, with changes that add
 features rather than break code. The principle is the Linux kernel's "don't break userspace",
 applied to game code.

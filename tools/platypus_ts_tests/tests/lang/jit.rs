@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The JIT: the same code generation as the object writer, into the running process
-//! (`iron_ts::jit`). IDs are in TESTS.md (M9-TS-1900.., M9-API-600..).
-use iron_api::Handle;
-use iron_scene::Scene;
-use iron_scene::api::scene_api as api;
-use iron_ts::jit::{JitOptions, compile_and_load};
-use iron_ts_rt::{NativeHost, link_anchor};
+//! (`platypus_ts::jit`). IDs are in TESTS.md (M9-TS-1900.., M9-API-600..).
+use platypus_api::Handle;
+use platypus_scene::Scene;
+use platypus_scene::api::scene_api as api;
+use platypus_ts::jit::{JitOptions, compile_and_load};
+use platypus_ts_rt::{NativeHost, link_anchor};
 
 /// Compiled programs share the thread's heap and globals: one test at a time.
 fn bench(name: &str) -> String {
@@ -23,15 +23,16 @@ fn fnv(bytes: &[u8]) -> u64 {
 // M9-TS-1900
 //
 // Making code generation generic over the Cranelift module type must not change the object file:
-// the sizes and hashes below were taken from the output before the change.
+// the sizes and hashes below were taken from the output before the change (and again after the
+// rename to Platypus, where each `iron_*` symbol became `platypus_*`, 4 bytes longer).
 #[test]
 fn the_object_writer_output_is_unchanged_by_the_generic_codegen() {
     for (file, len, hash) in [
-        ("sine.ts", 5883, 0x3099_e46c_3c15_8c75),
-        ("strings.ts", 30382, 0x9d2c_25ed_f66d_b2ff),
-        ("classes.ts", 16441, 0xac99_c71c_2bad_5f21),
+        ("sine.ts", 5887, 0x5410_9d5b_d8e5_4895),
+        ("strings.ts", 30442, 0xe206_6cfd_4937_c53c),
+        ("classes.ts", 16581, 0x80d1_77d9_ba9b_c258),
     ] {
-        let out = iron_ts::compile_source(&bench(file), "speed").unwrap();
+        let out = platypus_ts::compile_source(&bench(file), "speed").unwrap();
         assert_eq!(out.object.len(), len, "{file}");
         assert_eq!(fnv(&out.object), hash, "{file}");
     }
@@ -42,7 +43,7 @@ fn the_object_writer_output_is_unchanged_by_the_generic_codegen() {
 // A plain program compiled in the process: an exported function is called through its address.
 #[test]
 fn a_program_compiled_in_process_runs() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let game = compile_and_load(
         "export function add(a: number, b: number): number { return a * 2 + b; }\n\
@@ -70,7 +71,7 @@ fn a_program_compiled_in_process_runs() {
 // resolved from the generated table).
 #[test]
 fn jit_code_uses_the_runtime() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let game = compile_and_load(
         "export function words(n: number): number {\n\
            const parts: string[] = [];\n\
@@ -96,7 +97,7 @@ fn jit_code_uses_the_runtime() {
 // A missing symbol is reported by name before anything runs.
 #[test]
 fn an_unresolved_engine_function_is_an_error_naming_it() {
-    let manifest = r#"{"namespace":"Nope","functions":[{"name":"gone","symbol":"iron_Nope_gone","params":[],"returns":"f64"}]}"#;
+    let manifest = r#"{"namespace":"Nope","functions":[{"name":"gone","symbol":"platypus_Nope_gone","params":[],"returns":"f64"}]}"#;
     let e = compile_and_load(
         "export function f(): number { return Nope.gone(); }",
         &JitOptions {
@@ -108,13 +109,13 @@ fn an_unresolved_engine_function_is_an_error_naming_it() {
     );
     match e {
         Ok(_) => panic!("expected an error"),
-        Err(e) => assert!(e.contains("iron_Nope_gone"), "{e}"),
+        Err(e) => assert!(e.contains("platypus_Nope_gone"), "{e}"),
     }
 }
 
 fn scene_manifests() -> Vec<String> {
-    let mut v = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
-    v.extend(iron_engine_api::iron_math::manifests());
+    let mut v = vec![platypus_scene::api::scene_api::MANIFEST.to_json()];
+    v.extend(platypus_engine_api::platypus_math::manifests());
     v
 }
 
@@ -124,7 +125,7 @@ fn scene_manifests() -> Vec<String> {
 // the class table is read at run time and `NativeHost` drives the components.
 #[test]
 fn a_jit_compiled_component_table_drives_the_native_host() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let game = compile_and_load(
         &bench("components.ts"),
         &JitOptions {
@@ -138,7 +139,7 @@ fn a_jit_compiled_component_table_drives_the_native_host() {
     let names: Vec<_> = game.class_meta().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Mover", "Fast", "Faulty", "Physics"]);
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     game.init().unwrap();
     let classes = game.classes().unwrap();
     let have = |c: usize| -> Vec<bool> { classes[c].hooks.iter().map(|h| h.is_some()).collect() };
@@ -164,10 +165,10 @@ fn a_jit_compiled_component_table_drives_the_native_host() {
 #[test]
 fn every_manifest_function_symbol_resolves_after_reading_the_manifests() {
     let mut all = scene_manifests();
-    all.extend(iron_engine_api::manifests());
-    all.extend(iron_scenes::manifests());
-    all.extend(iron_physics_api::manifests());
-    all.extend(iron_render_api::manifests());
+    all.extend(platypus_engine_api::manifests());
+    all.extend(platypus_scenes::manifests());
+    all.extend(platypus_physics_api::manifests());
+    all.extend(platypus_render_api::manifests());
     let mut missing = Vec::new();
     let mut n = 0;
     for m in &all {
@@ -178,7 +179,7 @@ fn every_manifest_function_symbol_resolves_after_reading_the_manifests() {
                 serde_json::Value::Object(o) => {
                     if let Some(s) = o.get("symbol").and_then(|s| s.as_str()) {
                         n += 1;
-                        if iron_api::symbol(s).is_none() {
+                        if platypus_api::symbol(s).is_none() {
                             missing.push(s.to_string());
                         }
                     }
@@ -198,7 +199,7 @@ fn every_manifest_function_symbol_resolves_after_reading_the_manifests() {
 // The runtime's own table (generated by its build script) holds the runtime functions.
 #[test]
 fn the_runtime_symbol_table_lists_its_exports() {
-    let t = iron_ts_rt::symbols();
+    let t = platypus_ts_rt::symbols();
     assert!(t.len() > 200, "{}", t.len());
     for want in ["ts_rt_obj_new", "ts_rt_str_trim_gc", "ts_rt_tan"] {
         assert!(t.iter().any(|(n, a)| *n == want && *a != 0), "{want}");
@@ -211,7 +212,7 @@ fn the_runtime_symbol_table_lists_its_exports() {
 // `addComponent(Class)` finds it) and is not among the classes the register calls named.
 #[test]
 fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let src = "class Started extends Component { n: number = 1; onUpdate(dt: number): void { this.n++; } }\n\
                class OnlyAdded extends Started { m: number = 2; }\n\
                register({ Started });\n";
@@ -228,11 +229,11 @@ fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
     let meta: Vec<_> = game.class_meta().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(meta, ["Started", "OnlyAdded"]);
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     game.init().unwrap();
     // Which classes are registered is what the `register(..)` calls did when they ran.
     assert_eq!(
-        iron_ts_rt::registered_classes(),
+        platypus_ts_rt::registered_classes(),
         [("Started".to_string(), true)]
     );
     assert!(game.classes().is_ok());
@@ -243,7 +244,7 @@ fn an_unregistered_component_class_is_in_the_table_but_not_registered() {
 // A program that imports a module of `src/modules` by its bare name runs.
 #[test]
 fn a_program_importing_a_src_modules_file_by_name_runs() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let files: std::collections::HashMap<&str, &str> = [
         (
             "src/main.ts",
@@ -257,7 +258,7 @@ fn a_program_importing_a_src_modules_file_by_name_runs() {
     .into_iter()
     .collect();
     let bundle =
-        iron_ts::modules::bundle_with("src/main.ts", &|p| files.get(p).map(|s| s.to_string()))
+        platypus_ts::modules::bundle_with("src/main.ts", &|p| files.get(p).map(|s| s.to_string()))
             .unwrap();
     let game = compile_and_load(
         &bundle.source,
@@ -281,7 +282,7 @@ fn a_program_importing_a_src_modules_file_by_name_runs() {
 // value) still fails, with its line.
 #[test]
 fn unused_functions_with_unsupported_constructs_do_not_fail_the_build() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let unused = "function unusedA(): number {\n  with (Math) { return 1; }\n}\n\
                   function unusedB(): number { return unusedA() + 1; }\n";
     let game = compile_and_load(
@@ -302,7 +303,7 @@ fn unused_functions_with_unsupported_constructs_do_not_fail_the_build() {
         "export function main(): number { return unusedB(); }",
         "function run(g: () => number): number { return g(); }\nexport function main(): number { return run(unusedA); }",
     ] {
-        let e = iron_ts::compile_source(&format!("{unused}{use_it}"), "speed")
+        let e = platypus_ts::compile_source(&format!("{unused}{use_it}"), "speed")
             .err()
             .expect("a used function must fail");
         assert!(e.contains("unsupported statement"), "{e}");
@@ -312,7 +313,7 @@ fn unused_functions_with_unsupported_constructs_do_not_fail_the_build() {
 
 /// Compiles `source` and calls its `main(): number`.
 fn run_main(source: &str, prefix: &'static str, struct_base: u32) -> f64 {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let game = compile_and_load(
         source,
         &JitOptions {

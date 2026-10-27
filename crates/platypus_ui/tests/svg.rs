@@ -7,9 +7,9 @@
 mod common;
 
 use common::{Dom, n, op};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::{SET_ATTRS, SET_STYLE};
-use iron_ui::{BackgroundImage, DrawCmd, ElementState, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::{SET_ATTRS, SET_STYLE};
+use platypus_ui::{BackgroundImage, DrawCmd, ElementState, UiTree};
 
 fn attrs(d: &mut Dom, id: u32, pairs: &[(&str, Value)]) {
     let mut a = vec![n(id)];
@@ -207,7 +207,7 @@ fn an_svg_fades_once_when_its_parent_is_hovered() {
 
 // M3-SVG-02
 #[test]
-fn svg_is_hit_as_one_box_and_its_text_isnt_iron_text() {
+fn svg_is_hit_as_one_box_and_its_text_isnt_platypus_text() {
     let (mut tree, svg, dot) = icon("");
     assert_eq!(tree.hit_test(24.0, 24.0), Some(NodeId(svg)));
     assert!(tree.rect(NodeId(dot)).is_none(), "content isn't laid out");

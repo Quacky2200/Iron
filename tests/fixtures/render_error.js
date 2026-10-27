@@ -9545,7 +9545,7 @@ No matching component was found for:
       (parent ? parent.children : roots).push(this);
       const t = this.transform;
       flushTransforms();
-      __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
+      __platypus_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
     }
     static _adopt(id, name) {
       const go = Object.create(GameObject.prototype);
@@ -9575,7 +9575,7 @@ No matching component was found for:
     set name(name) {
       this._name = name;
       flushTransforms();
-      __iron_op("scene.name", this.id, name);
+      __platypus_op("scene.name", this.id, name);
     }
     get layer() {
       return this._layer;
@@ -9583,7 +9583,7 @@ No matching component was found for:
     set layer(layer) {
       this._layer = checkLayer(layer);
       flushTransforms();
-      __iron_op("scene.layer", this.id, layer);
+      __platypus_op("scene.layer", this.id, layer);
     }
     get parent() {
       return this._parent;
@@ -9615,7 +9615,7 @@ No matching component was found for:
       this._parent = parent;
       (parent ? parent.children : roots).push(this);
       flushTransforms();
-      __iron_op("scene.parent", this.id, parent?.id ?? null);
+      __platypus_op("scene.parent", this.id, parent?.id ?? null);
       if (keepWorld) {
         t.position = position;
         t.rotation = rotation;
@@ -9629,7 +9629,7 @@ No matching component was found for:
     set enabled(on) {
       this._enabled = on;
       flushTransforms();
-      __iron_op("scene.enabled", this.id, on);
+      __platypus_op("scene.enabled", this.id, on);
     }
     get activeInHierarchy() {
       for (let o = this;o; o = o._parent)
@@ -9652,7 +9652,7 @@ No matching component was found for:
       if (props)
         Object.assign(instance, props);
       flushTransforms();
-      __iron_op("scene.addComponent", this.id, id, name);
+      __platypus_op("scene.addComponent", this.id, id, name);
       return instance;
     }
     getComponent(cls) {
@@ -9670,23 +9670,23 @@ No matching component was found for:
         return;
       this.components.splice(i, 1);
       flushTransforms();
-      __iron_op("scene.removeComponent", component.id);
+      __platypus_op("scene.removeComponent", component.id);
     }
     destroy() {
       if (this._destroyed)
         return;
       flushTransforms();
-      __iron_op("scene.destroy", this.id);
+      __platypus_op("scene.destroy", this.id);
       forget(this);
     }
     static dontDestroyOnLoad(go) {
       if (!sceneHooks)
-        throw new Error("dontDestroyOnLoad needs @iron/engine's scenes.ts loaded");
+        throw new Error("dontDestroyOnLoad needs @platypus/engine's scenes.ts loaded");
       sceneHooks.dontDestroyOnLoad(go);
     }
     static instantiate(original, options = {}) {
       if (!sceneHooks)
-        throw new Error("instantiate needs @iron/engine's scenes.ts loaded");
+        throw new Error("instantiate needs @platypus/engine's scenes.ts loaded");
       return sceneHooks.instantiate(original, options);
     }
     findChild(name) {
@@ -9713,7 +9713,7 @@ No matching component was found for:
     }
     static createPrimitive(type, options) {
       if (!primitiveFactory)
-        throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
+        throw new Error("createPrimitive needs @platypus/engine's index (primitives.ts) loaded");
       return primitiveFactory(type, options);
     }
     static findObjectOfType(cls) {
@@ -9753,8 +9753,8 @@ No matching component was found for:
       }
     }
   }
-  globalThis.__iron_registered = () => [...starting];
-  globalThis.__iron_create = (className, id, objectId, objectName) => {
+  globalThis.__platypus_registered = () => [...starting];
+  globalThis.__platypus_create = (className, id, objectId, objectName) => {
     const cls = classes.get(className);
     if (!cls)
       throw new Error(`unknown component class '${className}'`);
@@ -9762,13 +9762,13 @@ No matching component was found for:
     instantiate(cls, id, object).onAwake?.();
   };
   var HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"];
-  globalThis.__iron_hooks = (id) => {
+  globalThis.__platypus_hooks = (id) => {
     const instance = instances.get(id);
     if (!instance)
       return [...HOOKS];
     return HOOKS.filter((h) => typeof instance[h] === "function" && !(h === "onStart" && restored.has(id)));
   };
-  globalThis.__iron_dispatch = (id, method, ...args) => {
+  globalThis.__platypus_dispatch = (id, method, ...args) => {
     const instance = instances.get(id);
     if (!instance)
       throw new Error(`no component with id ${id}`);
@@ -9777,8 +9777,8 @@ No matching component was found for:
       return fn.apply(instance, args);
     return;
   };
-  globalThis.__iron_run = (method, ids, ...args) => {
-    globalThis.__iron_run_at = -1;
+  globalThis.__platypus_run = (method, ids, ...args) => {
+    globalThis.__platypus_run_at = -1;
     for (let i = 0;i < ids.length; i++) {
       const instance = instances.get(ids[i]);
       try {
@@ -9788,12 +9788,12 @@ No matching component was found for:
         if (typeof fn === "function")
           fn.apply(instance, args);
       } catch (e) {
-        globalThis.__iron_run_at = i;
+        globalThis.__platypus_run_at = i;
         throw e;
       }
     }
   };
-  globalThis.__iron_destroy = (id) => {
+  globalThis.__platypus_destroy = (id) => {
     const instance = instances.get(id);
     instances.delete(id);
     if (!instance)
@@ -9818,10 +9818,10 @@ No matching component was found for:
     }
     pendingTransforms.clear();
     if (flat.length)
-      __iron_op("scene.locals", flat);
+      __platypus_op("scene.locals", flat);
   }
-  globalThis.__iron_flush = flushTransforms;
-  globalThis.__iron_scene = (moved) => {
+  globalThis.__platypus_flush = flushTransforms;
+  globalThis.__platypus_scene = (moved) => {
     for (let i = 0;i + 10 < moved.length; i += 11) {
       const go = objects.get(moved[i]);
       if (!go)
@@ -9837,7 +9837,7 @@ No matching component was found for:
   function _loadingGame() {
     return loading;
   }
-  globalThis.__iron_hot_begin = () => {
+  globalThis.__platypus_hot_begin = () => {
     const old = undo;
     undo = [];
     for (const f of old) {
@@ -9849,7 +9849,7 @@ No matching component was found for:
     }
     loading = true;
   };
-  globalThis.__iron_hot_end = () => {
+  globalThis.__platypus_hot_end = () => {
     loading = false;
     const stale = _patchClasses();
     if (stale.length) {
@@ -9866,7 +9866,7 @@ No matching component was found for:
   };
 
   // ../../js/engine/src/property.ts
-  var PROPERTIES = Symbol("iron.properties");
+  var PROPERTIES = Symbol("platypus.properties");
   var metadataKey = Symbol.metadata ?? Symbol.for("Symbol.metadata");
   function property(_value, context) {
     const meta = context.metadata;
@@ -9935,7 +9935,7 @@ No matching component was found for:
     frameCount = s.frameCount ?? frameCount;
     timeScale = s.timeScale ?? timeScale;
   }
-  globalThis.__iron_tick = (dt) => {
+  globalThis.__platypus_tick = (dt) => {
     unscaledDeltaTime = dt;
     deltaTime = dt * timeScale;
     unscaledTime += dt;
@@ -9993,7 +9993,7 @@ No matching component was found for:
         indices = s.mesh.indices;
       }
       colliders.set(this.id, this);
-      __iron_op("physics.collider", this.id, body?.id ?? null, shape, dims, vec2(options.position), quat2(options.rotation), [
+      __platypus_op("physics.collider", this.id, body?.id ?? null, shape, dims, vec2(options.position), quat2(options.rotation), [
         options.friction ?? 0.5,
         options.restitution ?? 0,
         options.density ?? 1,
@@ -10003,22 +10003,22 @@ No matching component was found for:
       ]);
     }
     setFriction(friction) {
-      __iron_op("physics.colliderSet", this.id, "friction", friction);
+      __platypus_op("physics.colliderSet", this.id, "friction", friction);
     }
     setRestitution(restitution) {
-      __iron_op("physics.colliderSet", this.id, "restitution", restitution);
+      __platypus_op("physics.colliderSet", this.id, "restitution", restitution);
     }
     setSensor(sensor) {
       this.sensor = sensor;
-      __iron_op("physics.colliderSet", this.id, "sensor", sensor);
+      __platypus_op("physics.colliderSet", this.id, "sensor", sensor);
     }
     setOffset(position, rotation) {
-      __iron_op("physics.colliderSet", this.id, "offset", vec2(position), quat2(rotation));
+      __platypus_op("physics.colliderSet", this.id, "offset", vec2(position), quat2(rotation));
     }
     remove() {
       if (!colliders.delete(this.id))
         return;
-      __iron_op("physics.removeCollider", this.id);
+      __platypus_op("physics.removeCollider", this.id);
     }
   }
 
@@ -10039,7 +10039,7 @@ No matching component was found for:
       this.rotation = Quaternion.from(options.rotation ?? Quaternion.identity);
       this.velocity = Vector3.from(options.velocity ?? Vector3.zero);
       bodies.set(this.id, this);
-      __iron_op("physics.body", this.id, this.kind, vec2(this.position), quat2(this.rotation), vec2(this.velocity), [
+      __platypus_op("physics.body", this.id, this.kind, vec2(this.position), quat2(this.rotation), vec2(this.velocity), [
         options.gravityScale ?? 1,
         options.linearDamping ?? 0,
         options.angularDamping ?? 0,
@@ -10052,77 +10052,77 @@ No matching component was found for:
     }
     setPosition(p) {
       this.position = Vector3.from(p);
-      __iron_op("physics.set", this.id, "position", vec2(p));
+      __platypus_op("physics.set", this.id, "position", vec2(p));
     }
     setRotation(q) {
       this.rotation = Quaternion.from(q);
-      __iron_op("physics.set", this.id, "rotation", quat2(q));
+      __platypus_op("physics.set", this.id, "rotation", quat2(q));
     }
     setVelocity(v) {
       this.velocity = Vector3.from(v);
-      __iron_op("physics.set", this.id, "velocity", vec2(v));
+      __platypus_op("physics.set", this.id, "velocity", vec2(v));
     }
     setAngularVelocity(v) {
-      __iron_op("physics.set", this.id, "angularVelocity", vec2(v));
+      __platypus_op("physics.set", this.id, "angularVelocity", vec2(v));
     }
     moveTo(p) {
-      __iron_op("physics.set", this.id, "target", vec2(p));
+      __platypus_op("physics.set", this.id, "target", vec2(p));
     }
     applyImpulse(impulse) {
-      __iron_op("physics.force", this.id, "impulse", vec2(impulse));
+      __platypus_op("physics.force", this.id, "impulse", vec2(impulse));
     }
     applyTorqueImpulse(impulse) {
-      __iron_op("physics.force", this.id, "torqueImpulse", vec2(impulse));
+      __platypus_op("physics.force", this.id, "torqueImpulse", vec2(impulse));
     }
     addForce(force) {
-      __iron_op("physics.force", this.id, "force", vec2(force));
+      __platypus_op("physics.force", this.id, "force", vec2(force));
     }
     addTorque(torque) {
-      __iron_op("physics.force", this.id, "torque", vec2(torque));
+      __platypus_op("physics.force", this.id, "torque", vec2(torque));
     }
     clearForces() {
-      __iron_op("physics.clearForces", this.id);
+      __platypus_op("physics.clearForces", this.id);
     }
     applyImpulseAtPoint(impulse, point) {
-      __iron_op("physics.force", this.id, "impulseAt", vec2(impulse), vec2(point));
+      __platypus_op("physics.force", this.id, "impulseAt", vec2(impulse), vec2(point));
     }
     setKind(kind) {
       this.kind = kind;
-      __iron_op("physics.set", this.id, "kind", kind);
+      __platypus_op("physics.set", this.id, "kind", kind);
     }
     setMass(kg) {
-      __iron_op("physics.set", this.id, "mass", kg);
+      __platypus_op("physics.set", this.id, "mass", kg);
     }
     setGravityScale(scale) {
-      __iron_op("physics.set", this.id, "gravityScale", scale);
+      __platypus_op("physics.set", this.id, "gravityScale", scale);
     }
     setDamping(linear, angular) {
-      __iron_op("physics.set", this.id, "linearDamping", linear);
-      __iron_op("physics.set", this.id, "angularDamping", angular);
+      __platypus_op("physics.set", this.id, "linearDamping", linear);
+      __platypus_op("physics.set", this.id, "angularDamping", angular);
     }
     setCcd(on) {
-      __iron_op("physics.set", this.id, "ccd", on);
+      __platypus_op("physics.set", this.id, "ccd", on);
     }
     setAllowedAxes(translation, rotation) {
-      __iron_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
+      __platypus_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
     }
     sleep() {
-      __iron_op("physics.set", this.id, "sleep");
+      __platypus_op("physics.set", this.id, "sleep");
     }
     wakeUp() {
-      __iron_op("physics.set", this.id, "wake");
+      __platypus_op("physics.set", this.id, "wake");
     }
     attachTo(objectId) {
-      __iron_op("physics.attach", this.id, objectId);
+      __platypus_op("physics.attach", this.id, objectId);
     }
     setEnabled(enabled) {
-      __iron_op("physics.set", this.id, "enabled", enabled);
+      __platypus_op("physics.set", this.id, "enabled", enabled);
     }
     makeCharacter(options = {}) {
-      __iron_op("physics.character", this.id, options.maxSlope ?? 45, options.snapToGround ?? null, options.stepHeight ?? null);
+      __platypus_op("physics.character", this.id, options.maxSlope ?? 45, options.snapToGround ?? null, options.stepHeight ?? null);
     }
     move(delta) {
-      __iron_op("physics.move", this.id, vec2(delta));
+      __platypus_op("physics.move", this.id, vec2(delta));
     }
     remove() {
       if (!bodies.delete(this.id))
@@ -10130,7 +10130,7 @@ No matching component was found for:
       for (const [id, c] of colliders)
         if (c.body === this)
           colliders.delete(id);
-      __iron_op("physics.removeBody", this.id);
+      __platypus_op("physics.removeBody", this.id);
     }
   }
   var nextJoint = 1;
@@ -10141,10 +10141,10 @@ No matching component was found for:
     constructor(kind, a, b, anchorA, anchorB, params = []) {
       this.kind = kind;
       this.id = nextJoint++;
-      __iron_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec2(anchorA), vec2(anchorB), params);
+      __platypus_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec2(anchorA), vec2(anchorB), params);
     }
     remove() {
-      __iron_op("physics.removeJoint", this.id);
+      __platypus_op("physics.removeJoint", this.id);
     }
   }
   var physics = {
@@ -10158,7 +10158,7 @@ No matching component was found for:
       return new PhysicsCollider(null, options);
     },
     setGravity(g) {
-      __iron_op("physics.gravity", vec2(g));
+      __platypus_op("physics.gravity", vec2(g));
     },
     raycast(origin, direction, maxDistance = 1000) {
       const id = nextQuery++;
@@ -10166,7 +10166,7 @@ No matching component was found for:
       const dir = { x: direction.x / len, y: direction.y / len, z: direction.z / len };
       return new Promise((resolve) => {
         queries.set(id, { origin: { ...origin }, dir, resolve });
-        __iron_op("physics.raycast", id, vec2(origin), vec2(dir), maxDistance);
+        __platypus_op("physics.raycast", id, vec2(origin), vec2(dir), maxDistance);
       });
     },
     body(id) {
@@ -10185,7 +10185,7 @@ No matching component was found for:
 ${err.stack}` : ""}`);
     }
   }
-  globalThis.__iron_physics = (moved, contacts, rays, characters) => {
+  globalThis.__platypus_physics = (moved, contacts, rays, characters) => {
     for (let i = 0;i + 13 < moved.length; i += 14) {
       const b = bodies.get(moved[i]);
       if (!b)
@@ -10248,10 +10248,10 @@ ${err.stack}` : ""}`);
   };
 
   // ../../js/engine/src/prefs.ts
-  var values = new Map(Object.entries(globalThis.__iron_info?.prefs ?? {}));
+  var values = new Map(Object.entries(globalThis.__platypus_info?.prefs ?? {}));
   function set(key, value) {
     values.set(key, value);
-    __iron_op("prefs.set", key, value);
+    __platypus_op("prefs.set", key, value);
   }
   function _loadJson(key) {
     const v = values.get(key);
@@ -10275,7 +10275,7 @@ ${err.stack}` : ""}`);
     { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "medium", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 0, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true }
   ];
   var manifest = () => {
-    const q = globalThis.__iron_info?.app?.quality;
+    const q = globalThis.__platypus_info?.app?.quality;
     return q && typeof q === "object" ? q : {};
   };
   function buildLevels() {
@@ -10288,7 +10288,7 @@ ${err.stack}` : ""}`);
     if (typeof d === "string")
       return d;
     if (d && typeof d === "object") {
-      const platform = globalThis.__iron_info?.system?.operatingSystemFamily ?? "";
+      const platform = globalThis.__platypus_info?.system?.operatingSystemFamily ?? "";
       return d[platform] ?? d.default ?? "High";
     }
     return "High";
@@ -10297,17 +10297,17 @@ ${err.stack}` : ""}`);
   var current = { ...levels[levelIndex] };
   function sendQuality() {
     const c = current;
-    __iron_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 3 : c.softShadowQuality === "medium" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit, c.volumetricFog ?? true, c.hdr ?? true, c.additionalLights ?? -1, c.additionalLightShadows ?? true);
+    __platypus_op("render.quality", 0, c.antiAliasing, c.renderScale, c.shadows, c.softShadowQuality === "high" ? 3 : c.softShadowQuality === "medium" ? 2 : 1, c.lodBias, c.vSyncCount, c.anisotropicFiltering, c.globalTextureMipmapLimit, c.volumetricFog ?? true, c.hdr ?? true, c.additionalLights ?? -1, c.additionalLightShadows ?? true);
     remember();
   }
   function sendShadows() {
-    __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution, current.shadowCascades);
+    __platypus_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution, current.shadowCascades);
     remember();
   }
   function remember() {
     if (restoring)
       return;
-    _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
+    _saveJson("platypus.quality", { level: levels[levelIndex]?.name, current });
   }
   var restoring = false;
   var listeners = new Set;
@@ -10471,7 +10471,7 @@ ${err.stack}` : ""}`);
     sendShadows();
   }
   function _applyDefaultQuality() {
-    const saved = _loadJson("iron.quality");
+    const saved = _loadJson("platypus.quality");
     if (saved?.current) {
       const i = levels.findIndex((l) => l.name === saved.level);
       if (i >= 0)
@@ -10486,14 +10486,14 @@ ${err.stack}` : ""}`);
       restoring = false;
     }
   }
-  if (typeof __iron_op === "function")
+  if (typeof __platypus_op === "function")
     _applyDefaultQuality();
 
   // ../../js/engine/src/screen.ts
   var width = 1280;
   var height = 720;
   var scale = 1;
-  var display = () => globalThis.__iron_info?.display ?? {};
+  var display = () => globalThis.__platypus_info?.display ?? {};
   var mode = () => display().mode ?? "Windowed";
   var isFullScreen = (m) => m === "FullScreenWindow" || m === "ExclusiveFullScreen";
   var windowSize = () => ({
@@ -10502,7 +10502,7 @@ ${err.stack}` : ""}`);
   });
   function setResolution(w, h, m = mode(), refreshRate = 0) {
     const chosen = typeof m === "boolean" ? m ? "FullScreenWindow" : "Windowed" : m;
-    __iron_op("screen.set", chosen, Math.round(w), Math.round(h), refreshRate);
+    __platypus_op("screen.set", chosen, Math.round(w), Math.round(h), refreshRate);
   }
   var Screen = {
     get width() {
@@ -10521,7 +10521,7 @@ ${err.stack}` : ""}`);
       return mode();
     },
     set fullScreenMode(m) {
-      __iron_op("screen.set", m, 0, 0, 0);
+      __platypus_op("screen.set", m, 0, 0, 0);
     },
     get fullScreen() {
       return isFullScreen(mode());
@@ -10529,7 +10529,7 @@ ${err.stack}` : ""}`);
     set fullScreen(on) {
       if (on === isFullScreen(mode()))
         return;
-      __iron_op("screen.set", on ? "FullScreenWindow" : "Windowed", 0, 0, 0);
+      __platypus_op("screen.set", on ? "FullScreenWindow" : "Windowed", 0, 0, 0);
     },
     setResolution,
     get windowSize() {
@@ -10552,7 +10552,7 @@ ${err.stack}` : ""}`);
     }
   };
   var listeners2 = new Set;
-  globalThis.__iron_screen = (w, h, s) => {
+  globalThis.__platypus_screen = (w, h, s) => {
     width = w;
     height = h;
     scale = s;
@@ -10782,7 +10782,7 @@ ${err.stack}` : ""}`);
       return this._sceneBrightness;
     }
     resetExposure() {
-      __iron_op("render.exposureReset", this.id);
+      __platypus_op("render.exposureReset", this.id);
     }
     aperture = 16;
     shutterSpeed = 1 / 200;
@@ -10853,7 +10853,7 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const r = this._rect;
-      __iron_op("render.camera", this.id, this.gameObject.id, this._fov, this._near, this._far, rgba(this._background), this._depth, this._orthographic, this._orthographicSize, [r.x, r.y, r.width, r.height], this._clearFlags === "skybox" ? "skybox" : "color", this._cullingMask, this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null, this._layerCullSpherical, this._antialiasing, this._targetTexture?.id ?? null, this._sceneGrid, this._fog);
+      __platypus_op("render.camera", this.id, this.gameObject.id, this._fov, this._near, this._far, rgba(this._background), this._depth, this._orthographic, this._orthographicSize, [r.x, r.y, r.width, r.height], this._clearFlags === "skybox" ? "skybox" : "color", this._cullingMask, this._layerCullDistances.some((d) => d > 0) ? this._layerCullDistances : null, this._layerCullSpherical, this._antialiasing, this._targetTexture?.id ?? null, this._sceneGrid, this._fog);
     }
     onStart() {
       this.started = true;
@@ -10862,7 +10862,7 @@ ${err.stack}` : ""}`);
     }
     onDestroy() {
       cameras.splice(cameras.indexOf(this), 1);
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   var _init2, _base2, _dec16, _dec17;
@@ -10898,14 +10898,14 @@ ${err.stack}` : ""}`);
     send() {
       if (!this.started)
         return;
-      __iron_op("render.plane", this.id, this.gameObject.id, this._size.toArray(), rgba(this._color));
+      __platypus_op("render.plane", this.id, this.gameObject.id, this._size.toArray(), rgba(this._color));
     }
     onStart() {
       this.started = true;
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   var _init3, _base3, _dec18, _dec19, _dec20, _dec21, _dec22;
@@ -11089,14 +11089,14 @@ ${err.stack}` : ""}`);
     send() {
       if (!this.started)
         return;
-      __iron_op("render.panel", this.id, this.gameObject.id, [this._width, this._height], this._pixelsPerMeter, this._resolution, rgba(this._tint), this._interactive);
+      __platypus_op("render.panel", this.id, this.gameObject.id, [this._width, this._height], this._pixelsPerMeter, this._resolution, rgba(this._tint), this._interactive);
     }
     onStart() {
       this.started = true;
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   var EXTRAS = {
@@ -11237,7 +11237,7 @@ ${err.stack}` : ""}`);
       };
       if (data.bindposes)
         this.bindposes = [...data.bindposes];
-      __iron_op("render.mesh", this.id, data.vertices.flatMap((v) => [v.x, v.y, v.z]), (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]), (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]), [...data.triangles], ...joints.length ? [joints, weights] : []);
+      __platypus_op("render.mesh", this.id, data.vertices.flatMap((v) => [v.x, v.y, v.z]), (data.normals ?? []).flatMap((v) => [v.x, v.y, v.z]), (data.uv ?? []).flatMap((v) => [v.x, 1 - v.y]), [...data.triangles], ...joints.length ? [joints, weights] : []);
     }
     static createFlat(data) {
       const mesh = new Mesh(nextMesh++);
@@ -11252,10 +11252,10 @@ ${err.stack}` : ""}`);
         flipped[i + 1] = 1 - uv[i + 1];
       }
       this._flat = data;
-      __iron_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
+      __platypus_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
     }
     destroy() {
-      __iron_op("render.mesh", this.id, null);
+      __platypus_op("render.mesh", this.id, null);
     }
   }
   var _init6, _base6, _dec37, _dec38, _dec39;
@@ -11306,14 +11306,14 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const m = this._material;
-      __iron_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off", m.metallic, m._extras(), ...this._skinArgs());
+      __platypus_op("render.meshRenderer", this.id, this.gameObject.id, typeof this._mesh === "string" ? this._mesh : this._mesh.id, rgba(m.color), [m.emission.r, m.emission.g, m.emission.b], m.smoothness, m.unlit, m.mainTexture?.id ?? null, [m.mainTextureScale.x, m.mainTextureScale.y, m.mainTextureOffset.x, m.mainTextureOffset.y], this._shadowCastingMode !== "off", m.metallic, m._extras(), ...this._skinArgs());
     }
     onAwake() {
       this.started = true;
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   var _init7, _base7, _dec40, _dec41;
@@ -11509,7 +11509,7 @@ ${err.stack}` : ""}`);
       if (!this.started)
         return;
       const c = this._color;
-      __iron_op("render.light", this.id, this.gameObject.id, this._type, [c.r, c.g, c.b], this._intensity, this._range, this._spotAngle, this._innerSpotAngle, this._haloSize, this._beamIntensity, this._shadows, this._shadowStrength, this._cullingMask, this._volumetricIntensity, this._spotShape, this._aspectRatio);
+      __platypus_op("render.light", this.id, this.gameObject.id, this._type, [c.r, c.g, c.b], this._intensity, this._range, this._spotAngle, this._innerSpotAngle, this._haloSize, this._beamIntensity, this._shadows, this._shadowStrength, this._cullingMask, this._volumetricIntensity, this._spotShape, this._aspectRatio);
     }
     onAwake() {
       this.started = true;
@@ -11518,7 +11518,7 @@ ${err.stack}` : ""}`);
     }
     onDestroy() {
       allLights.delete(this);
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
     static illuminanceAt(point, normal) {
       let sum = 0;
@@ -11591,7 +11591,7 @@ ${err.stack}` : ""}`);
     culledLights: 0,
     shadowMaps: 0
   };
-  globalThis.__iron_render_stats = (...n) => {
+  globalThis.__platypus_render_stats = (...n) => {
     [RenderStats.meshes, RenderStats.culledMeshes, RenderStats.quads, RenderStats.culledQuads, RenderStats.fogCulled, RenderStats.lights, RenderStats.culledLights, RenderStats.shadowMaps] = n.map((v) => v ?? 0);
   };
   var bloom = null;
@@ -11600,7 +11600,7 @@ ${err.stack}` : ""}`);
   var METERING = { average: 0, centerWeighted: 1, spot: 2 };
   var fixedExposure = null;
   var exposureTransition = 0;
-  globalThis.__iron_exposure = (id, ev, scene) => {
+  globalThis.__platypus_exposure = (id, ev, scene) => {
     const c = Camera.byId(id);
     if (!c)
       return;
@@ -11608,7 +11608,7 @@ ${err.stack}` : ""}`);
     c._sceneBrightness = scene ?? Number.NaN;
   };
   var autoExposure = null;
-  var sendPost = () => __iron_op("render.post", 0, postExposure, tonemapping, autoExposure && QualitySettings.autoExposure ? [
+  var sendPost = () => __platypus_op("render.post", 0, postExposure, tonemapping, autoExposure && QualitySettings.autoExposure ? [
     autoExposure.minEV ?? -10,
     autoExposure.maxEV ?? 20,
     autoExposure.compensation ?? 0,
@@ -11635,7 +11635,7 @@ ${err.stack}` : ""}`);
   function sendClouds() {
     const c = cloudLayer;
     const t = c?.tint;
-    __iron_op("render.clouds", 0, c ? [c.altitude ?? 1500, c.size ?? 2000, c.coverage ?? 0.5, c.opacity ?? 1, c.softness ?? 0.3, t?.r ?? 0.8, t?.g ?? 0.8, t?.b ?? 0.82, c.windSpeed ?? 0, c.windDirection ?? 0, c.fadeDistance ?? 20000] : null);
+    __platypus_op("render.clouds", 0, c ? [c.altitude ?? 1500, c.size ?? 2000, c.coverage ?? 0.5, c.opacity ?? 1, c.softness ?? 0.3, t?.r ?? 0.8, t?.g ?? 0.8, t?.b ?? 0.82, c.windSpeed ?? 0, c.windDirection ?? 0, c.fadeDistance ?? 20000] : null);
   }
   var fogCulling = true;
   var DENOISING = { none: 0, reprojection: 1, gaussian: 2, both: 3 };
@@ -11643,27 +11643,27 @@ ${err.stack}` : ""}`);
   var volumetricFog = null;
   function sendFog() {
     if (!fog) {
-      __iron_op("render.fog", 0, null);
+      __platypus_op("render.fog", 0, null);
       return;
     }
     const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
     const v = volumetricFog;
     const a = v?.albedo;
     const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"], v.historyWeight ?? 0.9, v.samples ?? 1, v.motionSamples ?? 2] : null;
-    __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
+    __platypus_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
   }
   var skybox = null;
   var ambientMode = "skybox";
   var reflectionIntensity = 1;
   function sendSky() {
     if (!skybox) {
-      __iron_op("render.sky", 0, null);
+      __platypus_op("render.sky", 0, null);
       return;
     }
     const s = skybox;
     const rgb = (c) => c ? [c.r, c.g, c.b] : null;
     const sun = s.sunDirection === null ? null : s.sunDirection ? [s.sunDirection.x, s.sunDirection.y, s.sunDirection.z] : [0.4, 0.6, 0.3];
-    __iron_op("render.sky", 0, rgb(s.zenith) ?? [0.16, 0.32, 0.62], rgb(s.horizon) ?? [0.62, 0.72, 0.82], rgb(s.ground) ?? [0.22, 0.2, 0.18], sun, rgb(s.sunColor) ?? [20, 18, 15], s.sunSize ?? 1.5, reflectionIntensity, ambientMode === "skybox");
+    __platypus_op("render.sky", 0, rgb(s.zenith) ?? [0.16, 0.32, 0.62], rgb(s.horizon) ?? [0.62, 0.72, 0.82], rgb(s.ground) ?? [0.22, 0.2, 0.18], sun, rgb(s.sunColor) ?? [20, 18, 15], s.sunSize ?? 1.5, reflectionIntensity, ambientMode === "skybox");
   }
   var RenderSettings = {
     get ambientLight() {
@@ -11671,7 +11671,7 @@ ${err.stack}` : ""}`);
     },
     set ambientLight(c) {
       ambient = c;
-      __iron_op("render.ambient", 0, [c.r, c.g, c.b]);
+      __platypus_op("render.ambient", 0, [c.r, c.g, c.b]);
     },
     get skybox() {
       return skybox;
@@ -11702,9 +11702,9 @@ ${err.stack}` : ""}`);
     set bloom(b) {
       bloom = b ? { ...b } : null;
       if (b)
-        __iron_op("render.bloom", 0, b.threshold, b.intensity, b.scatter);
+        __platypus_op("render.bloom", 0, b.threshold, b.intensity, b.scatter);
       else
-        __iron_op("render.bloom", 0, null);
+        __platypus_op("render.bloom", 0, null);
     },
     get tonemapping() {
       return tonemapping;
@@ -11849,13 +11849,13 @@ ${err.stack}` : ""}`);
     send() {
       const mesh = this.getComponent(MeshRenderer)?.mesh;
       const n = this.normal ?? (mesh === "quad" ? Vector3.back : Vector3.up);
-      __iron_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z], this.cullingMask >>> 0);
+      __platypus_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z], this.cullingMask >>> 0);
     }
     onAwake() {
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   var _init10, _base10, _dec56, _dec57, _dec58, _dec59, _dec60;
@@ -11891,16 +11891,16 @@ ${err.stack}` : ""}`);
     ], "refreshMode")] = (__runInitializers(_init10, 23, this), __runInitializers(_init10, 24, this, "onAwake"));
     send() {
       const s = this.size;
-      __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
+      __platypus_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
     }
     renderProbe() {
-      __iron_op("render.probeRender", this.id);
+      __platypus_op("render.probeRender", this.id);
     }
     onAwake() {
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   var _init11, _base11, _dec61, _dec62, _dec63, _dec64, _dec65;
@@ -11971,14 +11971,14 @@ ${err.stack}` : ""}`);
         return;
       const s = this._size;
       const c = this._color;
-      __iron_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend, this._shape);
+      __platypus_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend, this._shape);
     }
     onAwake() {
       this.started = true;
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   var _init12, _base12, _dec66, _dec67;
@@ -12033,14 +12033,14 @@ ${err.stack}` : ""}`);
     send() {
       if (!this.started)
         return;
-      __iron_op("render.lodGroup", this.id, this.gameObject.id, this._size, this._lods.map((l) => l.screenRelativeTransitionHeight), this._lods.map((l) => l.renderers.map((r) => r.id)), this._forced);
+      __platypus_op("render.lodGroup", this.id, this.gameObject.id, this._size, this._lods.map((l) => l.screenRelativeTransitionHeight), this._lods.map((l) => l.renderers.map((r) => r.id)), this._forced);
     }
     onAwake() {
       this.started = true;
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
 
@@ -12249,7 +12249,7 @@ ${err.stack}` : ""}`);
         this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
     send() {
       if (!this.started)
@@ -12264,7 +12264,7 @@ ${err.stack}` : ""}`);
       }
       const c = this._color;
       const f = this._fillColor;
-      __iron_op("render.stroke", this.id, this.gameObject.id, this._width, [c.r, c.g, c.b, c.a], this._loop, flat, f ? [f.r, f.g, f.b, f.a] : null, this._fillRule, this._sortingOrder);
+      __platypus_op("render.stroke", this.id, this.gameObject.id, this._width, [c.r, c.g, c.b, c.a], this._loop, flat, f ? [f.r, f.g, f.b, f.a] : null, this._fillRule, this._sortingOrder);
     }
   }
 
@@ -13214,11 +13214,11 @@ ${err.stack}` : ""}`);
           colliders.push(["capsule", go.id, c.radius, c.height, v(c.center)]);
       }
       const box = this.pinBox;
-      __iron_op("cloth.cloth", this.id, this.gameObject.id, typeof source === "string" ? source : source.id, this.simulated.id, [this.stretchingStiffness, this.bendingStiffness, this.damping, this.friction, this.solverIterations], v(this.externalAcceleration), v(this.randomAcceleration), this.useGravity, this.pins.flatMap(v), this.pinRadius, box ? [...v(box.min), ...v(box.max)] : null, colliders);
+      __platypus_op("cloth.cloth", this.id, this.gameObject.id, typeof source === "string" ? source : source.id, this.simulated.id, [this.stretchingStiffness, this.bendingStiffness, this.damping, this.friction, this.solverIterations], v(this.externalAcceleration), v(this.randomAcceleration), this.useGravity, this.pins.flatMap(v), this.pinRadius, box ? [...v(box.min), ...v(box.max)] : null, colliders);
       renderer.mesh = this.simulated;
     }
     onDestroy() {
-      __iron_op("cloth.remove", this.id);
+      __platypus_op("cloth.remove", this.id);
       if (this.renderer && this.original !== undefined && !this.renderer.gameObject.destroyed)
         this.renderer.mesh = this.original;
       this.simulated?.destroy();
@@ -13227,7 +13227,7 @@ ${err.stack}` : ""}`);
   // ../../js/engine/src/assets.ts
   var listeners3 = new Set;
   var native = () => globalThis.Assets ?? {};
-  var entries = () => globalThis.__iron_info?.assets ?? [];
+  var entries = () => globalThis.__platypus_info?.assets ?? [];
   var clean = (path) => path.replace(/\\/g, "/").replace(/^\.\//, "");
   var Assets = {
     get all() {
@@ -13263,7 +13263,7 @@ ${err.stack}` : ""}`);
       return () => listeners3.delete(fn);
     }
   };
-  globalThis.__iron_assets_changed = (paths) => {
+  globalThis.__platypus_assets_changed = (paths) => {
     for (const f of [...listeners3]) {
       try {
         f(paths);
@@ -14032,7 +14032,7 @@ ${err.stack}` : ""}`);
       pose.apply();
     }
   }
-  globalThis.__iron_animate = (dt) => {
+  globalThis.__platypus_animate = (dt) => {
     const visit = (go) => {
       if (!go.activeInHierarchy)
         return;
@@ -14066,13 +14066,13 @@ ${err.stack}` : ""}`);
       this.src = src;
       if (options.stream === undefined && Assets.importer(src).stream === true)
         options = { ...options, stream: true };
-      __iron_op("audio.load", this.id, src, !!options.stream);
+      __platypus_op("audio.load", this.id, src, !!options.stream);
     }
     play(options = {}) {
       return new Playback(this, options);
     }
     unload() {
-      __iron_op("audio.unload", this.id);
+      __platypus_op("audio.unload", this.id);
     }
   }
 
@@ -14085,7 +14085,7 @@ ${err.stack}` : ""}`);
       this.id = nextPlayback++;
       this.sound = sound;
       playing.set(this.id, this);
-      __iron_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
+      __platypus_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
         o.volume ?? 1,
         o.rate ?? 1,
         o.pan ?? 0,
@@ -14095,25 +14095,25 @@ ${err.stack}` : ""}`);
       ]);
     }
     setVolume(volume, fade = 0) {
-      __iron_op("audio.set", this.id, "volume", volume, fade);
+      __platypus_op("audio.set", this.id, "volume", volume, fade);
     }
     setRate(rate, fade = 0) {
-      __iron_op("audio.set", this.id, "rate", rate, fade);
+      __platypus_op("audio.set", this.id, "rate", rate, fade);
     }
     setPan(pan, fade = 0) {
-      __iron_op("audio.set", this.id, "pan", pan, fade);
+      __platypus_op("audio.set", this.id, "pan", pan, fade);
     }
     pause(fade = 0) {
-      __iron_op("audio.pause", this.id, fade);
+      __platypus_op("audio.pause", this.id, fade);
     }
     resume(fade = 0) {
-      __iron_op("audio.resume", this.id, fade);
+      __platypus_op("audio.resume", this.id, fade);
     }
     stop(fade = 0) {
-      __iron_op("audio.stop", this.id, fade);
+      __platypus_op("audio.stop", this.id, fade);
     }
     seek(seconds) {
-      __iron_op("audio.seek", this.id, seconds);
+      __platypus_op("audio.seek", this.id, seconds);
     }
   }
 
@@ -14121,19 +14121,19 @@ ${err.stack}` : ""}`);
     id;
     constructor(volume, parent) {
       this.id = nextTrack++;
-      __iron_op("audio.bus", this.id, parent?.id ?? null, volume);
+      __platypus_op("audio.bus", this.id, parent?.id ?? null, volume);
     }
     setVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", this.id, volume, fade);
+      __platypus_op("audio.trackVolume", this.id, volume, fade);
     }
     pause(fade = 0) {
-      __iron_op("audio.trackPause", this.id, fade);
+      __platypus_op("audio.trackPause", this.id, fade);
     }
     resume(fade = 0) {
-      __iron_op("audio.trackResume", this.id, fade);
+      __platypus_op("audio.trackResume", this.id, fade);
     }
     remove() {
-      __iron_op("audio.removeTrack", this.id);
+      __platypus_op("audio.removeTrack", this.id);
     }
   }
 
@@ -14141,16 +14141,16 @@ ${err.stack}` : ""}`);
     id;
     constructor(position, options) {
       this.id = nextTrack++;
-      __iron_op("audio.emitter", this.id, [position.x, position.y, position.z], [options.minDistance ?? 1, options.maxDistance ?? 50], options.bus?.id ?? null);
+      __platypus_op("audio.emitter", this.id, [position.x, position.y, position.z], [options.minDistance ?? 1, options.maxDistance ?? 50], options.bus?.id ?? null);
     }
     setPosition(p, glide = 0) {
-      __iron_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
+      __platypus_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
     }
     setVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", this.id, volume, fade);
+      __platypus_op("audio.trackVolume", this.id, volume, fade);
     }
     remove() {
-      __iron_op("audio.removeTrack", this.id);
+      __platypus_op("audio.removeTrack", this.id);
     }
   }
   var cache = new Map;
@@ -14173,13 +14173,13 @@ ${err.stack}` : ""}`);
       return new Emitter(position, options);
     },
     setListener(position, rotation = { x: 0, y: 0, z: 0, w: 1 }) {
-      __iron_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
+      __platypus_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
     },
     setMasterVolume(volume, fade = 0) {
-      __iron_op("audio.trackVolume", null, volume, fade);
+      __platypus_op("audio.trackVolume", null, volume, fade);
     }
   };
-  globalThis.__iron_audio = (ended) => {
+  globalThis.__platypus_audio = (ended) => {
     for (const id of ended) {
       const p = playing.get(id);
       if (!p)
@@ -15005,11 +15005,11 @@ ${err.stack}` : ""}`);
       if (key === this.sent)
         return;
       this.sent = key;
-      __iron_op("render.particles", this.id, this.gameObject.id, pairs, playOnAwake);
+      __platypus_op("render.particles", this.id, this.gameObject.id, pairs, playOnAwake);
     }
     control(action, count) {
       this.sync();
-      __iron_op("render.particleControl", this.id, action, ...count === undefined ? [] : [count]);
+      __platypus_op("render.particleControl", this.id, action, ...count === undefined ? [] : [count]);
     }
     play() {
       this.paused = false;
@@ -15039,7 +15039,7 @@ ${err.stack}` : ""}`);
     }
     onDestroy() {
       systems.delete(this.id);
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
     _report(count, alive) {
       const wasAlive = this.alive;
@@ -15056,7 +15056,7 @@ ${err.stack}` : ""}`);
       }
     }
   }
-  globalThis.__iron_particles = (changed) => {
+  globalThis.__platypus_particles = (changed) => {
     for (let i = 0;i + 2 < changed.length; i += 3) {
       systems.get(changed[i])?._report(changed[i + 1], changed[i + 2] === 1);
     }
@@ -15180,10 +15180,10 @@ ${err.stack}` : ""}`);
     }
     destroy() {
       textures.delete(this.id);
-      __iron_op("render.textureRemove", this.id);
+      __platypus_op("render.textureRemove", this.id);
     }
     send() {
-      __iron_op("render.texture", this.id, this.src, this._filterMode, this._wrapMode, this._mipmaps, ...this.pixels ? [this.width, this.height, this.pixels] : [null, null, null], this._anisoLevel, this.linear);
+      __platypus_op("render.texture", this.id, this.src, this._filterMode, this._wrapMode, this._mipmaps, ...this.pixels ? [this.width, this.height, this.pixels] : [null, null, null], this._anisoLevel, this.linear);
     }
     _loaded(width, height) {
       this.failed = width === 0;
@@ -15215,10 +15215,10 @@ ${err.stack}` : ""}`);
     send() {
       if (!this.isLoaded)
         return;
-      __iron_op("render.renderTexture", this.id, this.width, this.height);
+      __platypus_op("render.renderTexture", this.id, this.width, this.height);
     }
   }
-  globalThis.__iron_textures = (loaded) => {
+  globalThis.__platypus_textures = (loaded) => {
     for (const [id, w, h] of loaded)
       textures.get(id)?._loaded(w, h);
   };
@@ -15324,13 +15324,13 @@ ${err.stack}` : ""}`);
       const s = this._sprite;
       if (!s) {
         if (this.shown)
-          __iron_op("render.remove", this.id);
+          __platypus_op("render.remove", this.id);
         this.shown = false;
         return;
       }
       const c = this._color;
       const r = s.rect;
-      __iron_op("render.sprite", this.id, this.gameObject.id, s.texture.id, r ? [r.x, r.y, r.width, r.height] : null, [s.pivot.x, s.pivot.y], s.pixelsPerUnit, [c.r, c.g, c.b, c.a], this._flipX, this._flipY, this._sortingOrder);
+      __platypus_op("render.sprite", this.id, this.gameObject.id, s.texture.id, r ? [r.x, r.y, r.width, r.height] : null, [s.pivot.x, s.pivot.y], s.pixelsPerUnit, [c.r, c.g, c.b, c.a], this._flipX, this._flipY, this._sortingOrder);
       this.shown = true;
     }
     onAwake() {
@@ -15338,7 +15338,7 @@ ${err.stack}` : ""}`);
       this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
   }
   // ../../js/engine/src/input.ts
@@ -15378,7 +15378,7 @@ ${err.stack}` : ""}`);
     return s;
   }
   function cur() {
-    const f = globalThis.__iron_domain;
+    const f = globalThis.__platypus_domain;
     return domainState(typeof f === "function" ? f() : MAIN_DOMAIN);
   }
   onTick(() => domainState(MAIN_DOMAIN).tick());
@@ -15402,7 +15402,7 @@ ${err.stack}` : ""}`);
     }
     return p;
   }
-  globalThis.__iron_input = (type, ...args) => {
+  globalThis.__platypus_input = (type, ...args) => {
     switch (type) {
       case "tick":
         cur().tick();
@@ -15498,7 +15498,7 @@ ${err.stack}` : ""}`);
       this.id = nextModel++;
       this.src = src;
       models.set(this.id, this);
-      __iron_op("render.model", this.id, src);
+      __platypus_op("render.model", this.id, src);
     }
     static load(source) {
       const src = Assets.resolve(source);
@@ -15642,7 +15642,7 @@ ${err.stack}` : ""}`);
         f(this);
     }
   }
-  globalThis.__iron_models = (loaded) => {
+  globalThis.__platypus_models = (loaded) => {
     for (let i = 0;i + 1 < loaded.length; i += 2) {
       const m = models.get(loaded[i]);
       const json = loaded[i + 1];
@@ -16189,7 +16189,7 @@ ${err.stack}` : ""}`);
       const roots = this.getRootGameObjects();
       number(saver, roots);
       const objects = roots.map((go) => saveObject(saver, go)).filter((d) => d !== null);
-      const data = { format: "iron.scene", version: 1, name: this.name, objects };
+      const data = { format: "platypus.scene", version: 1, name: this.name, objects };
       if (this === active)
         data.renderSettings = saveRenderSettings(saver);
       if (Object.keys(saver.assets).length)
@@ -16283,8 +16283,8 @@ ${err.stack}` : ""}`);
       f(scene);
   }
   function fromData(data, mode, path) {
-    if (data?.format !== "iron.scene")
-      throw new Error("not a scene (format isn't iron.scene)");
+    if (data?.format !== "platypus.scene")
+      throw new Error("not a scene (format isn't platypus.scene)");
     if (data.version !== 1)
       throw new Error(`scene version ${data.version} isn't supported`);
     const scene = new Scene(data.name);
@@ -16309,7 +16309,7 @@ ${err.stack}` : ""}`);
   }
   var nextRead = 1;
   var reads = new Map;
-  globalThis.__iron_asset_text = (results) => {
+  globalThis.__platypus_asset_text = (results) => {
     for (let i = 0;i + 1 < results.length; i += 2) {
       const read = reads.get(results[i]);
       if (!read)
@@ -16326,7 +16326,7 @@ ${err.stack}` : ""}`);
     const id = nextRead++;
     return new Promise((resolve, reject) => {
       reads.set(id, { resolve, reject, path });
-      __iron_op("asset.readText", id, path);
+      __platypus_op("asset.readText", id, path);
     });
   }
   var SceneManager = {
@@ -16417,14 +16417,14 @@ ${err.stack}` : ""}`);
         throw new Error("parts of a model can't be prefabs on their own; use the model's root");
       delete root.position;
       delete root.rotation;
-      const data = { format: "iron.prefab", version: 1, name: go.name, root };
+      const data = { format: "platypus.prefab", version: 1, name: go.name, root };
       if (Object.keys(saver.assets).length)
         data.assets = saver.assets;
       return new Prefab(JSON.parse(JSON.stringify(data)), null);
     }
     static fromData(data, src = null) {
       const d = data;
-      if (d?.format !== "iron.prefab" || !d.root)
+      if (d?.format !== "platypus.prefab" || !d.root)
         throw new Error(`not prefab data${src ? `: ${src}` : ""}`);
       return new Prefab(d, src);
     }
@@ -16542,8 +16542,8 @@ ${err.stack}` : ""}`);
       applyRenderSettings(active._renderSettings);
     return true;
   }
-  globalThis.__iron_save_state = saveState;
-  globalThis.__iron_restore_state = restoreState;
+  globalThis.__platypus_save_state = saveState;
+  globalThis.__platypus_restore_state = restoreState;
   async function loadStartScene(path) {
     const main = active;
     try {
@@ -16555,8 +16555,8 @@ ${err.stack}` : ""}`);
       console.error(`start scene ${path}: ${e}`);
     }
   }
-  var startScene = globalThis.__iron_info?.app.startScene;
-  if (startScene && typeof __iron_op === "function" && !globalThis.__iron_reloading)
+  var startScene = globalThis.__platypus_info?.app.startScene;
+  if (startScene && typeof __platypus_op === "function" && !globalThis.__platypus_reloading)
     loadStartScene(startScene);
   _setSceneHooks({
     active: () => active,
@@ -16747,21 +16747,21 @@ ${err.stack}` : ""}`);
         this.send();
     }
     onDestroy() {
-      __iron_op("render.remove", this.id);
+      __platypus_op("render.remove", this.id);
     }
     send() {
       if (!this.started)
         return;
       this.dirty = false;
       const c = this._color;
-      __iron_op("render.text", this.id, this.gameObject.id, this._text, [c.r, c.g, c.b, c.a], this._fontSize, this._font, this._fontWeight, this._alignment, this._maxWidth, this._pixelsPerUnit, this._resolution);
+      __platypus_op("render.text", this.id, this.gameObject.id, this._text, [c.r, c.g, c.b, c.a], this._fontSize, this._font, this._fontWeight, this._alignment, this._maxWidth, this._pixelsPerUnit, this._resolution);
     }
   }
   // ../../js/engine/src/app.ts
   var focused = true;
   var paused = false;
   var focusListeners = new Set;
-  globalThis.__iron_focus = (hasFocus, isPaused) => {
+  globalThis.__platypus_focus = (hasFocus, isPaused) => {
     const focusChanged = hasFocus !== focused;
     const pauseChanged = isPaused !== paused;
     focused = hasFocus;
@@ -17072,7 +17072,7 @@ ${err.stack}` : ""}`);
       lines = [];
     },
     present(camera) {
-      __iron_op("render.gizmos", camera.id, lines);
+      __platypus_op("render.gizmos", camera.id, lines);
       lines = [];
     }
   };
@@ -17112,7 +17112,7 @@ ${err.stack}` : ""}`);
 
   // ../../js/engine/src/index.ts
   function op(name, ...args) {
-    __iron_op(name, ...args);
+    __platypus_op(name, ...args);
   }
 
   // ../../js/react/src/index.ts
@@ -17309,9 +17309,9 @@ ${err.stack}` : ""}`);
       return;
     const ops = c.pending.splice(0, c.pending.length);
     if (c.target === 0)
-      __iron_commit(ops);
+      __platypus_commit(ops);
     else
-      __iron_commit(ops, c.target);
+      __platypus_commit(ops, c.target);
   }
   function flush() {
     for (const c of containers.values())
@@ -17341,7 +17341,7 @@ ${err.stack}` : ""}`);
     cancelTimeout: (id) => clearTimeout(id),
     noTimeout: -1,
     rendererVersion: "0.1.0",
-    rendererPackageName: "@iron/react",
+    rendererPackageName: "@platypus/react",
     extraDevToolsConfig: null,
     bindToConsole(methodName, args, badgeName) {
       const log = console[methodName] ?? console.log;
@@ -17349,7 +17349,7 @@ ${err.stack}` : ""}`);
     },
     createInstance(type, props, root) {
       if (!ELEMENT_TYPES.has(type)) {
-        throw new Error(`<${type}> is not an Iron element; available: ${[...ELEMENT_TYPES].join(", ")}`);
+        throw new Error(`<${type}> is not a Platypus element; available: ${[...ELEMENT_TYPES].join(", ")}`);
       }
       const id = nextId++;
       owners.set(id, root);
@@ -17520,7 +17520,7 @@ ${err.stack}` : ""}`);
   var NON_BUBBLING = new Set(["pointerenter", "pointerleave", "scroll", "cancel", "close"]);
   var CONTINUOUS = new Set(["pointermove", "pointerenter", "pointerleave", "wheel", "scroll", "drag", "dragover"]);
 
-  class IronEvent {
+  class PlatypusEvent {
     type;
     target;
     bubbles;
@@ -17547,7 +17547,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronPointerEvent extends IronEvent {
+  class PlatypusPointerEvent extends PlatypusEvent {
     clientX;
     clientY;
     button;
@@ -17582,7 +17582,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronWheelEvent extends IronPointerEvent {
+  class PlatypusWheelEvent extends PlatypusPointerEvent {
     deltaX;
     deltaY;
     deltaZ = 0;
@@ -17597,7 +17597,7 @@ ${err.stack}` : ""}`);
     return { shiftKey: (bits & 1) !== 0, ctrlKey: (bits & 2) !== 0, altKey: (bits & 4) !== 0, metaKey: (bits & 8) !== 0 };
   }
 
-  class IronKeyboardEvent extends IronEvent {
+  class PlatypusKeyboardEvent extends PlatypusEvent {
     key;
     code;
     repeat;
@@ -17618,7 +17618,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronFocusEvent extends IronEvent {
+  class PlatypusFocusEvent extends PlatypusEvent {
     relatedTarget;
     constructor(type, target, data) {
       super(type, target, true);
@@ -17626,7 +17626,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronInputEvent extends IronEvent {
+  class PlatypusInputEvent extends PlatypusEvent {
     value;
     constructor(type, target, strings) {
       super(type, target, true);
@@ -17634,7 +17634,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronTransitionEvent extends IronEvent {
+  class PlatypusTransitionEvent extends PlatypusEvent {
     propertyName;
     elapsedTime;
     pseudoElement = "";
@@ -17645,7 +17645,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronAnimationEvent extends IronEvent {
+  class PlatypusAnimationEvent extends PlatypusEvent {
     animationName;
     elapsedTime;
     pseudoElement = "";
@@ -17656,7 +17656,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronDataTransfer {
+  class PlatypusDataTransfer {
     dropEffect = "none";
     effectAllowed = "uninitialized";
     files;
@@ -17693,15 +17693,15 @@ ${err.stack}` : ""}`);
       const key = files.join(`
 `);
       if (fileDrag?.key !== key)
-        fileDrag = { key, transfer: new IronDataTransfer(files) };
+        fileDrag = { key, transfer: new PlatypusDataTransfer(files) };
       return fileDrag.transfer;
     }
     if (type === "dragstart" || !elementDrag)
-      elementDrag = new IronDataTransfer;
+      elementDrag = new PlatypusDataTransfer;
     return elementDrag;
   }
 
-  class IronDragEvent extends IronPointerEvent {
+  class PlatypusDragEvent extends PlatypusPointerEvent {
     dataTransfer;
     dropped;
     constructor(type, target, data, transfer) {
@@ -17713,7 +17713,7 @@ ${err.stack}` : ""}`);
     }
   }
 
-  class IronScrollEvent extends IronEvent {
+  class PlatypusScrollEvent extends PlatypusEvent {
     scrollLeft;
     scrollTop;
     scrollWidth;
@@ -17750,27 +17750,27 @@ ${err.stack}` : ""}`);
   function createEvent(type, target, bubbles, data, strings) {
     switch (type) {
       case "wheel":
-        return new IronWheelEvent(type, target, bubbles, data);
+        return new PlatypusWheelEvent(type, target, bubbles, data);
       case "keydown":
       case "keyup":
-        return new IronKeyboardEvent(type, target, data, strings);
+        return new PlatypusKeyboardEvent(type, target, data, strings);
       case "focusin":
       case "focusout":
-        return new IronFocusEvent(type, target, data);
+        return new PlatypusFocusEvent(type, target, data);
       case "scroll":
-        return new IronScrollEvent(type, target, data);
+        return new PlatypusScrollEvent(type, target, data);
       case "input":
-        return new IronInputEvent(type, target, strings);
+        return new PlatypusInputEvent(type, target, strings);
       case "transitionrun":
       case "transitionstart":
       case "transitionend":
       case "transitioncancel":
-        return new IronTransitionEvent(type, target, data, strings);
+        return new PlatypusTransitionEvent(type, target, data, strings);
       case "animationstart":
       case "animationiteration":
       case "animationend":
       case "animationcancel":
-        return new IronAnimationEvent(type, target, data, strings);
+        return new PlatypusAnimationEvent(type, target, data, strings);
       case "dragstart":
       case "drag":
       case "dragenter":
@@ -17778,9 +17778,9 @@ ${err.stack}` : ""}`);
       case "dragleave":
       case "drop":
       case "dragend":
-        return new IronDragEvent(type, target, data, transferFor(type, strings));
+        return new PlatypusDragEvent(type, target, data, transferFor(type, strings));
       default:
-        return new IronPointerEvent(type, target, bubbles, data);
+        return new PlatypusPointerEvent(type, target, bubbles, data);
     }
   }
   function dispatchUiEvent(type, path, data, strings = []) {
@@ -17798,7 +17798,7 @@ ${err.stack}` : ""}`);
     const nodes = path.map((id) => instances2.get(id)).filter((n) => n !== undefined);
     const bubbles = !NON_BUBBLING.has(type);
     const event = createEvent(type, target, bubbles, data, strings);
-    if (event instanceof IronInputEvent)
+    if (event instanceof PlatypusInputEvent)
       target.value = event.value;
     const capture = names.map((n) => `${n}Capture`);
     const priority = CONTINUOUS.has(type) ? import_constants2.ContinuousEventPriority : import_constants2.DiscreteEventPriority;
@@ -17816,7 +17816,7 @@ ${err.stack}` : ""}`);
     if (type === "dragend")
       elementDrag = null;
     reconciler.flushSyncWork();
-    if (event instanceof IronInputEvent)
+    if (event instanceof PlatypusInputEvent)
       restoreControlledValue(target);
     return event.defaultPrevented;
   }
@@ -17831,7 +17831,7 @@ ${err.stack}` : ""}`);
     queueFor(target.id).push([SET_ATTRS, target.id, "value", value]);
     flush();
   }
-  globalThis.__iron_ui_event = dispatchUiEvent;
+  globalThis.__platypus_ui_event = dispatchUiEvent;
 
   // ../../js/react/src/index.ts
   function Text({ children, ...props }) {
@@ -17872,7 +17872,7 @@ ${e.stack}` : ""}`);
     rootsCreated.add(id);
     const container = id === 0 ? screenContainer : containerFor(id);
     let rendered = false;
-    const root = reconciler.createContainer(container, import_constants3.ConcurrentRoot, null, false, null, "iron", reportError2("uncaught error"), reportError2("caught error"), reportError2("recoverable error"), () => {}, null);
+    const root = reconciler.createContainer(container, import_constants3.ConcurrentRoot, null, false, null, "platypus", reportError2("uncaught error"), reportError2("caught error"), reportError2("recoverable error"), () => {}, null);
     const handle = {
       render(element) {
         if (_loadingGame() && rendered)

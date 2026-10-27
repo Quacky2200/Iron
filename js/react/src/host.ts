@@ -3,10 +3,10 @@
 // react-reconciler host config: turns React's tree mutations into UI ops.
 //
 // Ops are collected during render/commit and sent to the engine with ONE
-// `__iron_commit` call per React commit (D1 in TODO.md). Rust owns the real
+// `__platypus_commit` call per React commit (D1 in TODO.md). Rust owns the real
 // tree; JS only keeps node IDs and the last props needed for diffing.
 
-import { op } from "@iron/engine";
+import { op } from "@platypus/engine";
 import { createContext } from "react";
 import createReconciler from "react-reconciler";
 import { DefaultEventPriority, NoEventPriority } from "react-reconciler/constants";
@@ -24,17 +24,17 @@ import {
   SET_TEXT,
 } from "./opcodes.ts";
 import { attrDiff, attrEntries, SVG_TYPES } from "./attrs.ts";
-import { type IronStyle, styleDiff, styleEntries } from "./style.ts";
+import { type PlatypusStyle, styleDiff, styleEntries } from "./style.ts";
 
 /** Host element types; `text` and `span` are rendered by the `Text` and `Span` components. */
 export type ElementType = string;
 
 export interface Props {
-  style?: IronStyle;
+  style?: PlatypusStyle;
   children?: unknown;
 }
 
-/** An element. Refs (`useRef<IronElement>(null)`) point at these. */
+/** An element. Refs (`useRef<PlatypusElement>(null)`) point at these. */
 export class Instance {
   constructor(
     readonly id: number,
@@ -61,7 +61,7 @@ export class Instance {
   /**
    * Sends the pointer's moves and its release to this element wherever the pointer goes
    * (drag a slider or window), until the button is released. Call it from `onPointerDown`;
-   * it applies on the next frame, followed by `onGotPointerCapture`. Iron has one pointer,
+   * it applies on the next frame, followed by `onGotPointerCapture`. Platypus has one pointer,
    * so `pointerId` is ignored.
    */
   setPointerCapture(_pointerId?: number): void {
@@ -188,8 +188,8 @@ let nextId = 1;
 function flushContainer(c: Container) {
   if (c.pending.length === 0) return;
   const ops = c.pending.splice(0, c.pending.length);
-  if (c.target === 0) __iron_commit(ops);
-  else __iron_commit(ops, c.target);
+  if (c.target === 0) __platypus_commit(ops);
+  else __platypus_commit(ops, c.target);
 }
 
 /** Sends pending ops now (outside a React commit), each root to its own tree. */
@@ -211,7 +211,7 @@ const ELEMENT_TYPES: ReadonlySet<string> = new Set([
 
 let currentUpdatePriority: number = NoEventPriority;
 
-// React 19 needs a context to expose form/transition status; Iron has no forms.
+// React 19 needs a context to expose form/transition status; Platypus has no forms.
 const HostTransitionContext = createContext<null>(null);
 
 export const reconciler = createReconciler({
@@ -225,7 +225,7 @@ export const reconciler = createReconciler({
   cancelTimeout: (id: number) => clearTimeout(id),
   noTimeout: -1 as const,
   rendererVersion: "0.1.0",
-  rendererPackageName: "@iron/react",
+  rendererPackageName: "@platypus/react",
   extraDevToolsConfig: null,
   // Used by React's dev build to replay logs from server components; just forward them.
   bindToConsole(methodName: string, args: unknown[], badgeName: string) {
@@ -235,7 +235,7 @@ export const reconciler = createReconciler({
 
   createInstance(type: string, props: Props, root: Container): Instance {
     if (!ELEMENT_TYPES.has(type)) {
-      throw new Error(`<${type}> is not an Iron element; available: ${[...ELEMENT_TYPES].join(", ")}`);
+      throw new Error(`<${type}> is not a Platypus element; available: ${[...ELEMENT_TYPES].join(", ")}`);
     }
     const id = nextId++;
     owners.set(id, root);
@@ -341,7 +341,7 @@ export const reconciler = createReconciler({
   resolveUpdatePriority: () =>
     currentUpdatePriority !== NoEventPriority ? currentUpdatePriority : DefaultEventPriority,
 
-  // Transitions and forms (unused by Iron).
+  // Transitions and forms (unused by Platypus).
   NotPendingTransition: null,
   HostTransitionContext: HostTransitionContext as never,
   resetFormInstance: () => {},
@@ -351,7 +351,7 @@ export const reconciler = createReconciler({
   resolveEventTimeStamp: () => -1.1,
   requestPostPaintCallback: () => {},
 
-  // Suspending commits (for loading resources); Iron never suspends a commit.
+  // Suspending commits (for loading resources); Platypus never suspends a commit.
   maySuspendCommit: () => false,
   maySuspendCommitOnUpdate: () => false,
   maySuspendCommitInSyncRender: () => false,

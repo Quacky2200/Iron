@@ -25,7 +25,7 @@ mod upscale;
 mod volume;
 
 use bytemuck::{Pod, Zeroable};
-use iron_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
+use platypus_core::glam::{Mat3, Mat4, Vec3, Vec4Swizzles};
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -220,7 +220,7 @@ pub struct WorldCamera {
 
 impl WorldCamera {
     /// A camera at `world` (its transform: looking down its -z) for a viewport of `size`
-    /// pixels. Uses the same projections as `Matrix4x4` in `@iron/engine` (right-handed,
+    /// pixels. Uses the same projections as `Matrix4x4` in `@platypus/engine` (right-handed,
     /// depth 0 to 1).
     pub fn new(
         world: Mat4,
@@ -234,7 +234,7 @@ impl WorldCamera {
         let (near, far) = (near.max(1e-4), far.max(near.max(1e-4) + 1e-3));
         let proj = match projection {
             Projection::Perspective { fov_y_degrees } => {
-                iron_core::glam::camera::rh::proj::directx::perspective(
+                platypus_core::glam::camera::rh::proj::directx::perspective(
                     fov_y_degrees.clamp(1.0, 179.0).to_radians(),
                     aspect,
                     near,
@@ -244,7 +244,9 @@ impl WorldCamera {
             Projection::Orthographic { half_height } => {
                 let h = half_height.max(1e-4);
                 let w = h * aspect;
-                iron_core::glam::camera::rh::proj::directx::orthographic(-w, w, -h, h, near, far)
+                platypus_core::glam::camera::rh::proj::directx::orthographic(
+                    -w, w, -h, h, near, far,
+                )
             }
         };
         Self {
@@ -2057,7 +2059,7 @@ impl WorldRenderer {
             .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
     }
 
-    /// Sets texture `id` from a cooked texture (`iron --cook`): its levels upload as they
+    /// Sets texture `id` from a cooked texture (`platypus --cook`): its levels upload as they
     /// are. Refused when invalid, too big, or block-compressed on a GPU without BC.
     pub fn set_cooked_texture(&mut self, gpu: &Gpu, id: u32, data: &CookedTexture) -> bool {
         let max = gpu.device.limits().max_texture_dimension_2d;
@@ -3038,7 +3040,7 @@ impl WorldRenderer {
             let face_target = self.probe_face_target(gpu, res);
             for face in 0..6u32 {
                 let (forward, up) = environment::face_camera(face);
-                let world = iron_core::glam::camera::rh::view::look_at_mat4(
+                let world = platypus_core::glam::camera::rh::view::look_at_mat4(
                     probe.position,
                     probe.position + forward,
                     up,

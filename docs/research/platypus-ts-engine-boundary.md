@@ -1,7 +1,7 @@
-# iron_ts: the engine boundary (design note, for review)
+# platypus_ts: the engine boundary (design note, for review)
 
 Status: **proposal, no code written.** This is the design note for `TODO.md` M9.b2 "Direct engine
-calls" (a STOP item), set by the direction recorded in `iron-ts-classes.md` section 12: the engine is
+calls" (a STOP item), set by the direction recorded in `platypus-ts-classes.md` section 12: the engine is
 native, TypeScript sees it through declaration files (`.d.ts`), scripts call native functions
 directly, QuickJS stays an option. Questions that need a yes or no are in section 11.
 
@@ -20,20 +20,20 @@ directly, QuickJS stays an option. Questions that need a yes or no are in sectio
 ## 2. What exists today (measured by reading the code, 2026-10-18)
 
 - `js/engine/src` is 11,468 lines of TypeScript. Scripts reach Rust only through
-  `__iron_op(name, ...args)`: about 85 distinct op names in these families: `render` 19, `physics`
+  `__platypus_op(name, ...args)`: about 85 distinct op names in these families: `render` 19, `physics`
   15, `audio` 15, `scene` 9, `prefs` 4, `app` 3, `cursor` 3, plus `asset`, `cloth`, `screen`,
   `loadFont`, style sheets. Arguments are the generic `Value` (null, bool, number, string, array),
-  queued in an `OpBuffer` and applied by name once per frame. `iron_core/src/ops.rs` already says hot
+  queued in an `OpBuffer` and applied by name once per frame. `platypus_core/src/ops.rs` already says hot
   paths should move to a binary encoding.
 - **The TypeScript keeps a mirror of the world.** `Transform` stores `_position`, `_rotation`,
   `_scale` in TS and sends `scene.local` (three arrays) on every set; Rust sends moves back in a
-  batch, `__iron_scene(moved)`, as flat numbers. Physics contacts, raycast results, input and audio
-  endings come back the same way, as batches into `__iron_physics`, `__iron_input`, `__iron_audio`.
+  batch, `__platypus_scene(moved)`, as flat numbers. Physics contacts, raycast results, input and audio
+  endings come back the same way, as batches into `__platypus_physics`, `__platypus_input`, `__platypus_audio`.
 - **Rust owns the component list, JS holds the instances.** `ComponentHost` creates components by
-  class name (`__iron_create`), asks which hooks a class has (`__iron_hooks`), and calls
-  `__iron_dispatch(id, "onUpdate", dt)` by name. A component that throws is reported and disabled.
-- The measured cost of crossing: in the sine-circle comparison (`iron-ts-spike.md` section 8) the
-  QuickJS frame spent about 0.12 ms of 1.26 ms in `__iron_op` plus draining it, for one op.
+  class name (`__platypus_create`), asks which hooks a class has (`__platypus_hooks`), and calls
+  `__platypus_dispatch(id, "onUpdate", dt)` by name. A component that throws is reported and disabled.
+- The measured cost of crossing: in the sine-circle comparison (`platypus-ts-spike.md` section 8) the
+  QuickJS frame spent about 0.12 ms of 1.26 ms in `__platypus_op` plus draining it, for one op.
 - Where the 11.5k lines go, roughly: thin wrappers over ops (physics, audio, rendering component
   classes, app, prefs, screen); and **real logic that lives only in TypeScript**: `math.ts` (1,025:
   vectors, quaternions, colours, matrices), `scenes.ts` (1,044: JSON scene load, `SceneManager`,
@@ -48,10 +48,10 @@ game). That is the bulk of the work in this item, and it is mostly mechanical.
 ## 3. The shape: declarations over a native API
 
 ```text
-Rust engine functions (#[iron_api])  --generates-->  engine_api.json   (the manifest)
-                                                       |-- iron.d.ts          (for tsc, editors, users)
+Rust engine functions (#[platypus_api])  --generates-->  engine_api.json   (the manifest)
+                                                       |-- platypus.d.ts          (for tsc, editors, users)
                                                        |-- extern "C" shims   (the symbols to link)
-                                                       |-- compiler extern table (iron_ts)
+                                                       |-- compiler extern table (platypus_ts)
                                                        |-- QuickJS bindings   (while QuickJS is kept)
 ```
 
@@ -71,7 +71,7 @@ The compiler needs to know, per declared type, how its values are represented. F
 ### 4.1 Handle classes (identity objects owned by the engine)
 
 `GameObject`, `Transform`, `Rigidbody`, `Collider`, `AudioSource`, `Camera`, `Light`, `MeshRenderer`,
-`Animator`, ... A value is the engine's **generational id**, a 64-bit integer (`ObjectId` in `iron_scene` is an index plus a
+`Animator`, ... A value is the engine's **generational id**, a 64-bit integer (`ObjectId` in `platypus_scene` is an index plus a
 generation already; today scripts use their own numeric ids that the engine maps to it, and a handle
 would be the engine id itself, which removes that map). Proposal: a new IR type `Handle(class)`, an `i64` in a register. It is not a heap object, so it
 costs no allocation and no GC root; `===` compares ids; zero is `null`/`undefined`.
@@ -134,7 +134,7 @@ Today: class name string in, instance by id, hooks by name. Native:
 - Each compiled module exports a **class table** (static data), one entry per `register()`ed class:
   `{ name, class_id, instance_size, create: fn(handle_prefix) -> object, hooks: [onAwake, onStart,
   onUpdate, onLateUpdate, onFixedUpdate, onPreRender, onDestroy, ...] }`, each hook a function
-  address or null. Which hooks a class has is known at compile time, so the `__iron_hooks` probe
+  address or null. Which hooks a class has is known at compile time, so the `__platypus_hooks` probe
   disappears and a missing hook costs nothing.
 - Rust's `ComponentHost` keeps one **host root** per component (a pointer into the script heap,
   `ts_rt_root_add`), and calls `hook(this, dt)` directly. Order, enabled/active checks and `onStart`
@@ -156,7 +156,7 @@ Today: class name string in, instance by id, hooks by name. Native:
   signature is the manifest's, so Rust knows the argument types.
 - **Batches become direct calls.** Contacts and ended sounds are delivered as calls to the owning
   component's hook (`onCollisionEnter(other)`) when the engine steps; raycasts return their hit
-  through an out object; input state is read by getters. The `__iron_physics(moved, contacts, rays,
+  through an out object; input state is read by getters. The `__platypus_physics(moved, contacts, rays,
   characters)` style batch disappears with the mirror.
 - **Timers and `async`** (`Task`, `setTimeout`) need the event-loop contract of the open `async`
   item. Nothing here decides it.
@@ -185,19 +185,19 @@ Today: class name string in, instance by id, hooks by name. Native:
 | Module | Lines | Becomes |
 |---|---|---|
 | `math.ts` | 1,025 | Declared value classes (4.2); the arithmetic is intrinsics, the rest Rust (glam). `Mathf` is a singleton |
-| `scene.ts` | 785 | `GameObject`, `Transform`, `Component` as handles / extern base over `iron_scene`; the mirror is deleted |
+| `scene.ts` | 785 | `GameObject`, `Transform`, `Component` as handles / extern base over `platypus_scene`; the mirror is deleted |
 | `scenes.ts` | 1,044 | Rust: scene JSON load/save through the `@property` reflection table, `SceneManager`, `instantiate`, prefabs |
-| `physics.ts`, `physics2d.ts`, `physics-components.ts` | 1,862 | Declared handle classes over `iron_physics`; the logic that wraps ops is deleted |
+| `physics.ts`, `physics2d.ts`, `physics-components.ts` | 1,862 | Declared handle classes over `platypus_physics`; the logic that wraps ops is deleted |
 | `rendering.ts`, `models.ts`, `textures.ts`, `particles.ts`, `lines.ts`, `gizmos.ts`, `cloth.ts` | about 2,700 | Declared component classes whose fields are engine properties (setting `material.color` calls the engine) |
-| `audio.ts`, `audio-components.ts` | 500 | Declared classes over `iron_audio` |
+| `audio.ts`, `audio-components.ts` | 500 | Declared classes over `platypus_audio` |
 | `animation.ts` | 921 | **Rust port** (curves, clips, blend trees, transitions); the largest single port |
 | `time.ts`, `clock.ts` | 629 | `DateTime`/`TimeSpan` become value classes with native methods; `Time` a singleton; `Task` waits for the async design |
 | `input.ts`, `app.ts`, `screen.ts`, `quality.ts`, `cursor.ts`, `random.ts` | about 1,100 | Singletons over existing Rust state; `Random` needs a seedable API |
 | `hot.ts`, `property.ts`, `assets.ts`, `index.ts` | rest | Replaced by the class table and reflection table, or by the dev loop note |
 
 The `.d.ts` that replaces all of this is generated, and most of the 11.5k lines are deleted rather
-than translated: the Rust that implements them mostly exists (`iron_scene`, `iron_physics`,
-`iron_audio`), because the TypeScript was already a thin client of it. The genuinely new Rust is
+than translated: the Rust that implements them mostly exists (`platypus_scene`, `platypus_physics`,
+`platypus_audio`), because the TypeScript was already a thin client of it. The genuinely new Rust is
 `math` (glam is there; the API surface is not), `scenes`, `animation`, `time`.
 
 ## 9. QuickJS next to it
@@ -218,7 +218,7 @@ other.
 
 Out of scope here, but they constrain this note:
 
-- The UI tree is already native (`iron_ui`, driven by `__iron_commit` opcodes). A UI library in the
+- The UI tree is already native (`platypus_ui`, driven by `__platypus_commit` opcodes). A UI library in the
   compiled subset would call `ts_eng_ui_*` functions; the React reconciler is not needed for that.
   What it needs from the boundary: typed props and style objects (styles as `Record<string, ...>` are
   the hard case: they need structural typing and string keys), and event callbacks (6, closures to
@@ -228,7 +228,7 @@ Out of scope here, but they constrain this note:
 
 ## 11. Decisions I need from you
 
-1. **Source of truth**: Rust annotated with `#[iron_api]` generating the manifest, `.d.ts`, shims and
+1. **Source of truth**: Rust annotated with `#[platypus_api]` generating the manifest, `.d.ts`, shims and
    QuickJS bindings (recommended); or hand-written `.d.ts` and Rust checked against each other.
 2. **Value classes**: phase 1 ordinary structs with scalarised engine calls, scalar replacement
    later (recommended); or build register-passed vectors into the IR from the start.
@@ -241,14 +241,14 @@ Out of scope here, but they constrain this note:
 6. **Generics**: treat `getComponent`/`addComponent`/`findObjectOfType` as compiler intrinsics until
    generics exist?
 7. **What stays TypeScript**: anything, or is the rule "no engine logic in TypeScript at all", with
-   `animation.ts`, `scenes.ts` and `math.ts` ported to Rust? (Compiling them with `iron_ts` as
+   `animation.ts`, `scenes.ts` and `math.ts` ported to Rust? (Compiling them with `platypus_ts` as
    library source is the cheaper alternative and is allowed by the design above.)
 
 ## 12. Proposed sub-tasks
 
 | # | Sub-task | Size | Needs |
 |---|---|---|---|
-| 1 | The manifest format and `#[iron_api]` (or the hand-written equivalent), generating `.d.ts` | M | decision 1 |
+| 1 | The manifest format and `#[platypus_api]` (or the hand-written equivalent), generating `.d.ts` | M | decision 1 |
 | 2 | Compiler: extern table, `Handle` type, singleton calls, direct calls with scalar arguments | M | 1 |
 | 3 | First vertical slice: `Time`, `Mathf`, `Vector3` intrinsics, `Transform` position/rotation, `Input` axes, compiled `Component` subclass with `onUpdate`, driven by `ComponentHost` | M | 1, 2, plain classes |
 | 4 | Class table and component creation/hooks without names | M | 3 |
@@ -265,8 +265,8 @@ set against the 0.12 ms crossing above.
 
 ## 13. Answers (from the user, 2026-10-18)
 
-1. **Source of truth: Rust annotated with `#[iron_api]`**, generating the manifest, the shims and the
-   QuickJS bindings, *instead of* `__iron_op`. The user's point, which this note had only half said:
+1. **Source of truth: Rust annotated with `#[platypus_api]`**, generating the manifest, the shims and the
+   QuickJS bindings, *instead of* `__platypus_op`. The user's point, which this note had only half said:
    this speeds up QuickJS as well. The QuickJS bindings become ordinary native functions registered
    with typed arguments (numbers as `f64`, handles as integers), not strings plus a `Value` array in an
    op queue. A consequence to design for: ops are queued and applied once per frame today, so a script
@@ -280,7 +280,7 @@ set against the 0.12 ms crossing above.
 5. **Native faults take the process down for now**; the dev loop's checks are the later answer.
 6. **Everything in `js/engine` is ported to Rust.** Anything left in TypeScript is user-made, and may
    be ported if it is portable (a Bun library written in TypeScript is the example given). So the
-   "compile engine modules with `iron_ts` as library source" alternative in question 7 is not taken
+   "compile engine modules with `platypus_ts` as library source" alternative in question 7 is not taken
    for the engine; it remains how *user* libraries are compiled.
 
 **Question 6 answered later: yes**, generics-as-intrinsics (`getComponent`, `addComponent`,
@@ -291,53 +291,53 @@ set against the 0.12 ms crossing above.
 `findObjectOfType` as compiler intrinsics until generics exist), is therefore **still open**; the
 recommendation stands as the working default and is easy to change, because it is three functions.
 
-**What this makes next.** Sub-task 1 of section 12: the manifest format and `#[iron_api]`, generating
+**What this makes next.** Sub-task 1 of section 12: the manifest format and `#[platypus_api]`, generating
 the `.d.ts`, the `extern "C"` shims and the QuickJS bindings. It lives in the engine workspace (a
 proc-macro crate and a generator), not in `tools/`, and the engine crates that carry ops today
-(`iron_scene`, `iron_physics`, `iron_audio`, `iron_script`) are where the first annotated functions
-go. `iron_render` and `iron_app` carry the `render.*`, `app.*`, `cursor.*` and `screen.*` ops and
+(`platypus_scene`, `platypus_physics`, `platypus_audio`, `platypus_script`) are where the first annotated functions
+go. `platypus_render` and `platypus_app` carry the `render.*`, `app.*`, `cursor.*` and `screen.*` ops and
 belong to another session's area, so they are left for last, and for whoever owns them.
 
-## 14. First slice of `#[iron_api]`: built (2026-10-18)
+## 14. First slice of `#[platypus_api]`: built (2026-10-18)
 
 Sub-task 1 of section 12, in its smallest useful form: two new crates in the engine workspace,
-additive (nothing else depends on them, `__iron_op` is untouched).
+additive (nothing else depends on them, `__platypus_op` is untouched).
 
-- `crates/iron_api_macros`: `#[iron_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]`
+- `crates/platypus_api_macros`: `#[platypus_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]`
   on an inline `pub mod`. It keeps the module's code and adds `MANIFEST`, one `extern "C"` shim per
-  `pub fn` (`iron_Demo_add`), and with `quickjs` a `register_quickjs(ctx)`.
-- `crates/iron_api`: the manifest types (`Namespace`, `Function`, `Param`, `Ty`), the `Handle` trait
+  `pub fn` (`platypus_Demo_add`), and with `quickjs` a `register_quickjs(ctx)`.
+- `crates/platypus_api`: the manifest types (`Namespace`, `Function`, `Param`, `Ty`), the `Handle` trait
   (the Rust id type implements `to_raw`/`from_raw`), and the generators `to_dts()` (the TypeScript
   declaration, doc comments as JSDoc) and `to_json()` (the table the compiler will read).
 - Supported so far: functions over `f64`, `f32`, `i32`, `u32`, `bool`, `()` and declared handle
   types. Handles are `number & { __handle }` in TypeScript, a `u64` through the C ABI and a plain
   number in QuickJS. No registry or linker trick: everything the macro needs is in the one module it
   is attached to.
-- **QuickJS gets typed functions**, not `__iron_op(name, ...args)`: `Demo.add(1, 2)` is a native
-  closure taking `f64`s. Measured with `cargo test -p iron_api --release -- --ignored --nocapture`:
+- **QuickJS gets typed functions**, not `__platypus_op(name, ...args)`: `Demo.add(1, 2)` is a native
+  closure taking `f64`s. Measured with `cargo test -p platypus_api --release -- --ignored --nocapture`:
   1,000,000 calls take about 150 ns each through the typed function and about 245 ns through a
-  simplified `__iron_op` (a name string, a rest array of numbers, a queue push; the real op also
+  simplified `__platypus_op` (a name string, a rest array of numbers, a queue push; the real op also
   converts each argument to a `Value`, so the real gap is larger). Most of the remaining 150 ns is
   QuickJS's own call overhead; the large win is for compiled code, which calls the shim directly.
-- Tests: `crates/iron_api/tests/api.rs` (`M9-API-01`..`06`).
+- Tests: `crates/platypus_api/tests/api.rs` (`M9-API-01`..`06`).
 
 **Not built yet** (next, in order): the compiler reading the JSON manifest (an extern call node, the
 `Handle` type, f32/i32/u32/bool conversions at the call), value classes (`Vector3`) scalarised across
 the boundary, strings, methods on handles (`transform.position`) and the engine context those need (the
 shims are free functions, so anything that touches the world must reach it through state the host
 sets up, for example a thread-local current world; that design is open), and annotating the real
-engine crates. The crates that carry ops today are `iron_scene`, `iron_physics`, `iron_audio` and
-`iron_script`; `render.*`, `app.*`, `cursor.*` and `screen.*` live in `iron_render` and `iron_app`
+engine crates. The crates that carry ops today are `platypus_scene`, `platypus_physics`, `platypus_audio` and
+`platypus_script`; `render.*`, `app.*`, `cursor.*` and `screen.*` live in `platypus_render` and `platypus_app`
 and are left for their owner.
 
 ## 15. The compiler calls the engine API: built (2026-10-18)
 
 Sub-task 2 of section 12, in its first form (`M9-TS-142`..`146`). A TypeScript module compiled with
-the manifest of an `#[iron_api]` namespace calls it directly.
+the manifest of an `#[platypus_api]` namespace calls it directly.
 
-- `iron_ts --manifest api.json` (or `compile_with_manifests`) reads the JSON `Namespace::to_json`
-  writes (`tools/iron_ts/src/manifest.rs`). `Demo.scale(3, 4)` becomes `CallExtern`, an import of the
-  symbol `iron_Demo_scale` with the manifest's C signature: no op, no `Value`, no name lookup.
+- `platypus_ts --manifest api.json` (or `compile_with_manifests`) reads the JSON `Namespace::to_json`
+  writes (`tools/platypus_ts/src/manifest.rs`). `Demo.scale(3, 4)` becomes `CallExtern`, an import of the
+  symbol `platypus_Demo_scale` with the manifest's C signature: no op, no `Value`, no name lookup.
 - Numbers stay `f64` in scripts and are converted **at the call**: `f32` demotes on the way in and
   promotes on the way out; `i32`/`u32` take a saturating, truncating conversion (`-5.7` becomes `-5`,
   as `as i32` does in Rust); `bool` is a byte.
@@ -350,12 +350,12 @@ the manifest of an `#[iron_api]` namespace calls it directly.
 - An engine function is assumed not to call back into scripts and so not to allocate in the script
   heap: `CallExtern` is not an allocation point in the frame plan. The first engine function that runs
   a script hook changes that (closures to Rust, section 6).
-- The end-to-end proof is `tools/iron_demo_api` (a small world of entities written with
-  `#[iron_api]`) linked into `iron_ts_tests`, whose `build.rs` compiles `bench/engine.ts` with that
+- The end-to-end proof is `tools/platypus_demo_api` (a small world of entities written with
+  `#[platypus_api]`) linked into `platypus_ts_tests`, whose `build.rs` compiles `bench/engine.ts` with that
   crate's manifest. Every test runs normally, in stress GC mode and with collection off.
 
 Not built yet: value classes across the boundary, strings, methods on handles (`transform.position`),
-the engine context the real shims will reach the world through, and annotating `iron_scene` and the
+the engine context the real shims will reach the world through, and annotating `platypus_scene` and the
 other engine crates.
 
 ## 16. The engine context and value classes: built (2026-10-18)
@@ -363,7 +363,7 @@ other engine crates.
 **Decision: a thread-local current world.** Taken as the recommended default when the question in
 section 12's follow-up went unanswered and the work was told to continue. A shim has no world argument
 (scripts have none), so the host makes the world current on the scripting thread and API functions
-reach it through `iron_api::context`: `enter(&SLOT, &mut world)` returns a scope guard that restores
+reach it through `platypus_api::context`: `enter(&SLOT, &mut world)` returns a scope guard that restores
 the previous world when dropped, and `with(&SLOT, |w| ..)` runs a closure on it or answers `None` when
 there is none (so a function called outside a frame returns its default instead of crashing). While
 the closure runs the world is *not* current, so an API function called from inside it gets `None`
@@ -392,38 +392,38 @@ read.
 Not built yet: methods on value classes as inline intrinsics (`a.add(b)`), strings, methods on
 handles (`transform.position`), annotating the real engine crates, and QuickJS support for values.
 
-## 17. The first real engine crate: `iron_scene` (2026-10-18)
+## 17. The first real engine crate: `platypus_scene` (2026-10-18)
 
-`crates/iron_scene/src/api.rs` declares the `Scene` namespace with `#[iron_api]`, next to the
+`crates/platypus_scene/src/api.rs` declares the `Scene` namespace with `#[platypus_api]`, next to the
 op-based `ScriptScene`, which is untouched. It is the first engine crate on the new path, and
-compiled TypeScript now drives the real scene (`tools/iron_ts_tests/bench/scene.ts`).
+compiled TypeScript now drives the real scene (`tools/platypus_ts_tests/bench/scene.ts`).
 
 - Functions (no strings yet): `create`, `destroy`, `exists`, `count`, `parent`, `setParent`,
   `enabled`/`setEnabled`, `active`, `layer`/`setLayer`, and position, rotation and scale in local
   space plus position and rotation in world space, as `Vector3` and `Quaternion` values on
-  `GameObject` handles (glam's `Vec3` and `Quat`, through the new `iron_api` `glam` feature).
+  `GameObject` handles (glam's `Vec3` and `Quat`, through the new `platypus_api` `glam` feature).
 - **The handle encoding.** `ObjectId` is an index and a generation; its raw handle is
   `((generation + 1) << 32) | index`, so **no live object is 0** (generation 0 and index 0 is a real
   object, and 0 must mean "no object" in `GameObject | null`). `from_raw(0)` decodes to a generation
   no slot has, so it misses everywhere.
-- **The world.** `iron_scene::api::enter(&mut scene)` makes a scene current on the thread (the
-  `iron_api::context` thread-local); the functions answer with defaults (no object, the origin, the
+- **The world.** `platypus_scene::api::enter(&mut scene)` makes a scene current on the thread (the
+  `platypus_api::context` thread-local); the functions answer with defaults (no object, the origin, the
   identity rotation) when there is none or the id is stale.
-- **Not wired into the running engine.** `iron_app` is another session's area and was not touched:
-  nothing calls `enter` yet, and the engine's scripts still use `__iron_op`. Wiring it is one line
-  around script execution (`let _scope = iron_scene::api::enter(&mut scene);`) plus linking the shims
+- **Not wired into the running engine.** `platypus_app` is another session's area and was not touched:
+  nothing calls `enter` yet, and the engine's scripts still use `__platypus_op`. Wiring it is one line
+  around script execution (`let _scope = platypus_scene::api::enter(&mut scene);`) plus linking the shims
   into the game executable.
 - Adding the dependency changed nothing else: `cargo check --workspace --all-targets` passes.
 
 Next for this crate: strings (names, `find`), methods on handles (`transform.position` instead of
-`Scene.position(object)`), component handles, and the same treatment for `iron_physics` and
-`iron_audio`.
+`Scene.position(object)`), component handles, and the same treatment for `platypus_physics` and
+`platypus_audio`.
 
 ## 18. Handle classes (2026-10-18)
 
 Handles now have members: `parent.transform.localPosition = v` instead of
 `Scene.setLocalPosition(parent, v)`. They are declared in ordinary `impl` blocks of the handle's Rust
-type inside the `#[iron_api]` module.
+type inside the `#[platypus_api]` module.
 
 - **Syntax.** `#[property] pub fn x(self) -> T` is a getter; `pub fn set_x(self, v: T)` next to it (same
   type) is the setter, and a getter alone is read-only. Other `self` functions are methods, functions
@@ -439,7 +439,7 @@ type inside the `#[iron_api]` module.
 - **Declarations and shims.** `declare class Transform { private constructor(); get position():
   Vector3; set position(value: Vector3); setParent(parent: Transform, keepWorld: boolean): void; }`;
   a handle with no class still emits the `number & { __handle }` alias. Shims are
-  `iron_<Class>_<jsName>` with `this: u64` first; value results still use the trailing out pointer.
+  `platypus_<Class>_<jsName>` with `this: u64` first; value results still use the trailing out pointer.
 - **QuickJS.** Bindings are generated only for namespace functions. A handle is a plain number there,
   so a class would need a wrapper object; that is left until the QuickJS side needs it.
 - **Compiler.** The manifest parser fills `ClassFns { statics, methods, getters, setters }`. Lowering
@@ -448,7 +448,7 @@ type inside the `#[iron_api]` module.
   that calls the setter (assigning a read-only or unknown property is a compile error), a method call
   puts the receiver first, and `Class.f()` is the static. Compound assignment (`+=`) on a value
   property is not supported yet.
-- **iron_scene.** `GameObject` (`create`, `destroy`, `exists`, `transform`, `enabled`,
+- **platypus_scene.** `GameObject` (`create`, `destroy`, `exists`, `transform`, `enabled`,
   `activeInHierarchy`, `layer`) and `Transform` (`gameObject`, `position`, `rotation`, `localPosition`,
   `localRotation`, `localScale`, `parent`, `setParent(parent, keepWorld)`) next to the `Scene`
   namespace functions. Tests `M9-API-16`..`19`, `M9-TS-156`..`158`.
@@ -462,29 +462,29 @@ const p = child.transform.position; // world position, a new Vector3
 ```
 
 Not built yet: methods on value classes as intrinsics (`a.add(b)`; built in section 19), strings
-(names, `find`; built in section 20), classes in the QuickJS bindings, and the same treatment for `iron_physics` and
-`iron_audio`.
+(names, `find`; built in section 20), classes in the QuickJS bindings, and the same treatment for `platypus_physics` and
+`platypus_audio`.
 
 ## 19. Value-class methods (2026-10-18)
 
 Value classes have members: `a.add(b).scale(2)`, `v.magnitude`, `q.rotate(v)`.
 
-- **Syntax.** A free function in the `#[iron_api]` module marked `#[method(Vector3)]` or
+- **Syntax.** A free function in the `#[platypus_api]` module marked `#[method(Vector3)]` or
   `#[getter(Vector3)]`, where `Vector3` is declared in `values(..)` and the first parameter is that
   value. A getter takes only the value. Anything else is a compile error.
 - **Why free functions with an attribute.** The value type is a foreign glam type (`Vec3`), so an
-  inherent `impl` is not possible in `iron_scene`. An extension trait per value would work but is
+  inherent `impl` is not possible in `platypus_scene`. An extension trait per value would work but is
   heavier: a trait, an impl and an import for each function, and the macro would have to find them.
   The attribute keeps the function a plain `pub fn` that Rust code can call too.
 - **Manifest and declarations.** The functions go into `Namespace.classes` under the value's name, the
   receiver first as `this` (`value:Vector3`). `to_dts` declares them inside `declare class Vector3`,
-  not as a second class and without a handle alias. Shims are `iron_Vector3_add` and so on; the
+  not as a second class and without a handle alias. Shims are `platypus_Vector3_add` and so on; the
   receiver travels as the value's fields like any value parameter, and results come back through the
   out pointer.
 - **Compiler.** The manifest parser adds them to `ClassFns` of that name without registering a handle
   type. `value_member` (lower/expr.rs), `lower_method` (lower/arrays.rs) and `member_of` call them as
   direct extern calls. A field of the same name wins over a getter.
-- **iron_scene.** `Vector3`: `add`, `sub`, `scale`, `dot`, `cross`, `distance`, `lerp`, `magnitude`,
+- **platypus_scene.** `Vector3`: `add`, `sub`, `scale`, `dot`, `cross`, `distance`, `lerp`, `magnitude`,
   `normalized`; `Quaternion`: `mul`, `rotate`, `inverse`. Tests `M9-API-20`, `M9-TS-159`..`161`.
 - **Not built.** Static functions on value classes (`Vector3.zero`), operators (`a + b`), and
   compound assignment on value properties.
@@ -500,30 +500,30 @@ const v = q.rotate(new Vector3(1, 0, 0)); // (0, 0, -1)
 
 ## 20. Strings across the boundary (2026-10-18)
 
-`#[iron_api]` functions take `&str` (or `String`) parameters and return `String`; the strings item of
-the compiler is now complete (see [iron-ts-strings.md](iron-ts-strings.md)).
+`#[platypus_api]` functions take `&str` (or `String`) parameters and return `String`; the strings item of
+the compiler is now complete (see [platypus-ts-strings.md](platypus-ts-strings.md)).
 
-- **Type.** Manifest, JSON and d.ts say `string` (`iron_api::Ty::Str`; compiler `ExtTy::Str`).
+- **Type.** Manifest, JSON and d.ts say `string` (`platypus_api::Ty::Str`; compiler `ExtTy::Str`).
   `string | null` parameters are not supported. A string in a `quickjs` namespace is a compile error.
-- **In.** A parameter is a `*const u8` to the script string object (header `iron_api::ScriptStr`,
-  layout equal to `iron_ts_rt::Str`, bytes inline after the 48-byte header). The shim reads it with
-  `iron_api::script_str`, which borrows the bytes as `&str` without a copy when the string is well
+- **In.** A parameter is a `*const u8` to the script string object (header `platypus_api::ScriptStr`,
+  layout equal to `platypus_ts_rt::Str`, bytes inline after the 48-byte header). The shim reads it with
+  `platypus_api::script_str`, which borrows the bytes as `&str` without a copy when the string is well
   formed, and otherwise copies it with each lone surrogate replaced by one U+FFFD. The collector is
   non-moving and the caller roots the string, so the pointer is valid for the call. The engine must
   copy what it keeps. Shims with string parameters are `unsafe extern "C"`.
 - **Out.** A `String` result adds a trailing `out_len: *mut i64` and returns `*const u8` into a
-  per-thread buffer (`iron_api::return_string`). The compiled call copies it at once into a new script
+  per-thread buffer (`platypus_api::return_string`). The compiled call copies it at once into a new script
   string with `ts_rt_str_new_gc`, so it can collect: the root analysis counts it as allocating.
   Codegen passes a trailing stack slot for the length.
-- **iron_scene.** `GameObject.name` (get and set) and `GameObject.find(name)`. Tests `M9-API-21`..`22`
-  (crates/iron_api/tests/strings.rs) and `M9-TS-183`..`186` (tools/iron_ts_tests/tests/scene.rs).
+- **platypus_scene.** `GameObject.name` (get and set) and `GameObject.find(name)`. Tests `M9-API-21`..`22`
+  (crates/platypus_api/tests/strings.rs) and `M9-TS-183`..`186` (tools/platypus_ts_tests/tests/scene.rs).
 - **Not built.** `string | null` parameters; strings in the QuickJS bindings.
 
 ## 21. Components for the host (2026-10-19)
 
 Section 5 built in its smallest form: `Component` is a prelude class, `register(X)` becomes exported
-constructor and hook thunks, the bindings carry a class table and `iron_ts_rt::NativeHost` runs the
-lifecycle over it with the same rules as `ComponentHost` (see `docs/iron-ts.md`, "Components for the
-host"). The host lives in `iron_ts_rt` so the engine depends on one crate; `iron_app` wiring (enter the
+constructor and hook thunks, the bindings carry a class table and `platypus_ts_rt::NativeHost` runs the
+lifecycle over it with the same rules as `ComponentHost` (see `docs/platypus-ts.md`, "Components for the
+host"). The host lives in `platypus_ts_rt` so the engine depends on one crate; `platypus_app` wiring (enter the
 scene, call `update`/`fixed_update`/`pre_render`, call `ts_rt_timers_advance(now_ms)` once per frame) is
 the contract for the session that owns it. Tests `M9-TS-556..561`.

@@ -9,8 +9,8 @@ import type { Menu } from "../src/menu.ts";
 import { MenuBar } from "../src/MenuBar.tsx";
 
 beforeEach(() => {
-  (globalThis as { __iron_commit?: unknown }).__iron_commit = () => {};
-  (globalThis as { __iron_op?: unknown }).__iron_op = () => {};
+  (globalThis as { __platypus_commit?: unknown }).__platypus_commit = () => {};
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = () => {};
   resetForTests();
   _resetRootForTests();
 });
@@ -31,24 +31,24 @@ test("the menubar opens on press, switches on hover, runs items and closes on Es
   ];
   const root = createRoot();
   root.render(<MenuBar menus={menus} />);
-  const [bar] = byClass("iron-menubar");
-  const [row] = byClass("iron-menubar-items");
-  const [file, edit] = byClass("iron-menubar-item");
-  expect(byClass("iron-menu-item")).toEqual([]);
+  const [bar] = byClass("platypus-menubar");
+  const [row] = byClass("platypus-menubar-items");
+  const [file, edit] = byClass("platypus-menubar-item");
+  expect(byClass("platypus-menu-item")).toEqual([]);
 
   dispatchUiEvent("pointerdown", [file!, row!, bar!], POINTER);
-  expect(byClass("iron-menu-item").length).toBe(2);
-  expect(byClass("iron-menu-backdrop").length).toBe(1);
+  expect(byClass("platypus-menu-item").length).toBe(2);
+  expect(byClass("platypus-menu-backdrop").length).toBe(1);
 
   // Hovering the next title while open moves there.
   dispatchUiEvent("pointerenter", [edit!, row!, bar!], POINTER);
   await tick();
-  const items = byClass("iron-menu-item");
+  const items = byClass("platypus-menu-item");
   expect(items.length).toBe(1);
-  const menu = byClass("iron-menu")[0]!;
+  const menu = byClass("platypus-menu")[0]!;
   dispatchUiEvent("click", [items[0]!, menu, edit!, row!, bar!], POINTER);
   expect(ran).toEqual(["undo"]);
-  expect(byClass("iron-menu-item")).toEqual([]);
+  expect(byClass("platypus-menu-item")).toEqual([]);
 
   // Keys: Down on a highlighted bar opens, Enter chooses, Escape closes.
   dispatchUiEvent("pointerdown", [file!, row!, bar!], POINTER);
@@ -57,12 +57,12 @@ test("the menubar opens on press, switches on hover, runs items and closes on Es
   expect(ran).toEqual(["undo", "open"]);
   dispatchUiEvent("pointerdown", [file!, row!, bar!], POINTER);
   dispatchUiEvent("keydown", [bar!], [0, 0, 0, 0, 0, 0, 0, 0, 0], ["Escape", "Escape"]);
-  expect(byClass("iron-menu-item")).toEqual([]);
+  expect(byClass("platypus-menu-item")).toEqual([]);
 
   // A press on the backdrop (anywhere else) closes.
   dispatchUiEvent("pointerdown", [file!, row!, bar!], POINTER);
-  const [backdrop] = byClass("iron-menu-backdrop");
+  const [backdrop] = byClass("platypus-menu-backdrop");
   dispatchUiEvent("pointerdown", [backdrop!, bar!], POINTER);
-  expect(byClass("iron-menu-item")).toEqual([]);
+  expect(byClass("platypus-menu-item")).toEqual([]);
   root.unmount();
 });

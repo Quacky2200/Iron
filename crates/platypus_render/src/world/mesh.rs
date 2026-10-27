@@ -100,7 +100,7 @@ fn tangents(
     uvs: &[[f32; 2]],
     indices: &[u32],
 ) -> Vec<[f32; 4]> {
-    use iron_core::glam::Vec3;
+    use platypus_core::glam::Vec3;
     let n = positions.len();
     let mut tan = vec![Vec3::ZERO; n];
     let mut bit = vec![Vec3::ZERO; n];

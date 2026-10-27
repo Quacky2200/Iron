@@ -5,13 +5,13 @@ import { useRef, useState } from "react";
 
 import {
   dispatchUiEvent,
-  type IronDragEvent,
-  type IronFocusEvent,
-  type IronInputEvent,
-  type IronKeyboardEvent,
-  type IronPointerEvent,
-  type IronScrollEvent,
-  type IronWheelEvent,
+  type PlatypusDragEvent,
+  type PlatypusFocusEvent,
+  type PlatypusInputEvent,
+  type PlatypusKeyboardEvent,
+  type PlatypusPointerEvent,
+  type PlatypusScrollEvent,
+  type PlatypusWheelEvent,
 } from "../src/events.ts";
 import { type Instance, instances, resetForTests } from "../src/host.ts";
 import { _resetRootForTests, createRoot, Dialog, Input, Text } from "../src/index.ts";
@@ -24,7 +24,7 @@ const ids = new Map<string, number>();
 beforeEach(() => {
   commits = [];
   ids.clear();
-  (globalThis as { __iron_commit?: (ops: Op[]) => void }).__iron_commit = (ops) => {
+  (globalThis as { __platypus_commit?: (ops: Op[]) => void }).__platypus_commit = (ops) => {
     commits.push(ops);
     for (const op of ops) {
       if (op[0] !== CREATE) continue;
@@ -36,7 +36,7 @@ beforeEach(() => {
   _resetRootForTests();
 });
 afterEach(() => {
-  delete (globalThis as { __iron_commit?: unknown }).__iron_commit;
+  delete (globalThis as { __platypus_commit?: unknown }).__platypus_commit;
 });
 
 /** The path for `names` (target first), as Rust sends it. */
@@ -52,15 +52,15 @@ const data = (x = 0, y = 0, button = 0, buttons = 0, detail = 1, dx = 0, dy = 0,
   mods,
 ];
 
-describe("@iron/react events", () => {
+describe("@platypus/react events", () => {
   test("installs the global the engine calls", () => {
-    expect(globalThis.__iron_ui_event).toBe(dispatchUiEvent);
+    expect(globalThis.__platypus_ui_event).toBe(dispatchUiEvent);
   });
 
   // M3-EVT-02
   test("capture runs root-down, then bubbling runs target-up", () => {
     const log: string[] = [];
-    const on = (name: string) => (e: IronPointerEvent) =>
+    const on = (name: string) => (e: PlatypusPointerEvent) =>
       log.push(`${name}:${e.eventPhase}:${(e.currentTarget?.props as { "data-name": string })["data-name"]}`);
     createRoot().render(
       <box data-name="outer" onClick={on("bubble")} onClickCapture={on("capture")}>
@@ -131,8 +131,8 @@ describe("@iron/react events", () => {
   });
 
   test("event fields come from the data array", () => {
-    let pointer: IronPointerEvent | undefined;
-    let wheel: IronWheelEvent | undefined;
+    let pointer: PlatypusPointerEvent | undefined;
+    let wheel: PlatypusWheelEvent | undefined;
     createRoot().render(
       <box
         data-name="b"
@@ -215,7 +215,7 @@ describe("@iron/react events", () => {
   // M3-EVT-04
   test("key events carry key, code, repeat and modifiers, and bubble", () => {
     const log: string[] = [];
-    let event: IronKeyboardEvent | undefined;
+    let event: PlatypusKeyboardEvent | undefined;
     createRoot().render(
       <box data-name="form" onKeyDown={(e) => log.push(`form ${e.key}`)}>
         <box
@@ -237,7 +237,7 @@ describe("@iron/react events", () => {
   // M3-EVT-04
   test("focusin/focusout run onFocus/onBlur, bubbling, with relatedTarget", () => {
     const log: string[] = [];
-    let focus: IronFocusEvent | undefined;
+    let focus: PlatypusFocusEvent | undefined;
     createRoot().render(
       <box data-name="form" onFocus={(e) => log.push(`form focus ${e.target.id}`)} onBlur={() => log.push("form blur")}>
         <box data-name="a" tabIndex={0} />
@@ -260,7 +260,7 @@ describe("@iron/react events", () => {
   // M3-EVT-04
   test("tabIndex is an attribute and refs can focus and blur through ops", () => {
     const ops: unknown[][] = [];
-    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
     let ref: { current: Instance | null } = { current: null };
     function Field() {
       ref = useRef<Instance>(null);
@@ -275,14 +275,14 @@ describe("@iron/react events", () => {
       ["focus", id],
       ["blur", id],
     ]);
-    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+    delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
   });
   // M3-EVT-05
   test("onScroll gets the scroll position and doesn't bubble; refs scroll through ops", () => {
     const ops: unknown[][] = [];
-    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
     const log: string[] = [];
-    let event: IronScrollEvent | undefined;
+    let event: PlatypusScrollEvent | undefined;
     let ref: { current: Instance | null } = { current: null };
     function List() {
       ref = useRef<Instance>(null);
@@ -334,7 +334,7 @@ describe("@iron/react events", () => {
       ["scrollTo", id, null, 80, "smooth"],
       ["scrollBy", id, 0, 20, "instant"],
     ]);
-    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+    delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
   });
   // M3-DLG-01
   test("dialogs send open/modal/closedBy and get onCancel then onClose, which don't bubble", () => {
@@ -390,7 +390,7 @@ describe("@iron/react events", () => {
   // M3-EVT-06
   test("pointer capture: ops go out, hasPointerCapture follows the engine's events", () => {
     const ops: unknown[][] = [];
-    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
     let ref: { current: Instance | null } = { current: null };
     const log: string[] = [];
     function Slider() {
@@ -415,11 +415,11 @@ describe("@iron/react events", () => {
     dispatchUiEvent("lostpointercapture", path("thumb"), data());
     expect(ref.current!.hasPointerCapture(1)).toBe(false);
     expect(log).toEqual(["got", "lost"]);
-    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+    delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
   });
   // M3-INP-01
   test("onChange sees the new text in e.target.value and controlled fields commit it", () => {
-    let event: IronInputEvent | undefined;
+    let event: PlatypusInputEvent | undefined;
     let seenTarget = "";
     function Form() {
       const [name, setName] = useState("");
@@ -480,26 +480,26 @@ describe("drag and drop", () => {
   test("one dataTransfer carries data from dragstart to drop; dragover accepts by preventing", () => {
     const log: string[] = [];
     const ops: unknown[][] = [];
-    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
     createRoot().render(
       <box data-name="root">
         <box
           data-name="item"
           draggable
-          onDragStart={(e: IronDragEvent) => {
+          onDragStart={(e: PlatypusDragEvent) => {
             e.dataTransfer.setData("text/plain", "asset.png");
             e.dataTransfer.setDragImage(e.target, 4, 5);
             log.push("start");
           }}
-          onDragEnd={(e: IronDragEvent) => log.push(`end dropped=${e.dropped} effect=${e.dataTransfer.dropEffect}`)}
+          onDragEnd={(e: PlatypusDragEvent) => log.push(`end dropped=${e.dropped} effect=${e.dataTransfer.dropEffect}`)}
         />
         <box
           data-name="folder"
-          onDragOver={(e: IronDragEvent) => {
+          onDragOver={(e: PlatypusDragEvent) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
           }}
-          onDrop={(e: IronDragEvent) => log.push(`drop ${e.dataTransfer.getData("text/plain")} ${e.dataTransfer.types.join(",")}`)}
+          onDrop={(e: PlatypusDragEvent) => log.push(`drop ${e.dataTransfer.getData("text/plain")} ${e.dataTransfer.types.join(",")}`)}
         />
       </box>,
     );
@@ -511,7 +511,7 @@ describe("drag and drop", () => {
     dispatchUiEvent("drop", path("folder", "root"), data());
     dispatchUiEvent("dragend", path("item", "root"), data(0, 0, 0, 0, 1));
     expect(log).toEqual(["start", "drop asset.png text/plain", "end dropped=true effect=move"]);
-    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+    delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
   });
 
   // M5-DND-06
@@ -520,8 +520,8 @@ describe("drag and drop", () => {
     createRoot().render(
       <box
         data-name="drop"
-        onDragOver={(e: IronDragEvent) => e.preventDefault()}
-        onDrop={(e: IronDragEvent) => got.push(...e.dataTransfer.files.map((f) => `${f.name}@${f.path}`), e.dataTransfer.types.join())}
+        onDragOver={(e: PlatypusDragEvent) => e.preventDefault()}
+        onDrop={(e: PlatypusDragEvent) => got.push(...e.dataTransfer.files.map((f) => `${f.name}@${f.path}`), e.dataTransfer.types.join())}
       />,
     );
     const files = ["C:\\in\\a.png", "/home/me/b.txt"];

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // UI events from the engine (DESIGN D6). Rust hit-tests and calls
-// `__iron_ui_event(type, path, data)` with the target's path (target first, then
+// `__platypus_ui_event(type, path, data)` with the target's path (target first, then
 // its ancestors); this runs React-style capture and bubble phases over the
 // elements' `on*` / `on*Capture` props and reports `preventDefault()` back.
 
-import { op } from "@iron/engine";
+import { op } from "@platypus/engine";
 import { ContinuousEventPriority, DiscreteEventPriority } from "react-reconciler/constants";
 
 import {
@@ -68,7 +68,7 @@ const NON_BUBBLING: ReadonlySet<string> = new Set(["pointerenter", "pointerleave
 const CONTINUOUS: ReadonlySet<string> = new Set(["pointermove", "pointerenter", "pointerleave", "wheel", "scroll", "drag", "dragover"]);
 
 /** Base event, shaped like React's synthetic events. */
-export class IronEvent {
+export class PlatypusEvent {
   /** 1 capturing, 2 at the target, 3 bubbling. */
   eventPhase = 0;
   currentTarget: Instance | null = null;
@@ -96,7 +96,7 @@ export class IronEvent {
 }
 
 /** A mouse pointer event (`onClick`, `onPointerDown`, ...). Coordinates are logical pixels. */
-export class IronPointerEvent extends IronEvent {
+export class PlatypusPointerEvent extends PlatypusEvent {
   readonly clientX: number;
   readonly clientY: number;
   /** 0 primary, 1 middle, 2 secondary, 3 back, 4 forward. */
@@ -137,7 +137,7 @@ export class IronPointerEvent extends IronEvent {
 }
 
 /** `onWheel`. Deltas are logical pixels; positive `deltaY` scrolls down. */
-export class IronWheelEvent extends IronPointerEvent {
+export class PlatypusWheelEvent extends PlatypusPointerEvent {
   readonly deltaX: number;
   readonly deltaY: number;
   readonly deltaZ = 0;
@@ -157,7 +157,7 @@ function modifiers(bits: number) {
 }
 
 /** `onKeyDown` / `onKeyUp`, sent to the focused element. */
-export class IronKeyboardEvent extends IronEvent {
+export class PlatypusKeyboardEvent extends PlatypusEvent {
   /** What the key means in the current layout: `"a"`, `"A"`, `"Enter"`, `" "`. */
   readonly key: string;
   /** The physical key, layout independent: `"KeyA"`, `"Enter"`, `"Space"`. */
@@ -183,7 +183,7 @@ export class IronKeyboardEvent extends IronEvent {
 }
 
 /** `onFocus` / `onBlur`. */
-export class IronFocusEvent extends IronEvent {
+export class PlatypusFocusEvent extends PlatypusEvent {
   /** For `onFocus`, the element that lost focus; for `onBlur`, the one gaining it. */
   readonly relatedTarget: Instance | null;
 
@@ -194,7 +194,7 @@ export class IronFocusEvent extends IronEvent {
 }
 
 /** `onChange` / `onInput` on a text field. `target.value` (or `value`) is the new text. */
-export class IronInputEvent extends IronEvent {
+export class PlatypusInputEvent extends PlatypusEvent {
   readonly value: string;
 
   constructor(type: string, target: Instance, strings: readonly string[]) {
@@ -204,7 +204,7 @@ export class IronInputEvent extends IronEvent {
 }
 
 /** `onTransition*`: which property (kebab-case) and how long it ran, in seconds. */
-export class IronTransitionEvent extends IronEvent {
+export class PlatypusTransitionEvent extends PlatypusEvent {
   readonly propertyName: string;
   readonly elapsedTime: number;
   /** Always empty: transitions of `::before` / `::after` are reported on their element. */
@@ -218,7 +218,7 @@ export class IronTransitionEvent extends IronEvent {
 }
 
 /** `onAnimation*`: which `@keyframes` animation and how long it has run, in seconds. */
-export class IronAnimationEvent extends IronEvent {
+export class PlatypusAnimationEvent extends PlatypusEvent {
   readonly animationName: string;
   readonly elapsedTime: number;
   /** Always empty: animations of `::before` / `::after` are reported on their element. */
@@ -244,7 +244,7 @@ export interface DroppedFile {
  * one object from `dragstart` to `dragend`, holding what `setData` put in; for files
  * from the system, `files` lists them (and `types` includes `"Files"`).
  */
-export class IronDataTransfer {
+export class PlatypusDataTransfer {
   /** Set in `dragover` to say what a drop would do (shown nowhere yet; read in `drop`). */
   dropEffect: "none" | "copy" | "move" | "link" = "none";
   effectAllowed: "none" | "copy" | "move" | "link" | "copyMove" | "copyLink" | "linkMove" | "all" | "uninitialized" =
@@ -287,16 +287,16 @@ export class IronDataTransfer {
 
 // The transfer of the element drag in progress (from `dragstart` to `dragend`), and
 // the last one made for system files.
-let elementDrag: IronDataTransfer | null = null;
-let fileDrag: { key: string; transfer: IronDataTransfer } | null = null;
+let elementDrag: PlatypusDataTransfer | null = null;
+let fileDrag: { key: string; transfer: PlatypusDataTransfer } | null = null;
 
-function transferFor(type: string, files: readonly string[]): IronDataTransfer {
+function transferFor(type: string, files: readonly string[]): PlatypusDataTransfer {
   if (files.length) {
     const key = files.join("\n");
-    if (fileDrag?.key !== key) fileDrag = { key, transfer: new IronDataTransfer(files) };
+    if (fileDrag?.key !== key) fileDrag = { key, transfer: new PlatypusDataTransfer(files) };
     return fileDrag.transfer;
   }
-  if (type === "dragstart" || !elementDrag) elementDrag = new IronDataTransfer();
+  if (type === "dragstart" || !elementDrag) elementDrag = new PlatypusDataTransfer();
   return elementDrag;
 }
 
@@ -305,11 +305,11 @@ function transferFor(type: string, files: readonly string[]): IronDataTransfer {
  * accept a drop there; prevent `dragstart` to cancel the drag. In `onDragEnd`,
  * `dropped` says whether it was dropped somewhere that accepted it.
  */
-export class IronDragEvent extends IronPointerEvent {
-  readonly dataTransfer: IronDataTransfer;
+export class PlatypusDragEvent extends PlatypusPointerEvent {
+  readonly dataTransfer: PlatypusDataTransfer;
   readonly dropped: boolean;
 
-  constructor(type: string, target: Instance, data: readonly number[], transfer: IronDataTransfer) {
+  constructor(type: string, target: Instance, data: readonly number[], transfer: PlatypusDataTransfer) {
     super(type, target, true, data);
     this.dataTransfer = transfer;
     this.dropped = type === "dragend" && data[4] === 1;
@@ -318,7 +318,7 @@ export class IronDragEvent extends IronPointerEvent {
 }
 
 /** `onScroll`: the element's new scroll position and sizes (logical pixels). */
-export class IronScrollEvent extends IronEvent {
+export class PlatypusScrollEvent extends PlatypusEvent {
   readonly scrollLeft: number;
   readonly scrollTop: number;
   /** Content size. */
@@ -339,9 +339,9 @@ export class IronScrollEvent extends IronEvent {
   }
 }
 
-type Handler = (event: IronEvent) => void;
+type Handler = (event: PlatypusEvent) => void;
 
-function invoke(node: Instance, names: readonly string[], event: IronEvent, phase: number) {
+function invoke(node: Instance, names: readonly string[], event: PlatypusEvent, phase: number) {
   const props = node.props as Record<string, unknown>;
   for (const name of names) {
     const handler = props[name];
@@ -364,30 +364,30 @@ function createEvent(
   bubbles: boolean,
   data: readonly number[],
   strings: readonly string[],
-): IronEvent {
+): PlatypusEvent {
   switch (type) {
     case "wheel":
-      return new IronWheelEvent(type, target, bubbles, data);
+      return new PlatypusWheelEvent(type, target, bubbles, data);
     case "keydown":
     case "keyup":
-      return new IronKeyboardEvent(type, target, data, strings);
+      return new PlatypusKeyboardEvent(type, target, data, strings);
     case "focusin":
     case "focusout":
-      return new IronFocusEvent(type, target, data);
+      return new PlatypusFocusEvent(type, target, data);
     case "scroll":
-      return new IronScrollEvent(type, target, data);
+      return new PlatypusScrollEvent(type, target, data);
     case "input":
-      return new IronInputEvent(type, target, strings);
+      return new PlatypusInputEvent(type, target, strings);
     case "transitionrun":
     case "transitionstart":
     case "transitionend":
     case "transitioncancel":
-      return new IronTransitionEvent(type, target, data, strings);
+      return new PlatypusTransitionEvent(type, target, data, strings);
     case "animationstart":
     case "animationiteration":
     case "animationend":
     case "animationcancel":
-      return new IronAnimationEvent(type, target, data, strings);
+      return new PlatypusAnimationEvent(type, target, data, strings);
     case "dragstart":
     case "drag":
     case "dragenter":
@@ -395,9 +395,9 @@ function createEvent(
     case "dragleave":
     case "drop":
     case "dragend":
-      return new IronDragEvent(type, target, data, transferFor(type, strings));
+      return new PlatypusDragEvent(type, target, data, transferFor(type, strings));
     default:
-      return new IronPointerEvent(type, target, bubbles, data);
+      return new PlatypusPointerEvent(type, target, bubbles, data);
   }
 }
 
@@ -430,7 +430,7 @@ export function dispatchUiEvent(
   const bubbles = !NON_BUBBLING.has(type);
   const event = createEvent(type, target, bubbles, data, strings);
   // Like the DOM, the field already holds the new text when handlers run.
-  if (event instanceof IronInputEvent) target.value = event.value;
+  if (event instanceof PlatypusInputEvent) target.value = event.value;
   const capture = names.map((n) => `${n}Capture`);
   const priority = CONTINUOUS.has(type) ? ContinuousEventPriority : DiscreteEventPriority;
 
@@ -450,7 +450,7 @@ export function dispatchUiEvent(
   if (type === "dragend") elementDrag = null;
   // Discrete updates commit now, so the next frame shows them.
   reconciler.flushSyncWork();
-  if (event instanceof IronInputEvent) restoreControlledValue(target);
+  if (event instanceof PlatypusInputEvent) restoreControlledValue(target);
   return event.defaultPrevented;
 }
 
@@ -468,4 +468,4 @@ function restoreControlledValue(target: Instance) {
   flush();
 }
 
-globalThis.__iron_ui_event = dispatchUiEvent;
+globalThis.__platypus_ui_event = dispatchUiEvent;

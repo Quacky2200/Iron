@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Draws `iron_ui` draw lists: rounded boxes, borders, gradients, box shadows,
+//! Draws `platypus_ui` draw lists: rounded boxes, borders, gradients, box shadows,
 //! blur filters, group opacity and backdrop blur (DESIGN.md §5.2).
 //!
 //! A frame is drawn into an internal canvas texture, then blitted to the target.
@@ -19,8 +19,8 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use iron_ui::text_style::DecorationStyle;
-use iron_ui::{ClipShape, DrawCmd, Rect, Rgba};
+use platypus_ui::text_style::DecorationStyle;
+use platypus_ui::{ClipShape, DrawCmd, Rect, Rgba};
 use wgpu::util::DeviceExt;
 
 use crate::{Color, Gpu};
@@ -87,7 +87,7 @@ struct Instance {
 
 /// Circular corners approximating elliptical ones (the mean radius per corner),
 /// for shapes the shader only draws circular (blurred shadows).
-fn circular(r: iron_ui::Radii) -> [f32; 4] {
+fn circular(r: platypus_ui::Radii) -> [f32; 4] {
     [0, 1, 2, 3].map(|i| (r.x[i] + r.y[i]) / 2.0)
 }
 
@@ -120,7 +120,7 @@ impl Clips {
         &mut self,
         shape: &ClipShape,
         parent: u32,
-        xf: Option<&(u32, iron_ui::transform::Homography)>,
+        xf: Option<&(u32, platypus_ui::transform::Homography)>,
     ) -> u32 {
         let mut bounds = xf.map_or(shape.rect, |(_, h)| h.map_rect(shape.rect));
         if parent > 0 {
@@ -168,11 +168,11 @@ impl Clips {
 
     /// Stores a transform (homography and inverse) as a table entry; returns its
     /// 1-based index. It isn't a clip: nothing chains to it.
-    fn push_transform(&mut self, h: &iron_ui::transform::Homography) -> u32 {
+    fn push_transform(&mut self, h: &platypus_ui::transform::Homography) -> u32 {
         let m = h.0;
         let i = h
             .inverse()
-            .unwrap_or(iron_ui::transform::Homography::IDENTITY)
+            .unwrap_or(platypus_ui::transform::Homography::IDENTITY)
             .0;
         self.table.push(GpuClip {
             rect: [m[0][0], m[0][1], m[0][2], m[1][0]],
@@ -231,14 +231,14 @@ struct OpenLayer {
     /// The layer's own texture (drawing may have moved on to its mask).
     texture: usize,
     /// The mask texture and mode, once `BeginMask` started it.
-    mask: Option<(usize, iron_ui::MaskMode)>,
+    mask: Option<(usize, platypus_ui::MaskMode)>,
     parent: usize,
     bounds: Rect,
     blur: f32,
     opacity: f32,
     blend: u32,
-    matrix: Option<iron_ui::ColorMatrix>,
-    shadows: Vec<iron_ui::LayerShadow>,
+    matrix: Option<platypus_ui::ColorMatrix>,
+    shadows: Vec<platypus_ui::LayerShadow>,
     outer_clips: Vec<u32>,
 }
 
@@ -256,7 +256,7 @@ struct PxRect {
 pub fn needs_backdrop(cmds: &[DrawCmd]) -> bool {
     cmds.iter().any(|c| match c {
         DrawCmd::BackdropBlur { .. } => true,
-        DrawCmd::PushLayer { blend, .. } => *blend != iron_ui::BlendMode::Normal,
+        DrawCmd::PushLayer { blend, .. } => *blend != platypus_ui::BlendMode::Normal,
         _ => false,
     })
 }
@@ -293,13 +293,13 @@ enum Step {
         /// A blend mode other than normal, with a copy of `dst` to read as the backdrop.
         blend: Option<(u32, usize)>,
         /// `filter` colour functions.
-        matrix: Option<iron_ui::ColorMatrix>,
+        matrix: Option<platypus_ui::ColorMatrix>,
         /// Draw the source's alpha in this colour (a drop shadow), shifted by `shift`
         /// physical pixels.
         tint: Option<[f32; 4]>,
         shift: [f32; 2],
         /// Multiply by this texture's alpha or luminance.
-        mask: Option<(usize, iron_ui::MaskMode)>,
+        mask: Option<(usize, platypus_ui::MaskMode)>,
     },
 }
 
@@ -791,7 +791,7 @@ impl UiRenderer {
             *clip_from = instances.len();
         };
         // Open `PushTransform`s: (clip-table index, homography to the window).
-        let mut xf_stack: Vec<(u32, iron_ui::transform::Homography)> = Vec::new();
+        let mut xf_stack: Vec<(u32, platypus_ui::transform::Homography)> = Vec::new();
 
         let flush = |steps: &mut Vec<Step>,
                      instances: &Vec<Instance>,
@@ -856,7 +856,7 @@ impl UiRenderer {
                 }
                 DrawCmd::Quad(q) => {
                     let quad = |rect: Rect,
-                                radii: iron_ui::Radii,
+                                radii: platypus_ui::Radii,
                                 background: [f32; 4],
                                 border_color: [f32; 4],
                                 gradient: f32| Instance {
@@ -882,7 +882,7 @@ impl UiRenderer {
                         instances.push(quad(q.rect, q.radii, background, [0.0; 4], -1.0));
                     }
                     for fill in &q.images {
-                        if !matches!(*fill.image, iron_ui::BackgroundImage::Url(_)) {
+                        if !matches!(*fill.image, platypus_ui::BackgroundImage::Url(_)) {
                             // A gradient has no size of its own: `auto` is the box. One
                             // tile is laid out like an image's and repeats per the
                             // repeat axes (round rescales it; space gaps aren't kept).
@@ -900,7 +900,7 @@ impl UiRenderer {
                             layer.params[1] = f32::from(u8::from(repeat[0]))
                                 + 2.0 * f32::from(u8::from(repeat[1]));
                             instances.push(layer);
-                        } else if let iron_ui::BackgroundImage::Url(url) = &*fill.image
+                        } else if let platypus_ui::BackgroundImage::Url(url) = &*fill.image
                             && let Some(loaded) =
                                 self.images
                                     .get(gpu, &self.blit_layout, &self.image_samplers, url)
@@ -979,9 +979,9 @@ impl UiRenderer {
                             DecorationStyle::Dotted | DecorationStyle::Dashed => {
                                 // A one-sided styled border: dots and dashes fitted to the line.
                                 let style = if d.style == DecorationStyle::Dotted {
-                                    iron_ui::BorderStyle::Dotted
+                                    platypus_ui::BorderStyle::Dotted
                                 } else {
-                                    iron_ui::BorderStyle::Dashed
+                                    platypus_ui::BorderStyle::Dashed
                                 };
                                 let mut entry = GpuGradient {
                                     info: [style.index() as f32, 0.0, 0.0, 0.0],
@@ -1201,7 +1201,7 @@ impl UiRenderer {
                         Rect::new(x0 / scale, y0 / scale, (x1 - x0) / scale, (y1 - y0) / scale)
                     };
                     match image.source.as_deref() {
-                        Some(iron_ui::BackgroundImage::Url(url)) => {
+                        Some(platypus_ui::BackgroundImage::Url(url)) => {
                             let Some(loaded) =
                                 self.images
                                     .get(gpu, &self.blit_layout, &self.image_samplers, url)
@@ -1802,8 +1802,8 @@ impl UiRenderer {
                             mask: [
                                 match mask {
                                     None => 0.0,
-                                    Some((_, iron_ui::MaskMode::Alpha)) => 1.0,
-                                    Some((_, iron_ui::MaskMode::Luminance)) => 2.0,
+                                    Some((_, platypus_ui::MaskMode::Alpha)) => 1.0,
+                                    Some((_, platypus_ui::MaskMode::Luminance)) => 2.0,
                                 },
                                 0.0,
                                 0.0,

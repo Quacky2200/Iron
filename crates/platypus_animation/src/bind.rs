@@ -8,7 +8,7 @@
 
 use crate::clip::{Clip, ClipId, CurveId, World};
 use crate::pose::resolve;
-use iron_scene::{ObjectId, Scene};
+use platypus_scene::{ObjectId, Scene};
 use std::collections::HashMap;
 use std::sync::Arc;
 

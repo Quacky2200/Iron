@@ -88,7 +88,7 @@ impl Gpu {
     fn from_adapter(instance: wgpu::Instance, adapter: wgpu::Adapter) -> Result<Self, RenderError> {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-                label: Some("iron device"),
+                label: Some("platypus device"),
                 // Lets MSAA use every sample count the GPU has (WebGPU only promises 1 and
                 // 4), where it's offered.
                 // Block-compressed (BC) textures when the GPU has them (desktop GPUs do):

@@ -2,11 +2,11 @@
 
 //! Which files of a game folder a packaged build takes: `include` / `exclude` of `project.json`
 //! (paths, folders, globs), the dynamic path families the code builds, and what the code names.
-//! Shared by `iron-build build` (the report and `dist/assets.plan`) and `package`.
-//! Plan: `docs/research/iron-virtual-fs-plan.md` sections 2.5 and 2.6.
+//! Shared by `platypus-build build` (the report and `dist/assets.plan`) and `package`.
+//! Plan: `docs/research/platypus-virtual-fs-plan.md` sections 2.5 and 2.6.
 
 use crate::assets;
-use iron_core::glob::{glob_match, include_match, is_glob};
+use platypus_core::glob::{glob_match, include_match, is_glob};
 use std::path::Path;
 
 /// Why a file is taken into a packaged build, strongest first.

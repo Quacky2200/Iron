@@ -3,16 +3,16 @@
 //! Scene files, prefabs and copies of the animation components.
 
 use crate::manager;
-use iron_animation::{CullingMode, CullingType};
-use iron_engine_api::animation::{AnimationRef, ClipRef, CurveRef};
-use iron_engine_api::animator::{AnimatorRef, ControllerRef, NodeRef};
-use iron_scene::ObjectId;
+use platypus_animation::{CullingMode, CullingType};
+use platypus_engine_api::animation::{AnimationRef, ClipRef, CurveRef};
+use platypus_engine_api::animator::{AnimatorRef, ControllerRef, NodeRef};
+use platypus_scene::ObjectId;
 use serde_json::Value;
 
 fn named(scene: u32, name: &str) -> ObjectId {
     manager::roots(scene)
         .into_iter()
-        .find(|&o| iron_scene::api::with_scene(|s| s.name(o) == Some(name)).unwrap_or(false))
+        .find(|&o| platypus_scene::api::with_scene(|s| s.name(o) == Some(name)).unwrap_or(false))
         .expect("loaded")
 }
 
@@ -30,13 +30,33 @@ fn strip(v: &mut Value, keys: &[&str]) {
     }
 }
 
+// M9-REN-03
+#[test]
+fn scene_and_prefab_files_from_before_the_rename_still_load() {
+    manager::reset();
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let s = manager::load_scene(
+        r#"{"format":"iron.scene","version":1,"name":"Old","objects":[{"name":"o"}]}"#,
+        false,
+    )
+    .unwrap();
+    named(s, "o");
+    let p = manager::prefab_from_data(
+        r#"{"format":"iron.prefab","version":1,"name":"P","root":{"id":1,"name":"Made"}}"#,
+        None,
+    );
+    assert!(p.is_ok(), "{p:?}");
+    assert!(manager::load_scene(r#"{"format":"other","version":1}"#, false).is_err());
+}
+
 // M5-ANI-16
 #[test]
 fn animation_components_keep_their_settings_through_files_prefabs_and_copies() {
-    iron_engine_api::animation::reset();
+    platypus_engine_api::animation::reset();
     manager::reset();
-    let mut scene = iron_scene::Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
     let clip = ClipRef::create("swing");
     clip.set_curve(
         "",
@@ -48,7 +68,7 @@ fn animation_components_keep_their_settings_through_files_prefabs_and_copies() {
     let controller = ControllerRef::create();
     controller.add_node(NodeRef::create("Swing", clip));
     let (figure, lamp) =
-        iron_scene::api::with_scene(|s| (s.create("Figure"), s.create("Lamp"))).unwrap();
+        platypus_scene::api::with_scene(|s| (s.create("Figure"), s.create("Lamp"))).unwrap();
     let animator = AnimatorRef::attach(figure);
     animator.set_controller(controller);
     animator.set_speed(1.5);
@@ -124,6 +144,6 @@ fn animation_components_keep_their_settings_through_files_prefabs_and_copies() {
         (CullingType::AlwaysAnimate, true, 0.0)
     );
     assert!(crate::take_warnings().is_empty());
-    iron_engine_api::animation::reset();
+    platypus_engine_api::animation::reset();
     manager::reset();
 }

@@ -6,9 +6,9 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{NodeId, Value};
-use iron_ui::opcodes::SET_ATTRS;
-use iron_ui::{DrawCmd, Rgba, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_ui::opcodes::SET_ATTRS;
+use platypus_ui::{DrawCmd, Rgba, UiTree};
 
 fn rgb(s: &str) -> Rgba {
     Rgba::parse(s).unwrap()

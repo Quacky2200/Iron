@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_physics"
+name = "platypus_physics"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [dependencies]
-iron_core = { path = "../iron_core" }
+platypus_core = { path = "../platypus_core" }
 rapier3d = "0.36.1"
 tracing = "0.1.44"
 
 [dev-dependencies]
-iron_script = { path = "../iron_script" }
+platypus_script = { path = "../platypus_script" }

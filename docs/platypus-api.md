@@ -1,12 +1,12 @@
-# iron_api: the script API declared once in Rust
+# platypus_api: the script API declared once in Rust
 
-Crates: [iron_api](../crates/iron_api/src/lib.rs) (manifest types and generators) and
-[iron_api_macros](../crates/iron_api_macros/src/lib.rs) (the `#[iron_api]` attribute). Tests:
-[api.rs](../crates/iron_api/tests/api.rs) (`M9-API-01`..`06`),
-[context.rs](../crates/iron_api/tests/context.rs) (`M9-API-07`..`09`) and
-[values.rs](../crates/iron_api/tests/values.rs) (`M9-API-10`, `11`) and
-[classes.rs](../crates/iron_api/tests/classes.rs) (`M9-API-16`..`18`). Design and the road ahead:
-[iron-ts-engine-boundary.md](research/iron-ts-engine-boundary.md).
+Crates: [platypus_api](../crates/platypus_api/src/lib.rs) (manifest types and generators) and
+[platypus_api_macros](../crates/platypus_api_macros/src/lib.rs) (the `#[platypus_api]` attribute). Tests:
+[api.rs](../crates/platypus_api/tests/api.rs) (`M9-API-01`..`06`),
+[context.rs](../crates/platypus_api/tests/context.rs) (`M9-API-07`..`09`) and
+[values.rs](../crates/platypus_api/tests/values.rs) (`M9-API-10`, `11`) and
+[classes.rs](../crates/platypus_api/tests/classes.rs) (`M9-API-16`..`18`). Design and the road ahead:
+[platypus-ts-engine-boundary.md](research/platypus-ts-engine-boundary.md).
 
 One module of ordinary Rust is the single source for a namespace of the script API: the manifest, the
 TypeScript declarations, the `extern "C"` shims that compiled scripts link to, and typed QuickJS
@@ -15,7 +15,7 @@ bindings. They are all generated from the same functions, so they cannot drift a
 ## Usage
 
 ```rust
-use iron_api::{Handle, iron_api};
+use platypus_api::{Handle, platypus_api};
 
 #[derive(Clone, Copy)]
 pub struct ObjectId(pub u64);
@@ -24,7 +24,7 @@ impl Handle for ObjectId {
     fn from_raw(raw: u64) -> Self { ObjectId(raw) }
 }
 
-#[iron_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]
+#[platypus_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]
 pub mod demo {
     use super::ObjectId;
 
@@ -37,14 +37,14 @@ pub mod demo {
 ```
 
 Arguments: `namespace = ".."` (required), `quickjs` (also generate `register_quickjs`) and
-`handles(TsName = RustType, ..)` (Rust types that implement `iron_api::Handle`) and
+`handles(TsName = RustType, ..)` (Rust types that implement `platypus_api::Handle`) and
 `values(TsName = RustType [field: scalar, ..], ..)` (value classes, below). The module must be
 inline (`pub mod x { .. }`).
 
 ### Value classes
 
 A small Rust type that scripts see as a class of numbers (`glam::Vec3` as `Vector3`). The type
-implements `iron_api::ValueType<N>` (`N` fields; the parts travel as `f64`):
+implements `platypus_api::ValueType<N>` (`N` fields; the parts travel as `f64`):
 
 ```rust
 impl ValueType<3> for Vec3 {
@@ -52,14 +52,14 @@ impl ValueType<3> for Vec3 {
     fn to_parts(self) -> [f64; 3] { [self.x as f64, self.y as f64, self.z as f64] }
 }
 
-#[iron_api(namespace = "Demo", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
+#[platypus_api(namespace = "Demo", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
 pub mod demo {
     pub fn cross(a: Vec3, b: Vec3) -> Vec3 { /* .. */ }
 }
 ```
 
-The `glam` feature (`iron_api = { features = ["glam"] }`) implements `ValueType` for `Vec2`, `Vec3`,
-`Vec4` and `Quat`, so `iron_scene` declares `Vector3 = Vec3 [x: f32, y: f32, z: f32]` and
+The `glam` feature (`platypus_api = { features = ["glam"] }`) implements `ValueType` for `Vec2`, `Vec3`,
+`Vec4` and `Quat`, so `platypus_scene` declares `Vector3 = Vec3 [x: f32, y: f32, z: f32]` and
 `Quaternion = Quat [..]` without writing the impls.
 
 Each field is `f32`, `f64`, `i32` or `u32`, and all fields of one class have the same type. Functions
@@ -85,7 +85,7 @@ pub fn magnitude(a: Vec3) -> f32 { a.length() }    // v.magnitude
   receiver first as `this` (type `value:Vector3`). `to_dts` declares them inside `declare class
   Vector3` (not as a second class, and no handle alias): `scale(s: number): Vector3; get magnitude():
   number;`. Without the attribute the function stays a namespace function.
-- **Shims.** `iron_Vector3_scale(this_0, this_1, this_2, s, out)`: the receiver travels as the value's
+- **Shims.** `platypus_Vector3_scale(this_0, this_1, this_2, s, out)`: the receiver travels as the value's
   fields like any value parameter, and a value result goes through the trailing out pointer.
 - **Not built.** Static functions on a value class (`Vector3.zero`), operators (`a + b`) and compound
   assignment on value properties.
@@ -97,7 +97,7 @@ inside the module. The type must be declared in `handles(..)`; the class gets th
 name.
 
 ```rust
-#[iron_api(namespace = "Scene", handles(GameObject = ObjectId, Transform = TransformRef))]
+#[platypus_api(namespace = "Scene", handles(GameObject = ObjectId, Transform = TransformRef))]
 pub mod scene_api {
     impl ObjectId {
         pub fn create() -> ObjectId { /* .. */ }          // static: GameObject.create()
@@ -133,19 +133,19 @@ Rust newtype: `Transform` is `TransformRef(ObjectId)` and shares the object's ra
   declarations (`keep_world` is `keepWorld`).
 - **`.d.ts`.** `declare class Transform { private constructor(); static f(): T; method(): T; get x():
   T; set x(value: T); }`. A handle without a class still emits `declare type X = number & { .. }`.
-- **Shims.** `iron_<Class>_<jsName>` with `this: u64` first: `iron_Transform_setPosition(this, x, y, z)`
+- **Shims.** `platypus_<Class>_<jsName>` with `this: u64` first: `platypus_Transform_setPosition(this, x, y, z)`
   (a value result still goes through a trailing out pointer). A setter is `set` plus the capitalised
-  property name. Namespace functions keep `iron_<Namespace>_<jsName>`.
+  property name. Namespace functions keep `platypus_<Namespace>_<jsName>`.
 - **QuickJS.** A class is a JS class whose instances are opaque handle objects; see "Handles in QuickJS".
 
 **Static properties.** Inside an `impl`, `#[property] pub fn main() -> T` (no `self`, no parameters) is a static getter and
 `pub fn set_main(v: T)` next to it (same type) the static setter: `Window.main` reads like a property in both backends. The
 manifest has a `get` / `set` function of the class without a `this` parameter (the compiler keeps a static getter with the
 class statics, so `ext_static_prop` reads it, and the setter in `static_setters`). The `.d.ts` says `static readonly main: T;`
-(`static get` / `static set` for a writable one), and `iron-build types` the same. In QuickJS the property is an accessor on the
+(`static get` / `static set` for a writable one), and `platypus-build types` the same. In QuickJS the property is an accessor on the
 class object (configurable, not enumerable), so strict-mode assignment to a read-only one throws `TypeError`. A static function
 and a static property of one class cannot share a script name (compile error). A static and an instance member may (`Window.focused`
-and `win.focused`): the instance one lives on the prototype. Tests: `crates/iron_api/tests/static_props.rs` (`M9-API-1490`, `1491`).
+and `win.focused`): the instance one lives on the prototype. Tests: `crates/platypus_api/tests/static_props.rs` (`M9-API-1490`, `1491`).
 
 ## What the macro adds
 
@@ -154,7 +154,7 @@ The module's code is kept as it is. Inside the module the macro adds:
 | Item | What |
 |---|---|
 | `MANIFEST` | A `const Namespace`: name, handle names, value classes, handle classes and, per function, `kind`, `name`, `rust_name`, `symbol`, `doc`, `params`, `ret` |
-| `extern "C"` shims | One `#[no_mangle] pub extern "C" fn` per `pub fn` (including those in `impl` blocks of declared handles), named `iron_<Namespace>_<jsName>` (`iron_Demo_add`) or `iron_<Class>_<jsName>` for a class. Private functions are not exported |
+| `extern "C"` shims | One `#[no_mangle] pub extern "C" fn` per `pub fn` (including those in `impl` blocks of declared handles), named `platypus_<Namespace>_<jsName>` (`platypus_Demo_add`) or `platypus_<Class>_<jsName>` for a class. Private functions are not exported |
 | `register_quickjs(ctx)` | With `quickjs`: installs the global `Demo` object whose `add` is a native closure with typed arguments (no `Value` array, no op queue) |
 
 Doc comments on the functions become the JSDoc of the declaration. Functions cannot be `async` or
@@ -174,7 +174,7 @@ generic; `self` is allowed only in a handle class's `impl`, by value.
 
 | `&str` / `String` | `string` | a parameter: `*const u8` to the script string object; a result: `*const u8` plus a trailing `out_len: *mut i64` | a JS string |
 | `&[f64]` / `&[V]` | `number[]` / `Vector3[]` | `*const u8` to the script array | a JS array (elements: instances, objects or arrays) |
-| `&[String]` / `Vec<String>` | `string[]` | `*const u8` to the script array of strings; the shim copies them (`iron_api::script_strs`), so the function may keep them | a JS array of strings |
+| `&[String]` / `Vec<String>` | `string[]` | `*const u8` to the script array of strings; the shim copies them (`platypus_api::script_strs`), so the function may keep them | a JS array of strings |
 
 Any other type is a compile error that lists the supported ones. Names follow `snake_case` to
 `camelCase` (`set_time_scale` is `setTimeScale`), done by `camel` in both crates.
@@ -182,17 +182,17 @@ Any other type is a compile error that lists the supported ones. Names follow `s
 ### Strings
 
 A function may take `&str` (or `String`) parameters and return `String`. The manifest, JSON and d.ts
-type is `string` (`iron_api::Ty::Str`); `string | null` parameters are not supported.
+type is `string` (`platypus_api::Ty::Str`); `string | null` parameters are not supported.
 
 - **In.** A string parameter is a `*const u8` pointing at the script string object: the header
-  `iron_api::ScriptStr` (layout equal to `iron_ts_rt::Str`, a test in `iron_ts_tests` checks it) and
-  the bytes inline after its 48 bytes. The shim reads it with `iron_api::script_str`, which
+  `platypus_api::ScriptStr` (layout equal to `platypus_ts_rt::Str`, a test in `platypus_ts_tests` checks it) and
+  the bytes inline after its 48 bytes. The shim reads it with `platypus_api::script_str`, which
   borrows the bytes as `&str` with no copy when the string is well formed. Script strings are WTF-8,
   so one with a lone surrogate is copied with each lone surrogate replaced by one U+FFFD. A null
   pointer reads as `""`. The collector is non-moving and the caller roots the string, so it stays
   valid for the call. The engine must copy what it keeps (`set_name` stores an owned `String`).
 - **Out.** A `String` result adds a trailing `out_len: *mut i64` to the shim, which returns
-  `*const u8` into a per-thread buffer (`iron_api::return_string`). The compiled call copies it at
+  `*const u8` into a per-thread buffer (`platypus_api::return_string`). The compiled call copies it at
   once into a new script string (`ts_rt_str_new_gc`), before any other engine call.
 - **Unsafe shims.** A shim with a string parameter is `unsafe extern "C"`, since it dereferences the
   pointer.
@@ -202,13 +202,13 @@ pub fn find(name: &str) -> ObjectId { /* name is borrowed: copy it to keep it */
 pub fn name(self) -> String { /* the shim returns it through return_string */ }
 ```
 
-Tests: `M9-API-21`..`22` (crates/iron_api/tests/strings.rs).
+Tests: `M9-API-21`..`22` (crates/platypus_api/tests/strings.rs).
 
 ## Generating the files
 
 ```rust
 let dts = demo::MANIFEST.to_dts(); // declare namespace Demo { function add(a: number, b: number): number; }
-let json = demo::MANIFEST.to_json(); // {"namespace":"Demo","functions":[{"name":"add","symbol":"iron_Demo_add",..}]}
+let json = demo::MANIFEST.to_json(); // {"namespace":"Demo","functions":[{"name":"add","symbol":"platypus_Demo_add",..}]}
 ```
 
 `to_dts` writes a `declare type` per handle without a class, a `declare class` per handle class and
@@ -224,67 +224,67 @@ indices at 1).
 ## The engine context
 
 A shim has no world argument (scripts have none), so the host makes the world current on the thread
-that runs scripts and API functions reach it through `iron_api::context`. `enter` returns a scope
+that runs scripts and API functions reach it through `platypus_api::context`. `enter` returns a scope
 guard that restores the previous world on drop; `with` runs a closure on the current world, or
 returns `None` when there is none. While the closure runs the world is not current, so a nested
 call gets `None` instead of a second `&mut` to it.
 
 ```rust
 thread_local! { static WORLD: Cell<*mut World> = const { Cell::new(std::ptr::null_mut()) }; }
-let _scope = iron_api::context::enter(&WORLD, &mut world); // while scripts run
+let _scope = platypus_api::context::enter(&WORLD, &mut world); // while scripts run
 // inside an API function:
-let pos = iron_api::context::with(&WORLD, |w| w.position(id)).unwrap_or_default();
+let pos = platypus_api::context::with(&WORLD, |w| w.position(id)).unwrap_or_default();
 // a nested `with(&WORLD, ..)` inside that closure returns None
 ```
 
 ## Status
 
-Additive. `__iron_op` and the ops in [scripting.md](scripting.md) are untouched. `iron_scene` is the
-first engine crate using `#[iron_api]` (`Scene`, in `iron_scene::api`; see
-[scene-and-objects.md](scene-and-objects.md#the-typed-script-api-iron_sceneapi)), but nothing in the
-app calls it yet. The `iron_ts` compiler reads the JSON manifest and calls the shims directly
-(`--manifest`, see [iron-ts.md](iron-ts.md); the test namespace is `tools/iron_demo_api`). Value
+Additive. `__platypus_op` and the ops in [scripting.md](scripting.md) are untouched. `platypus_scene` is the
+first engine crate using `#[platypus_api]` (`Scene`, in `platypus_scene::api`; see
+[scene-and-objects.md](scene-and-objects.md#the-typed-script-api-platypus_sceneapi)), but nothing in the
+app calls it yet. The `platypus_ts` compiler reads the JSON manifest and calls the shims directly
+(`--manifest`, see [platypus-ts.md](platypus-ts.md); the test namespace is `tools/platypus_demo_api`). Value
 classes (`Vector3`) with methods and getters (`a.add(b)`), handle classes (`GameObject`, `Transform`)
 and the engine context exist, and so do strings across the boundary (`GameObject.name` and `find`);
 static functions and operators on value classes are not built.
 
-Measured with `cargo test -p iron_api --release -- --ignored --nocapture` (1,000,000 calls): about
-150 ns per call through the typed function and about 245 ns through a simplified `__iron_op` (a name,
+Measured with `cargo test -p platypus_api --release -- --ignored --nocapture` (1,000,000 calls): about
+150 ns per call through the typed function and about 245 ns through a simplified `__platypus_op` (a name,
 a rest array of numbers and a queue push; the real op also converts each argument to a `Value`, so
 the real gap is larger). Most of the remaining 150 ns is QuickJS's own call overhead. The large win
 is for compiled code, which calls the shim directly.
 
 ## QuickJS bindings for values and strings
 
-`#[iron_api(namespace = "X", quickjs, ...)]` now also generates QuickJS functions for namespace functions that take or return
+`#[platypus_api(namespace = "X", quickjs, ...)]` now also generates QuickJS functions for namespace functions that take or return
 a string or a value class (they used to be a macro error). A `&str` or `String` is a JS string; a value class (`Vector3`) is
 a plain object with the fields' names (`{ x, y, z }`): an argument is read field by field (a missing field is a JS exception
 the script can catch) and a result is a new object. Every generated function returns `rquickjs::Result`. Handle classes
 (`GameObject.name`, `transform.position`) are now in the QuickJS bindings, see "Handles in QuickJS"; the namespace functions
-(`Scene.setLocalPosition(go, v)`) still work with handle objects. `iron_scene`'s `Scene` namespace has `quickjs` on, so the same API
+(`Scene.setLocalPosition(go, v)`) still work with handle objects. `platypus_scene`'s `Scene` namespace has `quickjs` on, so the same API
 runs from QuickJS and from compiled code. Tests `M9-API-23..26`.
 
 ## Namespace properties and value classes in QuickJS
 
 - **Namespace properties.** In a namespace (no `impl`), `#[property] pub fn color() -> Color` is a getter and `pub fn set_color(c: Color)`
   next to it the setter: scripts write `Gizmos.color = c` and `Time.deltaTime`. The manifest has them as functions of kind `get` and
-  `set` with no receiver, the `.d.ts` as `let color: Color;` (`const` when read only), the shims as `iron_Gizmos_color()` /
-  `iron_Gizmos_setColor(..)`, QuickJS as accessors on the namespace object, and `iron_ts` calls the getter on a read and the
+  `set` with no receiver, the `.d.ts` as `let color: Color;` (`const` when read only), the shims as `platypus_Gizmos_color()` /
+  `platypus_Gizmos_setColor(..)`, QuickJS as accessors on the namespace object, and `platypus_ts` calls the getter on a read and the
   setter on an assignment (`Place::NsProp`, also for `+=`). A value class's statics are the properties and functions of a namespace
   with the same name (`Color.white`, `Color.hex("#ff0000")`).
 - **Value classes in QuickJS.** Each value type is a real JS class (made once, `globalThis.Vector3 ??= class ...`): the constructor takes
   the fields, methods (`#[method(Vector3)]`) and getters (`#[getter(Vector3)]`) are on the prototype and call hidden Rust functions
-  (`__iron_vm_<Value>_<name>`), results are instances. Modules that mention the same value type share the class.
+  (`__platypus_vm_<Value>_<name>`), results are instances. Modules that mention the same value type share the class.
 
 ## The engine API beyond the scene
 
-[iron_engine_api](../crates/iron_engine_api/src/lib.rs) declares, with `#[iron_api]`, what the sine-circle demo and most gameplay
+[platypus_engine_api](../crates/platypus_engine_api/src/lib.rs) declares, with `#[platypus_api]`, what the sine-circle demo and most gameplay
 code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen` and `QualitySettings`, with the names and behaviour of
 `js/engine`. Each keeps its state per thread and has plain Rust functions for the host: `time::advance(real_dt)`,
 `input::{key_down_event, key_up_event, mouse_button_event, mouse_move, end_frame}`, `gizmos::take_frame()`, `camera::cameras()`,
-`screen::{state, quality, set_size}`. `iron_app` is not wired to them yet (another session's area). Tests `M9-API-27..36`.
+`screen::{state, quality, set_size}`. `platypus_app` is not wired to them yet (another session's area). Tests `M9-API-27..36`.
 
-`iron_engine_api` also has `audio` (`load(path, stream)`, `Sound.play(loop)`, `Playback.pause/resume/stop`, recorded as
+`platypus_engine_api` also has `audio` (`load(path, stream)`, `Sound.play(loop)`, `Playback.pause/resume/stop`, recorded as
 `AudioCommand`s for the host). A Rust parameter written `r#loop` is the script's `loop`. Tests `M9-TS-593..597`.
 
 ## Optional parameters and renamed members
@@ -296,7 +296,7 @@ code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen`
 - `#[options]` (with `#[optional(..)]`) lets QuickJS pass the optional parameters as one plain object, by camelCase name:
   `Window.create({ title: "Palette", style: "tool", minWidth: 200 })`. It applies when the call has exactly one argument past
   the required ones and that argument is a plain object (`Object.prototype`, not an array, function, handle or value-class
-  instance: `iron_api::qjs::options_object`); a key that is missing, `undefined` or `null` is left out and takes the declared
+  instance: `platypus_api::qjs::options_object`); a key that is missing, `undefined` or `null` is left out and takes the declared
   default. Positional calls keep working. The manifest and the `.d.ts` do not change: compiled code already maps a trailing
   object literal onto the optional parameters by name (`call_ext_args`). A function with `#[options]` cannot have optional
   value-class parameters (a value is itself a plain object). Tests `M9-API-1430..1434`.
@@ -307,7 +307,7 @@ code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen`
 
 ## The first batch moved out of `js/engine` (2026-10-19)
 
-`iron_engine_api` now also declares `Rng` / `Random`, `LayerMask`, `Debug` / `Log` / `Console`,
+`platypus_engine_api` now also declares `Rng` / `Random`, `LayerMask`, `Debug` / `Log` / `Console`,
 `PlayerPrefs`, `Assets`, `Application` / `SystemInfo`, `TimeSince` / `TimeUntil`. Each keeps its state per
 thread and has host functions: `layers::set_game_layers`, `log::set_sink`, `prefs::{load, take_changes}`,
 `assets::{set_assets, changed}`, `app::{set_app, set_system, set_focus, take_requests}`. Differences from
@@ -320,7 +320,7 @@ the TypeScript, all because a call has fixed typed parameters:
   `list(glob)` (a `string[]` of the sorted paths matching a glob, `*` / `?` inside one folder name, `**` across folders,
   case-sensitive; a `Vec<String>` result of the macro, table below) and
   `packOf(path)` (`assets`, `scene-level1`, `""` for a loose file). They answer from the index the host fills with
-  `iron_engine_api::assets::set_asset_index` (every path of the mounted packs or game folder, `asset_db::index`), so they see assets
+  `platypus_engine_api::assets::set_asset_index` (every path of the mounted packs or game folder, `asset_db::index`), so they see assets
   without a `.meta`;
 - `SystemInfo.screenWidth` / `screenHeight` / `screenRefreshRate` / `screenDpi` replace `SystemInfo.screen`;
 - `Application.onFocusChanged(fn)`, `Task` and the vector-valued `Random` members wait for closures and the
@@ -334,7 +334,7 @@ the TypeScript, all because a call has fixed typed parameters:
   tick). Mouse buttons are keys (`MouseLeft`...). Gamepads are read by id (`gamepadCount`, `gamepadId(i)`, `gamepadName(id)`,
   `gamepadButton(id, name)`, `gamepadAxis(id, name)`); `input.gamepads()` gives `{ id, name, connected, buttons, axes }` (the standard
   buttons and axes by name, `0` when not reported; written in TypeScript over the readers above by the facade) and
-  `input.on(kind, fn)` takes every kind of `js/engine`'s `InputEvents` and returns the unsubscribe function: `keydown` / `keyup` (`{ code, key, repeat }`; `key` is the layout's text, from `key_down_with_text` / `key_up_with_text`), `gamepadconnected` / `gamepaddisconnected` (`{ gamepad }`), `gamepadbuttondown` / `gamepadbuttonup` (`{ gamepad, button }`) and `gamepadaxis` (`{ gamepad, axis, value }`). The kind is the enum `InputEventType`, the event the record `InputEvent` (fields of other kinds are empty). `Application.args` (the strings after `--` on `iron`'s command line, `AppInfo.args`) and `Application.quit(exitCode?)` (`Request::Quit(i32)`; `iron` exits with the code) are natives too. Tests: `M9-TS-3361..3383` (`tools/iron_ts_tests/tests/{engine_api/app,ui/ui,lang/readers}.rs`).
+  `input.on(kind, fn)` takes every kind of `js/engine`'s `InputEvents` and returns the unsubscribe function: `keydown` / `keyup` (`{ code, key, repeat }`; `key` is the layout's text, from `key_down_with_text` / `key_up_with_text`), `gamepadconnected` / `gamepaddisconnected` (`{ gamepad }`), `gamepadbuttondown` / `gamepadbuttonup` (`{ gamepad, button }`) and `gamepadaxis` (`{ gamepad, axis, value }`). The kind is the enum `InputEventType`, the event the record `InputEvent` (fields of other kinds are empty). `Application.args` (the strings after `--` on `platypus`'s command line, `AppInfo.args`) and `Application.quit(exitCode?)` (`Request::Quit(i32)`; `platypus` exits with the code) are natives too. Tests: `M9-TS-3361..3383` (`tools/platypus_ts_tests/tests/{engine_api/app,ui/ui,lang/readers}.rs`).
 - `TimeSpan` (field `totalMilliseconds`) and `DateTime` (fields `epochMilliseconds`, `utc`; local time through the OS zone or
   `datetime::set_zone`) are value classes. A static `create` makes `new TimeSpan(ms)` and `new DateTime(y, m, ...)` round and
   carry as TypeScript does (compiled code and QuickJS both call it; the engine builds its own results with the fields).
@@ -342,11 +342,11 @@ the TypeScript, all because a call has fixed typed parameters:
   `subtract(TimeSpan)` is `subtractTimeSpan`, `DateTime.fromDate(Date)` and `Task` are not there.
 - A function with more than four parameters reads its QuickJS arguments from the rest list (`new DateTime(..)` has eight).
 
-### The math types (`iron_math`)
+### The math types (`platypus_math`)
 
-`crates/iron_math` declares `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`,
+`crates/platypus_math` declares `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`,
 `Ray`, `Plane`, `Bounds` and `Pose` as `js/engine/src/math.ts` has them (the scene, input, gizmos and colour APIs use its
-types, so they live below `iron_scene`). Values are **doubles** (the TypeScript's), computed in the same order, so
+types, so they live below `platypus_scene`). Values are **doubles** (the TypeScript's), computed in the same order, so
 results are bit for bit the same as bun's for everything but `Math.hypot` of three or more numbers, where engines differ
 in the last bit: the native version scales by the largest and sums the squares (two numbers use the C library's `hypot`,
 as bun does), and the tests that compare with bun run the original with the same algorithm. The scene's `Vector3` /
@@ -368,15 +368,15 @@ as bun does), and the tests that compare with bun run the original with the same
 QuickJS both pass it (`GameObject.setParent(parent, keepWorld = true)` is declared this way). The manifest says `"default": 1`
 (a flag is 0 or 1).
 
-## Scenes (`iron_scenes`, `iron_kinds`)
+## Scenes (`platypus_scenes`, `platypus_kinds`)
 
-`iron_scenes` is `scenes.ts` in Rust: `SceneManager` (`loadScene(text, mode?)`, `getActiveScene`, `setActiveScene`,
+`platypus_scenes` is `scenes.ts` in Rust: `SceneManager` (`loadScene(text, mode?)`, `getActiveScene`, `setActiveScene`,
 `createScene`, `unloadScene`, `moveGameObjectToScene`, `mergeScenes`, `sceneOf`, `dontDestroyOnLoad`, `instantiate`), `Scene`
 (`name`, `path`, `isLoaded`, `rootCount` / `rootAt(i)`, `serialize()`) and `Prefab` (`fromObject`, `fromData`, `instantiate`,
-`toJSON`). The file format is `scenes.ts`'s `iron.scene` version 1, read and written with `serde_json`.
+`toJSON`). The file format is `scenes.ts`'s `platypus.scene` version 1, read and written with `serde_json`.
 
-The loader does not know component classes. `iron_kinds` is a per-thread registry of *kinds* (`create`, `on`, `save`, `load`,
-`awake`, `object`, `destroy` over raw `u64` handles). `iron_scenes` registers `Camera`, `Animation` (`clip`, `clips`,
+The loader does not know component classes. `platypus_kinds` is a per-thread registry of *kinds* (`create`, `on`, `save`, `load`,
+`awake`, `object`, `destroy` over raw `u64` handles). `platypus_scenes` registers `Camera`, `Animation` (`clip`, `clips`,
 `playAutomatically`, `cullingType`) and `Animator` (`controller`, `speed`, `cullingMode`, `enabled`; not its parameter values
 or current state), with the shared asset kinds `AnimationController` and `AnimationClip` (the `toJson` text, the controller's
 clips inline: one `assets` entry however many components use it; a prefab or copy keeps the live one; fields a file lacks keep
@@ -393,15 +393,15 @@ request (`request_load` / `take_load_requests` / `finish_load`); scene events ar
 exist; compiled programs do not keep state across a hot reload (they restart); `$asset`, `Material` and `Texture` values are not
 loaded yet.
 
-## Physics components (`iron_physics_api`)
+## Physics components (`platypus_physics_api`)
 
-`crates/iron_physics_api` declares physics for compiled scripts: the low-level `Physics` namespace (`createBody`,
+`crates/platypus_physics_api` declares physics for compiled scripts: the low-level `Physics` namespace (`createBody`,
 world colliders, `raycast` that answers at once, `createJoint`, `step`) and the components of `physics-components.ts` and
 `physics2d.ts` as handle classes over the GameObject (`go.addComponent(Rigidbody, { mass: 2 })`,
 `go.getComponent(BoxCollider)` through the static `findOn`). Layout: `comp.rs` (component data, the one body per
 GameObject shared by its Rigidbody and colliders, joints, rope, per-step sync), `components.rs`, `joints.rs`,
 `physics2d.rs` (the generated-looking class impls: same members repeated per class), `kinds.rs` (`register_kinds()`
-puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
+puts the 18 classes into `platypus_kinds` for scene files and `instantiate`).
 
 - **Every property change reaches the rapier world at once.** A collider is remade when its shape changes.
 - **`step()`** (`Physics.step()`): builds pending joints and ropes (`start_pending`), moves bodies to where scripts put their
@@ -424,11 +424,11 @@ puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
   for a trigger's `other`, and `clear_collisions()` at the start of each dispatch: a `Collision` is valid until the next
   dispatch, like Unity's reused ones. `relativeVelocity` is the other side's velocity minus this one's (going in for Enter,
   current for Stay and Exit). Contact points are read from rapier's narrow phase the first time a script asks
-  (`iron_physics::Physics::contact_points`: world point halfway between the surfaces, normal towards the side asking, the
+  (`platypus_physics::Physics::contact_points`: world point halfway between the surfaces, normal towards the side asking, the
   solver's normal impulse and the friction impulse it keeps for warm starting) into one buffer kept between dispatches, so
   a hook that does not look at them costs nothing; Exit and trigger collisions have none. Unity members left out are in
   `docs/differences.md` ("Collisions"). Tests `M4-PHY-08`, `M9-TS-1004`, `M9-TS-1005`.
-- Differences to the TypeScript are listed in `tools/iron_ts/TODO.md` ("Physics components"). Tests `M9-API-200..209`,
+- Differences to the TypeScript are listed in `tools/platypus_ts/TODO.md` ("Physics components"). Tests `M9-API-200..209`,
   `M9-TS-1100..1105`.
 ## Audio (`audio`, `AudioSource`, `AudioListener`)
 
@@ -436,13 +436,13 @@ puts the 18 classes into `iron_kinds` for scene files and `instantiate`).
 fadeIn, start, bus, emitter })`, `Playback` (`setVolume/Rate/Pan(v, fade?)`, `pause/resume/stop(fade?)`, `seek`, `playing`, `paused`,
 `onEnded(f)`), `Bus` (`audio.createBus({ volume, parent })`), `Emitter` (`audio.createEmitter(position, { minDistance, maxDistance, bus })`),
 `audio.setListener`, `audio.setMasterVolume`. Each change is an `AudioCommand`; the host takes them with `audio::take_commands()` and
-runs `command.to_op()` on `iron_audio::Mixer::apply` (a `Load` carries the path and stream flag: the host reads the file and calls
+runs `command.to_op()` on `platypus_audio::Mixer::apply` (a `Load` carries the path and stream flag: the host reads the file and calls
 `Mixer::load`). When `Mixer::poll` reports finished playbacks the host calls `audio::ended(&[PlaybackRef])` (runs `onEnded`).
 
 `audio_components.rs` is `audio-components.ts`: `AudioSource` and `AudioListener` are engine components (static `attach` / `findOn`, so
 `go.addComponent(AudioSource, { clip, spatialBlend: 1 })` and `getComponent` work), with scene-file kinds `AudioSource`
 (`clip` as `{"$type":"Sound","src","guid"}` or a path, `playOnAwake`, `spatialBlend`, `minDistance`, `maxDistance`, `volume`, `pitch`,
-`panStereo`, `mute`, `loop`) and `AudioListener`; registered by `iron_scenes` (`audio_components::register_kinds`). The host calls
+`panStereo`, `mute`, `loop`) and `AudioListener`; registered by `platypus_scenes` (`audio_components::register_kinds`). The host calls
 `audio_components::pre_render()` once a frame after transforms are final (emitters follow their objects, the listener follows its object;
 only real moves are sent). `objects::process_destroyed` removes the components of destroyed objects.
 
@@ -451,15 +451,15 @@ path is `src.clipPath = "x"` and `src.playOneShotPath("x")` (calls are not chose
 `AudioListener.volume` is `AudioListener.getVolume()` / `setVolume(v)`; `outputBus` is none (0) for the main mix; `audio.masterVolume`
 and `audio.soundCount` are read-only properties; `createEmitter` takes a `Vector3`.
 
-## Rendering data (`iron_render_api`)
+## Rendering data (`platypus_render_api`)
 
-[iron_render_api](../crates/iron_render_api/src/lib.rs) is `rendering.ts`, `textures.ts` (and, below, `particles.ts` ...) as data: nothing
-draws, the app reads per-thread registries and a command queue. **No change to `iron_render` or `iron_app` yet**: wiring is theirs.
+[platypus_render_api](../crates/platypus_render_api/src/lib.rs) is `rendering.ts`, `textures.ts` (and, below, `particles.ts` ...) as data: nothing
+draws, the app reads per-thread registries and a command queue. **No change to `platypus_render` or `platypus_app` yet**: wiring is theirs.
 
 - **Components** (engine components like `Camera`: static `attach` / `findOn`, `gameObject`, one property per field, and a scene-file
   kind each): `Light`, `PlaneRenderer`, `MeshRenderer`, `SkinnedMeshRenderer`, `Mirror`, `ReflectionProbe`, `LODGroup`, `WorldPanel`,
-  `SpriteRenderer`, `LineRenderer2D`. The host reads them with `iron_render_api::lights()`, `mesh_renderers()`, ... (`Vec<(Ref, Data)>`)
-  and removes the components of destroyed objects with `iron_render_api::destroyed(&objects)`. `Camera` gains `clearFlags`, `rect`,
+  `SpriteRenderer`, `LineRenderer2D`. The host reads them with `platypus_render_api::lights()`, `mesh_renderers()`, ... (`Vec<(Ref, Data)>`)
+  and removes the components of destroyed objects with `platypus_render_api::destroyed(&objects)`. `Camera` gains `clearFlags`, `rect`,
   `cullingMask`, `layerCullDistances`, `layerCullSpherical`, `antialiasing`, `targetTexture`, `sceneGrid`.
 - **Assets** (handles with asset kinds): `Texture` (`Texture.load(src, { filterMode, wrapMode, mipmaps, anisoLevel, linear })`,
   `Texture.create(w, h, colors)`, `Texture.createRenderTexture(w, h)`), `Mesh` (`Mesh.create({ vertices, triangles, normals?, uv? })`,
@@ -468,9 +468,9 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   and reports file loads with `texture_loaded(t, w, h)`.
 - **Generated code.** `build.rs` writes `generated.rs` (into `OUT_DIR`) from the field tables in `gen/components.rs` (type, default, doc, hooks); it runs with every build, so
   there is nothing to regenerate. Hand-written parts are `resources.rs`.
-- **Scene files.** `iron_kinds::AssetKind` (shared kinds go into the file's `assets` table as `{"$asset":"texture1"}`, inline kinds
+- **Scene files.** `platypus_kinds::AssetKind` (shared kinds go into the file's `assets` table as `{"$asset":"texture1"}`, inline kinds
   such as `Material` / `Sprite` are `{"$type":"Material",..}`); components save assets as `{"$handle":"Texture","id":N}` placeholders
-  and the saver / loader (`iron_scenes::data`) translate, one handle per table entry. `instantiate` and in-memory prefabs keep the
+  and the saver / loader (`platypus_scenes::data`) translate, one handle per table entry. `instantiate` and in-memory prefabs keep the
   handles. `mesh: "cube"` is saved as the string. The example `level1.scene.json` loads completely.
 - **Compiler help.** A string where a handle is expected calls the class's `fromString` (`mesh: "sphere"` is `Mesh.fromString`); an
   optional array parameter left out is empty; `Class.create({ .. })` on a class whose `create` takes nothing is `new Class({ .. })`;
@@ -492,25 +492,25 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `model_loaded(model, Some(json))` (`None`: it failed); copies asked for earlier are built then (a GameObject per node, a mesh renderer
   per primitive, or child objects when a node has several; skinned nodes get a `SkinnedMeshRenderer` with bones and bind poses; glTF
   materials). `colliders: "mesh" | "convex"` goes through `set_model_collider_hook`. Scene files carry a copy as the object's `"model"`
-  (`iron_kinds::ObjectExtra`: the model's own nodes are left out and built again on load). `materials` and `animations` are lists
-  (handles); the file's animations become looping clips when it loads (`iron_animation::gltf::clip_from_channels`: paths by node
+  (`platypus_kinds::ObjectExtra`: the model's own nodes are left out and built again on load). `materials` and `animations` are lists
+  (handles); the file's animations become looping clips when it loads (`platypus_animation::gltf::clip_from_channels`: paths by node
   names from the copy's root, rotation keys made sign-continuous, cubic keys with the file's tangents), and a copy gets an
   `Animation` holding them that plays the first, as `models.ts` does.
-- **Screen, QualitySettings, Gizmos** (`iron_engine_api`): `Screen` has `scale`, `aspect`, `fullScreenMode`, `setResolution(w, h, { mode,
+- **Screen, QualitySettings, Gizmos** (`platypus_engine_api`): `Screen` has `scale`, `aspect`, `fullScreenMode`, `setResolution(w, h, { mode,
   refreshRate })`, `windowWidth` / `windowHeight`, `resolutionCount` + `resolutionWidth(i)` ..., `currentResolution...`,
   `supportedFullScreenModes` (a `FullScreenMode[]`, an enum list) and `onChange(f)` (token, `offChange`). The host feeds it with `screen::update(w, h,
   scale)` (runs the listeners) and `set_display(..)` and takes the window changes scripts asked for with `take_requests()`.
   `QualitySettings` has the named levels (`levelCount`, `levelName(i)`, `levelJson(i)`, `getQualityLevel()`, `setQualityLevel(i)` /
   `setQualityLevelByName(name)`, `onLevelChanged(f)`) and every setting with the TypeScript's validation (unknown names ignored,
-  numbers clamped). The game's `iron.quality` manifest goes through `screen::configure_quality(&json)`, the player's saved choice
-  (`iron.quality` in PlayerPrefs) through `apply_default_quality()`; the renderer reads `quality()` when `quality_version()` changed.
+  numbers clamped). The game's `platypus.quality` manifest goes through `screen::configure_quality(&json)`, the player's saved choice
+  (`platypus.quality` in PlayerPrefs) through `apply_default_quality()`; the renderer reads `quality()` when `quality_version()` changed.
   `Gizmos` has `drawRay`, `drawWireCube`, `drawWireDisc`, `drawWireSphere`, `drawFrustum`, `matrix` and `lineCount`.
 - **Settings and behaviours.** `RenderSettings` (namespace properties: `ambientLight`, `ambientMode`, `reflectionIntensity`,
   `skyboxEnabled` + `skyZenith` / `skyHorizon` / `skyGround` / `skySunDirection` / `skyHasSun` / `skySunColor` / `skySunSize`,
   `bloomEnabled` + `bloomThreshold` / `bloomIntensity` / `bloomScatter`, `tonemapping`, `postExposure`; the host reads
   `settings()` when `version()` changed). Scene files apply their `renderSettings` when the scene becomes active and the active scene
   saves the current ones; the keys are the ones `scenes.ts` saves (`ambientLight`, `ambientMode`, `reflectionIntensity`, `skybox`, `bloom`, and the fog's `fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`, `fogEndDistance`, `heightFog`, `cloudLayer`, `volumetricFog`, `fogCulling`; the TypeScript tier saves no exposure keys either). `Cursor` (`visible`, `lockState`, `setCursor(path, { hotspotX, hotspotY })`, `clearCursor()`;
-  host: `iron_engine_api::cursor::state()`) with `CursorLockMode.None/Locked/Confined` strings. `CameraFollow` and `CameraOrbit` are
+  host: `platypus_engine_api::cursor::state()`) with `CursorLockMode.None/Locked/Confined` strings. `CameraFollow` and `CameraOrbit` are
   components whose update the host runs: `late_update_camera_follows(dt)` and `late_update_camera_orbits(dt)` once a frame.
 - **Differences from the TypeScript.** `RenderSettings.skybox = { .. }` is the `sky...` properties; `Cursor.setCursor(texture)` takes a
   path only. `Material` is mutable (a shared handle, like Unity's `sharedMaterial`; `with(..)` is
@@ -521,7 +521,7 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `Mirror.normal` has a `hasNormal` flag; `specularColor = null` is `clearSpecularColor()`; enum-like strings (`Light.type`) ignore
   unknown names instead of storing them.
 
-## Closures given to the engine (`iron_api::callback`)
+## Closures given to the engine (`platypus_api::callback`)
 
 A parameter of type `Callback<(A, B)>` (elements `f64`, `i32`, `u32`, `bool`, `String` or `HandleArg<T>` for a declared handle) is a
 script closure the engine keeps and calls later: `input.onKeyDown((code, repeat) => ..)`. Manifest type `fn(f64,string):void`
@@ -532,8 +532,8 @@ The closure returns nothing.
   `add` / `remove` / `snapshot`; tokens are unique across all events) and `emit(&snapshot, args)`. Emit after the state borrow is
   released, from a snapshot, so a listener may subscribe, unsubscribe or call the API.
 - **Runtime.** The shim wraps the closure pointer with `Callback::from_script`, which roots it (a host root) until the last clone is
-  dropped. The runtime tells `iron_api` how to root, make a script string and take a thrown exception through
-  `callback::install_bridge`; `iron_ts_rt` installs it with its heap. A string argument is a new rooted script string for the call.
+  dropped. The runtime tells `platypus_api` how to root, make a script string and take a thrown exception through
+  `callback::install_bridge`; `platypus_ts_rt` installs it with its heap. A string argument is a new rooted script string for the call.
   An exception thrown by a callback is swallowed and listed by `callback::take_errors()`.
 - **QuickJS.** A function with a `Callback` parameter is not generated for QuickJS yet.
 - **Differences.** The TypeScript `on(..)` returned an unsubscribe function; here `onX(f)` returns a token (a number, never 0) and a
@@ -543,11 +543,11 @@ The closure returns nothing.
   (`SceneManager` after the load or unload finished); `take_events()` still works.
 ## Handles in QuickJS
 
-The decision (user, 2026-10-20, `research/iron-native-physics.md` section 7): whatever the compiled side treats as internal (engine
+The decision (user, 2026-10-20, `research/platypus-native-physics.md` section 7): whatever the compiled side treats as internal (engine
 ids, handles) reaches QuickJS as an **opaque internal value**, like a V8 internal field. Plain data (numbers, strings, arrays,
 value classes) is encoded normally.
 
-- **The object.** A handle is an instance of a Rust class (`iron_api::qjs::HandleBox { raw, class }`) given the prototype of the
+- **The object.** A handle is an instance of a Rust class (`platypus_api::qjs::HandleBox { raw, class }`) given the prototype of the
   handle's JS class (`GameObject.prototype`). The id is in the engine-side slot, not a property: it has no own properties,
   `JSON.stringify(go)` is `{}`, `Object.prototype.toString.call(go)` is `[object GameObject]` (`Symbol.toStringTag`), and only
   properties the script sets are own. Id 0 is `null` going out; `null` / `undefined` are 0 coming in.
@@ -559,25 +559,25 @@ value classes) is encoded normally.
   (`Scene` helper functions and the scene class), they are merged in either order and the class wins (`install_namespace`).
 - **Checks.** A handle argument must be an instance of exactly that class (`Transform` where `GameObject` goes is a
   `TypeError: expected a GameObject, got a Transform`); a method with a non-handle `this` throws.
-- **Host side.** `iron_api::qjs::handle_new(ctx, "GameObject", raw)` makes the object and `handle_arg` reads the id back (for the
+- **Host side.** `platypus_api::qjs::handle_new(ctx, "GameObject", raw)` makes the object and `handle_arg` reads the id back (for the
   app's own bindings, tests).
-- **No identity.** Every read makes a new object, so `a === b` is false for the same id (listed in `tools/iron_ts/TODO.md`).
+- **No identity.** Every read makes a new object, so `a === b` is false for the same id (listed in `tools/platypus_ts/TODO.md`).
 - **Value classes.** Each QuickJS value class has `toJSON()` (the compact array of numbers, as compiled code stringifies) and a static
   `X.fromJSON(v)` taking that array (exactly the fields' count) or the object form (left-out fields 0, `a` 1). A function
   parameter of a value type accepts an instance, the object form (all fields) or the array.
 - **Arrays.** `&[String]` (or `Vec<String>`, owned) reads a JS array of strings (manifest type `strings`, `ExtTy::StrArr` in the compiled lowering; an optional one left out is empty; `M9-API-1621`, `M9-TS-3323`); `&[f64]` reads a JS array of numbers; `&[V]` an array of value instances, objects or arrays. Typed arrays and array
   results are not built.
-- Code: `crates/iron_api/src/qjs.rs`, the macro's `handle_class` branch. Tests `M9-API-100..113`.
+- Code: `crates/platypus_api/src/qjs.rs`, the macro's `handle_class` branch. Tests `M9-API-100..113`.
 
 ### Installing the APIs: one call
 
-`iron_native::install(&mut quickjs_runtime)` (crate `crates/iron_native`) installs the whole native API: it runs
-`iron_native::register_quickjs(ctx)` in the runtime's context and again in every context a `reset()` (hot reload) makes
-(`QuickJsRuntime::add_native`). The order inside is fixed: `iron_engine_api::register_quickjs` (math, scene, animation, input,
-time, audio, camera, ...), `iron_scenes::register_quickjs` (`SceneManager`, `Scene`, `Prefab`),
-`iron_physics_api::register_quickjs`, `iron_render_api::register_quickjs`. `iron_native::manifests()` lists them all for the compiler.
+`platypus_native::install(&mut quickjs_runtime)` (crate `crates/platypus_native`) installs the whole native API: it runs
+`platypus_native::register_quickjs(ctx)` in the runtime's context and again in every context a `reset()` (hot reload) makes
+(`QuickJsRuntime::add_native`). The order inside is fixed: `platypus_engine_api::register_quickjs` (math, scene, animation, input,
+time, audio, camera, ...), `platypus_scenes::register_quickjs` (`SceneManager`, `Scene`, `Prefab`),
+`platypus_physics_api::register_quickjs`, `platypus_render_api::register_quickjs`. `platypus_native::manifests()` lists them all for the compiler.
 
-**Classes and namespaces in QuickJS** (every `#[iron_api]` module of the engine has the `quickjs` flag; test `M9-API-120` checks
+**Classes and namespaces in QuickJS** (every `#[platypus_api]` module of the engine has the `quickjs` flag; test `M9-API-120` checks
 that every function of every manifest exists, `M9-API-144` that every property of every component round-trips):
 
 - *Math (value classes):* `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds`, `Pose`, `Color`, `Keyframe`, `TimeSpan`, `DateTime`, `TimeSince`, `TimeUntil`.
@@ -590,79 +590,79 @@ that every function of every manifest exists, `M9-API-144` that every property o
 
 **Callbacks.** A `Callback<(..)>` parameter (listener APIs: `input.onKeyDown(f)`, `Assets.onChanged`, `SceneManager.onSceneLoaded`,
 `Screen.onChange`, `ParticleSystem.onStopped`, `Playback.onEnded`, ...) takes a JS function. The engine keeps it as a reference
-counted `Function` (`iron_api::qjs::keep_function`), so the collector treats it as a root until the `Callback` is dropped, and
+counted `Function` (`platypus_api::qjs::keep_function`), so the collector treats it as a root until the `Callback` is dropped, and
 calls it with the same arguments the compiled side gives (numbers, booleans, strings, handle objects); the listener APIs return
 the numeric token and `off(token)` removes it. An exception in a callback is not thrown into the engine: it is recorded for
-`iron_api::callback::take_errors()` and the other callbacks still run. **Drop the callbacks before the runtime**: QuickJS asserts when
+`platypus_api::callback::take_errors()` and the other callbacks still run. **Drop the callbacks before the runtime**: QuickJS asserts when
 objects are alive at `JS_FreeRuntime`, so reset the engine state that holds listeners (`input::reset`, `assets::reset`,
-`app::reset`, `screen::reset`, `audio::reset`, `iron_render_api::reset`, `iron_scenes::reset`) before dropping or replacing a
+`app::reset`, `screen::reset`, `audio::reset`, `platypus_render_api::reset`, `platypus_scenes::reset`) before dropping or replacing a
 runtime (the `reset()` of a hot reload included).
 
 **Optional parameters** of value classes are NaN-filled when left out (as in compiled code), optional arrays are empty, optional
 handles `null`. Methods of one class with the same script name (`#[js_name]`) are chosen by argument count like namespace functions.
 
-**Hand-over for `iron_app`** (not done here, the area is the lead's):
-1. Where the app builds its `QuickJsRuntime`, call `iron_native::install(&mut rt)?` once before loading the bundle (add `iron_native` to
-   `crates/iron_app/Cargo.toml`). It replaces calling the per-crate functions.
-2. Wrap script execution (load, tick, event callbacks, the hot-reload `__iron_restore_state`) in `iron_scene::api::enter(&mut scene)`, so `GameObject.create()` and friends
-   have a current scene, and call `iron_scenes::register_engine_kinds()`, `iron_render_api::register_kinds()`,
-   `iron_engine_api::audio_components::register_kinds()` (and the physics kinds) as the compiled host does.
+**Hand-over for `platypus_app`** (not done here, the area is the lead's):
+1. Where the app builds its `QuickJsRuntime`, call `platypus_native::install(&mut rt)?` once before loading the bundle (add `platypus_native` to
+   `crates/platypus_app/Cargo.toml`). It replaces calling the per-crate functions.
+2. Wrap script execution (load, tick, event callbacks, the hot-reload `__platypus_restore_state`) in `platypus_scene::api::enter(&mut scene)`, so `GameObject.create()` and friends
+   have a current scene, and call `platypus_scenes::register_engine_kinds()`, `platypus_render_api::register_kinds()`,
+   `platypus_engine_api::audio_components::register_kinds()` (and the physics kinds) as the compiled host does.
 3. Feed the per-thread state each frame as in "The engine API beyond the scene": `time::advance`, `input::*` events,
-   `Physics.step()` (or `iron_physics_api::step()` once per fixed tick), `gizmos::take_frame()`, `audio::take_commands()` for the mixer
-   and `audio::ended(..)` back, `iron_render_api::take_commands()` / `texture_loaded`, `report_particles`, `assets::changed`, `app::set_focus`,
+   `Physics.step()` (or `platypus_physics_api::step()` once per fixed tick), `gizmos::take_frame()`, `audio::take_commands()` for the mixer
+   and `audio::ended(..)` back, `platypus_render_api::take_commands()` / `texture_loaded`, `report_particles`, `assets::changed`, `app::set_focus`,
    `screen::set_size`.
 4. On a runtime reset (hot reload) call the `reset()` functions listed under Callbacks first, then `rt.reset()` (the natives are
    installed again by `install`). Handle objects do not survive a reload; the Rust state does.
-5. The old `__iron_op("scene.*" / "physics.*" / "audio.*")` paths and these native globals both exist: a game bundle should use the
-   native globals **or** the `@iron/engine` classes, not hand ids between them.
+5. The old `__platypus_op("scene.*" / "physics.*" / "audio.*")` paths and these native globals both exist: a game bundle should use the
+   native globals **or** the `@platypus/engine` classes, not hand ids between them.
 
-- **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/iron_ts/TODO.md` and `tools/iron_ts/src/lower/facade.rs`. `Camera.main()` is a native static (`CameraRef::main`).
-### Native games in `iron_app` (compiled in process)
+- **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/platypus_ts/TODO.md` and `tools/platypus_ts/src/lower/facade.rs`. `Camera.main()` is a native static (`CameraRef::main`).
+### Native games in `platypus_app` (compiled in process)
 
-`iron_app` runs a game two ways. A folder with `dist/game.irbundle` (or a `.irbundle` / `.ts` / `.tsx` path) is a **native
-game**: [native.rs](../crates/iron_app/src/native.rs) JIT-compiles the bundled TypeScript with `iron_ts::jit` and drives it with no
+`platypus_app` runs a game two ways. A folder with `dist/game.pbundle` (or a `.pbundle` / `.ts` / `.tsx` path) is a **native
+game**: [native.rs](../crates/platypus_app/src/native.rs) JIT-compiles the bundled TypeScript with `platypus_ts::jit` and drives it with no
 QuickJS; otherwise `dist/game.js` runs in QuickJS as before (`App` keeps both sets of fields and branches at the pump points).
 
-- **Bundle** (written by `iron-build`): JSON `{"format":1,"title","entry","source":"<one TS/TSX text>","css":"game.css"|null,
+- **Bundle** (written by `platypus-build`): JSON `{"format":1,"title","entry","source":"<one TS/TSX text>","css":"game.css"|null,
   "assets":[..]}`. `Bundle::read` / `Bundle::parse`. The stylesheet is still `dist/game.css`, loaded by `load_game_css`.
-- **Compile.** Manifests: `iron_native::manifests()` (all engine namespaces, which also registers their shim addresses in
-  `iron_api::symbol`) plus `iron_ts_ui::manifest_json()` and `root_manifest_json()`; extra symbols: `iron_ts_ui::symbols()`; the
-  runtime's come from `iron_ts_rt::symbols()` (a build script lists its `#[no_mangle]` exports). Each reload gets a new
+- **Compile.** Manifests: `platypus_native::manifests()` (all engine namespaces, which also registers their shim addresses in
+  `platypus_api::symbol`) plus `platypus_ts_ui::manifest_json()` and `root_manifest_json()`; extra symbols: `platypus_ts_ui::symbols()`; the
+  runtime's come from `platypus_ts_rt::symbols()` (a build script lists its `#[no_mangle]` exports). Each reload gets a new
   `struct_base` (100,000 apart).
-- **Per frame and event** (`Native`): `fixed_tick` (`NativeHost::fixed_update`, `iron_physics_api::step`, `dispatch_physics`),
-  `frame` (`Time` via `iron_engine_api::time::advance`, `ts_rt_timers_advance(now_ms)`, microtasks, `NativeHost::update`),
-  `pre_render`, `ui_events` (a `UiEvent` becomes an `iron_ui_native::Event` for `Runtime::dispatch`), and after each of them the
-  mounts (`iron_ts_ui::take_mounts`, `UiRoot.mount(target, element)`), `Runtime::flush`, script faults and UI errors to the log.
-  Every call runs inside `iron_scene::api::enter(&mut app.scene.scene)`.
+- **Per frame and event** (`Native`): `fixed_tick` (`NativeHost::fixed_update`, `platypus_physics_api::step`, `dispatch_physics`),
+  `frame` (`Time` via `platypus_engine_api::time::advance`, `ts_rt_timers_advance(now_ms)`, microtasks, `NativeHost::update`),
+  `pre_render`, `ui_events` (a `UiEvent` becomes a `platypus_ui_native::Event` for `Runtime::dispatch`), and after each of them the
+  mounts (`platypus_ts_ui::take_mounts`, `UiRoot.mount(target, element)`), `Runtime::flush`, script faults and UI errors to the log.
+  Every call runs inside `platypus_scene::api::enter(&mut app.scene.scene)`.
 - **Console.** `console.log` goes to the `script` log target through `ts_rt_set_console`.
 - **Host wiring** (`native.rs`, `native_pump.rs`, `game_input.rs`):
-  - *Input.* Keys, mouse, wheel and gamepad events go to `iron_engine_api::input` (`game_input::apply_native`, the same argument lists as `__iron_input`), so `getKey*` and the `onKeyDown` closures work. UI events run through the compiled handlers *inside* the interaction layer's dispatch (`Native::ui_event`, with `Runtime::dispatch_handlers`; world panels go through `native_render::panel_event` the same way), so `preventDefault()` reaches the default actions; `Native::settle` commits afterwards. `iron_ts_ui::take_node_commands()` (`ref.focus()`, `blur()`, `scrollTo()`, `scrollBy()`, `scrollIntoView()`) is applied to the UI by `App::apply_node_commands`.
-  - *Physics.* `fixed_tick` calls `iron_physics_api::step()` (it writes body poses into the scene) and `dispatch_physics`.
+  - *Input.* Keys, mouse, wheel and gamepad events go to `platypus_engine_api::input` (`game_input::apply_native`, the same argument lists as `__platypus_input`), so `getKey*` and the `onKeyDown` closures work. UI events run through the compiled handlers *inside* the interaction layer's dispatch (`Native::ui_event`, with `Runtime::dispatch_handlers`; world panels go through `native_render::panel_event` the same way), so `preventDefault()` reaches the default actions; `Native::settle` commits afterwards. `platypus_ts_ui::take_node_commands()` (`ref.focus()`, `blur()`, `scrollTo()`, `scrollBy()`, `scrollIntoView()`) is applied to the UI by `App::apply_node_commands`.
+  - *Physics.* `fixed_tick` calls `platypus_physics_api::step()` (it writes body poses into the scene) and `dispatch_physics`.
   - *Audio.* `AudioCommand`s go to the mixer through `audio_op` (`Load` reads the file, the others `to_op()`); the mixer's finished sounds go back as `audio::ended` (`onEnded`, `AudioSource` state); `AudioSource` / `AudioListener` follow their objects in `pre_render`.
   - *Window and settings.* The window, `Screen`, quality levels and cursor are `native_render.rs`. `Application` requests (target frame rate, run in background, quit) and focus / pause (`onApplicationFocus` / `Pause`, `Application.onFocusChanged`) are applied. `PlayerPrefs` start from the saved prefs and their changes are written back. The manifest's `Application` info, layer names, quality levels and asset GUIDs are set by `native_pump::configure_engine`, before the program's top level, again after a reload.
-  - *Scenes and assets.* `SceneManager.loadSceneAsync` requests are read from the game folder (`Native::set_root`), scene events are dispatched after every call into the program, `iron.startScene` loads at start, `Assets.onChanged` runs when the asset watcher reloads files. `register(.., { spawn: false })` is read from the source text (the compiler erases `register`).
+  - *Scenes and assets.* `SceneManager.loadSceneAsync` requests are read from the game folder (`Native::set_root`), scene events are dispatched after every call into the program, `platypus.startScene` loads at start, `Assets.onChanged` runs when the asset watcher reloads files. `register(.., { spawn: false })` is read from the source text (the compiler erases `register`).
   - *Exit.* `App::drop` clears the panel reconcilers (`native_render::clear_state`) and runs `Native::shutdown` (drops the program's closures and resets the engine state) while the program's heap is alive; thread-local destructors run in no fixed order and used to panic at exit.
   - *Still missing:* `onReload`, component references between components across a reload, model completion callbacks.
 
-**Hot reload of a native game** (`Native::reload`, triggered by a change of `dist/game.irbundle` or `dist/.iron-reload`,
-`IRON_RELOAD_AT_FRAME=N` in screenshot runs; about 30 ms for hello): the new source is compiled first (a failure, or a
-`{"ok":false,"error"}` note from `iron-build dev`, keeps the old game). Then the scenes are saved with `iron_scenes::serialize`
+**Hot reload of a native game** (`Native::reload`, triggered by a change of `dist/game.pbundle` or `dist/.platypus-reload`,
+`PLATYPUS_RELOAD_AT_FRAME=N` in screenshot runs; about 30 ms for hello): the new source is compiled first (a failure, or a
+`{"ok":false,"error"}` note from `platypus-build dev`, keeps the old game). Then the scenes are saved with `platypus_scenes::serialize`
 (compiled components through their `@property` tables), the old `NativeHost` is dropped without `onDestroy`, the engine's per-thread
-state is reset (`input`, `assets`, `app`, `screen`, `audio`, `animation`, `camera`, `iron_render_api`, `iron_physics_api`,
-`iron_scenes`) because it holds the old code's closures, the new program's top level runs, the objects it made are removed and the
+state is reset (`input`, `assets`, `app`, `screen`, `audio`, `animation`, `camera`, `platypus_render_api`, `platypus_physics_api`,
+`platypus_scenes`) because it holds the old code's closures, the new program's top level runs, the objects it made are removed and the
 saved scenes load again (`load_scene`: components come back on their objects with their fields, `onAwake` runs; classes new in this
 program get a starting object). The UI keeps its hook state through `Runtime::refresh`, except components whose `__uiSignatures`
 hook list changed. Differences to QuickJS: no `onReload` hook (the compiled runtime has no such hook), non-`@property` fields start over, module variables of objects the
 top level made hold removed objects, component references between components are not restored.
 
-**3D from a native game** (`crates/iron_app/src/render_sync.rs`): each frame `sync` takes the resource commands
-(`iron_render_api::take_commands`: textures from files or pixels through `WorldViews::texture_op`, then `texture_loaded`; script meshes
+**3D from a native game** (`crates/platypus_app/src/render_sync.rs`): each frame `sync` takes the resource commands
+(`platypus_render_api::take_commands`: textures from files or pixels through `WorldViews::texture_op`, then `texture_loaded`; script meshes
 through the `mesh` op), then sends the components that changed to the renderer, by calling `WorldViews::apply` with the same arguments
 the QuickJS `render.*` ops carry, or for the many-item kinds typed calls (`set_renderer` for mesh and skinned renderers with their
 materials, `set_stroke` for `LineRenderer2D`), so there is one renderer path. Native objects get script ids with `ScriptScene::adopt`.
 Cameras look along -z (as in the QuickJS path, unlike Unity).
 
-The sync is incremental. Every registry counts its changes: the generated components and assets of `iron_render_api`
+The sync is incremental. Every registry counts its changes: the generated components and assets of `platypus_render_api`
 (`<name>s_version()`, bumped by `attach_*`, `create_*`, `remove_*`, `reset_*` and `with_*`, the mutable access every setter uses;
 getters, `<name>s_on` and the scene-file save read through `read_*` and do not count) and the cameras (`camera::version()`; the exposure
 the renderer reads back does not count). Per kind, `components()` keeps a `Track`: the versions it last synced at (a kind whose
@@ -673,9 +673,9 @@ cannot be sent (no mesh yet, no material) is dropped and retried on the next cha
 the views are built, so moving objects costs the sync nothing. Line renderer tubes are rebuilt only when their width, sides, smoothing
 or points change (`pre_render_lines` skips them all while the registry's version stays), world panel and `TextMesh` specs go to the app
 only when their registry changed (`Extras::panels` / `texts` are `None` otherwise), and the second resource pass runs only when
-`pre_render_lines` queued something. `IRON_RENDER_SYNC=full` rebuilds every component every frame instead (the old way, for comparing);
+`pre_render_lines` queued something. `PLATYPUS_RENDER_SYNC=full` rebuilds every component every frame instead (the old way, for comparing);
 `M9-API-1700` checks the incremental views against a full rebuild every frame of a game making random changes. `--bench` reports the
-sync's parts (`syncParts`, `iron_app/src/sync_profile.rs`).
+sync's parts (`syncParts`, `platypus_app/src/sync_profile.rs`).
 
 Round 2 (render side): `sync` also turns sprite renderers, `LineRenderer2D`, planes, mirrors, reflection probes (sent when new or
 changed; `probeRender` on a new render request), LOD groups, skinned mesh renderers (ids from `1 << 24`; bind poses from the mesh or from
@@ -689,35 +689,35 @@ after a camera changed),
 Mesh renderer ids are the registry handles, so `LODGroup` renderer lists match. A cloth starts when the host first sees it with a mesh
 renderer on its object (`rebuild()`), and its `cloth.*` ops go to `ClothSystem` through `Extras`.
 
-The app side is `crates/iron_app/src/native_render.rs` (`impl App`, called from `frame()` through `sync_native_render`):
-`CameraFollow` / `CameraOrbit` late updates and `iron_engine_api::animation::update_culled` (animation culling:
+The app side is `crates/platypus_app/src/native_render.rs` (`impl App`, called from `frame()` through `sync_native_render`):
+`CameraFollow` / `CameraOrbit` late updates and `platypus_engine_api::animation::update_culled` (animation culling:
 `culled_roots()` lists the objects whose `Animator.cullingMode` / `Animation.cullingType` culls, `WorldViews::animation_sight`
 (`anim_cull.rs`) answers from what the renderer saw of their renderers last frame (`WorldRenderer::take_seen`, read after each
 frame is drawn) and watches them for this frame; an animated object with a physics component, `AudioSource`, `ParticleSystem`,
 `Light` or script component below it is never culled (the safeguard, `anim_cull::blockers`, one warning per object); animators
-are posed on several threads (`iron_animation::set_threads`, from `IRON_ANIM_THREADS` or the machine's threads up to 16);
+are posed on several threads (`platypus_animation::set_threads`, from `PLATYPUS_ANIM_THREADS` or the machine's threads up to 16);
 `Animator.update(dt)` poses one by hand and `Animator.enabled = false` takes it out of the frame's update; see
 `docs/animation-native.md`), the quality levels from `package.json`
 (`configure_quality` and `apply_default_quality`, once), `UiResources` requests (`addStyleSheet`, `removeStyleSheet`, `loadFont` through
 the same code as the QuickJS ops, on the screen and every panel), `Cursor` (version counter) and `Screen` (window requests, the display
 state and size changes), and world panels: `Native::take_panel_mounts` hands over `createRoot(panel).render(..)` roots; each panel has its
-own `UiTree` (`panels.rs`) and its own `iron_ui_native::Runtime` (flushed every frame); pointer and key events of a panel
+own `UiTree` (`panels.rs`) and its own `platypus_ui_native::Runtime` (flushed every frame); pointer and key events of a panel
 (`App::native_panel_events`) go to that runtime. `WorldPanel` components give the panel's size, density and tint through `Panels::apply`.
 Not done: animation events are not delivered to components;
 colliders of models (`colliders: "mesh"`) need the physics hook (agent H).
 
-## The FPS counter (`crates/iron_app/src/fps.rs`)
+## The FPS counter (`crates/platypus_app/src/fps.rs`)
 
-A raw frame-rate overlay drawn by the app for every game, QuickJS (`dist/game.js`) or native (`dist/game.irbundle`): lime green
+A raw frame-rate overlay drawn by the app for every game, QuickJS (`dist/game.js`) or native (`dist/game.pbundle`): lime green
 (`#32ff32`), bold, 13px, `0 1px 2px #000` shadow, no background, in the top right corner 10px from the top and right edges,
 right-aligned, text like `144 FPS`. `FpsCounter` counts frames over windows of 0.25 s of real time and shows `round(frames / elapsed)`
 (no smoothing, no cap). `FpsOverlay` is a tiny `UiTree` (one absolutely placed box, `pointer-events: none`, so no hit testing or focus)
 drawn with `render_overlay` after the world and the game's UI, in `frame()` and in `save_screenshot`, at window resolution and window
 scale factor (not the UI scale, not the render scale).
 
-On or off, in order: `--fps` / `--no-fps` on the command line; off with `IRON_FPS=0` (or `false`, `off`, `no`) or `"iron": { "fps": false }`
+On or off, in order: `--fps` / `--no-fps` on the command line; off with `PLATYPUS_FPS=0` (or `false`, `off`, `no`) or `"platypus": { "fps": false }`
 in `package.json`; otherwise on, except in `--screenshot` runs (off unless `--fps`, so goldens and `bun run screenshots` don't change).
-`iron_editor` has it off unless `--fps`. A short screenshot run shows the partial window.
+`platypus_editor` has it off unless `--fps`. A short screenshot run shows the partial window.
 
 ## Fog, light shafts and exposure in native games (2026-10-21)
 
@@ -725,7 +725,7 @@ The render features of `js/engine` that `docs/world-rendering.md` describes (fog
 units, soft shadow levels, fog volumes) are declared natively too, and `render_sync.rs` sends the renderer the same `render.fog`,
 `render.post`, `render.light`, `render.fogVolume`, `render.exposureReset` and `render.quality` ops, so the pictures match.
 
-- **`RenderSettings`** (`iron_render_api::render_settings`): `fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`,
+- **`RenderSettings`** (`platypus_render_api::render_settings`): `fog`, `fogMode`, `fogColor`, `fogDensity`, `fogStartDistance`,
   `fogEndDistance`, `fogCulling`; `heightFogEnabled` + `heightFogDensity` / `heightFogBaseHeight` / `heightFogFalloff`;
   `volumetricFogEnabled` + `volumetricFogIntensity` / `Anisotropy` / `Steps` / `Distance` / `Albedo` / `SharpDistance` / `SharpSamples` /
   `Resolution` / `Denoising` / `HistoryWeight` / `Samples` / `MotionSamples`; `autoExposureEnabled` + `autoExposureMinEv` / `MaxEv` /
@@ -738,13 +738,13 @@ units, soft shadow levels, fog volumes) are declared natively too, and `render_s
   it as the `clouds` op; `WorldViews::advance_clouds` carries it on the wind each frame (`M7-CLOUD-04`).
 - **Object-valued properties** are native records: `skybox`, `bloom`, `heightFog`, `volumetricFog`, `cloudLayer` and `autoExposure` take an object or
   `null` and read back as one (`Option<Record>`, JSON on the wire, see "Records as parameters" below); `fixedExposure` is native
-  (`number | null`). `FogMode`, `VolumeDetail`, `VolumeDenoising` and `ExposureMetering` are enums (`#[iron_api]` `enums(..)`, string
+  (`number | null`). `FogMode`, `VolumeDetail`, `VolumeDenoising` and `ExposureMetering` are enums (`#[platypus_api]` `enums(..)`, string
   unions in the declarations). The per-field natives (`heightFogDensity`, `skyZenith`, ...) are still there.
 - **`Camera`**: `fog` (show the fog, on), `exposure` / `sceneBrightness` (EV100, read back from the GPU a frame or two late, NaN
   before: the app calls `camera::set_exposure`), `resetExposure()`, `aperture` / `shutterSpeed` / `iso` and `physicalExposure`.
 - **`Light`**: `volumetricIntensity`, `spotShape` (`cone` | `pyramid`), `aspectRatio`; `Light.illuminanceAt(point, normal?)` and
-  `Light.measureIlluminance(point, normal?)` (native, `crates/iron_render_api/src/light_meter.rs`: the sum over every light, the
-  shadowed form casting a physics ray to each, so `iron_render_api` depends on `iron_physics_api`; `measureIlluminance` is a
+  `Light.measureIlluminance(point, normal?)` (native, `crates/platypus_render_api/src/light_meter.rs`: the sum over every light, the
+  shadowed form casting a physics ray to each, so `platypus_render_api` depends on `platypus_physics_api`; `measureIlluminance` is a
   `#[promise]` that resolves after the next physics step, through `Physics.afterNextStep`, as the TypeScript tier does;
   `M9-API-1645`). **`FogVolume`** is a component (`size`, `density`, `color`,
   `blendDistance`, `shape`).
@@ -774,7 +774,7 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
   `pixelsPerUnit`, `resolution`. The host gives each one a panel (`panels.rs::apply_text`, ids from `render_sync::TEXT_BASE`) that
   goes with its component (`native_render::sync_texts`).
 - **`Shapes`** (`rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
-  `bezier`, `curve`, `closedCurve`) is native Rust now (`iron_math::outlines`, see "Enums, records, lists, rest parameters and
+  `bezier`, `curve`, `closedCurve`) is native Rust now (`platypus_math::outlines`, see "Enums, records, lists, rest parameters and
   docs"). **`Spline`** (knots, tangent modes, `evaluate` / `tangent` by distance, `segmentPoint`,
   `sample`, `nearest`, `version`) and **`SplineAnimate`** are native Rust too (see "Enums, records, lists, rest parameters and
   docs"); the TypeScript copies in `facade.ts` are gone.
@@ -783,12 +783,12 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
 - **Facade chunk requirements.** A chunk header may end with `@ Name ..`: `//# when Spline @ Vector3`. The chunk is added only
   when the engine API has every name (class, value class, handle or namespace) and the program names a trigger, so a comment that
   mentions `LineRenderer2D` no longer pulls a chunk written over it into programs without that class.
-- **Compiler changes this needed** (`tools/iron_ts`): interface and type-literal *method signatures* are function-valued
+- **Compiler changes this needed** (`tools/platypus_ts`): interface and type-literal *method signatures* are function-valued
   properties (`at(t: number): Move;`, optional ones too); named tuple members (`[t: number, run: () => void]`); a method shorthand
   in an object literal (`{ at(t) { .. } }`) is a property whose closure takes its parameter types from the declared
   field; closures inside closures in a **top-level initialiser** now capture the outer closure's locals; errors in top-level
   declarations and object types carry their line; the JSX rewrite keeps the lines of what follows each multi-line element, so
-  later error lines are right; `clipPath` is an attribute of `IronProps` (inline SVG `<g clipPath="url(#id)">`).
+  later error lines are right; `clipPath` is an attribute of `PlatypusProps` (inline SVG `<g clipPath="url(#id)">`).
 - **Still not there**: `Partial<Class>` (the examples use a small options interface and set the fields), a string-literal union
   local assigned from an optional field (compiler panic: `Spline` keeps `mode` a `string`), `Array.from({ length }, f)`,
   `.flatMap`, `.flat()`, `Record<string, V>` as a dictionary (use `Map`), `Map.get` over engine handles (box them), object
@@ -797,23 +797,23 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
 
 ## Enums, records, lists, rest parameters and docs (2026-10-22, generated declarations P0/P1)
 
-Part of making every declaration generated from Rust (plan: [iron-generated-dts-plan.md](research/iron-generated-dts-plan.md)):
-`#[iron_api]` and the manifest got what `Shapes`, `Spline` and `SplineAnimate` needed, so their TypeScript copies
-(`facade.ts`, `engine_ts.d.ts`) could go. Tests: [records_enums.rs](../crates/iron_api/tests/records_enums.rs)
+Part of making every declaration generated from Rust (plan: [platypus-generated-dts-plan.md](research/platypus-generated-dts-plan.md)):
+`#[platypus_api]` and the manifest got what `Shapes`, `Spline` and `SplineAnimate` needed, so their TypeScript copies
+(`facade.ts`, `engine_ts.d.ts`) could go. Tests: [records_enums.rs](../crates/platypus_api/tests/records_enums.rs)
 (`M9-API-1610`..`1614`).
 
 | Rust | Script | C ABI |
 |---|---|---|
 | `enums(TangentMode = Tangent [Auto, Bezier, Linear])` on the attribute, a Rust enum `Tangent` | the string union `"auto" \| "bezier" \| "linear"` (variant names with a lower-case first letter), plus the global `TangentMode.name(i)` / `TangentMode.parse(s)` | the index, `i32` (-1: not a name; the engine reads it as the first value) |
-| `records(SplineHit = SplineHit [segment: f64, u: f64])`, a Rust struct with those public fields (`f64`, `bool`, `string` (a `String`), a declared value class or enum) | a plain object `{ segment, u }` (an `interface` in the d.ts) | a result only: the numbers go to `iron_api`'s per-thread buffer (`return_flat`) and the strings to its string list (`return_strings`, in field order, element after element for a list), the compiled call reads them with `iron_api_result(i)` / `iron_api_result_str(i)` and builds the object |
+| `records(SplineHit = SplineHit [segment: f64, u: f64])`, a Rust struct with those public fields (`f64`, `bool`, `string` (a `String`), a declared value class or enum) | a plain object `{ segment, u }` (an `interface` in the d.ts) | a result only: the numbers go to `platypus_api`'s per-thread buffer (`return_flat`) and the strings to its string list (`return_strings`, in field order, element after element for a list), the compiled call reads them with `platypus_api_result(i)` / `platypus_api_result_str(i)` and builds the object |
 | `-> Vec<V>` / `-> Vec<Record>` | `V[]` / `Record[]` | the shim returns the element count; the numbers of every element are in the same buffer |
-| `-> Vec<String>` | `string[]` | the shim returns the count and keeps the strings in `iron_api`'s per-thread list (`return_strings`); the compiled call copies them out with `iron_api_result_str(i)`, one new script string each (manifest `list:string`; QuickJS gets an array of strings; `Assets.list`, `M9-API-1620`) |
+| `-> Vec<String>` | `string[]` | the shim returns the count and keeps the strings in `platypus_api`'s per-thread list (`return_strings`); the compiled call copies them out with `platypus_api_result_str(i)`, one new script string each (manifest `list:string`; QuickJS gets an array of strings; `Assets.list`, `M9-API-1620`) |
 | `#[rest(points)]` on a function whose last parameter is `&[V]` | `...points: V[]` (QuickJS: every remaining argument; compiled: the arguments packed into an array, or one `...array`) | the array pointer, as for `&[V]` |
 | `#[options(after = points)]` with `#[optional(points, closed = false, ..)]` | `new Spline(points?, { closed?, tension? })`: the object after `points` gives the parameters after it | the positional shim |
 | `like` on the attribute | value *parameters* are declared `Vector3Like` (a plain `{ x, y, z }` does) | - |
 | `#[nullable]` on a handle getter and its setter | `T \| null` in the declaration | a zero handle is `null` as before |
 | `#[nullable(undefined)]` (on a handle result, a static property such as `Camera.main`) | `T \| undefined` | the same zero handle (manifest `undefined`) |
-| `Option<f64>`, `Option<String>` (a result only), `Option<V>` for a value class | `number \| null`, `string \| null`, `Color \| null` (manifest `opt:f64`, `opt:string`, `opt:value:Color`) | the inner type with a none mark: NaN for a number, NaN in every field for a value (also as a parameter, so a setter takes `null`), and for a string an empty text plus the flag `iron_api_result_none()` the compiled call reads right after (`Window.openError`, `RenderSettings.fixedExposure`, `LineRenderer2D.fillColor`); QuickJS gets `null` |
+| `Option<f64>`, `Option<String>` (a result only), `Option<V>` for a value class | `number \| null`, `string \| null`, `Color \| null` (manifest `opt:f64`, `opt:string`, `opt:value:Color`) | the inner type with a none mark: NaN for a number, NaN in every field for a value (also as a parameter, so a setter takes `null`), and for a string an empty text plus the flag `platypus_api_result_none()` the compiled call reads right after (`Window.openError`, `RenderSettings.fixedExposure`, `LineRenderer2D.fillColor`); QuickJS gets `null` |
 | `enums(extern PrimitiveType = Primitive [..])` | an enum another namespace declares (no second set of converters, no second declaration); the module imports the declaring namespace's `primitive_type_*` helpers | the same index |
 | `enums(FullScreenMode = Mode [ExclusiveFullScreen = "ExclusiveFullScreen", ..])` | a variant may name its string when it is not the variant with a lower-case first letter | the index |
 | a parameter `Option<Enum>` | the enum, usually optional; a left-out or unknown name is `None` (compiled calls pass -1; QuickJS throws a `TypeError` for an unknown name and takes a left-out one as `None`): setters use it to ignore a name that is not one (`RenderSettings.fogMode = "nonsense"`), constructors to tell "left out" (the `.meta` importer's value) from the first value (`Texture.load(.., { filterMode })`) | the index (-1: none) |
@@ -833,13 +833,13 @@ returns the strings and throws a `TypeError` for an unknown name (a left-out opt
 **Enums of the engine API (2026-10-22, plan phase 2a).** `FogMode`, `VolumeDetail` (`RenderSettings`), `PrimitiveType` (with the
 alias `PrimitiveMesh`; `PrimitiveType.Cube` is the enum value `"cube"`), `FilterMode`, `TextureWrapMode` (`Texture`), `FullScreenMode`
 (`Screen`), `ShadowQualityMode` (`QualitySettings`), `WindowStyle` (`Window`) and `LoadSceneMode` (`SceneManager`) are
-`#[iron_api]` enums: the string unions in the declarations are generated, `tsc` and the compiler's `Record<FogMode, V>` see the same
+`#[platypus_api]` enums: the string unions in the declarations are generated, `tsc` and the compiler's `Record<FogMode, V>` see the same
 names, and a setter ignores a name that is not one. Differences from before: the natives
 `Screen.supportedFullScreenModeCount` / `...At(i)`, `RenderSettings.fixedExposureEnabled` / `...Value`, `LineRenderer2D.hasFill` /
 `fillValue` and `Window.openErrorText` are gone (the nullable property replaces each pair), `Camera.main` is a property of the
 native `Camera` class in QuickJS too (it was a function there), and `Window.create({ style: "floating" })` throws a `TypeError` in
-QuickJS (compiled code and the old string API fell back to `normal` with a warning). Tests: `crates/iron_api/tests/enums_nullables.rs`
-(`M9-API-1622`..`1626`, `1630`..`1632`), `crates/iron_native/tests/enums.rs` (`M9-API-1627`..`1629`, `1633`), `tools/iron_ts_tests` `M9-TS-3340`, `3341`, `3343`, `tools/iron_ts` `M9-TS-3342`.
+QuickJS (compiled code and the old string API fell back to `normal` with a warning). Tests: `crates/platypus_api/tests/enums_nullables.rs`
+(`M9-API-1622`..`1626`, `1630`..`1632`), `crates/platypus_native/tests/enums.rs` (`M9-API-1627`..`1629`, `1633`), `tools/platypus_ts_tests` `M9-TS-3340`, `3341`, `3343`, `tools/platypus_ts` `M9-TS-3342`.
 
 **Records as parameters (2026-10-22, plan phase 2b, second part).** A record declared in `records(..)` may have optional keys and number
 lists, and `Option<R>` of a record is a parameter or a result (`opt:record:R` in the manifest). On the wire it is **JSON text**: the
@@ -861,7 +861,7 @@ fed the facade are gone: `Screen.resolutionCount` / `resolutionWidth(i)` / `reso
 `currentResolutionWidth` / `Height` / `RefreshRate`.
 
 **Lists (2026-10-22, plan phase 2c, first part).** `Vec<f64>` and `Vec<Handle>` are results (`list:f64`, `list:handle:X`: the count, then the numbers in the
-result buffer or the 64-bit ids behind `iron_api_result_id(i)`), `&[Handle]` is a parameter (`handles:X`, read with `script_handles`: the
+result buffer or the 64-bit ids behind `platypus_api_result_id(i)`), `&[Handle]` is a parameter (`handles:X`, read with `script_handles`: the
 script array of ids). A getter that returns a list pairs with the setter that takes the array (`pair_ty` in the macro), so it is one
 property (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` / `capsuleColliders`, `Camera.layerCullDistances`,
 `LineRenderer.positions`, `LineRenderer2D.points`, `EdgeCollider2D.points`, `PolygonCollider2D.points`, `QualitySettings.names`);
@@ -884,7 +884,7 @@ argument (`"promise": true` in the manifest; the declaration drops the two param
 functions of `Promise::new` as the callbacks (the reject text becomes an `Error`: `qjs::error_rejecter`); compiled code gets a small
 function written from the manifest (`new Promise<T>((resolve, reject) => X.f$n(.., resolve, e => reject(new Error(e))))`). Optional
 parameters the generated function passes on become `""` / `NaN` / `false` when left out. Used by `SceneManager.loadSceneAsync`,
-`Prefab.load` (listeners the engine adds and removes itself, in `iron_scenes::manager`) and `Texture.whenLoaded()` / `Model.whenLoaded()`
+`Prefab.load` (listeners the engine adds and removes itself, in `platypus_scenes::manager`) and `Texture.whenLoaded()` / `Model.whenLoaded()`
 (a waiter list settled by `texture_loaded` / `model_loaded`, so no polling timer). Tests: `M9-API-1637`, `M9-API-1638`, and the
 existing `M9-API-1512`..`1517` and `M9-TS` promise tests.
 
@@ -899,29 +899,29 @@ or `[time, value]` pairs: QuickJS reads both, compiled code converts `number[][]
 
 **Manifest JSON** (additive): top-level `doc`, `like`, `enums: [{ name, doc, values, nameSymbol, parseSymbol }]`,
 `records: [{ name, doc, fields: [{ name, type, doc }] }]`; classes `doc`; functions `doc`, `optionsAfter`, `nullable`, `tsType`;
-parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string` (a result) and `strings` (a parameter). `tools/iron_ts/src/types_dts.rs` reads them
+parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:record:R`, `list:string` (a result) and `strings` (a parameter). `tools/platypus_ts/src/types_dts.rs` reads them
 (`enum` becomes `type X = ..` and `namespace X { name, parse }`, `record` an `interface`).
 
-**Guard tests** (`tools/iron_build/tests/generated_dts.rs`): `M9-TS-3100` no hand-written `.d.ts` file under `tools/` (strict:
-`engine_ts.d.ts` and `facade.ts` are gone; what the compiler itself declares is the table `tools/iron_ts/src/builtins.rs`),
+**Guard tests** (`tools/platypus_build/tests/generated_dts.rs`): `M9-TS-3100` no hand-written `.d.ts` file under `tools/` (strict:
+`engine_ts.d.ts` and `facade.ts` are gone; what the compiler itself declares is the table `tools/platypus_ts/src/builtins.rs`),
 `M9-TS-3101` the built-ins declare no engine name again and every class they add members to exists, `M9-TS-3102` the generated
-`types/iron.d.ts` equals a blessed API snapshot
-(`tools/iron_build/tests/golden/api_surface.txt`; `IRON_BLESS=1 cargo test -p iron_build --test generated_dts` rewrites it, and the
+`types/platypus.d.ts` equals a blessed API snapshot
+(`tools/platypus_build/tests/golden/api_surface.txt`; `PLATYPUS_BLESS=1 cargo test -p platypus_build --test generated_dts` rewrites it, and the
 diff shows exactly which declarations changed).
 
-**Shapes** is native: `iron_math::outlines` (`crates/iron_math/src/outlines.rs`, declared as the namespace `Shapes`), ported
+**Shapes** is native: `platypus_math::outlines` (`crates/platypus_math/src/outlines.rs`, declared as the namespace `Shapes`), ported
 from the TypeScript in the same order of operations. Compiled code and QuickJS call the same functions. The compiled facade copy
-is gone; `tools/iron_ts_tests/bench/outlines.ts` keeps it, renamed `RefShapes`, as a differential oracle (`M9-TS-3110`: every
+is gone; `tools/platypus_ts_tests/bench/outlines.ts` keeps it, renamed `RefShapes`, as a differential oracle (`M9-TS-3110`: every
 point of every shape on edge cases equals the native one bit for bit, in every GC mode). `js/engine/src/shapes.ts` is a typed
 alias of the global `Shapes`.
 
-**QuickJS installs the native API.** `iron_app` now calls `iron_native::install` for bundled (JavaScript) games, where it only
+**QuickJS installs the native API.** `platypus_app` now calls `platypus_native::install` for bundled (JavaScript) games, where it only
 called `Window`'s `register_quickjs`, including after a hot reload. The globals it adds (`Shapes`, `Spline`, `TangentMode`, ...)
 are the ones compiled games call. `js/engine`'s own classes are still module values; they do not read these globals except the
 ones a thin wrapper names (`Shapes`).
 
-**Spline** is native too: `iron_math::spline` (`crates/iron_math/src/spline.rs`, plain maths: knots, `closed`, `tension`, the cached
-control points and length table, `locate` / `evaluate` / `tangent` / `sample` / `nearest`) and `iron_engine_api::spline` (the
+**Spline** is native too: `platypus_math::spline` (`crates/platypus_math/src/spline.rs`, plain maths: knots, `closed`, `tension`, the cached
+control points and length table, `locate` / `evaluate` / `tangent` / `sample` / `nearest`) and `platypus_engine_api::spline` (the
 `Spline` handle class over a per-thread registry; `new Spline(points?, { closed?, tension?, mode? })` is `create` with
 `#[options(after = points)]`). The d.ts comes from the manifest: `TangentMode` (an enum), `SplineKnot`, `SplineHit` and
 `SplineNearest` (records), `Spline` (class). Differences from the TypeScript class: `knots` is a read-only snapshot (a fresh array of
@@ -933,11 +933,11 @@ with every mutator and compares every number (`count`, `length`, handles, `segme
 `evaluate`, `tangent`, `sample`, `nearest`, the knots) bit for bit. In QuickJS `Spline` is the same global class
 (`js/engine/src/spline.ts` types it; its bun tests became the QuickJS tests `M9-API-1603`..`1605`).
 
-**SplineAnimate** is a native component (`iron_engine_api::spline`, the `SplineAnimate` handle class, kind `SplineAnimate`). Its
+**SplineAnimate** is a native component (`platypus_engine_api::spline`, the `SplineAnimate` handle class, kind `SplineAnimate`). Its
 fields (`spline`, `container`, `duration`, `loopMode`, `alignment`, `playing`, `elapsed`) are data in the registry; `t` and `place()` are
 methods; `SplineAnimate.attach(go)` / `findOn(go)` are what `go.addComponent(SplineAnimate, { duration: 2 })` and
 `go.getComponent(SplineAnimate)` compile to. `loopMode` is the enum `SplineLoopMode` (`"loop" | "pingPong" | "once"`) and `alignment`
-`SplineAlignment` (`"none" | "path"`). The host calls `iron_engine_api::spline::update(dt)` once a frame next to
+`SplineAlignment` (`"none" | "path"`). The host calls `platypus_engine_api::spline::update(dt)` once a frame next to
 `animation::update` (`native_render.rs::sync_native_render`); it advances every playing component whose object is active in the
 hierarchy and puts the object on the path (`place`: the point and the direction from the spline, through the container's
 `transformPoint` / `transformDirection` when there is one, then `Quaternion.euler(0, 0, atan2)` on a flat path or `lookRotation`).
@@ -945,7 +945,7 @@ Components of destroyed objects go with them (`objects::process_destroyed`).
 
 **Scene files.** The kind saves every field: `loopMode` and `alignment` as names, `container` as an object reference, `spline` as the
 inline asset `{"$type":"Spline","closed":..,"tension":..,"knots":[{"position","tangentIn","tangentOut","mode"}]}` (asset kind
-`Spline`, `register_kinds()`); loading makes a new spline (`M9-API-1607`). `iron_scenes::register_engine_kinds` registers both.
+`Spline`, `register_kinds()`); loading makes a new spline (`M9-API-1607`). `platypus_scenes::register_engine_kinds` registers both.
 
 **QuickJS.** A bundled game's `GameObject` is the op-based one in `js/engine/src/scene.ts`, so the native component cannot be attached
 to it. `js/engine/src/spline.ts` keeps `SplineAnimate` as a thin script component that leaves the path maths to three native statics of

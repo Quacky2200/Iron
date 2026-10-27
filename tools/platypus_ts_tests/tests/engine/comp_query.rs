@@ -3,35 +3,35 @@
 //! `bench/comp_query.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_comp_query_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-703..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::comp_query_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::comp_query_t::*;
 use serde_json::Value;
 
 /// A new scene and a host for the program classes.
 fn reset() {
-    iron_scene::api::with_scene(|s| *s = iron_scene::Scene::new());
+    platypus_scene::api::with_scene(|s| *s = platypus_scene::Scene::new());
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
-    let mut scene = iron_scene::Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _serial = platypus_ts_tests::serial();
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_cqy_init() };
     // Every mode starts with a new host (the registry of live components) and scene.
-    let mut host = iron_ts_rt::NativeHost::new(classes());
+    let mut host = platypus_ts_rt::NativeHost::new(classes());
     reset();
     f();
     ts_rt_gc_stress(true);
     drop(host);
-    host = iron_ts_rt::NativeHost::new(classes());
+    host = platypus_ts_rt::NativeHost::new(classes());
     reset();
     f();
     ts_rt_gc_stress(false);
     ts_rt_gc_enable(false);
     drop(host);
-    host = iron_ts_rt::NativeHost::new(classes());
+    host = platypus_ts_rt::NativeHost::new(classes());
     reset();
     f();
     ts_rt_gc_enable(true);

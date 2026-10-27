@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Destructuring compiled by `iron_ts` (`bench/destructure.ts`). The expected numbers are what bun
+//! Destructuring compiled by `platypus_ts` (`bench/destructure.ts`). The expected numbers are what bun
 //! computes from the same file. Every test runs three times: normally, with a collection at every
 //! allocation, and with collection off. IDs are in TESTS.md (M9-TS-71..).
-use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::des::*;
+use platypus_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::des::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     unsafe { ts_des_init() };
     f();
     ts_rt_gc_stress(true);
-    let before = iron_ts_rt::gc_stats().collections;
+    let before = platypus_ts_rt::gc_stats().collections;
     f();
     ts_rt_gc_stress(false);
     assert!(
-        iron_ts_rt::gc_stats().collections > before,
+        platypus_ts_rt::gc_stats().collections > before,
         "stress mode collected nothing"
     );
     ts_rt_gc_enable(false);

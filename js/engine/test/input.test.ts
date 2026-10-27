@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Cursor, CursorLockMode, input, Vector2 } from "../src/index.ts";
 import { _resetInputForTests } from "../src/input.ts";
 
-const send = (type: string, ...args: unknown[]) => globalThis.__iron_input(type, ...args);
+const send = (type: string, ...args: unknown[]) => globalThis.__platypus_input(type, ...args);
 
 beforeEach(() => _resetInputForTests());
 
@@ -79,7 +79,7 @@ describe("game input", () => {
 
 // M5-CUR-01
 describe("mouse and cursor", () => {
-  const frame = () => globalThis.__iron_tick(1 / 60);
+  const frame = () => globalThis.__platypus_tick(1 / 60);
 
   test("position, buttons, raw movement and the wheel, Unity style", () => {
     send("mousemove", 120, 80);
@@ -105,7 +105,7 @@ describe("mouse and cursor", () => {
 
   test("Cursor settings become ops", () => {
     const ops: unknown[][] = [];
-    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
     Cursor.visible = false;
     Cursor.lockState = CursorLockMode.Locked;
     Cursor.setCursor("assets/hand.png", new Vector2(4, 2));
@@ -117,6 +117,6 @@ describe("mouse and cursor", () => {
       ["cursor.image", null],
     ]);
     expect([Cursor.visible, Cursor.lockState]).toEqual([false, "locked"]);
-    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+    delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
   });
 });

@@ -7,8 +7,8 @@
 //! view (`WorldView::bones`); the renderer sends only the runs it draws.
 
 use crate::world_view::Skin;
-use iron_core::glam::Mat4;
-use iron_scene::{ObjectId, ScriptObject, ScriptScene};
+use platypus_core::glam::Mat4;
+use platypus_scene::{ObjectId, ScriptObject, ScriptScene};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -155,8 +155,8 @@ impl BoneCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_core::glam::Vec3;
-    use iron_scene::Transform;
+    use platypus_core::glam::Vec3;
+    use platypus_scene::Transform;
 
     // M5-CUL-07
     #[test]

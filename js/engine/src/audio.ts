@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Sound for gameplay and UI code, mixed by kira in Rust (crates/iron_audio). Like
+// Sound for gameplay and UI code, mixed by kira in Rust (crates/platypus_audio). Like
 // physics, scripts hold handles with numeric IDs and changes go to the engine as
-// `audio.*` ops. Rust calls `__iron_audio(ended)` when playing sounds finish.
+// `audio.*` ops. Rust calls `__platypus_audio(ended)` when playing sounds finish.
 //
 // Volumes are linear gains (1 = as recorded, 0 = silent); times are seconds.
 
@@ -47,7 +47,7 @@ export class Sound {
     this.id = nextSound++;
     this.src = src;
     if (options.stream === undefined && Assets.importer(src).stream === true) options = { ...options, stream: true };
-    __iron_op("audio.load", this.id, src, !!options.stream);
+    __platypus_op("audio.load", this.id, src, !!options.stream);
   }
 
   play(options: PlayOptions = {}): Playback {
@@ -56,7 +56,7 @@ export class Sound {
 
   /** Frees the sound's data. Playing copies finish first. */
   unload(): void {
-    __iron_op("audio.unload", this.id);
+    __platypus_op("audio.unload", this.id);
   }
 }
 
@@ -74,7 +74,7 @@ export class Playback {
     this.id = nextPlayback++;
     this.sound = sound;
     playing.set(this.id, this);
-    __iron_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
+    __platypus_op("audio.play", this.id, sound.id, o.on?.id ?? null, [
       o.volume ?? 1,
       o.rate ?? 1,
       o.pan ?? 0,
@@ -86,33 +86,33 @@ export class Playback {
 
   /** Changes the volume, over `fade` seconds. */
   setVolume(volume: number, fade = 0): void {
-    __iron_op("audio.set", this.id, "volume", volume, fade);
+    __platypus_op("audio.set", this.id, "volume", volume, fade);
   }
 
   setRate(rate: number, fade = 0): void {
-    __iron_op("audio.set", this.id, "rate", rate, fade);
+    __platypus_op("audio.set", this.id, "rate", rate, fade);
   }
 
   setPan(pan: number, fade = 0): void {
-    __iron_op("audio.set", this.id, "pan", pan, fade);
+    __platypus_op("audio.set", this.id, "pan", pan, fade);
   }
 
   pause(fade = 0): void {
-    __iron_op("audio.pause", this.id, fade);
+    __platypus_op("audio.pause", this.id, fade);
   }
 
   resume(fade = 0): void {
-    __iron_op("audio.resume", this.id, fade);
+    __platypus_op("audio.resume", this.id, fade);
   }
 
   /** Stops it (fading out over `fade` seconds); `onEnded` follows. */
   stop(fade = 0): void {
-    __iron_op("audio.stop", this.id, fade);
+    __platypus_op("audio.stop", this.id, fade);
   }
 
   /** Jumps to `seconds` into the sound. */
   seek(seconds: number): void {
-    __iron_op("audio.seek", this.id, seconds);
+    __platypus_op("audio.seek", this.id, seconds);
   }
 }
 
@@ -123,24 +123,24 @@ export class Bus {
   /** @internal Use `audio.createBus()`. */
   constructor(volume: number, parent: Bus | null) {
     this.id = nextTrack++;
-    __iron_op("audio.bus", this.id, parent?.id ?? null, volume);
+    __platypus_op("audio.bus", this.id, parent?.id ?? null, volume);
   }
 
   setVolume(volume: number, fade = 0): void {
-    __iron_op("audio.trackVolume", this.id, volume, fade);
+    __platypus_op("audio.trackVolume", this.id, volume, fade);
   }
 
   pause(fade = 0): void {
-    __iron_op("audio.trackPause", this.id, fade);
+    __platypus_op("audio.trackPause", this.id, fade);
   }
 
   resume(fade = 0): void {
-    __iron_op("audio.trackResume", this.id, fade);
+    __platypus_op("audio.trackResume", this.id, fade);
   }
 
   /** Removes the bus; sounds on it stop. */
   remove(): void {
-    __iron_op("audio.removeTrack", this.id);
+    __platypus_op("audio.removeTrack", this.id);
   }
 }
 
@@ -163,7 +163,7 @@ export class Emitter {
   /** @internal Use `audio.createEmitter()`. */
   constructor(position: Vec3, options: EmitterOptions) {
     this.id = nextTrack++;
-    __iron_op(
+    __platypus_op(
       "audio.emitter",
       this.id,
       [position.x, position.y, position.z],
@@ -174,16 +174,16 @@ export class Emitter {
 
   /** Moves the emitter, gliding over `glide` seconds. */
   setPosition(p: Vec3, glide = 0): void {
-    __iron_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
+    __platypus_op("audio.emitterPosition", this.id, [p.x, p.y, p.z], glide);
   }
 
   setVolume(volume: number, fade = 0): void {
-    __iron_op("audio.trackVolume", this.id, volume, fade);
+    __platypus_op("audio.trackVolume", this.id, volume, fade);
   }
 
   /** Removes the emitter; sounds on it stop. */
   remove(): void {
-    __iron_op("audio.removeTrack", this.id);
+    __platypus_op("audio.removeTrack", this.id);
   }
 }
 
@@ -215,12 +215,12 @@ export const audio = {
 
   /** Where the player hears from (usually the camera). Facing -z with no rotation. */
   setListener(position: Vec3, rotation: Quat = { x: 0, y: 0, z: 0, w: 1 }): void {
-    __iron_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
+    __platypus_op("audio.listener", [position.x, position.y, position.z], [rotation.x, rotation.y, rotation.z, rotation.w]);
   },
 
   /** The volume of everything. */
   setMasterVolume(volume: number, fade = 0): void {
-    __iron_op("audio.trackVolume", null, volume, fade);
+    __platypus_op("audio.trackVolume", null, volume, fade);
   },
 };
 
@@ -231,7 +231,7 @@ export function _resetAudioForTests() {
   nextSound = nextPlayback = nextTrack = 1;
 }
 
-globalThis.__iron_audio = (ended: number[]) => {
+globalThis.__platypus_audio = (ended: number[]) => {
   for (const id of ended) {
     const p = playing.get(id);
     if (!p) continue;

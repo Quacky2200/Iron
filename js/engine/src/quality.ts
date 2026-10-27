@@ -7,7 +7,7 @@
 // Low is the phones' tier (no light shafts, 8 additional lights without shadows). A game's
 // `package.json` can choose the default level, per platform too, and change the levels:
 //
-//   "iron": { "quality": { "default": { "Android": "Low", "iOS": "Low", "default": "High" },
+//   "platypus": { "quality": { "default": { "Android": "Low", "iOS": "Low", "default": "High" },
 //                          "levels": { "Low": { "renderScale": 0.6 } } } }
 //
 // The default level is applied when the engine loads.
@@ -75,7 +75,7 @@ interface ManifestQuality {
 }
 
 const manifest = (): ManifestQuality => {
-  const q = (globalThis as { __iron_info?: { app?: { quality?: unknown } } }).__iron_info?.app?.quality;
+  const q = (globalThis as { __platypus_info?: { app?: { quality?: unknown } } }).__platypus_info?.app?.quality;
   return q && typeof q === "object" ? (q as ManifestQuality) : {};
 };
 
@@ -91,7 +91,7 @@ function defaultLevel(): string {
   const d = manifest().default;
   if (typeof d === "string") return d;
   if (d && typeof d === "object") {
-    const platform = (globalThis as { __iron_info?: { system?: { operatingSystemFamily?: string } } }).__iron_info?.system?.operatingSystemFamily ?? "";
+    const platform = (globalThis as { __platypus_info?: { system?: { operatingSystemFamily?: string } } }).__platypus_info?.system?.operatingSystemFamily ?? "";
     return d[platform] ?? d.default ?? "High";
   }
   return "High";
@@ -102,7 +102,7 @@ let current: QualityLevel = { ...levels[levelIndex]! };
 
 function sendQuality(): void {
   const c = current;
-  __iron_op(
+  __platypus_op(
     "render.quality",
     0,
     c.antiAliasing,
@@ -122,14 +122,14 @@ function sendQuality(): void {
 }
 
 function sendShadows(): void {
-  __iron_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution, current.shadowCascades);
+  __platypus_op("render.shadowSettings", 0, current.shadowDistance, current.shadowResolution, current.shadowCascades);
   remember();
 }
 
-/** The player's choice is saved (`iron.quality` in PlayerPrefs) and comes back next time. */
+/** The player's choice is saved (`platypus.quality` in PlayerPrefs) and comes back next time. */
 function remember(): void {
   if (restoring) return;
-  _saveJson("iron.quality", { level: levels[levelIndex]?.name, current });
+  _saveJson("platypus.quality", { level: levels[levelIndex]?.name, current });
 }
 let restoring = false;
 
@@ -341,7 +341,7 @@ export function _restoreQuality(state: unknown): void {
 
 /** @internal Applies the player's saved choice, else the default level (done when the engine loads). */
 export function _applyDefaultQuality(): void {
-  const saved = _loadJson("iron.quality") as { level?: string; current?: Partial<QualityLevel> } | null;
+  const saved = _loadJson("platypus.quality") as { level?: string; current?: Partial<QualityLevel> } | null;
   if (saved?.current) {
     const i = levels.findIndex((l) => l.name === saved.level);
     if (i >= 0) levelIndex = i;
@@ -367,4 +367,4 @@ export function _resetQualityForTests() {
 }
 
 // The engine starts at the default level.
-if (typeof __iron_op === "function") _applyDefaultQuality();
+if (typeof __platypus_op === "function") _applyDefaultQuality();

@@ -5,7 +5,7 @@
 //! the engine when a file finished loading with [`texture_loaded`]).
 
 use super::*;
-use iron_engine_api::assets;
+use platypus_engine_api::assets;
 use std::collections::HashMap;
 
 numbered_handle!(
@@ -86,7 +86,7 @@ struct State {
 
 type TextureWaiter = (
     u32,
-    Callback<(iron_api::callback::HandleArg<TextureRef>,)>,
+    Callback<(platypus_api::callback::HandleArg<TextureRef>,)>,
     Callback<(String,)>,
 );
 
@@ -147,7 +147,7 @@ pub fn texture_loaded(t: TextureRef, width: u32, height: u32) {
         if width == 0 {
             reject.call(("texture failed to load".to_string(),));
         } else {
-            resolve.call((iron_api::callback::HandleArg(t),));
+            resolve.call((platypus_api::callback::HandleArg(t),));
         }
     }
 }
@@ -335,7 +335,7 @@ pub enum WrapKind {
     Mirror,
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Texture", quickjs,
     handles(Texture = TextureRef),
     values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]),
@@ -355,12 +355,12 @@ pub mod texture_api {
         #[promise]
         pub fn when_loaded(
             self,
-            resolve: Callback<(iron_api::callback::HandleArg<TextureRef>,)>,
+            resolve: Callback<(platypus_api::callback::HandleArg<TextureRef>,)>,
             reject: Callback<(String,)>,
         ) {
             match texture_info(self) {
                 Some(i) if i.failed => reject.call(("texture failed to load".to_string(),)),
-                Some(i) if i.loaded => resolve.call((iron_api::callback::HandleArg(self),)),
+                Some(i) if i.loaded => resolve.call((platypus_api::callback::HandleArg(self),)),
                 Some(_) => st(|s| s.waiters.push((self.0, resolve, reject))),
                 None => reject.call(("the texture was freed".to_string(),)),
             }
@@ -632,7 +632,7 @@ fn bone_arrays(bones: &[BoneInfluence]) -> (Vec<f64>, Vec<f64>) {
     (joints, weights)
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Mesh", quickjs,
     handles(Mesh = MeshRef),
     values(
@@ -909,6 +909,6 @@ fn mesh_kind() -> AssetKind {
 }
 
 pub(crate) fn register_resource_kinds() {
-    iron_kinds::register_asset(texture_kind());
-    iron_kinds::register_asset(mesh_kind());
+    platypus_kinds::register_asset(texture_kind());
+    platypus_kinds::register_asset(mesh_kind());
 }

@@ -6,7 +6,7 @@
 //! (`backgroundColor.r`).
 
 use crate::pose::PropertySink;
-use iron_scene::ObjectId;
+use platypus_scene::ObjectId;
 use std::cell::RefCell;
 
 type Has = fn(ObjectId) -> bool;

@@ -8,8 +8,8 @@ import { _resetSceneForTests } from "../src/scene.ts";
 
 afterEach(() => {
   _resetApplicationForTests();
-  delete globalThis.__iron_info;
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete globalThis.__platypus_info;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 // M5-APP-02
@@ -17,13 +17,13 @@ describe("Application and SystemInfo", () => {
   test("read what the engine installed, with defaults before it has", () => {
     expect(Application.version).toBe("0.0.0");
     expect(SystemInfo.processorCount).toBe(1);
-    globalThis.__iron_info = {
+    globalThis.__platypus_info = {
       app: {
         name: "fox-run",
         productName: "Fox Run",
         version: "1.2.0",
-        companyName: "Iron",
-        identifier: "dev.iron.fox",
+        companyName: "Platypus",
+        identifier: "dev.platypus.fox",
         engineVersion: "0.1.0",
       },
       system: {
@@ -59,7 +59,7 @@ describe("Application and SystemInfo", () => {
   // M5-APP-11
   test("args are the command line's arguments after --", () => {
     expect(Application.args).toEqual([]);
-    globalThis.__iron_info = { app: { args: ["--goto", "a.md#b"] }, system: {} } as never;
+    globalThis.__platypus_info = { app: { args: ["--goto", "a.md#b"] }, system: {} } as never;
     const args = Application.args;
     expect(args).toEqual(["--goto", "a.md#b"]);
     args.push("changed");
@@ -69,7 +69,7 @@ describe("Application and SystemInfo", () => {
   // M5-APP-12
   test("quit is an op, with an exit code", () => {
     const ops: unknown[][] = [];
-    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
     Application.quit();
     Application.quit(2.7);
     expect(ops).toEqual([
@@ -93,9 +93,9 @@ class Watcher extends Component {
 describe("Running in the background and focus", () => {
   test("runInBackground starts from the manifest and goes to the engine when set", () => {
     const ops: unknown[][] = [];
-    (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
     expect(Application.runInBackground).toBe(false);
-    globalThis.__iron_info = { app: { runInBackground: true, targetFrameRate: 30 }, system: {} } as never;
+    globalThis.__platypus_info = { app: { runInBackground: true, targetFrameRate: 30 }, system: {} } as never;
     // The engine's values (the manifest's, or kept over a reload).
     expect([Application.runInBackground, Application.targetFrameRate]).toEqual([true, 30]);
     Application.runInBackground = false;
@@ -105,7 +105,7 @@ describe("Running in the background and focus", () => {
 
   test("focus and pause reach listeners and active components' hooks", () => {
     _resetSceneForTests();
-    (globalThis as { __iron_op?: unknown }).__iron_op = () => {};
+    (globalThis as { __platypus_op?: unknown }).__platypus_op = () => {};
     const on = new GameObject("On").addComponent(Watcher);
     const offObject = new GameObject("Off");
     const off = offObject.addComponent(Watcher);
@@ -121,14 +121,14 @@ describe("Running in the background and focus", () => {
     const errors = console.error;
     console.error = () => {};
     try {
-      globalThis.__iron_focus(false, true);
+      globalThis.__platypus_focus(false, true);
       expect([Application.isFocused, Application.isPaused]).toEqual([false, true]);
       // Same state again: nothing new.
-      globalThis.__iron_focus(false, true);
-      globalThis.__iron_focus(true, false);
+      globalThis.__platypus_focus(false, true);
+      globalThis.__platypus_focus(true, false);
       stop();
       // Running in the background: focus changes, the pause doesn't.
-      globalThis.__iron_focus(false, false);
+      globalThis.__platypus_focus(false, false);
     } finally {
       console.error = errors;
     }

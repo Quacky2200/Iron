@@ -2,7 +2,7 @@
 
 // Layers: 32 render groups a GameObject belongs to one of (Unity's `layer`). Cameras
 // draw the layers in their `cullingMask`, a bit per layer. Unity's built-in names come
-// first; the game names the rest in its `package.json`: `"iron": { "layers": { "8":
+// first; the game names the rest in its `package.json`: `"platypus": { "layers": { "8":
 // "Player", "9": "Minimap" } }`.
 
 const BUILT_IN: Record<number, string> = {
@@ -16,7 +16,7 @@ const BUILT_IN: Record<number, string> = {
 /** Layer names by number: the built-ins, then the manifest's. */
 function names(): Map<number, string> {
   const out = new Map<number, string>(Object.entries(BUILT_IN).map(([k, v]) => [Number(k), v]));
-  const game = globalThis.__iron_info?.app.layers;
+  const game = globalThis.__platypus_info?.app.layers;
   if (game && typeof game === "object") {
     for (const [k, v] of Object.entries(game)) {
       const layer = Number(k);

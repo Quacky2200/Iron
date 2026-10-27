@@ -9,7 +9,7 @@ import { _applyDefaultQuality, _resetQualityForTests } from "../src/quality.ts";
 let ops: unknown[][] = [];
 
 const info = (extra: Record<string, unknown>) => {
-  globalThis.__iron_info = {
+  globalThis.__platypus_info = {
     app: { name: "g", productName: "g", version: "1", companyName: "", identifier: "", engineVersion: "0" },
     system: {} as never,
     ...extra,
@@ -18,12 +18,12 @@ const info = (extra: Record<string, unknown>) => {
 
 beforeEach(() => {
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
-  delete globalThis.__iron_info;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
+  delete globalThis.__platypus_info;
   _resetPrefsForTests();
   _resetQualityForTests();
 });
@@ -93,10 +93,10 @@ describe("display settings", () => {
     QualitySettings.vSyncCount = 0;
     expect(ops.filter((o) => o[0] === "app.targetFrameRate")).toEqual([["app.targetFrameRate", 144], ["app.targetFrameRate", -1]]);
     expect(ops.filter((o) => o[0] === "render.quality").at(-1)![7]).toBe(0);
-    const saved = ops.filter((o) => o[0] === "prefs.set" && o[1] === "iron.quality").at(-1)![2] as string;
+    const saved = ops.filter((o) => o[0] === "prefs.set" && o[1] === "platypus.quality").at(-1)![2] as string;
 
     // Next launch: the engine hands the saved choice back and it's applied, not saved again.
-    info({ prefs: { "iron.quality": saved } });
+    info({ prefs: { "platypus.quality": saved } });
     _resetPrefsForTests();
     _resetQualityForTests();
     ops = [];
@@ -111,7 +111,7 @@ describe("display settings", () => {
   test("vsync is off by default and an old saved vsync is ignored", () => {
     _resetQualityForTests();
     expect(QualitySettings.vSyncCount).toBe(0);
-    info({ prefs: { "iron.quality": JSON.stringify({ level: "High", current: { ...QualitySettings.levels[2]!, vSyncCount: 1 } }) } });
+    info({ prefs: { "platypus.quality": JSON.stringify({ level: "High", current: { ...QualitySettings.levels[2]!, vSyncCount: 1 } }) } });
     _resetPrefsForTests();
     _resetQualityForTests();
     ops = [];

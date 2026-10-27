@@ -7,10 +7,10 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::events::Modifiers;
-use iron_ui::opcodes::{SET_ATTRS, SET_STYLE};
-use iron_ui::{Pointer, Rgba, UiEvent, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::events::Modifiers;
+use platypus_ui::opcodes::{SET_ATTRS, SET_STYLE};
+use platypus_ui::{Pointer, Rgba, UiEvent, UiTree};
 
 /// `a` (200x200 at 0,0, padding 20) holds `b` (100x100 at 20,20); `c` (100x100) is
 /// below `a` at (0,200).
@@ -322,7 +322,7 @@ fn cursor_is_inherited_and_auto_depends_on_the_element() {
 // M3-CUR-01
 #[test]
 fn cursor_images_come_with_a_fallback_keyword_and_inherit() {
-    use iron_ui::CursorImage;
+    use platypus_ui::CursorImage;
     let mut d = Dom::new();
     let outer = d.add(
         0,
@@ -381,7 +381,7 @@ fn removed_targets_get_no_click() {
     p.down(&mut tree, 0, 0.0);
     commit(
         &mut tree,
-        vec![op(iron_ui::opcodes::REMOVE_CHILD, &[n(a.0), n(b.0)])],
+        vec![op(platypus_ui::opcodes::REMOVE_CHILD, &[n(a.0), n(b.0)])],
     );
     let e = p.up(&mut tree, 0);
     assert_eq!(
@@ -446,7 +446,7 @@ fn capture_ends_on_release_call_removal_or_window_blur() {
     p.set_capture(&mut tree, b);
     commit(
         &mut tree,
-        vec![op(iron_ui::opcodes::REMOVE_CHILD, &[n(1), n(b.0)])],
+        vec![op(platypus_ui::opcodes::REMOVE_CHILD, &[n(1), n(b.0)])],
     );
     p.refresh(&mut tree);
     assert_eq!(p.capture(), None, "a removed element loses capture");

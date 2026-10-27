@@ -312,7 +312,7 @@ pub fn wants_intl(src: &str) -> bool {
 pub const COROUTINE: &str = "class Coroutine {}\nclass __GenReturn extends Error {}\n";
 
 /// `ArrayBuffer` and `DataView` over a `Uint8Array` that owns the bytes (typed arrays made from a
-/// buffer are views of it, `iron_ts_rt/src/typed.rs`).
+/// buffer are views of it, `platypus_ts_rt/src/typed.rs`).
 pub const ARRAYBUFFER: &str = r#"class ArrayBuffer {
   bytes: Uint8Array;
   constructor(byteLength: number) { this.bytes = new Uint8Array(byteLength); }
@@ -411,7 +411,7 @@ pub fn wants_task(src: &str) -> bool {
         && !src.contains("class Task")
 }
 
-/// `setTimeout` and friends over the runtime's timers (`iron_ts_rt/src/event.rs`).
+/// `setTimeout` and friends over the runtime's timers (`platypus_ts_rt/src/event.rs`).
 pub const TIMERS: &str = r#"function __uncaught(e: Error): void { console.error("Uncaught exception in a timer or microtask: " + e.toString()); }
 function queueMicrotask(callback: () => void): void { __queueMicrotask(() => { try { callback(); } catch (e) { __uncaught(e as Error); } }); }
 function setTimeout(callback: (arg?: number) => void, ms: number = 0): number { return __timerAdd(() => { try { callback(undefined); } catch (e) { __uncaught(e as Error); } }, ms, false); }

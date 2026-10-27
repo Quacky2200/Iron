@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compiled code calling the engine API beyond the scene (`bench/engine2.ts`, `iron_engine_api`):
+//! Compiled code calling the engine API beyond the scene (`bench/engine2.ts`, `platypus_engine_api`):
 //! `Color` statics and methods, namespace properties (`Time`, `Screen`, `Gizmos.color`) and a
 //! handle class with a static (`Camera.attach`). IDs are in TESTS.md (M9-TS-593..).
-use iron_engine_api::{camera, gizmos, input, screen, time};
-use iron_scene::Scene;
-use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::en2::*;
+use platypus_engine_api::{camera, gizmos, input, screen, time};
+use platypus_scene::Scene;
+use platypus_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::en2::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_en2_init() };
     f();
     ts_rt_gc_stress(true);
@@ -23,7 +23,7 @@ fn in_every_gc_mode(f: impl Fn()) {
 }
 
 fn text(p: *mut u8) -> String {
-    unsafe { iron_api::script_str(p as *const u8) }.into_owned()
+    unsafe { platypus_api::script_str(p as *const u8) }.into_owned()
 }
 
 // M9-TS-593
@@ -59,7 +59,7 @@ fn time_input_and_display_properties_work_in_compiled_code() {
 
         screen::set_size(800, 600);
         assert_eq!(screen::quality().v_sync_count, 0, "off by default");
-        screen::quality_api::iron_QualitySettings_setVSyncCount(1);
+        screen::quality_api::platypus_QualitySettings_setVSyncCount(1);
         let before = screen::state().full_screen;
         let v = unsafe { ts_en2_display() };
         assert_eq!(screen::state().full_screen, !before);
@@ -75,7 +75,7 @@ fn time_input_and_display_properties_work_in_compiled_code() {
 #[test]
 fn gizmos_and_a_camera_work_in_compiled_code() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| {
         gizmos::reset();
         camera::reset();

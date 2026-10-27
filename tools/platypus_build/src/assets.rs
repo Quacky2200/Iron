@@ -191,7 +191,7 @@ mod tests {
     use super::*;
 
     fn temp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("iron_build_{name}_{}", new_guid()));
+        let d = std::env::temp_dir().join(format!("platypus_build_{name}_{}", new_guid()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

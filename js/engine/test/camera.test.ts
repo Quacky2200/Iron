@@ -14,11 +14,11 @@ beforeEach(() => {
   _resetCamerasForTests();
   _setScreenForTests(800, 600);
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const near = (a: Vector3, b: Vector3, eps = 1e-4) => a.distance(b) < eps;
@@ -127,10 +127,10 @@ describe("exposure", () => {
   test("cameras learn their exposure from the engine and can reset it", () => {
     const cam = camera(Vector3.zero);
     expect(Number.isNaN(cam.exposure)).toBe(true);
-    globalThis.__iron_exposure(cam.id, 3.5, 2.25);
+    globalThis.__platypus_exposure(cam.id, 3.5, 2.25);
     expect(cam.exposure).toBe(3.5);
     expect(cam.sceneBrightness).toBe(2.25);
-    globalThis.__iron_exposure(cam.id, 1, null);
+    globalThis.__platypus_exposure(cam.id, 1, null);
     expect(Number.isNaN(cam.sceneBrightness)).toBe(true);
     cam.resetExposure();
     expect(ops.at(-1)).toEqual(["render.exposureReset", cam.id]);
@@ -139,7 +139,7 @@ describe("exposure", () => {
   test("freezing keeps the main camera's exposure as the manual one", () => {
     const cam = camera(Vector3.zero);
     RenderSettings.autoExposure = {};
-    globalThis.__iron_exposure(cam.id, 4, 4);
+    globalThis.__platypus_exposure(cam.id, 4, 4);
     RenderSettings.freezeExposure();
     const post = ops.filter((o) => o[0] === "render.post").at(-1)!;
     expect(post[4]).toBe(null);

@@ -5,7 +5,7 @@
 //! drawn procedurally ([`Sky`]); reflection probes copy six renders into theirs.
 
 use bytemuck::{Pod, Zeroable};
-use iron_core::glam::Vec3;
+use platypus_core::glam::Vec3;
 
 use crate::Gpu;
 

@@ -4,13 +4,13 @@
 //!
 //! `render.model id src` loads one: its meshes and textures are uploaded under engine
 //! ids (from [`ENGINE_IDS`], so they never meet script ids) and scripts get the node tree
-//! as JSON through `__iron_models`, from which `Model.instantiate` builds GameObjects.
+//! as JSON through `__platypus_models`, from which `Model.instantiate` builds GameObjects.
 //! Files the model refers to (buffers, images) must be inside the game folder too.
 
 use std::path::Path;
 
 use gltf::image::Source as ImageSource;
-use iron_render::{MeshData, TextureData, TextureFilter, TextureWrap};
+use platypus_render::{MeshData, TextureData, TextureFilter, TextureWrap};
 use serde_json::{Value, json};
 
 /// Engine-made meshes and textures start here (scripts count up from 1).
@@ -21,8 +21,8 @@ pub const ENGINE_IDS: u32 = 1 << 30;
 pub struct Model {
     pub meshes: Vec<(u32, MeshData)>,
     pub textures: Vec<(u32, TextureData)>,
-    /// From a cooked model (`iron --cook`): textures ready to upload.
-    pub cooked_textures: Vec<(u32, iron_render::CookedTexture)>,
+    /// From a cooked model (`platypus --cook`): textures ready to upload.
+    pub cooked_textures: Vec<(u32, platypus_render::CookedTexture)>,
     /// `{ nodes, roots, materials }` for `Model.instantiate`.
     pub description: Value,
 }
@@ -75,7 +75,7 @@ impl EngineIds {
 /// which must stay inside the game folder.
 fn read_uri(root: &Path, model_dir: &str, uri: &str) -> Result<Vec<u8>, String> {
     if uri.starts_with("data:") {
-        return iron_core::decode_data_url(uri).ok_or_else(|| "bad data URL".into());
+        return platypus_core::decode_data_url(uri).ok_or_else(|| "bad data URL".into());
     }
     let uri = percent_decode(uri);
     let relative = if model_dir.is_empty() {
@@ -83,7 +83,7 @@ fn read_uri(root: &Path, model_dir: &str, uri: &str) -> Result<Vec<u8>, String> 
     } else {
         format!("{model_dir}/{uri}")
     };
-    iron_core::read_asset(root, &relative).map_err(|e| e.to_string())
+    platypus_core::read_asset(root, &relative).map_err(|e| e.to_string())
 }
 
 /// glTF URIs are percent-encoded (`my%20texture.png`).
@@ -110,7 +110,7 @@ fn percent_decode(s: &str) -> String {
 
 /// Loads `src` (relative to the game folder `root`).
 pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String> {
-    let bytes = iron_core::read_asset(root, src).map_err(|e| e.to_string())?;
+    let bytes = platypus_core::read_asset(root, src).map_err(|e| e.to_string())?;
     let model_dir = src.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
     let gltf = gltf::Gltf::from_slice(&bytes).map_err(|e| format!("`{src}`: {e}"))?;
     let doc = &gltf.document;
@@ -202,7 +202,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
             let e = m.emissive_factor().map(|c| c * strength);
             // A texture whose image can't be read draws the missing checker.
             let mut map = |t: gltf::Texture<'_>, srgb: bool| {
-                texture_for(t, srgb).unwrap_or((iron_render::MISSING_TEXTURE, 8, 8))
+                texture_for(t, srgb).unwrap_or((platypus_render::MISSING_TEXTURE, 8, 8))
             };
             let texture = pbr.base_color_texture().map(|t| map(t.texture(), true));
             let normal = m
@@ -365,7 +365,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
             let inverse: Vec<[[f32; 4]; 4]> = reader
                 .read_inverse_bind_matrices()
                 .map(Iterator::collect)
-                .unwrap_or_else(|| vec![iron_core::glam::Mat4::IDENTITY.to_cols_array_2d(); joints.len()]);
+                .unwrap_or_else(|| vec![platypus_core::glam::Mat4::IDENTITY.to_cols_array_2d(); joints.len()]);
             json!({
                 "joints": joints,
                 "inverseBind": inverse.iter().flat_map(|m| m.iter().flatten().copied()).collect::<Vec<f32>>(),
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn files_outside_the_game_folder_are_refused() {
-        let dir = std::env::temp_dir().join(format!("iron-gltf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-gltf-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("game")).unwrap();
         std::fs::write(dir.join("secret.bin"), [0u8; 12]).unwrap();
         let gltf =

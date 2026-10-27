@@ -5,9 +5,9 @@
 //! takes the requests with [`take_requests`] and applies them to the screen UI and every world
 //! panel, the way it did the `addStyleSheet` / `removeStyleSheet` / `loadFont` ops.
 //!
-//! The TypeScript functions of `@iron/engine` are written over this in the compiler's facade.
+//! The TypeScript functions of `@platypus/engine` are written over this in the compiler's facade.
 
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 use std::cell::RefCell;
 
 /// One request, in the order scripts made them.
@@ -50,7 +50,7 @@ pub fn reset() {
     STATE.with(|s| *s.borrow_mut() = State::default());
 }
 
-#[iron_api(namespace = "UiResources", quickjs)]
+#[platypus_api(namespace = "UiResources", quickjs)]
 pub mod ui_resources_api {
     use super::{STATE, UiRequest};
 

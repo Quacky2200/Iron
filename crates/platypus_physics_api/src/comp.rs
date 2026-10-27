@@ -9,9 +9,9 @@
 //! is what they call.
 
 use crate::{State, num, op, st, v3, v3_from_f32};
-use iron_core::Value;
-use iron_math::{Q, V2, V3};
-use iron_scene::ObjectId;
+use platypus_core::Value;
+use platypus_math::{Q, V2, V3};
+use platypus_scene::ObjectId;
 
 /// The physics of one GameObject.
 pub(crate) struct ObjPhys {
@@ -243,7 +243,7 @@ pub(crate) struct Comp {
 // ---- component slab -------------------------------------------------------------------------
 
 pub(crate) fn add_comp(object: ObjectId, data: Data) -> u32 {
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     st(|s| {
         s.comps.push(Some(Comp { object, data }));
         s.comps.len() as u32
@@ -342,8 +342,8 @@ pub(crate) fn find_col(object: ObjectId, tag: ShapeTag) -> u32 {
 
 // ---- the object's body ----------------------------------------------------------------------
 
-pub(crate) fn world_transform(object: ObjectId) -> Option<iron_scene::Transform> {
-    iron_scene::api::with_scene(|sc| sc.contains(object).then(|| sc.world(object))).flatten()
+pub(crate) fn world_transform(object: ObjectId) -> Option<platypus_scene::Transform> {
+    platypus_scene::api::with_scene(|sc| sc.contains(object).then(|| sc.world(object))).flatten()
 }
 
 pub(crate) fn world_scale(object: ObjectId) -> V3 {
@@ -550,7 +550,7 @@ pub(crate) fn rb_destroy(h: u32) {
             *slot = None;
         }
     });
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     // The colliders stay, now static.
     if body != 0 {
         st(|s| s.kinds.insert(body, "fixed".into()));
@@ -893,7 +893,7 @@ pub(crate) fn col_destroy(h: u32) {
         }
         s.comps[h as usize - 1] = None;
     });
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     send_mass(object);
     release_physics(object);
 }
@@ -1111,7 +1111,7 @@ pub(crate) fn joint_destroy(h: u32) {
             *slot = None;
         }
     });
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
 }
 
 // ---- rope -----------------------------------------------------------------------------------
@@ -1161,18 +1161,18 @@ fn rope_start(h: u32) {
     } else {
         v3_from_f32(start.to_array())
     };
-    let name = iron_scene::api::with_scene(|sc| sc.name(object).unwrap_or("").to_owned())
+    let name = platypus_scene::api::with_scene(|sc| sc.name(object).unwrap_or("").to_owned())
         .unwrap_or_default();
     let mut links = Vec::new();
     let mut joints = Vec::new();
     let mut last_body = prev;
     for i in 0..n {
         let center = start + dir * (seg * (i as f32 + 0.5));
-        let link = iron_scene::api::with_scene(|sc| {
+        let link = platypus_scene::api::with_scene(|sc| {
             let id = sc.create(&format!("{name} rope {i}"));
             sc.set_local(
                 id,
-                iron_scene::Transform {
+                platypus_scene::Transform {
                     position: center,
                     rotation,
                     // The capsule is 1 m wide and 2 m tall.
@@ -1251,13 +1251,13 @@ pub(crate) fn rope_destroy(h: u32) {
             *slot = None;
         }
     });
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
 }
 
 /// Removes an object's physics components and body, then the object.
 fn destroy_object(object: ObjectId) {
     object_destroyed(object);
-    iron_scene::api::with_scene(|sc| sc.destroy(object));
+    platypus_scene::api::with_scene(|sc| sc.destroy(object));
 }
 
 /// Where the rope runs: the first link's top, then every link's bottom (where they join).
@@ -1340,7 +1340,7 @@ pub(crate) fn sync_from_scene() {
             }
             (None, Some((p, r))) => {
                 let (p, r) = (glam::Vec3::from_array(p), glam::Quat::from_array(r));
-                iron_scene::api::with_scene(|sc| sc.set_world(object, p, r));
+                platypus_scene::api::with_scene(|sc| sc.set_world(object, p, r));
                 let w = world_transform(object).unwrap_or(t);
                 st(|s| s.synced.insert(body, (w.position, w.rotation)));
             }

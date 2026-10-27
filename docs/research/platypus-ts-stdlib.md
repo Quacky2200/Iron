@@ -1,16 +1,16 @@
-# iron_ts: a native JavaScript standard library (design note, for review)
+# platypus_ts: a native JavaScript standard library (design note, for review)
 
-Status: **proposal, no code yet** (a STOP item of `tools/iron_ts/TODO.md`, item 4 of "Now"). Written
+Status: **proposal, no code yet** (a STOP item of `tools/platypus_ts/TODO.md`, item 4 of "Now"). Written
 2026-10-18 after the request: "add a bare minimum JS framework such as Intl / Date / String / Array /
 Object and anything other common JS you can think of, perhaps RegExp / `.match`".
 
 Status (2026-10-18): tier 1 is done, steps A-H: `throw`, `try`/`catch`/`finally` and the Error classes
-(section 4.1; see "Exceptions" in [../iron-ts.md](../iron-ts.md)), `join` of number arrays, `typeof`, the
+(section 4.1; see "Exceptions" in [../platypus-ts.md](../platypus-ts.md)), `join` of number arrays, `typeof`, the
 `Number`/`Math`/`Array` gaps, `console`, and `Object.*` with object spread and rest (see "Standard library
 tier 1, steps E-H" there; tests M9-TS-199..205). Tier 2 is done: `Map`/`Set`/`WeakMap`/`WeakSet` (an insertion-ordered
 hash table with live, exact iteration; tests M9-TS-206..214) and `JSON.stringify`/`JSON.parse` driven
 by the static types, with JavaScriptCore's parse errors (tests M9-TS-215..221); see "Standard library
-tier 2" in [../iron-ts.md](../iron-ts.md). Tier 3 has started: `RegExp` step R1 is done (the `regress`
+tier 2" in [../platypus-ts.md](../platypus-ts.md). Tier 3 has started: `RegExp` step R1 is done (the `regress`
 engine, literals, `new RegExp`, `test`/`exec`, the match object; tests M9-TS-222..231; see "Standard
 library tier 3" there). Next: R2 (the String methods `match`/`matchAll`/`search`/`replace`/`replaceAll`/
 `split` with a regex), then `Date` and `Intl`.
@@ -20,7 +20,7 @@ The tables below describe the state before this work.
 
 Same as for strings: **a script gets JavaScript's answer, exactly**. Whatever is not built is a compile
 error that says what is missing, never a different result. Every piece gets differential tests against
-bun (the harness in `tools/iron_ts_rt/tests/gen_strings.ts` is the pattern: bun writes the expected
+bun (the harness in `tools/platypus_ts_rt/tests/gen_strings.ts` is the pattern: bun writes the expected
 data, a Rust test replays it on the runtime).
 
 Because the program is closed (all of it is compiled together), the static types are known, which
@@ -32,7 +32,7 @@ analysis).
 | Area | Built | Missing (all compile errors today) |
 |---|---|---|
 | Language | functions, closures, classes (inheritance, accessors, statics), enums, destructuring, `switch`, loops, string-literal unions, optional chaining on objects, template literals | `try`/`catch`/`throw`, `typeof`, generators, `async`/`await`, iterators protocol, getters on object literals, spread of objects, `label: ` edge cases |
-| `String` | everything in `docs/research/iron-ts-strings.md` slices 1-3 | `replace`/`replaceAll`/`match`/`matchAll`/`search`/`split(regex)` (RegExp), `localeCompare`, `normalize`, `toLocale*`, `String.raw`, tagged templates |
+| `String` | everything in `docs/research/platypus-ts-strings.md` slices 1-3 | `replace`/`replaceAll`/`match`/`matchAll`/`search`/`split(regex)` (RegExp), `localeCompare`, `normalize`, `toLocale*`, `String.raw`, tagged templates |
 | `Number` | `toString(radix)` (integers), `toFixed`, `Number()`, `parseInt`, `parseFloat` | `toPrecision`, `toExponential`, `toLocaleString`, `Number.isInteger`/`isFinite`/`isNaN`/`isSafeInteger`, `EPSILON`, `MAX_SAFE_INTEGER`, fractional `toString(radix)` |
 | `Math` | `abs acos asin atan atan2 cbrt ceil clz32 cos exp floor fround hypot imul log log10 log2 pow random round sign sin sqrt tan trunc` (and `min`/`max`) | `sinh cosh tanh asinh acosh atanh expm1 log1p` |
 | `Array` | `at concat every fill filter find findIndex forEach from includes indexOf isArray join lastIndexOf map of pop push reduce reverse shift slice some sort splice unshift` | `flat flatMap findLast findLastIndex reduceRight copyWithin keys values entries toSorted toReversed toSpliced with`, `join` of non-strings, default `sort()` (by string), `Array.from` with a map function on iterables |

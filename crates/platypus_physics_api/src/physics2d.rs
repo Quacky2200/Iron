@@ -12,8 +12,8 @@
 
 use crate::comp::{self, ColShape, Data, ShapeTag, with_col, with_rb};
 use crate::*;
-use iron_api::iron_api;
-use iron_math::V2;
+use platypus_api::platypus_api;
+use platypus_math::V2;
 
 fn colg<R: Default>(h: u32, f: impl FnOnce(&comp::Col) -> R) -> R {
     with_col(h, |c| f(c)).unwrap_or_default()
@@ -56,7 +56,7 @@ fn rb_rotation(h: u32) -> f64 {
 
 fn set_pose2d(h: u32, position: Option<V2>, degrees: Option<f64>) {
     let object = comp::comp_object(h);
-    iron_scene::api::with_scene(|sc| {
+    platypus_scene::api::with_scene(|sc| {
         if !sc.contains(object) {
             return;
         }
@@ -100,7 +100,7 @@ pub(crate) fn count_rigidbodies_2d() -> u32 {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[iron_api(
+#[platypus_api(
     namespace = "Physics2D", quickjs,
     handles(
         GameObject = ObjectId,

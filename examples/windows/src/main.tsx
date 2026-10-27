@@ -24,7 +24,7 @@ function thingAt(i: number): Thing {
 // The payload of the "edit" event.
 type Edit = { name: string; y: number };
 
-const palette: IronStyle = { backgroundColor: "#181d27", color: "#e6ebf5", flexDirection: "column", padding: 14, gap: 10 };
+const palette: PlatypusStyle = { backgroundColor: "#181d27", color: "#e6ebf5", flexDirection: "column", padding: 14, gap: 10 };
 
 function Button({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -210,7 +210,7 @@ function App() {
   const supported = Window.isSupported;
   return (
     <box style={{ ...palette, flexGrow: 1, padding: 20, gap: 14 }}>
-      <text style={{ fontSize: 22, fontWeight: 700 }}>Iron windows</text>
+      <text style={{ fontSize: 22, fontWeight: 700 }}>Platypus windows</text>
       {!supported && (
         <box style={{ backgroundColor: "#5c2020", borderRadius: 8, padding: 10 }}>
           <text style={{ fontSize: 14 }}>Extra windows are not available here; this screen is all there is.</text>
@@ -234,7 +234,7 @@ function App() {
 }
 
 createRoot().render(<App />);
-Window.main.title = "Iron - Windows";
+Window.main.title = "Platypus - Windows";
 if (Window.isSupported) {
   openPalette();
   openCounter();

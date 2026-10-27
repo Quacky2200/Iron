@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Scenes and scene files in Rust: `scenes.ts`'s `SceneManager`, `Scene`, `Prefab` and
-//! `GameObject.instantiate`, with the same JSON format (`iron.scene` version 1). Design:
-//! `docs/research/iron-native-scenes.md`.
+//! `GameObject.instantiate`, with the same JSON format (`platypus.scene` version 1). Design:
+//! `docs/research/platypus-native-scenes.md`.
 //!
-//! The loader is generic over the component kinds registered in [`iron_kinds`]: this crate
+//! The loader is generic over the component kinds registered in [`platypus_kinds`]: this crate
 //! registers `Camera`, `Animation` and `Animator`; a compiled program's `NativeHost` registers
 //! one per class it has. A component of a kind that is not registered is skipped with a warning.
 
@@ -34,7 +34,9 @@ pub(crate) fn ensure_kinds() {
 }
 
 /// Installs `SceneManager` (with its `Scene` and `Prefab` classes) in a QuickJS context. Install
-/// `iron_engine_api::register_quickjs` first (the math classes, `GameObject`).
-pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
+/// `platypus_engine_api::register_quickjs` first (the math classes, `GameObject`).
+pub fn register_quickjs<'js>(
+    ctx: &platypus_api::rquickjs::Ctx<'js>,
+) -> platypus_api::rquickjs::Result<()> {
     api::scene_manager_api::register_quickjs(ctx)
 }

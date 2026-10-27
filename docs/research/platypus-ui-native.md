@@ -6,8 +6,8 @@ revised the same day after the user's decision.
 **Decision (user, 2026-10-19).** Keep the hooks API the code uses today (`useState`, `useEffect` with cleanup, `useRef`,
 `useMemo`, `useCallback`, `useSyncExternalStore`, `useImperativeHandle`, context, keys) and add portals. Implement it
 natively with **re-render semantics**: components return plain element descriptions and a small native reconciler diffs
-them against the previous tree and emits the `iron_ui` operations. This replaces `react-reconciler`'s host config and
-leaves component code nearly unchanged. Not Preact (dynamic JS: `iron_ts` cannot compile it) and not run-once signals
+them against the previous tree and emits the `platypus_ui` operations. This replaces `react-reconciler`'s host config and
+leaves component code nearly unchanged. Not Preact (dynamic JS: `platypus_ts` cannot compile it) and not run-once signals
 (every component would be rewritten); signals can come later as an optional layer. **React stays as it is until the
 native version exists.** (The first draft of this note recommended signals; it is replaced by this one.)
 
@@ -18,15 +18,15 @@ native version exists.** (The first draft of this note recommended signals; it i
    createInstance / appendChild / commitUpdate ...
         │  queueFor(id).push([OPCODE, ...])           js/react/src/host.ts, style.ts, attrs.ts
         ▼
-   resetAfterCommit → __iron_commit(ops[, target])    ONE call per React commit
+   resetAfterCommit → __platypus_commit(ops[, target])    ONE call per React commit
         │  Vec<Value> arrays, decoded in Rust
         ▼
- iron_ui::UiTree::apply_commit(&Commit)               crates/iron_ui/src/tree.rs
+ platypus_ui::UiTree::apply_commit(&Commit)               crates/platypus_ui/src/tree.rs
    8 ops: CREATE, SET_STYLE, APPEND_CHILD, INSERT_BEFORE, REMOVE_CHILD, CREATE_TEXT, SET_TEXT, SET_ATTRS,
    then one layout sync; CSS cascade, Taffy, Parley, draw list, hit testing ...
         ▲
         │  Pointer / Interaction build the event and its path (target, then ancestors)
- __iron_ui_event(type, path, data, strings)           js/react/src/events.ts
+ __platypus_ui_event(type, path, data, strings)           js/react/src/events.ts
    JS does capture/bubble over `on*` props, flushSyncWork, returns `defaultPrevented`
 ```
 
@@ -53,7 +53,7 @@ op list stays.
 | Roots | `createRoot()` (screen) and `createRoot(panel)` (world panels, `examples/world`) | one root per target |
 | Fast Refresh | dev builds | see section 7 |
 
-Portals are new (none today); dialogs already use the top layer in `iron_ui`.
+Portals are new (none today); dialogs already use the top layer in `platypus_ui`.
 
 ## 3. Avoiding duplication
 
@@ -63,7 +63,7 @@ Portals are new (none today); dialogs already use the top layer in `iron_ui`.
 | The op set | Stays the one mutation interface. Add a typed `Op` enum beside `Commit`, decode the `Value` arrays into it once, and make the applier take `&[Op]`. React keeps sending `Value`s; the native reconciler builds `Op`s directly. One applier, no second tree API. |
 | Style/attribute parsing | Reused: the reconciler passes the same raw numbers and CSS strings; Rust parses and reports `UiError`. |
 | Event path and `defaultPrevented` | Reused: the path comes from `Pointer`/`Interaction`. Capture/bubble over handlers moves to Rust for native roots (the handler table is part of the reconciler's node record). `events.ts` stays for React roots. |
-| Props and event type declarations | One declaration set in `@iron/ui` used by both paths (the native one is the source; `@iron/react` re-exports). |
+| Props and event type declarations | One declaration set in `@platypus/ui` used by both paths (the native one is the source; `@platypus/react` re-exports). |
 | `js/react` | Untouched until the native version passes the same UI tests and goldens; removed when nothing imports it. |
 
 ## 4. The element description
@@ -96,10 +96,10 @@ class Element {
   becomes `cond ? <A/> : none()`, and `cond && <A/>` is accepted only when `cond` is boolean-typed (a number or string
   `cond` would render `0`/`""` in React; here it is a compile error that says to write the ternary).
 - **Style** values are `number | string` in CSS (`width: 10` and `width: "50%"`). The subset has no general union,
-  so `style` is an `IronStyle` class with one `StyleValue` per property (`{ num, str, isNum }`), and an object literal in
+  so `style` is a `PlatypusStyle` class with one `StyleValue` per property (`{ num, str, isNum }`), and an object literal in
   `style={{ ... }}` is rewritten to its constructor calls. A number keeps the meaning it has today (the unit rule in
   `style.ts`). Style objects are created every render, so the diff (section 5) is per property.
-- **Event objects** (`IronPointerEvent`, ...) are typed classes with the fields `events.ts` documents.
+- **Event objects** (`PlatypusPointerEvent`, ...) are typed classes with the fields `events.ts` documents.
 
 ## 5. The reconciler and the diff
 
@@ -132,7 +132,7 @@ without `memo`; the cost is bounded by the element tree, not by the UiTree (ops 
 **Scheduling.** `setState` marks the component dirty and the root scheduled. Handlers dispatched from Rust flush
 synchronously before returning (the discrete behaviour of `flushSyncWork` today); everything else flushes once per
 frame, before layout, and after microtasks. Dirty components render top-down in depth order so a parent's re-render
-drops a child's own pending update. All ops from one flush are applied as one batch, as `__iron_commit` is today.
+drops a child's own pending update. All ops from one flush are applied as one batch, as `__platypus_commit` is today.
 Updates scheduled inside effects run in the same flush loop (bounded; a depth limit reports an infinite update loop).
 
 **Effects and cleanup ordering** (matched to React 19 and checked by a differential test, section 9):
@@ -148,7 +148,7 @@ Updates scheduled inside effects run in the same flush loop (bounded; a depth li
 ## 6. Portals, contexts and world-panel roots
 
 - **Roots.** `createRoot(target)` keeps today's rule: one root per target; the screen is target 0 and a world panel is
-  its own `UiTree` with its own `Root`. The reconciler's ops carry the target, exactly like `__iron_commit(ops, target)`.
+  its own `UiTree` with its own `Root`. The reconciler's ops carry the target, exactly like `__platypus_commit(ops, target)`.
 - **Portals.** `createPortal(children, node)` is an element with `kind = PORTAL` and a `UiNode` target (a ref to any host
   instance, in this root or another, or a panel root). Its children are mounted as the children of the target node, after
   the target's own children, and unmounted with the portal. Events bubble **through the component tree** as in React
@@ -180,7 +180,7 @@ This stays under "Dev loop without Bun"; it needs no UI work beyond keeping ids 
 
 ## 8. Generics: `useState<T>` and friends
 
-`iron_ts` has no generics. What the hooks need is smaller than generics:
+`platypus_ts` has no generics. What the hooks need is smaller than generics:
 
 - **Slot kinds.** A hook slot holds one 8-byte word plus a kind: `NUM` (f64), `BOOL`, `PTR` (a GC object: string,
   array, object, closure). The Rust reconciler stores and roots slots by kind and never needs `T`.
@@ -201,23 +201,23 @@ This stays under "Dev loop without Bun"; it needs no UI work beyond keeping ids 
 
 ## 9. Test strategy
 
-Differential, like the rest of `iron_ts`: the same TSX components run under **real React with a recording host** in
+Differential, like the rest of `platypus_ts`: the same TSX components run under **real React with a recording host** in
 bun and under the native reconciler; compare (a) the final `UiTree` dump (nodes, attributes, styles), (b) the log of
 effect runs and cleanups, in order, (c) the op stream length and kinds for update scenarios (keyed reorders, insert in
 the middle, removal, conditional children). Plus: the existing UI goldens and `examples/arcade`/editor panels
-re-rendered natively and compared; `IRON_TS_GC=stress` on everything (instances, slots and closures are roots).
+re-rendered natively and compared; `PLATYPUS_TS_GC=stress` on everything (instances, slots and closures are roots).
 
 ## 10. Migration path
 
-1. `Op` enum and one applier in `iron_ui`; React path unchanged. (Removes the decode duplication.)
+1. `Op` enum and one applier in `platypus_ui`; React path unchanged. (Removes the decode duplication.)
 2. The reconciler in Rust with a Rust-closure front end (no compiler): hosts, text, keyed children, state and effect
    slots, scheduling, portals, context; tested against the real-React recorder with the same descriptions written by
    hand in both.
 3. Compiler: JSX rewrite, `Element` builders, hook intrinsics (state/ref/memo/callback/effect/sync-store/context/
    imperative-handle), stable ids and hook signatures. Compile and run a counter, a keyed todo list, a portal.
 4. Native event dispatch (handler tables, capture/bubble in Rust), controlled fields, refs as `UiNode` handles with
-   `focus()`/`blur()`/scroll as `#[iron_api]` methods (replacing the `op("focus", id)` calls).
-5. Port the arcade HUD beside its React version; goldens must match. Then `@iron/editor-ui` (needs the `TreeView<T>`
+   `focus()`/`blur()`/scroll as `#[platypus_api]` methods (replacing the `op("focus", id)` calls).
+5. Port the arcade HUD beside its React version; goldens must match. Then `@platypus/editor-ui` (needs the `TreeView<T>`
    decision above), then remove `js/react` when nothing imports it.
 
 ## 11. Risks
@@ -229,7 +229,7 @@ re-rendered natively and compared; `IRON_TS_GC=stress` on everything (instances,
   the reconciler needs a fault policy (log, unmount the failing root, keep the rest of the UI), the same as
   `NativeHost`'s component disable.
 - GC: closures in element descriptions, slots, handlers and refs are all roots owned by instances; leaks or early
-  frees show up only under `IRON_TS_GC=stress`, so every reconciler test runs there.
+  frees show up only under `PLATYPUS_TS_GC=stress`, so every reconciler test runs there.
 
 ## 12. Open questions (answers change the work, none blocks review)
 

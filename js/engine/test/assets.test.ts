@@ -14,9 +14,9 @@ test("Assets.onChanged hears changed files until stopped; a throwing listener do
   const error = console.error;
   console.error = () => {};
   try {
-    globalThis.__iron_assets_changed(["assets/crate.png"]);
+    globalThis.__platypus_assets_changed(["assets/crate.png"]);
     stop();
-    globalThis.__iron_assets_changed(["assets/other.png"]);
+    globalThis.__platypus_assets_changed(["assets/other.png"]);
   } finally {
     console.error = error;
   }
@@ -48,10 +48,10 @@ test("Assets.exists / list / packOf hand over to the engine's Assets namespace, 
 // M5-AST-05
 test("GUIDs stand in for paths, importers give texture defaults, and scenes find renamed files by GUID", () => {
   const ops: unknown[][] = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
-  const info = globalThis.__iron_info as Record<string, unknown> | undefined;
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
+  const info = globalThis.__platypus_info as Record<string, unknown> | undefined;
   const setDb = (assets: unknown[]) => {
-    (globalThis as { __iron_info?: unknown }).__iron_info = { ...(info ?? {}), assets };
+    (globalThis as { __platypus_info?: unknown }).__platypus_info = { ...(info ?? {}), assets };
   };
   try {
     setDb([
@@ -79,7 +79,7 @@ test("GUIDs stand in for paths, importers give texture defaults, and scenes find
     const material = GameObject.find("Crate")!.getComponent(MeshRenderer)!.material;
     expect(material.mainTexture!.src).toBe("assets/props/crate.png");
   } finally {
-    (globalThis as { __iron_info?: unknown }).__iron_info = info;
-    delete (globalThis as { __iron_op?: unknown }).__iron_op;
+    (globalThis as { __platypus_info?: unknown }).__platypus_info = info;
+    delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
   }
 });

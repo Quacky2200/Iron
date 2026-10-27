@@ -18,7 +18,6 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 
-use iron_core::{RangeRead, Value};
 use kira::backend::Backend;
 use kira::listener::ListenerHandle;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
@@ -28,6 +27,7 @@ use kira::track::{
     SpatialTrackBuilder, SpatialTrackDistances, SpatialTrackHandle, TrackBuilder, TrackHandle,
 };
 use kira::{AudioManager, AudioManagerSettings, Decibels, Easing, Panning, PlaybackRate, Tween};
+use platypus_core::{RangeRead, Value};
 
 pub use kira::DefaultBackend;
 pub use offline::OfflineBackend;

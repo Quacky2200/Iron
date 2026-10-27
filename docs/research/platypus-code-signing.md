@@ -1,6 +1,6 @@
-# Code signing the packaged executable (research, nothing is signed by Iron)
+# Code signing the packaged executable (research, nothing is signed by Platypus)
 
-Status: research only (2026-10-21). `iron-build package` signs nothing. It has one hook, `--sign-cmd`, that runs the user's own
+Status: research only (2026-10-21). `platypus-build package` signs nothing. It has one hook, `--sign-cmd`, that runs the user's own
 signing tool on the finished file. Facts about certificate authorities, prices and Microsoft's reputation rules change often: the
 statements marked (verify) are from memory of 2024-2025 announcements and need a check before anyone relies on them.
 
@@ -22,7 +22,7 @@ over from one build to the next (an unsigned exe starts again from zero with eve
   certificate table behind or drop it. So the order is fixed: copy host, edit resources (`pe.rs`), append payload, sign.
 - Appending **after** signing puts bytes behind the certificate table. The PE specification expects the table to be last, those bytes
   are outside the hash, and some verifiers and scanners are stricter than `WinVerifyTrust`. Do not rely on it.
-- A signed exe no longer ends with our trailer: the certificate (and its padding) follows it. `iron_core::payload::Archive` therefore
+- A signed exe no longer ends with our trailer: the certificate (and its padding) follows it. `platypus_core::payload::Archive` therefore
   also looks for the trailer just before the certificate table when the end of the file has none (tested by `M9-API-1005` with a
   synthetic PE; not yet with a real signature, see TODO). An exe that was packaged, signed and then *re-packaged* is handled the same
   way: `host_len` strips the old payload and a re-signed file is a new file.
@@ -45,13 +45,13 @@ over from one build to the next (an unsigned exe starts again from zero with eve
 ones, and builds with downloads and the absence of malware reports. A new certificate starts with a warning even when valid; a
 new build under an old, reputable identity does not. Submitting a build to Microsoft for analysis helps false positives.
 
-**What Iron could do without proprietary SDKs.** Everything up to the signature is already Rust and cross-platform (`editpe`,
+**What Platypus could do without proprietary SDKs.** Everything up to the signature is already Rust and cross-platform (`editpe`,
 `flate2`, `image`). Authenticode signing itself needs PKCS#7/CMS signing with the user's key, a timestamp request and the PE digest
 rules; a Rust implementation is possible (the `authenticode` crate parses and hashes PE files, CMS crates exist) but certificates on
 HSMs and tokens are reached through PKCS#11 or vendor libraries, so shelling out to `signtool` / `osslsigncode` is the realistic
 path. That is what the hook does.
 
-## 3. The hook: `iron-build package --sign-cmd "<command>"` (implemented, tiny)
+## 3. The hook: `platypus-build package --sign-cmd "<command>"` (implemented, tiny)
 
 After the output file is written, `{exe}` in the command is replaced by the quoted path and the command runs through `cmd /S /C`
 (Windows) or `sh -c`. A failing command fails the package; the unsigned file stays on disk. Examples:
@@ -64,20 +64,20 @@ After the output file is written, `{exe}` in the command is replaced by the quot
 
 Secrets (passwords, tokens) belong in the environment or the tool's own store, not on the command line. Left for the hook: an
 `{out}` placeholder (or built-in in/out handling) so `osslsigncode` needs no wrapper; verifying after signing (`signtool verify /pa`
-or `osslsigncode verify`) and printing the result; a `package.json` `iron.signCommand` so the command is not retyped.
+or `osslsigncode verify`) and printing the result; a `package.json` `platypus.signCommand` so the command is not retyped.
 
 ## 4. macOS
 
-- A `.app` bundle (`Contents/MacOS/<exe>`, `Contents/Resources/iron payload`, `Info.plist`, `.icns`), signed with a **Developer ID
+- A `.app` bundle (`Contents/MacOS/<exe>`, `Contents/Resources/platypus payload`, `Info.plist`, `.icns`), signed with a **Developer ID
   Application** certificate (Apple Developer Program, 99 USD a year), with the **hardened runtime** (`codesign --options runtime`).
-- Iron's Cranelift JIT needs `com.apple.security.cs.allow-jit` (and probably `allow-unsigned-executable-memory`) in the entitlements,
+- Platypus's Cranelift JIT needs `com.apple.security.cs.allow-jit` (and probably `allow-unsigned-executable-memory`) in the entitlements,
   or the hardened runtime kills the game when it compiles. The `--aot` object avoids this.
 - **Notarization**: upload the zipped or dmg'd app with `xcrun notarytool submit --wait` (an App Store Connect API key or an app
   password), then `xcrun stapler staple`. Gatekeeper refuses un-notarized apps downloaded from the internet. Apple Silicon refuses to
   run any unsigned arm64 binary, so even local builds need at least an ad-hoc signature (`codesign -s -`).
 - From Rust without Apple's tools: **`apple-codesign` (`rcodesign`)** is a pure-Rust implementation of `codesign`, notarization
   upload, stapling and `.app`/`.dmg` handling, usable from Linux and Windows, with a `.p12` certificate and an API key. It is the one
-  signing tool in this list that could be a library dependency of `iron-build`. Needs the user's Apple account, certificate and key.
+  signing tool in this list that could be a library dependency of `platypus-build`. Needs the user's Apple account, certificate and key.
 - As with Windows: bundle contents and the payload first, sign last (the signature seals the whole bundle; changing a resource
   afterwards breaks it). On macOS the payload would be a file in `Resources/`, not appended to the Mach-O (appended data in a signed
   Mach-O is checked against the code directory).
@@ -90,10 +90,10 @@ or `osslsigncode verify`) and printing the result; a `package.json` `iron.signCo
   upload key safe) and a Play developer account (25 USD once). `apksigner` is Java; the format is documented and implemented in
   Rust crates of uneven quality, so shelling out to the SDK is the safe route. Debug builds are signed with an auto-made debug key.
 - **iOS**: apps run only when signed with a certificate (Apple Development for devices, Apple Distribution for TestFlight/App Store)
-  and an embedded **provisioning profile** (device list or distribution profile, entitlements, bundle id = `iron.identifier`).
+  and an embedded **provisioning profile** (device list or distribution profile, entitlements, bundle id = `platypus.identifier`).
   `codesign` (or `rcodesign sign` with the `.p12` and profile) seals the `.app`; the `.ipa` is uploaded with `xcrun altool` /
   `notarytool`-family tools or Transporter. Needs the Apple Developer Program, a Mac for the Xcode tools in practice, and no JIT
-  (see the mobile plan in `docs/iron-build.md`).
+  (see the mobile plan in `docs/platypus-build.md`).
 
 ## 6. Linux
 
@@ -108,7 +108,7 @@ skipped.
 | A Windows code-signing certificate (OV/EV on a token or cloud HSM, a few hundred USD a year) **or** an Azure subscription with an approved Trusted/Artifact Signing identity | Windows Authenticode |
 | Apple Developer Program membership, a Developer ID Application certificate, an App Store Connect API key | macOS signing, notarization; iOS provisioning |
 | A Play developer account and an upload keystore | Android release builds |
-| A decision on the publisher name (it is the identity in the certificate: it should equal `iron.company`) | all |
+| A decision on the publisher name (it is the identity in the certificate: it should equal `platypus.company`) | all |
 | A Windows test machine with a fresh profile (SmartScreen reputation is per user machine and per download source) | checking the result |
 
 ## 8. TODO
@@ -116,7 +116,7 @@ skipped.
 1. Sign a real build with `signtool` and `osslsigncode` once a certificate exists: confirm `Archive::open` finds the payload behind
    the real certificate table (only a synthetic PE is tested) and that `signtool verify /pa` passes.
 2. `{out}` placeholder or in/out handling in `--sign-cmd`; a verify step after signing.
-3. `iron.signCommand` in `package.json`; an environment variable for the command in CI.
+3. `platypus.signCommand` in `package.json`; an environment variable for the command in CI.
 4. macOS: `.app` bundle writer (`Info.plist`, `.icns` from the icon, payload in `Resources/`), entitlements file with `allow-jit`,
    `rcodesign` integration for sign and notarize.
 5. Android/iOS packaging and signing hooks (after the `--aot` path covers the engine API).

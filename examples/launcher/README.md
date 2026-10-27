@@ -1,17 +1,17 @@
 # launcher
 
-A game launcher mock-up, to see whether a store / launcher front end works in Iron's UI: the
+A game launcher mock-up, to see whether a store / launcher front end works in Platypus's UI: the
 examples as a cover-flow carousel or a grid, browsed with the mouse, the keys or a gamepad. It
 launches nothing yet: Play shows a loading spinner, then an alert that says so.
 
 ## Running it
 
 ```bash
-cd tools && cargo run -p iron_build -- build ../examples/launcher
+cd tools && cargo run -p platypus_build -- build ../examples/launcher
 ```
 
 ```bash
-cargo run -p iron_app -- examples/launcher
+cargo run -p platypus_app -- examples/launcher
 ```
 
 The list of games is made at build time by `gen-games.ts`, which `project.json`'s `prebuild` runs
@@ -44,7 +44,7 @@ everything.
 Arguments after `--` reach the launcher as `Application.args`, mostly for screenshot runs:
 
 ```bash
-cargo run -p iron_app -- examples/launcher --screenshot out.png --frames 40 -- --view grid --select clock --show context --pad playstation
+cargo run -p platypus_app -- examples/launcher --screenshot out.png --frames 40 -- --view grid --select clock --show context --pad playstation
 ```
 
 | Argument | What |

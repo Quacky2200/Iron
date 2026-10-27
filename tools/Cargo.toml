@@ -3,7 +3,7 @@
 # The AOT script compiler spike. Its own workspace so engine builds never see it.
 [workspace]
 resolver = "3"
-members = ["iron_ts", "iron_ts_rt", "iron_ts_tests", "iron_demo_api", "iron_ts_ui", "iron_build"]
+members = ["platypus_ts", "platypus_ts_rt", "platypus_ts_tests", "platypus_demo_api", "platypus_ts_ui", "platypus_build"]
 
 [workspace.package]
 version = "0.1.0"

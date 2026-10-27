@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Splines: Iron's `Spline` in two halves.
+// Splines: Platypus's `Spline` in two halves.
 //
 // Left, splines that move: a closed ribbon whose knots drift, ridden by a car that goes by
 // distance (`SplineAnimate`: a steady speed) and a ball that goes by each segment's own

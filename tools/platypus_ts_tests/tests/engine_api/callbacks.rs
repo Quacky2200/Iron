@@ -3,14 +3,14 @@
 //! `bench/callbacks.ts`: closures given to the engine (`input.onKeyDown(..)`), called back by the
 //! engine with numbers, booleans and strings, in the normal, stress GC and collection-off modes.
 //! IDs are in TESTS.md (M9-TS-1200..).
-use iron_engine_api::input;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::callbacks_t::*;
+use platypus_engine_api::input;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::callbacks_t::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_cbk_init() };
     input::reset();
     f();
@@ -95,11 +95,11 @@ fn assets_on_changed_gets_the_changed_paths() {
     in_every_gc_mode(|| unsafe {
         let _ = text(ts_cbk_readLog());
         ts_cbk_subscribeAssets();
-        iron_engine_api::assets::changed(["a.png".to_string(), "b.ogg".to_string()]);
+        platypus_engine_api::assets::changed(["a.png".to_string(), "b.ogg".to_string()]);
         ts_cbk_churn();
-        iron_engine_api::assets::changed(["c.png".to_string()]);
+        platypus_engine_api::assets::changed(["c.png".to_string()]);
         assert_eq!(text(ts_cbk_readLog()), "assets:a.png,b.ogg;assets:c.png;");
-        iron_engine_api::assets::reset();
+        platypus_engine_api::assets::reset();
     });
 }
 
@@ -107,7 +107,7 @@ fn assets_on_changed_gets_the_changed_paths() {
 #[test]
 fn application_on_focus_changed_fires_on_a_change_only() {
     in_every_gc_mode(|| unsafe {
-        use iron_engine_api::app;
+        use platypus_engine_api::app;
         app::reset();
         let _ = text(ts_cbk_readLog());
         let token = ts_cbk_subscribeFocus();
@@ -127,7 +127,7 @@ fn application_on_focus_changed_fires_on_a_change_only() {
 #[test]
 fn scene_events_reach_script_listeners_with_scene_handles() {
     in_every_gc_mode(|| unsafe {
-        iron_scenes::reset();
+        platypus_scenes::reset();
         let _ = text(ts_cbk_readLog());
         ts_cbk_subscribeScenes();
         ts_cbk_loadSecond(true);
@@ -138,7 +138,7 @@ fn scene_events_reach_script_listeners_with_scene_handles() {
         assert!(log.contains("loaded:Second:single;"), "{log}");
         assert!(log.contains("unloaded;"), "{log}");
         assert!(log.contains("active:"), "{log}");
-        iron_scenes::reset();
+        platypus_scenes::reset();
     });
 }
 

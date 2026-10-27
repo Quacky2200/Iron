@@ -2,7 +2,7 @@
 
 //! `RegExp`: literals, `new RegExp`, `test` and `exec`, and the match object. A regular expression
 //! is an object of the prelude class `RegExp` (its `lastIndex` is a plain field); the engine and
-//! the registry of compiled expressions are in the runtime (`iron_ts_rt/src/regexp.rs`). A match is
+//! the registry of compiled expressions are in the runtime (`platypus_ts_rt/src/regexp.rs`). A match is
 //! a `RegExpMatchArray` object: `m[i]`, `m.length`, destructuring, spreading and the array methods
 //! see its `matches` array; `m.index`, `m.input` and `m.groups` are its fields.
 
@@ -111,7 +111,7 @@ impl<'a> Lowerer<'a> {
             bail!("{at}: malformed regular expression literal")
         };
         let (pattern, flags) = (&raw[1..end], &raw[end + 1..]);
-        if let Err(e) = iron_ts_rt::regex_validate(pattern, flags) {
+        if let Err(e) = platypus_ts_rt::regex_validate(pattern, flags) {
             bail!("{at}: {e}")
         }
         let (p, f) = (self.str_lit(pattern), self.str_lit(flags));
@@ -293,12 +293,12 @@ impl<'a> Lowerer<'a> {
             Expression::RegExpLiteral(r) => {
                 let raw = r.raw.as_ref()?.as_str();
                 let end = raw.rfind('/')?;
-                Some(iron_ts_rt::regex_groups(&raw[1..end]))
+                Some(platypus_ts_rt::regex_groups(&raw[1..end]))
             }
             Expression::NewExpression(n) if matches!(&n.callee, Expression::Identifier(id) if id.name == "RegExp") => {
                 match n.arguments.first().and_then(|a| a.as_expression()) {
                     Some(Expression::StringLiteral(s)) => {
-                        Some(iron_ts_rt::regex_groups(s.value.as_str()))
+                        Some(platypus_ts_rt::regex_groups(s.value.as_str()))
                     }
                     _ => None,
                 }

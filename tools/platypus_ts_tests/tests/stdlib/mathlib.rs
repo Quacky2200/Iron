@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The Math library surface and the operators around it compiled by `iron_ts`
+//! The Math library surface and the operators around it compiled by `platypus_ts`
 //! (`bench/mathlib.ts`). The expected values are what bun computes from the same file, compared
 //! bit for bit (the sign of zero counts; NaN equals NaN). IDs are in TESTS.md (M9-TS-85..).
-use iron_ts_rt::{Array, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_random_seed};
-use iron_ts_tests::ml::*;
+use platypus_ts_rt::{Array, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_random_seed};
+use platypus_ts_tests::ml::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     unsafe { ts_ml_init() };
     f();

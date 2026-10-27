@@ -23,7 +23,7 @@ use selectors::{Parser as SelectorParser, SelectorList};
 
 /// Our `selectors::SelectorImpl`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct IronSelectors;
+pub struct PlatypusSelectors;
 
 /// A string used for identifiers, element names and attribute values.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -147,7 +147,7 @@ impl PseudoElementTrait for PseudoElement {
     }
 }
 
-impl SelectorImpl for IronSelectors {
+impl SelectorImpl for PlatypusSelectors {
     type ExtraMatchingData<'a> = std::marker::PhantomData<&'a ()>;
     type AttrValue = CssString;
     type Identifier = CssString;
@@ -166,10 +166,10 @@ impl Borrow<str> for CssString {
     }
 }
 
-struct IronSelectorParser;
+struct PlatypusSelectorParser;
 
-impl<'i> SelectorParser<'i> for IronSelectorParser {
-    type Impl = IronSelectors;
+impl<'i> SelectorParser<'i> for PlatypusSelectorParser {
+    type Impl = PlatypusSelectors;
     type Error = SelectorParseErrorKind;
 
     fn parse_nth_child_of(&self) -> bool {
@@ -225,9 +225,9 @@ impl<'i> SelectorParser<'i> for IronSelectorParser {
 }
 
 /// Parses a selector list such as `.card > text:first-child, #main::before`.
-pub fn parse_selectors(text: &str) -> Result<SelectorList<IronSelectors>, String> {
+pub fn parse_selectors(text: &str) -> Result<SelectorList<PlatypusSelectors>, String> {
     let mut parser = CssParser::new(text);
-    SelectorList::parse(&IronSelectorParser, &mut parser, ParseRelative::No)
+    SelectorList::parse(&PlatypusSelectorParser, &mut parser, ParseRelative::No)
         .map_err(|e| format!("invalid selector `{text}`: {:?}", e.kind))
 }
 
@@ -244,7 +244,7 @@ pub struct Declaration {
 
 #[derive(Clone, Debug)]
 pub struct StyleRule {
-    pub selectors: SelectorList<IronSelectors>,
+    pub selectors: SelectorList<PlatypusSelectors>,
     pub declarations: Vec<Declaration>,
     /// `@media` conditions around the rule: all must match for it to apply.
     pub media: Vec<std::sync::Arc<crate::media::MediaList>>,
@@ -317,7 +317,7 @@ struct SheetParser;
 
 impl<'i> QualifiedRuleParser<'i> for SheetParser {
     /// The selectors, and their text (for rules nested inside).
-    type Prelude = (SelectorList<IronSelectors>, String);
+    type Prelude = (SelectorList<PlatypusSelectors>, String);
     type QualifiedRule = Item;
     type Error = SelectorParseErrorKind;
 
@@ -326,7 +326,7 @@ impl<'i> QualifiedRuleParser<'i> for SheetParser {
         input: &mut CssParser<'i>,
     ) -> Result<Self::Prelude, ParseError<Self::Error>> {
         let start = input.position();
-        let selectors = SelectorList::parse(&IronSelectorParser, input, ParseRelative::No)?;
+        let selectors = SelectorList::parse(&PlatypusSelectorParser, input, ParseRelative::No)?;
         Ok((selectors, input.slice_from(start).trim().to_owned()))
     }
 
@@ -350,7 +350,7 @@ const MAX_NESTING: usize = 16;
 /// Nesting), flattened into `out` after the rule itself.
 fn parse_rule_body(
     input: &mut CssParser<'_>,
-    selectors: SelectorList<IronSelectors>,
+    selectors: SelectorList<PlatypusSelectors>,
     selector_text: &str,
     out: &mut Vec<StyleRule>,
     warnings: &mut Vec<String>,
@@ -887,7 +887,7 @@ fn unquote(s: &str) -> String {
     s.trim().trim_matches(['"', '\'']).to_owned()
 }
 
-/// The first `url(...)` in an `@font-face` `src` list that Iron can load: TrueType,
+/// The first `url(...)` in an `@font-face` `src` list that Platypus can load: TrueType,
 /// OpenType, WOFF or WOFF2 (by `format()`, else by extension). `local()` entries and
 /// EOT / SVG fonts are skipped.
 fn first_url(src: &str) -> Option<String> {

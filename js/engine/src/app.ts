@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The game and the machine it runs on (Unity's `Application` and `SystemInfo`). The
-// engine installs `globalThis.__iron_info` before the game's code runs: the game's
-// manifest (its `package.json`: `name`, `version` and an `iron` section with `title`,
+// engine installs `globalThis.__platypus_info` before the game's code runs: the game's
+// manifest (its `package.json`: `name`, `version` and a `platypus` section with `title`,
 // `company`, `identifier` and `icon`) and what the OS and GPU report.
 //
-// Focus: Rust calls `__iron_focus(focused, paused)` when the window gains or loses
+// Focus: Rust calls `__platypus_focus(focused, paused)` when the window gains or loses
 // focus (or is minimised) and when that pauses the game (`runInBackground` off).
 
 import { _forEachActiveComponent } from "./scene.ts";
@@ -17,19 +17,19 @@ interface InfoApp {
   companyName: string;
   identifier: string;
   engineVersion: string;
-  /** The manifest's `iron.quality` (QualitySettings reads it). */
+  /** The manifest's `platypus.quality` (QualitySettings reads it). */
   quality?: unknown;
-  /** The manifest's `iron.layers`: names by layer number (LayerMask reads it). */
+  /** The manifest's `platypus.layers`: names by layer number (LayerMask reads it). */
   layers?: unknown;
-  /** The manifest's `iron.startScene`: loaded when the game starts. */
+  /** The manifest's `platypus.startScene`: loaded when the game starts. */
   startScene?: string | null;
-  /** The manifest's `iron.runInBackground`, or what scripts last set (kept over reloads). */
+  /** The manifest's `platypus.runInBackground`, or what scripts last set (kept over reloads). */
   runInBackground?: boolean;
   /** What scripts last set (kept over reloads). */
   targetFrameRate?: number;
-  /** True in `iron_editor`. */
+  /** True in `platypus_editor`. */
   isEditor?: boolean;
-  /** The command line's arguments after `--` (`iron game -- --level 2`). */
+  /** The command line's arguments after `--` (`platypus game -- --level 2`). */
   args?: string[];
 }
 
@@ -57,8 +57,8 @@ interface InfoSystem {
 }
 
 declare global {
-  var __iron_info: { app: InfoApp; system: InfoSystem } | undefined;
-  var __iron_focus: (focused: boolean, paused: boolean) => void;
+  var __platypus_info: { app: InfoApp; system: InfoSystem } | undefined;
+  var __platypus_focus: (focused: boolean, paused: boolean) => void;
 }
 
 // Set by scripts; until then the engine's (or the manifest's) value.
@@ -68,8 +68,8 @@ let focused = true;
 let paused = false;
 const focusListeners = new Set<(focused: boolean) => void>();
 
-const app = (): Partial<InfoApp> => globalThis.__iron_info?.app ?? {};
-const sys = (): Partial<InfoSystem> => globalThis.__iron_info?.system ?? {};
+const app = (): Partial<InfoApp> => globalThis.__platypus_info?.app ?? {};
+const sys = (): Partial<InfoSystem> => globalThis.__platypus_info?.system ?? {};
 
 /** Which OS family (Unity's `OperatingSystemFamily`, plus the mobile ones). */
 export type OperatingSystemFamily = "Windows" | "MacOSX" | "Linux" | "Android" | "iOS" | "Other";
@@ -82,7 +82,7 @@ export const Application = {
   get name(): string {
     return app().name ?? "";
   },
-  /** The title it shows (`iron.title`, else the name). Unity's `productName`. */
+  /** The title it shows (`platypus.title`, else the name). Unity's `productName`. */
   get productName(): string {
     return app().productName ?? "";
   },
@@ -92,11 +92,11 @@ export const Application = {
   get companyName(): string {
     return app().companyName ?? "";
   },
-  /** Reverse-DNS id (`iron.identifier`). */
+  /** Reverse-DNS id (`platypus.identifier`). */
   get identifier(): string {
     return app().identifier ?? "";
   },
-  /** Iron's version (Unity's `unityVersion`). */
+  /** Platypus's version (Unity's `unityVersion`). */
   get engineVersion(): string {
     return app().engineVersion ?? "";
   },
@@ -110,12 +110,12 @@ export const Application = {
   },
   /**
    * The command line's arguments for the game: everything after `--`
-   * (`iron examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`.
+   * (`platypus examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`.
    */
   get args(): string[] {
     return [...(app().args ?? [])];
   },
-  /** Whether this runs in the editor (`iron_editor`) rather than the player (`iron`). */
+  /** Whether this runs in the editor (`platypus_editor`) rather than the player (`platypus`). */
   get isEditor(): boolean {
     return app().isEditor === true;
   },
@@ -132,11 +132,11 @@ export const Application = {
   },
   set targetFrameRate(fps: number) {
     targetFrameRate = fps > 0 ? Math.round(fps) : -1;
-    __iron_op("app.targetFrameRate", targetFrameRate);
+    __platypus_op("app.targetFrameRate", targetFrameRate);
   },
   /**
    * Keep running while the window is in the background (unfocused or minimised).
-   * Off by default (`iron.runInBackground` in `package.json` changes that): then the
+   * Off by default (`platypus.runInBackground` in `package.json` changes that): then the
    * game pauses — no updates, fixed ticks or timers, sounds muted — until it's back.
    */
   get runInBackground(): boolean {
@@ -144,7 +144,7 @@ export const Application = {
   },
   set runInBackground(on: boolean) {
     runInBackground = !!on;
-    __iron_op("app.runInBackground", runInBackground);
+    __platypus_op("app.runInBackground", runInBackground);
   },
   /** Whether the window has focus (and isn't minimised). */
   get isFocused(): boolean {
@@ -161,9 +161,9 @@ export const Application = {
       focusListeners.delete(f);
     };
   },
-  /** Closes the game after this frame; `iron` exits with `exitCode` (0, success, by default). */
+  /** Closes the game after this frame; `platypus` exits with `exitCode` (0, success, by default). */
   quit(exitCode = 0): void {
-    __iron_op("app.quit", Math.trunc(exitCode));
+    __platypus_op("app.quit", Math.trunc(exitCode));
   },
 };
 
@@ -230,7 +230,7 @@ export const SystemInfo = {
   },
 };
 
-globalThis.__iron_focus = (hasFocus: boolean, isPaused: boolean) => {
+globalThis.__platypus_focus = (hasFocus: boolean, isPaused: boolean) => {
   const focusChanged = hasFocus !== focused;
   const pauseChanged = isPaused !== paused;
   focused = hasFocus;

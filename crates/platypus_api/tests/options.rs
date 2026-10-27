@@ -2,7 +2,7 @@
 
 //! `#[options]`: QuickJS functions whose optional parameters may come as one object, by camelCase
 //! name (`Window.create({ title: "T", minWidth: 200 })`). IDs are in TESTS.md (M9-API-14xx).
-use iron_api::{ValueType, iron_api};
+use platypus_api::{ValueType, platypus_api};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct V3 {
@@ -23,7 +23,7 @@ impl ValueType<3> for V3 {
     }
 }
 
-#[iron_api(namespace = "Opts", quickjs, values(Vec3 = V3 [x: f64, y: f64, z: f64]))]
+#[platypus_api(namespace = "Opts", quickjs, values(Vec3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod opts {
     use super::V3;
 
@@ -128,7 +128,7 @@ fn positional_calls_still_work_and_a_value_class_argument_is_not_an_options_obje
         .iter()
         .map(|src| {
             let v: rquickjs::Value = ctx.eval(*src).unwrap();
-            iron_api::qjs::options_object(ctx, &v).is_some()
+            platypus_api::qjs::options_object(ctx, &v).is_some()
         })
         .collect();
         assert_eq!(

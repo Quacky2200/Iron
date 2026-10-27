@@ -5,7 +5,7 @@
 # It adds ("<name>", "<prefix>_", <base>) to build.rs, a `pub mod <name>_t` to src/lib.rs, the
 # generator bench/gen_<name>_expected.ts and a test per exported function in tests/<name>.rs.
 # Write bench/<name>.ts first: every exported function without parameters returns a string.
-# Then: `bun bench/gen_<name>_expected.ts` and `cargo test -p iron_ts_tests --test <name>`.
+# Then: `bun bench/gen_<name>_expected.ts` and `cargo test -p platypus_ts_tests --test <name>`.
 import os
 import re
 import sys
@@ -80,8 +80,8 @@ def snake(n):
 
 tests = f"""//! `bench/{name}.ts` against bun (`bench/gen_{name}_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-{first}..).
-use iron_ts_rt::{{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress}};
-use iron_ts_tests::{mod}::*;
+use platypus_ts_rt::{{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress}};
+use platypus_ts_tests::{mod}::*;
 use serde_json::Value;
 
 fn in_every_gc_mode(f: impl Fn()) {{

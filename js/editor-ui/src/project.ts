@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The project folder for the editor: `iron_editor [project]` answers `editor.listDir`,
-// `editor.copyIn` and `editor.move` through `__iron_editor_fs`, a frame later. Paths
+// The project folder for the editor: `platypus_editor [project]` answers `editor.listDir`,
+// `editor.copyIn` and `editor.move` through `__platypus_editor_fs`, a frame later. Paths
 // are relative to the project, `/` separated, "" for its root.
 
-import { op } from "@iron/engine";
+import { op } from "@platypus/engine";
 
 export interface ProjectEntry {
   name: string;
@@ -19,17 +19,17 @@ export interface Listing {
 }
 
 /** The data type a project item carries while dragged inside the editor. */
-export const PROJECT_PATH_TYPE = "application/x-iron-project-path";
+export const PROJECT_PATH_TYPE = "application/x-platypus-project-path";
 
 let nextId = 1;
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
 declare global {
-  /** Answers to `editor.*` file ops, flat: `[id, ok, json or error, ...]` (iron_editor only). */
-  var __iron_editor_fs: (flat: unknown[]) => void;
+  /** Answers to `editor.*` file ops, flat: `[id, ok, json or error, ...]` (platypus_editor only). */
+  var __platypus_editor_fs: (flat: unknown[]) => void;
 }
 
-globalThis.__iron_editor_fs = (flat: unknown[]) => {
+globalThis.__platypus_editor_fs = (flat: unknown[]) => {
   for (let i = 0; i + 2 < flat.length; i += 3) {
     const id = Number(flat[i]);
     const waiting = pending.get(id);
@@ -68,7 +68,7 @@ export const moveInto = (path: string, dir: string): Promise<{ path: string }> =
 
 /** The project folder's full path, if the editor has one. */
 export function projectFolder(): string | null {
-  const app = (globalThis.__iron_info as { app?: { project?: string | null } } | undefined)?.app;
+  const app = (globalThis.__platypus_info as { app?: { project?: string | null } } | undefined)?.app;
   return app?.project ?? null;
 }
 

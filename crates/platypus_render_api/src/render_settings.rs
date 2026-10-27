@@ -794,7 +794,7 @@ impl AutoExposurePatch {
     }
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "RenderSettings", quickjs,
     values(
         Color = Rgba [r: f64, g: f64, b: f64, a: f64],
@@ -1624,8 +1624,8 @@ pub mod render_settings_api {
     /// Turns auto exposure off without anything changing on screen: the manual exposure is set
     /// to the main camera's current one. Pair it with `exposureTransition` for a slow blend.
     pub fn freeze_exposure() {
-        let main = iron_engine_api::camera::CameraRef::main();
-        let ev = iron_engine_api::camera::with_camera(main, |d| d.exposure).unwrap_or(f64::NAN);
+        let main = platypus_engine_api::camera::CameraRef::main();
+        let ev = platypus_engine_api::camera::with_camera(main, |d| d.exposure).unwrap_or(f64::NAN);
         change(|s| {
             if ev.is_finite() {
                 s.fixed_exposure = Some(ev);
@@ -1688,7 +1688,7 @@ fn stat<R>(f: impl FnOnce(&Stats) -> R) -> R {
 
 /// What the world renderer drew and skipped in the last frame, over every camera, mirror and
 /// reflection probe (like Unity's rendering statistics). Read-only; the engine updates it.
-#[iron_api(namespace = "RenderStats", quickjs)]
+#[platypus_api(namespace = "RenderStats", quickjs)]
 pub mod render_stats_api {
     use super::*;
 
@@ -1751,14 +1751,14 @@ pub fn set_physical_light_units(physical: bool) {
     PHYSICAL_UNITS.with(|p| p.set(physical));
 }
 
-/// Project-wide graphics settings (Unity's `GraphicsSettings`). Iron has one render pipeline;
+/// Project-wide graphics settings (Unity's `GraphicsSettings`). Platypus has one render pipeline;
 /// what a project chooses is its light units, in `project.json`.
-#[iron_api(namespace = "GraphicsSettings", quickjs)]
+#[platypus_api(namespace = "GraphicsSettings", quickjs)]
 pub mod graphics_settings_api {
     use super::*;
 
     /// `physical`: real-world units (the sun in lux, lamps in lumens, glowing surfaces and the
-    /// sky in nits); `legacy` (the default): Iron's own.
+    /// sky in nits); `legacy` (the default): Platypus's own.
     #[property]
     pub fn light_units() -> String {
         if PHYSICAL_UNITS.with(std::cell::Cell::get) {

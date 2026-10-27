@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { Vector3 } from "@iron/engine";
+import { Vector3 } from "@platypus/engine";
 
 import {
   defaultSceneCamera,

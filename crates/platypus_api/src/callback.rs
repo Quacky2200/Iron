@@ -29,7 +29,7 @@ pub fn install_bridge(b: ScriptBridge) {
     let _ = BRIDGE.set(b);
 }
 
-/// The layout of a script closure (`iron_ts_rt::Closure`).
+/// The layout of a script closure (`platypus_ts_rt::Closure`).
 #[repr(C)]
 struct ScriptClosure {
     header: u64,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The flip clock, drawn by Iron's UI: each digit is a card split across the middle. When it
+// The flip clock, drawn by Platypus's UI: each digit is a card split across the middle. When it
 // changes, the top flap (the old digit's top half) folds down on its hinge, then the new
 // digit's bottom half folds down into place, in 3D (`perspective`, `rotateX`). Each half clips
 // a full-height digit (`overflow: hidden`), so a flap shows exactly half of it.

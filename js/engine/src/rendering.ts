@@ -55,7 +55,7 @@ export class Camera extends Component {
   private _fog = true;
   private _targetTexture: RenderTexture | null = null;
   private started = false;
-  /** @internal The exposure last read back (`__iron_exposure`). */
+  /** @internal The exposure last read back (`__platypus_exposure`). */
   _exposure = Number.NaN;
   /** @internal How bright it last metered. */
   _sceneBrightness = Number.NaN;
@@ -300,14 +300,14 @@ export class Camera extends Component {
    * easing there: after a cut, a teleport or a scene load.
    */
   resetExposure(): void {
-    __iron_op("render.exposureReset", this.id);
+    __platypus_op("render.exposureReset", this.id);
   }
 
   /**
    * A physical camera's settings (HDRP's), for the manual exposure: the aperture's
    * f-number, the shutter's time in seconds and the sensor's ISO. Their exposure is
    * `physicalExposure`; use it as `RenderSettings.fixedExposure`. HDRP's defaults (f/16,
-   * 1/200 s, ISO 200) suit a sunny day in real-world light units (`iron.lightUnits: "physical"`).
+   * 1/200 s, ISO 200) suit a sunny day in real-world light units (`platypus.lightUnits: "physical"`).
    */
   aperture = 16;
   shutterSpeed = 1 / 200;
@@ -318,7 +318,7 @@ export class Camera extends Component {
     return Math.log2((this.aperture * this.aperture) / Math.max(this.shutterSpeed, 1e-6)) - Math.log2(Math.max(this.iso, 1) / 100);
   }
 
-  /** @internal By id, for `__iron_exposure`. */
+  /** @internal By id, for `__platypus_exposure`. */
   static byId(id: number): Camera | undefined {
     return cameras.find((c) => c.id === id);
   }
@@ -408,7 +408,7 @@ export class Camera extends Component {
   private send(): void {
     if (!this.started) return;
     const r = this._rect;
-    __iron_op(
+    __platypus_op(
       "render.camera",
       this.id,
       this.gameObject.id,
@@ -439,7 +439,7 @@ export class Camera extends Component {
 
   override onDestroy(): void {
     cameras.splice(cameras.indexOf(this), 1);
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 
@@ -477,7 +477,7 @@ export class PlaneRenderer extends Component {
 
   private send(): void {
     if (!this.started) return;
-    __iron_op("render.plane", this.id, this.gameObject.id, this._size.toArray(), rgba(this._color));
+    __platypus_op("render.plane", this.id, this.gameObject.id, this._size.toArray(), rgba(this._color));
   }
 
   override onStart(): void {
@@ -486,7 +486,7 @@ export class PlaneRenderer extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 
@@ -564,7 +564,7 @@ export class CameraOrbit extends Component {
 
 /**
  * Screen-style UI on a plane in the world, like s&box's `WorldPanel`: render React into
- * it with `createRoot(panel)` from `@iron/react`. The panel stands in its object's XY
+ * it with `createRoot(panel)` from `@platypus/react`. The panel stands in its object's XY
  * plane facing +z (towards a camera looking down -z), `width`×`height` UI pixels at
  * `pixelsPerMeter`, centred on the object. Pointer events reach it through the camera
  * (screen UI over it wins), and keys go to it after it's clicked.
@@ -645,7 +645,7 @@ export class WorldPanel extends Component {
 
   private send(): void {
     if (!this.started) return;
-    __iron_op(
+    __platypus_op(
       "render.panel",
       this.id,
       this.gameObject.id,
@@ -663,7 +663,7 @@ export class WorldPanel extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 
@@ -935,7 +935,7 @@ export class Mesh {
       ...(joints.length ? { joints, weights } : {}),
     };
     if (data.bindposes) this.bindposes = [...data.bindposes];
-    __iron_op(
+    __platypus_op(
       "render.mesh",
       this.id,
       data.vertices.flatMap((v) => [v.x, v.y, v.z]),
@@ -964,12 +964,12 @@ export class Mesh {
       flipped[i + 1] = 1 - uv[i + 1]!;
     }
     this._flat = data;
-    __iron_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
+    __platypus_op("render.mesh", this.id, data.positions, data.normals ?? [], flipped, data.triangles);
   }
 
   /** Frees it (renderers still using it draw nothing). */
   destroy(): void {
-    __iron_op("render.mesh", this.id, null);
+    __platypus_op("render.mesh", this.id, null);
   }
 }
 
@@ -1023,7 +1023,7 @@ export class MeshRenderer extends Component {
   protected send(): void {
     if (!this.started) return;
     const m = this._material;
-    __iron_op(
+    __platypus_op(
       "render.meshRenderer",
       this.id,
       this.gameObject.id,
@@ -1047,7 +1047,7 @@ export class MeshRenderer extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 
@@ -1255,7 +1255,7 @@ export class Light extends Component {
   private send(): void {
     if (!this.started) return;
     const c = this._color;
-    __iron_op(
+    __platypus_op(
       "render.light",
       this.id,
       this.gameObject.id,
@@ -1284,12 +1284,12 @@ export class Light extends Component {
 
   override onDestroy(): void {
     allLights.delete(this);
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 
   /**
    * A light meter: how much light falls on `point` from every light, in lux in the HD
-   * pipeline (where lights are in lux and lumens; elsewhere in Iron's own units). Facing
+   * pipeline (where lights are in lux and lumens; elsewhere in Platypus's own units). Facing
    * `normal` if given (a surface's), else each light head-on. Shadows aren't counted: indoors
    * it counts the sun through the roof. `measureIlluminance` does count them.
    */
@@ -1383,7 +1383,7 @@ export const RenderStats = {
   shadowMaps: 0,
 };
 
-globalThis.__iron_render_stats = (...n: number[]) => {
+globalThis.__platypus_render_stats = (...n: number[]) => {
   [RenderStats.meshes, RenderStats.culledMeshes, RenderStats.quads, RenderStats.culledQuads, RenderStats.fogCulled, RenderStats.lights, RenderStats.culledLights, RenderStats.shadowMaps] = n.map((v) => v ?? 0) as [number, number, number, number, number, number, number, number];
 };
 
@@ -1457,7 +1457,7 @@ let fixedExposure: number | null = null;
 let exposureTransition = 0;
 
 /** @internal Each camera's exposure, read back: EV100 in use, and how bright it metered. */
-globalThis.__iron_exposure = (id: number, ev: number, scene: number | null) => {
+globalThis.__platypus_exposure = (id: number, ev: number, scene: number | null) => {
   const c = Camera.byId(id);
   if (!c) return;
   c._exposure = ev;
@@ -1466,7 +1466,7 @@ globalThis.__iron_exposure = (id: number, ev: number, scene: number | null) => {
 
 let autoExposure: AutoExposureSettings | null = null;
 const sendPost = () =>
-  __iron_op(
+  __platypus_op(
     "render.post",
     0,
     postExposure,
@@ -1569,7 +1569,7 @@ let cloudLayer: CloudLayerSettings | null = null;
 function sendClouds(): void {
   const c = cloudLayer;
   const t = c?.tint;
-  __iron_op(
+  __platypus_op(
     "render.clouds",
     0,
     c
@@ -1651,14 +1651,14 @@ let volumetricFog: VolumetricFogSettings | null = null;
 
 function sendFog(): void {
   if (!fog) {
-    __iron_op("render.fog", 0, null);
+    __platypus_op("render.fog", 0, null);
     return;
   }
   const h = heightFog ? [heightFog.density, heightFog.baseHeight, heightFog.falloff] : null;
   const v = volumetricFog;
   const a = v?.albedo;
   const shafts = v ? [v.intensity ?? 1, v.anisotropy ?? 0.4, v.steps ?? 4, v.distance ?? 50, a?.r ?? 1, a?.g ?? 1, a?.b ?? 1, v.sharpDistance ?? 0, v.sharpSamples ?? 32, Math.max(0, VOLUME_DETAILS.indexOf(v.resolution ?? "high")), DENOISING[v.denoising ?? "both"], v.historyWeight ?? 0.9, v.samples ?? 1, v.motionSamples ?? 2] : null;
-  __iron_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
+  __platypus_op("render.fog", 0, fogMode, [fogColor.r, fogColor.g, fogColor.b], fogDensity, fogStart, fogEnd, h, shafts, fogCulling);
 }
 
 let skybox: ProceduralSky | null = null;
@@ -1667,13 +1667,13 @@ let reflectionIntensity = 1;
 
 function sendSky(): void {
   if (!skybox) {
-    __iron_op("render.sky", 0, null);
+    __platypus_op("render.sky", 0, null);
     return;
   }
   const s = skybox;
   const rgb = (c: Color | undefined) => (c ? [c.r, c.g, c.b] : null);
   const sun = s.sunDirection === null ? null : s.sunDirection ? [s.sunDirection.x, s.sunDirection.y, s.sunDirection.z] : [0.4, 0.6, 0.3];
-  __iron_op(
+  __platypus_op(
     "render.sky",
     0,
     rgb(s.zenith) ?? [0.16, 0.32, 0.62],
@@ -1695,7 +1695,7 @@ export const RenderSettings = {
   },
   set ambientLight(c: Color) {
     ambient = c;
-    __iron_op("render.ambient", 0, [c.r, c.g, c.b]);
+    __platypus_op("render.ambient", 0, [c.r, c.g, c.b]);
   },
   /**
    * The sky: what reflections show, where sky light comes from, and what cameras with
@@ -1731,8 +1731,8 @@ export const RenderSettings = {
   },
   set bloom(b: BloomSettings | null) {
     bloom = b ? { ...b } : null;
-    if (b) __iron_op("render.bloom", 0, b.threshold, b.intensity, b.scatter);
-    else __iron_op("render.bloom", 0, null);
+    if (b) __platypus_op("render.bloom", 0, b.threshold, b.intensity, b.scatter);
+    else __platypus_op("render.bloom", 0, null);
   },
   /**
    * How HDR light (brighter than white) becomes screen colours: `none` clips it (the
@@ -1909,7 +1909,7 @@ export class Mirror extends Component {
     const mesh = this.getComponent(MeshRenderer)?.mesh;
     // Quads face +z (`Vector3.back`: forward is -z here).
     const n = this.normal ?? (mesh === "quad" ? Vector3.back : Vector3.up);
-    __iron_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z], this.cullingMask >>> 0);
+    __platypus_op("render.mirror", this.id, this.gameObject.id, [n.x, n.y, n.z], this.cullingMask >>> 0);
   }
 
   override onAwake(): void {
@@ -1917,7 +1917,7 @@ export class Mirror extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 
@@ -1945,12 +1945,12 @@ export class ReflectionProbe extends Component {
 
   private send(): void {
     const s = this.size;
-    __iron_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
+    __platypus_op("render.probe", this.id, this.gameObject.id, [s.x, s.y, s.z], this.resolution, this.boxProjection, this.refreshMode === "everyFrame", this.cullingMask >>> 0);
   }
 
   /** Captures the scene again on the next frame (after moving things, say). */
   renderProbe(): void {
-    __iron_op("render.probeRender", this.id);
+    __platypus_op("render.probeRender", this.id);
   }
 
   override onAwake(): void {
@@ -1958,7 +1958,7 @@ export class ReflectionProbe extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 
@@ -2028,7 +2028,7 @@ export class FogVolume extends Component {
     if (!this.started) return;
     const s = this._size;
     const c = this._color;
-    __iron_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend, this._shape);
+    __platypus_op("render.fogVolume", this.id, this.gameObject.id, [s.x, s.y, s.z], this._density, [c.r, c.g, c.b], this._blend, this._shape);
   }
 
   override onAwake(): void {
@@ -2037,7 +2037,7 @@ export class FogVolume extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 
@@ -2107,7 +2107,7 @@ export class LODGroup extends Component {
 
   private send(): void {
     if (!this.started) return;
-    __iron_op(
+    __platypus_op(
       "render.lodGroup",
       this.id,
       this.gameObject.id,
@@ -2124,7 +2124,7 @@ export class LODGroup extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 

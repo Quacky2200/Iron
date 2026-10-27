@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Closure parameters (`Callback`), their manifest type and the listener table (`M9-API-300..302`).
-use iron_api::callback::{HandleArg, Listeners, emit};
-use iron_api::{Callback, Handle, iron_api};
+use platypus_api::callback::{HandleArg, Listeners, emit};
+use platypus_api::{Callback, Handle, platypus_api};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -21,11 +21,11 @@ thread_local! {
     static LISTENERS: RefCell<Listeners<(f64, String)>> = RefCell::new(Listeners::default());
 }
 
-#[iron_api(namespace = "Events", handles(Thing = Thing))]
+#[platypus_api(namespace = "Events", handles(Thing = Thing))]
 pub mod events_api {
     use super::{LISTENERS, Thing};
-    use iron_api::Callback;
-    use iron_api::callback::HandleArg;
+    use platypus_api::Callback;
+    use platypus_api::callback::HandleArg;
 
     /// Calls `f(n, text)` on every event.
     pub fn on_event(f: Callback<(f64, String)>) -> u32 {
@@ -80,7 +80,7 @@ fn listeners_get_events_in_order_and_tokens_are_unique() {
 // M9-API-302
 #[test]
 fn a_script_callback_without_a_runtime_bridge_does_nothing() {
-    // No `iron_ts_rt` in this test binary: nothing is installed, so a closure pointer is ignored
+    // No `platypus_ts_rt` in this test binary: nothing is installed, so a closure pointer is ignored
     // instead of called.
     let cb = unsafe { Callback::<(f64,)>::from_script(0x10 as *const u8) };
     cb.call((1.0,));

@@ -2,18 +2,18 @@
 
 //! `ui_bench [rows]`: the same UI app (a list of keyed rows: mount, change one row, change every
 //! row, reverse) rendered two ways into a real `UiTree`:
-//! - React 19 + `@iron/react` running in QuickJS (the engine today): the script builds the
+//! - React 19 + `@platypus/react` running in QuickJS (the engine today): the script builds the
 //!   commit, Rust decodes and applies it;
-//! - the compiled TSX (`bench/ui_perf.ts`) rendered by the native reconciler (`iron_ui_native`).
+//! - the compiled TSX (`bench/ui_perf.ts`) rendered by the native reconciler (`platypus_ui_native`).
 //!
 //! Both include applying the ops to the tree; the native time includes building the descriptions
 //! in compiled code and the diff.
-use iron_core::Value;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ts_rt::link_anchor;
-use iron_ts_tests::uip::*;
-use iron_ui::{ROOT, UiTree};
-use iron_ui_native::Runtime;
+use platypus_core::Value;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ts_rt::link_anchor;
+use platypus_ts_tests::uip::*;
+use platypus_ui::{ROOT, UiTree};
+use platypus_ui_native::Runtime;
 use std::process::Command;
 use std::time::Instant;
 
@@ -63,7 +63,7 @@ fn native_run(n: usize) -> ([f64; 4], usize) {
     for (i, (rev, tick, all)) in STEPS.iter().enumerate() {
         let t = Instant::now();
         let h = unsafe { ts_uip_perfApp(n as f64, *rev, *tick, *all) };
-        let el = iron_ts_ui::element_from(h);
+        let el = platypus_ts_ui::element_from(h);
         let errors = rt.render(root, el, &mut tree);
         assert!(errors.is_empty(), "{errors:?}");
         times[i] = t.elapsed().as_secs_f64() * 1000.0;
@@ -73,8 +73,8 @@ fn native_run(n: usize) -> ([f64; 4], usize) {
 
 fn main() {
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_ui::link_anchor(), 0);
-    iron_ts_tests::gc_mode_from_env();
+    assert_ne!(platypus_ts_ui::link_anchor(), 0);
+    platypus_ts_tests::gc_mode_from_env();
     unsafe { ts_uip_init() };
     let rows: usize = std::env::args()
         .nth(1)
@@ -83,7 +83,7 @@ fn main() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     // React twice: a production bundle (what ships) and a development one (what `bun run dev` runs).
     let bundle_for = |mode: &str| {
-        let path = std::env::temp_dir().join(format!("iron_ts_ui_perf_{mode}.js"));
+        let path = std::env::temp_dir().join(format!("platypus_ts_ui_perf_{mode}.js"));
         let st = Command::new("bun")
             .arg("build")
             .arg(dir.join("../../js/react/test/perf_entry.tsx"))

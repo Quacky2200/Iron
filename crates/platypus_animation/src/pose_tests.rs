@@ -8,7 +8,7 @@ use crate::clip::{Clip, ClipId, World};
 use crate::curve::{Curve, Keyframe};
 use crate::legacy_pose::{Ctx, LegacyPose};
 use crate::pose::{Pose, PropertySink};
-use iron_scene::{ObjectId, Scene, Transform};
+use platypus_scene::{ObjectId, Scene, Transform};
 
 /// xorshift64*: the same numbers on every run.
 struct Rng(u64);

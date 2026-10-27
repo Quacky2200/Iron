@@ -17,7 +17,7 @@ import {
   register,
   Vector2,
   Vector3,
-} from "@iron/engine";
+} from "@platypus/engine";
 
 const log: string[] = [];
 let box: GameObject;

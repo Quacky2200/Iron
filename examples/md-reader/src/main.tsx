@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A Markdown reader for Iron's own docs, drawn by Iron's UI: a file tree of docs/ and the
+// A Markdown reader for Platypus's own docs, drawn by Platypus's UI: a file tree of docs/ and the
 // repo's top-level .md files (toggled from the top bar), back / forward history (the
 // buttons, Alt+Left / Alt+Right, or the mouse's side buttons), links between docs and to
 // headings, tables, code, task lists and images. gen-docs.ts bundles the files at build time.
@@ -11,7 +11,7 @@ import { DOCS, IMAGES, ROOT } from "./docs.gen.ts";
 import { highlight } from "./highlight.ts";
 import { type Block, type Doc, type Inline, parse, plainText } from "./markdown.ts";
 
-/** The first page: Iron's `docs/README.md`, else the root's README, else the first doc. */
+/** The first page: Platypus's `docs/README.md`, else the root's README, else the first doc. */
 const HOME =
   ["docs/README.md", "README.md", "readme.md", "index.md"].find((p) => DOCS[p] !== undefined) ??
   Object.keys(DOCS).sort()[0] ??
@@ -135,7 +135,7 @@ function FileTree({
   );
 }
 
-// --- Markdown to Iron UI ---------------------------------------------------------------
+// --- Markdown to Platypus UI ---------------------------------------------------------------
 
 interface Ctx {
   path: string;
@@ -477,7 +477,7 @@ interface Mark {
   /** For a list, the item marked instead of the whole row (-1 for the row). */
   item: number;
   faded: boolean;
-  ref: { current: IronElement | null };
+  ref: { current: PlatypusElement | null };
 }
 
 /** The highlighted box around a jump's target. */
@@ -485,7 +485,7 @@ function Marked({ mark, children }: { mark: Mark; children: ReactNode }) {
   return (
     <box
       className={mark.faded ? "mark faded" : "mark"}
-      ref={(el: IronElement | null) => {
+      ref={(el: PlatypusElement | null) => {
         mark.ref.current = el;
       }}
     >
@@ -620,7 +620,7 @@ const clean = (path: string) => path.replaceAll("\\", "/").replace(/^\.\//, "").
 function startAt(): { entry: Entry; status: string } {
   const { goto, root } = commandLine();
   if (root !== null) {
-    // Reading a folder while running needs file access Iron's scripts don't have yet (M6
+    // Reading a folder while running needs file access Platypus's scripts don't have yet (M6
     // plans the game and data folders only), so the option exists but stops here.
     console.error(
       `md-reader: --root ${root}: not supported yet (scripts can't read folders outside the game). ` +
@@ -654,9 +654,9 @@ function App() {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(["docs"]));
   const [hovered, setHovered] = useState<string | null>(null);
   const [status, setStatus] = useState(START.status);
-  const content = useRef<IronElement>(null);
+  const content = useRef<PlatypusElement>(null);
   const scrollTop = useRef(0);
-  const markRef = useRef<IronElement | null>(null);
+  const markRef = useRef<PlatypusElement | null>(null);
   const [faded, setFaded] = useState(false);
 
   const entry = history.entries[history.index]!;
@@ -766,7 +766,7 @@ function App() {
   return (
     <box
       className={light ? "app light" : "app"}
-      onPointerDown={(e: IronPointerEvent) => {
+      onPointerDown={(e: PlatypusPointerEvent) => {
         // The mouse's side buttons: 3 back, 4 forward.
         if (e.button === 3) step(-1);
         else if (e.button === 4) step(1);
@@ -828,7 +828,7 @@ function App() {
         <box
           className="content"
           ref={content}
-          onScroll={(e: IronScrollEvent) => {
+          onScroll={(e: PlatypusScrollEvent) => {
             scrollTop.current = e.scrollTop;
           }}
         >

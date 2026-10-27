@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Prints the `Ui` manifest: `cargo run -p iron_ts_ui --example manifest > iron_ts/src/lower/ui_manifest.json`.
+//! Prints the `Ui` manifest: `cargo run -p platypus_ts_ui --example manifest > platypus_ts/src/lower/ui_manifest.json`.
 fn main() {
-    println!("{}", iron_ts_ui::manifest_json());
+    println!("{}", platypus_ts_ui::manifest_json());
 }

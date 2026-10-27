@@ -2,15 +2,15 @@
 
 //! What compiled games hand to the app each frame, apart from drawing: audio commands for the
 //! mixer and the finished sounds going back, `Application` requests,
-//! and `PlayerPrefs` (`iron_engine_api::{audio, app, prefs}`). The window, quality and cursor are
+//! and `PlayerPrefs` (`platypus_engine_api::{audio, app, prefs}`). The window, quality and cursor are
 //! `native_render.rs`.
 
 use super::App;
 use super::{info, prefs};
-use iron_core::Value;
-use iron_engine_api::app::{AppInfo, Request, SystemInfo};
-use iron_engine_api::audio::{AudioCommand, PlaybackRef};
-use iron_engine_api::prefs::{Change, Pref};
+use platypus_core::Value;
+use platypus_engine_api::app::{AppInfo, Request, SystemInfo};
+use platypus_engine_api::audio::{AudioCommand, PlaybackRef};
+use platypus_engine_api::prefs::{Change, Pref};
 
 impl App {
     /// Applies the audio commands compiled code queued to the mixer. The mixer opens on the first
@@ -19,7 +19,7 @@ impl App {
         if self.native.is_none() {
             return;
         }
-        for c in iron_engine_api::audio::take_commands() {
+        for c in platypus_engine_api::audio::take_commands() {
             match &c {
                 AudioCommand::Load {
                     sound,
@@ -52,9 +52,9 @@ impl App {
         let (keys, textures) = (keys.to_vec(), textures.to_vec());
         n.with_scene(&mut self.scene.scene, &mut self.ui, move || {
             for (id, w, h) in textures {
-                iron_render_api::texture_loaded(iron_render_api::TextureRef(id), w, h);
+                platypus_render_api::texture_loaded(platypus_render_api::TextureRef(id), w, h);
             }
-            iron_engine_api::assets::changed(keys);
+            platypus_engine_api::assets::changed(keys);
         });
     }
 
@@ -71,7 +71,7 @@ impl App {
         if self.native.is_none() {
             return;
         }
-        for r in iron_engine_api::app::take_requests() {
+        for r in platypus_engine_api::app::take_requests() {
             match r {
                 Request::Quit(code) => {
                     super::EXIT_CODE.store(code, std::sync::atomic::Ordering::Relaxed);
@@ -84,7 +84,7 @@ impl App {
                 }
             }
         }
-        for c in iron_engine_api::prefs::take_changes() {
+        for c in platypus_engine_api::prefs::take_changes() {
             match c {
                 Change::Set(k, Pref::Num(n)) => self.prefs.set(&k, serde_json::json!(n)),
                 Change::Set(k, Pref::Str(s)) => self.prefs.set(&k, serde_json::json!(s)),
@@ -98,7 +98,7 @@ impl App {
 
 /// The saved settings as the engine's `PlayerPrefs` start out. Once, before the first load.
 pub fn seed_prefs(saved: &prefs::Prefs) {
-    iron_engine_api::prefs::load(saved.all().iter().filter_map(|(k, v)| {
+    platypus_engine_api::prefs::load(saved.all().iter().filter_map(|(k, v)| {
         let pref = match v {
             serde_json::Value::Number(n) => Pref::Num(n.as_f64()?),
             serde_json::Value::String(s) => Pref::Str(s.clone()),
@@ -118,13 +118,13 @@ pub fn seed_asset_index(info: &info::Info) {
         .into_iter()
         .flatten()
         .filter_map(|r| Some((r[0].as_str()?.to_owned(), r[1].as_str()?.to_owned())));
-    iron_engine_api::assets::set_asset_index(rows.collect());
+    platypus_engine_api::assets::set_asset_index(rows.collect());
 }
 
 /// What the program reads at start and after each reload: `Application`, `SystemInfo`, the
 /// layer names, and the quality levels (the manifest's, then the player's saved choice).
 pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
-    iron_engine_api::app::set_app(AppInfo {
+    platypus_engine_api::app::set_app(AppInfo {
         name: manifest.name.clone(),
         product_name: manifest.title.clone(),
         version: manifest.version.clone(),
@@ -141,12 +141,12 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
             .filter_map(|a| Some(a.as_str()?.to_owned()))
             .collect(),
     });
-    iron_render_api::set_physical_light_units(manifest.physical_units);
+    platypus_render_api::set_physical_light_units(manifest.physical_units);
     seed_asset_index(info);
     let sys = info.0.get("system").cloned().unwrap_or_default();
     let text = |k: &str| sys[k].as_str().unwrap_or_default().to_owned();
     let num = |k: &str| sys[k].as_f64().unwrap_or(0.0) as u32;
-    iron_engine_api::app::set_system(SystemInfo {
+    platypus_engine_api::app::set_system(SystemInfo {
         operating_system: text("operatingSystem"),
         operating_system_family: text("operatingSystemFamily"),
         operating_system_version: text("operatingSystemVersion"),
@@ -161,10 +161,10 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
         ..SystemInfo::default()
     });
     if let Some(list) = info.0.get("assets").and_then(serde_json::Value::as_array) {
-        iron_engine_api::assets::set_assets(
+        platypus_engine_api::assets::set_assets(
             list.iter()
                 .filter_map(|a| {
-                    Some(iron_engine_api::assets::AssetEntry {
+                    Some(platypus_engine_api::assets::AssetEntry {
                         path: a["path"].as_str()?.to_owned(),
                         guid: a["guid"].as_str()?.to_owned(),
                         importer_json: a["importer"].to_string(),

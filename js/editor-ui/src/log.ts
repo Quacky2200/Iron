@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The engine's log for the editor: `iron_editor` sends new records to `__iron_log`
+// The engine's log for the editor: `platypus_editor` sends new records to `__platypus_log`
 // each frame once `editor.logHistory` asked for them (everything kept so far first).
 
-import { op } from "@iron/engine";
+import { op } from "@platypus/engine";
 
 import { type LogEntry, levelOf } from "./console.ts";
 
@@ -17,11 +17,11 @@ const listeners = new Set<() => void>();
 let started = false;
 
 declare global {
-  /** New log records, flat: `[seq, level, target, message, timeMs, ...]` (iron_editor only). */
-  var __iron_log: (flat: unknown[]) => void;
+  /** New log records, flat: `[seq, level, target, message, timeMs, ...]` (platypus_editor only). */
+  var __platypus_log: (flat: unknown[]) => void;
 }
 
-globalThis.__iron_log = (flat: unknown[]) => {
+globalThis.__platypus_log = (flat: unknown[]) => {
   const added: LogEntry[] = [];
   for (let i = 0; i + 4 < flat.length; i += 5) {
     const seq = Number(flat[i]);
@@ -66,7 +66,7 @@ export function clearLog(): void {
   for (const fn of listeners) fn();
 }
 
-/** Opens a file at a line in the user's code editor (`code -g`, or `IRON_EDITOR_OPEN`). */
+/** Opens a file at a line in the user's code editor (`code -g`, or `PLATYPUS_EDITOR_OPEN`). */
 export function openInEditor(file: string, line = 1, col = 1): void {
   op("editor.openFile", file, line, col);
 }

@@ -1,16 +1,16 @@
-# iron_ts: strings (design note, for review)
+# platypus_ts: strings (design note, for review)
 
 Status: **slices 1a, 1b, 2 and 3 are implemented; the strings item is done** (2026-10-18). RegExp, Intl,
-localeCompare, normalize and the rest are in the standard-library item of tools/iron_ts/TODO.md.
+localeCompare, normalize and the rest are in the standard-library item of tools/platypus_ts/TODO.md.
 - **Slice 3, the engine boundary:** a `string` manifest type, `&str` borrowed in, `String` out through an
   out length, `GameObject.name`/`find`; tests M9-API-21..22, M9-TS-183..186; see section 20 of
-  [iron-ts-engine-boundary.md](iron-ts-engine-boundary.md).
+  [platypus-ts-engine-boundary.md](platypus-ts-engine-boundary.md).
 - **Slice 2** is compiler support (`lower/strings.rs`, `RtFn::Str`, static literals, `+`/templates/
   compare/methods; tests M9-TS-178..182); known gaps: `typeof`, `codePointAt` past the end, optional
   chaining on strings, object-literal fields without a declared type, `join` of non-string arrays, one
   allocation per `+` in a chain.
 - **Slices 1a and 1b:** the runtime side in
-`tools/iron_ts_rt/src/string.rs` (WTF-8 `Str` with inline bytes, flags, one-entry cursor; concat, eq,
+`tools/platypus_ts_rt/src/string.rs` (WTF-8 `Str` with inline bytes, flags, one-entry cursor; concat, eq,
 compare, length, charCodeAt/codePointAt, charAt, slice, substring, indexOf/lastIndexOf/includes/
 startsWith/endsWith, fromCodePoint) with tests M9-TS-162..172, and `string_more.rs` (trim, repeat, pad,
 case mapping, at, template concat, split/join, Number to string/toFixed/integer radix, Number/parseFloat/
@@ -37,7 +37,7 @@ valid UTF-8, byte for byte. SpiderMonkey and Servo use the same idea.
 
 ## 2. Representation
 
-The runtime has `Str { header, len, data }` (`iron_ts_rt`), a GC object pointing at a separate
+The runtime has `Str { header, len, data }` (`platypus_ts_rt`), a GC object pointing at a separate
 buffer. Proposal:
 
 ```
@@ -117,7 +117,7 @@ The engine speaks Rust: `&str` and `String` (valid UTF-8).
    section (a literal with a lone surrogate escape is fine now); the operations as runtime calls;
    `string | null`; `typeof`.
 3. **Boundary:** the `string` manifest type, macro and compiler conversion; then `GameObject.name`
-   and `GameObject.find` in `iron_scene` (the first string-taking engine functions).
+   and `GameObject.find` in `platypus_scene` (the first string-taking engine functions).
 4. **Later, each its own item:** `Map<string, T>` and string-keyed records, ropes, `RegExp`,
    `JSON`, `normalize`, `localeCompare`/`Intl`.
 

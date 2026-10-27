@@ -2,7 +2,7 @@
 
 //! The typed window messages (`postMessage<T>`, `onMessage<T>`, `request<R>`, the named events
 //! `emit` / `on` / `ask<R>` / `answer`, `Window.broadcast` / `emitAll`; docs/windows.md) over the
-//! JSON natives of `iron_engine_api::window` (`postMessageJson`, `emitJson`, `requestJson`,
+//! JSON natives of `platypus_engine_api::window` (`postMessageJson`, `emitJson`, `requestJson`,
 //! `askJson`, ..). The engine writes the event envelope, keeps the pending requests and settles
 //! their promises, checks names and sizes; what is left for the compiler is the static type: it
 //! writes, per program, functions that stringify the payload and parse what arrives as the type

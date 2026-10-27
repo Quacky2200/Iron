@@ -2,9 +2,11 @@
 
 //! The `Window` API's host side: requests, events, closing. IDs are in TESTS.md (M9-API-14xx).
 //! The Rust API and the generated shims are called directly: no display, no GPU, no script runtime.
-use iron_api::Callback;
-use iron_engine_api::app;
-use iron_engine_api::window::{self, MAIN, Opened, Style, WindowRef, WindowRequest, window_api};
+use platypus_api::Callback;
+use platypus_engine_api::app;
+use platypus_engine_api::window::{
+    self, MAIN, Opened, Style, WindowRef, WindowRequest, window_api,
+};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -78,7 +80,7 @@ fn opened(w: WindowRef, size: (f64, f64)) {
 fn the_main_window_exists_from_the_start_and_takes_the_manifest_title() {
     fresh();
     assert_eq!(WindowRef::main(), MAIN);
-    assert_eq!(MAIN.title(), "Iron");
+    assert_eq!(MAIN.title(), "Platypus");
     window::set_main("Game", (800.0, 600.0), 2.0);
     assert_eq!(WindowRef::main().title(), "Game");
     assert_eq!(

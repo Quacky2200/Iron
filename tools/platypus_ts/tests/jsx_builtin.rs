@@ -4,7 +4,7 @@
 //! `Ui` namespace itself. These tests only compile; linking `ts_ui_*` is the host's business.
 
 fn compile(src: &str, manifests: &[String]) -> Result<(), String> {
-    iron_ts::compile_with_manifests(src, "speed", "jx_", 100, manifests).map(|_| ())
+    platypus_ts::compile_with_manifests(src, "speed", "jx_", 100, manifests).map(|_| ())
 }
 
 fn ok(src: &str) {
@@ -107,7 +107,7 @@ fn typescript_that_is_not_tsx_is_left_to_the_ordinary_parse() {
 #[test]
 fn an_explicit_ui_manifest_is_still_accepted() {
     let src = "export function root(): UiElement { return <box />; }";
-    let manifests = vec![iron_ts::lower::UI_MANIFEST.to_string()];
+    let manifests = vec![platypus_ts::lower::UI_MANIFEST.to_string()];
     if let Err(e) = compile(src, &manifests) {
         panic!("{e}");
     }

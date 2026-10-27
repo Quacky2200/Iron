@@ -6,9 +6,9 @@
 mod common;
 
 use common::{Dom, px};
-use iron_core::Value;
-use iron_ui::events::Modifiers;
-use iron_ui::{Clipboard, DrawCmd, Input, Interaction, Rgba, UiTree};
+use platypus_core::Value;
+use platypus_ui::events::Modifiers;
+use platypus_ui::{Clipboard, DrawCmd, Input, Interaction, Rgba, UiTree};
 
 struct Page {
     tree: UiTree,
@@ -80,7 +80,7 @@ impl Page {
         self.ui.take_clipboard()
     }
 
-    fn quads(&mut self) -> Vec<(iron_ui::Rect, Rgba)> {
+    fn quads(&mut self) -> Vec<(platypus_ui::Rect, Rgba)> {
         self.tree
             .draw_list()
             .into_iter()
@@ -116,7 +116,7 @@ fn double_click_selects_a_word_and_triple_click_a_line() {
         "",
     );
     // Somewhere in "beta" (the second word on the first line).
-    let x = p.tree.rect(iron_core::NodeId(2)).unwrap().x;
+    let x = p.tree.rect(platypus_core::NodeId(2)).unwrap().x;
     let beta_x = x + 75.0;
     p.click(beta_x, 10.0, 0.0);
     p.click(beta_x, 10.0, 100.0);
@@ -141,7 +141,7 @@ fn user_select_none_and_all() {
     p.input(Input::PointerMove { x: 300.0, y: 10.0 });
     p.release();
     assert_eq!(p.selected(), None, "user-select: none");
-    let y = p.tree.rect(iron_core::NodeId(4)).unwrap().y + 10.0;
+    let y = p.tree.rect(platypus_core::NodeId(4)).unwrap().y + 10.0;
     p.click(30.0, y, 1000.0);
     assert_eq!(
         p.selected().as_deref(),
@@ -149,8 +149,8 @@ fn user_select_none_and_all() {
         "one click takes all"
     );
     // `none` text shows the arrow, selectable text the I-beam.
-    assert_eq!(p.tree.cursor(Some(iron_core::NodeId(2))), "default");
-    assert_eq!(p.tree.cursor(Some(iron_core::NodeId(4))), "text");
+    assert_eq!(p.tree.cursor(Some(platypus_core::NodeId(2))), "default");
+    assert_eq!(p.tree.cursor(Some(platypus_core::NodeId(4))), "text");
 }
 
 // M3-SEL-01
@@ -222,7 +222,7 @@ fn placeholder_rules_style_the_placeholder() {
     let mut d = Dom::new();
     let input = d.add(0, "input", &[("color", "white".into())]);
     d.ops.push(common::op(
-        iron_ui::opcodes::SET_ATTRS,
+        platypus_ui::opcodes::SET_ATTRS,
         &[common::n(input), "placeholder".into(), "Name".into()],
     ));
     let mut tree = d.build("input::placeholder { color: #ff0000; opacity: 0.5; font-size: 30px }");

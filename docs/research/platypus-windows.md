@@ -1,12 +1,12 @@
 # Windows: a `Window` class for games (design)
 
 Status: design, 2026-10-21; revised the same day with the user's answers (families and event domains, section 3a;
-messages, section 3b; `Window.main` as a static property in both backends; section 14). Steps: [iron-windows-plan.md](iron-windows-plan.md). Test IDs: `M9-API-1400..1499`,
+messages, section 3b; `Window.main` as a static property in both backends; section 14). Steps: [platypus-windows-plan.md](platypus-windows-plan.md). Test IDs: `M9-API-1400..1499`,
 `M9-TS-2800..2899`.
 
 ## 1. What the user asked for
 
-- The **game** names its window. The manifest title (`iron.title` in `package.json` today, `title` in `project.json` once
+- The **game** names its window. The manifest title (`platypus.title` in `package.json` today, `title` in `project.json` once
   that lands) is only the title the window opens with; `Window.main.title = "..."` changes it at any time.
 - Games make **more windows**: tool windows (palettes, inspectors) owned by the main window, dialogs, popups, borderless
   windows, each with its **own UI** (`createRoot(win).render(<Panel/>)`).
@@ -16,14 +16,14 @@ messages, section 3b; `Window.main` as a static property in both backends; secti
 
 Constraints that shape the design:
 
-- **GPU caution.** The user's PC has hard-reset with the Iron window open (an NVIDIA instability older than Iron). More windows
+- **GPU caution.** The user's PC has hard-reset with the Platypus window open (an NVIDIA instability older than Platypus). More windows
   means more swapchains. Every automated check in the plan is a fake-backend test or a `--screenshot` run, and screenshot runs
   make **no OS window for secondary windows** (they render offscreen, section 7.4). Nothing in the plan opens an interactive
   window.
 - **Rust owns the world, JS owns behaviour.** Scripts hold `Window` handles (numbers inside); the OS windows, surfaces and UI
   trees live in Rust.
-- **One API for both runtimes.** Declared once with `#[iron_api(namespace = "Window", quickjs, handles(Window = WindowRef))]`
-  in `iron_engine_api`, like `Screen` and `Cursor`; compiled games (`iron_ts`) and QuickJS both get it.
+- **One API for both runtimes.** Declared once with `#[platypus_api(namespace = "Window", quickjs, handles(Window = WindowRef))]`
+  in `platypus_engine_api`, like `Screen` and `Cursor`; compiled games (`platypus_ts`) and QuickJS both get it.
 
 ## 2. Findings: what the stack gives us
 
@@ -56,7 +56,7 @@ after creation would be undone at the first `set_visible(true)`. The fix: **subc
 `SetWindowSubclass` (comctl32, `windows-sys` feature `Win32_UI_Shell`, already in the registry at 0.52) and, in
 `WM_STYLECHANGING` for `GWL_EXSTYLE`, OR `WS_EX_TOOLWINDOW` into `STYLESTRUCT.styleNew` (and drop `WS_EX_APPWINDOW`). The
 style is applied once with `SetWindowLongPtrW` + `SetWindowPos(SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-SWP_NOACTIVATE)` and the subclass keeps it. `iron_platform` already uses `windows-sys` 0.52 (winit's version) for the black
+SWP_NOACTIVATE)` and the subclass keeps it. `platypus_platform` already uses `windows-sys` 0.52 (winit's version) for the black
 class brush; the plan adds the `Win32_UI_Shell` feature. No new crate.
 
 Alt-Tab and the taskbar on Windows: a window shows in both when it is unowned or has `WS_EX_APPWINDOW`, and is hidden from both
@@ -64,7 +64,7 @@ when it has `WS_EX_TOOLWINDOW`. An owned window without `WS_EX_APPWINDOW` alread
 also removes it from Alt-Tab and gives the small caption. `with_skip_taskbar(true)` is set too, harmlessly, for the cases winit
 re-adds `WS_EX_APPWINDOW` (it does when `ON_TASKBAR` is set).
 
-### 2.2 wgpu 30 and `iron_render`
+### 2.2 wgpu 30 and `platypus_render`
 
 - `Gpu` holds one `Instance`, `Adapter`, `Device`, `Queue`; `Gpu::with_surface` makes the instance, the first surface and the
   adapter together. Further surfaces come from `gpu.instance.create_surface(Arc<Window>)`; `adapter.is_surface_supported` checks
@@ -80,16 +80,16 @@ re-adds `WS_EX_APPWINDOW` (it does when `ON_TASKBAR` is set).
   `QualitySettings.vSyncCount` as today. Secondary windows draw once per main frame; a minimised, hidden or 0 x 0 window is
   skipped by `WindowSurface` itself.
 
-### 2.3 Iron today (base `c3ffc1b`)
+### 2.3 Platypus today (base `c3ffc1b`)
 
-- `iron_platform::Platform::run(WindowConfig, app)` makes **one** window in `resumed`, hidden until its first frame, and calls
+- `platypus_platform::Platform::run(WindowConfig, app)` makes **one** window in `resumed`, hidden until its first frame, and calls
   `PlatformApp::{window_ready, input, frame, ...}`. `window_event` ignores the `WindowId`; `CloseRequested` exits the loop.
-- `iron_app::App` has one `Gfx { gpu, surface, window, renderer, world }`, the screen `UiTree` (`self.ui`) with its
+- `platypus_app::App` has one `Gfx { gpu, surface, window, renderer, world }`, the screen `UiTree` (`self.ui`) with its
   `Interaction`, and `Surface::{Screen, Panel(id)}` routing for the pointer and keys between the screen and world panels.
 - World panels (`panels.rs`) are the model for per-window UI: their own `UiTree`, `Interaction`, stylesheet and font copies
-  (`new_panel_tree`), QuickJS commits with a target id, and for compiled games their own `iron_ui_native::Runtime`
-  (`native_render.rs`) fed by `UiRoot.mount(panel, element)` (`iron_ts_ui::mount`).
-- The `Screen` API (`iron_engine_api::screen`) is per thread with host functions (`update`, `set_display`, `take_requests`).
+  (`new_panel_tree`), QuickJS commits with a target id, and for compiled games their own `platypus_ui_native::Runtime`
+  (`native_render.rs`) fed by `UiRoot.mount(panel, element)` (`platypus_ts_ui::mount`).
+- The `Screen` API (`platypus_engine_api::screen`) is per thread with host functions (`update`, `set_display`, `take_requests`).
   The `Window` module copies that pattern.
 - `--screenshot` renders the main window offscreen at its size and writes one PNG.
 
@@ -185,7 +185,7 @@ declare class Window {
   static create(options?: WindowOptions): Window;
 
   // ---- Identity ----
-  /** Iron's id: 1 for the main window, then 2, 3, ... never reused in a run. */
+  /** Platypus's id: 1 for the main window, then 2, 3, ... never reused in a run. */
   readonly handle: number;
   /** The OS handle as a number: HWND on Windows, the NSView pointer on macOS, the X11 window id; 0 when there is
    *  none (a screenshot run's offscreen window, Wayland, before the OS window exists). For passing to native plugins. */
@@ -341,8 +341,8 @@ and `EventLoop::new` fails a second time anywhere). So "each isolated window has
   tick stays the main domain's step. All domains run in the one script runtime (one heap): isolation is enforced at the API
   (input and focus are per domain, cross-family window changes are refused, handles can't travel in messages), not by the
   memory model. A slow handler in one domain still delays the others.
-- **Phase B (later): a domain on its own thread.** Iron's engine API state is already per thread (`thread_local!` in
-  `iron_engine_api`, `iron_scene::api::enter`, `iron_render_api`, `iron_physics_api`), so a domain thread starts with empty
+- **Phase B (later): a domain on its own thread.** Platypus's engine API state is already per thread (`thread_local!` in
+  `platypus_engine_api`, `platypus_scene::api::enter`, `platypus_render_api`, `platypus_physics_api`), so a domain thread starts with empty
   engine state of its own. It would need: its own script runtime (a second QuickJS runtime, or for compiled games a second
   JIT instance of the program with its own globals: each compile already gets its own `struct_base`, but module globals of
   one instance are shared between threads today, so a second compile is required), its own `Scene`, UI trees and native UI
@@ -393,7 +393,7 @@ inspector.run(() => {
   per-domain `onReplyJson(id, text, error)` hook; `reply` is `Window.replyJson(id, text)`.
 - **Broadcast.** `Window.broadcast(data)` posts to the root of every family except the sender's own.
 - **Within a family** direct calls keep working (same domain, same heap): messages are optional there.
-- **Engine side.** Messages are `(from, to, text, request id, reply-to id)` records in `iron_engine_api::window`; the app
+- **Engine side.** Messages are `(from, to, text, request id, reply-to id)` records in `platypus_engine_api::window`; the app
   only pumps them per domain. In phase B they are what crosses the channel.
 
 ## 4. Styles per platform
@@ -414,7 +414,7 @@ inspector.run(() => {
 - **Transparent windows** are out of scope for now (`with_transparent` plus a non-opaque `alpha_mode` on the surface); the
   option is not in `WindowOptions` until built (D4).
 
-## 5. The Rust `#[iron_api]` shape (`crates/iron_engine_api/src/window.rs`)
+## 5. The Rust `#[platypus_api]` shape (`crates/platypus_engine_api/src/window.rs`)
 
 Per-thread state with host functions, like `screen.rs`. No winit types: the app translates.
 
@@ -505,7 +505,7 @@ pub fn deliver(d: DomainId, now_ms: f64);
 pub fn pending(d: DomainId) -> usize;
 pub const MAX_MESSAGE_BYTES: usize = 1 << 20;
 
-#[iron_api(namespace = "Window", quickjs, handles(Window = WindowRef))]
+#[platypus_api(namespace = "Window", quickjs, handles(Window = WindowRef))]
 pub mod window_api {
     use super::*;
     impl WindowRef {
@@ -601,7 +601,7 @@ Notes:
   `[1, 16384]`; a `parent` that is closed or the window itself is ignored; `child` set after creation is ignored.
 - **Closed windows.** Getters read the last state; setters and `focus` do nothing; `on*` returns 0.
 - **Events are synchronous** from the host's calls, emitted after the state borrow is released from a snapshot
-  (`iron_api::callback::{Listeners, emit}`), so listeners may call the API, open windows or close them.
+  (`platypus_api::callback::{Listeners, emit}`), so listeners may call the API, open windows or close them.
 - **Cross-family changes.** Every setter, `focus`, `close`, `center` and `on*` checks `domain_of(self) ==
   current_domain()` (main-domain code may change any window of the main family; nobody changes another family's windows):
   otherwise a warning and no effect (`on*` returns 0).
@@ -613,23 +613,23 @@ Notes:
 
 ## 6. Runtimes
 
-| | Compiled (`iron_ts`) | QuickJS |
+| | Compiled (`platypus_ts`) | QuickJS |
 |---|---|---|
 | Declarations | Manifest + `engine_ts.d.ts` supplement: `declare namespace Window { const main: Window; const focused: Window \| undefined; const current: Window; const count: number; function create(options?: WindowOptions): Window; }`, `interface WindowOptions`, `type WindowStyle` | Same globals (installed by `window_api::register_quickjs`) |
 | `Window.main` | A static getter in the manifest; `facade.rs::ext_static_prop` already reads no-argument statics as properties | A static accessor property on the class object (`Object::prop(name, Accessor::new_get(..))`, rquickjs 0.14 `object/property.rs`), plan step 3a: `Window.main` reads the same in both backends |
 | Messages | `postMessage(data)` / `request(data)` / `broadcast(data)` lower to `JSON.stringify` of the static type (handles are a compile error) plus `postMessageJson` / `postRequestJson` / `broadcastJson`; `onMessage<T>(f)` / `onRequest<T, R>(f)` wrap `f` in a closure that `JSON.parse`s as `T` (and `R` for `reply`); `request` returns a `Promise<R>` from the prelude (`facade.ts`), settled by `onReplyJson` | A JS prelude installed with the class defines `postMessage`, `request`, `onMessage`, `onRequest`, `broadcast` on `Window` / its prototype over the `...Json` natives with `JSON.stringify` (a replacer rejecting handle objects and functions) and `JSON.parse` |
 | `Window.create({..})` | `call_ext_args` maps a trailing object literal onto the optional parameters by name, honouring the manifest defaults | New `#[options]` attribute (plan step 3): a single plain object at the first optional position is read by camelCase name |
-| `createRoot(win)` | `UiRoot.mount(win, el)`: a third overload `ts_ui_mount_window(window: handle:Window, element)` into its own queue, `iron_ts_ui::take_window_mounts()` | `@iron/react` `createRoot(target)`: a `Window` object (it has `handle`) becomes the target id `iron_core::WINDOW_TARGET \| handle`; the main window is target 0 |
-| Callbacks | `Callback<..>` from compiled closures | `Callback<..>` from JS functions (`iron_api::qjs::keep_function`) |
+| `createRoot(win)` | `UiRoot.mount(win, el)`: a third overload `ts_ui_mount_window(window: handle:Window, element)` into its own queue, `platypus_ts_ui::take_window_mounts()` | `@platypus/react` `createRoot(target)`: a `Window` object (it has `handle`) becomes the target id `platypus_core::WINDOW_TARGET \| handle`; the main window is target 0 |
+| Callbacks | `Callback<..>` from compiled closures | `Callback<..>` from JS functions (`platypus_api::qjs::keep_function`) |
 | Hot reload | `Native::reload` | QuickJS reload in `reload_scripts` |
 
-QuickJS games run the `@iron/engine` path and the app does not install `iron_native` there. The plan installs **only**
+QuickJS games run the `@platypus/engine` path and the app does not install `platypus_native` there. The plan installs **only**
 `window_api::register_quickjs` into the app's QuickJS runtime (`QuickJsRuntime::add_native`), so bun-built games get the same
 global `Window`; `js/engine` adds `window.ts` (types and a re-export of `globalThis.Window`).
 
-## 7. Platform abstraction (`iron_platform`)
+## 7. Platform abstraction (`platypus_platform`)
 
-### 7.1 Types (`crates/iron_platform/src/windows.rs`, no winit in the pure part)
+### 7.1 Types (`crates/platypus_platform/src/windows.rs`, no winit in the pure part)
 
 ```rust
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -760,7 +760,7 @@ pub(crate) fn set_tool_window(window: &Window, on: bool);
 GWL_EXSTYLE`, and `WM_NCDESTROY` by `RemoveWindowSubclass`; everything goes on to `DefSubclassProc`. `on = false` removes the
 subclass and clears the bit the same way.
 
-### 7.4 The fake platform (`crates/iron_platform/src/fake.rs`)
+### 7.4 The fake platform (`crates/platypus_platform/src/fake.rs`)
 
 Drives any `PlatformApp` without winit, a display or a GPU, for unit tests:
 
@@ -786,9 +786,9 @@ The same `run_commands` logic is shared: a private `trait Backend { fn open(..) 
 fn destroy(..); }` with `WinitBackend<'a>(&'a ActiveEventLoop, ...)` and `FakeBackend`, and one generic
 `fn run_commands<B: Backend>(app, backend, tree, cmds)`, so the fake tests the real command path, not a copy.
 
-## 8. The app (`crates/iron_app`)
+## 8. The app (`crates/platypus_app`)
 
-### 8.1 Per-window state (`crates/iron_app/src/windows.rs`)
+### 8.1 Per-window state (`crates/platypus_app/src/windows.rs`)
 
 ```rust
 pub struct AppWindow {
@@ -820,9 +820,9 @@ pub struct Domain {
 pub struct Domains { pub map: BTreeMap<DomainId, Domain> }
 ```
 
-Per-domain `input` state lives in `iron_engine_api::input` (its `State` becomes a map by `DomainId` with the current domain
+Per-domain `input` state lives in `platypus_engine_api::input` (its `State` becomes a map by `DomainId` with the current domain
 chosen by `window::current_domain()`; the main domain is the existing state, so existing code reads the same). For QuickJS
-games, `@iron/engine`'s `input` stays the main domain's in phase A: isolated windows get keys through their UI events only
+games, `@platypus/engine`'s `input` stays the main domain's in phase A: isolated windows get keys through their UI events only
 (listed as a difference).
 
 The main window is **not** an `AppWindow`: `self.ui`, `self.interaction`, `Gfx.surface` stay as they are, so single-window
@@ -837,7 +837,7 @@ games run the same code. `Surface` gains `Window(u32)` for the routing helpers (
    `window::opened(w, Opened { .. })`.
 3. Mounts: QuickJS commits with target `WINDOW_TARGET | handle` go to that window's tree (a commit before the window opened is
    kept in a pending list, as panels do with commits before their component starts); compiled `take_window_mounts()` render
-   with a per-window `iron_ui_native::Runtime` (`native_render.rs` keeps `runtimes` for panels; windows get a second map),
+   with a per-window `platypus_ui_native::Runtime` (`native_render.rs` keeps `runtimes` for panels; windows get a second map),
    flushed every frame.
 4. **Domains.** `pump_domains(now_ms)` once per frame, main domain first: inside `window::enter_domain(d)` it calls
    `window::deliver(d, now_ms)` (messages, requests, replies, timeouts), fires `d`'s due timers unless `d` is paused (compiled:
@@ -852,7 +852,7 @@ games run the same code. `Surface` gains `Window(u32)` for the routing helpers (
 | Event from | Goes to |
 |---|---|
 | Main window | As today (screen, world panels, game input of the main domain) |
-| Any other window: pointer, wheel | Queued for its domain; dispatched to that window's `Interaction` (its own hover, active, capture: `buttons_down` per window) through `__iron_ui_event` with the window's target (QuickJS) or the window's native runtime |
+| Any other window: pointer, wheel | Queued for its domain; dispatched to that window's `Interaction` (its own hover, active, capture: `buttons_down` per window) through `__platypus_ui_event` with the window's target (QuickJS) or the window's native runtime |
 | Any other window: keys, IME | Queued for its domain; that window's `Interaction` (keyboard focus is per OS window, so the OS already sent them to the right one), then the **domain's** `input` state unless typing in a text field. A tool window's keys therefore reach the main game's `input` (same family); an isolated window's never do |
 | Modifiers | Every tree of that window's family |
 | Gamepads | To the focused domain's `input`, or the main domain's when none is focused |
@@ -963,9 +963,9 @@ main window is never affected. `win.onOpened((width, height, scale) => ..)` fire
 | `focused` as a static and an instance member | `#[js_name]`, checked by `M9-TS-2802`, fallback `isFocused` (5). |
 | QuickJS options objects | New `#[options]` macro attribute with its own tests (plan step 3). |
 | One heap for all domains (phase A): code can still share module variables across families | Documented; the API refuses cross-family window changes and handles in messages, which covers what the engine owns. Phase B gives real isolation. |
-| Timers per domain need runtime support | A domain tag per timer in `iron_ts_rt` (`event.rs`) and the QuickJS timers prelude (plan step 9b); until then timers fire in the main domain. |
+| Timers per domain need runtime support | A domain tag per timer in `platypus_ts_rt` (`event.rs`) and the QuickJS timers prelude (plan step 9b); until then timers fire in the main domain. |
 | Per-domain `input` changes a widely used module | The main domain is the existing state; only reads made with another domain current see a different one (tests in 9a). |
-| Large `iron_app` changes | Main-window code paths are untouched; new code lives in `windows.rs`; `PlatformApp` methods have defaults. |
+| Large `platypus_app` changes | Main-window code paths are untouched; new code lives in `windows.rs`; `PlatformApp` methods have defaults. |
 
 ## 14. Decisions (answered by the user, 2026-10-21)
 

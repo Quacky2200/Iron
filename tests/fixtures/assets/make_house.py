@@ -95,7 +95,7 @@ def main():
         blob.append(0)
 
     doc = {
-        "asset": {"version": "2.0", "generator": "Iron make_house.py"},
+        "asset": {"version": "2.0", "generator": "Platypus make_house.py"},
         "extensionsUsed": ["KHR_materials_unlit"],
         "scene": 0,
         "scenes": [{"nodes": [0]}],

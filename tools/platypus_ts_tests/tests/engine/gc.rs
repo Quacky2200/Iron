@@ -2,9 +2,9 @@
 
 //! The collector under the zombie sim: it must not change what the game computes, and it must
 //! keep memory bounded. IDs are in TESTS.md (M9-TS-23..25).
-use iron_ts_rt::{gc_stats, link_anchor, ts_rt_gc_collect, ts_rt_gc_stress};
-use iron_ts_tests::sim::*;
-use iron_ts_tests::*;
+use platypus_ts_rt::{gc_stats, link_anchor, ts_rt_gc_collect, ts_rt_gc_stress};
+use platypus_ts_tests::sim::*;
+use platypus_ts_tests::*;
 
 fn run_busy(steps: usize) -> f64 {
     assert_ne!(link_anchor(), 0);
@@ -18,7 +18,7 @@ fn run_busy(steps: usize) -> f64 {
 // M9-TS-23
 #[test]
 fn collecting_at_every_allocation_changes_nothing_the_game_computes() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let normal = run_busy(600);
     ts_rt_gc_stress(true);
     let before = gc_stats().collections;
@@ -35,7 +35,7 @@ fn collecting_at_every_allocation_changes_nothing_the_game_computes() {
 // M9-TS-24
 #[test]
 fn a_long_run_collects_on_its_own_and_memory_stays_bounded() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let b = {
         assert_ne!(link_anchor(), 0);
         busy_state()
@@ -62,7 +62,7 @@ fn a_long_run_collects_on_its_own_and_memory_stays_bounded() {
 // M9-TS-25
 #[test]
 fn what_the_host_roots_survives_and_the_rest_is_freed() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let b = busy_state();
     for _ in 0..300 {
@@ -93,7 +93,7 @@ fn what_the_host_roots_survives_and_the_rest_is_freed() {
 // and `sum` read poisoned memory.
 #[test]
 fn a_field_value_held_as_an_argument_survives_the_object_being_overwritten() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     ts_rt_gc_stress(true);
     unsafe {
@@ -116,7 +116,7 @@ fn a_field_value_held_as_an_argument_survives_the_object_being_overwritten() {
 // one, and `fresh(1)` allocates after the reassignment. Result: 5 + 1.
 #[test]
 fn a_local_reassigned_while_its_old_value_waits_as_an_argument_survives() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     ts_rt_gc_stress(true);
     unsafe {
@@ -138,7 +138,7 @@ fn a_local_reassigned_while_its_old_value_waits_as_an_argument_survives() {
 // needs the same rooting as passing them.
 #[test]
 fn a_pointer_waiting_to_be_compared_is_not_freed_and_reused() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     ts_rt_gc_stress(true);
     unsafe {
@@ -157,7 +157,7 @@ fn a_pointer_waiting_to_be_compared_is_not_freed_and_reused() {
 // traces the wrong slots (or frees what it cannot see).
 #[test]
 fn two_modules_in_one_heap_keep_their_own_pointer_maps() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     ts_rt_gc_stress(true);
     unsafe {

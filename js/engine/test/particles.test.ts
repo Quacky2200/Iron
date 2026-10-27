@@ -12,11 +12,11 @@ beforeEach(() => {
   _resetSceneForTests();
   _resetParticlesForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const particleOps = () => ops.filter((o) => String(o[0]).startsWith("render.particle"));
@@ -71,9 +71,9 @@ describe("ParticleSystem", () => {
     ]);
     expect(ps.isPlaying).toBe(false);
     ps.play();
-    globalThis.__iron_particles([ps.id, 40, 1]);
+    globalThis.__platypus_particles([ps.id, 40, 1]);
     expect([ps.particleCount, ps.isPlaying]).toEqual([40, true]);
-    globalThis.__iron_particles([ps.id, 0, 0]);
+    globalThis.__platypus_particles([ps.id, 0, 0]);
     expect(stopped).toBe(1);
     // stopAction "destroy" removed the object.
     expect(ops.some((o) => o[0] === "scene.destroy" && o[1] === go.id)).toBe(true);

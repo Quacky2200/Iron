@@ -9,7 +9,7 @@
 //     @property target: GameObject | null = null;
 //   }
 
-const PROPERTIES = Symbol("iron.properties");
+const PROPERTIES = Symbol("platypus.properties");
 
 // Bun's decorator helpers put metadata under `Symbol.metadata` when it exists, else
 // under `Symbol.for("Symbol.metadata")`.

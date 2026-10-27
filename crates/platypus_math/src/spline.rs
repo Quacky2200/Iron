@@ -8,7 +8,7 @@
 //! `evaluate(t)` goes by distance (t 0 to 1 along the whole length), so things move along a spline
 //! at a steady speed; `segment_point(i, u)` goes by each segment's own parameter. Ported from
 //! `js/engine/src/spline.ts` and the compiled facade, in the same order of operations, so the
-//! numbers are bit for bit what they were. Plain maths: `iron_engine_api::spline` makes it
+//! numbers are bit for bit what they were. Plain maths: `platypus_engine_api::spline` makes it
 //! the script `Spline`.
 
 use crate::jsnum;

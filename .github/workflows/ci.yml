@@ -37,7 +37,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build                      # M1-BLD-03 (the editor)
-      - run: bun run typecheck:js               # M1-BLD-04 (the examples are checked by `iron-build check --tsc`, `typecheck:examples`)
+      - run: bun run typecheck:js               # M1-BLD-04 (the examples are checked by `platypus-build check --tsc`, `typecheck:examples`)
       - run: bun test
       - name: Committed test fixtures match their TypeScript sources
         run: bun run build:fixtures && git diff --exit-code tests/fixtures

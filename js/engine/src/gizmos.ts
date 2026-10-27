@@ -112,7 +112,7 @@ export const Gizmos = {
    * so presenting nothing clears them) and starts over.
    */
   present(camera: Camera): void {
-    __iron_op("render.gizmos", camera.id, lines);
+    __platypus_op("render.gizmos", camera.id, lines);
     lines = [];
   },
 };

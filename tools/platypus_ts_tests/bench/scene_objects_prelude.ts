@@ -5,7 +5,7 @@
 import "./hypot_patch.ts";
 import { GameObject, Transform, _resetSceneForTests } from "../../../js/engine/src/scene.ts";
 
-(globalThis as any).__iron_op = () => {};
+(globalThis as any).__platypus_op = () => {};
 _resetSceneForTests();
 
 const NONE = { destroyed: true, name: "", childCount: 0 };

@@ -1,26 +1,26 @@
 # md-reader
 
-A Markdown reader for Iron's own docs, drawn entirely by Iron's UI (React through Iron's
-reconciler, laid out by Taffy, text by Parley, drawn by Iron's renderer). It shows `docs/` and
+A Markdown reader for Platypus's own docs, drawn entirely by Platypus's UI (React through Platypus's
+reconciler, laid out by Taffy, text by Parley, drawn by Platypus's renderer). It shows `docs/` and
 the repository's top-level `.md` files.
 
 ## Running it
 
-Build the example with `iron-build` (this also bundles the docs), then run it. A release build
+Build the example with `platypus-build` (this also bundles the docs), then run it. A release build
 scrolls and loads long pages much faster than a debug one.
 
 ```bash
-cd tools && cargo run -p iron_build -- build ../examples/md-reader
+cd tools && cargo run -p platypus_build -- build ../examples/md-reader
 ```
 
 ```bash
-cargo run --release -p iron_app -- examples/md-reader
+cargo run --release -p platypus_app -- examples/md-reader
 ```
 
 The docs are bundled at build time by `gen-docs.ts`, which `project.json`'s `prebuild` runs with
 bun before each build: every `.md` under `docs/` and in the repository root goes into
 `src/docs.gen.ts`, and the images they can show are copied into `content/` (both git-ignored).
-Build again after editing the docs, or use `iron-build dev ../examples/md-reader`, which rebuilds
+Build again after editing the docs, or use `platypus-build dev ../examples/md-reader`, which rebuilds
 on every change.
 
 ## Using it
@@ -31,7 +31,7 @@ on every change.
 | Show or hide the file tree | The ☰ button, or Ctrl+B |
 | Back / forward | The ← / → buttons, Alt+← / Alt+→, or the mouse's side buttons |
 | Home (`docs/README.md`) | The house button |
-| Open a folder's listing | Click a folder in the path bar (`Iron / docs / …`), or a `folder/` link |
+| Open a folder's listing | Click a folder in the path bar (`Platypus / docs / …`), or a `folder/` link |
 | Light / dark | The sun / moon button on the right (remembered between runs) |
 
 - Links between docs and to headings (`page.md#heading`) work like a browser's. Links to source
@@ -43,16 +43,16 @@ on every change.
 ## What it renders
 
 Headings, paragraphs, **bold**, *italic*, ~~strikethrough~~, `inline code`, links, images (PNG,
-JPEG and SVG; GIFs show their caption until Iron decodes them), lists (nested, numbered, task
+JPEG and SVG; GIFs show their caption until Platypus decodes them), lists (nested, numbered, task
 lists), quotes, GitHub tables, rules and code blocks. Code is highlighted for TypeScript /
 JavaScript, Rust, WGSL, CSS, JSON, TOML and shell, in Atom's One Dark or One Light colours.
 
 ## Command-line arguments
 
-Arguments after `--` go to the reader (Iron passes them to scripts as `Application.args`):
+Arguments after `--` go to the reader (Platypus passes them to scripts as `Application.args`):
 
 ```bash
-cargo run --release -p iron_app -- examples/md-reader -- --goto "docs/ui-tree.md#images"
+cargo run --release -p platypus_app -- examples/md-reader -- --goto "docs/ui-tree.md#images"
 ```
 
 - `--goto "<doc>#<anchor>"`: open a doc, relative to the root (`docs/css.md`, or a folder for its
@@ -65,13 +65,13 @@ cargo run --release -p iron_app -- examples/md-reader -- --goto "docs/ui-tree.md
   The target is highlighted, then fades. Links inside the docs take the same anchors
   (`[see](ui-tree.md#L300)`). An unknown doc or anchor is reported in the status bar.
 - `--root <folder>`: reserved for reading another folder of docs. For now it stops with an
-  error (exit code 2), because Iron's scripts can't read folders outside the game yet. Until
+  error (exit code 2), because Platypus's scripts can't read folders outside the game yet. Until
   then, choose the folder when building, with `MD_READER_ROOT` (relative to
   `examples/md-reader`, where the `prebuild` step runs), or run `bun gen-docs.ts --root <folder>`
-  there and build with `iron-build build --no-prebuild`:
+  there and build with `platypus-build build --no-prebuild`:
 
   ```bash
-  cd tools && MD_READER_ROOT=../../../my-project/docs cargo run -p iron_build -- build ../examples/md-reader
+  cd tools && MD_READER_ROOT=../../../my-project/docs cargo run -p platypus_build -- build ../examples/md-reader
   ```
 
   In PowerShell: `$env:MD_READER_ROOT = "..\..\..\my-project\docs"` before the build. Every

@@ -5,7 +5,7 @@
 //! operation over a corpus with ASCII, Latin-1, CJK, astral and lone-surrogate strings. The
 //! operations run here in the same order on the runtime's WTF-8 strings. IDs are in TESTS.md
 //! (M9-TS-168..).
-use iron_ts_rt::*;
+use platypus_ts_rt::*;
 use serde_json::Value;
 
 fn units(v: &Value) -> Vec<u16> {

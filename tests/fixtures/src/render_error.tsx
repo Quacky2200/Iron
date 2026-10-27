@@ -2,7 +2,7 @@
 
 // A React render error after the first mount (M2-LAY-06): React unmounts the root,
 // and the UI tree must take the resulting commit without the engine falling over.
-import { createRoot, Text } from "@iron/react";
+import { createRoot, Text } from "@platypus/react";
 import { useState } from "react";
 
 let bump = () => {};

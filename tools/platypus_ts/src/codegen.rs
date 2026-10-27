@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Iron IR -> Cranelift -> an object file for the host target.
+//! Platypus IR -> Cranelift -> an object file for the host target.
 //!
 //! Machine types: `Num` f64, `Bool` i8, `Lit` i32, pointers i64. Object and array slots are
 //! 8 bytes wide whatever the value (small values are zero-extended on store).
@@ -144,7 +144,8 @@ pub(crate) fn host_isa(
 pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
     let isa = host_isa(opt, false)?;
     let mut module = ObjectModule::new(
-        ObjectBuilder::new(isa, "iron_ts", default_libcall_names()).map_err(|e| e.to_string())?,
+        ObjectBuilder::new(isa, "platypus_ts", default_libcall_names())
+            .map_err(|e| e.to_string())?,
     );
     generate(&mut module, m)?;
     let object = module.finish().emit().map_err(|e| e.to_string())?;
@@ -170,7 +171,7 @@ pub(crate) fn generate<M: ClifModule>(module: &mut M, m: &Module) -> R<Vec<(Stri
         let (name, linkage) = if f.exported {
             (format!("ts_{}{}", m.prefix, f.name), Linkage::Export)
         } else {
-            (format!("iron_ts_local_{}", f.name), Linkage::Local)
+            (format!("platypus_ts_local_{}", f.name), Linkage::Local)
         };
         let id = module
             .declare_function(&name, linkage, &sig)
@@ -260,7 +261,7 @@ pub(crate) fn generate<M: ClifModule>(module: &mut M, m: &Module) -> R<Vec<(Stri
         itdata.push(id);
     }
 
-    // String literals: static `Str` objects (see iron_ts_rt/src/string.rs for the layout). Writable,
+    // String literals: static `Str` objects (see platypus_ts_rt/src/string.rs for the layout). Writable,
     // because the runtime keeps a scan cursor in the string; the header has no heap id, so the
     // collector never touches them.
     let mut sdata: Vec<DataId> = Vec::new();
@@ -322,7 +323,7 @@ pub(crate) fn generate<M: ClifModule>(module: &mut M, m: &Module) -> R<Vec<(Stri
     let mut imports: HashMap<&'static str, CFuncId> = HashMap::new();
     let mut fbc = FunctionBuilderContext::new();
     for (fi, f) in m.funcs.iter().enumerate() {
-        if std::env::var_os("IRON_TS_TRACE").is_some() {
+        if std::env::var_os("PLATYPUS_TS_TRACE").is_some() {
             eprintln!("codegen {}", f.name);
         }
         let mut ctx = module.make_context();

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Functions that return an unsubscribe function (`#[subscription(off = ..)]`) from QuickJS: the
-//! same native code compiled games call (`tools/iron_ts_tests/tests/engine_api/facade.rs`, M9-TS-3351).
+//! same native code compiled games call (`tools/platypus_ts_tests/tests/engine_api/facade.rs`, M9-TS-3351).
 //! IDs are in TESTS.md (M9-API-1636).
 mod common;
 use common::{js, with_world};
-use iron_engine_api::{app, assets, screen};
+use platypus_engine_api::{app, assets, screen};
 
 // M9-API-1636
 #[test]
@@ -62,9 +62,9 @@ fn listeners_return_a_function_that_stops_them() {
 // reject with an `Error` for a file that cannot be read or parsed.
 #[test]
 fn load_functions_return_promises_the_host_settles() {
-    use iron_scenes as manager;
+    use platypus_scenes as manager;
     with_world(|ctx| {
-        iron_scenes::register_engine_kinds();
+        platypus_scenes::register_engine_kinds();
         let text: String = js(
             ctx,
             r#"
@@ -98,7 +98,7 @@ fn load_functions_return_promises_the_host_settles() {
         }
         let (pid, _) = manager::take_prefab_requests()[0].clone();
         assert!(manager::finish_prefab(pid, Err("missing")).is_err());
-        iron_scenes::dispatch();
+        platypus_scenes::dispatch();
         while ctx.execute_pending_job() {}
         let log: String = js(ctx, "JSON.stringify(log)");
         assert_eq!(
@@ -114,7 +114,7 @@ fn load_functions_return_promises_the_host_settles() {
 // has loaded) and rejects with an `Error` when the load failed.
 #[test]
 fn when_loaded_promises_settle_when_the_host_reports_the_texture() {
-    use iron_render_api::{TextureRef, texture_loaded};
+    use platypus_render_api::{TextureRef, texture_loaded};
     with_world(|ctx| {
         let _: f64 = js(
             ctx,

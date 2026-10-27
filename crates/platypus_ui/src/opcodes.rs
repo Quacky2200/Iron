@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Opcodes for UI commits, shared with `@iron/react` (`js/react/src/opcodes.ts`
+//! Opcodes for UI commits, shared with `@platypus/react` (`js/react/src/opcodes.ts`
 //! must match). Each op is an array `[opcode, ...args]`; node IDs are numbers.
 //!
 //! The root container is node [`crate::ROOT`] (`0`); the reconciler's own nodes
@@ -8,7 +8,7 @@
 //! reinserts a removed instance (moves use `APPEND_CHILD`/`INSERT_BEFORE` directly).
 
 use crate::tree::UiError;
-use iron_core::{NodeId, Value};
+use platypus_core::{NodeId, Value};
 
 /// `[CREATE, id, type]`: creates a detached node of element `type` (e.g. `"box"`).
 pub const CREATE: u32 = 0;

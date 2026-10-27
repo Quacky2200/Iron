@@ -4,16 +4,16 @@
 //! listing, one line per function: `Namespace.Class kind name(params) -> ret`. A development
 //! aid for the engine facade (what the TypeScript examples can call, and what they cannot).
 fn main() {
-    assert_ne!(iron_ts_rt::link_anchor(), 0);
-    assert_ne!(iron_ts_ui::link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
-    assert_ne!(iron_ts_tests::demo_api_anchor(), 0);
-    let _ = iron_ts_tests::scene_anchor();
-    let mut manifests = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
-    manifests.extend(iron_engine_api::manifests());
-    manifests.extend(iron_scenes::manifests());
-    manifests.extend(iron_physics_api::manifests());
-    manifests.extend(iron_render_api::manifests());
+    assert_ne!(platypus_ts_rt::link_anchor(), 0);
+    assert_ne!(platypus_ts_ui::link_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::demo_api_anchor(), 0);
+    let _ = platypus_ts_tests::scene_anchor();
+    let mut manifests = vec![platypus_scene::api::scene_api::MANIFEST.to_json()];
+    manifests.extend(platypus_engine_api::manifests());
+    manifests.extend(platypus_scenes::manifests());
+    manifests.extend(platypus_physics_api::manifests());
+    manifests.extend(platypus_render_api::manifests());
     let mut lines = Vec::new();
     for m in &manifests {
         let v: serde_json::Value = serde_json::from_str(m).expect("manifest json");

@@ -22,9 +22,9 @@ interface Game {
   palette: Palette;
 }
 
-/** "Iron - God rays: the cell" → "God rays: the cell"; no title → "Sine circle demo". */
+/** "Platypus - God rays: the cell" → "God rays: the cell"; no title → "Sine circle demo". */
 function title(name: string, given: unknown): string {
-  if (typeof given === "string" && given.trim()) return given.replace(/^Iron\s*[-—–]\s*/, "").trim();
+  if (typeof given === "string" && given.trim()) return given.replace(/^Platypus\s*[-—–]\s*/, "").trim();
   const words = name.replaceAll("-", " ");
   return words[0]!.toUpperCase() + words.slice(1);
 }

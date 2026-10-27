@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use glam::{Quat, Vec3};
-use iron_scene::{Scene, Transform};
+use platypus_scene::{Scene, Transform};
 
 fn close(a: Vec3, b: Vec3) -> bool {
     (a - b).length() < 1e-4
@@ -120,7 +120,11 @@ fn moved_objects_and_active_state() {
 
 /// The moved list as `mark_moved` kept it before it stopped at listed, stale objects: the whole
 /// subtree walked every time, each object added once.
-fn mark_every_time(s: &Scene, id: iron_scene::ObjectId, moved: &mut Vec<iron_scene::ObjectId>) {
+fn mark_every_time(
+    s: &Scene,
+    id: platypus_scene::ObjectId,
+    moved: &mut Vec<platypus_scene::ObjectId>,
+) {
     let mut stack = vec![id];
     while let Some(id) = stack.pop() {
         if !s.contains(id) {
@@ -134,7 +138,7 @@ fn mark_every_time(s: &Scene, id: iron_scene::ObjectId, moved: &mut Vec<iron_sce
 }
 
 /// The world matrix from the locals up the chain, with no cache.
-fn uncached(s: &Scene, id: iron_scene::ObjectId) -> glam::Affine3A {
+fn uncached(s: &Scene, id: platypus_scene::ObjectId) -> glam::Affine3A {
     let mut m = glam::Affine3A::IDENTITY;
     let mut at = Some(id);
     while let Some(a) = at {

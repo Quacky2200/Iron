@@ -43,7 +43,7 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            title: "Iron".into(),
+            title: "Platypus".into(),
             width: 1280,
             height: 720,
             icon: None,
@@ -168,7 +168,7 @@ pub struct Platform {
 
 impl Platform {
     /// A platform with gamepad support. Gamepads are optional: if `gilrs` can't start
-    /// (e.g. no input subsystem on a CI machine) Iron carries on without them.
+    /// (e.g. no input subsystem on a CI machine) Platypus carries on without them.
     pub fn new() -> Self {
         let gamepads = match gilrs::Gilrs::new() {
             Ok(g) => Some(g),
@@ -197,7 +197,7 @@ impl Platform {
 
     /// Drains pending gamepad events as [`InputEvent::Gamepad`]s.
     ///
-    /// The first poll also announces pads that were plugged in before Iron started (some
+    /// The first poll also announces pads that were plugged in before Platypus started (some
     /// gilrs backends list those without a `Connected` event), and a pad is announced
     /// once however many `Connected` events it gets.
     pub fn poll_gamepads(&mut self) -> Vec<InputEvent> {

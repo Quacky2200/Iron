@@ -10,12 +10,12 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use iron_core::glam::{Mat4, Vec3, Vec4Swizzles};
-use iron_core::{Commit, NodeId, Value};
-use iron_render::{Gpu, RenderTarget, UiRenderer, WorldQuad, wgpu};
-use iron_scene::{ScriptObject, ScriptScene};
-use iron_ui::opcodes::{APPEND_CHILD, CREATE, CREATE_TEXT, SET_STYLE, SET_TEXT};
-use iron_ui::{Interaction, UiTree};
+use platypus_core::glam::{Mat4, Vec3, Vec4Swizzles};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_render::{Gpu, RenderTarget, UiRenderer, WorldQuad, wgpu};
+use platypus_scene::{ScriptObject, ScriptScene};
+use platypus_ui::opcodes::{APPEND_CHILD, CREATE, CREATE_TEXT, SET_STYLE, SET_TEXT};
+use platypus_ui::{Interaction, UiTree};
 
 /// The texture format panels are drawn into (sampled as sRGB by the world pass).
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -339,7 +339,7 @@ impl Panels {
                 panel.texture = Some((texture, view, size));
             }
             let (_, view, _) = panel.texture.as_ref().expect("just made");
-            let transparent = iron_render::Color {
+            let transparent = platypus_render::Color {
                 r: 0.0,
                 g: 0.0,
                 b: 0.0,
@@ -362,7 +362,7 @@ impl Panels {
             let quad = WorldQuad {
                 model,
                 color: panel.tint,
-                texture: Some(iron_render::WorldTexture::Frame(views.len())),
+                texture: Some(platypus_render::WorldTexture::Frame(views.len())),
                 uv: [0.0, 0.0, 1.0, 1.0],
                 additive: false,
                 order: 0,
@@ -442,7 +442,7 @@ fn ray_quad(model: Mat4, origin: Vec3, dir: Vec3) -> Option<(f32, f32, f32)> {
 /// The ray through a window pixel from the camera drawn there last (the highest depth
 /// whose viewport contains it), as (origin, direction).
 pub fn camera_ray(
-    views: &[iron_render::WorldView],
+    views: &[platypus_render::WorldView],
     size: (u32, u32),
     x: f32,
     y: f32,
@@ -456,8 +456,8 @@ pub fn camera_ray(
         }
         let inv = view.camera.view_proj.inverse();
         let (nx, ny) = (u * 2.0 - 1.0, 1.0 - v * 2.0);
-        let near = inv * iron_core::glam::Vec4::new(nx, ny, 0.0, 1.0);
-        let far = inv * iron_core::glam::Vec4::new(nx, ny, 1.0, 1.0);
+        let near = inv * platypus_core::glam::Vec4::new(nx, ny, 0.0, 1.0);
+        let far = inv * platypus_core::glam::Vec4::new(nx, ny, 1.0, 1.0);
         let (near, far) = (near.xyz() / near.w, far.xyz() / far.w);
         Some((near, (far - near).normalize()))
     })
@@ -480,7 +480,7 @@ mod tests {
         // A 2×1 m quad at z = -5, facing the camera at the origin.
         let model = Mat4::from_scale_rotation_translation(
             Vec3::new(2.0, 1.0, 1.0),
-            iron_core::glam::Quat::IDENTITY,
+            platypus_core::glam::Quat::IDENTITY,
             Vec3::new(0.0, 0.0, -5.0),
         );
         let (u, v, d) = ray_quad(model, Vec3::ZERO, Vec3::NEG_Z).unwrap();

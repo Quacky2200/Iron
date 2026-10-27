@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Gamepad glue: events for the game's `input` API (`__iron_input` in @iron/engine)
+//! Gamepad glue: events for the game's `input` API (`__platypus_input` in @platypus/engine)
 //! and gamepad UI navigation (d-pad / left stick move focus, South clicks).
 
 use std::collections::HashMap;
 
-use iron_core::Value;
-use iron_platform::GamepadEvent;
-use iron_ui::{Direction, Input};
+use platypus_core::Value;
+use platypus_platform::GamepadEvent;
+use platypus_ui::{Direction, Input};
 
 /// A stick counts as pushed past this, and released below the lower value, so one
 /// push moves focus once.
 const STICK_PRESS: f32 = 0.6;
 const STICK_RELEASE: f32 = 0.3;
 
-/// Arguments for `__iron_input` for a gamepad event.
+/// Arguments for `__platypus_input` for a gamepad event.
 pub fn script_args(id: u32, event: &GamepadEvent) -> Vec<Value> {
     let id = Value::Number(id.into());
     match event {
@@ -38,10 +38,10 @@ pub fn script_args(id: u32, event: &GamepadEvent) -> Vec<Value> {
     }
 }
 
-/// Applies a `__iron_input` argument list to the native `input` state (and so to the listeners
+/// Applies a `__platypus_input` argument list to the native `input` state (and so to the listeners
 /// compiled code registered). The scene must be current.
 pub fn apply_native(args: &[Value]) {
-    use iron_engine_api::input as i;
+    use platypus_engine_api::input as i;
     let Some(kind) = args.first().and_then(Value::as_str) else {
         return;
     };
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn gamepad_events_reach_script_listeners() {
-        use iron_script::{QuickJsRuntime, ScriptRuntime};
+        use platypus_script::{QuickJsRuntime, ScriptRuntime};
         let mut rt = QuickJsRuntime::new();
         rt.load_bundle("input.js", include_str!("../../../tests/fixtures/input.js"))
             .unwrap();
@@ -170,21 +170,22 @@ mod tests {
             GamepadEvent::ButtonDown("South"),
             GamepadEvent::Axis("LeftStickX", 0.5),
         ] {
-            rt.call_global("__iron_input", &script_args(0, &event))
+            rt.call_global("__platypus_input", &script_args(0, &event))
                 .unwrap();
         }
         let keydown = ["keydown".into(), "KeyW".into(), "w".into(), false.into()];
-        rt.call_global("__iron_input", &keydown).unwrap();
+        rt.call_global("__platypus_input", &keydown).unwrap();
         assert_eq!(
             rt.eval("__input_log()").unwrap(),
             Value::from("connected Pad, down South, LeftStickX 0.5, key KeyW, held true")
         );
     }
-    /// Sends `__iron_input` the way `App::send_game_input_in` does: with domain `d` entered.
-    fn send_in(rt: &mut iron_script::QuickJsRuntime, d: u32, args: &[Value]) {
-        use iron_script::ScriptRuntime;
-        let _g = iron_engine_api::window::enter_domain(iron_engine_api::window::DomainId(d));
-        rt.call_global("__iron_input", args).unwrap();
+    /// Sends `__platypus_input` the way `App::send_game_input_in` does: with domain `d` entered.
+    fn send_in(rt: &mut platypus_script::QuickJsRuntime, d: u32, args: &[Value]) {
+        use platypus_script::ScriptRuntime;
+        let _g =
+            platypus_engine_api::window::enter_domain(platypus_engine_api::window::DomainId(d));
+        rt.call_global("__platypus_input", args).unwrap();
     }
 
     fn key(code: &str, down: bool) -> Vec<Value> {
@@ -199,10 +200,10 @@ mod tests {
     // M9-API-1500
     #[test]
     fn quickjs_input_reads_the_current_event_domain() {
-        use iron_script::{QuickJsRuntime, ScriptRuntime};
-        iron_engine_api::window::reset();
+        use platypus_script::{QuickJsRuntime, ScriptRuntime};
+        platypus_engine_api::window::reset();
         let mut rt = QuickJsRuntime::new();
-        rt.add_native(iron_engine_api::window::register_quickjs)
+        rt.add_native(platypus_engine_api::window::register_quickjs)
             .unwrap();
         rt.load_bundle(
             "input_domains.js",
@@ -214,7 +215,8 @@ mod tests {
             .unwrap();
         assert_eq!(rt.eval("insp.domain").unwrap(), Value::Number(2.0));
         // Main holds KeyA; the Inspector's domain holds KeyB.
-        rt.call_global("__iron_input", &key("KeyA", true)).unwrap();
+        rt.call_global("__platypus_input", &key("KeyA", true))
+            .unwrap();
         send_in(&mut rt, 2, &key("KeyB", true));
         send_in(&mut rt, 2, &["mousemove".into(), 40.0.into(), 7.0.into()]);
         // Main-game code reads main's keys, whatever the other window holds.
@@ -225,14 +227,14 @@ mod tests {
         // The window's `run` callback (its domain current) reads its own.
         rt.eval("insp.run(() => { globalThis.inside = __probe(); });")
             .unwrap();
-        iron_engine_api::window::run_queued(iron_engine_api::window::DomainId(2));
+        platypus_engine_api::window::run_queued(platypus_engine_api::window::DomainId(2));
         assert_eq!(
             rt.eval("globalThis.inside").unwrap(),
             Value::from("A false, B true, A! false, x 40")
         );
         // Frames end per domain: main's tick makes its press "this frame", the Inspector's own does
         // the same for its keys only.
-        rt.call_global("__iron_tick", &[0.016.into()]).unwrap();
+        rt.call_global("__platypus_tick", &[0.016.into()]).unwrap();
         assert_eq!(
             rt.eval("__probe()").unwrap(),
             Value::from("A true, B false, A! true, x 0")
@@ -242,7 +244,7 @@ mod tests {
             "insp.run(() => { Promise.resolve().then(() => { globalThis.job = __probe(); }); });",
         )
         .unwrap();
-        iron_engine_api::window::run_queued(iron_engine_api::window::DomainId(2));
+        platypus_engine_api::window::run_queued(platypus_engine_api::window::DomainId(2));
         rt.eval("0").unwrap();
         assert_eq!(
             rt.eval("globalThis.job").unwrap(),
@@ -252,7 +254,7 @@ mod tests {
         send_in(&mut rt, 2, &["blur".into()]);
         rt.eval("insp.run(() => { globalThis.after = __probe(); });")
             .unwrap();
-        iron_engine_api::window::run_queued(iron_engine_api::window::DomainId(2));
+        platypus_engine_api::window::run_queued(platypus_engine_api::window::DomainId(2));
         assert_eq!(
             rt.eval("globalThis.after").unwrap(),
             Value::from("A false, B false, A! false, x 40")
@@ -263,6 +265,6 @@ mod tests {
         );
         // Listeners belong to the domain that registered them: main's saw only main's press.
         assert_eq!(rt.eval("__listened()").unwrap(), Value::from("KeyA"));
-        iron_engine_api::window::reset();
+        platypus_engine_api::window::reset();
     }
 }

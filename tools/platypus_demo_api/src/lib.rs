@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! A small engine API written with `#[iron_api]`, to prove the whole path: Rust functions, the
-//! generated manifest, and TypeScript compiled by `iron_ts` calling the generated `extern "C"`
+//! A small engine API written with `#[platypus_api]`, to prove the whole path: Rust functions, the
+//! generated manifest, and TypeScript compiled by `platypus_ts` calling the generated `extern "C"`
 //! shims directly. It keeps a tiny "world" of entities behind handles, like the real engine will.
 
-use iron_api::{Handle, ValueType, iron_api};
+use platypus_api::{Handle, ValueType, platypus_api};
 use std::cell::RefCell;
 
 /// An entity id: slot index in the low 32 bits, generation in the high 32 (so a stale id misses).
@@ -66,7 +66,7 @@ fn with_slot<R>(e: EntityId, f: impl FnOnce(&mut Slot) -> R) -> Option<R> {
     })
 }
 
-#[iron_api(namespace = "Demo", handles(Entity = EntityId), values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
+#[platypus_api(namespace = "Demo", handles(Entity = EntityId), values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
 pub mod demo {
     use super::{EntityId, Slot, Vec3, WORLD, id, with_slot};
 
@@ -196,23 +196,23 @@ pub fn declarations() -> String {
 /// script code.
 pub fn link_anchor() -> usize {
     let fns: [usize; 17] = [
-        demo::iron_Demo_scale as *const () as usize,
-        demo::iron_Demo_clampI as *const () as usize,
-        demo::iron_Demo_half as *const () as usize,
-        demo::iron_Demo_isEven as *const () as usize,
-        demo::iron_Demo_reset as *const () as usize,
-        demo::iron_Demo_spawn as *const () as usize,
-        demo::iron_Demo_destroy as *const () as usize,
-        demo::iron_Demo_alive as *const () as usize,
-        demo::iron_Demo_kindOf as *const () as usize,
-        demo::iron_Demo_setHp as *const () as usize,
-        demo::iron_Demo_hp as *const () as usize,
-        demo::iron_Demo_count as *const () as usize,
-        demo::iron_Demo_length as *const () as usize,
-        demo::iron_Demo_scaled as *const () as usize,
-        demo::iron_Demo_cross as *const () as usize,
-        demo::iron_Demo_setPosition as *const () as usize,
-        demo::iron_Demo_position as *const () as usize,
+        demo::platypus_Demo_scale as *const () as usize,
+        demo::platypus_Demo_clampI as *const () as usize,
+        demo::platypus_Demo_half as *const () as usize,
+        demo::platypus_Demo_isEven as *const () as usize,
+        demo::platypus_Demo_reset as *const () as usize,
+        demo::platypus_Demo_spawn as *const () as usize,
+        demo::platypus_Demo_destroy as *const () as usize,
+        demo::platypus_Demo_alive as *const () as usize,
+        demo::platypus_Demo_kindOf as *const () as usize,
+        demo::platypus_Demo_setHp as *const () as usize,
+        demo::platypus_Demo_hp as *const () as usize,
+        demo::platypus_Demo_count as *const () as usize,
+        demo::platypus_Demo_length as *const () as usize,
+        demo::platypus_Demo_scaled as *const () as usize,
+        demo::platypus_Demo_cross as *const () as usize,
+        demo::platypus_Demo_setPosition as *const () as usize,
+        demo::platypus_Demo_position as *const () as usize,
     ];
     fns.iter().sum()
 }

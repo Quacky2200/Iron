@@ -3,9 +3,9 @@
 //! Stylesheets applied to the UI tree: selectors, cascade and restyle
 //! (M3-CSS-02, -03, -04, -08, -09, -10, -11).
 
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::*;
-use iron_ui::{ElementState, Rgba, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::*;
+use platypus_ui::{ElementState, Rgba, UiTree};
 
 fn n(id: u32) -> Value {
     Value::Number(id.into())
@@ -192,7 +192,7 @@ fn structural_pseudo_classes() {
     }
     assert_eq!(tree.visual(NodeId(only)).unwrap().opacity, 0.6);
     assert_eq!(
-        tree.visual(iron_ui::ROOT).unwrap().opacity,
+        tree.visual(platypus_ui::ROOT).unwrap().opacity,
         0.9,
         ":root is the root container"
     );
@@ -551,7 +551,7 @@ fn before_and_after_generate_content() {
     assert!(
         tree.draw_list()
             .iter()
-            .any(|c| matches!(c, iron_ui::DrawCmd::Quad(q) if q.rect == r))
+            .any(|c| matches!(c, platypus_ui::DrawCmd::Quad(q) if q.rect == r))
     );
 
     // Generated content is invisible to selectors: the real last item still matches.
@@ -779,7 +779,7 @@ fn media_rules_follow_the_window_and_device() {
         (0.5, 50.0, 0.0),
         "resizing re-evaluates the queries"
     );
-    tree.set_media_env(iron_ui::media::MediaEnv {
+    tree.set_media_env(platypus_ui::media::MediaEnv {
         dark: true,
         ..tree.media_env()
     });

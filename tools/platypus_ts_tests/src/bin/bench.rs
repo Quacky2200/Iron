@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `bench [steps]`: step() on a busy state for QuickJS (the engine's runtime), bun (a JIT
-//! stand-in) and the native code `iron_ts` generated. All three print a checksum; they should agree.
-use iron_core::Value;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ts_rt::link_anchor;
-use iron_ts_tests::sim::*;
-use iron_ts_tests::*;
+//! stand-in) and the native code `platypus_ts` generated. All three print a checksum; they should agree.
+use platypus_core::Value;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ts_rt::link_anchor;
+use platypus_ts_tests::sim::*;
+use platypus_ts_tests::*;
 use std::process::Command;
 use std::time::Instant;
 
@@ -18,7 +18,11 @@ fn native(steps: usize) -> (f64, f64, usize) {
         unsafe { ts_step(b.state, b.input, 1.0 / 60.0, b.walls) };
     }
     let ms = t.elapsed().as_secs_f64() * 1000.0;
-    (ms, busy_checksum(b.state), iron_ts_rt::ts_rt_allocated())
+    (
+        ms,
+        busy_checksum(b.state),
+        platypus_ts_rt::ts_rt_allocated(),
+    )
 }
 
 fn quickjs(steps: usize, bundle: &str) -> (f64, f64) {
@@ -73,7 +77,7 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(10_000);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let bundle_path = std::env::temp_dir().join("iron_ts_bench_bundle.js");
+    let bundle_path = std::env::temp_dir().join("platypus_ts_bench_bundle.js");
     let st = Command::new("bun")
         .args(["build"])
         .arg(dir.join("bench/bench.ts"))
@@ -113,7 +117,7 @@ fn main() {
         Some((ms, sum))
     });
     let _ = native(steps);
-    let g = iron_ts_rt::gc_stats();
+    let g = platypus_ts_rt::gc_stats();
     println!(
         "native GC over its last runs on this thread: {} collections, {:.1} MiB handed out in all, {} objects and {:.0} KiB live after the last one",
         g.collections,

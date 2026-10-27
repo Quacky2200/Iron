@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Compiled scripts calling the engine API directly (`bench/engine.ts`). The API is
-//! `iron_demo_api`, written with `#[iron_api]`: the compiler reads its JSON manifest, a call
-//! `Demo.scale(3, 4)` becomes a call of the shim `iron_Demo_scale`, and handles are plain ids.
+//! `platypus_demo_api`, written with `#[platypus_api]`: the compiler reads its JSON manifest, a call
+//! `Demo.scale(3, 4)` becomes a call of the shim `platypus_Demo_scale`, and handles are plain ids.
 //! Every test runs normally, with a collection at every allocation, and with collection off.
 //! IDs are in TESTS.md (M9-TS-142..).
-use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::eng::*;
+use platypus_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::eng::*;
 
 /// The demo engine's world is thread-local state; each test thread has its own.
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_demo_api::link_anchor(), 0);
+    assert_ne!(platypus_demo_api::link_anchor(), 0);
     unsafe { ts_eng_init() };
     f();
     ts_rt_gc_stress(true);
@@ -25,7 +25,7 @@ fn in_every_gc_mode(f: impl Fn()) {
 
 // M9-TS-142
 //
-// `Demo.scale(3, 4)` is `iron_Demo_scale(3.0, 4.0)`; `clampI` takes i32s (the f64 arguments are
+// `Demo.scale(3, 4)` is `platypus_Demo_scale(3.0, 4.0)`; `clampI` takes i32s (the f64 arguments are
 // converted at the call), `isEven` takes a u32 and returns a bool.
 #[test]
 fn a_script_calls_engine_functions_with_the_engines_number_types() {

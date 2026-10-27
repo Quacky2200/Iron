@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Shared by the `build.rs` of `iron_ts_rt` and `iron_ts_ui` (`include!`): writes `symbols.rs`, a
+// Shared by the `build.rs` of `platypus_ts_rt` and `platypus_ts_ui` (`include!`): writes `symbols.rs`, a
 // function `symbols()` listing every `#[unsafe(no_mangle)] pub ... extern "C" fn` of the crate by
 // name and address, so a JIT can resolve compiled code's imports with no hand-kept list.
 //

@@ -62,7 +62,7 @@ pub(crate) fn encode_clear(
     color: Color,
 ) {
     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("iron clear"),
+        label: Some("platypus clear"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view,
             depth_slice: None,

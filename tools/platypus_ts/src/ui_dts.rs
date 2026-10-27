@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The UI half of the generated declarations, written from the tables of `iron_ui::tables` (style
+//! The UI half of the generated declarations, written from the tables of `platypus_ui::tables` (style
 //! properties, attributes, elements, events, React names) and from the `Ui` manifest: `interface
-//! IronStyle`, the event interfaces, `IronProps`, `JSX`, the hooks, `createRoot` and the element
+//! PlatypusStyle`, the event interfaces, `PlatypusProps`, `JSX`, the hooks, `createRoot` and the element
 //! components. Nothing here is a declaration file written by hand; the TypeScript text a few names need
 //! (the hook signatures, `ReactNode`) is Rust data next to the tables (decision 1 of
-//! `docs/research/iron-generated-dts-plan.md`).
+//! `docs/research/platypus-generated-dts-plan.md`).
 //!
 //! It also writes the compiled side of the same names (`prelude`): `StyleValue`, `StyleEntry`, the
-//! `UiEvent` class whose fields read the event's slots, and the aliases `type IronPointerEvent = UiEvent`.
+//! `UiEvent` class whose fields read the event's slots, and the aliases `type PlatypusPointerEvent = UiEvent`.
 
-use iron_ui::tables::attrs::ATTRS;
-use iron_ui::tables::elements::ELEMENTS;
-use iron_ui::tables::events::{
+use platypus_ui::tables::attrs::ATTRS;
+use platypus_ui::tables::elements::ELEMENTS;
+use platypus_ui::tables::events::{
     DATA_TRANSFER_TS, EVENT_FIELDS, EVENT_INTERFACES, EVENT_METHODS, EVENT_PROPS, EventField, Init,
 };
-use iron_ui::tables::react::{CREATE_ROOT, HOOKS, IRON_REACT_TYPES, Module, REACT_TYPES};
-use iron_ui::tables::style::{NAMED_TYPES, STYLE_PROPS, ts_type};
+use platypus_ui::tables::react::{CREATE_ROOT, HOOKS, Module, PLATYPUS_REACT_TYPES, REACT_TYPES};
+use platypus_ui::tables::style::{NAMED_TYPES, STYLE_PROPS, ts_type};
 use std::sync::OnceLock;
 
 /// `/** doc */` for one line, a block for several; empty for no doc.
@@ -78,7 +78,7 @@ fn element_interface() -> String {
         );
     }
     let mut options_done: Vec<&str> = Vec::new();
-    let mut s = String::from("interface IronElement {\n");
+    let mut s = String::from("interface PlatypusElement {\n");
     for f in class["functions"].as_array().into_iter().flatten() {
         let name = f["name"].as_str().unwrap_or("_");
         let returns = crate::types_dts::manifest_ts_type(f["returns"].as_str().unwrap_or("void"));
@@ -123,7 +123,7 @@ fn element_interface() -> String {
 }
 
 fn style_interface() -> String {
-    let mut s = String::from("interface IronStyle {\n");
+    let mut s = String::from("interface PlatypusStyle {\n");
     for p in STYLE_PROPS {
         if !p.group.is_empty() {
             if !s.ends_with("{\n") {
@@ -169,10 +169,10 @@ fn event_interfaces() -> String {
 }
 
 fn props_interface() -> String {
-    let mut s = String::from("interface IronProps {\n");
+    let mut s = String::from("interface PlatypusProps {\n");
     let mut svg_comment = false;
     for a in ATTRS {
-        if a.scope == iron_ui::tables::attrs::Scope::Svg && !svg_comment {
+        if a.scope == platypus_ui::tables::attrs::Scope::Svg && !svg_comment {
             svg_comment = true;
             s += "  // Inline SVG (`<svg>` and the shapes inside it): attributes as React names them.\n";
         }
@@ -192,9 +192,9 @@ fn jsx_namespace() -> String {
         "declare namespace JSX {\n  type Element = ReactElementLike;\n  // A component may return any node (text, a list, null), as React's types allow (TS 5.1).\n  type ElementType = string | ((props: any) => ReactNode);\n  interface ElementChildrenAttribute {\n    children: {};\n  }\n  interface IntrinsicAttributes {\n    key?: string | number;\n  }\n  interface IntrinsicElements {\n",
     );
     for e in ELEMENTS {
-        s += &format!("    {}: IronProps;\n", e.tag);
+        s += &format!("    {}: PlatypusProps;\n", e.tag);
     }
-    s += "    [tag: string]: IronProps;\n  }\n}\n";
+    s += "    [tag: string]: PlatypusProps;\n  }\n}\n";
     s
 }
 
@@ -210,7 +210,7 @@ interface Ref<T> {
 
 const REACT_NAMESPACE: &str = "declare namespace React {
   type ReactNode = globalThis.ReactNode;
-  type CSSProperties = IronStyle;
+  type CSSProperties = PlatypusStyle;
 }
 ";
 
@@ -224,11 +224,11 @@ declare const console: {
 };
 ";
 
-/// The ambient declarations: what `@iron/react`, `react` and a few engine names give, without
-/// node_modules. `iron-build types` puts this after the engine globals in `types/iron.d.ts`.
+/// The ambient declarations: what `@platypus/react`, `react` and a few engine names give, without
+/// node_modules. `platypus-build types` puts this after the engine globals in `types/platypus.d.ts`.
 pub fn declarations() -> String {
     let mut s = String::from(
-        "// The ambient declarations of an Iron program: what `@iron/react` and `react` give, without node_modules.\n// Generated from the tables of iron_ui::tables (style, attributes, events, elements, React names).\n\n",
+        "// The ambient declarations of a Platypus program: what `@platypus/react` and `react` give, without node_modules.\n// Generated from the tables of platypus_ui::tables (style, attributes, events, elements, React names).\n\n",
     );
     for (name, members) in NAMED_TYPES {
         s += &union_alias(name, members);
@@ -245,7 +245,7 @@ pub fn declarations() -> String {
     s += &jsx_namespace();
     s += "\n";
     s += REACT_NAMESPACE;
-    s += "\n// The names of `react`, `@iron/react` and `@iron/engine`'s UI side are globals: a game needs no import.\n// `iron-build types` also declares the three modules as re-exports of these (see `types_dts.rs`).\n";
+    s += "\n// The names of `react`, `@platypus/react` and `@platypus/engine`'s UI side are globals: a game needs no import.\n// `platypus-build types` also declares the three modules as re-exports of these (see `types_dts.rs`).\n";
     for h in HOOKS {
         s += &format!("declare function {}{};\n", h.name, h.sig);
     }
@@ -258,7 +258,7 @@ pub fn declarations() -> String {
     );
     for e in ELEMENTS {
         if let Some(c) = e.component {
-            s += &format!("declare function {c}(props: IronProps): ReactElementLike;\n");
+            s += &format!("declare function {c}(props: PlatypusProps): ReactElementLike;\n");
         }
     }
     s
@@ -286,14 +286,14 @@ pub fn react_exports() -> Vec<String> {
     )
 }
 
-/// The names `@iron/react` exports.
-pub fn iron_react_exports() -> Vec<String> {
+/// The names `@platypus/react` exports.
+pub fn platypus_react_exports() -> Vec<String> {
     dedup(
-        IRON_REACT_TYPES
+        PLATYPUS_REACT_TYPES
             .iter()
             .map(|s| s.to_string())
             .chain(EVENT_INTERFACES.iter().map(|i| i.name.to_string()))
-            .chain(["IronDataTransfer", "IronDroppedFile"].map(String::from))
+            .chain(["PlatypusDataTransfer", "PlatypusDroppedFile"].map(String::from))
             .chain([CREATE_ROOT.name.to_string()])
             .chain(
                 ELEMENTS
@@ -310,7 +310,7 @@ pub fn iron_react_exports() -> Vec<String> {
 /// expected); a style is a list of property entries (structs have at most 64 fields, and a style has
 /// about 260 properties).
 const STYLE_PRELUDE: &str =
-    "// The ambient types of an Iron program (generated by tools/iron_ts/src/ui_dts.rs).
+    "// The ambient types of a Platypus program (generated by tools/platypus_ts/src/ui_dts.rs).
 // `number | string` is the class `StyleValue`; a number or a string converts where one is expected.
 class StyleValue {
   n: number = 0;
@@ -329,10 +329,10 @@ function __sv_str(s: string): StyleValue {
   return v;
 }
 type ReactNode = UiElement[];
-type IronElement = UiNode;
+type PlatypusElement = UiNode;
 ";
 
-const STYLE_ENTRIES: &str = "// A style is a list of property entries: `{ width: 10 }` typed `IronStyle` builds the entries,
+const STYLE_ENTRIES: &str = "// A style is a list of property entries: `{ width: 10 }` typed `PlatypusStyle` builds the entries,
 // `...other` concatenates, a later entry of a name wins when they are applied.
 class StyleEntry {
   key: string = \"\";
@@ -341,7 +341,7 @@ class StyleEntry {
   n: number = 0;
   s: string = \"\";
 }
-type IronStyle = StyleEntry[];
+type PlatypusStyle = StyleEntry[];
 function __se_num(key: string, n: number): StyleEntry {
   const e = new StyleEntry();
   e.key = key;
@@ -368,7 +368,7 @@ function __se_ostr(key: string, s: string | undefined): StyleEntry {
 function __se_osv(key: string, v: StyleValue | undefined): StyleEntry {
   return v === undefined ? new StyleEntry() : __se_sv(key, v);
 }
-function __apply_style(h: UiElement, style: IronStyle | undefined): UiElement {
+function __apply_style(h: UiElement, style: PlatypusStyle | undefined): UiElement {
   if (style) {
     for (const e of style) {
       if (e.kind === 0) {
@@ -398,7 +398,7 @@ fn field_init(f: &EventField) -> String {
     }
 }
 
-/// The compiled `dataTransfer` of a drag event (`IronDataTransfer` of the tables): one object from
+/// The compiled `dataTransfer` of a drag event (`PlatypusDataTransfer` of the tables): one object from
 /// `dragstart` to `dragend` for an element drag, one per set of files dragged in from the system.
 /// `Ui.evStr` holds the dragged files' paths.
 const DATA_TRANSFER_PRELUDE: &str = "class UiRelated {
@@ -532,8 +532,8 @@ pub fn prelude() -> &'static str {
         for i in EVENT_INTERFACES {
             s += &format!("type {} = UiEvent;\n", i.name);
         }
-        s += "type IronDataTransfer = UiDataTransfer;
-type IronDroppedFile = UiDroppedFile;
+        s += "type PlatypusDataTransfer = UiDataTransfer;
+type PlatypusDroppedFile = UiDroppedFile;
 ";
         s += "type FullScreenMode = \"ExclusiveFullScreen\" | \"FullScreenWindow\" | \"MaximizedWindow\" | \"Windowed\";\n";
         s += STYLE_ENTRIES;
@@ -579,14 +579,14 @@ mod tests {
         }
         for e in ELEMENTS {
             assert!(
-                t.contains(&format!("    {}: IronProps;", e.tag)),
+                t.contains(&format!("    {}: PlatypusProps;", e.tag)),
                 "{}",
                 e.tag
             );
             if let Some(c) = e.component {
                 assert!(
                     t.contains(&format!(
-                        "declare function {c}(props: IronProps): ReactElementLike;"
+                        "declare function {c}(props: PlatypusProps): ReactElementLike;"
                     )),
                     "{c}"
                 );
@@ -601,7 +601,7 @@ mod tests {
         ));
         assert!(t.contains("type BorderStyle =\n  | \"none\"\n"));
         // `ref` receives what the Ui manifest's `UiNode` offers.
-        assert!(t.contains("interface IronElement {\n  focus(): void;\n  blur(): void;\n  scrollTo(left: number, top: number): void;\n  scrollTo(options: ScrollToOptions): void;\n  scrollBy(left: number, top: number): void;\n  scrollBy(options: ScrollToOptions): void;\n  scrollIntoView(options?: ScrollIntoViewOptions): void;\n}"), "{t}");
+        assert!(t.contains("interface PlatypusElement {\n  focus(): void;\n  blur(): void;\n  scrollTo(left: number, top: number): void;\n  scrollTo(options: ScrollToOptions): void;\n  scrollBy(left: number, top: number): void;\n  scrollBy(options: ScrollToOptions): void;\n  scrollIntoView(options?: ScrollIntoViewOptions): void;\n}"), "{t}");
         // The DOM's scroll options (M3-EVT-08 / 09 in compiled games).
         assert!(t.contains("interface ScrollIntoViewOptions {\n  block?: ScrollLogicalPosition;\n  inline?: ScrollLogicalPosition;\n  behavior?: ScrollBehavior;\n}"), "{t}");
         assert!(
@@ -617,8 +617,9 @@ mod tests {
     fn the_compiled_data_transfer_has_every_member_of_the_declared_interface() {
         let p = prelude();
         let class = &p[p.find("class UiDataTransfer").unwrap()..p.find("let __ui_drag").unwrap()];
-        let decl =
-            &DATA_TRANSFER_TS[DATA_TRANSFER_TS.find("interface IronDataTransfer").unwrap()..];
+        let decl = &DATA_TRANSFER_TS[DATA_TRANSFER_TS
+            .find("interface PlatypusDataTransfer")
+            .unwrap()..];
         let mut members = 0;
         for line in decl.lines().skip(1) {
             let t = line.trim_start();
@@ -641,8 +642,8 @@ mod tests {
             members += 1;
         }
         assert_eq!(members, 8);
-        assert!(declarations().contains("interface IronDataTransfer {"));
-        assert!(p.contains("type IronDataTransfer = UiDataTransfer;"));
+        assert!(declarations().contains("interface PlatypusDataTransfer {"));
+        assert!(p.contains("type PlatypusDataTransfer = UiDataTransfer;"));
     }
 
     // M9-TS-3310
@@ -672,7 +673,7 @@ mod tests {
         assert!(p.contains("class StyleValue {") && p.contains("class StyleEntry {"));
         // The module lists come from the same tables.
         assert!(react_exports().contains(&"useReducer".to_string()));
-        assert!(iron_react_exports().contains(&"IronScrollEvent".to_string()));
-        assert!(iron_react_exports().contains(&"Dialog".to_string()));
+        assert!(platypus_react_exports().contains(&"PlatypusScrollEvent".to_string()));
+        assert!(platypus_react_exports().contains(&"Dialog".to_string()));
     }
 }

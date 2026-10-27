@@ -3,23 +3,23 @@
 //! Engine API shapes the original (QuickJS-era) example sources use, from compiled code
 //! (`bench/originals_engine.ts`, prefix `ogn_`), in the normal, stress GC and collection-off
 //! modes. IDs are in TESTS.md (M9-TS-3184..).
-use iron_scene::Scene;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::originals_engine_t::*;
+use platypus_scene::Scene;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::originals_engine_t::*;
 
 fn reset() {
-    iron_render_api::reset();
-    iron_engine_api::camera::reset();
+    platypus_render_api::reset();
+    platypus_engine_api::camera::reset();
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     let run = || {
         reset();
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         unsafe { ts_ogn_init() };
         f();
     };
@@ -92,7 +92,7 @@ fn handles_are_map_values_map_keys_and_set_members() {
 // M9-TS-3198
 #[test]
 fn gamepads_have_buttons_and_axes_by_name_and_connect_events_carry_the_pad() {
-    use iron_engine_api::input;
+    use platypus_engine_api::input;
     in_every_gc_mode(|| unsafe {
         input::reset();
         input::gamepad_connected(3, "Pad");
@@ -114,37 +114,37 @@ fn gamepads_have_buttons_and_axes_by_name_and_connect_events_carry_the_pad() {
 // M9-TS-3199
 #[test]
 fn measure_illuminance_resolves_after_the_next_physics_step() {
-    use iron_ts_rt::ts_rt_microtasks_run;
+    use platypus_ts_rt::ts_rt_microtasks_run;
     in_every_gc_mode(|| unsafe {
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
         assert_eq!(ts_ogn_startMeasure(), -1.0);
         ts_rt_microtasks_run();
         assert_eq!(ts_ogn_measuredLux(), -1.0, "nothing before a step");
-        iron_physics_api::step();
+        platypus_physics_api::step();
         ts_rt_microtasks_run();
         let lux = ts_ogn_measuredLux();
         assert!(lux > 0.0, "{lux}");
         assert_eq!(lux, ts_ogn_expectedLux());
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
     });
 }
 
 // M9-API-1645
 #[test]
 fn the_native_light_meter_faces_the_normal_and_counts_colliders_as_shadows() {
-    use iron_ts_rt::ts_rt_microtasks_run;
+    use platypus_ts_rt::ts_rt_microtasks_run;
     in_every_gc_mode(|| unsafe {
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
         // 16 pi lumens over 4 pi sr = 4 cd, 1 lux at 2 m head-on (times the range fade, 0.9998); 0 facing away.
         assert_eq!((ts_ogn_startShadowed() * 1000.0).round(), 9998.0);
-        iron_physics_api::step();
+        platypus_physics_api::step();
         ts_rt_microtasks_run();
         assert_eq!(
             ts_ogn_shadowedLux(),
             0.0,
             "the roof's collider is in the way"
         );
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
     });
 }
 
@@ -152,13 +152,13 @@ fn the_native_light_meter_faces_the_normal_and_counts_colliders_as_shadows() {
 #[test]
 fn a_closure_given_to_after_next_step_runs_once_after_a_step() {
     in_every_gc_mode(|| unsafe {
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
         let before = ts_ogn_stepsSeen();
         assert_eq!(ts_ogn_afterStepTwice(), before);
-        iron_physics_api::step();
+        platypus_physics_api::step();
         assert_eq!(ts_ogn_stepsSeen(), before + 1.0);
-        iron_physics_api::step();
+        platypus_physics_api::step();
         assert_eq!(ts_ogn_stepsSeen(), before + 1.0, "once");
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
     });
 }

@@ -24,9 +24,9 @@ export interface AssetEntry {
 }
 
 /**
- * The members the engine itself gives the global `Assets` (`#[iron_api(namespace = "Assets")]`,
- * crates/iron_engine_api/src/assets.rs; `Assets.exists` / `list` / `packOf` there are the typed
- * declarations of the generated `types/iron.d.ts`). This module's `Assets` below adds the asset
+ * The members the engine itself gives the global `Assets` (`#[platypus_api(namespace = "Assets")]`,
+ * crates/platypus_engine_api/src/assets.rs; `Assets.exists` / `list` / `packOf` there are the typed
+ * declarations of the generated `types/platypus.d.ts`). This module's `Assets` below adds the asset
  * database and hot reload and hands these three to the native namespace, which answers from the
  * index the host fills (packs or the game folder, also assets without a `.meta`). Without the
  * engine (unit tests) they answer as an empty game would.
@@ -38,7 +38,7 @@ interface NativeAssets {
 }
 const native = (): Partial<NativeAssets> => (globalThis as { Assets?: Partial<NativeAssets> }).Assets ?? {};
 
-const entries = (): AssetEntry[] => ((globalThis.__iron_info as { assets?: AssetEntry[] } | undefined)?.assets ?? []);
+const entries = (): AssetEntry[] => ((globalThis.__platypus_info as { assets?: AssetEntry[] } | undefined)?.assets ?? []);
 const clean = (path: string) => path.replace(/\\/g, "/").replace(/^\.\//, "");
 
 export const Assets = {
@@ -98,7 +98,7 @@ export const Assets = {
   },
 };
 
-globalThis.__iron_assets_changed = (paths: string[]) => {
+globalThis.__platypus_assets_changed = (paths: string[]) => {
   for (const f of [...listeners]) {
     try {
       f(paths);

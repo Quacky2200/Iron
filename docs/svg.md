@@ -1,6 +1,6 @@
 # SVG (M3d step 5.1)
 
-Iron draws SVG two ways. Both end in the same place: resvg rasterizes the SVG on the CPU at the
+Platypus draws SVG two ways. Both end in the same place: resvg rasterizes the SVG on the CPU at the
 size it is drawn, and the result is a texture drawn like any image. Known gaps against browsers are
 in [differences.md](differences.md).
 
@@ -11,8 +11,8 @@ in [differences.md](differences.md).
 
 ## SVG files as images (step 5.1a)
 
-Code: [images.rs](../crates/iron_render/src/ui/images.rs), call site in
-[ui/mod.rs](../crates/iron_render/src/ui/mod.rs). Uses resvg 0.48 (default features off, only
+Code: [images.rs](../crates/platypus_render/src/ui/images.rs), call site in
+[ui/mod.rs](../crates/platypus_render/src/ui/mod.rs). Uses resvg 0.48 (default features off, only
 `text` on, so no system fonts).
 
 - `is_svg(url)`: a `data:image/svg+xml` URL, or a path ending in `.svg` (query and fragment ignored).
@@ -25,7 +25,7 @@ Code: [images.rs](../crates/iron_render/src/ui/images.rs), call site in
 - Raster sizes go through `bucket`: rounded up to a multiple of 8 px, clamped to 8..=4096. Small size
   changes (a transition, a resize drag) reuse the same raster instead of making one per frame.
 - Cache keys: the parsed tree is under the URL, each raster under `<id>#WxH`.
-- `svg_tree` builds `usvg::Options` once with the bundled Inter (`iron_ui::text::INTER` and
+- `svg_tree` builds `usvg::Options` once with the bundled Inter (`platypus_ui::text::INTER` and
   `INTER_ITALIC`, now public) as the only font, so `<text>` renders without system fonts.
 - `rasterize` renders with tiny-skia and converts to straight alpha; `upload` makes the texture.
 - `ImageCache::set_root` clears the parsed trees along with the entries.
@@ -34,14 +34,14 @@ Tint (`background-image-tint`) and `image-rendering` apply to the raster like an
 
 ## Inline `<svg>` (step 5.1b)
 
-Code: [svg.rs](../crates/iron_ui/src/svg.rs) (helpers), [tree.rs](../crates/iron_ui/src/tree.rs)
-(`svg_markup`, measuring, drawing), [attrs.rs](../crates/iron_ui/src/attrs.rs),
-[style.rs](../crates/iron_ui/src/style.rs), and in JS
+Code: [svg.rs](../crates/platypus_ui/src/svg.rs) (helpers), [tree.rs](../crates/platypus_ui/src/tree.rs)
+(`svg_markup`, measuring, drawing), [attrs.rs](../crates/platypus_ui/src/attrs.rs),
+[style.rs](../crates/platypus_ui/src/style.rs), and in JS
 [attrs.ts](../js/react/src/attrs.ts), [host.ts](../js/react/src/host.ts),
 [style.ts](../js/react/src/style.ts).
 
 **Why serialize.** The SVG elements are ordinary tree nodes, so selectors, `:hover`, inheritance,
-custom properties, transitions and animations all work on them through the usual cascade. Iron does
+custom properties, transitions and animations all work on them through the usual cascade. Platypus does
 not lay them out; it turns the subtree back into markup when drawing.
 
 ### Element types and attributes
@@ -75,7 +75,7 @@ written in `Visual.svg_props`:
 - `clip-path` and `mask` accept `url(#id)` (pointing at a `clipPath` or `mask` inside the same SVG).
 
 Stylesheet rules and inline `style` both work, with the normal specificity order. `<style>` elements
-and `class` selectors written inside SVG markup are not read; Iron stylesheets style the content.
+and `class` selectors written inside SVG markup are not read; Platypus stylesheets style the content.
 
 ### Measuring and drawing
 
@@ -120,6 +120,6 @@ one per frame), so the cache would grow without bound. In the renderer:
 
 | ID | What | Where |
 |---|---|---|
-| `M3-SVG-01` | SVG file as `background-image` (golden, fixture `tests/fixtures/images/icon.svg`) | `crates/iron_render/tests/ui.rs` |
-| `M3-SVG-02` | `svg` measuring and serialization, `url(#id)` clips, `svg.rs` helper units | `crates/iron_ui/tests/svg.rs`, unit tests in `crates/iron_ui/src/svg.rs`, `crates/iron_ui/tests/clip.rs` |
-| `M3-SVG-03` | Inline SVG drawn through the renderer (golden) | `crates/iron_render/tests/ui.rs` |
+| `M3-SVG-01` | SVG file as `background-image` (golden, fixture `tests/fixtures/images/icon.svg`) | `crates/platypus_render/tests/ui.rs` |
+| `M3-SVG-02` | `svg` measuring and serialization, `url(#id)` clips, `svg.rs` helper units | `crates/platypus_ui/tests/svg.rs`, unit tests in `crates/platypus_ui/src/svg.rs`, `crates/platypus_ui/tests/clip.rs` |
+| `M3-SVG-03` | Inline SVG drawn through the renderer (golden) | `crates/platypus_render/tests/ui.rs` |

@@ -14,7 +14,7 @@
 //! The shader finds a light's matrices by index ([`ShadowSlot::first`]): cascades first,
 //! then local layers.
 
-use iron_core::glam::{Mat4, Vec3, Vec4Swizzles};
+use platypus_core::glam::{Mat4, Vec3, Vec4Swizzles};
 
 use super::{Light, LightKind, Shadows, WorldCamera, cull, environment};
 
@@ -127,7 +127,7 @@ pub(crate) fn plan(camera: &WorldCamera, lights: &[Light], s: PlanSettings) -> S
         if plan.local_layers + layers > MAX_LOCAL_LAYERS {
             continue;
         }
-        let proj = iron_core::glam::camera::rh::proj::directx::perspective(
+        let proj = platypus_core::glam::camera::rh::proj::directx::perspective(
             fov.to_radians(),
             1.0,
             near,
@@ -135,7 +135,7 @@ pub(crate) fn plan(camera: &WorldCamera, lights: &[Light], s: PlanSettings) -> S
         );
         let first = MAX_CASCADES + plan.local_layers;
         for (forward, up) in faces {
-            let view = iron_core::glam::camera::rh::view::look_at_mat4(
+            let view = platypus_core::glam::camera::rh::view::look_at_mat4(
                 l.position,
                 l.position + forward,
                 up,
@@ -177,7 +177,7 @@ fn cascades(
         .iter()
         .map(|&(x, y)| {
             let at = |z: f32| {
-                let p = inv * iron_core::glam::Vec4::new(x, y, z, 1.0);
+                let p = inv * platypus_core::glam::Vec4::new(x, y, z, 1.0);
                 p.xyz() / p.w
             };
             (at(0.0), at(1.0))
@@ -232,7 +232,7 @@ fn fit(center: Vec3, radius: f32, dir: Vec3, res: f32) -> Mat4 {
     // Far enough back to catch casters outside the sphere (tall things, hills).
     let back = (radius * 3.0).max(30.0);
     let eye = center - dir * back;
-    let view = iron_core::glam::camera::rh::view::look_at_mat4(eye, center, up);
+    let view = platypus_core::glam::camera::rh::view::look_at_mat4(eye, center, up);
     let texel = 2.0 * radius / res;
     let at = view.transform_point3(center);
     let snap = Vec3::new(
@@ -240,7 +240,7 @@ fn fit(center: Vec3, radius: f32, dir: Vec3, res: f32) -> Mat4 {
         (at.y / texel).round() * texel - at.y,
         0.0,
     );
-    let proj = iron_core::glam::camera::rh::proj::directx::orthographic(
+    let proj = platypus_core::glam::camera::rh::proj::directx::orthographic(
         -radius,
         radius,
         -radius,
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn cascades_cover_the_view_and_local_lights_share_a_layer_budget() {
         let camera = WorldCamera::perspective(
-            iron_core::glam::camera::rh::view::look_at_mat4(
+            platypus_core::glam::camera::rh::view::look_at_mat4(
                 Vec3::new(0.0, 2.0, 10.0),
                 Vec3::ZERO,
                 Vec3::Y,

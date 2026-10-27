@@ -2,8 +2,8 @@
 
 //! Physics driven by a real script bundle in QuickJS, the way the app does it.
 
-use iron_physics::Physics;
-use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime, Value};
+use platypus_physics::Physics;
+use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime, Value};
 
 const PHYSICS: &str = include_str!("../../../tests/fixtures/physics.js");
 
@@ -28,7 +28,8 @@ fn collision_events_and_raycasts_reach_ts_components() {
         physics.step();
         let batch = physics.take_batch();
         if !batch.is_empty() {
-            rt.call_global("__iron_physics", &batch.to_args()).unwrap();
+            rt.call_global("__platypus_physics", &batch.to_args())
+                .unwrap();
         }
     }
 

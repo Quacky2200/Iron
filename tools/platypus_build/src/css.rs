@@ -3,7 +3,7 @@
 //! CSS bundling, what `bun build` did for the examples: the stylesheets a program imports are joined in
 //! import order (`@import` is inlined), and every `url()` is rewritten: a small file becomes a `data:`
 //! URL, a larger one is copied into `dist/` under a hashed name and the URL is relative to
-//! `dist/game.css` (which is where `iron_app` reads it from, see `load_game_css`).
+//! `dist/game.css` (which is where `platypus_app` reads it from, see `load_game_css`).
 
 use base64::Engine as _;
 use std::path::{Path, PathBuf};
@@ -184,7 +184,7 @@ mod tests {
 
     fn temp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!(
-            "iron_build_css_{name}_{}",
+            "platypus_build_css_{name}_{}",
             crate::assets::new_guid()
         ));
         std::fs::create_dir_all(&d).unwrap();

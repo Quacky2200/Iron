@@ -3,8 +3,8 @@
 //! Shared by the bun-compared language tests: a program of `//## name` cases (each defines
 //! `function t(): string`) is compiled in the process, run in the normal, stress GC and
 //! collection-off modes, and compared with what bun gives for the same case.
-use iron_ts::jit::{JitOptions, compile_and_load};
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts::jit::{JitOptions, compile_and_load};
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
 
 /// The source of the case `name` in `cases` (split at `//## name` lines).
 pub fn case(cases: &'static str, name: &str) -> &'static str {
@@ -31,7 +31,7 @@ pub fn run_with(
     struct_base: u32,
     manifests: &[String],
 ) -> Result<String, String> {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let game = compile_and_load(
         &format!("{src}\nexport function run(): string {{ return t(); }}\n"),

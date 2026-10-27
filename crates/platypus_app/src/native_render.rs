@@ -7,8 +7,8 @@
 //! renderer reports back (particles).
 
 use super::*;
-use iron_core::Value;
-use iron_ui_native::{RootId, Runtime};
+use platypus_core::Value;
+use platypus_ui_native::{RootId, Runtime};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -22,7 +22,7 @@ struct State {
     /// One reconciler per secondary window (by window handle), like the panels'.
     windows: HashMap<u32, (Runtime, RootId)>,
     /// Window roots mounted before their window was opened.
-    window_pending: Vec<(u32, iron_ui_native::Element)>,
+    window_pending: Vec<(u32, platypus_ui_native::Element)>,
     /// Panels a `WorldPanel` component exists for (the others only had a mount so far).
     live: HashSet<u32>,
     /// The `TextMesh` panels (ids from `render_sync::TEXT_BASE`).
@@ -51,11 +51,11 @@ fn num(n: f64) -> Value {
 pub fn configure_engine(root: &std::path::Path) {
     st(|s| s.root = Some(root.to_path_buf()));
     let manifest = info::Manifest::load(root);
-    iron_engine_api::screen::configure_quality(&manifest.quality);
-    iron_engine_api::screen::apply_default_quality();
-    // `iron.layers`: names of the layers above the built-in ones.
+    platypus_engine_api::screen::configure_quality(&manifest.quality);
+    platypus_engine_api::screen::apply_default_quality();
+    // `platypus.layers`: names of the layers above the built-in ones.
     if let Some(layers) = manifest.layers.as_object() {
-        iron_engine_api::layers::set_game_layers(
+        platypus_engine_api::layers::set_game_layers(
             layers
                 .iter()
                 .filter_map(|(k, v)| Some((k.parse().ok()?, v.as_str()?.to_string()))),
@@ -78,14 +78,14 @@ pub fn reconfigure() {
 
 /// Particle counts the world renderer reports (`[id, count, alive, ...]`): `onStopped` runs and
 /// `stopAction: "destroy"` applies.
-pub fn report_particles(changed: &[f64], scene: &mut iron_scene::Scene) {
+pub fn report_particles(changed: &[f64], scene: &mut platypus_scene::Scene) {
     if changed.is_empty() {
         return;
     }
-    let _scope = iron_scene::api::enter(scene);
+    let _scope = platypus_scene::api::enter(scene);
     for c in changed.as_chunks::<3>().0 {
-        iron_render_api::report_particles(
-            iron_render_api::ParticleSystemRef(c[0] as u32),
+        platypus_render_api::report_particles(
+            platypus_render_api::ParticleSystemRef(c[0] as u32),
             c[1] as u32,
             c[2] != 0.0,
         );
@@ -98,18 +98,18 @@ impl App {
         let mut lap = crate::sync_profile::Lap::start();
         {
             // Culling animators ask what the last frame saw of their renderers.
-            let roots = iron_engine_api::animation::culled_roots();
+            let roots = platypus_engine_api::animation::culled_roots();
             let mut sight = self.world_view.animation_sight(&self.scene, &roots);
             // `CameraFollow` and `CameraOrbit` move their cameras after every `onLateUpdate`.
-            let _scope = iron_scene::api::enter(&mut self.scene.scene);
-            let dt = iron_engine_api::time::state().delta_time;
+            let _scope = platypus_scene::api::enter(&mut self.scene.scene);
+            let dt = platypus_engine_api::time::state().delta_time;
             // `Animation` and `Animator` components pose their objects (events are not
             // delivered to components yet).
-            iron_engine_api::animation::update_culled(dt, None, &mut sight);
+            platypus_engine_api::animation::update_culled(dt, None, &mut sight);
             // `SplineAnimate` components put their objects on their paths.
-            iron_engine_api::spline::update(dt);
-            iron_render_api::late_update_camera_follows(dt);
-            iron_render_api::late_update_camera_orbits(dt);
+            platypus_engine_api::spline::update(dt);
+            platypus_render_api::late_update_camera_follows(dt);
+            platypus_render_api::late_update_camera_orbits(dt);
         }
         lap.mark("animation, splines, camera follow");
         let extras = render_sync::sync(&mut self.world_view, &mut self.scene, &self.asset_root);
@@ -152,8 +152,8 @@ impl App {
     /// `addStyleSheet`, `removeStyleSheet` and `loadFont` from the game, on the screen and every
     /// panel.
     fn apply_ui_resources(&mut self) {
-        use iron_engine_api::ui_resources::UiRequest;
-        for request in iron_engine_api::ui_resources::take_requests() {
+        use platypus_engine_api::ui_resources::UiRequest;
+        for request in platypus_engine_api::ui_resources::take_requests() {
             match request {
                 UiRequest::AddStyleSheet { id, css } => {
                     self.stylesheet_op("addStyleSheet", &[num(f64::from(id)), Value::String(css)]);
@@ -188,9 +188,9 @@ impl App {
 
     /// `Cursor` and `Screen`: what the game asked for, and what the window is now.
     fn apply_cursor_and_screen(&mut self) {
-        let version = iron_engine_api::cursor::version();
+        let version = platypus_engine_api::cursor::version();
         if st(|s| s.cursor_version.replace(version)) != Some(version) {
-            let c = iron_engine_api::cursor::state();
+            let c = platypus_engine_api::cursor::state();
             self.cursor_op("visible", &[Value::Bool(c.visible)]);
             self.cursor_op("lock", &[Value::String(c.lock_state.clone())]);
             match c.image {
@@ -204,7 +204,7 @@ impl App {
                 None => self.cursor_op("image", &[Value::Null]),
             }
         }
-        for r in iron_engine_api::screen::take_requests() {
+        for r in platypus_engine_api::screen::take_requests() {
             self.screen_op(&[
                 Value::String(r.mode),
                 num(f64::from(r.width)),
@@ -217,7 +217,7 @@ impl App {
         let state = display::state(window.as_deref(), &self.display);
         let text = state.to_string();
         if st(|s| s.display.replace(text.clone())).as_deref() != Some(&text) {
-            let res = |v: &serde_json::Value| iron_engine_api::screen::Resolution {
+            let res = |v: &serde_json::Value| platypus_engine_api::screen::Resolution {
                 width: v["width"].as_u64().unwrap_or(0) as u32,
                 height: v["height"].as_u64().unwrap_or(0) as u32,
                 refresh_rate: v["refreshRate"].as_f64().unwrap_or(0.0),
@@ -234,7 +234,7 @@ impl App {
                         .collect()
                 })
                 .unwrap_or_default();
-            iron_engine_api::screen::set_display(
+            platypus_engine_api::screen::set_display(
                 state["mode"].as_str().unwrap_or("Windowed"),
                 (
                     state["windowWidth"].as_u64().unwrap_or(1280) as u32,
@@ -253,8 +253,8 @@ impl App {
             f64::from(scale).to_bits(),
         );
         if w > 0.0 && st(|s| s.screen.replace(key)) != Some(key) {
-            let _scope = iron_scene::api::enter(&mut self.scene.scene);
-            iron_engine_api::screen::update(key.0, key.1, f64::from(scale));
+            let _scope = platypus_scene::api::enter(&mut self.scene.scene);
+            platypus_engine_api::screen::update(key.0, key.1, f64::from(scale));
         }
     }
 
@@ -330,7 +330,7 @@ impl App {
         };
         let mounts = native.take_panel_mounts();
         let scene = &mut self.scene.scene;
-        let _scope = iron_scene::api::enter(scene);
+        let _scope = platypus_scene::api::enter(scene);
         for (target, element) in mounts {
             let id = target as u32;
             let (root, fonts, sheets) = (&self.asset_root, &self.font_sources, &self.sheet_sources);
@@ -340,7 +340,7 @@ impl App {
             let errors = st(|s| {
                 let (rt, rid) = s.runtimes.entry(id).or_insert_with(|| {
                     let mut rt = Runtime::new(FIRST_NODE);
-                    let rid = rt.create_root(iron_ui::ROOT);
+                    let rid = rt.create_root(platypus_ui::ROOT);
                     (rt, rid)
                 });
                 let rid = *rid;
@@ -382,25 +382,27 @@ impl App {
                 .extend(mounts.into_iter().map(|(h, e)| (h as u32, e)))
         });
         let pending = st(|s| std::mem::take(&mut s.window_pending));
-        let _scope = iron_scene::api::enter(&mut self.scene.scene);
+        let _scope = platypus_scene::api::enter(&mut self.scene.scene);
         for (key, element) in pending {
-            let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+            let Some(w) = self.windows.map.get_mut(&platypus_platform::WindowKey(key)) else {
                 // Not opened yet: wait, unless the window is gone.
-                let live = iron_engine_api::window::state(iron_engine_api::window::WindowRef(key))
-                    .is_some_and(|s| s.open);
+                let live =
+                    platypus_engine_api::window::state(platypus_engine_api::window::WindowRef(key))
+                        .is_some_and(|s| s.open);
                 if live {
                     st(|s| s.window_pending.push((key, element)));
                 }
                 continue;
             };
-            let w_ref = iron_engine_api::window::WindowRef(key);
-            let _domain =
-                iron_engine_api::window::enter_domain(iron_engine_api::window::domain_of(w_ref));
-            let _current = iron_engine_api::window::enter_current(w_ref);
+            let w_ref = platypus_engine_api::window::WindowRef(key);
+            let _domain = platypus_engine_api::window::enter_domain(
+                platypus_engine_api::window::domain_of(w_ref),
+            );
+            let _current = platypus_engine_api::window::enter_current(w_ref);
             let errors = st(|s| {
                 let (rt, rid) = s.windows.entry(key).or_insert_with(|| {
                     let mut rt = Runtime::new(FIRST_NODE);
-                    let rid = rt.create_root(iron_ui::ROOT);
+                    let rid = rt.create_root(platypus_ui::ROOT);
                     (rt, rid)
                 });
                 let rid = *rid;
@@ -413,13 +415,14 @@ impl App {
         // State set by timers and effects since the last frame.
         let keys: Vec<u32> = st(|s| s.windows.keys().copied().collect());
         for key in keys {
-            let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+            let Some(w) = self.windows.map.get_mut(&platypus_platform::WindowKey(key)) else {
                 continue;
             };
-            let w_ref = iron_engine_api::window::WindowRef(key);
-            let _domain =
-                iron_engine_api::window::enter_domain(iron_engine_api::window::domain_of(w_ref));
-            let _current = iron_engine_api::window::enter_current(w_ref);
+            let w_ref = platypus_engine_api::window::WindowRef(key);
+            let _domain = platypus_engine_api::window::enter_domain(
+                platypus_engine_api::window::domain_of(w_ref),
+            );
+            let _current = platypus_engine_api::window::enter_current(w_ref);
             let errors = st(|s| {
                 s.windows
                     .get_mut(&key)
@@ -441,11 +444,15 @@ pub(super) fn drop_window_runtime(key: u32) {
 }
 
 /// A UI event of a window through the handlers of its reconciler (see [`panel_event`]).
-pub(super) fn window_event(scene: &mut iron_scene::Scene, key: u32, e: &iron_ui::UiEvent) -> bool {
+pub(super) fn window_event(
+    scene: &mut platypus_scene::Scene,
+    key: u32,
+    e: &platypus_ui::UiEvent,
+) -> bool {
     let Some(mut ev) = native::to_event(e) else {
         return false;
     };
-    let _scope = iron_scene::api::enter(scene);
+    let _scope = platypus_scene::api::enter(scene);
     st(|s| {
         s.windows.get_mut(&key).is_some_and(|(rt, _)| {
             native::set_target_kind(rt.host_kind(ev.target));
@@ -470,11 +477,15 @@ pub(super) fn window_settle(key: u32, tree: &mut UiTree) {
 /// A UI event of a world panel through the handlers of its reconciler, while the panel's
 /// interaction layer handles the input; says whether a handler prevented the default action.
 /// Follow with [`panel_settle`].
-pub(super) fn panel_event(scene: &mut iron_scene::Scene, id: u32, e: &iron_ui::UiEvent) -> bool {
+pub(super) fn panel_event(
+    scene: &mut platypus_scene::Scene,
+    id: u32,
+    e: &platypus_ui::UiEvent,
+) -> bool {
     let Some(mut ev) = native::to_event(e) else {
         return false;
     };
-    let _scope = iron_scene::api::enter(scene);
+    let _scope = platypus_scene::api::enter(scene);
     st(|s| {
         s.runtimes.get_mut(&id).is_some_and(|(rt, _)| {
             native::set_target_kind(rt.host_kind(ev.target));

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Secondary windows in the app (design: `docs/research/iron-windows.md` section 8): the script's
+//! Secondary windows in the app (design: `docs/research/platypus-windows.md` section 8): the script's
 //! `Window` requests become platform commands, each opened window gets its own UI tree, interaction
 //! state and surface, and the platform's window events are routed to them.
 //!
@@ -9,12 +9,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use iron_engine_api::window::{self as win, Style, WindowRef, WindowRequest, WindowState};
-use iron_platform::{
+use platypus_engine_api::window::{self as win, Style, WindowRef, WindowRequest, WindowState};
+use platypus_platform::{
     InputEvent, WheelDelta, WindowCommand, WindowHost, WindowKey, WindowKind, WindowSpec,
 };
-use iron_render::{OffscreenTarget, WindowSurface};
-use iron_ui::{Input, Interaction, UiTree, events};
+use platypus_render::{OffscreenTarget, WindowSurface};
+use platypus_ui::{Input, Interaction, UiTree, events};
 
 use super::*;
 
@@ -50,7 +50,7 @@ pub struct AppWindows {
     /// The position each window was opened at (the requests resolved it).
     pub placed: HashMap<WindowKey, Option<(f64, f64)>>,
     /// React commits for windows that are not open yet (QuickJS games).
-    pub pending_commits: HashMap<u32, Vec<iron_core::Commit>>,
+    pub pending_commits: HashMap<u32, Vec<platypus_core::Commit>>,
     /// Titles in use for screenshot file names.
     pub slugs: HashMap<WindowKey, String>,
 }
@@ -168,7 +168,7 @@ pub fn draw_window(
     let ui = to_ui(w.physical, w.scale);
     w.tree.set_size(ui.0 as f32, ui.1 as f32);
     w.tree.set_time(now_ms);
-    w.tree.set_media_env(iron_ui::media::MediaEnv {
+    w.tree.set_media_env(platypus_ui::media::MediaEnv {
         resolution: w.scale as f32,
         dark,
         ..w.tree.media_env()
@@ -265,14 +265,14 @@ fn key_ref(k: WindowKey) -> WindowRef {
     WindowRef(k.0)
 }
 
-/// An event as the arguments of `__iron_input` / `input::apply_native` (`keydown code key repeat`,
+/// An event as the arguments of `__platypus_input` / `input::apply_native` (`keydown code key repeat`,
 /// `mousemove x y`, `wheel dx dy`, `blur`); the mouse in UI pixels.
-pub fn game_args(event: &InputEvent, ui: f64) -> Option<Vec<iron_core::Value>> {
-    let name = |b: &iron_platform::MouseButton| match b {
-        iron_platform::MouseButton::Left => "MouseLeft".to_owned(),
-        iron_platform::MouseButton::Right => "MouseRight".to_owned(),
-        iron_platform::MouseButton::Middle => "MouseMiddle".to_owned(),
-        iron_platform::MouseButton::Other(n) => format!("Mouse{n}"),
+pub fn game_args(event: &InputEvent, ui: f64) -> Option<Vec<platypus_core::Value>> {
+    let name = |b: &platypus_platform::MouseButton| match b {
+        platypus_platform::MouseButton::Left => "MouseLeft".to_owned(),
+        platypus_platform::MouseButton::Right => "MouseRight".to_owned(),
+        platypus_platform::MouseButton::Middle => "MouseMiddle".to_owned(),
+        platypus_platform::MouseButton::Other(n) => format!("Mouse{n}"),
     };
     Some(match event {
         InputEvent::MouseMove { x, y } => {
@@ -339,7 +339,7 @@ fn open_spec(
             .take_while(|w| **w != me)
             .filter(|w| state(**w).is_some_and(|s| s.parent == Some(parent)))
             .count() as u32;
-        Some(iron_platform::place(
+        Some(platypus_platform::place(
             p.position.unwrap_or((0.0, 0.0)),
             p.size,
             st.size,
@@ -444,7 +444,7 @@ impl App {
     /// follows a call into scripts.
     pub(super) fn in_game<R>(&mut self, f: impl FnOnce() -> R) -> R {
         let r = {
-            let _scope = iron_scene::api::enter(&mut self.scene.scene);
+            let _scope = platypus_scene::api::enter(&mut self.scene.scene);
             f()
         };
         if let Some(n) = self.native.as_mut() {
@@ -463,7 +463,7 @@ impl App {
         let (physical, scale, native) = match &host {
             WindowHost::Os(window) => {
                 let size = window.inner_size();
-                let (handle, platform) = iron_platform::native_handle(window);
+                let (handle, platform) = platypus_platform::native_handle(window);
                 (
                     (size.width, size.height),
                     window.scale_factor(),
@@ -683,13 +683,13 @@ impl App {
                     meta: m.meta,
                 }),
             ),
-            InputEvent::Ime(iron_platform::ImeEvent::Preedit(text, cursor)) => {
+            InputEvent::Ime(platypus_platform::ImeEvent::Preedit(text, cursor)) => {
                 self.handle_on(surface, Input::ImePreedit { text, cursor })
             }
-            InputEvent::Ime(iron_platform::ImeEvent::Commit(text)) => {
+            InputEvent::Ime(platypus_platform::ImeEvent::Commit(text)) => {
                 self.handle_on(surface, Input::ImeCommit(text))
             }
-            InputEvent::Ime(iron_platform::ImeEvent::Disabled) => self.handle_on(
+            InputEvent::Ime(platypus_platform::ImeEvent::Disabled) => self.handle_on(
                 surface,
                 Input::ImePreedit {
                     text: String::new(),
@@ -722,7 +722,7 @@ impl App {
             return;
         }
         {
-            let _scope = iron_scene::api::enter(&mut self.scene.scene);
+            let _scope = platypus_scene::api::enter(&mut self.scene.scene);
             native_render::drop_window_runtime(key.0);
         }
         self.windows.map.remove(&key);
@@ -750,7 +750,7 @@ impl App {
                 continue;
             }
             let dark = match &w.host {
-                WindowHost::Os(window) => window.theme() == Some(iron_platform::Theme::Dark),
+                WindowHost::Os(window) => window.theme() == Some(platypus_platform::Theme::Dark),
                 WindowHost::Virtual { .. } => false,
             };
             let first = !w.drawn;
@@ -782,7 +782,7 @@ impl App {
             let (width, height, pixels) =
                 window_pixels(&gfx.gpu, &mut gfx.renderer, w, now_ms, false)?;
             let file = path.with_file_name(format!("{stem}-{name}.png"));
-            iron_render::testing::write_png(&file, width, height, &pixels)?;
+            platypus_render::testing::write_png(&file, width, height, &pixels)?;
             tracing::info!("saved window screenshot to {}", file.display());
         }
         Ok(())
@@ -875,7 +875,7 @@ impl App {
             self.in_game(|| win::deliver(d, now_ms));
             if !paused {
                 if self.native.is_some() {
-                    self.in_game(|| iron_ts_rt::ts_rt_timers_advance_domain(now_ms, d.0));
+                    self.in_game(|| platypus_ts_rt::ts_rt_timers_advance_domain(now_ms, d.0));
                 } else {
                     for e in self.scripts.tick_domain(now_ms, d.0) {
                         tracing::error!(target: "script", "uncaught: {e}");
@@ -887,8 +887,8 @@ impl App {
                 self.window_event(key, event);
             }
             if self.native.is_some() {
-                let _scope = iron_scene::api::enter(&mut self.scene.scene);
-                iron_engine_api::input::tick_domain(d);
+                let _scope = platypus_scene::api::enter(&mut self.scene.scene);
+                platypus_engine_api::input::tick_domain(d);
             } else {
                 // The domain's input frame (`input.ts`; the main one ends with `Time`'s tick).
                 self.send_game_input_in(d, &["tick".into()]);
@@ -908,9 +908,9 @@ impl App {
     }
 
     /// An input event for the game's `input` of domain `d`. QuickJS games get it with `d` entered,
-    /// so `__iron_input` (@iron/engine's `input.ts`) files it under that domain and its listeners
+    /// so `__platypus_input` (@platypus/engine's `input.ts`) files it under that domain and its listeners
     /// run in it.
-    pub(super) fn send_game_input_in(&mut self, d: win::DomainId, args: &[iron_core::Value]) {
+    pub(super) fn send_game_input_in(&mut self, d: win::DomainId, args: &[platypus_core::Value]) {
         if d == win::DomainId::MAIN {
             self.send_game_input(args);
         } else if let Some(n) = self.native.as_mut() {
@@ -919,7 +919,7 @@ impl App {
             self.native_after();
         } else if self.game_input {
             let _g = win::enter_domain(d);
-            if let Err(e) = self.scripts.call_global("__iron_input", args) {
+            if let Err(e) = self.scripts.call_global("__platypus_input", args) {
                 tracing::error!(target: "script", "input: {e}");
             }
         }
@@ -929,7 +929,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_engine_api::window::Flags;
+    use platypus_engine_api::window::Flags;
 
     fn state(title: &str, style: Style, parent: Option<WindowRef>) -> WindowState {
         WindowState {
@@ -960,7 +960,7 @@ mod tests {
         WindowState {
             position: Some((100.0, 50.0)),
             size: (800.0, 600.0),
-            ..state("Iron", Style::Normal, None)
+            ..state("Platypus", Style::Normal, None)
         }
     }
 
@@ -1048,7 +1048,7 @@ mod tests {
     #[test]
     fn the_game_is_focused_while_any_of_its_windows_is() {
         // MAIN <- 2 (tool); 5 is an isolated root.
-        let mut tree = iron_platform::WindowTree::default();
+        let mut tree = platypus_platform::WindowTree::default();
         tree.insert(WindowKey::MAIN, None);
         tree.insert(WindowKey(2), Some(WindowKey::MAIN));
         tree.insert(WindowKey(5), None);
@@ -1065,7 +1065,7 @@ mod tests {
     // M9-TS-2834
     #[test]
     fn focus_moving_to_a_tool_window_keeps_the_main_domain_focused() {
-        let mut tree = iron_platform::WindowTree::default();
+        let mut tree = platypus_platform::WindowTree::default();
         tree.insert(WindowKey::MAIN, None);
         tree.insert(WindowKey(2), Some(WindowKey::MAIN));
         tree.insert(WindowKey(3), Some(WindowKey(2)));
@@ -1084,7 +1084,7 @@ mod tests {
     #[test]
     fn focusing_an_isolated_window_unfocuses_the_main_domain_and_pauses_it_without_run_in_background()
      {
-        let mut tree = iron_platform::WindowTree::default();
+        let mut tree = platypus_platform::WindowTree::default();
         tree.insert(WindowKey::MAIN, None);
         tree.insert(WindowKey(2), Some(WindowKey::MAIN));
         tree.insert(WindowKey(5), None);
@@ -1141,14 +1141,14 @@ mod tests {
     // M9-API-1470
     #[test]
     fn a_virtual_window_draws_its_ui_offscreen() {
-        use iron_ui::opcodes::{APPEND_CHILD, CREATE, SET_STYLE};
-        let gpu = iron_render::testing::shared_gpu();
+        use platypus_ui::opcodes::{APPEND_CHILD, CREATE, SET_STYLE};
+        let gpu = platypus_render::testing::shared_gpu();
         let mut renderer = UiRenderer::new(&gpu);
         let mut tree = UiTree::with_system_fonts(1.0, 1.0);
-        let n = |v: u32| iron_core::Value::Number(v.into());
+        let n = |v: u32| platypus_core::Value::Number(v.into());
         let ops = vec![
-            iron_core::Value::Array(vec![n(CREATE), n(1), "box".into()]),
-            iron_core::Value::Array(vec![
+            platypus_core::Value::Array(vec![n(CREATE), n(1), "box".into()]),
+            platypus_core::Value::Array(vec![
                 n(SET_STYLE),
                 n(1),
                 "width".into(),
@@ -1158,9 +1158,9 @@ mod tests {
                 "backgroundColor".into(),
                 "#ff0000".into(),
             ]),
-            iron_core::Value::Array(vec![n(APPEND_CHILD), n(0), n(1)]),
+            platypus_core::Value::Array(vec![n(APPEND_CHILD), n(0), n(1)]),
         ];
-        assert!(tree.apply_commit(&iron_core::Commit { ops }).is_empty());
+        assert!(tree.apply_commit(&platypus_core::Commit { ops }).is_empty());
         let mut w = AppWindow {
             surface: None,
             offscreen: Some(OffscreenTarget::with_format(
@@ -1198,9 +1198,9 @@ mod tests {
     fn window_targets_do_not_collide_with_panels() {
         let panels = [0u32, 1, 7, 4096, 1 << 20];
         for w in [2u32, 3, 500] {
-            let t = iron_core::WINDOW_TARGET | w;
-            assert!(t >= iron_core::WINDOW_TARGET);
-            assert_eq!(t - iron_core::WINDOW_TARGET, w);
+            let t = platypus_core::WINDOW_TARGET | w;
+            assert!(t >= platypus_core::WINDOW_TARGET);
+            assert_eq!(t - platypus_core::WINDOW_TARGET, w);
             assert!(!panels.contains(&t));
         }
         assert_eq!(to_ui((1600, 1200), 2.0), (800.0, 600.0));

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The style properties a script can set (`IronStyle`): name, TypeScript value type, documentation.
-//! `iron_ui::apply_style` implements them; `crates/iron_ui/tests/ui_tables.rs` checks that every entry
-//! here is applied and that nothing it applies is missing, and `tools/iron_ts` prints the table as
-//! `interface IronStyle` in the generated `types/iron.d.ts`.
+//! The style properties a script can set (`PlatypusStyle`): name, TypeScript value type, documentation.
+//! `platypus_ui::apply_style` implements them; `crates/platypus_ui/tests/ui_tables.rs` checks that every entry
+//! here is applied and that nothing it applies is missing, and `tools/platypus_ts` prints the table as
+//! `interface PlatypusStyle` in the generated `types/platypus.d.ts`.
 //!
 //! Units: a `Length` is a number (logical pixels) or a string with a unit (`"10px"`, `"50%"`,
 //! `"2em"`, `calc(..)`); see [`LENGTH_UNITS`]. Shorthands expand to longhands, see [`SHORTHANDS`].
@@ -226,7 +226,7 @@ pub fn named_type(name: &str) -> Option<&'static [&'static str]> {
         .map(|(_, v)| *v)
 }
 
-/// Every property of `IronStyle`, in declaration order.
+/// Every property of `PlatypusStyle`, in declaration order.
 pub const STYLE_PROPS: &[StyleProp] = &[
     sp(
         "Layout",
@@ -250,7 +250,7 @@ pub const STYLE_PROPS: &[StyleProp] = &[
         "",
         "boxSizing",
         &[Lit("border-box"), Lit("content-box")],
-        r#"Iron defaults to `border-box` (sizes include padding and border), unlike CSS."#,
+        r#"Platypus defaults to `border-box` (sizes include padding and border), unlike CSS."#,
     ),
     sp("", "width", LENGTH, ""),
     sp("", "height", LENGTH, ""),
@@ -532,7 +532,7 @@ images to try first: `url(sword.png) 4 4, pointer` (PNG, JPEG or `.cur`, up to
         "",
         "borderStyle",
         STR,
-        r#"1-4 styles. Iron's default is `solid`, so a width alone draws a border."#,
+        r#"1-4 styles. Platypus's default is `solid`, so a width alone draws a border."#,
     ),
     sp("", "borderTopStyle", &[Named("BorderStyle")], ""),
     sp("", "borderRightStyle", &[Named("BorderStyle")], ""),

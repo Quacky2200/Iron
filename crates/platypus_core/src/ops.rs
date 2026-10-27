@@ -73,9 +73,9 @@ mod tests {
     }
 }
 
-/// One UI commit sent by the React reconciler with `__iron_commit(ops)`.
+/// One UI commit sent by the React reconciler with `__platypus_commit(ops)`.
 ///
-/// Each op is a `Value::Array` of `[opcode, ...args]`; `iron_ui` decodes them.
+/// Each op is a `Value::Array` of `[opcode, ...args]`; `platypus_ui` decodes them.
 /// A commit is applied as a unit so the engine never sees a half-updated tree.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Commit {

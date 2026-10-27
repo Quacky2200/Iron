@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Physics for compiled scripts: rigid bodies, colliders and ray queries over `iron_physics`,
-//! declared with `#[iron_api]` (design: `docs/research/iron-native-physics.md`).
+//! Physics for compiled scripts: rigid bodies, colliders and ray queries over `platypus_physics`,
+//! declared with `#[platypus_api]` (design: `docs/research/platypus-native-physics.md`).
 //!
 //! Bodies and colliders are numbers chosen here; the world is one per thread. The host calls
 //! [`step`] once per fixed tick: it advances the world, moves the GameObjects bodies are attached
 //! to, and queues the contacts for [`take_contacts`] (the host turns them into
 //! `onCollisionEnter` and friends). A ray answers at once.
 
-use iron_api::{Handle, iron_api};
-use iron_core::Value;
-use iron_math::{Q, V3};
-use iron_physics::{Contact, Physics};
-use iron_scene::ObjectId;
+use platypus_api::{Handle, platypus_api};
+use platypus_core::Value;
+use platypus_math::{Q, V3};
+use platypus_physics::{Contact, Physics};
+use platypus_scene::ObjectId;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -97,7 +97,7 @@ struct State {
     /// The collisions handed to contact hooks since the last dispatch (`Collision` handles).
     pub(crate) collisions: Vec<contacts::Slot>,
     /// Contact points of those collisions, read from the world when a script first asks.
-    pub(crate) points: Vec<iron_physics::ContactPoint>,
+    pub(crate) points: Vec<platypus_physics::ContactPoint>,
     /// Physics components (a handle is the place plus one).
     comps: Vec<Option<comp::Comp>>,
     /// The body, Rigidbody and colliders of each GameObject with physics components.
@@ -227,12 +227,12 @@ pub fn step() {
     step_world();
     // What was asked to run after the next step runs now, once.
     let callbacks = AFTER_STEP.with(|a| std::mem::take(&mut *a.borrow_mut()));
-    iron_api::callback::emit(&callbacks, ());
+    platypus_api::callback::emit(&callbacks, ());
 }
 
 thread_local! {
     /// Closures `Physics.afterNextStep` was given, run once after the next step.
-    static AFTER_STEP: std::cell::RefCell<Vec<iron_api::Callback<()>>> =
+    static AFTER_STEP: std::cell::RefCell<Vec<platypus_api::Callback<()>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -250,7 +250,7 @@ fn step_world() {
             .collect();
         (moves, batch.characters, batch.contacts)
     });
-    let written = iron_scene::api::with_scene(|scene| {
+    let written = platypus_scene::api::with_scene(|scene| {
         let mut written = Vec::new();
         for (body, o, p, r) in moves {
             let (p, r) = (
@@ -363,14 +363,14 @@ fn flat(points: &[V3]) -> Vec<f64> {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[iron_api(
+#[platypus_api(
     namespace = "Physics", quickjs,
     handles(PhysicsBody = BodyRef, PhysicsCollider = ColliderRef, RaycastHit = HitRef, PhysicsJoint = JointRef, GameObject = ObjectId),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
 )]
 pub mod physics_api {
     use super::*;
-    use iron_api::Callback;
+    use platypus_api::Callback;
 
     /// Gravity in m/s² (y up; default 0, -9.81, 0).
     #[property]
@@ -883,9 +883,11 @@ pub(crate) fn body_set(body: u32, what: &str, value: Option<Value>) {
     op("set", args);
 }
 
-/// Installs every namespace of this crate in a QuickJS context (after `iron_engine_api`'s, which
+/// Installs every namespace of this crate in a QuickJS context (after `platypus_engine_api`'s, which
 /// has the math classes and `GameObject`).
-pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
+pub fn register_quickjs<'js>(
+    ctx: &platypus_api::rquickjs::Ctx<'js>,
+) -> platypus_api::rquickjs::Result<()> {
     physics_api::register_quickjs(ctx)?;
     components::components_api::register_quickjs(ctx)?;
     components::force_mode_api::register_quickjs(ctx)?;

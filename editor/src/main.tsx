@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Iron editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
-// Inspector, Console, Project) and a status bar, built with @iron/editor-ui.
-// `iron_editor` loads this bundle (editor/dist). The Hierarchy and Scene view show the
+// The Platypus editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
+// Inspector, Console, Project) and a status bar, built with @platypus/editor-ui.
+// `platypus_editor` loads this bundle (editor/dist). The Hierarchy and Scene view show the
 // editor's own world (a demo scene for now); the Inspector is a placeholder.
 import "./editor.css";
 
@@ -27,9 +27,9 @@ import {
   TreeView,
   useScreenSize,
   visibleObjects,
-} from "@iron/editor-ui";
-import { Application, AudioSource, Camera, GameObject, Light, MeshRenderer, PlayerPrefs, Rect as ViewRect, ReflectionProbe, Screen } from "@iron/engine";
-import { createRoot, Text } from "@iron/react";
+} from "@platypus/editor-ui";
+import { Application, AudioSource, Camera, GameObject, Light, MeshRenderer, PlayerPrefs, Rect as ViewRect, ReflectionProbe, Screen } from "@platypus/engine";
+import { createRoot, Text } from "@platypus/react";
 import { useEffect, useMemo, useState } from "react";
 
 import { buildDemoScene } from "./demo-scene.ts";
@@ -237,7 +237,7 @@ function App() {
       label: "Help",
       items: [
         { label: "Documentation", accelerator: "F1", action: () => say("Docs: docs/editor.md:1") },
-        { label: "About Iron", action: () => say(`${Application.productName} ${Application.version}`) },
+        { label: "About Platypus", action: () => say(`${Application.productName} ${Application.version}`) },
       ],
     },
   ];
@@ -314,5 +314,5 @@ const TITLES: Record<string, string> = {
 
 buildDemoScene();
 createRoot().render(<App />);
-console.log("Iron editor started (UI: editor/src/main.tsx:1)");
+console.log("Platypus editor started (UI: editor/src/main.tsx:1)");
 console.warn("The Inspector is a placeholder (TODO.md M5.e)");

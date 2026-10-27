@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use iron_core::NodeId;
+use platypus_core::NodeId;
 
 use parley::fontique::{
     Blob, Collection, CollectionOptions, FontInfoOverride, GenericFamily, SourceCache,

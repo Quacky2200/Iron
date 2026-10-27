@@ -541,7 +541,7 @@ impl Pack {
         Ok(Bytes::from(out))
     }
 
-    /// Reads every entry and checks chunk checksums and content hashes (`iron-build pack --verify`,
+    /// Reads every entry and checks chunk checksums and content hashes (`platypus-build pack --verify`,
     /// tests). Returns the number of entries checked.
     pub fn verify(&self) -> Result<usize> {
         let mut n = 0;
@@ -635,9 +635,9 @@ mod tests {
         let empty = EntrySpec::new("empty.json", b"");
         let bytes = build(small_chunks(), &[tex, cooked, mp3, empty]);
 
-        let dir = std::env::temp_dir().join(format!("iron_pack_rt_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus_pack_rt_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("a.irpk");
+        let file = dir.join("a.ppk");
         std::fs::write(&file, &bytes).unwrap();
         for pack in [
             Pack::from_bytes(bytes.clone()).unwrap(),
@@ -836,7 +836,7 @@ mod tests {
             WriteOptions::default(),
             &[EntrySpec::new("x/y.txt", b"inside")],
         );
-        let dir = std::env::temp_dir().join(format!("iron_pack_at_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus_pack_at_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("bundle.bin");
         let mut all = vec![0xeeu8; 12_345];

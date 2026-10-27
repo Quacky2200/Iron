@@ -4,11 +4,11 @@
 //! from styles, rendered offscreen, and checked with pixel assertions that
 //! encode the CSS behaviour, plus golden images for regressions.
 
-use iron_core::{Commit, Value};
-use iron_render::testing::{assert_golden, shared_gpu};
-use iron_render::{Color, OffscreenTarget, RenderStats, RenderTarget, UiRenderer};
-use iron_ui::UiTree;
-use iron_ui::opcodes::*;
+use platypus_core::{Commit, Value};
+use platypus_render::testing::{assert_golden, shared_gpu};
+use platypus_render::{Color, OffscreenTarget, RenderStats, RenderTarget, UiRenderer};
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::*;
 
 /// Golden comparisons allow small differences between GPUs and drivers.
 const TOLERANCE: u8 = 3;
@@ -196,7 +196,7 @@ fn render_with_assets(
     }
 }
 
-use iron_render::wgpu;
+use platypus_render::wgpu;
 
 const BLACK: Color = Color::rgb(0.0, 0.0, 0.0);
 
@@ -1330,7 +1330,7 @@ fn masks_from_gradients() {
     );
     let f = render(s, (100, 100), 1.0, BLACK);
     assert!(f.luma(3, 15) > 240.0, "alpha: left shows");
-    // Iron composites in linear light, so the faint edge of the fade reads brighter
+    // Platypus composites in linear light, so the faint edge of the fade reads brighter
     // than a browser's sRGB blend would.
     assert!(f.luma(97, 15) < 50.0, "alpha: right nearly gone");
     assert!(f.luma(3, 50) > 240.0, "luminance: white shows");
@@ -1524,8 +1524,8 @@ fn transforms_draw_rotated_skewed_and_in_perspective() {
 // M3-SEL-03
 #[test]
 fn text_selection_and_placeholder_styles() {
-    use iron_ui::editor::PointerSelect;
-    use iron_ui::events::Modifiers;
+    use platypus_ui::editor::PointerSelect;
+    use platypus_ui::events::Modifiers;
     let mut s = Scene::new();
     s.css = ".warm::selection { background: #ffd54a; color: #202020 }
         input::placeholder { color: #ff8a80; font-style: italic }";
@@ -1565,10 +1565,10 @@ fn text_selection_and_placeholder_styles() {
     let empty = s.element(0, "input", &field_style(76.0));
     s.attrs(empty, &[("placeholder", "Player name".into())]);
     s.prepare = Some(Box::new(move |tree: &mut UiTree| {
-        let id = iron_core::NodeId;
+        let id = platypus_core::NodeId;
         tree.set_state(
             id(filled),
-            iron_ui::ElementState {
+            platypus_ui::ElementState {
                 focus: true,
                 ..Default::default()
             },
@@ -2325,7 +2325,7 @@ fn text_sampler() -> Scene {
     let row = s.add(0, &[("width", "100%".into())]);
     for (bg, fg) in [("#101318", "#f2f2f2"), ("#f4f4f4", "#1b1b1b")] {
         let c = s.add(row, &col(bg));
-        s.label(c, "Iron engine 16px", &[("color", fg.into())]);
+        s.label(c, "Platypus engine 16px", &[("color", fg.into())]);
         s.label(
             c,
             "Bold 700 weight",
@@ -2617,9 +2617,9 @@ fn scrolled_content_and_scrollbars() {
     let errors = tree.apply_commit(&Commit { ops: s.ops });
     assert!(errors.is_empty(), "{errors:?}");
     tree.layout_if_needed();
-    let scroller = iron_core::NodeId(scroller);
+    let scroller = platypus_core::NodeId(scroller);
     assert!(tree.scroll_to(scroller, 20.0, 45.0, true));
-    assert!(tree.scroll_to(iron_core::NodeId(thin), 0.0, 65.0, true));
+    assert!(tree.scroll_to(platypus_core::NodeId(thin), 0.0, 65.0, true));
     let cmds = tree.draw_list();
     let target = OffscreenTarget::with_format(&gpu, 160, 80, wgpu::TextureFormat::Rgba8UnormSrgb);
     let view = target.view().unwrap();
@@ -2657,7 +2657,7 @@ fn scrolled_content_and_scrollbars() {
 // selection and caret, and a wrapping textarea. Checked by eye, then golden.
 #[test]
 fn text_fields() {
-    use iron_ui::{Input, Interaction};
+    use platypus_ui::{Input, Interaction};
     let mut s = Scene::new();
     let field = |s: &mut Scene, kind: &str, x: f64, y: f64, w: f64, attrs: &[(&str, Value)]| {
         let mut style = at(
@@ -2732,12 +2732,12 @@ fn text_fields() {
     let mut ui = Interaction::new();
     ui.handle(
         &mut tree,
-        Input::Focus(iron_core::NodeId(focused)),
+        Input::Focus(platypus_core::NodeId(focused)),
         &mut |_| false,
     );
     ui.handle(
         &mut tree,
-        Input::Modifiers(iron_ui::events::Modifiers {
+        Input::Modifiers(platypus_ui::events::Modifiers {
             shift: true,
             ctrl: true,
             ..Default::default()

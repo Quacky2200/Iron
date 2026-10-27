@@ -2,18 +2,18 @@
 
 //! Where a game's assets are read from, apart from where its code is.
 //!
-//! A game folder has both (`dist/game.irbundle` and `assets/`), so the asset root is the game
-//! folder. A packaged exe (`iron-build package`) carries only the code, which `payload.rs`
+//! A game folder has both (`dist/game.pbundle` and `assets/`), so the asset root is the game
+//! folder. A packaged exe (`platypus-build package`) carries only the code, which `payload.rs`
 //! extracts to a cache folder; its assets are the `data/` folder beside the exe (or another one
-//! named by `--data` / `$IRON_DATA`). Every asset read goes through the [`Vfs`] that [`mount`]
+//! named by `--data` / `$PLATYPUS_DATA`). Every asset read goes through the [`Vfs`] that [`mount`]
 //! builds over that folder: its packs (`index.json`, `assets.dat`, `scene-*.dat`) when it has
-//! them, else the folder itself (`docs/research/iron-virtual-fs-plan.md`).
+//! them, else the folder itself (`docs/research/platypus-virtual-fs-plan.md`).
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use iron_pack::{DirSource, PackSource, Vfs};
+use platypus_pack::{DirSource, PackSource, Vfs};
 
 /// A folder asset paths (`assets/a.png`) are resolved against.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,10 +30,10 @@ impl AssetRoot {
         &self.dir
     }
 
-    /// The file for `relative`, if it stays inside the root (`iron_core::resolve_asset`).
+    /// The file for `relative`, if it stays inside the root (`platypus_core::resolve_asset`).
     #[allow(dead_code)] // only the tests ask for a file name
     pub fn resolve(&self, relative: &str) -> Option<PathBuf> {
-        iron_core::resolve_asset(&self.dir, relative)
+        platypus_core::resolve_asset(&self.dir, relative)
     }
 }
 
@@ -108,11 +108,11 @@ pub fn css_base(code_root: &Path, css_path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// What `iron_app` needs to decide where a packaged game's assets are.
+/// What `platypus_app` needs to decide where a packaged game's assets are.
 pub struct DataSearch<'a> {
     /// `--data <dir>`.
     pub flag: Option<&'a Path>,
-    /// `$IRON_DATA`.
+    /// `$PLATYPUS_DATA`.
     pub env: Option<&'a OsStr>,
     /// The folder the exe is in.
     pub exe_dir: Option<&'a Path>,
@@ -120,7 +120,7 @@ pub struct DataSearch<'a> {
     pub code_dir: &'a Path,
 }
 
-/// The data folder of a packaged game. Order: `--data`, `$IRON_DATA`, `<exe dir>/<dataDir>`
+/// The data folder of a packaged game. Order: `--data`, `$PLATYPUS_DATA`, `<exe dir>/<dataDir>`
 /// (`dataDir` of the payload's `project.json`, default `data`). A flag or variable that names
 /// a missing folder is an error (it is a request, not a guess). When none is found, a game that
 /// does not need data (`dataRequired` false: no assets, or only the embedded essentials)
@@ -138,13 +138,16 @@ pub fn locate_data(s: &DataSearch<'_>) -> Result<PathBuf, String> {
         return if p.is_dir() {
             Ok(p)
         } else {
-            Err(format!("IRON_DATA {}: not a folder", p.display()))
+            Err(format!("PLATYPUS_DATA {}: not a folder", p.display()))
         };
     }
-    let user = iron_core::project::SystemUser;
-    let project = iron_core::project::Project::load(
+    let user = platypus_core::project::SystemUser;
+    let project = platypus_core::project::Project::load(
         s.code_dir,
-        &iron_core::project::LoadOptions::new(iron_core::project::Platform::current(), &user),
+        &platypus_core::project::LoadOptions::new(
+            platypus_core::project::Platform::current(),
+            &user,
+        ),
     )
     .ok();
     let name = project
@@ -161,7 +164,7 @@ pub fn locate_data(s: &DataSearch<'_>) -> Result<PathBuf, String> {
     }
     Err(format!(
         "the game's data folder was not found (looked for {}). Put the `{name}` folder that \
-         `iron-build package` wrote beside the program, or pass --data <folder> or set IRON_DATA.",
+         `platypus-build package` wrote beside the program, or pass --data <folder> or set PLATYPUS_DATA.",
         beside
             .map(|b| format!("`{}`", b.display()))
             .unwrap_or_else(|| format!("`{name}` beside the program"))
@@ -173,8 +176,10 @@ mod tests {
     use super::*;
 
     fn temp(tag: &str) -> PathBuf {
-        let d =
-            std::env::temp_dir().join(format!("iron_app_assetroot_{tag}_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!(
+            "platypus_app_assetroot_{tag}_{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -234,7 +239,7 @@ mod tests {
         let e = locate_data(&s(Some(&gone), None)).unwrap_err();
         assert!(e.contains("--data") && e.contains("gone"), "{e}");
         let e = locate_data(&s(None, Some(gone.as_os_str()))).unwrap_err();
-        assert!(e.contains("IRON_DATA") && e.contains("gone"), "{e}");
+        assert!(e.contains("PLATYPUS_DATA") && e.contains("gone"), "{e}");
     }
 
     // M9-API-1202
@@ -252,7 +257,7 @@ mod tests {
         })
         .unwrap_err();
         assert!(
-            e.contains("game-data") && e.contains("--data") && e.contains("IRON_DATA"),
+            e.contains("game-data") && e.contains("--data") && e.contains("PLATYPUS_DATA"),
             "{e}"
         );
         assert!(e.contains(&*exe_dir.display().to_string()), "{e}");
@@ -302,7 +307,7 @@ mod tests {
     // M9-API-1205
     #[test]
     fn a_data_folder_mounts_its_packs_assets_first_or_falls_back_to_the_folder() {
-        use iron_pack::{EntrySpec, PackWriter, WriteOptions};
+        use platypus_pack::{EntrySpec, PackWriter, WriteOptions};
         let d = temp("mount");
         let write = |file: &str, entries: &[(&str, &[u8])]| {
             PackWriter::write_file(&d.join(file), WriteOptions::default(), |w| {

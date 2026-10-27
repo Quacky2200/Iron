@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron-build init [<dir>]`: writes a default `project.json` whose templates take their values
+//! `platypus-build init [<dir>]`: writes a default `project.json` whose templates take their values
 //! from the person running it (`"title": "${firstName}'s Game"`), a minimal `src/main.ts` when the
 //! folder has no `src/`, and prints what the templates evaluate to right now. See
-//! `docs/iron-build.md`.
+//! `docs/platypus-build.md`.
 
 use crate::icon;
-use iron_core::project::{
+use platypus_core::project::{
     FixedUser, LoadOptions, PROJECT_FILE, Platform, Project, SystemUser, UserInfo, file_safe,
 };
 use std::path::{Path, PathBuf};
@@ -116,11 +116,11 @@ pub fn init(
         .unwrap_or_else(|| file_safe(&folder).replace(' ', "-").to_lowercase());
 
     if let Some(l) = &o.license
-        && iron_core::project::canonical_license(l).is_none()
+        && platypus_core::project::canonical_license(l).is_none()
     {
         return Err(format!(
             "--license {l}: unknown license (use `private`, `custom` or one of: {})",
-            iron_core::project::SPDX_LICENSES.join(", ")
+            platypus_core::project::SPDX_LICENSES.join(", ")
         ));
     }
     // The icon is copied first, so a bad one stops before anything is written.
@@ -190,7 +190,7 @@ pub fn init(
 }
 
 const USAGE: &str =
-    "usage: iron-build init [<dir>] [--name n] [--title t] [--company c] [--description d]
+    "usage: platypus-build init [<dir>] [--name n] [--title t] [--company c] [--description d]
        [--icon file.png|ico] [--version v] [--identifier id] [--license private|MIT|...] [--force]";
 
 /// The `init` command; `args` follow the word `init`. Returns the exit code.
@@ -265,7 +265,7 @@ mod tests {
     use super::*;
 
     fn temp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("iron_init_{tag}_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_init_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
     }

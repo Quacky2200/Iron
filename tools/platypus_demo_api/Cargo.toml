@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_demo_api"
+name = "platypus_demo_api"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [dependencies]
-iron_api = { path = "../../crates/iron_api", default-features = false }
+platypus_api = { path = "../../crates/platypus_api", default-features = false }

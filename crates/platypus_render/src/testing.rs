@@ -3,7 +3,7 @@
 //! Golden-image helpers for render tests (see TESTS.md "Conventions").
 //!
 //! References live in `tests/golden/<id>.png` at the workspace root. Set
-//! `IRON_UPDATE_GOLDEN=1` to write new references instead of comparing. Every
+//! `PLATYPUS_UPDATE_GOLDEN=1` to write new references instead of comparing. Every
 //! render is also saved to `tests/output/<id>.png` (git-ignored) for inspection.
 
 use std::path::{Path, PathBuf};
@@ -31,7 +31,7 @@ pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance
         )
     });
 
-    if std::env::var_os("IRON_UPDATE_GOLDEN").is_some() {
+    if std::env::var_os("PLATYPUS_UPDATE_GOLDEN").is_some() {
         std::fs::create_dir_all(golden_dir()).unwrap();
         write_png(&path, width, height, pixels).unwrap();
         eprintln!("updated golden image {}", path.display());
@@ -40,7 +40,7 @@ pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance
 
     let file = std::fs::File::open(&path).unwrap_or_else(|_| {
         panic!(
-            "missing golden image {}; run with IRON_UPDATE_GOLDEN=1 to create it",
+            "missing golden image {}; run with PLATYPUS_UPDATE_GOLDEN=1 to create it",
             path.display()
         )
     });
@@ -78,7 +78,7 @@ pub fn assert_golden(id: &str, width: u32, height: u32, pixels: &[u8], tolerance
     }
 }
 
-/// Writes RGBA8 `pixels` as a PNG (used for goldens and `iron --screenshot`).
+/// Writes RGBA8 `pixels` as a PNG (used for goldens and `platypus --screenshot`).
 pub fn write_png(path: &Path, width: u32, height: u32, pixels: &[u8]) -> std::io::Result<()> {
     let file = std::fs::File::create(path)?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);

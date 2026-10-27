@@ -4,17 +4,17 @@
 //! unwinding through calls, closures and loops. `bench/gen_errors_expected.ts` ran the same file in
 //! bun; every function here must return what bun returned, in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-187..).
-use iron_ts_rt::{
+use platypus_ts_rt::{
     Str, link_anchor, ts_rt_exc_pending, ts_rt_exc_take, ts_rt_gc_enable, ts_rt_gc_stress,
 };
-use iron_ts_tests::errs::*;
+use platypus_ts_tests::errs::*;
 use serde_json::Value;
 
 /// The module's globals are shared by every thread, so one test runs at a time.
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     assert_ne!(link_anchor(), 0);
     unsafe { ts_err_init() };

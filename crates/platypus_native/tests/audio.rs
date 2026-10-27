@@ -4,7 +4,7 @@
 //! in TESTS.md (M9-API-*).
 mod common;
 use common::{js, throws, with_world};
-use iron_engine_api::audio::{AudioCommand, take_commands};
+use platypus_engine_api::audio::{AudioCommand, take_commands};
 
 // M9-API-132
 //
@@ -75,7 +75,7 @@ fn sounds_playbacks_buses_and_emitters_produce_host_commands() {
         ));
         assert!(cmds.iter().any(|c| matches!(c, AudioCommand::Stop(..))));
         // The host reports the playback ended: the JS callback runs once.
-        iron_engine_api::audio::ended(&[iron_engine_api::audio::PlaybackRef(1)]);
+        platypus_engine_api::audio::ended(&[platypus_engine_api::audio::PlaybackRef(1)]);
         let ended: f64 = js(ctx, "ended");
         assert_eq!(ended, 1.0);
         assert!(throws(ctx, "audio.load(5, false)").starts_with("TypeError"));

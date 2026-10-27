@@ -5,7 +5,7 @@
 //! takes one string (compiled code writes a template literal; `js/engine`'s versions joined many
 //! arguments and printed objects as JSON).
 
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,7 +37,7 @@ pub fn emit(level: Level, message: &str) {
 }
 
 /// Unity's `Debug`.
-#[iron_api(namespace = "Debug", quickjs)]
+#[platypus_api(namespace = "Debug", quickjs)]
 pub mod debug_api {
     use super::{Level, emit};
 
@@ -73,7 +73,7 @@ pub mod debug_api {
 }
 
 /// s&box's `Log`.
-#[iron_api(namespace = "Log", quickjs)]
+#[platypus_api(namespace = "Log", quickjs)]
 pub mod log_api {
     use super::{Level, emit};
 
@@ -96,7 +96,7 @@ pub mod log_api {
 }
 
 /// C#'s `Console`, with the JS names too.
-#[iron_api(namespace = "Console", quickjs)]
+#[platypus_api(namespace = "Console", quickjs)]
 pub mod console_api {
     use super::{Level, emit};
 

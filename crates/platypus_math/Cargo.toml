@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_math"
+name = "platypus_math"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [dependencies]
-iron_api = { path = "../iron_api", default-features = false, features = ["quickjs"] }
+platypus_api = { path = "../platypus_api", default-features = false, features = ["quickjs"] }
 
 [dev-dependencies]
 rquickjs = "0.14.0"

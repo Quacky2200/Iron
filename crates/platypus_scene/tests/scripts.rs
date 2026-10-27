@@ -3,9 +3,9 @@
 //! GameObjects and components driven by a real script bundle in QuickJS, the way the
 //! app does it.
 
-use iron_core::{ComponentId, Value};
-use iron_scene::{SceneEvent, ScriptScene};
-use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
+use platypus_core::{ComponentId, Value};
+use platypus_scene::{SceneEvent, ScriptScene};
+use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
 
 const SCENE: &str = include_str!("../../../tests/fixtures/scene.js");
 
@@ -198,15 +198,15 @@ fn reload_keeping_state(
     old: &mut QuickJsRuntime,
     edit: impl FnOnce(String) -> String,
 ) -> (QuickJsRuntime, ComponentHost, ScriptScene, Value) {
-    let Value::String(json) = old.call_global("__iron_save_state", &[]).unwrap() else {
+    let Value::String(json) = old.call_global("__platypus_save_state", &[]).unwrap() else {
         panic!("no saved state");
     };
     let mut rt = QuickJsRuntime::new();
-    rt.eval("globalThis.__iron_reloading = true").unwrap();
+    rt.eval("globalThis.__platypus_reloading = true").unwrap();
     rt.load_bundle("scene.js", SCENE).unwrap();
-    rt.eval("globalThis.__iron_reloading = false").unwrap();
+    rt.eval("globalThis.__platypus_reloading = false").unwrap();
     let ok = rt
-        .call_global("__iron_restore_state", &[Value::String(edit(json))])
+        .call_global("__platypus_restore_state", &[Value::String(edit(json))])
         .unwrap();
     (rt, ComponentHost::new(), ScriptScene::new(), ok)
 }

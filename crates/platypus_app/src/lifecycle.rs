@@ -25,7 +25,7 @@ pub struct Lifecycle {
 /// What changed in an [`Lifecycle::update`].
 #[derive(Debug, Default, PartialEq)]
 pub struct Change {
-    /// The new `(focused, paused)` for scripts (`__iron_focus`), when either changed.
+    /// The new `(focused, paused)` for scripts (`__platypus_focus`), when either changed.
     pub report: Option<(bool, bool)>,
     /// The game just paused.
     pub paused: bool,

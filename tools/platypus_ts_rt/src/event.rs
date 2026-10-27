@@ -6,7 +6,7 @@
 //! The contract with the host: after every call into script it calls `ts_rt_microtasks_run()`, and
 //! once per frame it calls `ts_rt_timers_advance(now_ms)` with the game clock (the timers' time is
 //! whatever the host passes, so a paused game pauses its timers). `ts_rt_run_loop()` runs both until
-//! nothing is left, for tests and tools. See `docs/research/iron-ts-generators-and-proxy.md`.
+//! nothing is left, for tests and tools. See `docs/research/platypus-ts-generators-and-proxy.md`.
 
 use super::*;
 use std::collections::VecDeque;

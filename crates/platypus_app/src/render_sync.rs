@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Feeds the 3D renderer from what a compiled game left in the `iron_render_api` registries.
+//! Feeds the 3D renderer from what a compiled game left in the `platypus_render_api` registries.
 //!
 //! The QuickJS path hands the renderer `render.*` ops; a native game writes typed data (cameras,
 //! lights, mesh renderers, materials, textures, meshes, sprites, ...). Each frame this turns that
@@ -10,7 +10,7 @@
 //! every mutable access) did not change is skipped; otherwise each component is compared with
 //! what was last sent ([`Track`]) and sent again only when it differs, and the ones gone from the
 //! registry are dropped. Transforms and active flags are read when drawing, so moves cost
-//! nothing here. `IRON_RENDER_SYNC=full` rebuilds everything every frame instead (the old way, to
+//! nothing here. `PLATYPUS_RENDER_SYNC=full` rebuilds everything every frame instead (the old way, to
 //! compare). Native objects get script ids through `ScriptScene::adopt`.
 //!
 //! Wired here: cameras (and render textures, gizmos), lights, mesh and skinned mesh renderers
@@ -20,11 +20,11 @@
 //! What needs the app (world panels, cloth, fonts and stylesheets) comes back in [`Extras`].
 
 use crate::world_view::{Kind, MaterialExtras, Renderer, Skin, StrokeSpec, WorldViews};
-use iron_core::Value;
-use iron_core::glam::Mat4;
-use iron_render::{MaterialMaps, RenderMode, WorldTexture, primitive_id};
-use iron_render_api::MeshRef;
-use iron_scene::ScriptScene;
+use platypus_core::Value;
+use platypus_core::glam::Mat4;
+use platypus_render::{MaterialMaps, RenderMode, WorldTexture, primitive_id};
+use platypus_render_api::MeshRef;
+use platypus_scene::ScriptScene;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -53,11 +53,11 @@ fn tex(id: u32) -> Value {
     }
 }
 
-fn rgba(c: iron_engine_api::color::Rgba) -> Value {
+fn rgba(c: platypus_engine_api::color::Rgba) -> Value {
     arr(&[c.r, c.g, c.b, c.a])
 }
 
-fn rgb(c: iron_engine_api::color::Rgba) -> Value {
+fn rgb(c: platypus_engine_api::color::Rgba) -> Value {
     arr(&[c.r, c.g, c.b])
 }
 
@@ -110,7 +110,7 @@ pub const TEXT_BASE: u32 = 1 << 25;
 
 /// Whether a mesh exists (an engine mesh of a model always does).
 fn mesh_exists(mesh: u32) -> bool {
-    mesh >= ENGINE_IDS || iron_render_api::read_mesh_info(MeshRef(mesh), |_| ()).is_some()
+    mesh >= ENGINE_IDS || platypus_render_api::read_mesh_info(MeshRef(mesh), |_| ()).is_some()
 }
 
 /// The mesh argument of a `cloth` op: a primitive's name, or the id of an uploaded mesh.
@@ -118,7 +118,7 @@ fn mesh_arg(mesh: u32) -> Option<Value> {
     if !mesh_exists(mesh) {
         return None;
     }
-    Some(match iron_render_api::primitive_name(MeshRef(mesh)) {
+    Some(match platypus_render_api::primitive_name(MeshRef(mesh)) {
         Some(name) => Value::String(name),
         None => n(f64::from(mesh)),
     })
@@ -130,7 +130,7 @@ fn mesh_id(mesh: u32) -> Result<u32, String> {
         // Not made yet: the renderer shows once it is (a quiet skip, as before).
         return Err(String::new());
     }
-    match iron_render_api::primitive_name(MeshRef(mesh)) {
+    match platypus_render_api::primitive_name(MeshRef(mesh)) {
         Some(name) => primitive_id(&name).ok_or_else(|| format!("no primitive `{name}`")),
         None => Ok(mesh),
     }
@@ -152,7 +152,7 @@ fn map(id: u32) -> Option<WorldTexture> {
 fn renderer(
     object: u32,
     mesh: u32,
-    m: &iron_render_api::MaterialData,
+    m: &platypus_render_api::MaterialData,
     shadow_casting_mode: &str,
 ) -> Result<Renderer, String> {
     let mode = match m.rendering_mode.as_str() {
@@ -290,26 +290,29 @@ impl<K> Track<K> {
 /// What every kind of component was last sent as (see [`components`]).
 #[derive(Default)]
 struct Sent {
-    cameras: Track<iron_engine_api::camera::CameraData>,
+    cameras: Track<platypus_engine_api::camera::CameraData>,
     /// `resetExposure()` counters per camera, as last seen.
     exposure_resets: HashMap<u32, f64>,
-    lights: Track<iron_render_api::LightData>,
-    fog_volumes: Track<iron_render_api::FogVolumeData>,
+    lights: Track<platypus_render_api::LightData>,
+    fog_volumes: Track<platypus_render_api::FogVolumeData>,
     renderers: Track<(
-        iron_render_api::MeshRendererData,
-        iron_render_api::MaterialData,
+        platypus_render_api::MeshRendererData,
+        platypus_render_api::MaterialData,
     )>,
-    skinned: Track<(iron_render_api::SkinnedData, iron_render_api::MaterialData)>,
+    skinned: Track<(
+        platypus_render_api::SkinnedData,
+        platypus_render_api::MaterialData,
+    )>,
     sprites: Track<(
-        iron_render_api::SpriteRendererData,
-        iron_render_api::SpriteData,
+        platypus_render_api::SpriteRendererData,
+        platypus_render_api::SpriteData,
     )>,
-    strokes: Track<iron_render_api::StrokeData>,
-    planes: Track<iron_render_api::PlaneData>,
-    mirrors: Track<iron_render_api::MirrorData>,
-    probes: Track<iron_render_api::ProbeData>,
-    lods: Track<iron_render_api::LodData>,
-    particles: Track<iron_render_api::ParticleData>,
+    strokes: Track<platypus_render_api::StrokeData>,
+    planes: Track<platypus_render_api::PlaneData>,
+    mirrors: Track<platypus_render_api::MirrorData>,
+    probes: Track<platypus_render_api::ProbeData>,
+    lods: Track<platypus_render_api::LodData>,
+    particles: Track<platypus_render_api::ParticleData>,
     panels: Track<()>,
     texts: Track<()>,
     cloths: Track<()>,
@@ -318,8 +321,8 @@ struct Sent {
 /// A camera's settings are the same (not the exposure the renderer reads back, which changes
 /// every frame and may be NaN).
 fn same_camera(
-    a: &iron_engine_api::camera::CameraData,
-    b: &iron_engine_api::camera::CameraData,
+    a: &platypus_engine_api::camera::CameraData,
+    b: &platypus_engine_api::camera::CameraData,
 ) -> bool {
     a.object == b.object
         && a.fov == b.fov
@@ -341,10 +344,10 @@ fn same_camera(
         && a.exposure_resets == b.exposure_resets
 }
 
-/// `IRON_RENDER_SYNC=full`: rebuild every component each frame (the old way, to compare).
+/// `PLATYPUS_RENDER_SYNC=full`: rebuild every component each frame (the old way, to compare).
 fn full_rebuild() -> bool {
     static FULL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *FULL.get_or_init(|| std::env::var("IRON_RENDER_SYNC").is_ok_and(|v| v == "full"))
+    *FULL.get_or_init(|| std::env::var("PLATYPUS_RENDER_SYNC").is_ok_and(|v| v == "full"))
 }
 
 /// Uploads what the game queued (textures, meshes, models) and sends the components that
@@ -355,9 +358,9 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
     resources(views, scene, root);
     lap.mark("resources");
     // Line renderers redraw their tubes (they are mesh renderers on the same objects).
-    iron_render_api::pre_render_lines();
+    platypus_render_api::pre_render_lines();
     lap.mark("line renderers");
-    if iron_render_api::has_commands() {
+    if platypus_render_api::has_commands() {
         resources(views, scene, root);
     }
     settings(views);
@@ -376,7 +379,7 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
     let uploads = cache(|c| c.uploads);
     let cameras_changed = components(views, scene, &mut sent, uploads, &mut extras, &mut lap);
     // Gizmo lines belong to the camera they were presented for, until the next frame of them.
-    let frame = iron_engine_api::gizmos::take_frame();
+    let frame = platypus_engine_api::gizmos::take_frame();
     if frame.is_some() || cameras_changed {
         if let Some(frame) = frame {
             let mut flat = Vec::with_capacity(frame.lines.len() * 10);
@@ -393,7 +396,7 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
             let _ = views.apply("gizmos", &[n(f64::from(camera)), arr(&flat)]);
         }
     }
-    for (r, action, count) in iron_render_api::take_particle_controls() {
+    for (r, action, count) in platypus_render_api::take_particle_controls() {
         let mut args = vec![n(f64::from(r.0)), Value::String(action)];
         if count > 0.0 {
             args.push(n(count));
@@ -402,8 +405,8 @@ pub fn sync(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) -> Ext
     }
     lap.mark("gizmos, particle controls");
     let versions = [
-        iron_render_api::cloths_version(),
-        iron_render_api::mesh_renderers_version(),
+        platypus_render_api::cloths_version(),
+        platypus_render_api::mesh_renderers_version(),
         uploads,
     ];
     if sent.cloths.stale(versions) {
@@ -426,8 +429,8 @@ fn components(
     extras: &mut Extras,
     lap: &mut crate::sync_profile::Lap,
 ) -> bool {
-    use iron_engine_api::camera;
-    use iron_render_api as api;
+    use platypus_engine_api::camera;
+    use platypus_render_api as api;
     let mut cameras_changed = false;
     let t = &mut sent.cameras;
     if t.stale([camera::version(), 0, 0]) {
@@ -711,7 +714,7 @@ fn components(
                 |views| {
                     let points: Vec<[f32; 2]> =
                         d.points.iter().map(|p| [p.x as f32, p.y as f32]).collect();
-                    let c = |c: iron_engine_api::color::Rgba| {
+                    let c = |c: platypus_engine_api::color::Rgba| {
                         [c.r as f32, c.g as f32, c.b as f32, c.a as f32]
                     };
                     if !d.width.is_finite() {
@@ -941,10 +944,10 @@ fn components(
 
 /// `RenderSettings` and `QualitySettings`, when they changed.
 fn settings(views: &mut WorldViews) {
-    let v = iron_render_api::version();
+    let v = platypus_render_api::version();
     let settings_changed = cache(|c| c.settings_version.replace(v)) != Some(v);
     if settings_changed {
-        let s = iron_render_api::settings();
+        let s = platypus_render_api::settings();
         warn(
             views.apply("ambient", &[n(0.0), rgb(s.ambient_light)]),
             "ambient",
@@ -992,16 +995,16 @@ fn settings(views: &mut WorldViews) {
         };
         warn(views.apply("clouds", &clouds), "clouds");
     }
-    let v = iron_engine_api::screen::quality_version();
+    let v = platypus_engine_api::screen::quality_version();
     let quality_changed = cache(|c| c.quality_version.replace(v)) != Some(v);
     // Post settings follow both: the player's auto exposure switch is a quality setting.
     if settings_changed || quality_changed {
-        let s = iron_render_api::settings();
-        let auto = iron_engine_api::screen::quality().auto_exposure;
+        let s = platypus_render_api::settings();
+        let auto = platypus_engine_api::screen::quality().auto_exposure;
         warn(views.apply("post", &post_args(&s, auto)), "post");
     }
     if quality_changed {
-        let q = iron_engine_api::screen::quality();
+        let q = platypus_engine_api::screen::quality();
         warn(
             views.apply(
                 "quality",
@@ -1043,7 +1046,7 @@ fn settings(views: &mut WorldViews) {
 }
 
 /// The `fog` op's arguments for the fog settings (`fog 0 null` clears the air).
-fn fog_args(f: &iron_render_api::Fog) -> Vec<Value> {
+fn fog_args(f: &platypus_render_api::Fog) -> Vec<Value> {
     if !f.enabled {
         return vec![n(0.0), Value::Null];
     }
@@ -1092,7 +1095,7 @@ fn fog_args(f: &iron_render_api::Fog) -> Vec<Value> {
 
 /// The `post` op's arguments: post exposure, tonemapping, the auto exposure (when the quality
 /// level lets it run), the manual exposure and the blend time.
-fn post_args(s: &iron_render_api::RenderSettingsData, auto_allowed: bool) -> Vec<Value> {
+fn post_args(s: &platypus_render_api::RenderSettingsData, auto_allowed: bool) -> Vec<Value> {
     let auto = match (&s.auto_exposure, auto_allowed) {
         (Some(a), true) => {
             let metering = ["average", "centerWeighted", "spot"]
@@ -1132,7 +1135,7 @@ fn post_args(s: &iron_render_api::RenderSettingsData, auto_allowed: bool) -> Vec
 }
 
 /// `[key, value, ...]` of a particle system, as the TypeScript's `pairs()` makes them.
-fn particle_pairs(d: &iron_render_api::ParticleData) -> Vec<Value> {
+fn particle_pairs(d: &platypus_render_api::ParticleData) -> Vec<Value> {
     let range = |m: [f64; 2]| {
         if m[0] == m[1] { n(m[0]) } else { arr(&m) }
     };
@@ -1211,12 +1214,12 @@ fn particle_pairs(d: &iron_render_api::ParticleData) -> Vec<Value> {
 fn cloths(scene: &mut ScriptScene, extras: &mut Extras) {
     // A cloth a program made starts when the host first sees it (the TypeScript's `onStart`),
     // once its object has a mesh renderer.
-    for (r, d) in iron_render_api::cloths() {
-        if d.simulated_mesh == 0 && !iron_render_api::mesh_renderers_on(d.object).is_empty() {
+    for (r, d) in platypus_render_api::cloths() {
+        if d.simulated_mesh == 0 && !platypus_render_api::mesh_renderers_on(d.object).is_empty() {
             r.rebuild();
         }
     }
-    let live = iron_render_api::cloths();
+    let live = platypus_render_api::cloths();
     let ids: HashSet<u32> = live.iter().map(|(r, _)| r.0).collect();
     let gone: Vec<u32> = cache(|c| {
         let gone = c
@@ -1247,7 +1250,7 @@ fn cloths(scene: &mut ScriptScene, extras: &mut Extras) {
 
         let mut colliders = Vec::new();
         for o in &d.sphere_colliders {
-            let c = iron_physics_api::SphereColliderRef::find_on(*o);
+            let c = platypus_physics_api::SphereColliderRef::find_on(*o);
             if c.0 != 0 {
                 colliders.push(Value::Array(vec![
                     Value::String("sphere".into()),
@@ -1258,7 +1261,7 @@ fn cloths(scene: &mut ScriptScene, extras: &mut Extras) {
             }
         }
         for o in &d.capsule_colliders {
-            let c = iron_physics_api::CapsuleColliderRef::find_on(*o);
+            let c = platypus_physics_api::CapsuleColliderRef::find_on(*o);
             if c.0 != 0 {
                 colliders.push(Value::Array(vec![
                     Value::String("capsule".into()),
@@ -1335,15 +1338,15 @@ fn model_bindposes(description: &serde_json::Value) {
 
 /// Textures, meshes and models the game made since the last frame.
 fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
-    use iron_render_api::{RenderCommand, TextureRef};
-    let commands = iron_render_api::take_commands();
+    use platypus_render_api::{RenderCommand, TextureRef};
+    let commands = platypus_render_api::take_commands();
     if !commands.is_empty() {
         cache(|c| c.uploads += 1);
     }
     for cmd in commands {
         match cmd {
             RenderCommand::Texture(t) => {
-                let Some(info) = iron_render_api::texture_info(t) else {
+                let Some(info) = platypus_render_api::texture_info(t) else {
                     continue;
                 };
                 if info.render_texture {
@@ -1353,7 +1356,7 @@ fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
                         n(f64::from(info.height)),
                     ];
                     warn(views.apply("renderTexture", &args), "renderTexture");
-                    iron_render_api::texture_loaded(t, info.width, info.height);
+                    platypus_render_api::texture_loaded(t, info.width, info.height);
                     continue;
                 }
                 let pixels = info.pixels.as_ref().map_or(Value::Null, |p| {
@@ -1372,12 +1375,12 @@ fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
                     Value::Bool(info.linear),
                 ];
                 match views.texture_op("texture", root, &args) {
-                    Ok(Some((_, w, h))) => iron_render_api::texture_loaded(t, w, h),
+                    Ok(Some((_, w, h))) => platypus_render_api::texture_loaded(t, w, h),
                     Ok(None) => {}
                     Err(e) => {
                         tracing::warn!(target: "render", "texture {}: {e}", t.0);
                         views.mark_missing(t.0);
-                        iron_render_api::texture_loaded(t, 0, 0);
+                        platypus_render_api::texture_loaded(t, 0, 0);
                     }
                 }
             }
@@ -1385,7 +1388,7 @@ fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
                 let _ = views.texture_op("textureRemove", root, &[n(f64::from(id))]);
             }
             RenderCommand::Mesh(m) => {
-                let Some(info) = iron_render_api::mesh_info(m) else {
+                let Some(info) = platypus_render_api::mesh_info(m) else {
                     continue;
                 };
                 // Primitives are built in; an engine mesh (a cloth's copy) is filled in later.
@@ -1418,7 +1421,7 @@ fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
                 );
             }
             RenderCommand::Model(m) => {
-                let Some(src) = iron_render_api::model_src(m) else {
+                let Some(src) = platypus_render_api::model_src(m) else {
                     continue;
                 };
                 let args = [n(f64::from(m.0)), Value::String(src.clone())];
@@ -1426,13 +1429,13 @@ fn resources(views: &mut WorldViews, scene: &mut ScriptScene, root: &Path) {
                     Ok(description) => {
                         model_bindposes(&description);
                         // Building the nodes makes GameObjects: the scene must be current.
-                        let _scope = iron_scene::api::enter(&mut scene.scene);
-                        iron_render_api::model_loaded(m, Some(&description.to_string()));
+                        let _scope = platypus_scene::api::enter(&mut scene.scene);
+                        platypus_render_api::model_loaded(m, Some(&description.to_string()));
                     }
                     Err(e) => {
                         tracing::warn!(target: "render", "model `{src}`: {e}");
-                        let _scope = iron_scene::api::enter(&mut scene.scene);
-                        iron_render_api::model_loaded(m, None);
+                        let _scope = platypus_scene::api::enter(&mut scene.scene);
+                        platypus_render_api::model_loaded(m, None);
                     }
                 }
             }
@@ -1461,13 +1464,13 @@ fn full_rebuild_dump(scene: &mut ScriptScene) -> String {
 mod tests {
     use super::super::native::{Bundle, Native};
     use super::*;
-    use iron_ui::UiTree;
+    use platypus_ui::UiTree;
 
     // M9-API-1700
     #[test]
     fn the_incremental_sync_matches_a_full_rebuild_under_random_changes() {
-        iron_render_api::reset();
-        iron_engine_api::camera::reset();
+        platypus_render_api::reset();
+        platypus_engine_api::camera::reset();
         reset();
         let mut scene = ScriptScene::new();
         let mut ui = UiTree::new(100.0, 100.0);
@@ -1588,8 +1591,8 @@ mod tests {
     // M9-API-1701
     #[test]
     fn an_unchanged_frame_sends_nothing() {
-        iron_render_api::reset();
-        iron_engine_api::camera::reset();
+        platypus_render_api::reset();
+        platypus_engine_api::camera::reset();
         reset();
         let mut scene = ScriptScene::new();
         let mut ui = UiTree::new(100.0, 100.0);
@@ -1657,7 +1660,7 @@ mod tests {
     // M9-API-700
     #[test]
     fn settings_planes_and_quality_reach_the_renderers_views() {
-        iron_render_api::reset();
+        platypus_render_api::reset();
         reset();
         let mut scene = ScriptScene::new();
         let mut ui = UiTree::new(100.0, 100.0);
@@ -1689,7 +1692,10 @@ mod tests {
         assert_eq!(v[0].quads.len(), 1, "the plane");
         assert!(views.sky.is_some(), "the skybox");
         assert!(views.bloom.is_some());
-        assert_eq!(views.grading.tonemapping, iron_render::Tonemapping::Aces);
+        assert_eq!(
+            views.grading.tonemapping,
+            platypus_render::Tonemapping::Aces
+        );
         // Nothing changed: the second sync leaves the settings alone and keeps the plane.
         sync(&mut views, &mut scene, Path::new("."));
         scene.scene.update_world();
@@ -1699,8 +1705,8 @@ mod tests {
     // M9-API-1501
     #[test]
     fn fog_exposure_lights_and_fog_volumes_reach_the_renderers_views() {
-        iron_render_api::reset();
-        iron_engine_api::screen::reset();
+        platypus_render_api::reset();
+        platypus_engine_api::screen::reset();
         reset();
         let mut scene = ScriptScene::new();
         let mut ui = UiTree::new(100.0, 100.0);
@@ -1743,7 +1749,7 @@ mod tests {
         assert_eq!(v[0].fog, None);
         assert!(v[0].fog_volumes.is_empty());
         let fog = views.fog_for_test().expect("fog");
-        assert_eq!(fog.mode, iron_render::FogMode::Linear);
+        assert_eq!(fog.mode, platypus_render::FogMode::Linear);
         assert_eq!((fog.start, fog.end), (2.0, 50.0));
         let height = fog.height.expect("height fog");
         assert_eq!((height.density, height.base_height), (0.1, 1.0));
@@ -1752,22 +1758,22 @@ mod tests {
         assert_eq!(shafts.albedo, [1.0, 0.5, 0.25]);
         let auto = views.grading.auto_exposure.expect("auto exposure");
         assert_eq!((auto.min_ev, auto.compensation), (-4.0, 1.0));
-        assert_eq!(auto.metering, iron_render::Metering::Spot);
+        assert_eq!(auto.metering, platypus_render::Metering::Spot);
         assert_eq!(views.grading.fixed_ev, Some(12.0));
         assert_eq!(views.grading.transition, 2.0);
         assert_eq!(v[0].lights.len(), 1);
         assert_eq!(v[0].lights[0].volumetric, 0.25);
         assert!(matches!(
             v[0].lights[0].kind,
-            iron_render::LightKind::Pyramid { aspect, .. } if aspect == 3.0
+            platypus_render::LightKind::Pyramid { aspect, .. } if aspect == 3.0
         ));
         // The player's quality switch turns auto exposure off without the game changing anything.
-        iron_engine_api::screen::quality_api::set_auto_exposure(false);
+        platypus_engine_api::screen::quality_api::set_auto_exposure(false);
         sync(&mut views, &mut scene, Path::new("."));
         assert!(views.grading.auto_exposure.is_none());
         assert_eq!(views.grading.fixed_ev, Some(12.0));
         // Setting the fog to nothing clears the air.
-        iron_render_api::render_settings_api::set_fog(false);
+        platypus_render_api::render_settings_api::set_fog(false);
         sync(&mut views, &mut scene, Path::new("."));
         assert!(views.fog_for_test().is_none());
     }
@@ -1775,8 +1781,8 @@ mod tests {
     // M7-CLOUD-04
     #[test]
     fn a_compiled_games_cloud_layer_reaches_the_views_with_its_defaults() {
-        iron_render_api::reset();
-        iron_engine_api::screen::reset();
+        platypus_render_api::reset();
+        platypus_engine_api::screen::reset();
         reset();
         let mut scene = ScriptScene::new();
         let mut ui = UiTree::new(100.0, 100.0);
@@ -1806,7 +1812,7 @@ mod tests {
         views.advance_clouds(0.5);
         let o = views.views(&scene, (64, 64), &[])[0].clouds.unwrap().offset;
         assert!(o[0].abs() < 1e-5 && (o[1] - 1.0).abs() < 1e-5, "{o:?}");
-        iron_render_api::render_settings_api::set_cloud_layer(None);
+        platypus_render_api::render_settings_api::set_cloud_layer(None);
         sync(&mut views, &mut scene, Path::new("."));
         assert_eq!(views.views(&scene, (64, 64), &[])[0].clouds, None);
     }
@@ -1814,8 +1820,8 @@ mod tests {
     // M9-API-1511, M9-TS-2887
     #[test]
     fn filled_shapes_text_meshes_and_a_spline_rider_reach_the_renderer() {
-        iron_render_api::reset();
-        iron_engine_api::screen::reset();
+        platypus_render_api::reset();
+        platypus_engine_api::screen::reset();
         reset();
         let mut scene = ScriptScene::new();
         let mut ui = UiTree::new(100.0, 100.0);
@@ -1860,7 +1866,7 @@ mod tests {
         assert_eq!(args[5].as_str(), Some("Inter"));
         assert_eq!(args[8].as_f64(), Some(300.0));
         // Shapes: the filled one carries its fill, rule and order into the view; the other none.
-        let lines = iron_render_api::line_renderer2ds();
+        let lines = platypus_render_api::line_renderer2ds();
         assert_eq!(lines.len(), 2);
         let filled = lines
             .iter()

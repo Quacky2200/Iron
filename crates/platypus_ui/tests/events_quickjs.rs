@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! UI events end to end (M3-EVT-02, M3-EVT-03, M3-EVT-04): [`Interaction`] hit-tests
-//! and tracks focus, `@iron/react` runs the handlers inside QuickJS, and re-renders
+//! and tracks focus, `@platypus/react` runs the handlers inside QuickJS, and re-renders
 //! come back as commits; `ref.focus()` / `ref.blur()` come back as ops. Uses
 //! `tests/fixtures/events.js`, built by Bun from `tests/fixtures/src/events.tsx`.
 
-use iron_core::{NodeId, Value};
-use iron_script::conformance::capture_logs;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Input, Interaction, ROOT, Rgba, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_script::conformance::capture_logs;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ui::{Input, Interaction, ROOT, Rgba, UiTree};
 
 const EVENTS: &str = include_str!("../../../tests/fixtures/events.js");
 
@@ -66,7 +66,7 @@ impl Game {
         }
     }
 
-    /// Handles one input like the app: events go to `__iron_ui_event`, commits are
+    /// Handles one input like the app: events go to `__platypus_ui_event`, commits are
     /// applied, then `focus` / `blur` ops are handled. Returns each event's type and
     /// whether it was prevented.
     fn handle(&mut self, input: Input) -> Vec<(&'static str, bool)> {
@@ -74,7 +74,7 @@ impl Game {
         let rt = &mut self.rt;
         self.ui.handle(&mut self.tree, input, &mut |e| {
             let prevented = rt
-                .call_global("__iron_ui_event", &e.script_args())
+                .call_global("__platypus_ui_event", &e.script_args())
                 .unwrap_or_else(|err| panic!("{err}"))
                 == Value::Bool(true);
             out.push((e.kind.name(), prevented));

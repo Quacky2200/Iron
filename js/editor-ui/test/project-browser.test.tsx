@@ -11,9 +11,9 @@ import { ProjectBrowser } from "../src/ProjectBrowser.tsx";
 let ops: unknown[][] = [];
 beforeEach(() => {
   ops = [];
-  (globalThis as { __iron_commit?: unknown }).__iron_commit = () => {};
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
-  (globalThis as { __iron_info?: unknown }).__iron_info = { app: { project: "C:/Games/Arcade" }, system: {} };
+  (globalThis as { __platypus_commit?: unknown }).__platypus_commit = () => {};
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_info?: unknown }).__platypus_info = { app: { project: "C:/Games/Arcade" }, system: {} };
   resetForTests();
   _resetRootForTests();
   _resetProjectForTests();
@@ -32,7 +32,7 @@ test("the project browser lists a folder, takes dropped files and moves items in
   root.render(<ProjectBrowser width={400} height={300} />);
   await tick();
   expect(ops[0]).toEqual(["editor.listDir", 1, ""]);
-  globalThis.__iron_editor_fs([
+  globalThis.__platypus_editor_fs([
     1,
     true,
     JSON.stringify({
@@ -44,7 +44,7 @@ test("the project browser lists a folder, takes dropped files and moves items in
     }),
   ]);
   await tick();
-  const rows = byClass("iron-project-row");
+  const rows = byClass("platypus-project-row");
   expect(rows.map((r) => (r.props as { draggable?: boolean }).draggable)).toEqual([true, true]);
   const [folder, file] = rows;
 
@@ -61,6 +61,6 @@ test("the project browser lists a folder, takes dropped files and moves items in
   dispatchUiEvent("drop", pathOf(folder!.id), POINTER);
   dispatchUiEvent("dragend", pathOf(file!.id), [0, 0, 0, 0, 1, 0, 0, 0]);
   expect(ops.at(-1)).toEqual(["editor.move", 3, "main.tsx", "assets"]);
-  expect(PROJECT_PATH_TYPE).toContain("iron");
+  expect(PROJECT_PATH_TYPE).toContain("platypus");
   root.unmount();
 });

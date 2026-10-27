@@ -113,7 +113,7 @@ _registerBuiltIns({
 
 /** A saved scene. */
 export interface SceneData {
-  format: "iron.scene";
+  format: "platypus.scene";
   version: 1;
   name: string;
   /** The lighting it was saved with (applied when it's the active scene). */
@@ -637,7 +637,7 @@ export class Scene {
     const roots = this.getRootGameObjects();
     number(saver, roots);
     const objects = roots.map((go) => saveObject(saver, go)).filter((d): d is GameObjectData => d !== null);
-    const data: SceneData = { format: "iron.scene", version: 1, name: this.name, objects };
+    const data: SceneData = { format: "platypus.scene", version: 1, name: this.name, objects };
     if (this === active) data.renderSettings = saveRenderSettings(saver);
     if (Object.keys(saver.assets).length) data.assets = saver.assets;
     return data;
@@ -722,7 +722,7 @@ function unload(scene: Scene): void {
 }
 
 function fromData(data: SceneData, mode: LoadSceneMode, path: string | null): Scene {
-  if (data?.format !== "iron.scene") throw new Error("not a scene (format isn't iron.scene)");
+  if (data?.format !== "platypus.scene") throw new Error("not a scene (format isn't platypus.scene)");
   if (data.version !== 1) throw new Error(`scene version ${data.version} isn't supported`);
   const scene = new Scene(data.name);
   scene.path = path;
@@ -748,10 +748,10 @@ let nextRead = 1;
 const reads = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void; path: string }>();
 
 declare global {
-  var __iron_asset_text: ((results: (number | string | null)[]) => void) | undefined;
+  var __platypus_asset_text: ((results: (number | string | null)[]) => void) | undefined;
 }
 
-globalThis.__iron_asset_text = (results) => {
+globalThis.__platypus_asset_text = (results) => {
   for (let i = 0; i + 1 < results.length; i += 2) {
     const read = reads.get(results[i] as number);
     if (!read) continue;
@@ -766,7 +766,7 @@ function readText(path: string): Promise<string> {
   const id = nextRead++;
   return new Promise((resolve, reject) => {
     reads.set(id, { resolve, reject, path });
-    __iron_op("asset.readText", id, path);
+    __platypus_op("asset.readText", id, path);
   });
 }
 
@@ -861,7 +861,7 @@ export const SceneManager = {
 
 /** A saved prefab (Unity's prefab asset): one object tree in the scene file's format. */
 export interface PrefabData {
-  format: "iron.prefab";
+  format: "platypus.prefab";
   version: 1;
   name: string;
   root: GameObjectData;
@@ -894,7 +894,7 @@ export class Prefab {
     // The prefab's own placement starts from the origin.
     delete root.position;
     delete root.rotation;
-    const data: PrefabData = { format: "iron.prefab", version: 1, name: go.name, root };
+    const data: PrefabData = { format: "platypus.prefab", version: 1, name: go.name, root };
     if (Object.keys(saver.assets).length) data.assets = saver.assets;
     return new Prefab(JSON.parse(JSON.stringify(data)) as PrefabData, null);
   }
@@ -902,7 +902,7 @@ export class Prefab {
   /** A prefab from saved data (`toJSON()`'s output). */
   static fromData(data: unknown, src: string | null = null): Prefab {
     const d = data as Partial<PrefabData>;
-    if (d?.format !== "iron.prefab" || !d.root) throw new Error(`not prefab data${src ? `: ${src}` : ""}`);
+    if (d?.format !== "platypus.prefab" || !d.root) throw new Error(`not prefab data${src ? `: ${src}` : ""}`);
     return new Prefab(d as PrefabData, src);
   }
 
@@ -1046,16 +1046,16 @@ function restoreState(json: string): boolean {
 }
 
 declare global {
-  var __iron_save_state: (() => string) | undefined;
-  var __iron_restore_state: ((json: string) => boolean) | undefined;
+  var __platypus_save_state: (() => string) | undefined;
+  var __platypus_restore_state: ((json: string) => boolean) | undefined;
   /** Set by the engine while a reload with saved state loads the new bundle. */
-  var __iron_reloading: boolean | undefined;
+  var __platypus_reloading: boolean | undefined;
 }
-globalThis.__iron_save_state = saveState;
-globalThis.__iron_restore_state = restoreState;
+globalThis.__platypus_save_state = saveState;
+globalThis.__platypus_restore_state = restoreState;
 
 /**
- * The game's start scene (`iron.startScene` in its `package.json`), loaded once the
+ * The game's start scene (`platypus.startScene` in its `package.json`), loaded once the
  * file has been read. It loads next to the objects of the starting components and
  * becomes active; the `Main` scene goes if nothing is in it.
  */
@@ -1070,9 +1070,9 @@ async function loadStartScene(path: string): Promise<void> {
   }
 }
 
-const startScene = globalThis.__iron_info?.app.startScene;
+const startScene = globalThis.__platypus_info?.app.startScene;
 // Not after a reload that keeps state: the saved scenes come back instead.
-if (startScene && typeof __iron_op === "function" && !globalThis.__iron_reloading) void loadStartScene(startScene);
+if (startScene && typeof __platypus_op === "function" && !globalThis.__platypus_reloading) void loadStartScene(startScene);
 
 _setSceneHooks({
   active: () => active,

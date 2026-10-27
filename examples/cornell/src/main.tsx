@@ -4,7 +4,7 @@
 // primitives: a 2 m room with a red left wall, a green right wall, white floor, ceiling
 // and back, a tall and a short block, and a light in the ceiling.
 //
-// Iron has no global illumination or area lights yet, so the light is approximated: an
+// Platypus has no global illumination or area lights yet, so the light is approximated: an
 // emissive panel (glowing through bloom), a point light under it for the walls, a
 // soft-shadowed directional light from above so the blocks cast their shadows, and bounce
 // lights (soft point lights tinted by the walls and floor) faking the light GI would

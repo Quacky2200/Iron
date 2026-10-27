@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_ts_rt"
+name = "platypus_ts_rt"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [dependencies]
-iron_api = { path = "../../crates/iron_api", default-features = false }
-iron_kinds = { path = "../../crates/iron_kinds" }
-iron_physics_api = { path = "../../crates/iron_physics_api" }
+platypus_api = { path = "../../crates/platypus_api", default-features = false }
+platypus_kinds = { path = "../../crates/platypus_kinds" }
+platypus_physics_api = { path = "../../crates/platypus_physics_api" }
 serde_json = "1"
 regress = { version = "0.12.0", features = ["utf16"] }
 jiff = "0.2"

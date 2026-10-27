@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Element attributes used by CSS selectors (crates/iron_ui/src/attrs.rs).
+// Element attributes used by CSS selectors (crates/platypus_ui/src/attrs.rs).
 
 type AttrValue = string | number | boolean | null;
 

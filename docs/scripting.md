@@ -1,21 +1,21 @@
 # Scripting
 
-Crates and packages: [iron_script](../crates/iron_script/src) (Rust), [js/engine](../js/engine/src)
-(`@iron/engine`), plus the loader in [iron_app/main.rs](../crates/iron_app/src/main.rs).
+Crates and packages: [platypus_script](../crates/platypus_script/src) (Rust), [js/engine](../js/engine/src)
+(`@platypus/engine`), plus the loader in [platypus_app/main.rs](../crates/platypus_app/src/main.rs).
 Design background: [DESIGN.md](../DESIGN.md) section 3 and 4.
 
 ## Values crossing the boundary
 
-[iron_core::Value](../crates/iron_core/src/value.rs) is the only thing that crosses: `Null`,
+[platypus_core::Value](../crates/platypus_core/src/value.rs) is the only thing that crosses: `Null`,
 `Bool`, `Number(f64)`, `String`, `Array`. There are no objects, no functions, no handles to JS.
-Engine objects are numeric ids ([ids.rs](../crates/iron_core/src/ids.rs): `EntityId`,
+Engine objects are numeric ids ([ids.rs](../crates/platypus_core/src/ids.rs): `EntityId`,
 `ComponentId`, `NodeId`). `from_js`/`to_js` in
-[quickjs.rs](../crates/iron_script/src/quickjs.rs) convert; anything that is not bool, number,
+[quickjs.rs](../crates/platypus_script/src/quickjs.rs) convert; anything that is not bool, number,
 string or array becomes `Null`. Typed arrays (`Float32Array`, `Float64Array`, `Uint32Array`, `Int32Array`, `Uint16Array`, `Int16Array`, `Uint8Array`, `Int8Array`, `subarray` views included) arrive as number lists: `typed_numbers` reads their bytes directly, with no per-element JS calls (`M7-FOG-09`).
 
 ## `ScriptRuntime`
 
-Defined in [lib.rs](../crates/iron_script/src/lib.rs). Every backend provides the same globals.
+Defined in [lib.rs](../crates/platypus_script/src/lib.rs). Every backend provides the same globals.
 
 | Method | Purpose |
 |---|---|
@@ -30,57 +30,57 @@ Defined in [lib.rs](../crates/iron_script/src/lib.rs). Every backend provides th
 
 Difference from DESIGN.md section 4.1: the trait there has no `tick` or `drain_commits`; the code
 added both (timers and UI commits are first-class). The shared behaviour is pinned by the
-conformance suite ([conformance.rs](../crates/iron_script/src/conformance.rs)), which any new
+conformance suite ([conformance.rs](../crates/platypus_script/src/conformance.rs)), which any new
 backend must pass via `runtime_conformance_tests!`.
 
 ## QuickJS backend
 
-[quickjs.rs](../crates/iron_script/src/quickjs.rs), `QuickJsRuntime` (rquickjs):
+[quickjs.rs](../crates/platypus_script/src/quickjs.rs), `QuickJsRuntime` (rquickjs):
 
 - Holds a `Context`, a `Runtime` and `Rc<RefCell<Shared>>`. `Shared` (ops, commits, errors, log
   sink) is what the native functions write into and survives `reset()`. Field order matters:
   the context must drop before its runtime (also handled in `reset`).
 - `new_context` creates a runtime and context, runs `install_globals`, then evaluates
-  [prelude.js](../crates/iron_script/src/prelude.js).
+  [prelude.js](../crates/platypus_script/src/prelude.js).
 - **Native globals** installed by `install_globals`:
   - `console.log/info/debug/warn/error` -> the log sink.
-  - `__iron_op(name, ...args)` -> pushes an `Op { name, args }` onto `Shared.ops`.
-  - `__iron_commit(ops, target?)` -> pushes a `Commit { ops }` onto `Shared.commits` with its UI tree
+  - `__platypus_op(name, ...args)` -> pushes an `Op { name, args }` onto `Shared.ops`.
+  - `__platypus_commit(ops, target?)` -> pushes a `Commit { ops }` onto `Shared.commits` with its UI tree
     `target` (default 0, the screen; others are world panels). `drain_commits()` drops the targets;
     `drain_targeted_commits()` returns `(target, Commit)` pairs.
-  - `__iron_report_error(e)` -> pushes onto `Shared.errors` (used by the prelude).
+  - `__platypus_report_error(e)` -> pushes onto `Shared.errors` (used by the prelude).
 - **Microtasks**: every entry point (`load_bundle`, `eval`, `call_global`) ends with `run_jobs()`,
-  draining pending promise jobs, then calling the global `__iron_flush` if defined (it sends queued transforms, see [scene-and-objects.md](scene-and-objects.md#transform-batching)); an error from it goes to `Shared.errors`. React 19 relies on microtasks, so "jobs run before returning to
+  draining pending promise jobs, then calling the global `__platypus_flush` if defined (it sends queued transforms, see [scene-and-objects.md](scene-and-objects.md#transform-batching)); an error from it goes to `Shared.errors`. React 19 relies on microtasks, so "jobs run before returning to
   Rust" is part of the contract. A job that throws is kept in `Shared.errors` and returned by the
   next `tick`.
 - Bundles are evaluated non-strict with the bundle name as the filename, so stack traces point at
-  `game.js:line`. `thrown_to_error` builds a `ScriptError` ([error.rs](../crates/iron_script/src/error.rs))
+  `game.js:line`. `thrown_to_error` builds a `ScriptError` ([error.rs](../crates/platypus_script/src/error.rs))
   with message, stack and a file/line parsed from the stack.
 
 ## Timers (the prelude)
 
-[prelude.js](../crates/iron_script/src/prelude.js) implements `setTimeout`/`clearTimeout` entirely
+[prelude.js](../crates/platypus_script/src/prelude.js) implements `setTimeout`/`clearTimeout` entirely
 in JS so that Rust never holds a JS function (DESIGN rule). Timers live in a `Map` keyed by id,
 with a due time on *engine time* and a sequence number for stable ordering.
 
-`QuickJsRuntime::tick(now_ms)` repeatedly calls the global `__iron_fire_next_timer(now)`. Each
+`QuickJsRuntime::tick(now_ms)` repeatedly calls the global `__platypus_fire_next_timer(now)`. Each
 call fires the earliest due timer (ties broken by sequence) and returns `true`, so microtasks run
 between timers because `call_global` drains jobs. The loop is capped at `MAX_TIMERS_PER_TICK`
 (1000) so `setTimeout(f, 0)` loops cannot freeze a frame; timers that throw are reported through
-`__iron_report_error` and the others still run. There is no `setInterval` or `requestAnimationFrame`.
+`__platypus_report_error` and the others still run. There is no `setInterval` or `requestAnimationFrame`.
 
 ## Ops and commits
 
 | Channel | JS side | Rust side | Used for |
 |---|---|---|---|
-| Ops | `__iron_op(name, ...args)` (`op()` in `@iron/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `setPointerCapture`, `releasePointerCapture`, `scrollTo`..., and the `physics.*` and `audio.*` families |
-| Commits | `__iron_commit(ops, target)` | `drain_targeted_commits()` -> `Vec<(u32, Commit)>` | React UI mutations, for the screen or a world panel |
+| Ops | `__platypus_op(name, ...args)` (`op()` in `@platypus/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `setPointerCapture`, `releasePointerCapture`, `scrollTo`..., and the `physics.*` and `audio.*` families |
+| Commits | `__platypus_commit(ops, target)` | `drain_targeted_commits()` -> `Vec<(u32, Commit)>` | React UI mutations, for the screen or a world panel |
 
-Ops are generic (a name plus arguments, see [ops.rs](../crates/iron_core/src/ops.rs)); the doc
+Ops are generic (a name plus arguments, see [ops.rs](../crates/platypus_core/src/ops.rs)); the doc
 comment notes a binary encoding is planned once the op set settles (TESTS.md `M2-BEN-04`).
-A typed alternative to string-named ops is being built as `iron_api` (see [iron-api.md](iron-api.md)).
+A typed alternative to string-named ops is being built as `platypus_api` (see [platypus-api.md](platypus-api.md)).
 There is no registry: the **app** matches on `op.name` in `App::tick`
-([main.rs](../crates/iron_app/src/main.rs)) and logs `unknown script op` otherwise. `physics.*` and `audio.*` ops are matched by prefix and
+([main.rs](../crates/platypus_app/src/main.rs)) and logs `unknown script op` otherwise. `physics.*` and `audio.*` ops are matched by prefix and
 forwarded to `Physics::apply` and the mixer; `cloth.*` goes to `ClothSystem`
 ([physics-and-audio.md](physics-and-audio.md#cloth)); `app.runInBackground` and `app.targetFrameRate` are the
 app's own; `scene.*` goes to `ScriptScene::apply` and `render.*` to
@@ -88,31 +88,31 @@ app's own; `scene.*` goes to `ScriptScene::apply` and `render.*` to
 [world-rendering.md](world-rendering.md)).
 
 A `Commit` is a `Vec<Value>`, each op `[opcode, ...args]`
-([opcodes.rs](../crates/iron_ui/src/opcodes.rs), mirrored by
+([opcodes.rs](../crates/platypus_ui/src/opcodes.rs), mirrored by
 [opcodes.ts](../js/react/src/opcodes.ts)). Applied as a unit by `UiTree::apply_commit`; see
 [ui-tree.md](ui-tree.md).
 
-## `ComponentHost` and `@iron/engine`
+## `ComponentHost` and `@platypus/engine`
 
-Rust side: [components.rs](../crates/iron_script/src/components.rs). `ComponentHost` keeps a
+Rust side: [components.rs](../crates/platypus_script/src/components.rs). `ComponentHost` keeps a
 `Vec<Entry { id, class, object, hooks, started, enabled }>` and talks to JS only by calling globals:
 
-| Rust call | JS global (installed by `@iron/engine`) |
+| Rust call | JS global (installed by `@platypus/engine`) |
 |---|---|
-| `registered_classes` | `__iron_registered()` -> names of the starting classes (registered without `spawn: false`) |
-| `spawn_on(class, object, name)` (`spawn` has no object) | `__iron_create(class, id, object, name)` |
-| first run of a component | `__iron_hooks(id)` -> names of its lifecycle methods, kept in the `Entry` |
-| `update_active(dt, active)` | `__iron_tick(dt)` (script `Time`; returns the scaled `dt`), then `__iron_dispatch(id, "onStart"/"onUpdate"/"onLateUpdate", ...args)` |
+| `registered_classes` | `__platypus_registered()` -> names of the starting classes (registered without `spawn: false`) |
+| `spawn_on(class, object, name)` (`spawn` has no object) | `__platypus_create(class, id, object, name)` |
+| first run of a component | `__platypus_hooks(id)` -> names of its lifecycle methods, kept in the `Entry` |
+| `update_active(dt, active)` | `__platypus_tick(dt)` (script `Time`; returns the scaled `dt`), then `__platypus_dispatch(id, "onStart"/"onUpdate"/"onLateUpdate", ...args)` |
 | `fixed_update(dt, active)` | `onFixedUpdate`, batched the same way |
 | `pre_render(active)` | `onPreRender`, batched the same way |
-| `remove`, `remove_on_objects`, and on error | `onDestroy` (not after an error), then `__iron_destroy(id)` |
+| `remove`, `remove_on_objects`, and on error | `onDestroy` (not after an error), then `__platypus_destroy(id)` |
 | `adopt(id, class, object)` | none: takes over a component a script made with `addComponent` |
 
-`run` batches a hook: one `__iron_run(method, ids, ...args)` call covers each run of consecutive components,
-instead of one `__iron_dispatch` per component. A new component's `onStart` flushes the batch first, so the
-order is unchanged. If a call throws, JS has set `__iron_run_at` to the index that failed; the host disables
-that component (`fail`) and goes on with the rest. A bundle without `__iron_run` falls back to `run_each`
-(one `__iron_dispatch(id, method, ...args)` per component).
+`run` batches a hook: one `__platypus_run(method, ids, ...args)` call covers each run of consecutive components,
+instead of one `__platypus_dispatch` per component. A new component's `onStart` flushes the batch first, so the
+order is unchanged. If a call throws, JS has set `__platypus_run_at` to the index that failed; the host disables
+that component (`fail`) and goes on with the rest. A bundle without `__platypus_run` falls back to `run_each`
+(one `__platypus_dispatch(id, method, ...args)` per component).
 
 `onStart` runs once before any other hook. Each hook only runs on components that define it and whose
 GameObject is active (the `active` closure). A component that throws is
@@ -133,99 +133,99 @@ JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
   Takes `{ height: 1080 }`, `{ width, height }`, a number (fixed zoom) or `null` (the default). The
   app handles it in `ui_scale.rs` (see [input-and-events.md](input-and-events.md#ui-scale-m3d-step-9b)).
 - `input` ([input.ts](../js/engine/src/input.ts)): keyboard and gamepad state and events for
-  gameplay code, fed by `__iron_input(type, ...args)` from the app (see
+  gameplay code, fed by `__platypus_input(type, ...args)` from the app (see
   [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6)).
 - `physics` ([physics.ts](../js/engine/src/physics.ts)) and `audio` ([audio.ts](../js/engine/src/audio.ts)):
   bodies, colliders, sounds, buses. They queue `physics.*`/`audio.*` ops and receive results through
-  `__iron_physics` and `__iron_audio` (see [physics-and-audio.md](physics-and-audio.md)).
-- The `__iron_*` host functions are assigned on `globalThis` at import time; instances live in a
+  `__platypus_physics` and `__platypus_audio` (see [physics-and-audio.md](physics-and-audio.md)).
+- The `__platypus_*` host functions are assigned on `globalThis` at import time; instances live in a
   `Map<number, Component>`.
-- [globals.ts](../js/engine/src/globals.ts) declares the ambient types (`__iron_op`, timers,
-  `process.env.NODE_ENV`, `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio`, and the scene hooks below). It is hand-written for now (a generated `.d.ts` is planned).
+- [globals.ts](../js/engine/src/globals.ts) declares the ambient types (`__platypus_op`, timers,
+  `process.env.NODE_ENV`, `__platypus_ui_event`, `__platypus_input`, `__platypus_physics`, `__platypus_audio`, and the scene hooks below). It is hand-written for now (a generated `.d.ts` is planned).
 
-The scene globals, installed by `@iron/engine` and called by Rust: `__iron_registered`,
-`__iron_create(class, id, object, name)`, `__iron_hooks(id)`, `__iron_dispatch`, `__iron_run(method, ids, ...args)`, `__iron_flush()`, `__iron_destroy`,
-`__iron_tick(dt)` (script `Time`, once per frame), `__iron_scene(moved)` (engine moves of objects, see
-[scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__iron_screen(width, height, scale)`
-(the screen size in UI pixels, when it changes). `__iron_animate(dt)` poses animated objects between `onUpdate`
-and `onLateUpdate` ([animation-3d.md](animation-3d.md#when-it-runs)); `__iron_focus(focused, paused)` reports
-focus and background pausing ([platform.md](platform.md#focus-and-pausing)); `__iron_assets_changed(paths)`
-reports reloaded asset files ([assets-and-models.md](assets-and-models.md#hot-reload-of-assets)). `__iron_asset_text([id, text | null, ...])` answers
-`asset.readText` (files scenes load, see [scene-and-objects.md](scene-and-objects.md#scenes)). Like `__iron_ui_event`, the optional ones
-(`__iron_tick`, `__iron_animate`, `__iron_focus`, `__iron_assets_changed`, `__iron_scene`, `__iron_screen`,
-`__iron_physics`, `__iron_audio`) are probed or
+The scene globals, installed by `@platypus/engine` and called by Rust: `__platypus_registered`,
+`__platypus_create(class, id, object, name)`, `__platypus_hooks(id)`, `__platypus_dispatch`, `__platypus_run(method, ids, ...args)`, `__platypus_flush()`, `__platypus_destroy`,
+`__platypus_tick(dt)` (script `Time`, once per frame), `__platypus_scene(moved)` (engine moves of objects, see
+[scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__platypus_screen(width, height, scale)`
+(the screen size in UI pixels, when it changes). `__platypus_animate(dt)` poses animated objects between `onUpdate`
+and `onLateUpdate` ([animation-3d.md](animation-3d.md#when-it-runs)); `__platypus_focus(focused, paused)` reports
+focus and background pausing ([platform.md](platform.md#focus-and-pausing)); `__platypus_assets_changed(paths)`
+reports reloaded asset files ([assets-and-models.md](assets-and-models.md#hot-reload-of-assets)). `__platypus_asset_text([id, text | null, ...])` answers
+`asset.readText` (files scenes load, see [scene-and-objects.md](scene-and-objects.md#scenes)). Like `__platypus_ui_event`, the optional ones
+(`__platypus_tick`, `__platypus_animate`, `__platypus_focus`, `__platypus_assets_changed`, `__platypus_scene`, `__platypus_screen`,
+`__platypus_physics`, `__platypus_audio`) are probed or
 called tolerantly, so games that don't import the engine still run.
 
-`iron_app` makes **one GameObject per starting class** (registered without `spawn: false`) with that
+`platypus_app` makes **one GameObject per starting class** (registered without `spawn: false`) with that
 component (`spawn_starting_components`; a start scene is loaded by the scripts themselves, see
 [scene-and-objects.md](scene-and-objects.md#scenes)) and ticks at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per
 frame). Per frame the order is:
 
 1. For each fixed tick: `fixed_update` (`onFixedUpdate`), `apply_script_output` (commits, then ops in
-   order), `step_physics` (calls `__iron_physics(moved, contacts, rays, characters)` if defined), the
-   cloth step, then `send_scene_moves` (`__iron_scene`).
+   order), `step_physics` (calls `__platypus_physics(moved, contacts, rays, characters)` if defined), the
+   cloth step, then `send_scene_moves` (`__platypus_scene`).
 2. `ScriptRuntime::tick` (timers and microtasks).
-3. `apply_script_output`, `update_active` (`__iron_tick`, then `onUpdate`, `__iron_animate` and
+3. `apply_script_output`, `update_active` (`__platypus_tick`, then `onUpdate`, `__platypus_animate` and
    `onLateUpdate`, `dt` capped at 0.1 s), `apply_script_output`, then `update_audio`, which calls
-   `__iron_audio(ended)`.
+   `__platypus_audio(ended)`.
 
 Before all that, `App::tick` polls the script and asset watchers. While the game is paused in the
 background (see [platform.md](platform.md#focus-and-pausing)) it stops there: none of the steps run.
-4. At draw time: `pre_render` (`onPreRender`), `apply_script_output`, `__iron_screen` if the size
+4. At draw time: `pre_render` (`onPreRender`), `apply_script_output`, `__platypus_screen` if the size
    changed, then panels and the world are drawn ([world-rendering.md](world-rendering.md)).
 
 See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
 
 ## From TypeScript to a running game
 
-1. The examples are compiled by `iron-build` (see [iron-build.md](iron-build.md); they no longer have Bun `build` / `dev` /
+1. The examples are compiled by `platypus-build` (see [platypus-build.md](platypus-build.md); they no longer have Bun `build` / `dev` /
    `typecheck` scripts). The QuickJS path below is what remains for the editor (`editor/`) and the test fixtures: a folder with
    `src/main.tsx` and a `build` script:
    `bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser
-   --define process.env.NODE_ENV='"development"'`. Bun strips types, bundles React and the `@iron/*`
+   --define process.env.NODE_ENV='"development"'`. Bun strips types, bundles React and the `@platypus/*`
    workspace packages into one IIFE, and (when CSS is imported) writes `dist/game.css` next to it.
    The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
-2. `iron <folder>` ([main.rs](../crates/iron_app/src/main.rs)) runs the current folder when no game is
+2. `platypus <folder>` ([main.rs](../crates/platypus_app/src/main.rs)) runs the current folder when no game is
    given (`parse_args_from`; the folder may come before or after the options, `M5-APP-03`). It calls
    `resolve_bundle`: a directory
    means `<dir>/dist/game.js` with the directory as the asset root; a `.js` path uses its parent.
 3. `QuickJsRuntime::new()`, `load_bundles`, then `ComponentHost::registered_classes` + `spawn` each.
    `load_bundles` loads `game.js` alone, or for a dev build (below) `vendor.js` and then the game's
-   code through `iron_script::load_game`.
-4. `ui_events` is probed once with `typeof __iron_ui_event === 'function'` (set by `@iron/react`);
+   code through `platypus_script::load_game`.
+4. `ui_events` is probed once with `typeof __platypus_ui_event === 'function'` (set by `@platypus/react`);
    games without React UI skip event dispatch.
 5. `dist/game.css`, if present, is added with `add_stylesheet_with_base(css, "dist")` so its relative
    `url(...)`s are rebased onto the game folder (see [css.md](css.md)). `@font-face` faces found in it
    are loaded through the same `load_font` helper as `loadFont()`.
 6. Assets (`url()` images, fonts) are resolved with
-   [resolve_asset](../crates/iron_core/src/assets.rs): relative paths only, no `..`, no schemes, no
+   [resolve_asset](../crates/platypus_core/src/assets.rs): relative paths only, no `..`, no schemes, no
    drive letters. `data:` URLs (Bun inlines small assets) go through `decode_data_url`.
    Game scripts therefore cannot read arbitrary files.
 
 **Dev builds.** `bun run dev` in `editor/` runs [scripts/dev.ts](../scripts/dev.ts) instead of the
 `build` script. It writes two files to `dist/`:
 
-- `vendor.js`: an IIFE with React, the reconciler, the `react-refresh` runtime, `@iron/engine` and
-  `@iron/react` ([vendor.ts](../js/react/src/vendor.ts)), built once. It keeps a table of those
-  modules behind `globalThis.__iron_require`.
-- `game.js`: the game's own code as CommonJS (`--format cjs`), with `react`, `react/*` and `@iron/*`
+- `vendor.js`: an IIFE with React, the reconciler, the `react-refresh` runtime, `@platypus/engine` and
+  `@platypus/react` ([vendor.ts](../js/react/src/vendor.ts)), built once. It keeps a table of those
+  modules behind `globalThis.__platypus_require`.
+- `game.js`: the game's own code as CommonJS (`--format cjs`), with `react`, `react/*` and `@platypus/*`
   left external, so its `require` calls get the vendor bundle's copies. Bun's `--react-fast-refresh`
-  adds the `$RefreshReg$` / `$RefreshSig$` calls. It starts with the banner `// @iron-dev`.
+  adds the `$RefreshReg$` / `$RefreshSig$` calls. It starts with the banner `// @platypus-dev`.
 
 The split exists because React, the reconciler and the engine must stay in one runtime for Fast
 Refresh: the game's code can run again while their module state (the fiber tree, the scene's
 classes and instances) stays. `bun run dev --once` builds once without watching. A production
 `bun run build` still makes one self-contained `game.js`.
 
-The app detects a dev build by the banner (`dev_vendor` in [main.rs](../crates/iron_app/src/main.rs)):
-if `game.js` starts with `// @iron-dev`, it reads `vendor.js` from the same folder (a missing one is
+The app detects a dev build by the banner (`dev_vendor` in [main.rs](../crates/platypus_app/src/main.rs)):
+if `game.js` starts with `// @platypus-dev`, it reads `vendor.js` from the same folder (a missing one is
 logged as an error and the code loads as a plain bundle).
 
 Test bundles are built the same way into `tests/fixtures/*.js` (`bun run build:fixtures`) and
 embedded in Rust tests with `include_str!`; see [testing.md](testing.md).
 
 An experimental ahead-of-time compiler for a TypeScript subset exists in `tools/`; see
-[iron-ts.md](iron-ts.md). The engine does not use it yet.
+[platypus-ts.md](platypus-ts.md). The engine does not use it yet.
 
 ## Hot reload
 
@@ -234,7 +234,7 @@ Flow, from an edit to the new code running:
 1. `bun run dev` in `editor/` runs `scripts/dev.ts` (see "Dev builds" above), which builds
    `dist/vendor.js` once and runs `bun build --watch` for the game's code, so every save
    rewrites `dist/game.js` and, when CSS is imported, `dist/game.css`.
-2. `iron <folder>` starts a `BundleWatcher` ([reload.rs](../crates/iron_app/src/reload.rs)). It uses
+2. `platypus <folder>` starts a `BundleWatcher` ([reload.rs](../crates/platypus_app/src/reload.rs)). It uses
    `notify` on the `dist` folder (not the files: Bun may replace them) and only counts events for
    the bundle, its CSS and `vendor.js` by file name. Access events are ignored.
 3. `App::tick` polls the watcher first thing. `poll` reports a change once the files have been quiet
@@ -242,7 +242,7 @@ Flow, from an edit to the new code running:
    several writes.
 4. `App::reload_scripts` reads the bundle. If it is a dev build and `vendor.js` is the same text as
    the loaded one, it takes the in-place path (next). Otherwise it saves the old code's state
-   (below) and calls `iron_script::reload`.
+   (below) and calls `platypus_script::reload`.
 
 Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning
 and runs without hot reload.
@@ -252,21 +252,21 @@ Those reload in place without touching the scripts: see
 [assets-and-models.md](assets-and-models.md#hot-reload-of-assets). `bun run dev` also writes `.meta` files
 for new assets before building ([assets-and-models.md](assets-and-models.md#the-asset-database)).
 
-**`--cook`.** `iron <folder> --cook` doesn't load any scripts: it prepares textures and models into
-`.iron/cooked/` and exits ([assets-and-models.md](assets-and-models.md#cooking)).
+**`--cook`.** `platypus <folder> --cook` doesn't load any scripts: it prepares textures and models into
+`.platypus/cooked/` and exits ([assets-and-models.md](assets-and-models.md#cooking)).
 
 **In place (dev builds, Fast Refresh).** When only `game.js` changed, `reload_in_place` runs the new
 code in the same runtime, so React state, the world, physics and sounds all stay. The sequence is
-`iron_script::load_game` ([components.rs](../crates/iron_script/src/components.rs)):
+`platypus_script::load_game` ([components.rs](../crates/platypus_script/src/components.rs)):
 
-1. `__iron_hot_begin()` ([hot.ts](../js/engine/src/hot.ts)) runs the undo callbacks the old top level
+1. `__platypus_hot_begin()` ([hot.ts](../js/engine/src/hot.ts)) runs the undo callbacks the old top level
    registered with `_undoOnReload` (only `addStyleSheet` does: it removes its sheet), then sets
    `_loadingGame()`.
-2. The code is evaluated inside a wrapper, `(function (require, module, exports) { <code>\n})(__iron_require, ...)`.
+2. The code is evaluated inside a wrapper, `(function (require, module, exports) { <code>\n})(__platypus_require, ...)`.
    The wrapper shares the code's first line, so error line numbers stay right. The top level runs
    again: `register` replaces the classes by name, and `createRoot()` returns the live root while
    `_loadingGame()` is set, and that root's `render` does nothing then ([react.md](react.md#createroot)).
-3. `__iron_hot_end()` runs, even if the code threw. It calls `_patchClasses` ([scene.ts](../js/engine/src/scene.ts)):
+3. `__platypus_hot_end()` runs, even if the code threw. It calls `_patchClasses` ([scene.ts](../js/engine/src/scene.ts)):
    every live component whose class is now registered as a different class under its name gets the
    new prototype (`Object.setPrototypeOf`), keeps its fields and gets defaults for fields the new
    class added. Then the after-load callbacks run: `vendor.ts` registers `performReactRefresh`, which
@@ -289,14 +289,14 @@ Limits of the in-place path:
   components instead.
 - Class statics start fresh, since the class is a new object. Top-level objects (constants,
   `new GameObject(...)`) are created again, and module-level variables are new.
-- A live component whose class is no longer registered keeps its old code. `__iron_hot_end` warns
+- A live component whose class is no longer registered keeps its old code. `__platypus_hot_end` warns
   `reload: X isn't registered, so its components keep the old code (register({ X }, { spawn: false }))`.
 - Fast Refresh needs the dev build's transform. Production builds don't refresh; they use the full
   reload.
 
 M4-HOT-06 covers the in-place path ([testing.md](testing.md#fixture-bundles)).
 
-**New runtime first, then swap.** `iron_script::reload(rt, fresh, host, load, bootstrap)` runs the
+**New runtime first, then swap.** `platypus_script::reload(rt, fresh, host, load, bootstrap)` runs the
 `load` closure on a fresh `QuickJsRuntime` (one `load_bundle`, or `load_bundles` for a dev build: vendor, then
 game code), reads `registered_classes` and calls the `bootstrap` closure, all
 in `fresh`. The app's closure restores the saved state, or, with nothing to restore, calls
@@ -308,7 +308,7 @@ before touching the UI, physics or audio. The game keeps running and the next sa
 M4-HOT-01 and M4-HOT-04 cover the success and failure paths.
 
 **State is saved first.** `reload_scripts` asks the old runtime for its state before building the new one.
-If `__iron_save_state` exists (it does when the bundle imports `@iron/engine`'s scenes), the old code
+If `__platypus_save_state` exists (it does when the bundle imports `@platypus/engine`'s scenes), the old code
 returns one JSON string; a bundle without it, or a save that throws (logged as `saving state failed,
 starting over`), just starts over. The JSON is a `ReloadState` ([scenes.ts](../js/engine/src/scenes.ts)):
 
@@ -320,14 +320,14 @@ starting over`), just starts over. The JSON is a `ReloadState` ([scenes.ts](../j
   (functions, engine handles, class instances) is left out quietly instead of warning.
 - The quality level and settings (`_qualityState`) and the clock (`Time`, frame count, time scale).
 
-**Restoring.** The fresh runtime gets `__iron_reloading = true` before the bundle loads, so the start
+**Restoring.** The fresh runtime gets `__platypus_reloading = true` before the bundle loads, so the start
 scene is not loaded on top of the saved ones. After the bundle's top level and registration, the
-bootstrap sets the flag back and calls `__iron_restore_state(json)`. If it returns true, the scenes are
+bootstrap sets the flag back and calls `__platypus_restore_state(json)`. If it returns true, the scenes are
 rebuilt with `loadObjects` in reload mode and `spawn_starting_components` is skipped; otherwise it runs
 as on a first start.
 
 - Script components come back marked as restored: no `onAwake`, no `onStart` (they started already;
-  `__iron_hooks` leaves `onStart` out), and `onReload()` is called once everything is built. Put
+  `__platypus_hooks` leaves `onStart` out), and `onReload()` is called once everything is built. Put
   re-attaching event listeners, timers and callbacks there. A throwing `onReload` is logged.
 - Engine components (`Rigidbody`, `MeshRenderer`, `Light`, ...) are rebuilt like a scene load:
   `onAwake` and `onStart` run, so bodies and renderers are made again.
@@ -338,7 +338,7 @@ as on a first start.
   starts over.
 
 The log line `reloaded <bundle> in N ms` has a `restored` field that says which way it went.
-`IRON_RELOAD_AT_FRAME=N` makes a `--screenshot` run call `reload_scripts` after frame N, so a reload can
+`PLATYPUS_RELOAD_AT_FRAME=N` makes a `--screenshot` run call `reload_scripts` after frame N, so a reload can
 be checked without a window or a file edit (the bundle on disk is reloaded as it is).
 
 **What is reset.** After a successful swap `reload_scripts` wipes the world the old scripts
@@ -355,8 +355,8 @@ built, and the restored scenes rebuild their part of it as ops:
 - The scene, cameras, planes and world panels: a new `ScriptScene` and `WorldViews`, no panels, and
   pointer and key focus back on the screen. The screen size is sent again on the next frame.
 
-Then it sends `Input::Refresh` and probes `__iron_ui_event`, `__iron_input`, `__iron_physics`, `__iron_audio` and
-`__iron_scene` again. The new bundle's top level has already queued its UI and ops, and they apply
+Then it sends `Input::Refresh` and probes `__platypus_ui_event`, `__platypus_input`, `__platypus_physics`, `__platypus_audio` and
+`__platypus_scene` again. The new bundle's top level has already queued its UI and ops, and they apply
 after the wipe.
 
 M4-HOT-02, 03 and 05 cover the saved state, the rebuilt objects and the fallback. M4-HOT-07 is the
@@ -367,7 +367,7 @@ benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 componen
 - **A reload restores objects; it doesn't rebuild them.** What `onStart` (or `onAwake`) built comes
   back from the saved state, and `onStart` doesn't run again, so a change to what it builds
   (geometry, materials, colours, lights) doesn't show after a reload, only changed behaviour
-  (`onUpdate`, handlers) does. Restart the game to see it (close the window and run `iron` again).
+  (`onUpdate`, handlers) does. Restart the game to see it (close the window and run `platypus` again).
   There's no key or option to force a fresh start yet; a reload starts over only when a saved
   component class isn't registered any more (the fallback above). Code at the bundle's top level
   runs again on every reload (module-level variables start fresh), and `onReload` runs on restored
@@ -378,7 +378,7 @@ benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 componen
   particles in flight, module-level variables in the bundle (they start fresh; keep state in
   component fields), React state (the new bundle renders its UI from scratch; only the in-place
   path above keeps it), and fields that can't be saved.
-- `bun build --watch` doesn't watch `@iron/engine` or `@iron/react` sources outside the example
+- `bun build --watch` doesn't watch `@platypus/engine` or `@platypus/react` sources outside the example
   folder, so editing those doesn't trigger a rebuild. Touch a file in the example or rebuild
   (in a dev build, restart `bun run dev`: `vendor.js` is built once).
 - Keys held at the time of the reload are forgotten.

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Native `#[iron_api]` namespaces in the QuickJS runtime. IDs are in TESTS.md (M9-API-*).
-use iron_api::{Handle, iron_api};
-use iron_script::{QuickJsRuntime, ScriptRuntime, Value};
+//! Native `#[platypus_api]` namespaces in the QuickJS runtime. IDs are in TESTS.md (M9-API-*).
+use platypus_api::{Handle, platypus_api};
+use platypus_script::{QuickJsRuntime, ScriptRuntime, Value};
 
 #[derive(Clone, Copy)]
 pub struct BoxId(pub u64);
@@ -15,7 +15,7 @@ impl Handle for BoxId {
     }
 }
 
-#[iron_api(namespace = "Box", quickjs, handles(Box = BoxId))]
+#[platypus_api(namespace = "Box", quickjs, handles(Box = BoxId))]
 pub mod box_api {
     use super::BoxId;
 

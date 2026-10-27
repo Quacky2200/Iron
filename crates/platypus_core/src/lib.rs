@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared types for every Iron crate: typed IDs, script values and the op buffer
+//! Shared types for every Platypus crate: typed IDs, script values and the op buffer
 //! that carries commands from scripts to the engine.
 
 pub use glam;
 
-/// The UI target id of a window's tree: `WINDOW_TARGET | handle` in `__iron_commit(ops, target)`
+/// The UI target id of a window's tree: `WINDOW_TARGET | handle` in `__platypus_commit(ops, target)`
 /// (0 is the screen, smaller ids are world panels).
 pub const WINDOW_TARGET: u32 = 0x4000_0000;
 

@@ -1,16 +1,16 @@
-# External TypeScript packages in games built by iron_ts
+# External TypeScript packages in games built by platypus_ts
 
-**Decision (2026-10-21): only `src/modules` aliases, skipping of unreferenced functions and separation of engine global names were built; the rest of this note is parked.** A bare import is a file of the game's `src/modules/` folder (a TypeScript package is used by copying its source in), `tsc` gets the matching `paths`, top-level functions nothing refers to are not lowered, and a module's declarations never capture the engine's global names. No `node_modules` resolution, no `project.json` packages section, no allow list, no licence generation or copyleft check, no `check-packages`, no JSR fetch, no dynamic `any`, no native plugins. See `docs/iron-build.md`, "Modules and packages".
+**Decision (2026-10-21): only `src/modules` aliases, skipping of unreferenced functions and separation of engine global names were built; the rest of this note is parked.** A bare import is a file of the game's `src/modules/` folder (a TypeScript package is used by copying its source in), `tsc` gets the matching `paths`, top-level functions nothing refers to are not lowered, and a module's declarations never capture the engine's global names. No `node_modules` resolution, no `project.json` packages section, no allow list, no licence generation or copyleft check, no `check-packages`, no JSR fetch, no dynamic `any`, no native plugins. See `docs/platypus-build.md`, "Modules and packages".
 
 Status: research, 2026-10-21. No code changed. Question from the user: games are TypeScript compiled ahead of time
-by `tools/iron_ts` (oxc -> IR -> Cranelift) and built by `tools/iron_build` with no bun and no `node_modules`
-(only `tsc` for type checking). Today any bare import other than `@iron/*` and `react` is an error. How could a game
+by `tools/platypus_ts` (oxc -> IR -> Cranelift) and built by `tools/platypus_build` with no bun and no `node_modules`
+(only `tsc` for type checking). Today any bare import other than `@platypus/*` and `react` is an error. How could a game
 use third-party packages (pathfinding, utilities, validation, state machines, ECS, i18n, markdown, seedable RNGs), and
 what would actually compile?
 
 Short answer:
 
-- **Only TypeScript source written in the compiler's subset can work.** iron_ts needs types inside every function
+- **Only TypeScript source written in the compiler's subset can work.** platypus_ts needs types inside every function
   body (it lowers `number` to f64, objects to structs, generics by monomorphisation). A package that ships `.js` plus
   `.d.ts` gives types for its exports only, not for its locals and helpers, so **compiled JavaScript packages cannot
   be used, whatever their `.d.ts` say**. CommonJS, UMD, prototype code, `any`-heavy code and Node built-ins are out.
@@ -25,25 +25,25 @@ Short answer:
 
 ### 1.1 How the build works (the parts that matter here)
 
-- `tools/iron_ts/src/modules.rs` follows relative imports from the entry, erases `@iron/*` / `react` imports
+- `tools/platypus_ts/src/modules.rs` follows relative imports from the entry, erases `@platypus/*` / `react` imports
   (`is_library`), renames colliding top-level names (`helper` -> `helper_2`), drops `export` from non-entry files and
   writes **one source text** (`Bundle::source`). A bare specifier fails in `Graph::load`:
-  `"{path}: unsupported import \"{spec}\" (only relative files, @iron/* and react)"`.
+  `"{path}: unsupported import \"{spec}\" (only relative files, @platypus/* and react)"`.
 - `resolve_path` already tries `x`, `x.ts`/`x.tsx` for a `.js`/`.jsx` specifier, and `x/index.ts(x)`. Every file is
   parsed as TS or TSX (`parse_module`), so a `.js` file is parsed as TypeScript without annotations.
 - That text is lowered as **one program** (`lower/mod.rs`). Step 3 of the lowering lowers **every declared function**
   (the loop over `fstate == 0` around `lower/mod.rs:635`); only generic specialisations are made on demand. So an
   unsupported construct in a package function the game never calls still fails the build. There is no tree-shaking.
-- `iron-build build` (`tools/iron_build/src/lib.rs`, `build`) bundles, runs `tsc` with a generated
+- `platypus-build build` (`tools/platypus_build/src/lib.rs`, `build`) bundles, runs `tsc` with a generated
   `dist/.tsc/tsconfig.json` (`tsc_config`: `extends` the game's file, `"types": []`, `exclude: ../../node_modules`,
-  `files: ["iron.d.ts"]`), compiles, and writes `dist/game.irbundle`, which **contains the source text**
-  (`docs/iron-build.md`, "`game.irbundle`"). The shipped exe JIT-compiles it. So package source is shipped as source.
+  `files: ["platypus.d.ts"]`), compiles, and writes `dist/game.pbundle`, which **contains the source text**
+  (`docs/platypus-build.md`, "`game.pbundle`"). The shipped exe JIT-compiles it. So package source is shipped as source.
 - `Bundle::locate_in` rewrites `line N` in an error to `file:line` of the original file; lowering errors carry a
-  line for statements (`tools/iron_ts/TODO.md`, "line numbers on statement errors"), not for every expression error.
+  line for statements (`tools/platypus_ts/TODO.md`, "line numbers on statement errors"), not for every expression error.
 
 ### 1.2 The subset, from the code and the trackers
 
-Supported and relevant to libraries (detail in `tools/iron_ts/TODO.md` "Now", `TODO.md` M9.b2):
+Supported and relevant to libraries (detail in `tools/platypus_ts/TODO.md` "Now", `TODO.md` M9.b2):
 numbers, strings (exact JS semantics), booleans, arrays, `Map`/`Set`, typed arrays, `ArrayBuffer`/`DataView`, classes
 with inheritance, `super`, abstract classes, getters/setters, statics, `#private`, `instanceof`, `typeof`, enums,
 generics by monomorphisation (functions, classes, interfaces, aliases), closures, destructuring in declarations and
@@ -72,7 +72,7 @@ Not supported (each is a compile error today; messages from `lower/*.rs`):
 
 Rule of thumb: a package compiles if it is **TypeScript source, `strict`, with concrete types, classes and plain
 functions, no `any`, no dictionaries keyed by `string` on plain objects (uses `Map`), no type-level programming,
-no Node/DOM, ESM**. That is the style Iron's own examples are written in, not the style of most npm libraries.
+no Node/DOM, ESM**. That is the style Platypus's own examples are written in, not the style of most npm libraries.
 
 ### 1.3 Where the source has to come from
 
@@ -81,7 +81,7 @@ no Node/DOM, ESM**. That is the style Iron's own examples are written in, not th
 - **JSR** (`jsr.io`, the Deno/JSR registry) publishes TypeScript source by design (`@std/*` and many small
   libraries). `npx jsr add @std/data-structures` / `pnpm add jsr:@std/...` installs it into `node_modules/@jsr/...`
   as an npm-compatible package (the npm compatibility layer serves compiled JS plus `.d.ts`; the original `.ts` is at
-  `https://jsr.io/@scope/name/<version>/<file>.ts`). Vendoring JSR source is the cleanest route; an `iron-build`
+  `https://jsr.io/@scope/name/<version>/<file>.ts`). Vendoring JSR source is the cleanest route; a `platypus-build`
   fetch of JSR source is a phase 3 idea.
 - **Git / copy-paste vendoring** of a small library into the game (`packages/<name>/`). For game-sized utilities
   this is the realistic main path.
@@ -96,11 +96,11 @@ does that). "Edits" means changes to the package source in a vendored copy.
 | `@std/data-structures` `BinaryHeap` / `RedBlackTree` (JSR) | TS source, ESM, generics with a comparator, `#private`, `Symbol.iterator`, generators | **Likely compiles with 0 to few edits** | Classes, generics and generators are all in the subset. Risks: `implements Iterable<T>`, a `static from()` with overloads and `ArrayLike<T>` / `Iterable` unions, `readonly` modifiers (fine). The best first target for a test. |
 | `@std/random` seeded PRNG (`randomSeeded`, pcg32 on `BigInt`) or a hand-sized mulberry32 / sfc32 | TS source, numeric, bit ops | **Compiles** (mulberry32 in minutes; the `@std` one depends on `BigInt` 64-bit arithmetic, which exists, and on `Uint8Array` / `DataView`, which exist) | Pure arithmetic is the compiler's best case; check `>>> 0` / `Math.imul` results against bun (the JS-semantics conformance item). |
 | `mitt` (event emitter, TS source in its repo; npm ships JS + `.d.ts`) | about 100 lines, `Map`, generics `Emitter<Events extends Record<EventType, unknown>>`, `EventType = string \| symbol`, `keyof Events`, `'*'` overloads | **Fails today; vendored and rewritten in ~30 lines it works** | `Record<string \| symbol, unknown>`, `keyof`, indexed access by a type parameter (`Events[Key]`), overload signatures. Typical of "small but type-level" libraries. |
-| `zod` (generics-heavy) | TS source in repo, compiled JS on npm; deep conditional/mapped types, `ZodType<Output, Def, Input>` hierarchy, `any` in internals, dynamic shape objects | **Will not compile, and should not be the goal** | Type-level programming is the whole API (`z.infer<typeof schema>`); runtime walks objects by string keys. A validation story for Iron is typed `JSON.parse` (already built) plus hand checks, or a future `JsonValue` (`TODO.md` "JsValue fallback"). |
-| `pathfinding` (PathFinding.js) | CommonJS JS, `function Grid() {}` + `Grid.prototype.x = ...`, `require('heap')` | **Impossible as is**; port to TS classes (~400 lines for A* + grid + heap) | No CommonJS, no types, prototype assignment. Pathfinding is a good candidate for a hand-written Iron-style TS package (or a Rust `#[iron_api]` module, which would also be faster). |
+| `zod` (generics-heavy) | TS source in repo, compiled JS on npm; deep conditional/mapped types, `ZodType<Output, Def, Input>` hierarchy, `any` in internals, dynamic shape objects | **Will not compile, and should not be the goal** | Type-level programming is the whole API (`z.infer<typeof schema>`); runtime walks objects by string keys. A validation story for Platypus is typed `JSON.parse` (already built) plus hand checks, or a future `JsonValue` (`TODO.md` "JsValue fallback"). |
+| `pathfinding` (PathFinding.js) | CommonJS JS, `function Grid() {}` + `Grid.prototype.x = ...`, `require('heap')` | **Impossible as is**; port to TS classes (~400 lines for A* + grid + heap) | No CommonJS, no types, prototype assignment. Pathfinding is a good candidate for a hand-written Platypus-style TS package (or a Rust `#[platypus_api]` module, which would also be faster). |
 | `dotenv` / anything using `fs`, `path`, `process`, `Buffer` | CommonJS, Node built-ins | **Impossible by design** | No Node runtime. File access is M6 Script IO (`docs/research/networking-and-files.md`). tsc already rejects it (`"types": []` means no `@types/node`). |
 | `marked` (markdown; TS source since v5, ESM JS + `.d.ts` on npm) | Classes (`Lexer`, `Parser`, `Renderer`), regex tables built at run time (`edit(regex).replace(...).getRegex()` on `.source`), a discriminated union of token interfaces, `any` in extensions/options | **Fails; a large port** | Token unions need structural typing / unions of interfaces; options objects with `any`; dynamic regex composition is fine (RegExp is built). Realistic only after structural typing lands. |
-| (classes/mixins) `miniplex` or `bitecs` (ECS) | Mapped types (`With<E, P>`), dynamic component stores keyed by string or `Symbol`, `Proxy` in some versions | **Fails** | Iron already owns the world in Rust (`iron_scene`, components); an ECS library fights the core rule. Not worth targeting. |
+| (classes/mixins) `miniplex` or `bitecs` (ECS) | Mapped types (`With<E, P>`), dynamic component stores keyed by string or `Symbol`, `Proxy` in some versions | **Fails** | Platypus already owns the world in Rust (`platypus_scene`, components); an ECS library fights the core rule. Not worth targeting. |
 
 Takeaway: target **algorithms and data structures written as typed classes** (heaps, trees, grids, A*, noise,
 PRNGs, easing, tweening, FSMs, i18n message tables keyed by literal unions). Do not target the type-level
@@ -111,14 +111,14 @@ ecosystem (zod, ts-pattern, type-fest), proxy-based state (immer, valtio, mobx),
 ### 2.1 Three sources, one resolver
 
 1. **Vendored folder in the game** (recommended default): `packages/<name>/` with its own `package.json` (or none:
-   then `index.ts`). Committed with the game, watched by `iron-build dev` (the watcher skips `node_modules` but not
+   then `index.ts`). Committed with the game, watched by `platypus-build dev` (the watcher skips `node_modules` but not
    `packages`), editable when a construct must be rewritten. Imported by bare name through a mapping.
 2. **tsconfig `compilerOptions.paths` (+ `baseUrl`)**: what editors and `tsc` already understand. `"paths":
-   { "astar": ["./packages/astar/src/index.ts"], "@std/*": ["./packages/std/*"] }`. iron_ts must implement the same
+   { "astar": ["./packages/astar/src/index.ts"], "@std/*": ["./packages/std/*"] }`. platypus_ts must implement the same
    matching: exact keys, a single `*` wildcard, longest prefix wins, candidates tried in order, relative to `baseUrl`
    or to the tsconfig's folder (TS 4.1+). This makes the compiler and `tsc` agree by construction.
-3. **`node_modules`** installed by the developer with any tool (`npm`, `pnpm`, `bun install`). `iron-build` only
-   reads files; the shipped build never needs `node_modules` because the source is in `game.irbundle`.
+3. **`node_modules`** installed by the developer with any tool (`npm`, `pnpm`, `bun install`). `platypus-build` only
+   reads files; the shipped build never needs `node_modules` because the source is in `game.pbundle`.
 
 `project.json` gets one new optional section, for the cases tsconfig cannot express:
 
@@ -135,7 +135,7 @@ ecosystem (zod, ts-pattern, type-fest), proxy-based state (immer, valtio, mobx),
   package that resolves is allowed, with a note listing them).
 - `source`: per-package entry override for a package whose `package.json` does not point at its `.ts`.
 - No `dependencies` list of its own: versions stay in `package.json` + the lockfile of whatever installer the
-  developer used (npm, pnpm and bun all write one). Iron does not invent a second package manager. For vendored
+  developer used (npm, pnpm and bun all write one). Platypus does not invent a second package manager. For vendored
   folders, the version is the folder's `package.json` `version` (or the commit it was copied from, noted in a
   `packages/<name>/SOURCE` line).
 
@@ -147,8 +147,8 @@ New function `resolve_bare(from, spec) -> Result<String, String>`, called from `
 
 Order:
 
-1. `is_library(spec)` (`@iron/*`, `react`, `react/*`) stays first and stays erased.
-2. tsconfig `paths` (read once in `iron_build::GameConfig::load`, passed in as data; `modules.rs` stays I/O-free
+1. `is_library(spec)` (`@platypus/*`, `react`, `react/*`) stays first and stays erased.
+2. tsconfig `paths` (read once in `platypus_build::GameConfig::load`, passed in as data; `modules.rs` stays I/O-free
    through `ReadFn`).
 3. `project.json` `packages.source` override.
 4. `node_modules` lookup: from the importing file's folder upward, `node_modules/<name>` (`<name>` is `@scope/pkg`
@@ -156,7 +156,7 @@ Order:
    (pnpm uses symlinks into `node_modules/.pnpm/...`) so one package reached twice is one module.
 5. Inside the package, with its `package.json`:
    - `exports` (string, subpath map `"./x"`, patterns `"./*"`, condition objects). Conditions tried in order:
-     **`"iron"`** (a condition Iron defines, for packages that want to ship an Iron entry), **`"source"`**,
+     **`"platypus"`** (a condition Platypus defines, for packages that want to ship a Platypus entry), **`"source"`**,
      **`"types"`** (only to find a sibling `.ts`, see below), `"import"`, `"default"`. `"require"` / `"node"` /
      `"browser"` are never picked. A subpath not in `exports` is an error, as in Node.
    - Without `exports`: `"source"`, then `"module"`, then `"main"`, then `index`.
@@ -183,33 +183,33 @@ Also in `modules.rs`:
 - The generated `dist/.tsc/tsconfig.json` (`tsc_config`) extends the game's config, so the game's `paths` already
   apply. `exclude: node_modules` only affects `include` globs; imported files are still checked, and `"types": []`
   only stops automatic `@types/*` (good: no `@types/node` sneaking in).
-- Two changes: set `"moduleResolution": "bundler"` and `"customConditions": ["iron", "source"]` in the generated
-  config so `tsc` picks the same `exports` entries as iron_ts; and **check package sources as source**: when a
+- Two changes: set `"moduleResolution": "bundler"` and `"customConditions": ["platypus", "source"]` in the generated
+  config so `tsc` picks the same `exports` entries as platypus_ts; and **check package sources as source**: when a
   package resolves to `.ts`, tsc type-checks it with the game's strictness. A package that is not `strict`-clean
   then fails `tsc`; offer `packages.skipCheck: ["name"]` (sets nothing in tsc itself, but the build reports tsc errors
   inside that package as warnings).
-- `moduleDetection: force` stays. The generated `types/iron.d.ts` globals are visible inside package files too,
-  which is right (a package may use `Vector3` if written for Iron) but also means a package's own `Vector2` shadows
+- `moduleDetection: force` stays. The generated `types/platypus.d.ts` globals are visible inside package files too,
+  which is right (a package may use `Vector3` if written for Platypus) but also means a package's own `Vector2` shadows
   the global inside that file (same rule as games).
-- `isolatedModules`-style concerns: none (iron_ts reads types itself).
+- `isolatedModules`-style concerns: none (platypus_ts reads types itself).
 
 ### 2.4 Licences
 
-Packages end up as source inside `game.irbundle`, inside the packaged exe (`iron-build package`), so the shipped
+Packages end up as source inside `game.pbundle`, inside the packaged exe (`platypus-build package`), so the shipped
 game **distributes third-party source**. Most permissive licences (MIT, ISC, BSD, Apache-2.0, Zlib, 0BSD) require
 keeping the copyright notice and licence text.
 
 - Build step: for every package folder in the bundle (the nearest `package.json` above each file outside the game's
   `src/`), read `name`, `version`, `license` (SPDX expression), `author`/`repository`, and the licence file
   (`LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*` for Apache-2.0). Write `dist/THIRD-PARTY-NOTICES.txt`; `package`
-  copies it next to the exe (same place as the game's own licence today, `tools/iron_build/src/package.rs`
-  `LICENSE_NAMES`) and the irbundle gets a `"packages": [{name, version, license}]` list so the app can show
+  copies it next to the exe (same place as the game's own licence today, `tools/platypus_build/src/package.rs`
+  `LICENSE_NAMES`) and the pbundle gets a `"packages": [{name, version, license}]` list so the app can show
   credits.
 - Policy checks (warnings by default, errors with `packages.licenses: "strict"`): no licence or `UNLICENSED` ->
   error; GPL/AGPL/LGPL/MPL in a game whose `license` is `private` -> error naming the package (copyleft obligations
-  for a closed game; the user decides, section 5 Q4); unknown SPDX ids -> warning. Reuse `iron_core::project`'s
+  for a closed game; the user decides, section 5 Q4); unknown SPDX ids -> warning. Reuse `platypus_core::project`'s
   SPDX list.
-- Iron's own runtime crates (regress, jiff, ICU4X data, etc.) need the same notices file; this step is a natural
+- Platypus's own runtime crates (regress, jiff, ICU4X data, etc.) need the same notices file; this step is a natural
   place to append them once (`cargo about`-style list generated at release time, open question Q5).
 
 ## 3. Failure modes and UX
@@ -219,7 +219,7 @@ keeping the copyright notice and licence text.
 | Situation | Message (proposed) |
 |---|---|
 | Not installed | `src/ai.ts:3: cannot find package "astar" (looked in tsconfig paths, project.json packages, node_modules from src/ upward)` |
-| Only compiled JS | `src/ai.ts:3: package "pathfinding@0.4.18" ships only JavaScript (main: lib/PathFinding.js); iron_ts needs TypeScript source. Vendor its source into packages/, point project.json packages.source at a .ts entry, or use a TypeScript package` |
+| Only compiled JS | `src/ai.ts:3: package "pathfinding@0.4.18" ships only JavaScript (main: lib/PathFinding.js); platypus_ts needs TypeScript source. Vendor its source into packages/, point project.json packages.source at a .ts entry, or use a TypeScript package` |
 | CommonJS / UMD | detected by `require(`/`module.exports`/`exports.` at top level: `... is CommonJS (module.exports at lib/x.js:12); not supported` |
 | Node / DOM global | `node_modules/foo/src/io.ts:8: "fs" is a Node built-in; games have no Node runtime (file access: Script IO, M6)` (a fixed list of Node built-in names incl. `node:*`) |
 | Unsupported construct inside a package | the lowering error with `file:line` plus a prefix: `in package "mitt@3.0.1": node_modules/mitt/src/index.ts:14: unsupported type annotation (keyof Events)` |
@@ -230,9 +230,9 @@ span (today many type errors have no line: `"unsupported type annotation"`); a s
 and helps games too; (b) name the construct (`keyof`, `mapped type`, `conditional type`, `any`) instead of the
 generic message (size S, a `match` on `TSType` variants).
 
-### 3.2 `iron-build check-packages`
+### 3.2 `platypus-build check-packages`
 
-`iron-build check-packages <game> [--all-exports] [--json]`: resolves every package the game imports (or every
+`platypus-build check-packages <game> [--all-exports] [--json]`: resolves every package the game imports (or every
 package in `node_modules` with `--installed`), and for each one:
 
 1. Resolution: which file was picked and why (`exports` condition, `source` field, `dist -> src` mirror), or the
@@ -245,13 +245,13 @@ package in `node_modules` with `--installed`), and for each one:
    summary of constructs (`keyof: 4, any: 11, Record<string,V>: 2`), which doubles as a prioritised backlog for the
    compiler. Licence column from section 2.4.
 
-The same command run on a corpus (phase 0: ~30 real packages vendored into `tools/iron_ts_tests/packages/`) turns
+The same command run on a corpus (phase 0: ~30 real packages vendored into `tools/platypus_ts_tests/packages/`) turns
 the estimates of section 1.4 into measurements.
 
 ### 3.3 Escape hatches for dynamic JavaScript
 
 - **QuickJS legacy path.** Games built the old way (bun bundles `node_modules` into `dist/game.js`, run by
-  `crates/iron_script`) can use most npm packages that do not need Node built-ins, today. That path is slated to
+  `crates/platypus_script`) can use most npm packages that do not need Node built-ins, today. That path is slated to
   become a "mods and legacy" path (`docs/research/iron-native-without-quickjs.md` on branch `iron-js`). A hybrid
   (compiled game + a QuickJS island running one JS package, values crossing as JSON or `JsValue`) is possible but
   needs the "calls between native and QuickJS, GC handles across the two heaps" item of `TODO.md` M9.b2 `JsValue`
@@ -264,8 +264,8 @@ the estimates of section 1.4 into measurements.
 - **Cheaper middle ground**: `JsValue` only for `any`/`unknown` *values* inside typed code (that note's section 6,
   point 4). It would let `unknown`-typed internals (event payloads, JSON blobs, `Record<string, unknown>` options)
   compile, which is the most common reason small TS libraries fail. Worth a decision (Q2).
-- **Port to Rust**: for heavy algorithmic packages (pathfinding, noise, physics helpers) an `#[iron_api]` module
-  in Rust is faster and available to both backends (`docs/iron-api.md`).
+- **Port to Rust**: for heavy algorithmic packages (pathfinding, noise, physics helpers) an `#[platypus_api]` module
+  in Rust is faster and available to both backends (`docs/platypus-api.md`).
 
 ### 3.4 Tree-shaking and compile cost
 
@@ -279,16 +279,16 @@ the estimates of section 1.4 into measurements.
   (respect `package.json` `"sideEffects": false` to drop them too). Class members are not shaken (virtual calls make
   it hard; the class itself is). Size M.
 - Cost: lowering + Cranelift measured 21 to 25 ms for 330 to 460 lines including the prelude
-  (`docs/research/iron-examples-on-iron-ts.md` section 0); a 3,000-line package fully lowered would add roughly
+  (`docs/research/platypus-examples-on-platypus-ts.md` section 0); a 3,000-line package fully lowered would add roughly
   0.15 to 0.3 s per build by extrapolation (unmeasured). Tree-shaking keeps it to what is used. Monomorphisation can
   multiply generic code: the "code-size budget and instantiation depth limit" item of `TODO.md` M9.b2 Generics
   matters more with libraries.
-- Shipped size: the irbundle holds source text; tree-shaken source only, so unused package files are not shipped
+- Shipped size: the pbundle holds source text; tree-shaken source only, so unused package files are not shipped
   (also fewer licence obligations to list: list only packages with reachable code).
 
 ### 3.5 Hot reload
 
-- `iron-build dev` watches the game folder except `node_modules` (`docs/iron-build.md`, "The dev loop"). Vendored
+- `platypus-build dev` watches the game folder except `node_modules` (`docs/platypus-build.md`, "The dev loop"). Vendored
   `packages/` reload like game code. An `npm install` changes `node_modules` without a rebuild: also watch the
   lockfile (`package-lock.json`, `pnpm-lock.yaml`, `bun.lock`) and `tsconfig.json` / `project.json`, and rebuild
   on change.
@@ -301,7 +301,7 @@ the estimates of section 1.4 into measurements.
 ## 4. Security and supply chain
 
 - **Install scripts**: `npm install` runs `preinstall`/`install`/`postinstall` of every dependency on the
-  developer's machine. Iron never runs them, but the developer's installer does. Recommend `npm install
+  developer's machine. Platypus never runs them, but the developer's installer does. Recommend `npm install
   --ignore-scripts` / `pnpm` (which since v10 does not run dependency build scripts unless allowed) / bun (runs
   scripts only for `trustedDependencies`) in the docs, and have `check-packages` warn about packages that declare
   install scripts (read from `package.json` `scripts`).
@@ -313,7 +313,7 @@ the estimates of section 1.4 into measurements.
   `require`, no `Function` constructor, no `process.env`: a whole class of loaders and obfuscated payloads cannot
   compile. `check-packages` can also print the engine APIs a package calls (from the lowering's call targets), a cheap
   "what does this touch" report.
-- **Integrity**: record in the irbundle the SHA-256 of each package file that was bundled; `check-packages --verify`
+- **Integrity**: record in the pbundle the SHA-256 of each package file that was bundled; `check-packages --verify`
   compares against the lockfile's `integrity` field when the installer kept the tarball hash (npm and pnpm do;
   vendored folders have no upstream hash, the `SOURCE` line names where they came from).
 - Typosquatting and dependency confusion: `allow` list plus the "resolved from" line in build output
@@ -329,14 +329,14 @@ Sizes: S = up to ~300 lines of Rust with tests, M = ~300 to 1,000, L = more. Tes
 ### Phase 0: measure (S, research)
 
 - Vendor ~30 small TypeScript packages (JSR `@std/*` data structures, random, collections, a few npm TS-source
-  packages, mitt, a TS A*, a TS FSM, an i18n table library) into `tools/iron_ts_tests/packages/` (needs the user's
+  packages, mitt, a TS A*, a TS FSM, an i18n table library) into `tools/platypus_ts_tests/packages/` (needs the user's
   OK for downloads), run a throwaway "compile all exports" script, and record per construct what fails. Replaces
   the estimates in section 1.4 with numbers.
 
 ### Phase 1: vendored and source packages (M, recommended first)
 
 1. `modules.rs`: `resolve_bare` with tsconfig `paths`/`baseUrl`, `project.json` `packages.source`, `node_modules`
-   lookup upward, `package.json` `exports` (conditions `iron`, `source`, `import`, `default`; subpath patterns),
+   lookup upward, `package.json` `exports` (conditions `platypus`, `source`, `import`, `default`; subpath patterns),
    `source`/`module`/`main`, `.js`/`.d.ts` -> `.ts` and `dist/` -> `src/` mirrors; resolved paths stored per
    `(module, spec)`; realpath dedupe. (M)
    - Tests: `M9-PKG-01` paths exact and wildcard, longest prefix; `02` node_modules upward from a nested file;
@@ -352,12 +352,12 @@ Sizes: S = up to ~300 lines of Rust with tests, M = ~300 to 1,000, L = more. Tes
    an unused function with an unsupported construct does not fail the build; `16`: a top-level statement with side
    effects is kept; `17`: `sideEffects: false` drops it; `18`: a class reached only through a type annotation is
    kept as a type, its methods are not required.
-5. `iron_build`: pass tsconfig `paths` into the bundler; `customConditions` + `moduleResolution: bundler` in
+5. `platypus_build`: pass tsconfig `paths` into the bundler; `customConditions` + `moduleResolution: bundler` in
    `tsc_config`; watch lockfiles; print the resolved packages in the build report. (S) Test `M9-PKG-19` (generated
    tsconfig text), `M9-TS` style integration test with an example game using a vendored `packages/heap`.
-6. Licences: `THIRD-PARTY-NOTICES.txt`, the irbundle `packages` list, copyleft-vs-private check. (S) Tests
+6. Licences: `THIRD-PARTY-NOTICES.txt`, the pbundle `packages` list, copyleft-vs-private check. (S) Tests
    `M9-PKG-20..22`.
-7. Docs: `docs/iron-build.md` "Packages" section, a `docs/differences.md` note ("packages must be TypeScript
+7. Docs: `docs/platypus-build.md` "Packages" section, a `docs/differences.md` note ("packages must be TypeScript
    source"), an example game using one vendored package (e.g. A* in `examples/platformer` or a new tiny one).
 
 Phase 1 total: M to L (about 1,200 to 1,600 lines with tests).
@@ -373,8 +373,8 @@ implementation, check calls against the overloads in tsc only); class expression
 
 ### Phase 3: tooling (M)
 
-`iron-build check-packages` (all-exports compile, error collection per function, construct summary, licence and
-install-script columns, `--json`) (M); `iron-build vendor <pkg>` that copies a package's TypeScript source from
+`platypus-build check-packages` (all-exports compile, error collection per function, construct summary, licence and
+install-script columns, `--json`) (M); `platypus-build vendor <pkg>` that copies a package's TypeScript source from
 `node_modules` or JSR into `packages/<name>/` with its licence and a `SOURCE` line (S to M; network fetch needs the
 user's OK per the project rules).
 
@@ -392,10 +392,10 @@ user's OK per the project rules).
    JSON), or keep the rule "what is not typed is a compile error"?
 3. **`packages.allow`**: required (opt-in list, safer) or optional (every resolvable package allowed, with a note)?
 4. **Copyleft in closed games**: error, warning, or allowed? (GPL/LGPL/MPL source compiled into a `private` game.)
-5. **Iron's own third-party notices** (Rust crates, ICU data) in the same `THIRD-PARTY-NOTICES.txt`, generated at
+5. **Platypus's own third-party notices** (Rust crates, ICU data) in the same `THIRD-PARTY-NOTICES.txt`, generated at
    release time?
-6. **JSR support**: worth an `iron-build vendor jsr:@std/...` fetch command, or document `npx jsr` + vendoring?
-7. **Package-provided engine extensions**: should a package be allowed to ship `#[iron_api]` Rust code (native
-   plugins) later, or are packages TypeScript only? (Affects the `iron` export condition's meaning.)
+6. **JSR support**: worth a `platypus-build vendor jsr:@std/...` fetch command, or document `npx jsr` + vendoring?
+7. **Package-provided engine extensions**: should a package be allowed to ship `#[platypus_api]` Rust code (native
+   plugins) later, or are packages TypeScript only? (Affects the `platypus` export condition's meaning.)
 8. **Should tree-shaking also apply to game code** (unused game functions with unsupported constructs stop failing),
    or only to package files? Recommendation: everything, it is the same pass.

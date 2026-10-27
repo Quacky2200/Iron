@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Physics components from compiled programs (`bench/physics_comp.ts`, `iron_physics_api`
+//! Physics components from compiled programs (`bench/physics_comp.ts`, `platypus_physics_api`
 //! components, joints, `Rope`, `CharacterController` and 2D). IDs are in TESTS.md (M9-TS-1100..).
-use iron_core::Value;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::physics_comp_t::*;
+use platypus_core::Value;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::physics_comp_t::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     let run = || {
-        iron_physics_api::reset();
-        let mut scene = iron_scene::Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        platypus_physics_api::reset();
+        let mut scene = platypus_scene::Scene::new();
+        let _scope = platypus_scene::api::enter(&mut scene);
         unsafe { ts_phc_init() };
         f();
     };
@@ -41,14 +41,14 @@ fn arr(v: &[f64]) -> Value {
 // M9-TS-1100
 //
 // A ball with a Rigidbody and a SphereCollider falls onto a BoxCollider floor and gives the same
-// height as the same world built through the physics ops (`iron_physics::Physics::apply`).
+// height as the same world built through the physics ops (`platypus_physics::Physics::apply`).
 #[test]
 fn components_match_the_ops_they_stand_for() {
     in_every_gc_mode(|| unsafe {
         let y = ts_phc_compFall(100.0);
         // The reference: a fixed floor body, a dynamic body with a ball, friction 0.6, mass 1.
-        let mut p = iron_physics::Physics::new();
-        let call = |p: &mut iron_physics::Physics, name: &str, args: Vec<Value>| {
+        let mut p = platypus_physics::Physics::new();
+        let call = |p: &mut platypus_physics::Physics, name: &str, args: Vec<Value>| {
             p.apply(name, &args).unwrap();
         };
         let opts = |friction: f64| {
@@ -176,7 +176,7 @@ fn joints_and_ropes_hold() {
     in_every_gc_mode(|| unsafe {
         let y = ts_phc_fixedJointHolds(180.0);
         assert!((y - 3.5).abs() < 0.05, "{y}");
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
         let r = ts_phc_ropeHangs();
         assert_eq!((r / 1000.0).floor(), 5.0, "five points: {r}");
         assert!((r - 5000.0 - 3.0).abs() < 0.3, "{r}");
@@ -203,9 +203,9 @@ fn two_d_components_work() {
         let r = ts_phc_twoDFall(240.0);
         // y 1.0 (floor top 0.5 plus the radius), z 0.7: packed as y * 100 + z.
         assert!((r - (100.0 + 0.7)).abs() < 6.0, "{r}");
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
         assert_eq!(text(ts_phc_ray2D()), "ground2d:4.5");
-        iron_physics_api::reset();
+        platypus_physics_api::reset();
         assert_eq!(ts_phc_gravity2D(), -2.0);
     });
 }

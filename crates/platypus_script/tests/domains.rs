@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Timers per event domain in the QuickJS runtime. IDs are in TESTS.md (M9-TS-28xx).
-use iron_script::{QuickJsRuntime, ScriptRuntime, Value};
+use platypus_script::{QuickJsRuntime, ScriptRuntime, Value};
 use std::cell::RefCell;
 
 thread_local! {
@@ -13,19 +13,19 @@ fn install(ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
     use rquickjs::Function;
     let g = ctx.globals();
     g.set(
-        "__iron_domain",
+        "__platypus_domain",
         Function::new(ctx.clone(), || {
             DOMAINS.with(|d| d.borrow().last().copied().unwrap_or(1))
         })?,
     )?;
     g.set(
-        "__iron_enter_domain",
+        "__platypus_enter_domain",
         Function::new(ctx.clone(), |d: u32| {
             DOMAINS.with(|s| s.borrow_mut().push(d))
         })?,
     )?;
     g.set(
-        "__iron_leave_domain",
+        "__platypus_leave_domain",
         Function::new(ctx.clone(), || {
             DOMAINS
                 .with(|s| s.borrow_mut().pop())
@@ -41,7 +41,7 @@ fn install(ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
 fn quickjs_timers_keep_their_domain() {
     let mut rt = QuickJsRuntime::new();
     rt.add_native(install).unwrap();
-    rt.eval("globalThis.log = []; globalThis.here = () => __iron_domain();")
+    rt.eval("globalThis.log = []; globalThis.here = () => __platypus_domain();")
         .unwrap();
     DOMAINS.with(|d| d.borrow_mut().push(5));
     rt.eval("setTimeout(() => log.push('a' + here()), 10)")

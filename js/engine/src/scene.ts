@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // GameObjects and components, the s&box / Unity way. Rust owns the objects (crates/
-// iron_scene); scripts hold `GameObject` handles with numeric IDs and a mirror of each
+// platypus_scene); scripts hold `GameObject` handles with numeric IDs and a mirror of each
 // object's name, parent and local transform, so reads need no round trip. Changes go
 // to the engine as `scene.*` ops. When the engine moves an object (physics), Rust
-// sends its new local transform back with `__iron_scene(moved)` after the tick.
+// sends its new local transform back with `__platypus_scene(moved)` after the tick.
 //
 // Components are script classes attached to GameObjects. The engine keeps the list
 // and calls `onStart`/`onUpdate`/`onDestroy` by (component id, method name) through
@@ -199,7 +199,7 @@ export function _setSceneHooks(hooks: SceneHooks): void {
 /**
  * The registered name of a class. Unregistered classes (like the engine's own
  * `Camera`) go by their class name; they aren't starting components, so they stay
- * out of `__iron_registered`.
+ * out of `__platypus_registered`.
  */
 function nameOf(cls: ComponentClass): string {
   let name = names.get(cls);
@@ -495,7 +495,7 @@ export class GameObject {
     (parent ? parent.children : roots).push(this);
     const t = this.transform;
     flushTransforms();
-    __iron_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
+    __platypus_op("scene.create", this.id, name, parent?.id ?? null, vec(t._position), quat(t._rotation), vec(t._scale));
   }
 
   /** @internal An object the engine created (it has the id already). */
@@ -528,7 +528,7 @@ export class GameObject {
   set name(name: string) {
     this._name = name;
     flushTransforms();
-    __iron_op("scene.name", this.id, name);
+    __platypus_op("scene.name", this.id, name);
   }
 
   /**
@@ -541,7 +541,7 @@ export class GameObject {
   set layer(layer: number) {
     this._layer = checkLayer(layer);
     flushTransforms();
-    __iron_op("scene.layer", this.id, layer);
+    __platypus_op("scene.layer", this.id, layer);
   }
 
   get parent(): GameObject | null {
@@ -580,7 +580,7 @@ export class GameObject {
     this._parent = parent;
     (parent ? parent.children : roots).push(this);
     flushTransforms();
-    __iron_op("scene.parent", this.id, parent?.id ?? null);
+    __platypus_op("scene.parent", this.id, parent?.id ?? null);
     if (keepWorld) {
       t.position = position;
       t.rotation = rotation;
@@ -596,7 +596,7 @@ export class GameObject {
   set enabled(on: boolean) {
     this._enabled = on;
     flushTransforms();
-    __iron_op("scene.enabled", this.id, on);
+    __platypus_op("scene.enabled", this.id, on);
   }
 
   /** Enabled, along with every parent: inactive objects' components don't update. */
@@ -623,7 +623,7 @@ export class GameObject {
     const instance = instantiate(cls, id, this) as T;
     if (props) Object.assign(instance, props);
     flushTransforms();
-    __iron_op("scene.addComponent", this.id, id, name);
+    __platypus_op("scene.addComponent", this.id, id, name);
     return instance;
   }
 
@@ -647,14 +647,14 @@ export class GameObject {
     if (i < 0) return;
     this.components.splice(i, 1);
     flushTransforms();
-    __iron_op("scene.removeComponent", component.id);
+    __platypus_op("scene.removeComponent", component.id);
   }
 
   /** Destroys the object, its children and all their components. */
   destroy(): void {
     if (this._destroyed) return;
     flushTransforms();
-    __iron_op("scene.destroy", this.id);
+    __platypus_op("scene.destroy", this.id);
     forget(this);
   }
 
@@ -663,7 +663,7 @@ export class GameObject {
    * scenes: it moves to the `DontDestroyOnLoad` scene (Unity's `DontDestroyOnLoad`).
    */
   static dontDestroyOnLoad(go: GameObject): void {
-    if (!sceneHooks) throw new Error("dontDestroyOnLoad needs @iron/engine's scenes.ts loaded");
+    if (!sceneHooks) throw new Error("dontDestroyOnLoad needs @platypus/engine's scenes.ts loaded");
     sceneHooks.dontDestroyOnLoad(go);
   }
 
@@ -674,7 +674,7 @@ export class GameObject {
    * places a copy of it.
    */
   static instantiate(original: GameObject | Prefab, options: InstantiateObjectOptions = {}): GameObject {
-    if (!sceneHooks) throw new Error("instantiate needs @iron/engine's scenes.ts loaded");
+    if (!sceneHooks) throw new Error("instantiate needs @platypus/engine's scenes.ts loaded");
     return sceneHooks.instantiate(original, options);
   }
 
@@ -714,7 +714,7 @@ export class GameObject {
     type: "cube" | "sphere" | "capsule" | "cylinder" | "plane" | "quad",
     options?: GameObjectOptions & { name?: string },
   ): GameObject {
-    if (!primitiveFactory) throw new Error("createPrimitive needs @iron/engine's index (primitives.ts) loaded");
+    if (!primitiveFactory) throw new Error("createPrimitive needs @platypus/engine's index (primitives.ts) loaded");
     return primitiveFactory(type, options);
   }
 
@@ -781,12 +781,12 @@ export function _resetSceneForTests() {
   nextComponent = 1 << 24;
 }
 
-// ---- Host functions called by Rust (crates/iron_script/src/components.rs) ----
+// ---- Host functions called by Rust (crates/platypus_script/src/components.rs) ----
 
-globalThis.__iron_registered = () => [...starting];
+globalThis.__platypus_registered = () => [...starting];
 
 /** Creates an engine-spawned component, on the object the engine made for it. */
-globalThis.__iron_create = (className: string, id: number, objectId?: number, objectName?: string) => {
+globalThis.__platypus_create = (className: string, id: number, objectId?: number, objectName?: string) => {
   const cls = classes.get(className);
   if (!cls) throw new Error(`unknown component class '${className}'`);
   const object = objectId === undefined || objectId === null
@@ -798,13 +798,13 @@ globalThis.__iron_create = (className: string, id: number, objectId?: number, ob
 const HOOKS = ["onStart", "onUpdate", "onLateUpdate", "onFixedUpdate", "onPreRender", "onDestroy"] as const;
 
 /** Which lifecycle methods a component has, so the engine only calls those. */
-globalThis.__iron_hooks = (id: number) => {
+globalThis.__platypus_hooks = (id: number) => {
   const instance = instances.get(id) as unknown as Record<string, unknown> | undefined;
   if (!instance) return [...HOOKS];
   return HOOKS.filter((h) => typeof instance[h] === "function" && !(h === "onStart" && restored.has(id)));
 };
 
-globalThis.__iron_dispatch = (id: number, method: string, ...args: unknown[]) => {
+globalThis.__platypus_dispatch = (id: number, method: string, ...args: unknown[]) => {
   const instance = instances.get(id);
   if (!instance) throw new Error(`no component with id ${id}`);
   const fn = (instance as unknown as Record<string, unknown>)[method];
@@ -814,10 +814,10 @@ globalThis.__iron_dispatch = (id: number, method: string, ...args: unknown[]) =>
 
 /**
  * Calls `method` on many components in one go (the engine's per-frame hooks), in order. On a
- * throw, `__iron_run_at` says which one it was, so the engine can disable it and carry on.
+ * throw, `__platypus_run_at` says which one it was, so the engine can disable it and carry on.
  */
-globalThis.__iron_run = (method: string, ids: number[], ...args: unknown[]) => {
-  globalThis.__iron_run_at = -1;
+globalThis.__platypus_run = (method: string, ids: number[], ...args: unknown[]) => {
+  globalThis.__platypus_run_at = -1;
   for (let i = 0; i < ids.length; i++) {
     const instance = instances.get(ids[i]!) as unknown as Record<string, unknown> | undefined;
     try {
@@ -825,13 +825,13 @@ globalThis.__iron_run = (method: string, ids: number[], ...args: unknown[]) => {
       const fn = instance[method];
       if (typeof fn === "function") fn.apply(instance, args);
     } catch (e) {
-      globalThis.__iron_run_at = i;
+      globalThis.__platypus_run_at = i;
       throw e;
     }
   }
 };
 
-globalThis.__iron_destroy = (id: number) => {
+globalThis.__platypus_destroy = (id: number) => {
   const instance = instances.get(id);
   instances.delete(id);
   if (!instance) return;
@@ -845,7 +845,7 @@ const pendingTransforms = new Map<number, Transform>();
 
 /**
  * Sends every queued transform in one `scene.locals` op (`id, px, py, pz, qx, qy, qz, qw,
- * sx, sy, sz` each, local). The engine calls it when a script turn ends (`__iron_flush`);
+ * sx, sy, sz` each, local). The engine calls it when a script turn ends (`__platypus_flush`);
  * other scene ops call it first, so ops keep their order.
  */
 export function flushTransforms(): void {
@@ -859,13 +859,13 @@ export function flushTransforms(): void {
     flat.push(id, p.x, p.y, p.z, q.x, q.y, q.z, q.w, sc.x, sc.y, sc.z);
   }
   pendingTransforms.clear();
-  if (flat.length) __iron_op("scene.locals", flat);
+  if (flat.length) __platypus_op("scene.locals", flat);
 }
 
-globalThis.__iron_flush = flushTransforms;
+globalThis.__platypus_flush = flushTransforms;
 
 /** Objects the engine moved: `id, px, py, pz, qx, qy, qz, qw, sx, sy, sz` each (local). */
-globalThis.__iron_scene = (moved: number[]) => {
+globalThis.__platypus_scene = (moved: number[]) => {
   for (let i = 0; i + 10 < moved.length; i += 11) {
     const go = objects.get(moved[i]!);
     if (!go) continue;

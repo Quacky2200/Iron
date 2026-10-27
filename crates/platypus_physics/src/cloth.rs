@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use iron_core::glam::{Mat4, Vec3};
+use platypus_core::glam::{Mat4, Vec3};
 
 /// How a cloth behaves (Unity's `Cloth` settings).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -384,7 +384,7 @@ mod tests {
         let (v, idx) = grid(16);
         let world = Mat4::from_scale_rotation_translation(
             Vec3::splat(2.0),
-            iron_core::glam::Quat::IDENTITY,
+            platypus_core::glam::Quat::IDENTITY,
             Vec3::new(0.0, 1.5, 0.0),
         );
         let mut cloth = Cloth::new(&v, &idx, world, |_| false);

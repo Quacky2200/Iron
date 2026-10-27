@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! TypeScript AST (oxc) -> Iron IR.
+//! TypeScript AST (oxc) -> Platypus IR.
 //!
 //! Types come from the source's own annotations (see `types.rs`); expression types are inferred
 //! bottom-up from them, with a contextual "expected" type pushed down for literals. The program
@@ -107,7 +107,7 @@ enum TopItem<'a> {
     /// A control-flow statement (`if`, `for`, `while`, `switch`, `try`, a block, ..).
     Stmt(&'a Statement<'a>),
     /// The start of a module's text in a bundle that has a top-level `await` somewhere
-    /// (`__iron_module(..)`, written by `modules.rs`).
+    /// (`__platypus_module(..)`, written by `modules.rs`).
     Module(ModuleInfo),
 }
 
@@ -131,7 +131,7 @@ impl ModuleInfo {
     }
 }
 
-/// `__iron_module(id, "path", tla, [dep, ..])`, the marker `modules.rs` writes before a module.
+/// `__platypus_module(id, "path", tla, [dep, ..])`, the marker `modules.rs` writes before a module.
 fn module_marker(e: &Expression<'_>) -> Option<ModuleInfo> {
     let Expression::CallExpression(c) = e else {
         return None;
@@ -139,7 +139,7 @@ fn module_marker(e: &Expression<'_>) -> Option<ModuleInfo> {
     let Expression::Identifier(f) = &c.callee else {
         return None;
     };
-    if f.name != "__iron_module" {
+    if f.name != "__platypus_module" {
         return None;
     }
     let num = |a: Option<&Argument<'_>>| match a {
@@ -406,7 +406,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     let src = with_facade.as_deref().unwrap_or(src);
     // JSX and hooks become calls of the `Ui` namespace (first: the other rewrites parse plain TS).
     // The compiler brings the `Ui` namespace itself when the caller did not pass it (the host links
-    // the `ts_ui_*` symbols; `iron_ts_ui` checks that this copy equals its own).
+    // the `ts_ui_*` symbols; `platypus_ts_ui` checks that this copy equals its own).
     let with_keyed = keyed::desugar(src)?;
     let src = with_keyed.as_deref().unwrap_or(src);
     let wants_ui = jsx::wanted(src);
@@ -538,7 +538,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     crate::timing::add("program lines", src.matches('\n').count() as f64);
     let full = format!("{head}{src}");
     let src = full.as_str();
-    if std::env::var_os("IRON_TS_DUMP_SRC").is_some() {
+    if std::env::var_os("PLATYPUS_TS_DUMP_SRC").is_some() {
         eprintln!("{full}");
     }
     lap.mark("source rewrites (JSX, async, components, preludes)");
@@ -1143,7 +1143,7 @@ impl<'a> Lowerer<'a> {
         self.assigned = saved_assigned;
         self.cur = saved;
         r.map_err(|e| {
-            if std::env::var_os("IRON_TS_TRACE_FN").is_some() {
+            if std::env::var_os("PLATYPUS_TS_TRACE_FN").is_some() {
                 format!("{e} [in {name}]")
             } else {
                 e

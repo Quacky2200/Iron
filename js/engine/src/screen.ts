@@ -3,7 +3,7 @@
 // The window as scripts see it (Unity's `Screen`). Sizes are in UI pixels, the units
 // pointer events (`clientX`/`clientY`) and screen UI use: the window's pixels divided
 // by its DPI scale and the UI scale (`setUiScale`). The engine reports changes with
-// `__iron_screen(width, height, scale)`.
+// `__platypus_screen(width, height, scale)`.
 
 let width = 1280;
 let height = 720;
@@ -32,7 +32,7 @@ interface DisplayInfo {
 }
 
 /** What the engine says about the window and monitor (updated after each change). */
-const display = (): Partial<DisplayInfo> => (globalThis.__iron_info as { display?: Partial<DisplayInfo> } | undefined)?.display ?? {};
+const display = (): Partial<DisplayInfo> => (globalThis.__platypus_info as { display?: Partial<DisplayInfo> } | undefined)?.display ?? {};
 
 const mode = (): FullScreenMode => display().mode ?? "Windowed";
 const isFullScreen = (m: FullScreenMode) => m === "FullScreenWindow" || m === "ExclusiveFullScreen";
@@ -43,7 +43,7 @@ const windowSize = () => ({
 
 function setResolution(w: number, h: number, m: FullScreenMode | boolean = mode(), refreshRate = 0): void {
   const chosen: FullScreenMode = typeof m === "boolean" ? (m ? "FullScreenWindow" : "Windowed") : m;
-  __iron_op("screen.set", chosen, Math.round(w), Math.round(h), refreshRate);
+  __platypus_op("screen.set", chosen, Math.round(w), Math.round(h), refreshRate);
 }
 
 export const Screen = {
@@ -74,7 +74,7 @@ export const Screen = {
   set fullScreenMode(m: FullScreenMode) {
     // No size: exclusive takes the monitor's current resolution, windowed goes back to
     // the last window size.
-    __iron_op("screen.set", m, 0, 0, 0);
+    __platypus_op("screen.set", m, 0, 0, 0);
   },
 
   /** Fullscreen (borderless, or exclusive when that's the mode) or not. */
@@ -83,7 +83,7 @@ export const Screen = {
   },
   set fullScreen(on: boolean) {
     if (on === isFullScreen(mode())) return;
-    __iron_op("screen.set", on ? "FullScreenWindow" : "Windowed", 0, 0, 0);
+    __platypus_op("screen.set", on ? "FullScreenWindow" : "Windowed", 0, 0, 0);
   },
 
   /**
@@ -124,7 +124,7 @@ export const Screen = {
 
 const listeners = new Set<() => void>();
 
-globalThis.__iron_screen = (w: number, h: number, s: number) => {
+globalThis.__platypus_screen = (w: number, h: number, s: number) => {
   width = w;
   height = h;
   scale = s;
@@ -139,5 +139,5 @@ globalThis.__iron_screen = (w: number, h: number, s: number) => {
 
 /** Sets the screen size. Only for tests. */
 export function _setScreenForTests(w: number, h: number, s = 1) {
-  globalThis.__iron_screen(w, h, s);
+  globalThis.__platypus_screen(w, h, s);
 }

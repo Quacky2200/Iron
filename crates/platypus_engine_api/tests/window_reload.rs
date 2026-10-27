@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Hot reload and windows: keyed windows stay, the rest close. IDs are in TESTS.md (M9-API-148x).
-use iron_api::Callback;
-use iron_engine_api::window::{self, MAIN, Opened, Style, WindowRef, WindowRequest};
+use platypus_api::Callback;
+use platypus_engine_api::window::{self, MAIN, Opened, Style, WindowRef, WindowRequest};
 use std::cell::Cell;
 use std::rc::Rc;
 

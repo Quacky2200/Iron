@@ -9,9 +9,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use iron_core::Value;
-use iron_core::glam::{Mat4, Quat, Vec3};
-use iron_render::{
+use platypus_core::Value;
+use platypus_core::glam::{Mat4, Quat, Vec3};
+use platypus_render::{
     ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, CloudLayer, Color, Denoising,
     FillRule, FillVertex, Fog, FogMode, FogVolume, GizmoLine, Grading, HeightFog, Light, LightKind,
     MAX_CURVE_POINTS, MAX_FOG_VOLUMES, MaterialMaps, MeshData, MeshGlow, MeshInstance, Metering,
@@ -19,7 +19,7 @@ use iron_render::{
     ShapeRun, Sky, Stroke, TextureData, TextureFilter, TextureWrap, Tonemapping, VolumetricFog,
     WorldCamera, WorldQuad, WorldTexture, WorldView, primitive_id, viewport_size,
 };
-use iron_scene::{ScriptObject, ScriptScene};
+use platypus_scene::{ScriptObject, ScriptScene};
 
 use crate::particles::{self, ParticleSystem};
 
@@ -395,7 +395,7 @@ pub struct WorldViews {
     /// Cameras whose auto exposure jumps to what they see next frame (`render.exposureReset`),
     /// applied by the app.
     pub exposure_resets: Vec<u32>,
-    /// Lights in real-world units (`iron.lightUnits: "physical"`, as Unity 7 and HDRP): directional lights' intensity
+    /// Lights in real-world units (`platypus.lightUnits: "physical"`, as Unity 7 and HDRP): directional lights' intensity
     /// in lux, spot and point lights' in lumens.
     pub physical_units: bool,
     /// The sky (`render.sky`), applied by the app before drawing.
@@ -422,7 +422,7 @@ pub struct WorldViews {
     /// Textures to upload (`None`: remove), applied by the app before drawing.
     pub texture_uploads: Vec<(u32, Option<TextureData>)>,
     /// Cooked textures to upload (falling back to decoding them on GPUs without BC).
-    pub cooked_uploads: Vec<(u32, iron_render::CookedTexture)>,
+    pub cooked_uploads: Vec<(u32, platypus_render::CookedTexture)>,
     /// Render textures to make or resize, with their sizes.
     pub render_texture_uploads: Vec<(u32, (u32, u32))>,
     /// Render textures' sizes, for their cameras' aspect.
@@ -568,7 +568,7 @@ impl WorldViews {
         reuse: &[u32],
     ) -> Result<serde_json::Value, String> {
         self.model_ids.record(reuse);
-        // A cooked model (`iron --cook`) when there's a fresh one.
+        // A cooked model (`platypus --cook`) when there's a fresh one.
         let model = match crate::cook::cooked_model(root, src, &mut self.model_ids) {
             Some(m) => Ok(m),
             None => crate::models::load(root, src, &mut self.model_ids),
@@ -629,7 +629,7 @@ impl WorldViews {
     /// A mesh's data by name (a primitive) or id (a script's or a model's).
     pub fn mesh_source(&self, mesh: Option<&Value>) -> Option<MeshData> {
         match mesh? {
-            Value::String(name) => iron_render::primitive(name),
+            Value::String(name) => platypus_render::primitive(name),
             v => self.mesh_data.get(&(v.as_f64()? as u32)).cloned(),
         }
     }
@@ -671,7 +671,7 @@ impl WorldViews {
         self.fog.is_some_and(|f| f.volumetric.is_some())
     }
 
-    /// Empty, with lights in real-world units (`iron.lightUnits: "physical"`) or not.
+    /// Empty, with lights in real-world units (`platypus.lightUnits: "physical"`) or not.
     pub fn with_physical_units(physical_units: bool) -> Self {
         Self {
             physical_units,
@@ -768,7 +768,7 @@ impl WorldViews {
         };
         let mipmaps = !matches!(args.get(4), Some(Value::Bool(false)));
         let srgb = !matches!(args.get(9), Some(Value::Bool(true)));
-        // A cooked texture (`iron --cook`) when there's a fresh one made the same way.
+        // A cooked texture (`platypus --cook`) when there's a fresh one made the same way.
         if let Some(Value::String(src)) = args.get(1)
             && !src.trim_start().starts_with("data:")
             && let Some(mut cooked) = crate::cook::cooked_texture(root, src, srgb, mipmaps)
@@ -787,9 +787,9 @@ impl WorldViews {
         let (width, height, rgba) = match args.get(1) {
             Some(Value::String(src)) => {
                 let bytes = if src.trim_start().starts_with("data:") {
-                    iron_core::decode_data_url(src).ok_or("bad data URL")?
+                    platypus_core::decode_data_url(src).ok_or("bad data URL")?
                 } else {
-                    iron_core::read_asset(root, src).map_err(|e| e.to_string())?
+                    platypus_core::read_asset(root, src).map_err(|e| e.to_string())?
                 };
                 let image = image::load_from_memory(&bytes)
                     .map_err(|e| format!("`{src}`: {e}"))?
@@ -911,7 +911,7 @@ impl WorldViews {
                 _ => None,
             }
             .map_or_else(
-                || (color, iron_render::tessellate_fill(s.points, rule)),
+                || (color, platypus_render::tessellate_fill(s.points, rule)),
                 |tris| (color, tris),
             )
         });
@@ -1615,7 +1615,7 @@ impl WorldViews {
     pub(crate) fn animation_sight(
         &mut self,
         scene: &ScriptScene,
-        roots: &[iron_scene::ObjectId],
+        roots: &[platypus_scene::ObjectId],
     ) -> crate::anim_cull::Sight {
         let renderers = self.renderers.iter().map(|(id, r)| (*id, r.object));
         self.culling
@@ -1624,7 +1624,7 @@ impl WorldViews {
 
     /// Advances particle systems on active objects by `dt` (scaled) seconds, emitting
     /// from where their objects are now. Returns `[id, count, alive (0/1), ...]` for
-    /// systems whose count or state changed, for `__iron_particles`.
+    /// systems whose count or state changed, for `__platypus_particles`.
     pub fn update_particles(&mut self, dt: f32, scene: &ScriptScene) -> Vec<f64> {
         let world = |o: ScriptObject| scene.object(o).map(|id| scene.scene.world_matrix(id));
         for (id, count) in self.pending_emits.drain(..) {
@@ -2137,7 +2137,7 @@ mod tests {
     // M5-AST-01
     #[test]
     fn changed_textures_and_models_reload_under_their_ids() {
-        let dir = std::env::temp_dir().join(format!("iron-reload-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-reload-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("assets")).unwrap();
         let png = |w: u32, h: u32| {

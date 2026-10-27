@@ -25,15 +25,15 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/crowd
-cd .. && cargo run --release -p iron_app -- examples/crowd
+cd tools && cargo run -q -p platypus_build -- build ../examples/crowd
+cd .. && cargo run --release -p platypus_app -- examples/crowd
 ```
 
-Screenshot run: `iron_app examples/crowd --screenshot out.png --frames 150` (the interactive window has crashed some
+Screenshot run: `platypus_app examples/crowd --screenshot out.png --frames 150` (the interactive window has crashed some
 GPUs; the screenshot run is safest). A windowless benchmark of every view, count and mode:
 
 ```bash
-target/release/iron_app.exe examples/crowd --bench --bench-input tools/bench/inputs/crowd.json \
+target/release/platypus.exe examples/crowd --bench --bench-input tools/bench/inputs/crowd.json \
   --fixed-dt 0.0166667 --size 1280x720 --bench-out out.json
 ```
 

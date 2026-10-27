@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron <game> --bench` runs a native game without a window, sends its scripted input and
+//! `platypus <game> --bench` runs a native game without a window, sends its scripted input and
 //! writes the timings (needs a GPU, like the other rendering tests; no window opens).
 
 use std::path::PathBuf;
@@ -26,7 +26,7 @@ const SPEC: &str = r#"{ "warmup": 3, "segments": [
 // M9-BEN-03
 #[test]
 fn a_bench_run_times_a_native_game_without_a_window() {
-    let dir = std::env::temp_dir().join(format!("iron-bench-smoke-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("platypus-bench-smoke-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let game = dir.join("main.ts");
@@ -35,14 +35,14 @@ fn a_bench_run_times_a_native_game_without_a_window() {
     std::fs::write(&spec, SPEC).unwrap();
     let out = dir.join("out.json");
     let log = dir.join("run.log");
-    let status = Command::new(env!("CARGO_BIN_EXE_iron_app"))
+    let status = Command::new(env!("CARGO_BIN_EXE_platypus"))
         .arg(&game)
         .args(["--bench", "--fixed-dt", "0.02", "--size", "320x200"])
         .arg("--bench-input")
         .arg(&spec)
         .arg("--bench-out")
         .arg(&out)
-        .env("IRON_LOG_FILE", &log)
+        .env("PLATYPUS_LOG_FILE", &log)
         .status()
         .unwrap();
     let log_text = std::fs::read_to_string(&log).unwrap_or_default();

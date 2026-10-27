@@ -5,7 +5,7 @@
 //! `pre_render_lines`) and the geometry of `LineRenderer`'s tube.
 
 use super::*;
-use iron_scene::api::{TransformRef, scene_api};
+use platypus_scene::api::{TransformRef, scene_api};
 use std::collections::HashMap;
 
 // ---- JSON helpers ----
@@ -473,7 +473,7 @@ pub enum Primitive {
     Quad,
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Primitives", quickjs,
     handles(GameObject = ObjectId),
     enums(extern PrimitiveType = Primitive [Cube, Sphere, Capsule, Cylinder, Plane, Quad])
@@ -495,7 +495,7 @@ pub mod primitives_api {
 
 /// The names of the built-in meshes: `PrimitiveType.Cube` is `"cube"`, and `PrimitiveType.name(i)`
 /// / `.parse(s)` convert the index.
-#[iron_api(
+#[platypus_api(
     namespace = "PrimitiveType", quickjs,
     enums(
         /// A built-in mesh (Unity's `PrimitiveType`).

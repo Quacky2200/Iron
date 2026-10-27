@@ -207,7 +207,7 @@
 /* --- Grid ----------------------------------------------------------------------------- */
 
 /* Tiles fade out under the header and above the hints instead of being cut off. Extra
-   stops ease the fade: Iron composites in linear light, where a straight alpha ramp looks
+   stops ease the fade: Platypus composites in linear light, where a straight alpha ramp looks
    abrupt (docs/differences.md). */
 .grid-scroll {
   flex-grow: 1;

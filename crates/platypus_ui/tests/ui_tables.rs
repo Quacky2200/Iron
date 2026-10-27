@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The tables in `iron_ui::tables` against what this crate implements: every style property, attribute,
-//! element and event the tables declare (and so the compiler writes into `types/iron.d.ts`) is
+//! The tables in `platypus_ui::tables` against what this crate implements: every style property, attribute,
+//! element and event the tables declare (and so the compiler writes into `types/platypus.d.ts`) is
 //! handled, and what the code handles is declared.
 
 mod common;
 
 use common::Dom;
-use iron_core::Value;
-use iron_ui::events::Modifiers;
-use iron_ui::tables::attrs::{ATTRS, Scope};
-use iron_ui::tables::elements::{ELEMENTS, SVG_KINDS, tag_of_component};
-use iron_ui::tables::events::{
+use platypus_core::Value;
+use platypus_ui::events::Modifiers;
+use platypus_ui::tables::attrs::{ATTRS, Scope};
+use platypus_ui::tables::elements::{ELEMENTS, SVG_KINDS, tag_of_component};
+use platypus_ui::tables::events::{
     EVENT_FIELDS, EVENT_INTERFACES, EVENT_PROPS, Init, NON_BUBBLING, NOT_EXPOSED, kind_of_prop,
 };
-use iron_ui::tables::style::{
+use platypus_ui::tables::style::{
     CURSORS, LENGTH_UNITS, NAMED_TYPES, SHORTHANDS, STYLE_PROPS, StyleProp,
 };
-use iron_ui::{Attrs, EventKind, LayoutStyle, StyleError, UiEvent, Visual, apply_style};
+use platypus_ui::{Attrs, EventKind, LayoutStyle, StyleError, UiEvent, Visual, apply_style};
 use std::collections::BTreeSet;
 
 fn apply(prop: &str, v: Value) -> Result<(), StyleError> {
@@ -166,7 +166,7 @@ fn everything_apply_style_matches_on_is_in_the_table() {
         .collect();
     assert!(
         missing.is_empty(),
-        "apply_style handles these but the table in iron_ui::tables::style does not declare them (add them with a type and a doc, or list them in NOT_PROPERTIES if they are values): {missing:?}"
+        "apply_style handles these but the table in platypus_ui::tables::style does not declare them (add them with a type and a doc, or list them in NOT_PROPERTIES if they are values): {missing:?}"
     );
 }
 
@@ -178,7 +178,7 @@ fn the_names_in_the_table_are_unique_and_the_named_unions_apply() {
         assert!(seen.insert(p.name), "{} is listed twice", p.name);
         assert!(!p.name.is_empty());
         for part in p.ty {
-            if let iron_ui::tables::style::Part::Named(n) = part {
+            if let platypus_ui::tables::style::Part::Named(n) = part {
                 assert!(
                     NAMED_TYPES.iter().any(|(k, _)| k == n),
                     "{} names the unknown type {n}",
@@ -190,7 +190,7 @@ fn the_names_in_the_table_are_unique_and_the_named_unions_apply() {
     for kw in CURSORS {
         assert!(apply("cursor", (*kw).into()).is_ok(), "cursor: {kw}");
     }
-    assert_eq!(iron_ui::CURSORS, CURSORS);
+    assert_eq!(platypus_ui::CURSORS, CURSORS);
 }
 
 // M9-TS-3304
@@ -259,9 +259,9 @@ fn attributes_in_the_table_are_handled_as_their_scope_says() {
             let svg = d.add(0, "svg", &[]);
             let shape = d.add(svg, "rect", &[]);
             let mut tree = d.build("");
-            let errors = tree.apply_commit(&iron_core::Commit {
+            let errors = tree.apply_commit(&platypus_core::Commit {
                 ops: vec![common::op(
-                    iron_ui::opcodes::SET_ATTRS,
+                    platypus_ui::opcodes::SET_ATTRS,
                     &[common::n(shape), a.name.into(), sample.clone()],
                 )],
             });
@@ -304,7 +304,7 @@ fn elements_in_the_table_can_be_created() {
     let _tree = d.build("");
     assert_eq!(tag_of_component("TextArea"), Some("textarea"));
     assert_eq!(tag_of_component("Nope"), None);
-    assert_eq!(iron_ui::svg::SVG_KINDS, SVG_KINDS);
+    assert_eq!(platypus_ui::svg::SVG_KINDS, SVG_KINDS);
 }
 
 // M9-TS-3307
@@ -312,7 +312,7 @@ fn elements_in_the_table_can_be_created() {
 fn event_fields_read_the_slots_script_args_fills() {
     let mut e = UiEvent::new(
         EventKind::KeyDown,
-        vec![iron_core::NodeId(7)],
+        vec![platypus_core::NodeId(7)],
         Modifiers {
             shift: true,
             ctrl: false,
@@ -330,7 +330,7 @@ fn event_fields_read_the_slots_script_args_fills() {
     e.repeat = true;
     e.key = "a".into();
     e.code = "KeyA".into();
-    e.scroll = Some(iron_ui::ScrollInfo {
+    e.scroll = Some(platypus_ui::ScrollInfo {
         left: 20.0,
         top: 21.0,
         width: 22.0,
@@ -396,7 +396,7 @@ fn event_fields_read_the_slots_script_args_fills() {
     // An input event carries its text in string slot 0.
     let mut input = UiEvent::new(
         EventKind::Input,
-        vec![iron_core::NodeId(1)],
+        vec![platypus_core::NodeId(1)],
         Modifiers::default(),
     );
     input.value = Some("hello".into());
@@ -533,7 +533,7 @@ fn every_event_kind_is_in_the_all_list() {
 
 // M9-TS-3330
 //
-// The `on*` props of the tables are the ones `@iron/react` runs for the same event types
+// The `on*` props of the tables are the ones `@platypus/react` runs for the same event types
 // (`HANDLERS` in `js/react/src/events.ts`), so a game reads the same names on both backends; the
 // non-bubbling types are the same in both.
 #[test]
@@ -577,7 +577,7 @@ fn motion_focus_and_drag_fields_read_their_slots() {
     let slot = |name: &str| EVENT_FIELDS.iter().find(|f| f.name == name).unwrap().init;
     let mut t = UiEvent::new(
         EventKind::TransitionEnd,
-        vec![iron_core::NodeId(1)],
+        vec![platypus_core::NodeId(1)],
         Modifiers::default(),
     );
     t.value = Some("background-color".into());
@@ -596,10 +596,10 @@ fn motion_focus_and_drag_fields_read_their_slots() {
     assert_eq!(data[i].as_f64(), Some(1.5));
     let mut f = UiEvent::new(
         EventKind::FocusIn,
-        vec![iron_core::NodeId(1)],
+        vec![platypus_core::NodeId(1)],
         Modifiers::default(),
     );
-    f.related = Some(iron_core::NodeId(9));
+    f.related = Some(platypus_core::NodeId(9));
     assert!(matches!(slot("relatedTarget"), Init::Related));
     let Value::Array(data) = &f.script_args()[2] else {
         panic!()
@@ -607,7 +607,7 @@ fn motion_focus_and_drag_fields_read_their_slots() {
     assert_eq!(data[9].as_f64(), Some(9.0), "relatedTarget reads data[9]");
     let mut d = UiEvent::new(
         EventKind::DragEnd,
-        vec![iron_core::NodeId(1)],
+        vec![platypus_core::NodeId(1)],
         Modifiers::default(),
     );
     d.detail = 1;

@@ -10,14 +10,14 @@ let ops: unknown[][] = [];
 beforeEach(() => {
   _resetSceneForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
   Gizmos.clear();
   Gizmos.color = Color.white;
   Gizmos.matrix = Matrix4x4.identity;
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 /** The presented lines as [a, b, colour] triples. */

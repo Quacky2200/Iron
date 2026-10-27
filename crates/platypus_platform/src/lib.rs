@@ -2,7 +2,7 @@
 
 //! The `Platform` layer: windowing, input and gamepads.
 //!
-//! Everything above this crate sees Iron's own [`InputEvent`]s, so `winit` + `gilrs`
+//! Everything above this crate sees Platypus's own [`InputEvent`]s, so `winit` + `gilrs`
 //! can be swapped (e.g. for SDL3) without touching the engine (DESIGN.md §10.1).
 
 pub mod display;

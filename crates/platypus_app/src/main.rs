@@ -3,11 +3,11 @@
 // A windowed program: no console window of its own (the log goes to a file, see
 // `logging`); tests keep the console harness.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
-//! `iron [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
+//! `platypus [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
 //! game's script bundle and runs it.
 //!
-//! `[game]` is either a game folder (loads `<game>/dist/game.irbundle`, built with
-//! `iron-build build`; a QuickJS `dist/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
+//! `[game]` is either a game folder (loads `<game>/dist/game.pbundle`, built with
+//! `platypus-build build`; a QuickJS `dist/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 pub(crate) mod anim_cull;
@@ -24,7 +24,7 @@ mod file_drop;
 mod fps;
 mod frame_target;
 mod game_input;
-// `pub(crate)`: `iron_editor` (bin/iron_editor.rs) includes this file as a module and
+// `pub(crate)`: `platypus_editor` (bin/platypus_editor.rs) includes this file as a module and
 // re-exports these at its root, for the `crate::` paths between modules.
 pub(crate) mod info;
 mod lifecycle;
@@ -52,14 +52,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use iron_platform::{
+use platypus_platform::{
     CursorIcon, CustomCursorRequest, ImeEvent, InputEvent, MouseButton, Platform, PlatformApp,
     WheelDelta, Window, WindowConfig,
 };
-use iron_render::wgpu;
-use iron_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WorldRenderer};
-use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use iron_ui::{
+use platypus_render::wgpu;
+use platypus_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WorldRenderer};
+use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
+use platypus_ui::{
     Clipboard, Input, Interaction, ScrollAlign, ScrollBehavior, UiEvent, UiTree, events,
 };
 
@@ -80,7 +80,7 @@ struct Args {
     cook: bool,
     /// `--fps` / `--no-fps`: the FPS counter on or off, over the defaults.
     fps: Option<bool>,
-    /// `--data <dir>`: where a packaged game's assets are (over `$IRON_DATA` and `data/` beside
+    /// `--data <dir>`: where a packaged game's assets are (over `$PLATYPUS_DATA` and `data/` beside
     /// the exe).
     data: Option<PathBuf>,
     /// The folder assets are read from when it is not the game folder (a packaged game).
@@ -101,7 +101,7 @@ impl Args {
 }
 
 /// The deprecation note for the QuickJS backend (logged once per run).
-const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `iron-build build` (iron_ts, native, writes dist/game.irbundle); pass --force to run this QuickJS bundle anyway";
+const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `platypus-build build` (platypus_ts, native, writes dist/game.pbundle); pass --force to run this QuickJS bundle anyway";
 
 /// What to do with a bundle: native ones always run; QuickJS ones only with `--force` (the
 /// editor, itself QuickJS-based, counts as forced).
@@ -124,7 +124,7 @@ fn quickjs_gate(native: bool, force: bool, editor: bool) -> QuickJsGate {
 
 fn parse_args() -> Result<Args> {
     let mut args = parse_args_from(std::env::args_os().skip(1))?;
-    // `iron_editor [project]`: the editor runs its own UI on the project folder.
+    // `platypus_editor [project]`: the editor runs its own UI on the project folder.
     if editor::ENABLED {
         editor::set_project(&args.game);
         args.game = editor::ui_folder();
@@ -132,7 +132,7 @@ fn parse_args() -> Result<Args> {
         // A packaged single-file game runs its own code (extracted from the exe), whatever the
         // arguments say, and reads its assets from the data folder beside the exe.
         let exe = std::env::current_exe().ok();
-        let env = std::env::var_os("IRON_DATA");
+        let env = std::env::var_os("PLATYPUS_DATA");
         args.asset_root = Some(
             asset_root::locate_data(&asset_root::DataSearch {
                 flag: args.data.as_deref(),
@@ -150,10 +150,10 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: iron [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder] [--force] [-- script args]
-       iron [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
---force runs a QuickJS (deprecated) bundle; games built with `iron-build build` are native; arguments after -- reach scripts as Application.args;
---bench runs without a window as fast as it can and writes timings as JSON (docs/iron-build.md, \"Benchmarks\")";
+    let usage = "usage: platypus [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder] [--force] [-- script args]
+       platypus [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
+--force runs a QuickJS (deprecated) bundle; games built with `platypus-build build` are native; arguments after -- reach scripts as Application.args;
+--bench runs without a window as fast as it can and writes timings as JSON (docs/platypus-build.md, \"Benchmarks\")";
     let mut args = args.into_iter();
     let mut game = None;
     let mut parsed = Args {
@@ -230,10 +230,10 @@ pub(crate) fn main() -> Result<()> {
     result
 }
 
-/// Threads the animation update poses animators on: `IRON_ANIM_THREADS` (1: in turn), else
+/// Threads the animation update poses animators on: `PLATYPUS_ANIM_THREADS` (1: in turn), else
 /// the machine's threads, up to 16 (more gain little: the writing stays in turn).
 fn animation_threads() -> usize {
-    std::env::var("IRON_ANIM_THREADS")
+    std::env::var("PLATYPUS_ANIM_THREADS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get().min(16)))
@@ -249,12 +249,12 @@ fn run() -> Result<()> {
     };
     // `--bench` reports where start-up goes (`startupParts`).
     if args.bench.is_some() {
-        iron_ts::timing::enable();
+        platypus_ts::timing::enable();
     }
-    iron_animation::set_threads(animation_threads());
-    let mut lap = iron_ts::timing::Lap::start();
+    platypus_animation::set_threads(animation_threads());
+    let mut lap = platypus_ts::timing::Lap::start();
     // The log file sits with the game's settings (not for screenshot runs, which leave
-    // the player's files alone; `IRON_LOG_FILE` still works there).
+    // the player's files alone; `PLATYPUS_LOG_FILE` still works there).
     let manifest_dir = match resolve_bundle(&args.game) {
         Ok((_, root)) => Some(root),
         Err(_) => None,
@@ -279,7 +279,7 @@ fn run() -> Result<()> {
             "cooked {} textures and {} models into {}",
             report.textures,
             report.models,
-            root.join(".iron/cooked").display()
+            root.join(".platypus/cooked").display()
         );
         for f in &report.failed {
             tracing::warn!("not cooked: {f}");
@@ -296,7 +296,7 @@ fn run() -> Result<()> {
         QuickJsGate::Refused => {
             tracing::warn!("{QUICKJS_DEPRECATED}");
             bail!(
-                "{} is a QuickJS bundle (deprecated); rebuild with `iron-build build` or pass --force",
+                "{} is a QuickJS bundle (deprecated); rebuild with `platypus-build build` or pass --force",
                 bundle_path.display()
             );
         }
@@ -312,11 +312,11 @@ fn run() -> Result<()> {
     // Every asset read goes through this: the packs of a packaged game (all mounted now, so a
     // script can load any path), else the folder.
     let vfs = asset_root::mount(&asset_root).map_err(anyhow::Error::msg)?;
-    iron_core::set_asset_fs(Some(std::sync::Arc::new(vfs.clone())));
-    // Dev loop: `iron-build build` lists what a packaged build would hold; loading a file outside
+    platypus_core::set_asset_fs(Some(std::sync::Arc::new(vfs.clone())));
+    // Dev loop: `platypus-build build` lists what a packaged build would hold; loading a file outside
     // it logs a warning (a packaged game would not find it).
     if let Ok(plan) = std::fs::read_to_string(code_root.join("dist/assets.plan")) {
-        iron_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
+        platypus_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
     }
     lap.mark("log, manifest, asset mount");
     // A compiled (native) game is JIT-compiled below; there is no JavaScript to read.
@@ -341,8 +341,8 @@ fn run() -> Result<()> {
     // the bundle's top level runs.
     let manifest = info::Manifest::load(&code_root);
     // `Window.main` starts with the manifest's title; the real size and scale come with the window.
-    iron_engine_api::window::set_main(&manifest.title, (1280.0, 720.0), 1.0);
-    iron_engine_api::window::set_supported(iron_platform::Os::current().supports_windows());
+    platypus_engine_api::window::set_main(&manifest.title, (1280.0, 720.0), 1.0);
+    platypus_engine_api::window::set_supported(platypus_platform::Os::current().supports_windows());
     let mut info = info::Info::new(&manifest);
     info.set_app("args", serde_json::json!(args.script_args));
     // The player's saved settings (not for screenshot runs, which stay the same every
@@ -353,12 +353,12 @@ fn run() -> Result<()> {
     } else {
         prefs::Prefs::load(&manifest)
     };
-    // A game that keeps a fixed size (`iron.display.resizable: false`) always gets its own
+    // A game that keeps a fixed size (`platypus.display.resizable: false`) always gets its own
     // settings: saved ones would tell its scripts about a window size it never has.
     let resizable = manifest.display["resizable"].as_bool().unwrap_or(true);
     let defaults = display::from_json(Some(&manifest.display), Default::default());
     let display_settings = if resizable {
-        display::from_json(prefs.get("iron.display"), defaults)
+        display::from_json(prefs.get("platypus.display"), defaults)
     } else {
         defaults
     };
@@ -376,7 +376,7 @@ fn run() -> Result<()> {
     // The native API (`Window`, `Shapes`, `Spline`, ...) for bundled (JavaScript) games: the same
     // functions compiled games call. Compiled games have them natively.
     if !native::is_native(&bundle_path) {
-        iron_native::install(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
+        platypus_native::install(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     scripts
         .eval(&info.script())
@@ -389,10 +389,10 @@ fn run() -> Result<()> {
     }
 
     // One GameObject per starting component class (registered without
-    // `spawn: false`), each with that component; a start scene (`iron.startScene`)
+    // `spawn: false`), each with that component; a start scene (`platypus.startScene`)
     // is loaded by the scripts themselves.
     let mut components = ComponentHost::new();
-    let mut scene = iron_scene::ScriptScene::new();
+    let mut scene = platypus_scene::ScriptScene::new();
     if native_bundle.is_none() {
         let classes =
             ComponentHost::registered_classes(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -400,23 +400,23 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         tracing::info!(?classes, "loaded {}", bundle_path.display());
     }
-    // Set by @iron/react; games without React UI get no UI events.
+    // Set by @platypus/react; games without React UI get no UI events.
     let ui_events = scripts
-        .eval("typeof __iron_ui_event === 'function'")
-        .is_ok_and(|v| v == iron_core::Value::Bool(true));
-    // Set by @iron/engine's `input` module.
+        .eval("typeof __platypus_ui_event === 'function'")
+        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
+    // Set by @platypus/engine's `input` module.
     let game_input = scripts
-        .eval("typeof __iron_input === 'function'")
-        .is_ok_and(|v| v == iron_core::Value::Bool(true));
+        .eval("typeof __platypus_input === 'function'")
+        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
     let audio_events = scripts
-        .eval("typeof __iron_audio === 'function'")
-        .is_ok_and(|v| v == iron_core::Value::Bool(true));
+        .eval("typeof __platypus_audio === 'function'")
+        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
     let scene_events = scripts
-        .eval("typeof __iron_scene === 'function'")
-        .is_ok_and(|v| v == iron_core::Value::Bool(true));
+        .eval("typeof __platypus_scene === 'function'")
+        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
     let physics_events = scripts
-        .eval("typeof __iron_physics === 'function'")
-        .is_ok_and(|v| v == iron_core::Value::Bool(true));
+        .eval("typeof __platypus_physics === 'function'")
+        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
 
     lap.mark("QuickJS runtime (info script; JS games: their bundle)");
     // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
@@ -445,7 +445,7 @@ fn run() -> Result<()> {
         }
         None => None,
     };
-    let mut lap = iron_ts::timing::Lap::start();
+    let mut lap = platypus_ts::timing::Lap::start();
 
     // Rebuilds by `bun build --watch` reload the scripts (not for screenshot or bench runs).
     let watcher = if offline {
@@ -455,8 +455,8 @@ fn run() -> Result<()> {
             bundle_path.clone(),
             css_path.clone(),
             bundle_path.with_file_name("vendor.js"),
-            // `iron-build dev` writes this after the bundle (or with the error of a failed build).
-            bundle_path.with_file_name(".iron-reload"),
+            // `platypus-build dev` writes this after the bundle (or with the error of a failed build).
+            bundle_path.with_file_name(".platypus-reload"),
         ])
         .inspect_err(|e| tracing::warn!("not watching for script changes: {e}"))
         .ok()
@@ -502,14 +502,14 @@ fn run() -> Result<()> {
         sheet_sources: game_css_source.into_iter().collect(),
         font_sources: Vec::new(),
         screen: (0.0, 0.0, 0.0),
-        render_stats: iron_render::WorldStats::default(),
+        render_stats: platypus_render::WorldStats::default(),
         exposure_sent: HashMap::new(),
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
         ui_events,
         game_input,
-        physics: iron_physics::Physics::new(),
+        physics: platypus_physics::Physics::new(),
         attachments: physics_sync::Attachments::default(),
         cloth: cloth_sync::ClothSystem::default(),
         audio: None,
@@ -539,7 +539,7 @@ fn run() -> Result<()> {
         fps_on: fps::enabled(
             args.fps.or((editor::ENABLED && !offline).then_some(false)),
             offline,
-            std::env::var("IRON_FPS").ok().as_deref(),
+            std::env::var("PLATYPUS_FPS").ok().as_deref(),
             manifest.fps,
         ),
         fps: fps::FpsCounter::default(),
@@ -591,15 +591,24 @@ fn run() -> Result<()> {
 /// The bundle to load and the folder its assets (`url(...)` images) live in.
 fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
     if path.is_dir() {
-        // A game built for the native backend has an `.irbundle`.
-        let native = path.join("dist").join("game.irbundle");
+        // A game built for the native backend has a `.pbundle`.
+        let native = path.join("dist").join("game.pbundle");
         if native.is_file() {
             return Ok((native, path.to_path_buf()));
+        }
+        // Games built before the rename to Platypus still load.
+        let legacy = path.join("dist").join(native::LEGACY_BUNDLE);
+        if legacy.is_file() {
+            tracing::warn!(
+                "{} is deprecated: rebuild with `platypus-build build` (writes game.pbundle)",
+                legacy.display()
+            );
+            return Ok((legacy, path.to_path_buf()));
         }
         let bundle = path.join("dist").join("game.js");
         if !bundle.is_file() {
             bail!(
-                "{} not found; build it first with `iron-build build {}`",
+                "{} not found; build it first with `platypus-build build {}`",
                 bundle.display(),
                 path.display()
             );
@@ -629,13 +638,13 @@ fn draw_frame(
     renderer: &mut UiRenderer,
     world: &mut WorldRenderer,
     target: &RenderTarget<'_>,
-    views: &[iron_render::WorldView],
+    views: &[platypus_render::WorldView],
     textures: &[&wgpu::TextureView],
-    cmds: &[iron_ui::DrawCmd],
+    cmds: &[platypus_ui::DrawCmd],
 ) {
     if views.is_empty() {
         renderer.render(gpu, target, CLEAR, cmds);
-    } else if iron_render::needs_backdrop(cmds) {
+    } else if platypus_render::needs_backdrop(cmds) {
         // Backdrop blurs and blend modes read the world: draw it where the UI can
         // sample it, then the UI over a copy of it into the target.
         let backdrop = renderer.backdrop_target(gpu, target.size, target.format);
@@ -657,20 +666,20 @@ struct App {
     /// The player's saved settings (`PlayerPrefs`), written on `prefs.save` and on exit.
     prefs: prefs::Prefs,
     /// The window's mode and size, as last applied.
-    display: iron_platform::DisplaySettings,
+    display: platypus_platform::DisplaySettings,
     /// `Application.targetFrameRate` (-1: no cap); ignored while vsync is on.
     target_frame_rate: i32,
     /// A dev build's vendor bundle (React, the engine), kept while only the game's code
     /// changes: then reloads happen in place, with Fast Refresh.
     vendor: Option<String>,
     /// GameObjects scripts made (and the engine made for them).
-    scene: iron_scene::ScriptScene,
-    /// Whether the game takes engine moves (`__iron_scene` exists).
+    scene: platypus_scene::ScriptScene,
+    /// Whether the game takes engine moves (`__platypus_scene` exists).
     scene_events: bool,
     /// The screen size in UI pixels and the UI scale, as last told to scripts.
     screen: (f32, f32, f32),
     /// The world renderer's last stats, as last told to scripts (`RenderStats`).
-    render_stats: iron_render::WorldStats,
+    render_stats: platypus_render::WorldStats,
     /// Each camera's exposure as last sent to scripts (`Camera.exposure`).
     exposure_sent: HashMap<u32, (f32, f32)>,
     /// React UI on planes in the world (`WorldPanel`s), each with its own tree.
@@ -682,8 +691,8 @@ struct App {
     /// A reload happened: after the new code's first frame, keyed windows nobody claimed close.
     reload_claims_pending: bool,
     /// Platform commands scripts' window requests became, and the windows drawn for the first time.
-    window_commands: Vec<iron_platform::WindowCommand>,
-    windows_to_show: Vec<iron_platform::WindowKey>,
+    window_commands: Vec<platypus_platform::WindowCommand>,
+    windows_to_show: Vec<platypus_platform::WindowKey>,
     /// The game's focus as last given to the lifecycle (any of its windows focused).
     main_focus_sent: Option<bool>,
     /// The surface under the pointer (or holding it while a button is down), and the one
@@ -708,7 +717,7 @@ struct App {
     asset_watcher: Option<reload::AssetWatcher>,
     /// Sounds loaded from files (by asset key): their `audio.load` arguments, to load
     /// again when the file changes.
-    sound_files: HashMap<String, Vec<Vec<iron_core::Value>>>,
+    sound_files: HashMap<String, Vec<Vec<platypus_core::Value>>>,
     scripts: QuickJsRuntime,
     components: ComponentHost,
     /// A compiled game, when the folder has a native bundle (then `scripts` and
@@ -717,8 +726,8 @@ struct App {
     ui: UiTree,
     /// Where textures, models, sounds, fonts and scenes are read from.
     asset_root: PathBuf,
-    /// The assets' file system (also installed for the loaders through `iron_core`).
-    vfs: iron_pack::Vfs,
+    /// The assets' file system (also installed for the loaders through `platypus_core`).
+    vfs: platypus_pack::Vfs,
     /// Where the game's code, `package.json` and CSS are (the asset root, except in a packaged exe).
     code_root: PathBuf,
     gfx: Option<Gfx>,
@@ -749,32 +758,32 @@ struct App {
     /// Stylesheets added by scripts: script id -> tree id.
     sheets: HashMap<u32, u32>,
     interaction: Interaction,
-    /// Whether the game handles UI events (`__iron_ui_event` exists).
+    /// Whether the game handles UI events (`__platypus_ui_event` exists).
     ui_events: bool,
-    /// Whether the game reads input (`__iron_input` exists).
+    /// Whether the game reads input (`__platypus_input` exists).
     game_input: bool,
     /// The physics world scripts drive with `physics.*` ops.
-    physics: iron_physics::Physics,
-    /// Whether the game takes physics results (`__iron_physics` exists).
+    physics: platypus_physics::Physics,
+    /// Whether the game takes physics results (`__platypus_physics` exists).
     physics_events: bool,
     /// Bodies attached to GameObjects (`physics.attach`).
     attachments: physics_sync::Attachments,
     /// `Cloth` components' simulations.
     cloth: cloth_sync::ClothSystem,
     /// The sound mixer, opened by the first `audio.*` op.
-    audio: Option<Box<dyn iron_audio::Mixer>>,
-    /// Whether the game takes finished-sound events (`__iron_audio` exists).
+    audio: Option<Box<dyn platypus_audio::Mixer>>,
+    /// Whether the game takes finished-sound events (`__platypus_audio` exists).
     audio_events: bool,
     nav: game_input::GamepadNav,
     /// The CSS cursor currently shown: keyword, images, and the scale they were for.
-    cursor: (&'static str, Vec<iron_ui::CursorImage>, f64),
+    cursor: (&'static str, Vec<platypus_ui::CursorImage>, f64),
     /// How screen UI is scaled to the window (`setUiScale`).
     ui_scale: ui_scale::UiScale,
     /// A custom cursor for the platform to show.
     custom_cursor: Option<CustomCursorRequest>,
-    /// The game's manifest and the machine, as scripts see them (`__iron_info`).
+    /// The game's manifest and the machine, as scripts see them (`__platypus_info`).
     info: info::Info,
-    /// Real-world light units (`iron.lightUnits`), and whether the quality level has warned
+    /// Real-world light units (`platypus.lightUnits`), and whether the quality level has warned
     /// about leaving out light shafts the game asked for yet.
     physical_units: bool,
     pipeline_warned: bool,
@@ -788,8 +797,8 @@ struct App {
     clipboard: Option<arboard::Clipboard>,
     /// Whether the window currently accepts IME input, and the last candidate area.
     ime_allowed: bool,
-    ime_area: Option<iron_ui::Rect>,
-    /// The editor's log feed and `editor.*` ops (refused outside `iron_editor`).
+    ime_area: Option<platypus_ui::Rect>,
+    /// The editor's log feed and `editor.*` ops (refused outside `platypus_editor`).
     editor: editor::EditorHost,
     /// Files dragged onto the window from the system.
     file_drag: file_drop::FileDrag,
@@ -812,9 +821,10 @@ impl App {
         let screen = (width as f32 / scale, height as f32 / scale, scale);
         if self.screen != screen {
             self.screen = screen;
-            let args = [screen.0, screen.1, screen.2].map(|v| iron_core::Value::Number(v.into()));
-            // Games without @iron/engine's Screen don't have the hook.
-            let _ = self.scripts.call_global("__iron_screen", &args);
+            let args =
+                [screen.0, screen.1, screen.2].map(|v| platypus_core::Value::Number(v.into()));
+            // Games without @platypus/engine's Screen don't have the hook.
+            let _ = self.scripts.call_global("__platypus_screen", &args);
         }
     }
 
@@ -842,13 +852,13 @@ impl App {
         }
         // The old code saves its scenes (objects, components, their fields) as JSON;
         // the new code rebuilds them instead of starting over.
-        // (Bundles without @iron/engine's scenes have nothing to save.)
+        // (Bundles without @platypus/engine's scenes have nothing to save.)
         let can_save = self
             .scripts
-            .eval("typeof __iron_save_state === 'function'")
-            .is_ok_and(|v| v == iron_core::Value::Bool(true));
-        let saved = match can_save.then(|| self.scripts.call_global("__iron_save_state", &[])) {
-            Some(Ok(iron_core::Value::String(json))) => Some(json),
+            .eval("typeof __platypus_save_state === 'function'")
+            .is_ok_and(|v| v == platypus_core::Value::Bool(true));
+        let saved = match can_save.then(|| self.scripts.call_global("__platypus_save_state", &[])) {
+            Some(Ok(platypus_core::Value::String(json))) => Some(json),
             Some(Err(e)) => {
                 tracing::warn!("reload: saving state failed, starting over: {e}");
                 None
@@ -856,9 +866,9 @@ impl App {
             _ => None,
         };
         // The old code's window listeners go; windows with a key stay for the new code to claim.
-        let unowned = iron_engine_api::window::reload_begin();
+        let unowned = platypus_engine_api::window::reload_begin();
         let mut fresh = QuickJsRuntime::new();
-        if let Err(e) = iron_native::install(&mut fresh) {
+        if let Err(e) = platypus_native::install(&mut fresh) {
             tracing::error!("reload: {e}");
         }
         if let Err(e) = fresh.eval(&self.info.script()) {
@@ -866,21 +876,22 @@ impl App {
         }
         if saved.is_some() {
             // Keeps the start scene from loading on top of the restored ones.
-            let _ = fresh.eval("globalThis.__iron_reloading = true");
+            let _ = fresh.eval("globalThis.__platypus_reloading = true");
         }
-        let mut scene = iron_scene::ScriptScene::new();
+        let mut scene = platypus_scene::ScriptScene::new();
         let mut restored = false;
-        let classes = match iron_script::reload(
+        let classes = match platypus_script::reload(
             &mut self.scripts,
             fresh,
             &mut self.components,
             |rt| load_bundles(rt, vendor.as_deref(), &self.bundle_name, &code),
             |rt, host, classes| {
                 if let Some(json) = saved {
-                    let _ = rt.eval("globalThis.__iron_reloading = false");
-                    restored = rt
-                        .call_global("__iron_restore_state", &[iron_core::Value::String(json)])?
-                        == iron_core::Value::Bool(true);
+                    let _ = rt.eval("globalThis.__platypus_reloading = false");
+                    restored = rt.call_global(
+                        "__platypus_restore_state",
+                        &[platypus_core::Value::String(json)],
+                    )? == platypus_core::Value::Bool(true);
                 }
                 if restored {
                     // The restored objects and components arrive as ops.
@@ -892,7 +903,7 @@ impl App {
         ) {
             Ok(classes) => classes,
             Err(e) => {
-                iron_engine_api::window::reload_abort();
+                platypus_engine_api::window::reload_abort();
                 tracing::error!("reload failed, keeping the old code: {e}");
                 return;
             }
@@ -921,7 +932,7 @@ impl App {
         self.world_view = world_view::WorldViews::with_physical_units(self.physical_units);
         // Tell the new scripts the screen size on the next frame.
         self.screen = (0.0, 0.0, 0.0);
-        self.physics = iron_physics::Physics::new();
+        self.physics = platypus_physics::Physics::new();
         self.attachments = physics_sync::Attachments::default();
         self.cloth = cloth_sync::ClothSystem::default();
         // Dropping the mixer stops every sound.
@@ -931,13 +942,13 @@ impl App {
         let has = |scripts: &mut QuickJsRuntime, f: &str| {
             scripts
                 .eval(&format!("typeof {f} === 'function'"))
-                .is_ok_and(|v| v == iron_core::Value::Bool(true))
+                .is_ok_and(|v| v == platypus_core::Value::Bool(true))
         };
-        self.ui_events = has(&mut self.scripts, "__iron_ui_event");
-        self.game_input = has(&mut self.scripts, "__iron_input");
-        self.physics_events = has(&mut self.scripts, "__iron_physics");
-        self.audio_events = has(&mut self.scripts, "__iron_audio");
-        self.scene_events = has(&mut self.scripts, "__iron_scene");
+        self.ui_events = has(&mut self.scripts, "__platypus_ui_event");
+        self.game_input = has(&mut self.scripts, "__platypus_input");
+        self.physics_events = has(&mut self.scripts, "__platypus_physics");
+        self.audio_events = has(&mut self.scripts, "__platypus_audio");
+        self.scene_events = has(&mut self.scripts, "__platypus_scene");
         self.lifecycle.scripts_restarted();
         self.sync_lifecycle();
         tracing::info!(
@@ -986,7 +997,7 @@ impl App {
     /// same runtime. React (Fast Refresh) keeps its state, components move onto their new
     /// classes, and the world, physics and sounds stay as they are.
     fn reload_in_place(&mut self, code: &str, started: Instant) {
-        if let Err(e) = iron_script::load_game(&mut self.scripts, &self.bundle_name, code) {
+        if let Err(e) = platypus_script::load_game(&mut self.scripts, &self.bundle_name, code) {
             // A syntax error stops it before anything ran; a throwing top level may have
             // run partly.
             tracing::error!("reload failed: {e}");
@@ -1016,7 +1027,7 @@ impl App {
     }
 
     /// Starts or ends a pause in the background and tells scripts about focus and
-    /// pausing (`__iron_focus(focused, paused)`).
+    /// pausing (`__platypus_focus(focused, paused)`).
     fn sync_lifecycle(&mut self) {
         let change = self.lifecycle.update(Instant::now());
         if change.paused
@@ -1036,9 +1047,9 @@ impl App {
         if let Some((focused, paused)) = change.report {
             // `Window.onDomainFocusChanged` of the main game.
             {
-                let _scope = iron_scene::api::enter(&mut self.scene.scene);
-                iron_engine_api::window::domain_focus_changed(
-                    iron_engine_api::window::DomainId::MAIN,
+                let _scope = platypus_scene::api::enter(&mut self.scene.scene);
+                platypus_engine_api::window::domain_focus_changed(
+                    platypus_engine_api::window::DomainId::MAIN,
                     focused,
                     paused,
                 );
@@ -1047,17 +1058,17 @@ impl App {
                 n.focus_changed(&mut self.scene.scene, &mut self.ui, focused, paused);
                 self.native_after();
             }
-            // Games without @iron/engine's Application don't have the hook.
+            // Games without @platypus/engine's Application don't have the hook.
             let has = self
                 .scripts
-                .eval("typeof __iron_focus === 'function'")
-                .is_ok_and(|v| v == iron_core::Value::Bool(true));
+                .eval("typeof __platypus_focus === 'function'")
+                .is_ok_and(|v| v == platypus_core::Value::Bool(true));
             if has
                 && let Err(e) = self
                     .scripts
-                    .call_global("__iron_focus", &[focused.into(), paused.into()])
+                    .call_global("__platypus_focus", &[focused.into(), paused.into()])
             {
-                tracing::error!(target: "script", "__iron_focus: {e}");
+                tracing::error!(target: "script", "__platypus_focus: {e}");
             }
             // What the hooks asked for (a pause menu, paused sounds) applies now.
             self.apply_script_output();
@@ -1100,7 +1111,7 @@ impl App {
             self.apply_script_output();
             self.step_physics();
             if !self.cloth.is_empty() {
-                let gravity = iron_core::glam::Vec3::from(self.physics.gravity());
+                let gravity = platypus_core::glam::Vec3::from(self.physics.gravity());
                 let scene = &self.scene;
                 self.cloth.retain(|o| scene.object(o).is_some());
                 self.cloth
@@ -1146,16 +1157,19 @@ impl App {
         if self.native.is_some() {
             native_render::report_particles(&changed, &mut self.scene.scene);
         }
-        // `__iron_particles([id, count, alive, ...])` for systems that changed.
+        // `__platypus_particles([id, count, alive, ...])` for systems that changed.
         if !changed.is_empty()
             && let Err(e) = self.scripts.call_global(
-                "__iron_particles",
-                &[iron_core::Value::Array(
-                    changed.into_iter().map(iron_core::Value::Number).collect(),
+                "__platypus_particles",
+                &[platypus_core::Value::Array(
+                    changed
+                        .into_iter()
+                        .map(platypus_core::Value::Number)
+                        .collect(),
                 )],
             )
         {
-            tracing::debug!("__iron_particles: {e}");
+            tracing::debug!("__platypus_particles: {e}");
         }
         self.update_audio(elapsed);
 
@@ -1167,7 +1181,7 @@ impl App {
         }
     }
 
-    /// Objects the engine moved this tick, to scripts (`__iron_scene`).
+    /// Objects the engine moved this tick, to scripts (`__platypus_scene`).
     fn send_scene_moves(&mut self) {
         let moved = self.scene.take_batch();
         if moved.is_empty() || !self.scene_events {
@@ -1175,27 +1189,28 @@ impl App {
         }
         if let Err(e) = self
             .scripts
-            .call_global("__iron_scene", &[iron_core::Value::Array(moved)])
+            .call_global("__platypus_scene", &[platypus_core::Value::Array(moved)])
         {
             tracing::error!(target: "script", "scene moves: {e}");
         }
     }
 
     /// Runs one `scene.*` op and what it asks of components.
-    fn scene_op(&mut self, name: &str, args: &[iron_core::Value]) {
-        use iron_scene::SceneEvent;
+    fn scene_op(&mut self, name: &str, args: &[platypus_core::Value]) {
+        use platypus_scene::SceneEvent;
         match self.scene.apply(name, args) {
             Ok(None) => {}
             Ok(Some(SceneEvent::ComponentAdded {
                 object,
                 component,
                 class,
-            })) => self
-                .components
-                .adopt(iron_core::ComponentId(component), &class, Some(object)),
+            })) => {
+                self.components
+                    .adopt(platypus_core::ComponentId(component), &class, Some(object))
+            }
             Ok(Some(SceneEvent::ComponentRemoved(id))) => self
                 .components
-                .remove(&mut self.scripts, iron_core::ComponentId(id)),
+                .remove(&mut self.scripts, platypus_core::ComponentId(id)),
             Ok(Some(SceneEvent::Destroyed(objects))) => {
                 self.components
                     .remove_on_objects(&mut self.scripts, &objects);
@@ -1206,13 +1221,16 @@ impl App {
         }
     }
 
-    /// One physics tick, then its results to scripts (`__iron_physics`).
+    /// One physics tick, then its results to scripts (`__platypus_physics`).
     fn step_physics(&mut self) {
         let batch = self.attachments.step(&mut self.physics, &mut self.scene);
         if !self.physics_events || batch.is_empty() {
             return;
         }
-        if let Err(e) = self.scripts.call_global("__iron_physics", &batch.to_args()) {
+        if let Err(e) = self
+            .scripts
+            .call_global("__platypus_physics", &batch.to_args())
+        {
             tracing::error!(target: "script", "physics events: {e}");
         }
         // Collision handlers may have queued more ops; they apply next tick.
@@ -1226,7 +1244,7 @@ impl App {
     }
 
     /// The UI tree holding a node (ops like `focus` name nodes, not trees).
-    fn surface_of(&self, node: iron_core::NodeId) -> Surface {
+    fn surface_of(&self, node: platypus_core::NodeId) -> Surface {
         if self.ui.contains(node) {
             return Surface::Screen;
         }
@@ -1245,7 +1263,7 @@ impl App {
         &self,
         px: f32,
         py: f32,
-    ) -> Option<(iron_core::glam::Vec3, iron_core::glam::Vec3)> {
+    ) -> Option<(platypus_core::glam::Vec3, platypus_core::glam::Vec3)> {
         let size = self.gfx.as_ref()?.surface.size();
         // Cameras drawing into textures aren't on the screen.
         let mut views = self.world_view.views(&self.scene, size, &[]);
@@ -1259,7 +1277,10 @@ impl App {
     fn surface_at(&mut self, px: f32, py: f32) -> (Surface, f32, f32) {
         let scale = self.scale();
         let (ux, uy) = (px / scale, py / scale);
-        let on_screen = self.ui.hit_test(ux, uy).is_some_and(|n| n != iron_ui::ROOT);
+        let on_screen = self
+            .ui
+            .hit_test(ux, uy)
+            .is_some_and(|n| n != platypus_ui::ROOT);
         if !on_screen
             && !self.panels.map.is_empty()
             && let Some((origin, dir)) = self.camera_ray(px, py)
@@ -1302,7 +1323,7 @@ impl App {
         self.handle_on(surface, Input::PointerMove { x, y });
     }
 
-    /// Lets audio progress and tells scripts which sounds finished (`__iron_audio`).
+    /// Lets audio progress and tells scripts which sounds finished (`__platypus_audio`).
     fn update_audio(&mut self, elapsed: f64) {
         self.native_audio_commands();
         let Some(mixer) = self.audio.as_mut() else {
@@ -1319,24 +1340,24 @@ impl App {
         if ended.is_empty() || !self.audio_events {
             return;
         }
-        let ended = iron_core::Value::Array(ended.into_iter().map(Into::into).collect());
-        if let Err(e) = self.scripts.call_global("__iron_audio", &[ended]) {
+        let ended = platypus_core::Value::Array(ended.into_iter().map(Into::into).collect());
+        if let Err(e) = self.scripts.call_global("__platypus_audio", &[ended]) {
             tracing::error!(target: "script", "audio events: {e}");
         }
     }
 
     /// Runs one `audio.*` op, opening the mixer on first use (games without sound never
     /// open a device). Screenshot runs mix offline, silently.
-    fn audio_op(&mut self, name: &str, args: &[iron_core::Value]) {
+    fn audio_op(&mut self, name: &str, args: &[platypus_core::Value]) {
         let offline = self.offline;
         let paused = self.lifecycle.paused();
         let mixer = self
             .audio
-            .get_or_insert_with(|| iron_audio::open_mixer(offline));
+            .get_or_insert_with(|| platypus_audio::open_mixer(offline));
         // A mixer opened during a pause starts silent.
         mixer.set_muted(paused);
         if name == "load"
-            && let Some(src) = args.get(1).and_then(iron_core::Value::as_str)
+            && let Some(src) = args.get(1).and_then(platypus_core::Value::as_str)
             && !src.trim_start().starts_with("data:")
         {
             let list = self.sound_files.entry(reload::asset_key(src)).or_default();
@@ -1363,10 +1384,10 @@ impl App {
 
     fn apply_script_output_now(&mut self) {
         for (target, commit) in self.scripts.drain_targeted_commits() {
-            if target >= iron_core::WINDOW_TARGET {
+            if target >= platypus_core::WINDOW_TARGET {
                 // A secondary window's tree; commits that come before the window opens wait.
-                let key = target - iron_core::WINDOW_TARGET;
-                match self.windows.map.get_mut(&iron_platform::WindowKey(key)) {
+                let key = target - platypus_core::WINDOW_TARGET;
+                match self.windows.map.get_mut(&platypus_platform::WindowKey(key)) {
                     Some(w) => {
                         for e in w.tree.apply_commit(&commit) {
                             tracing::warn!(target: "ui", "{e}");
@@ -1395,12 +1416,12 @@ impl App {
                 tracing::warn!(target: "ui", "{e}");
             }
         }
-        // Textures and models loaded by these ops, for `__iron_textures` /
-        // `__iron_models` after them.
+        // Textures and models loaded by these ops, for `__platypus_textures` /
+        // `__platypus_models` after them.
         let mut loaded: Vec<(u32, u32, u32)> = Vec::new();
         let mut models: Vec<(u32, Option<serde_json::Value>)> = Vec::new();
-        // Text files read for scripts (`asset.readText id path`), for `__iron_asset_text`.
-        let mut texts: Vec<iron_core::Value> = Vec::new();
+        // Text files read for scripts (`asset.readText id path`), for `__platypus_asset_text`.
+        let mut texts: Vec<platypus_core::Value> = Vec::new();
         for op in self.scripts.drain_ops() {
             match op.name.as_str() {
                 "loadFont" => self.load_font_op(&op.args),
@@ -1410,11 +1431,11 @@ impl App {
                 },
                 "addStyleSheet" | "removeStyleSheet" => self.stylesheet_op(&op.name, &op.args),
                 "focus" | "blur" | "setPointerCapture" | "releasePointerCapture" => {
-                    let Some(id) = op.args.first().and_then(iron_core::Value::as_f64) else {
+                    let Some(id) = op.args.first().and_then(platypus_core::Value::as_f64) else {
                         tracing::warn!("{} needs an element id", op.name);
                         continue;
                     };
-                    let id = iron_core::NodeId(id as u32);
+                    let id = platypus_core::NodeId(id as u32);
                     let surface = self.surface_of(id);
                     // Keys go to the window with OS focus; windows route their own.
                     if op.name == "focus" && !matches!(surface, Surface::Window(_)) {
@@ -1431,8 +1452,8 @@ impl App {
                     );
                 }
                 "scrollTo" | "scrollBy" | "scrollIntoView" => {
-                    let num = |i: usize| op.args.get(i).and_then(iron_core::Value::as_f64);
-                    let Some(id) = num(0).map(|n| iron_core::NodeId(n as u32)) else {
+                    let num = |i: usize| op.args.get(i).and_then(platypus_core::Value::as_f64);
+                    let Some(id) = num(0).map(|n| platypus_core::NodeId(n as u32)) else {
                         tracing::warn!("{} needs an element id", op.name);
                         continue;
                     };
@@ -1446,7 +1467,7 @@ impl App {
                     let behavior = op
                         .args
                         .get(3)
-                        .and_then(iron_core::Value::as_str)
+                        .and_then(platypus_core::Value::as_str)
                         .and_then(ScrollBehavior::parse)
                         .unwrap_or_default();
                     let surface = self.surface_of(id);
@@ -1470,7 +1491,7 @@ impl App {
                                 let align = |i: usize, default| {
                                     op.args
                                         .get(i)
-                                        .and_then(iron_core::Value::as_str)
+                                        .and_then(platypus_core::Value::as_str)
                                         .and_then(ScrollAlign::parse)
                                         .unwrap_or(default)
                                 };
@@ -1488,7 +1509,7 @@ impl App {
                     let id = op
                         .args
                         .first()
-                        .and_then(iron_core::Value::as_f64)
+                        .and_then(platypus_core::Value::as_f64)
                         .unwrap_or(0.0) as u32;
                     match self.world_view.model_op(&self.asset_root, &op.args) {
                         Ok(description) => models.push((id, Some(description))),
@@ -1506,7 +1527,8 @@ impl App {
                         Err(e) => {
                             tracing::warn!("render.texture: {e}");
                             // Scripts hear about failures too (a 0 × 0 size).
-                            if let Some(id) = op.args.first().and_then(iron_core::Value::as_f64) {
+                            if let Some(id) = op.args.first().and_then(platypus_core::Value::as_f64)
+                            {
                                 loaded.push((id as u32, 0, 0));
                                 // Sprites of it show the missing checker.
                                 self.world_view.mark_missing(id as u32);
@@ -1536,7 +1558,7 @@ impl App {
                 }
                 name if name.starts_with("render.") => {
                     if name == "render.remove"
-                        && let Some(id) = op.args.first().and_then(iron_core::Value::as_f64)
+                        && let Some(id) = op.args.first().and_then(platypus_core::Value::as_f64)
                     {
                         self.panels.remove(id as u32);
                     }
@@ -1545,20 +1567,24 @@ impl App {
                     }
                 }
                 "asset.readText" => {
-                    let id = op.args.first().cloned().unwrap_or(iron_core::Value::Null);
+                    let id = op
+                        .args
+                        .first()
+                        .cloned()
+                        .unwrap_or(platypus_core::Value::Null);
                     let path = op
                         .args
                         .get(1)
-                        .and_then(iron_core::Value::as_str)
+                        .and_then(platypus_core::Value::as_str)
                         .unwrap_or("");
-                    let text = iron_core::read_asset_string(&self.asset_root, path)
+                    let text = platypus_core::read_asset_string(&self.asset_root, path)
                         .map_err(|e| e.to_string());
                     texts.push(id);
                     texts.push(match text {
-                        Ok(text) => iron_core::Value::String(text),
+                        Ok(text) => platypus_core::Value::String(text),
                         Err(e) => {
                             tracing::warn!("asset.readText `{path}`: {e}");
-                            iron_core::Value::Null
+                            platypus_core::Value::Null
                         }
                     });
                 }
@@ -1566,19 +1592,19 @@ impl App {
                     let code = op
                         .args
                         .first()
-                        .and_then(iron_core::Value::as_f64)
+                        .and_then(platypus_core::Value::as_f64)
                         .unwrap_or(0.0);
                     EXIT_CODE.store(code as i32, std::sync::atomic::Ordering::Relaxed);
                     self.done = true;
                 }
                 "app.targetFrameRate" => {
-                    let rate = op.args.first().and_then(iron_core::Value::as_f64);
+                    let rate = op.args.first().and_then(platypus_core::Value::as_f64);
                     self.target_frame_rate = rate.map_or(-1, |r| r.round() as i32);
                     self.info
                         .set_app("targetFrameRate", self.target_frame_rate.into());
                 }
                 "app.runInBackground" => {
-                    let on = op.args.first() == Some(&iron_core::Value::Bool(true));
+                    let on = op.args.first() == Some(&platypus_core::Value::Bool(true));
                     self.lifecycle.run_in_background = on;
                     self.info.set_app("runInBackground", on.into());
                     self.sync_lifecycle();
@@ -1615,7 +1641,8 @@ impl App {
                     // Mesh colliders made from render meshes get the mesh's data here.
                     let mut args = std::borrow::Cow::Borrowed(&op.args);
                     if name == "collider"
-                        && op.args.get(2).and_then(iron_core::Value::as_str) == Some("renderMesh")
+                        && op.args.get(2).and_then(platypus_core::Value::as_str)
+                            == Some("renderMesh")
                         && let Err(e) = self.world_view.resolve_mesh_collider(args.to_mut())
                     {
                         tracing::warn!("physics.collider: {e}");
@@ -1631,33 +1658,34 @@ impl App {
                 other => tracing::warn!("unknown script op `{other}`"),
             }
         }
-        // `__iron_asset_text([id, text | null, ...])`: files scripts asked for.
+        // `__platypus_asset_text([id, text | null, ...])`: files scripts asked for.
         if !texts.is_empty()
-            && let Err(e) = self
-                .scripts
-                .call_global("__iron_asset_text", &[iron_core::Value::Array(texts)])
+            && let Err(e) = self.scripts.call_global(
+                "__platypus_asset_text",
+                &[platypus_core::Value::Array(texts)],
+            )
         {
-            tracing::error!("script error in __iron_asset_text: {e}");
+            tracing::error!("script error in __platypus_asset_text: {e}");
         }
-        // `__iron_models([id, json | null, ...])`: what each model holds, for
+        // `__platypus_models([id, json | null, ...])`: what each model holds, for
         // `Model.instantiate` (null: it failed).
         if !models.is_empty() {
             let list = models
                 .into_iter()
                 .flat_map(|(id, d)| {
                     [
-                        iron_core::Value::from(id),
-                        d.map_or(iron_core::Value::Null, |d| {
-                            iron_core::Value::String(d.to_string())
+                        platypus_core::Value::from(id),
+                        d.map_or(platypus_core::Value::Null, |d| {
+                            platypus_core::Value::String(d.to_string())
                         }),
                     ]
                 })
                 .collect();
             if let Err(e) = self
                 .scripts
-                .call_global("__iron_models", &[iron_core::Value::Array(list)])
+                .call_global("__platypus_models", &[platypus_core::Value::Array(list)])
             {
-                tracing::error!("script error in __iron_models: {e}");
+                tracing::error!("script error in __platypus_models: {e}");
             }
         }
         self.report_textures(loaded);
@@ -1665,7 +1693,7 @@ impl App {
     }
 
     /// Asset files changed on disk: textures, models and sounds from them load again
-    /// under their ids, then scripts hear which files (`__iron_assets_changed`).
+    /// under their ids, then scripts hear which files (`__platypus_assets_changed`).
     fn reload_assets(&mut self, keys: &[String]) {
         // Files came or went: the index `Assets.exists` / `list` answer from (packs never change).
         if self.vfs.root().is_some() {
@@ -1685,10 +1713,10 @@ impl App {
             && keys.iter().any(|k| k.ends_with(".meta"))
             && let Some(list) = self.info.0.get("assets").and_then(|a| a.as_array())
         {
-            iron_engine_api::assets::set_assets(
+            platypus_engine_api::assets::set_assets(
                 list.iter()
                     .filter_map(|a| {
-                        Some(iron_engine_api::assets::AssetEntry {
+                        Some(platypus_engine_api::assets::AssetEntry {
                             path: a["path"].as_str()?.to_owned(),
                             guid: a["guid"].as_str()?.to_owned(),
                             importer_json: a["importer"].to_string(),
@@ -1715,47 +1743,47 @@ impl App {
         self.report_textures(sizes);
         if self
             .scripts
-            .eval("typeof __iron_assets_changed === 'function'")
-            .is_ok_and(|v| v == iron_core::Value::Bool(true))
+            .eval("typeof __platypus_assets_changed === 'function'")
+            .is_ok_and(|v| v == platypus_core::Value::Bool(true))
         {
             let list = keys
                 .iter()
-                .map(|k| iron_core::Value::String(k.clone()))
+                .map(|k| platypus_core::Value::String(k.clone()))
                 .collect();
-            if let Err(e) = self
-                .scripts
-                .call_global("__iron_assets_changed", &[iron_core::Value::Array(list)])
-            {
-                tracing::error!(target: "script", "__iron_assets_changed: {e}");
+            if let Err(e) = self.scripts.call_global(
+                "__platypus_assets_changed",
+                &[platypus_core::Value::Array(list)],
+            ) {
+                tracing::error!(target: "script", "__platypus_assets_changed: {e}");
             }
             self.apply_script_output();
         }
     }
 
-    /// Tells scripts textures' sizes: `__iron_textures([[id, width, height], ...])` (0 × 0
+    /// Tells scripts textures' sizes: `__platypus_textures([[id, width, height], ...])` (0 × 0
     /// failed). Ops it queues run with the next batch.
     fn report_textures(&mut self, loaded: Vec<(u32, u32, u32)>) {
         if !loaded.is_empty()
             && self
                 .scripts
-                .eval("typeof __iron_textures === 'function'")
-                .is_ok_and(|v| v == iron_core::Value::Bool(true))
+                .eval("typeof __platypus_textures === 'function'")
+                .is_ok_and(|v| v == platypus_core::Value::Bool(true))
         {
             let list = loaded
                 .into_iter()
                 .map(|(id, w, h)| {
-                    iron_core::Value::Array(vec![
-                        iron_core::Value::from(f64::from(id)),
-                        iron_core::Value::from(f64::from(w)),
-                        iron_core::Value::from(f64::from(h)),
+                    platypus_core::Value::Array(vec![
+                        platypus_core::Value::from(f64::from(id)),
+                        platypus_core::Value::from(f64::from(w)),
+                        platypus_core::Value::from(f64::from(h)),
                     ])
                 })
                 .collect();
             if let Err(e) = self
                 .scripts
-                .call_global("__iron_textures", &[iron_core::Value::Array(list)])
+                .call_global("__platypus_textures", &[platypus_core::Value::Array(list)])
             {
-                tracing::error!("script error in __iron_textures: {e}");
+                tracing::error!("script error in __platypus_textures: {e}");
             }
         }
     }
@@ -1795,11 +1823,12 @@ impl App {
                 p.interaction.take_clipboard()
             }
             Surface::Window(key) => {
-                let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+                let Some(w) = self.windows.map.get_mut(&platypus_platform::WindowKey(key)) else {
                     return;
                 };
-                let _current =
-                    iron_engine_api::window::enter_current(iron_engine_api::window::WindowRef(key));
+                let _current = platypus_engine_api::window::enter_current(
+                    platypus_engine_api::window::WindowRef(key),
+                );
                 w.interaction.handle(&mut w.tree, input, &mut |event| {
                     if native.is_some() {
                         return native_render::window_event(scene, key, event);
@@ -1829,10 +1858,11 @@ impl App {
                 native_render::panel_settle(id, &mut p.tree);
             }
             if let Surface::Window(key) = surface
-                && let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key))
+                && let Some(w) = self.windows.map.get_mut(&platypus_platform::WindowKey(key))
             {
-                let _current =
-                    iron_engine_api::window::enter_current(iron_engine_api::window::WindowRef(key));
+                let _current = platypus_engine_api::window::enter_current(
+                    platypus_engine_api::window::WindowRef(key),
+                );
                 native_render::window_settle(key, &mut w.tree);
                 n.settle(&mut self.scene.scene, &mut self.ui);
                 self.native_after();
@@ -1851,10 +1881,10 @@ impl App {
 
     /// A window's own cursor and IME state (the main window's are `update_cursor` / `update_ime`).
     fn update_window_cursor_and_ime(&mut self, key: u32) {
-        let Some(w) = self.windows.map.get_mut(&iron_platform::WindowKey(key)) else {
+        let Some(w) = self.windows.map.get_mut(&platypus_platform::WindowKey(key)) else {
             return;
         };
-        let iron_platform::WindowHost::Os(window) = &w.host else {
+        let platypus_platform::WindowHost::Os(window) = &w.host else {
             return;
         };
         let (keyword, _) = w.interaction.cursor_with_images(&w.tree);
@@ -1873,8 +1903,8 @@ impl App {
         if let Some(a) = area {
             let z = 1.0 / window.scale_factor() as f32 * w.scale as f32;
             window.set_ime_cursor_area(
-                iron_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
-                iron_platform::dpi::LogicalSize::new(
+                platypus_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
+                platypus_platform::dpi::LogicalSize::new(
                     (a.width * z).max(1.0),
                     (a.height * z).max(1.0),
                 ),
@@ -1893,23 +1923,23 @@ impl App {
     /// Applies what compiled code asked of nodes it holds refs to (`focus()`, `blur()`,
     /// `scrollTo()`).
     fn apply_node_commands(&mut self) {
-        use iron_ts_ui::NodeCommand;
-        for c in iron_ts_ui::take_node_commands() {
+        use platypus_ts_ui::NodeCommand;
+        for c in platypus_ts_ui::take_node_commands() {
             if let NodeCommand::DragImage(id, x, y) = c {
                 // id 0: no drag image (the screen's interaction holds the drag).
-                let node = (id > 0).then_some(iron_core::NodeId(id));
+                let node = (id > 0).then_some(platypus_core::NodeId(id));
                 let surface = node.map_or(Surface::Screen, |n| self.surface_of(n));
                 let (x, y) = (x as f32, y as f32);
                 self.handle_on(surface, Input::SetDragImage { id: node, x, y });
                 continue;
             }
             let (id, input) = match c {
-                NodeCommand::Focus(id) => (id, Input::Focus(iron_core::NodeId(id))),
-                NodeCommand::Blur(id) => (id, Input::Blur(iron_core::NodeId(id))),
+                NodeCommand::Focus(id) => (id, Input::Focus(platypus_core::NodeId(id))),
+                NodeCommand::Blur(id) => (id, Input::Blur(platypus_core::NodeId(id))),
                 NodeCommand::ScrollTo(id, x, y, behavior) => (
                     id,
                     Input::ScrollTo {
-                        id: iron_core::NodeId(id),
+                        id: platypus_core::NodeId(id),
                         x: x as f32,
                         y: y as f32,
                         behavior,
@@ -1918,7 +1948,7 @@ impl App {
                 NodeCommand::ScrollBy(id, dx, dy, behavior) => (
                     id,
                     Input::ScrollBy {
-                        id: iron_core::NodeId(id),
+                        id: platypus_core::NodeId(id),
                         dx: dx as f32,
                         dy: dy as f32,
                         behavior,
@@ -1932,7 +1962,7 @@ impl App {
                 } => (
                     id,
                     Input::ScrollIntoView {
-                        id: iron_core::NodeId(id),
+                        id: platypus_core::NodeId(id),
                         block,
                         inline,
                         behavior,
@@ -1940,7 +1970,7 @@ impl App {
                 ),
                 NodeCommand::DragImage(..) => unreachable!("handled above"),
             };
-            let surface = self.surface_of(iron_core::NodeId(id));
+            let surface = self.surface_of(platypus_core::NodeId(id));
             if matches!(c, NodeCommand::Focus(_)) && !matches!(surface, Surface::Window(_)) {
                 self.keys_on = surface;
             }
@@ -1951,8 +1981,8 @@ impl App {
     /// Runs a `cursor.*` op: `visible bool`, `lock none|locked|confined`, `image
     /// src|null [hotspot x y]`.
     /// `prefs.set key value`, `prefs.delete key`, `prefs.deleteAll`, `prefs.save`.
-    fn prefs_op(&mut self, name: &str, args: &[iron_core::Value]) {
-        let key = args.first().and_then(iron_core::Value::as_str);
+    fn prefs_op(&mut self, name: &str, args: &[platypus_core::Value]) {
+        let key = args.first().and_then(platypus_core::Value::as_str);
         match (name, key) {
             ("set", Some(key)) => {
                 let value = args.get(1).map_or(serde_json::Value::Null, prefs::json_of);
@@ -1968,13 +1998,13 @@ impl App {
     /// `screen.set mode width height refreshRate`: changes the window's mode and size,
     /// remembers it for next time and tells scripts what took effect. A size of 0 is the
     /// mode's default: the monitor's resolution (exclusive) or the last window size.
-    fn screen_op(&mut self, args: &[iron_core::Value]) {
-        let num = |i: usize| args.get(i).and_then(iron_core::Value::as_f64);
-        let wanted = iron_platform::DisplaySettings {
+    fn screen_op(&mut self, args: &[platypus_core::Value]) {
+        let num = |i: usize| args.get(i).and_then(platypus_core::Value::as_f64);
+        let wanted = platypus_platform::DisplaySettings {
             mode: args
                 .first()
-                .and_then(iron_core::Value::as_str)
-                .and_then(iron_platform::FullScreenMode::parse)
+                .and_then(platypus_core::Value::as_str)
+                .and_then(platypus_platform::FullScreenMode::parse)
                 .unwrap_or(self.display.mode),
             width: num(1).map_or(self.display.width, |w| w.max(0.0) as u32),
             height: num(2).map_or(self.display.height, |h| h.max(0.0) as u32),
@@ -1983,15 +2013,15 @@ impl App {
         };
         self.apply_display(wanted);
         self.prefs
-            .set("iron.display", display::to_json(&self.display));
+            .set("platypus.display", display::to_json(&self.display));
     }
 
     /// Puts the window in a mode (screenshot runs leave it alone) and updates
-    /// `__iron_info.display`.
-    fn apply_display(&mut self, wanted: iron_platform::DisplaySettings) {
+    /// `__platypus_info.display`.
+    fn apply_display(&mut self, wanted: platypus_platform::DisplaySettings) {
         let window = self.gfx.as_ref().and_then(|g| g.window.clone());
         self.display = match (&window, self.offline) {
-            (Some(w), false) => iron_platform::display::apply(w, &wanted),
+            (Some(w), false) => platypus_platform::display::apply(w, &wanted),
             _ => wanted,
         };
         self.info
@@ -2001,10 +2031,10 @@ impl App {
         }
     }
 
-    fn cursor_op(&mut self, name: &str, args: &[iron_core::Value]) {
+    fn cursor_op(&mut self, name: &str, args: &[platypus_core::Value]) {
         match (name, args.first()) {
-            ("visible", Some(iron_core::Value::Bool(v))) => self.script_cursor.visible = *v,
-            ("lock", Some(iron_core::Value::String(mode))) => {
+            ("visible", Some(platypus_core::Value::Bool(v))) => self.script_cursor.visible = *v,
+            ("lock", Some(platypus_core::Value::String(mode))) => {
                 self.script_cursor.lock = match mode.as_str() {
                     "locked" => CursorLock::Locked,
                     "confined" => CursorLock::Confined,
@@ -2012,16 +2042,19 @@ impl App {
                 };
                 self.apply_cursor_lock();
             }
-            ("image", Some(iron_core::Value::String(src))) => {
+            ("image", Some(platypus_core::Value::String(src))) => {
                 let hotspot = match args.get(1) {
-                    Some(iron_core::Value::Array(h)) => {
-                        let n =
-                            |i: usize| h.get(i).and_then(iron_core::Value::as_f64).unwrap_or(0.0);
+                    Some(platypus_core::Value::Array(h)) => {
+                        let n = |i: usize| {
+                            h.get(i)
+                                .and_then(platypus_core::Value::as_f64)
+                                .unwrap_or(0.0)
+                        };
                         Some((n(0) as f32, n(1) as f32))
                     }
                     _ => None,
                 };
-                self.script_cursor.image = Some(iron_ui::CursorImage {
+                self.script_cursor.image = Some(platypus_ui::CursorImage {
                     url: src.clone(),
                     hotspot,
                 });
@@ -2043,7 +2076,7 @@ impl App {
         let Some(window) = self.gfx.as_ref().and_then(|g| g.window.as_ref()) else {
             return;
         };
-        use iron_platform::CursorGrabMode;
+        use platypus_platform::CursorGrabMode;
         let result = match self.script_cursor.lock {
             CursorLock::None => window.set_cursor_grab(CursorGrabMode::None),
             CursorLock::Confined => window.set_cursor_grab(CursorGrabMode::Confined),
@@ -2164,8 +2197,8 @@ impl App {
             // UI pixels → the window's logical pixels.
             let z = ui_factor(gfx, self.ui_scale) / gfx.dpi() as f32;
             window.set_ime_cursor_area(
-                iron_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
-                iron_platform::dpi::LogicalSize::new(
+                platypus_platform::dpi::LogicalPosition::new(a.x * z, a.y * z),
+                platypus_platform::dpi::LogicalSize::new(
                     (a.width * z).max(1.0),
                     (a.height * z).max(1.0),
                 ),
@@ -2173,8 +2206,8 @@ impl App {
         }
     }
 
-    /// Sends an input event to the game's `input` API (@iron/engine).
-    fn send_game_input(&mut self, args: &[iron_core::Value]) {
+    /// Sends an input event to the game's `input` API (@platypus/engine).
+    fn send_game_input(&mut self, args: &[platypus_core::Value]) {
         if let Some(n) = self.native.as_mut() {
             n.game_input(&mut self.scene.scene, &mut self.ui, args);
             self.native_after();
@@ -2183,7 +2216,7 @@ impl App {
         if !self.game_input {
             return;
         }
-        if let Err(e) = self.scripts.call_global("__iron_input", args) {
+        if let Err(e) = self.scripts.call_global("__platypus_input", args) {
             tracing::error!(target: "script", "input: {e}");
         }
     }
@@ -2215,9 +2248,9 @@ impl App {
         self.fake_now.unwrap_or_else(Instant::now)
     }
 
-    /// `loadFont(family, src, weight, style)` from `@iron/engine`.
-    fn load_font_op(&mut self, args: &[iron_core::Value]) {
-        use iron_core::Value;
+    /// `loadFont(family, src, weight, style)` from `@platypus/engine`.
+    fn load_font_op(&mut self, args: &[platypus_core::Value]) {
+        use platypus_core::Value;
         let (Some(family), Some(src)) = (
             args.first().and_then(Value::as_str),
             args.get(1).and_then(Value::as_str),
@@ -2243,11 +2276,11 @@ impl App {
             .push((family.to_owned(), src.to_owned(), weight, italic));
     }
 
-    /// `addStyleSheet(id, css)` / `removeStyleSheet(id)` from `@iron/engine`.
-    fn stylesheet_op(&mut self, name: &str, args: &[iron_core::Value]) {
+    /// `addStyleSheet(id, css)` / `removeStyleSheet(id)` from `@platypus/engine`.
+    fn stylesheet_op(&mut self, name: &str, args: &[platypus_core::Value]) {
         let Some(js_id) = args
             .first()
-            .and_then(iron_core::Value::as_f64)
+            .and_then(platypus_core::Value::as_f64)
             .map(|n| n as u32)
         else {
             tracing::warn!("{name} needs an id: {args:?}");
@@ -2271,7 +2304,10 @@ impl App {
             }
             return;
         }
-        let css = args.get(1).and_then(iron_core::Value::as_str).unwrap_or("");
+        let css = args
+            .get(1)
+            .and_then(platypus_core::Value::as_str)
+            .unwrap_or("");
         let id = add_stylesheet(&mut self.ui, &self.asset_root, css, "", "addStyleSheet");
         if let Some(old) = self.sheets.insert(js_id, id) {
             self.ui.remove_stylesheet(old);
@@ -2333,9 +2369,9 @@ impl App {
             tracing::info!("real-world light units");
         }
         // `Window.main` learns the real size and scale (its title may be the game's own).
-        let title = iron_engine_api::window::state(iron_engine_api::window::MAIN)
+        let title = platypus_engine_api::window::state(platypus_engine_api::window::MAIN)
             .map_or_else(String::new, |s| s.title);
-        iron_engine_api::window::set_main(&title, windows::to_ui(size, dpi), dpi);
+        platypus_engine_api::window::set_main(&title, windows::to_ui(size, dpi), dpi);
         if let Some(w) = &window
             && title != w.title()
         {
@@ -2449,7 +2485,7 @@ impl App {
             );
         }
         let pixels = target.read_pixels(&gfx.gpu)?;
-        iron_render::testing::write_png(path, w, h, &pixels)?;
+        platypus_render::testing::write_png(path, w, h, &pixels)?;
         self.save_window_screenshots(path)
     }
 }
@@ -2459,33 +2495,40 @@ impl PlatformApp for App {
         self.custom_cursor.take()
     }
 
-    fn take_window_commands(&mut self) -> Vec<iron_platform::WindowCommand> {
+    fn take_window_commands(&mut self) -> Vec<platypus_platform::WindowCommand> {
         std::mem::take(&mut self.window_commands)
     }
 
-    fn window_opened(&mut self, key: iron_platform::WindowKey, host: iron_platform::WindowHost) {
+    fn window_opened(
+        &mut self,
+        key: platypus_platform::WindowKey,
+        host: platypus_platform::WindowHost,
+    ) {
         self.window_open(key, host);
     }
 
-    fn window_open_failed(&mut self, key: iron_platform::WindowKey, error: String) {
+    fn window_open_failed(&mut self, key: platypus_platform::WindowKey, error: String) {
         self.in_game(|| {
-            iron_engine_api::window::open_failed(iron_engine_api::window::WindowRef(key.0), &error)
+            platypus_engine_api::window::open_failed(
+                platypus_engine_api::window::WindowRef(key.0),
+                &error,
+            )
         });
     }
 
-    fn window_input(&mut self, key: iron_platform::WindowKey, event: InputEvent) {
-        if key == iron_platform::WindowKey::MAIN {
+    fn window_input(&mut self, key: platypus_platform::WindowKey, event: InputEvent) {
+        if key == platypus_platform::WindowKey::MAIN {
             self.input(event);
         } else {
             self.window_input_for(key, event);
         }
     }
 
-    fn close_requested(&mut self, key: iron_platform::WindowKey) -> bool {
+    fn close_requested(&mut self, key: platypus_platform::WindowKey) -> bool {
         self.window_close_requested(key)
     }
 
-    fn window_closed(&mut self, key: iron_platform::WindowKey) {
+    fn window_closed(&mut self, key: platypus_platform::WindowKey) {
         self.window_gone(key);
     }
 
@@ -2493,15 +2536,15 @@ impl PlatformApp for App {
         self.window_events_done();
     }
 
-    fn take_windows_to_show(&mut self) -> Vec<iron_platform::WindowKey> {
+    fn take_windows_to_show(&mut self) -> Vec<platypus_platform::WindowKey> {
         std::mem::take(&mut self.windows_to_show)
     }
 
     fn window_ready(&mut self, window: Arc<Window>) {
         // The saved (or default) window mode, before the first frame shows. Screenshot
         // runs stay windowed.
-        if !self.offline && self.display.mode != iron_platform::FullScreenMode::Windowed {
-            self.display = iron_platform::display::apply(&window, &self.display);
+        if !self.offline && self.display.mode != platypus_platform::FullScreenMode::Windowed {
+            self.display = platypus_platform::display::apply(&window, &self.display);
         }
         let size = window.inner_size();
         match Gpu::with_surface(window.clone(), size.width, size.height) {
@@ -2532,7 +2575,7 @@ impl PlatformApp for App {
         // The mouse for gameplay code (`input.mousePosition`, buttons, look, wheel), in UI
         // pixels, whatever the UI does with it.
         let ui = self.scale() as f64;
-        let game_mouse: Option<Vec<iron_core::Value>> = match &event {
+        let game_mouse: Option<Vec<platypus_core::Value>> = match &event {
             InputEvent::MouseMove { x, y } => {
                 Some(vec!["mousemove".into(), (x / ui).into(), (y / ui).into()])
             }
@@ -2570,12 +2613,16 @@ impl PlatformApp for App {
             // The game's focus is any of its windows' (`window_events_done`).
             InputEvent::Focused(f) => {
                 if f {
-                    self.windows.focused.insert(iron_platform::WindowKey::MAIN);
+                    self.windows
+                        .focused
+                        .insert(platypus_platform::WindowKey::MAIN);
                 } else {
-                    self.windows.focused.remove(&iron_platform::WindowKey::MAIN);
+                    self.windows
+                        .focused
+                        .remove(&platypus_platform::WindowKey::MAIN);
                 }
                 self.in_game(|| {
-                    iron_engine_api::window::focus_changed(iron_engine_api::window::MAIN, f)
+                    platypus_engine_api::window::focus_changed(platypus_engine_api::window::MAIN, f)
                 });
             }
             InputEvent::Occluded(o) => self.lifecycle.set_occluded(o),
@@ -2585,8 +2632,8 @@ impl PlatformApp for App {
                     let dpi = gfx.dpi();
                     let size = windows::to_ui((width, height), dpi);
                     self.in_game(|| {
-                        iron_engine_api::window::resized(
-                            iron_engine_api::window::MAIN,
+                        platypus_engine_api::window::resized(
+                            platypus_engine_api::window::MAIN,
                             size.0,
                             size.1,
                         )
@@ -2598,13 +2645,17 @@ impl PlatformApp for App {
                     let dpi = gfx.dpi();
                     let (lx, ly) = (f64::from(x) / dpi, f64::from(y) / dpi);
                     self.in_game(|| {
-                        iron_engine_api::window::moved(iron_engine_api::window::MAIN, lx, ly)
+                        platypus_engine_api::window::moved(
+                            platypus_engine_api::window::MAIN,
+                            lx,
+                            ly,
+                        )
                     });
                 }
             }
             InputEvent::ScaleChanged(s) => {
                 self.in_game(|| {
-                    iron_engine_api::window::scale_changed(iron_engine_api::window::MAIN, s)
+                    platypus_engine_api::window::scale_changed(platypus_engine_api::window::MAIN, s)
                 });
             }
             _ => {}
@@ -2622,7 +2673,7 @@ impl PlatformApp for App {
         if let InputEvent::MouseMotion { .. } = event {
             return;
         }
-        let game_key: Option<Vec<iron_core::Value>> = match &event {
+        let game_key: Option<Vec<platypus_core::Value>> = match &event {
             InputEvent::KeyDown {
                 code, key, repeat, ..
             } => Some(vec![
@@ -2765,13 +2816,16 @@ impl PlatformApp for App {
         if !self.lifecycle.paused() {
             let now_ms = self.now_ms();
             self.in_game(|| {
-                iron_engine_api::window::deliver(iron_engine_api::window::DomainId::MAIN, now_ms)
+                platypus_engine_api::window::deliver(
+                    platypus_engine_api::window::DomainId::MAIN,
+                    now_ms,
+                )
             });
         }
         self.tick();
         let now_ms = self.now_ms();
         self.pump_domains(now_ms);
-        iron_engine_api::window::end_frame();
+        platypus_engine_api::window::end_frame();
         self.close_unclaimed_windows();
         // New log lines and file results for the editor.
         self.editor.pump(&mut self.scripts);
@@ -2820,10 +2874,10 @@ impl PlatformApp for App {
                 stats.culled_lights,
                 stats.shadow_maps,
             ]
-            .map(|v| iron_core::Value::Number(v as f64));
-            let _ = self.scripts.call_global("__iron_render_stats", &args);
+            .map(|v| platypus_core::Value::Number(v as f64));
+            let _ = self.scripts.call_global("__platypus_render_stats", &args);
             // A compiled game reads `RenderStats` from the registry.
-            iron_render_api::set_render_stats(iron_render_api::Stats {
+            platypus_render_api::set_render_stats(platypus_render_api::Stats {
                 meshes: stats.meshes as f64,
                 culled_meshes: stats.culled_meshes as f64,
                 quads: stats.quads as f64,
@@ -2849,27 +2903,28 @@ impl PlatformApp for App {
             if moved {
                 self.exposure_sent.insert(id, now);
                 let scene = if now.1.is_nan() {
-                    iron_core::Value::Null
+                    platypus_core::Value::Null
                 } else {
-                    iron_core::Value::Number(now.1.into())
+                    platypus_core::Value::Number(now.1.into())
                 };
                 let args = [
-                    iron_core::Value::Number(id.into()),
-                    iron_core::Value::Number(now.0.into()),
+                    platypus_core::Value::Number(id.into()),
+                    platypus_core::Value::Number(now.0.into()),
                     scene,
                 ];
-                let _ = self.scripts.call_global("__iron_exposure", &args);
+                let _ = self.scripts.call_global("__platypus_exposure", &args);
                 // A compiled game's cameras (the id is the camera component's).
-                iron_engine_api::camera::set_exposure(
-                    iron_engine_api::camera::CameraRef(id),
+                platypus_engine_api::camera::set_exposure(
+                    platypus_engine_api::camera::CameraRef(id),
                     f64::from(now.0),
                     f64::from(now.1),
                 );
             }
         }
         // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
-        let dark = gfx.window.as_ref().and_then(|w| w.theme()) == Some(iron_platform::Theme::Dark);
-        self.ui.set_media_env(iron_ui::media::MediaEnv {
+        let dark =
+            gfx.window.as_ref().and_then(|w| w.theme()) == Some(platypus_platform::Theme::Dark);
+        self.ui.set_media_env(platypus_ui::media::MediaEnv {
             resolution: scale,
             dark,
             ..self.ui.media_env()
@@ -2996,10 +3051,10 @@ impl PlatformApp for App {
         }
 
         self.frames += 1;
-        // `IRON_RELOAD_AT_FRAME=N`: a screenshot run reloads its scripts after frame N,
+        // `PLATYPUS_RELOAD_AT_FRAME=N`: a screenshot run reloads its scripts after frame N,
         // to check hot reload without a window.
         if self.screenshot.is_some()
-            && std::env::var("IRON_RELOAD_AT_FRAME")
+            && std::env::var("PLATYPUS_RELOAD_AT_FRAME")
                 .ok()
                 .and_then(|n| n.parse::<u32>().ok())
                 == Some(self.frames)
@@ -3064,8 +3119,8 @@ fn dispatch(scripts: &mut QuickJsRuntime, enabled: bool, event: &UiEvent) -> boo
     if !enabled {
         return false;
     }
-    match scripts.call_global("__iron_ui_event", &event.script_args()) {
-        Ok(prevented) => prevented == iron_core::Value::Bool(true),
+    match scripts.call_global("__platypus_ui_event", &event.script_args()) {
+        Ok(prevented) => prevented == platypus_core::Value::Bool(true),
         Err(e) => {
             tracing::error!(target: "script", "{} handler: {e}", event.kind.name());
             false
@@ -3109,7 +3164,7 @@ struct ScriptCursor {
     visible: bool,
     lock: CursorLock,
     /// Shown where the UI asks for no particular cursor.
-    image: Option<iron_ui::CursorImage>,
+    image: Option<platypus_ui::CursorImage>,
 }
 
 impl Default for ScriptCursor {
@@ -3140,7 +3195,7 @@ fn load_font(
     weight: Option<f32>,
     italic: Option<bool>,
 ) {
-    let data = iron_core::read_asset(root, src).map_err(|e| e.to_string());
+    let data = platypus_core::read_asset(root, src).map_err(|e| e.to_string());
     match data.and_then(|d| ui.register_font(d, Some(family), weight, italic)) {
         Ok(_) => tracing::info!("loaded font `{family}`"),
         Err(e) => tracing::warn!("font `{family}` failed to load: {e}"),
@@ -3151,28 +3206,28 @@ fn load_font(
 /// `base` is the stylesheet's folder inside the game folder (for its `url()`s).
 /// `audio.load id src stream`: reads the file (or `data:` URL) from the game folder.
 fn load_sound(
-    mixer: &mut dyn iron_audio::Mixer,
+    mixer: &mut dyn platypus_audio::Mixer,
     root: &Path,
-    args: &[iron_core::Value],
+    args: &[platypus_core::Value],
 ) -> Result<(), String> {
     let (Some(id), Some(src)) = (
-        args.first().and_then(iron_core::Value::as_f64),
-        args.get(1).and_then(iron_core::Value::as_str),
+        args.first().and_then(platypus_core::Value::as_f64),
+        args.get(1).and_then(platypus_core::Value::as_str),
     ) else {
         return Err("needs an id and a file".into());
     };
-    let stream = matches!(args.get(2), Some(iron_core::Value::Bool(true)));
+    let stream = matches!(args.get(2), Some(platypus_core::Value::Bool(true)));
     // A streamed sound is read in pieces (a pack's chunks, a file's windows), never whole.
     if stream
         && !src.trim_start().starts_with("data:")
-        && let Some(fs) = iron_core::asset_fs()
+        && let Some(fs) = platypus_core::asset_fs()
     {
         let reader = fs.open_range(src).map_err(|e| e.to_string())?;
         return mixer
             .load_stream(id as u32, reader)
             .map_err(|e| format!("`{src}`: {e}"));
     }
-    let bytes = iron_core::read_asset(root, src).map_err(|e| e.to_string())?;
+    let bytes = platypus_core::read_asset(root, src).map_err(|e| e.to_string())?;
     mixer
         .load(id as u32, bytes, stream)
         .map_err(|e| format!("`{src}`: {e}"))
@@ -3219,9 +3274,9 @@ fn new_panel_tree(
 fn spawn_starting_components(
     rt: &mut QuickJsRuntime,
     host: &mut ComponentHost,
-    scene: &mut iron_scene::ScriptScene,
+    scene: &mut platypus_scene::ScriptScene,
     classes: &[String],
-) -> Result<(), iron_script::ScriptError> {
+) -> Result<(), platypus_script::ScriptError> {
     for class in classes {
         let object = scene.create_engine_object(class);
         host.spawn_on(rt, class, Some(object), class)?;
@@ -3230,10 +3285,10 @@ fn spawn_starting_components(
 }
 
 /// Loads the stylesheet Bun writes next to the bundle (game.js -> game.css), if any.
-/// A dev build's vendor bundle: `game.js` starts with `// @iron-dev` and `vendor.js`
+/// A dev build's vendor bundle: `game.js` starts with `// @platypus-dev` and `vendor.js`
 /// sits next to it (`None` for a normal, self-contained build).
 fn dev_vendor(bundle_path: &Path, code: &str) -> Option<String> {
-    if !code.starts_with("// @iron-dev") {
+    if !code.starts_with("// @platypus-dev") {
         return None;
     }
     let path = bundle_path.with_file_name("vendor.js");
@@ -3248,11 +3303,11 @@ fn load_bundles(
     vendor: Option<&str>,
     name: &str,
     code: &str,
-) -> Result<(), iron_script::ScriptError> {
+) -> Result<(), platypus_script::ScriptError> {
     match vendor {
         Some(vendor) => {
             rt.load_bundle("vendor.js", vendor)?;
-            iron_script::load_game(rt, name, code)
+            platypus_script::load_game(rt, name, code)
         }
         None => rt.load_bundle(name, code),
     }
@@ -3271,7 +3326,7 @@ fn add_stylesheet(ui: &mut UiTree, root: &Path, css: &str, base: &str, source: &
     // `@import`s load from the game folder (Bun inlines them when bundling; this is
     // for stylesheets added at runtime).
     let added = ui.add_stylesheet_with_imports(css, base, &mut |path| {
-        iron_core::read_asset_string(root, path).ok()
+        platypus_core::read_asset_string(root, path).ok()
     });
     for warning in &added.warnings {
         tracing::warn!(target: "css", "{source}: {warning}");
@@ -3371,8 +3426,8 @@ mod tests {
     // M9-API-1148
     #[test]
     fn sounds_load_from_packs_whole_and_streamed_and_a_miss_says_where_it_looked() {
-        use iron_core::Value;
-        use iron_pack::{EntrySpec, Pack, PackSource, PackWriter, Vfs, WriteOptions};
+        use platypus_core::Value;
+        use platypus_pack::{EntrySpec, Pack, PackSource, PackWriter, Vfs, WriteOptions};
         let sound = wav(40_000);
         let mut w =
             PackWriter::new(std::io::Cursor::new(Vec::new()), WriteOptions::default()).unwrap();
@@ -3382,17 +3437,17 @@ mod tests {
         let mut vfs = Vfs::new();
         vfs.mount(std::sync::Arc::new(PackSource::new("assets", pack)));
         let root = Path::new("no-such-folder");
-        let load = |mixer: &mut dyn iron_audio::Mixer, id: f64, src: &str, stream: bool| {
+        let load = |mixer: &mut dyn platypus_audio::Mixer, id: f64, src: &str, stream: bool| {
             let args = [
                 Value::Number(id),
                 Value::String(src.into()),
                 Value::Bool(stream),
             ];
-            iron_core::with_asset_fs(std::sync::Arc::new(vfs.clone()), || {
+            platypus_core::with_asset_fs(std::sync::Arc::new(vfs.clone()), || {
                 load_sound(mixer, root, &args)
             })
         };
-        let mut mixer = iron_audio::open_mixer(true);
+        let mut mixer = platypus_audio::open_mixer(true);
         load(mixer.as_mut(), 1.0, "assets/sfx/beep.wav", false).unwrap();
         // Streamed: read through the pack's chunks (the file is compressed, 3 chunks of 256 KiB
         // would not be needed for 80 kB, but the reader works in windows all the same).
@@ -3410,7 +3465,7 @@ mod tests {
         let args = parse(&["examples/md-reader", "--", "--goto", "a.md#b", "x"]).unwrap();
         assert_eq!(args.game, PathBuf::from("examples/md-reader"));
         assert_eq!(args.script_args, ["--goto", "a.md#b", "x"]);
-        // Iron's own options before `--` still count; nothing after it does.
+        // Platypus's own options before `--` still count; nothing after it does.
         let args = parse(&["--frames", "3", "--", "--frames", "9"]).unwrap();
         assert_eq!((args.frames, args.script_args.len()), (3, 2));
         assert!(parse(&["examples/css"]).unwrap().script_args.is_empty());

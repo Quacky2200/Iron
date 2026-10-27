@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Guard rails for "every declaration is generated from Rust" (docs/research/iron-generated-dts-plan.md):
+//! Guard rails for "every declaration is generated from Rust" (docs/research/platypus-generated-dts-plan.md):
 //! no hand-written `.d.ts` file (and the TypeScript compiled into games only on a short list), the
 //! compiler built-ins declare no engine name again, and a snapshot of the API surface `tsc` sees.
 
@@ -47,11 +47,11 @@ fn rel(p: &Path) -> String {
 /// engine adapters, is gone: the compiler writes those functions from the manifests.)
 const ALLOWED_TS: &[(&str, &str)] = &[
     (
-        "tools/iron_ts/src/lower/ui.ts",
-        "the hook helpers (useState, useReducer, useRef, useMemo, useContext, ...): generic over the program's own types, so they are          monomorphised per use by the compiler and cannot be one native function; TODO: lower them in Rust (jsx.rs) as IR          over the native slots of iron_ts_ui once the compiler can emit generic calls into a native library",
+        "tools/platypus_ts/src/lower/ui.ts",
+        "the hook helpers (useState, useReducer, useRef, useMemo, useContext, ...): generic over the program's own types, so they are          monomorphised per use by the compiler and cannot be one native function; TODO: lower them in Rust (jsx.rs) as IR          over the native slots of platypus_ts_ui once the compiler can emit generic calls into a native library",
     ),
     (
-        "tools/iron_ts/src/lower/temporal.ts",
+        "tools/platypus_ts/src/lower/temporal.ts",
         "the Temporal runtime library (decision 2: moved to Rust long term, not in this pass)",
     ),
 ];
@@ -68,7 +68,7 @@ fn no_new_hand_written_declaration_files_appear() {
         .collect();
     assert!(
         found.is_empty(),
-        "hand-written .d.ts files are not allowed (declare it in #[iron_api], iron_ui::tables or tools/iron_ts/src/builtins.rs): {found:?}"
+        "hand-written .d.ts files are not allowed (declare it in #[platypus_api], platypus_ui::tables or tools/platypus_ts/src/builtins.rs): {found:?}"
     );
     // No Rust source may include a declaration file either.
     let mut included = BTreeSet::new();
@@ -93,7 +93,9 @@ fn no_new_hand_written_declaration_files_appear() {
         .iter()
         .map(|p| rel(p))
         .filter(|r| {
-            r.starts_with("tools/iron_ts/src/lower/") && r.ends_with(".ts") && !r.ends_with(".d.ts")
+            r.starts_with("tools/platypus_ts/src/lower/")
+                && r.ends_with(".ts")
+                && !r.ends_with(".d.ts")
         })
         .collect();
     let allowed_ts: BTreeSet<String> = ALLOWED_TS.iter().map(|(p, _)| p.to_string()).collect();
@@ -104,9 +106,12 @@ fn no_new_hand_written_declaration_files_appear() {
     let py: BTreeSet<String> = files
         .iter()
         .map(|p| rel(p))
-        .filter(|r| r.ends_with(".py") && r.starts_with("tools/iron_ts/"))
+        .filter(|r| r.ends_with(".py") && r.starts_with("tools/platypus_ts/"))
         .collect();
-    assert!(py.is_empty(), "no Python step under tools/iron_ts: {py:?}");
+    assert!(
+        py.is_empty(),
+        "no Python step under tools/platypus_ts: {py:?}"
+    );
 }
 
 /// The top-level names the manifests declare (namespaces, classes, value classes, handle types,
@@ -138,8 +143,8 @@ fn manifest_names(ms: &[String]) -> BTreeSet<String> {
 // M9-TS-3101
 #[test]
 fn the_built_ins_declare_no_engine_name_again_and_their_owners_exist() {
-    use iron_ts::builtins::{BUILTINS, Place, top_names};
-    let ms: Vec<String> = iron_build::manifests()
+    use platypus_ts::builtins::{BUILTINS, Place, top_names};
+    let ms: Vec<String> = platypus_build::manifests()
         .into_iter()
         .filter(|m| !m.contains("\"namespace\":\"Ui\""))
         .collect();
@@ -234,23 +239,23 @@ fn snapshot_path() -> PathBuf {
 // M9-TS-3102
 #[test]
 fn the_generated_api_surface_matches_the_blessed_snapshot() {
-    let dts = iron_build::types_dts().unwrap();
+    let dts = platypus_build::types_dts().unwrap();
     let now = surface(&dts);
     let path = snapshot_path();
-    if std::env::var("IRON_BLESS").is_ok_and(|v| v == "1") {
+    if std::env::var("PLATYPUS_BLESS").is_ok_and(|v| v == "1") {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &now).unwrap();
         return;
     }
     let blessed = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("{} is missing: run with IRON_BLESS=1", path.display()));
+        .unwrap_or_else(|_| panic!("{} is missing: run with PLATYPUS_BLESS=1", path.display()));
     if blessed != now {
         let a: BTreeSet<&str> = blessed.lines().collect();
         let b: BTreeSet<&str> = now.lines().collect();
         let removed: Vec<_> = a.difference(&b).take(40).collect();
         let added: Vec<_> = b.difference(&a).take(40).collect();
         panic!(
-            "the API surface changed (review, then IRON_BLESS=1 to accept)\nremoved:\n{}\nadded:\n{}",
+            "the API surface changed (review, then PLATYPUS_BLESS=1 to accept)\nremoved:\n{}\nadded:\n{}",
             removed
                 .iter()
                 .map(|s| format!("  - {s}"))
@@ -273,7 +278,7 @@ fn the_generated_api_surface_matches_the_blessed_snapshot() {
 // and a namespace property that is one of a few names is the union.
 #[test]
 fn declared_types_are_the_ones_games_are_written_against() {
-    let dts = iron_build::types_dts().unwrap();
+    let dts = platypus_build::types_dts().unwrap();
     for want in [
         "mainTexture?: Texture | null",
         "get type(): \"directional\" | \"point\" | \"spot\";",

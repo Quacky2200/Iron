@@ -47,11 +47,11 @@ bun_tests! {
 // M9-TS-3012
 #[test]
 fn a_literal_outside_the_union_is_a_compile_error() {
-    let _serial = iron_ts_tests::serial();
-    let e = iron_ts::jit::compile_and_load(
+    let _serial = platypus_ts_tests::serial();
+    let e = platypus_ts::jit::compile_and_load(
         "type M = \"a\" | \"b\";
 export function f(): string { const m: M = \"c\"; return m; }",
-        &iron_ts::jit::JitOptions {
+        &platypus_ts::jit::JitOptions {
             prefix: "un12_",
             struct_base: 312_000,
             ..Default::default()

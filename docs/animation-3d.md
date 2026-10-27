@@ -2,12 +2,12 @@
 
 How animation of GameObjects works today. (CSS motion is a different system: see
 [animation.md](animation.md).) The code is [animation.ts](../js/engine/src/animation.ts), with
-`__iron_animate` called from [components.rs](../crates/iron_script/src/components.rs), glTF skins and
-animations in [models.rs](../crates/iron_app/src/models.rs) and [models.ts](../js/engine/src/models.ts),
-and GPU skinning in [world/mod.rs](../crates/iron_render/src/world/mod.rs). Demo:
+`__platypus_animate` called from [components.rs](../crates/platypus_script/src/components.rs), glTF skins and
+animations in [models.rs](../crates/platypus_app/src/models.rs) and [models.ts](../js/engine/src/models.ts),
+and GPU skinning in [world/mod.rs](../crates/platypus_render/src/world/mod.rs). Demo:
 [examples/animation](../examples/animation/src/main.tsx). The API follows Unity's.
 
-All of the animation logic runs in scripts. Rust only calls `__iron_animate` once a frame and, for
+All of the animation logic runs in scripts. Rust only calls `__platypus_animate` once a frame and, for
 skinned meshes, turns bone objects into matrices for the GPU.
 
 ## Curves and clips
@@ -65,9 +65,9 @@ An `AnimatorController` is one layer of `parameters` (`float`, `int`, `bool`, `t
 
 ## When it runs
 
-`ComponentHost::update_active` runs `onUpdate` for all components, then calls `__iron_animate(dt)` (if
+`ComponentHost::update_active` runs `onUpdate` for all components, then calls `__platypus_animate(dt)` (if
 the bundle has it), then `onLateUpdate`. So scripts set Animator parameters in `onUpdate`, the pose is
-written, and late updates (a camera following a bone) read it. `__iron_animate` walks the active
+written, and late updates (a camera following a bone) read it. `__platypus_animate` walks the active
 objects and advances each `Animation` and `Animator`; a player that throws is logged and the others
 continue. `dt` is the scaled frame time.
 
@@ -127,10 +127,10 @@ has any.
 ## Tests
 
 `M5-ANI-01` to `-04` (curves, clips, `Animation`, `Animator`) are in
-[js/engine/test/animation.test.ts](../js/engine/test/animation.test.ts); `M5-ANI-05` (`__iron_animate`
-runs after every `onUpdate`) is in [iron_script/tests/components.rs](../crates/iron_script/tests/components.rs).
+[js/engine/test/animation.test.ts](../js/engine/test/animation.test.ts); `M5-ANI-05` (`__platypus_animate`
+runs after every `onUpdate`) is in [platypus_script/tests/components.rs](../crates/platypus_script/tests/components.rs).
 `M5-SKN-01` (glTF skins and animations) is a unit test in `models.rs` using `tests/fixtures/assets/worm.glb`
 (made by `make_worm.py`); `M5-SKN-02` (skinned parts, clips from a model, mesh bone weights) is in
 `js/engine/test/models.test.ts`. The golden `M5-RND-21` (a tube bent by two bones, with a bent shadow) is
-in [iron_render/tests/world.rs](../crates/iron_render/tests/world.rs). `examples/animation` is the manual
+in [platypus_render/tests/world.rs](../crates/platypus_render/tests/world.rs). `examples/animation` is the manual
 check.

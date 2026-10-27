@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-# Registers a bun-compared test program that calls the native engine API (`iron_engine_api`):
+# Registers a bun-compared test program that calls the native engine API (`platypus_engine_api`):
 #   python bench/add_engine_module.py <name> <prefix> <struct_base> <first_test_id> <engine ts files...>
 # The engine files are modules of js/engine/src (for example `random.ts`): the generator imports
 # them in bun and puts their exports on globalThis, so bench/<name>.ts runs there against the
@@ -8,7 +8,7 @@
 # engine manifests), a module to src/lib.rs, the generator bench/gen_<name>_expected.ts and a test
 # per exported function in tests/engine_api/<name>.rs. Every exported function without parameters returns
 # a string. Then: `bun bench/gen_<name>_expected.ts` and
-# `cargo test -p iron_ts_tests --test engine_api <name>`.
+# `cargo test -p platypus_ts_tests --test engine_api <name>`.
 import os
 import re
 import sys
@@ -93,17 +93,17 @@ def snake(n):
 tests = f"""//! `bench/{name}.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_{name}_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-{first}..).
-use iron_ts_rt::{{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress}};
-use iron_ts_tests::{mod}::*;
+use platypus_ts_rt::{{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress}};
+use platypus_ts_tests::{mod}::*;
 use serde_json::Value;
 
 /// The engine state a program starts from; change it for this program.
 fn reset() {{}}
 
 fn in_every_gc_mode(f: impl Fn()) {{
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe {{ ts_{prefix}_init() }};
     reset();
     f();

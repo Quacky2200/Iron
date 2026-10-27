@@ -15,7 +15,7 @@ license = "Apache-2.0"
 debug = "line-tables-only"
 
 # Dependencies (QuickJS, Parley, swash, wgpu, ...) are optimized even in debug builds:
-# typing in a debug build otherwise takes ~25 ms per key in QuickJS alone. Iron's own
+# typing in a debug build otherwise takes ~25 ms per key in QuickJS alone. Platypus's own
 # crates stay unoptimized for debugging.
 [profile.dev.package."*"]
 opt-level = 3

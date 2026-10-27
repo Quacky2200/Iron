@@ -7,10 +7,12 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId};
-use iron_ui::events::Modifiers;
-use iron_ui::opcodes::{REMOVE_CHILD, SET_ATTRS};
-use iron_ui::{DrawCmd, Input, Interaction, Rect, ScrollAlign, ScrollBehavior, UiEvent, UiTree};
+use platypus_core::{Commit, NodeId};
+use platypus_ui::events::Modifiers;
+use platypus_ui::opcodes::{REMOVE_CHILD, SET_ATTRS};
+use platypus_ui::{
+    DrawCmd, Input, Interaction, Rect, ScrollAlign, ScrollBehavior, UiEvent, UiTree,
+};
 
 struct Rec {
     events: Vec<UiEvent>,
@@ -506,7 +508,7 @@ fn scrollbars_show_when_needed_and_track_the_offset() {
     let set = |tree: &mut UiTree, value: &str| {
         let errors = tree.apply_commit(&Commit {
             ops: vec![op(
-                iron_ui::opcodes::SET_STYLE,
+                platypus_ui::opcodes::SET_STYLE,
                 &[n(scroller.0), "scrollbarWidth".into(), value.into()],
             )],
         });
@@ -604,8 +606,8 @@ fn scrollbar_color_is_inherited() {
     let mut tree = d.build("");
     tree.layout_if_needed();
     let bar = tree.scrollbars(NodeId(scroller))[0];
-    assert_eq!(bar.thumb_color, iron_ui::Rgba::parse("red").unwrap());
-    assert_eq!(bar.track_color, iron_ui::Rgba::parse("blue").unwrap());
+    assert_eq!(bar.thumb_color, platypus_ui::Rgba::parse("red").unwrap());
+    assert_eq!(bar.track_color, platypus_ui::Rgba::parse("blue").unwrap());
 }
 
 // M3-SCR-01
@@ -617,7 +619,7 @@ fn scrollbar_gutter_stable_reserves_the_scrollbar_space() {
     let _ = scroller;
     let errors = tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_STYLE,
+            platypus_ui::opcodes::SET_STYLE,
             &[n(scroller2.0), "scrollbarGutter".into(), "stable".into()],
         )],
     });
@@ -627,7 +629,7 @@ fn scrollbar_gutter_stable_reserves_the_scrollbar_space() {
     assert_eq!(tree.rect(rows2[0]).unwrap().width, 88.0);
     let errors = tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_STYLE,
+            platypus_ui::opcodes::SET_STYLE,
             &[n(scroller2.0), "scrollbarWidth".into(), "thin".into()],
         )],
     });
@@ -642,7 +644,7 @@ fn scrollbar_gutter_stable_reserves_the_scrollbar_space() {
     let (mut tree, scroller3, rows3) = list("visible", 1);
     tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_STYLE,
+            platypus_ui::opcodes::SET_STYLE,
             &[
                 n(scroller3.0),
                 "scrollbarGutter".into(),
@@ -756,7 +758,7 @@ fn content_scrolled_out_of_view_is_not_drawn() {
         &[("flexDirection", "column".into()), ("flexShrink", px(0.0))],
     );
     for i in 0..60 {
-        let style: &[(&str, iron_core::Value)] = if i == 40 {
+        let style: &[(&str, platypus_core::Value)] = if i == 40 {
             // Far below the view, but a shadow could reach anywhere: the row is drawn.
             &[("height", px(20.0)), ("boxShadow", "0 0 4px black".into())]
         } else {
@@ -840,7 +842,7 @@ fn smooth_scrolls_ease_over_time_and_send_scroll_events() {
     // `scroll-behavior: smooth` makes `auto` script scrolls smooth too.
     tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_STYLE,
+            platypus_ui::opcodes::SET_STYLE,
             &[n(scroller.0), "scrollBehavior".into(), "smooth".into()],
         )],
     });
@@ -867,7 +869,7 @@ fn scroll_padding_keeps_scrolled_into_view_elements_clear_of_the_edges() {
     let (mut tree, scroller, rows) = list("hidden", 6);
     tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_STYLE,
+            platypus_ui::opcodes::SET_STYLE,
             &[n(scroller.0), "scrollPadding".into(), "10px 0".into()],
         )],
     });

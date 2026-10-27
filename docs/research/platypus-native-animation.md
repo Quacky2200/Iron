@@ -1,6 +1,6 @@
 # Animation in Rust: design note (for review before it is built)
 
-Status: **waiting for the user** (2026-10-19). This is the next item of `iron-native-engine.md` after the first batch and
+Status: **waiting for the user** (2026-10-19). This is the next item of `platypus-native-engine.md` after the first batch and
 the math types. It is the first port that is not "same functions, typed": `js/engine/src/animation.ts` (921 lines) is built
 from object literals, string-keyed property writes on arbitrary components and callbacks by method name, none of which can
 cross the native boundary as they are. This note says what the native version looks like, what it needs under it and what
@@ -17,16 +17,16 @@ changes for a game, so the shape can be agreed before the work is done.
 - `Animation` (legacy component): named states, `play`, `crossFade`, `stop`, `isPlaying`.
 - `Animator` + `AnimatorController`: parameters, states (a clip or a 1D blend tree), transitions on conditions or exit time
   with cross-fades, `Any` state, speed parameters, triggers, `getCurrentAnimatorStateInfo`.
-- Every frame, after all `onUpdate` and before `onLateUpdate`, the engine calls `__iron_animate(dt)`.
+- Every frame, after all `onUpdate` and before `onLateUpdate`, the engine calls `__platypus_animate(dt)`.
 
 ## 2. Native shape
 
-**A crate `iron_animation`** with no script engine in it: curves, clips, states, the controller graph, blending, events, JSON
+**A crate `platypus_animation`** with no script engine in it: curves, clips, states, the controller graph, blending, events, JSON
 (serde). A system (`AnimationWorld`, per thread like the other engine state) holds the players and has
-`update(&mut Scene, dt, &mut dyn PropertySink) -> Vec<FiredEvent>`, which the host calls where it now calls `__iron_animate`.
+`update(&mut Scene, dt, &mut dyn PropertySink) -> Vec<FiredEvent>`, which the host calls where it now calls `__platypus_animate`.
 Transform channels and `GameObject.active` are written to the scene directly. Nothing in it knows TypeScript.
 
-**The script API** is declared in `iron_engine_api` (`animation.rs`) with `#[iron_api]`, so compiled code and QuickJS both get
+**The script API** is declared in `platypus_engine_api` (`animation.rs`) with `#[platypus_api]`, so compiled code and QuickJS both get
 it (same as every other module). Types are handles into the system's arenas:
 
 | Class | Made by | Members |
@@ -48,7 +48,7 @@ Strings are used where TypeScript had unions (`"loop"`, `"Transform"`, `"if"`), 
 2. **`fromPoints` takes a flat list** (`[t0, v0, t1, v1, ..]`) once arrays of numbers cross the boundary (section 4); until then
    `AnimationCurve` is built key by key.
 3. **Properties of components are looked up by name through a registry**, not by writing to a JS object. Engine components
-   (`Light`, `MeshRenderer`, `AudioSource`, ...) declare their number properties through their `#[iron_api]` setters, so
+   (`Light`, `MeshRenderer`, `AudioSource`, ...) declare their number properties through their `#[platypus_api]` setters, so
    `setCurve("", "Light", "intensity", c)` works exactly when `Light` has `set_intensity`; a value field such as `color.r` is
    read, changed and written back. A compiled component animates its `@property` fields only (they are in the reflection
    table, `NativeHost::set_property`, `M9-TS-601..604`). Any other field is not animatable (TypeScript could write any
@@ -65,7 +65,7 @@ Strings are used where TypeScript had unions (`"loop"`, `"Transform"`, `"if"`), 
 - **Arrays across the boundary** (`number[]`, `string[]`, handle arrays, value arrays) in parameters and results. In: a pointer
   to the script `Array`, read like a string; out: a per-thread buffer the compiled call copies into a new script array, like
   strings. This is needed again by physics (raycast hits), the scene (`getComponents`, children) and rendering (vertices), so it
-  is built once, in `iron_api` first.
+  is built once, in `platypus_api` first.
 - **Optional value parameters** (`#[optional]` on a `Vector3`: left out means "the default the function documents").
 - **Handle classes in QuickJS** (the item already open): QuickJS games use the same API.
 - Reading the scene's component list from Rust: `getComponent` exists for compiled components; the animation system needs "the
@@ -82,14 +82,14 @@ GC stress runs as for the rest.
 ## 6. Phases
 
 1. Arrays across the boundary, optional value parameters (infrastructure, no animation yet).
-2. `iron_animation`: curves and clips, `sampleAnimation`; script API for them; JSON.
+2. `platypus_animation`: curves and clips, `sampleAnimation`; script API for them; JSON.
 3. `Animation` component (states, cross-fade, events, property registry).
 4. `Animator` and the controller builder (transitions, blend trees, triggers).
-5. `examples/animation` runs on the native path (needs `iron_app` wiring, another session's area: a hand-over note).
+5. `examples/animation` runs on the native path (needs `platypus_app` wiring, another session's area: a hand-over note).
 
 ## 7. Questions for the user
 
-1. Is the builder shape in section 3 acceptable for the controller and events, or should `iron_api` grow support for nested
+1. Is the builder shape in section 3 acceptable for the controller and events, or should `platypus_api` grow support for nested
    object literals instead (a larger feature: a manifest type for "options object of these fields", used for
    `new AnimatorController({..})`)? The builders are less work and clearer in the generated types; literals are closer to the
    current code.
@@ -114,22 +114,22 @@ The user's direction: explicit classes **and** a chained builder over them, with
 
 ## 9. Status
 
-- **Phase 2 done (2026-10-19):** `crates/iron_animation` (curves, clips, pose blending with quaternion alignment, `sample`, JSON)
-  and the script API for `Keyframe`, `AnimationCurve`, `AnimationClip` (`iron_engine_api::animation`), `M9-TS-676..683`.
+- **Phase 2 done (2026-10-19):** `crates/platypus_animation` (curves, clips, pose blending with quaternion alignment, `sample`, JSON)
+  and the script API for `Keyframe`, `AnimationCurve`, `AnimationClip` (`platypus_engine_api::animation`), `M9-TS-676..683`.
   Differences so far: `addKey(time, value?)` makes flat tangents (use `addKeyframe(new Keyframe(..))` for tangents, as the
   original), a clip's target is a class-name string, an event parameter is a number, `toJson()` is text, `fromPoints` waits for arrays.
   A namespace named like a handle class (`AnimationCurve`) also holds the class statics for the compiler.
 - Next: the `Animation` component (states, cross-fade, events) with the property registry for components, then the
   controller classes and builder.
 
-- **Phase 3 done (2026-10-19):** the `Animation` component (`iron_animation::player`, `iron_engine_api::animation`:
+- **Phase 3 done (2026-10-19):** the `Animation` component (`platypus_animation::player`, `platypus_engine_api::animation`:
   `Animation.attach`, `AnimationState`, `Animations.updateAll(dt)` / `takeEvents()`), the property registry
-  (`iron_animation::registry`, `Camera` registered), `M9-TS-684..691`. The host calls `iron_engine_api::animation::update(dt, other)`
+  (`platypus_animation::registry`, `Camera` registered), `M9-TS-684..691`. The host calls `platypus_engine_api::animation::update(dt, other)`
   after the component updates and delivers the returned `FiredEvent`s. Differences: the first update starts the default clip
   (the original did it in `onStart`, before the frame's `onUpdate`); events are delivered after the frame's pose is written
   (the original called the methods in the middle of it).
 
-- **Phase 4 done (2026-10-19):** the controller classes, the builder and the `Animator` (`iron_animation::{controller, animator}`,
-  `iron_engine_api::animator`), `M9-TS-692..697`; `new Class(a, b, { option })` sets the options through setters after `create`.
+- **Phase 4 done (2026-10-19):** the controller classes, the builder and the `Animator` (`platypus_animation::{controller, animator}`,
+  `platypus_engine_api::animator`), `M9-TS-692..697`; `new Class(a, b, { option })` sets the options through setters after `create`.
   The page for the code is `docs/animation-native.md`. Left: `AnimationCurve.fromPoints` (arrays), engine components beyond `Camera`
-  in the registry (as they are ported), `examples/animation` on the native path (needs `iron_app` wiring).
+  in the registry (as they are ported), `examples/animation` on the native path (needs `platypus_app` wiring).

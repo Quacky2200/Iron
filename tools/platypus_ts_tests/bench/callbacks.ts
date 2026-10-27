@@ -74,7 +74,7 @@ export function subscribeScenes(): number {
 }
 
 export function loadSecond(additive: boolean): void {
-  SceneManager.loadScene('{"format":"iron.scene","version":1,"name":"Second","objects":[]}', additive ? "additive" : "single");
+  SceneManager.loadScene('{"format":"platypus.scene","version":1,"name":"Second","objects":[]}', additive ? "additive" : "single");
 }
 
 export function churn(): number {

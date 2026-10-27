@@ -1,11 +1,11 @@
 # Window, display, frame pacing and saved settings
 
-How the window's mode, vsync, the frame cap and `PlayerPrefs` work. Code: `iron_platform`
-([display.rs](../crates/iron_platform/src/display.rs), [platform.rs](../crates/iron_platform/src/platform.rs)),
-`iron_render` ([surface.rs](../crates/iron_render/src/surface.rs)), `iron_app`
-([display.rs](../crates/iron_app/src/display.rs), [prefs.rs](../crates/iron_app/src/prefs.rs),
-[logging.rs](../crates/iron_app/src/logging.rs),
-[main.rs](../crates/iron_app/src/main.rs)) and `@iron/engine`
+How the window's mode, vsync, the frame cap and `PlayerPrefs` work. Code: `platypus_platform`
+([display.rs](../crates/platypus_platform/src/display.rs), [platform.rs](../crates/platypus_platform/src/platform.rs)),
+`platypus_render` ([surface.rs](../crates/platypus_render/src/surface.rs)), `platypus_app`
+([display.rs](../crates/platypus_app/src/display.rs), [prefs.rs](../crates/platypus_app/src/prefs.rs),
+[logging.rs](../crates/platypus_app/src/logging.rs),
+[main.rs](../crates/platypus_app/src/main.rs)) and `@platypus/engine`
 ([screen.ts](../js/engine/src/screen.ts), [prefs.ts](../js/engine/src/prefs.ts),
 [app.ts](../js/engine/src/app.ts), [quality.ts](../js/engine/src/quality.ts)).
 
@@ -46,12 +46,12 @@ window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read 
 
 ## How settings flow
 
-1. At startup `main` reads the manifest's `iron.display` (`{ mode, width, height }`) as the defaults,
-   then lets the saved `iron.display` pref override them field by field (`display::from_json`;
+1. At startup `main` reads the manifest's `platypus.display` (`{ mode, width, height }`) as the defaults,
+   then lets the saved `platypus.display` pref override them field by field (`display::from_json`;
    unknown mode names and sizes below 1 are ignored). The window is created at the resulting size.
-   With `resizable: false` in the manifest's `iron.display`, the window opens at the manifest's
+   With `resizable: false` in the manifest's `platypus.display`, the window opens at the manifest's
    own size (saved sizes are ignored) and can't be resized (`WindowConfig::resizable`).
-2. `__iron_info.display` is set before the bundle runs (`display::state`). It holds the settings
+2. `__platypus_info.display` is set before the bundle runs (`display::state`). It holds the settings
    plus `supportedModes`, `resolutions` and `currentResolution`; before the window exists the last
    two are empty/null and all four modes are listed. It is rebuilt and re-evaluated once the window
    is ready and after every `screen.set`.
@@ -59,20 +59,20 @@ window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read 
    flashes at the wrong size (it is created hidden and shown after its first frame).
 4. At run time `Screen.setResolution(w, h, mode, refreshRate)` sends `screen.set mode width height
    refreshRate`. The `fullScreenMode` and `fullScreen` setters send a size of 0, so the app picks the
-   monitor's resolution or the last window size (see above). The app applies it, writes what was asked for to the `iron.display` pref and
-   re-evaluates `__iron_info.display` with what took effect.
+   monitor's resolution or the last window size (see above). The app applies it, writes what was asked for to the `platypus.display` pref and
+   re-evaluates `__platypus_info.display` with what took effect.
 5. **Screenshot runs** (`--screenshot`) stay windowed and never apply a mode, and their prefs are
    kept in memory, so renders are the same every time.
 
-`Screen.width`/`height` (UI pixels) still come from `__iron_screen`; `Screen.windowSize` is the
-physical size from `__iron_info.display`.
+`Screen.width`/`height` (UI pixels) still come from `__platypus_screen`; `Screen.windowSize` is the
+physical size from `__platypus_info.display`.
 
 ## Log file
 
-`iron` is a Windows GUI-subsystem program, so it has no console of its own. `logging::init` sends the log
+`platypus` is a Windows GUI-subsystem program, so it has no console of its own. `logging::init` sends the log
 (`tracing`, default filter `info,wgpu_core=warn,wgpu_hal=error`, `RUST_LOG` overrides it) to `Player.log`
 in the game's settings folder, next to `prefs.json`, with the same ANSI colours a terminal shows. The
-previous run's file is kept as `Player-prev.log`. `IRON_LOG_FILE` names another file. Started from a
+previous run's file is kept as `Player-prev.log`. `PLATYPUS_LOG_FILE` names another file. Started from a
 terminal, it also logs there: on Windows `attach_console` attaches to the parent's console when stderr
 is not already redirected, and piped output (scripts, tests) works as before. A panic hook writes the
 panic to the log (`M5-APP-04`).
@@ -95,11 +95,11 @@ panic to the log (`M5-APP-04`).
 - The target frame rate is not saved; games keep it in `PlayerPrefs` if players choose it.
 - `lifecycle::frame_cap(target_fps, vsync, screenshot)` makes the interval: `None` unless vsync is off,
   the rate is above 0 and it is not a screenshot run (`M5-APP-08`). The rate set by scripts goes into
-  `__iron_info.app.targetFrameRate`, so a full script reload keeps it.
+  `__platypus_info.app.targetFrameRate`, so a full script reload keeps it.
 
 ## Focus and pausing
 
-[lifecycle.rs](../crates/iron_app/src/lifecycle.rs) holds `Lifecycle`, which decides whether the game is
+[lifecycle.rs](../crates/platypus_app/src/lifecycle.rs) holds `Lifecycle`, which decides whether the game is
 in the background and whether that pauses it.
 
 - **Background** means unfocused (`InputEvent::Focused(false)`), occluded (`InputEvent::Occluded`, sent on
@@ -108,7 +108,7 @@ in the background and whether that pauses it.
 - **Pausing** happens in the background unless `runInBackground` is on (`Application.runInBackground`,
   which sends `app.runInBackground`, or `runInBackground` in `project.json`; default off). Screenshot
   runs never pause. Switching `runInBackground` off while in the background pauses at once. The script
-  value goes into `__iron_info.app.runInBackground`, which a full reload keeps.
+  value goes into `__platypus_info.app.runInBackground`, which a full reload keeps.
 - `Lifecycle::update` is called from `App::sync_lifecycle` (after each input event and op) and returns a
   `Change`: `paused`, `resumed` (with how long the pause lasted) and `report`, the new
   `(focused, paused)` for scripts when either changed.
@@ -121,14 +121,14 @@ in the background and whether that pauses it.
   and `FixedClock::restart` makes the first frame count as one tick instead of catching up. `FixedClock`
   turns frame times into fixed ticks (at most `MAX_TICKS_PER_FRAME`, dropping the rest after a hitch).
   The mixer unmutes.
-- **Scripts.** `__iron_focus(focused, paused)` updates `Application.isFocused` and `isPaused`, then calls
+- **Scripts.** `__platypus_focus(focused, paused)` updates `Application.isFocused` and `isPaused`, then calls
   `onApplicationPause(paused)` on active components when pausing changed, then the `onFocusChanged`
   listeners and `onApplicationFocus(focused)` when focus changed. A throwing listener doesn't stop the
   rest. New scripts after a reload start believing they are focused and running
   (`scripts_restarted`), so the next update tells them the real state.
 
-Tests: `M5-APP-05` (window events), `-06` (muting, in `iron_audio/tests/audio.rs`), `-07` (`Lifecycle` and
-`FixedClock`), `-08` (the frame cap) and `-09` (manifest and `__iron_info`) in the app crate; `-10` (the JS
+Tests: `M5-APP-05` (window events), `-06` (muting, in `platypus_audio/tests/audio.rs`), `-07` (`Lifecycle` and
+`FixedClock`), `-08` (the frame cap) and `-09` (manifest and `__platypus_info`) in the app crate; `-10` (the JS
 side) in `js/engine/test/app.test.ts`.
 
 ## PlayerPrefs
@@ -142,29 +142,29 @@ and `save`. Values are numbers and strings.
   - macOS: `~/Library/Application Support/<identifier, or company.title>/`
   - Linux and others: `$XDG_CONFIG_HOME/<company>/<title>/` (or `~/.config`)
 
-  Names come from the manifest and are made file-name safe. `IRON_PREFS_DIR` replaces the folder
+  Names come from the manifest and are made file-name safe. `PLATYPUS_PREFS_DIR` replaces the folder
   (tests, portable installs). With no settings folder, or on screenshot runs, prefs live in memory
   only.
-- **Read.** The app loads the file at startup and puts it in `__iron_info.prefs`. `prefs.ts` copies
+- **Read.** The app loads the file at startup and puts it in `__platypus_info.prefs`. `prefs.ts` copies
   it into a map when the engine loads, so reads never cross the boundary. A file that is not a JSON
   object is ignored with a warning.
 - **Write.** Sets and deletes go to the app as `prefs.set key value`, `prefs.delete key`,
   `prefs.deleteAll` and `prefs.save`. The file is written on `save()` and when the `App` is dropped
   (so on exit). `Prefs::save` skips the write when nothing changed and writes through a temporary
   file and a rename, so a crash cannot leave half a file.
-- **Engine keys** start with `iron.`: `iron.display` (the window mode and size, a JSON object) and
-  `iron.quality` (the quality level and its current values, a JSON string). `deleteAll` removes
+- **Engine keys** start with `platypus.`: `platypus.display` (the window mode and size, a JSON object) and
+  `platypus.quality` (the quality level and its current values, a JSON string). `deleteAll` removes
   them too.
-- **Quality.** Every quality or shadow change saves `iron.quality`. `_applyDefaultQuality`
+- **Quality.** Every quality or shadow change saves `platypus.quality`. `_applyDefaultQuality`
   restores it when the engine loads (level by name, then the saved values over that level), without
   writing the starting state back as if the player had chosen it.
 
 ## Multi-window
 
-`iron_platform` can run more than one window (design: `docs/research/iron-windows.md`). One-window apps are unchanged: every new
+`platypus_platform` can run more than one window (design: `docs/research/platypus-windows.md`). One-window apps are unchanged: every new
 `PlatformApp` method has a default, and `WindowConfig::virtual_windows` is false by default.
 
-**Keys and types** (`iron_platform::windows`): `WindowKey(u32)` (`WindowKey::MAIN` = 1; the app chooses the others), `WindowKind`,
+**Keys and types** (`platypus_platform::windows`): `WindowKey(u32)` (`WindowKey::MAIN` = 1; the app chooses the others), `WindowKind`,
 `WindowSpec` (logical sizes and positions), `plan(&spec, Os) -> NativePlan` (what a style means on an OS, decided without a display),
 `place(..)`, `WindowTree` (parents; `close_order` deepest first; `contains`), `WindowCommand`, `WindowHost::{Os(Arc<Window>), Virtual
 { width, height, scale }}` (physical size), `attributes(spec, plan, owner, embed) -> WindowAttributes`.
@@ -215,7 +215,7 @@ same `run_commands` / close code as the runner over a recording backend: `step()
 `window(key) -> Option<&FakeWindow>` (`spec`, `plan`, `physical`, `position`, `scale`, `focused`, `minimized`, `maximized`, `shown`),
 `keys()`, `tree()`, `exited()`, `app()`. The main window is opened with `window_opened(MAIN, Virtual)` (not `window_ready`).
 
-**Surfaces for more windows** (`iron_render`): `Gpu::create_window_surface(target, width, height) -> Result<WindowSurface,
+**Surfaces for more windows** (`platypus_render`): `Gpu::create_window_surface(target, width, height) -> Result<WindowSurface,
 RenderError>` makes a surface on the same instance, adapter and device (`RenderError::Unsupported` when the adapter cannot present to
 that window). One `UiRenderer` and one `WorldRenderer` serve every window; draw with `WindowSurface::present_with`. Secondary
 windows keep vsync off (never call `set_vsync(true)` on them: several FIFO swapchains in one thread can cost a vblank each), and

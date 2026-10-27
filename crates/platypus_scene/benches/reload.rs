@@ -3,7 +3,7 @@
 //! M4-HOT-07: a hot reload that keeps state, with 1,000 script components (each with a
 //! child object) and a ~1 MB bundle. Measures saving in the old runtime, loading the
 //! bundle into a fresh one, restoring and applying the ops it queues. Target: under
-//! 100 ms. Run with `cargo bench -p iron_scene --bench reload`.
+//! 100 ms. Run with `cargo bench -p platypus_scene --bench reload`.
 //!
 //! 2026-10-17: about 146 ms, of which ~54 ms is QuickJS parsing the 1 MB bundle,
 //! ~27 ms saving, ~58 ms restoring (mostly building 2,000 GameObjects, ~10 µs each
@@ -12,9 +12,9 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use iron_core::{ComponentId, Value};
-use iron_scene::{SceneEvent, ScriptScene};
-use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
+use platypus_core::{ComponentId, Value};
+use platypus_scene::{SceneEvent, ScriptScene};
+use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
 
 const SCENE: &str = include_str!("../../../tests/fixtures/scene.js");
 
@@ -59,12 +59,14 @@ fn reload(c: &mut Criterion) {
                 rt
             },
             |mut old| {
-                let saved = old.call_global("__iron_save_state", &[]).unwrap();
+                let saved = old.call_global("__platypus_save_state", &[]).unwrap();
                 let mut rt = QuickJsRuntime::new();
-                rt.eval("globalThis.__iron_reloading = true").unwrap();
+                rt.eval("globalThis.__platypus_reloading = true").unwrap();
                 rt.load_bundle("scene.js", &code).unwrap();
-                rt.eval("globalThis.__iron_reloading = false").unwrap();
-                let ok = rt.call_global("__iron_restore_state", &[saved]).unwrap();
+                rt.eval("globalThis.__platypus_reloading = false").unwrap();
+                let ok = rt
+                    .call_global("__platypus_restore_state", &[saved])
+                    .unwrap();
                 assert_eq!(ok, Value::Bool(true));
                 let (mut host, mut scene) = (ComponentHost::new(), ScriptScene::new());
                 apply(&mut rt, &mut host, &mut scene);

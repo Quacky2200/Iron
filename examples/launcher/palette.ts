@@ -2,7 +2,7 @@
 
 // Build-time colours for the launcher's backgrounds: a screenshot's top and bottom tones and
 // its most vivid colour, read straight from the PNG (8-bit RGB / RGBA, not interlaced, as
-// Iron's screenshots are), so each game gets a gradient that matches its picture. White text
+// Platypus's screenshots are), so each game gets a gradient that matches its picture. White text
 // sits on top, so every colour keeps a hue and stays well below white: a grey or white
 // picture borrows its accent's hue, and bright pictures show fainter behind the UI.
 import { inflateSync } from "node:zlib";
@@ -26,7 +26,7 @@ interface Png {
   data: Uint8Array;
 }
 
-/** Decodes the PNGs Iron writes; `null` for anything else. */
+/** Decodes the PNGs Platypus writes; `null` for anything else. */
 function decode(buf: Buffer): Png | null {
   if (buf.readUInt32BE(0) !== 0x89504e47) return null;
   let at = 8;

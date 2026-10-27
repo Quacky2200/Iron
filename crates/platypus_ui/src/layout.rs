@@ -2,7 +2,7 @@
 
 use rustc_hash::FxHashMap as HashMap;
 
-use iron_core::NodeId;
+use platypus_core::NodeId;
 use taffy::detailed_info::DetailedGridInfo;
 use taffy::{
     AvailableSpace, BlockContext, Cache, CacheTree, ClearState, DetailedLayoutInfo, Display,
@@ -55,7 +55,7 @@ pub trait LayoutEngine {
     fn layout(&self, id: NodeId) -> Option<NodeLayout>;
 }
 
-/// [`LayoutEngine`] backed by Taffy's algorithms over Iron's own node storage.
+/// [`LayoutEngine`] backed by Taffy's algorithms over Platypus's own node storage.
 ///
 /// Taffy's ready-made `TaffyTree` can't evaluate `calc()` (its `resolve_calc_value`
 /// returns 0), so this implements Taffy's low-level tree traits itself, mirroring

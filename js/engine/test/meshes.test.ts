@@ -31,11 +31,11 @@ beforeEach(() => {
   _resetPhysicsForTests();
   _resetPhysicsComponentsForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const renderOps = () => ops.filter((o) => String(o[0]).startsWith("render."));

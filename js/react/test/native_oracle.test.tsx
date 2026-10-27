@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The order in which real React runs effects and cleanups, for the native reconciler to match
-// (crates/iron_ui_native/tests/effects.rs holds the same scenarios and expected logs).
+// (crates/platypus_ui_native/tests/effects.rs holds the same scenarios and expected logs).
 import { beforeEach, expect, test } from "bun:test";
 import { useEffect, useState } from "react";
 
@@ -11,7 +11,7 @@ import { _resetRootForTests, createRoot } from "../src/index.ts";
 let log: string[] = [];
 beforeEach(() => {
   log = [];
-  (globalThis as { __iron_commit?: unknown }).__iron_commit = () => {};
+  (globalThis as { __platypus_commit?: unknown }).__platypus_commit = () => {};
   resetForTests();
   _resetRootForTests();
 });

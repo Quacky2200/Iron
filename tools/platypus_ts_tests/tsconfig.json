@@ -6,7 +6,7 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@iron/engine": ["../../js/engine/src/index.ts"]
+      "@platypus/engine": ["../../js/engine/src/index.ts"]
     }
   },
   "include": ["bench/**/*.ts"]

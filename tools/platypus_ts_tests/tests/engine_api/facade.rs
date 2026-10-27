@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The TypeScript `@iron/engine` shapes over the native API (`bench/facade.ts`, prefix `fac_`),
+//! The TypeScript `@platypus/engine` shapes over the native API (`bench/facade.ts`, prefix `fac_`),
 //! in the normal, stress GC and collection-off modes. IDs are in TESTS.md (M9-TS-1700..).
-use iron_scene::Scene;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::facade_t::*;
+use platypus_scene::Scene;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::facade_t::*;
 
 fn reset() {
-    iron_render_api::reset();
-    iron_engine_api::camera::reset();
-    iron_engine_api::assets::reset();
-    iron_scenes::reset();
-    iron_scenes::take_warnings();
+    platypus_render_api::reset();
+    platypus_engine_api::camera::reset();
+    platypus_engine_api::assets::reset();
+    platypus_scenes::reset();
+    platypus_scenes::take_warnings();
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     let run = || {
         reset();
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         unsafe { ts_fac_init() };
         f();
     };
@@ -115,18 +115,18 @@ fn sprite_create_with_a_rect_and_sprite_grid() {
 #[test]
 fn style_sheets_fonts_and_gamepad_wrappers_go_through_the_ui_resources_queue() {
     in_every_gc_mode(|| unsafe {
-        iron_engine_api::ui_resources::reset();
+        platypus_engine_api::ui_resources::reset();
         assert_eq!(text(ts_fac_uiResources()), "1|0");
-        let r = iron_engine_api::ui_resources::take_requests();
+        let r = platypus_engine_api::ui_resources::take_requests();
         assert_eq!(r.len(), 4);
         assert!(matches!(
             r[1],
-            iron_engine_api::ui_resources::UiRequest::LoadFont { weight, .. } if weight == 700.0
+            platypus_engine_api::ui_resources::UiRequest::LoadFont { weight, .. } if weight == 700.0
         ));
         // A font object held in a variable, with the weight and style left out: the font's own.
         assert!(matches!(
             &r[3],
-            iron_engine_api::ui_resources::UiRequest::LoadFont { family, weight, style, .. }
+            platypus_engine_api::ui_resources::UiRequest::LoadFont { family, weight, style, .. }
                 if family == "Plain" && *weight == 0.0 && style.is_empty()
         ));
     });
@@ -323,7 +323,7 @@ fn line_renderer_fill_color_reads_and_writes_null_and_text_mesh_takes_options() 
 #[test]
 fn screen_to_world_point_matches_the_camera_frustum() {
     in_every_gc_mode(|| unsafe {
-        iron_engine_api::screen::update(800, 600, 1.0);
+        platypus_engine_api::screen::update(800, 600, 1.0);
         // Orthographic (5 tall, 800 x 600): the middle, and the top left (-6.67, 5);
         // perspective 60 degrees: the bottom right 10 in front is (7.7, -5.77).
         assert_eq!(text(ts_fac_screenToWorld()), "0|0|0|-6.67|5|0|7.7|-5.77|0");
@@ -373,7 +373,7 @@ fn enums_take_names_and_unknown_ones_change_nothing_nullables_read_null_and_alia
 #[test]
 fn result_records_and_lists_of_records_come_back_as_plain_objects_with_strings() {
     in_every_gc_mode(|| unsafe {
-        use iron_engine_api::screen::{Resolution, set_display};
+        use platypus_engine_api::screen::{Resolution, set_display};
         let r = |width, height, refresh_rate| Resolution {
             width,
             height,
@@ -447,7 +447,7 @@ fn record_lists_with_handles_and_optional_keys_cross_as_json() {
 #[test]
 fn camera_screen_maths_is_native() {
     in_every_gc_mode(|| unsafe {
-        iron_engine_api::screen::set_size(800, 600);
+        platypus_engine_api::screen::set_size(800, 600);
         // mid: (1, 2, -2); corner: x = 1 - 5 * 4/3, y = 2 + 5, z = -2; horizontal fov of a 4:3 window.
         assert_eq!(
             text(ts_fac_cameraMaths()),
@@ -466,7 +466,7 @@ fn a_mesh_is_made_from_an_object_with_bones_and_bind_poses() {
     in_every_gc_mode(|| unsafe {
         assert_eq!(text(ts_fac_skinnedMesh()), "3|1");
         let skinned = (1..16)
-            .filter_map(|i| iron_render_api::mesh_info(iron_render_api::MeshRef(i)))
+            .filter_map(|i| platypus_render_api::mesh_info(platypus_render_api::MeshRef(i)))
             .find(|m| !m.joints.is_empty())
             .expect("a skinned mesh");
         assert_eq!(

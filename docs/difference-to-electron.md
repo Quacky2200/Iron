@@ -1,7 +1,7 @@
-# Iron and Electron
+# Platypus and Electron
 
 Electron packages a web app with Chromium and Node.js, so each app ships its own browser
-engine. Iron is aimed at the same kind of product, a desktop app with a React UI, but with
+engine. Platypus is aimed at the same kind of product, a desktop app with a React UI, but with
 one native binary, a Rust core, and no bundled browser. This page covers the reasons and the
 plan, and where Electron is still ahead.
 
@@ -20,19 +20,19 @@ plan, and where Electron is still ahead.
 Electron's isolation is good, and it has a huge ecosystem. Our aim is not to remove what works,
 but to keep the web developer's way of building UIs while cutting what each app has to carry.
 
-## What Iron does differently
+## What Platypus does differently
 
-- **React and CSS for the UI, running on our own renderer.** `@iron/react` drives a UI tree that
-  Iron lays out with Taffy and draws with wgpu. There is no DOM and no browser engine.
+- **React and CSS for the UI, running on our own renderer.** `@platypus/react` drives a UI tree that
+  Platypus lays out with Taffy and draws with wgpu. There is no DOM and no browser engine.
 - **TypeScript in QuickJS.** The JavaScript runtime is small compared with V8. Scripts talk to
-  the Rust core through `__iron_op` and `__iron_commit`, and a typed `@iron/api` surface is
+  the Rust core through `__platypus_op` and `__platypus_commit`, and a typed `@platypus/api` surface is
   planned so an app can call the engine as a normal TypeScript module, without an IPC bridge.
 - **Rust for the platform.** Memory safety and a single native binary per platform. Windowing
   (winit), GPU (wgpu), audio (kira), physics (rapier) and gamepads (gilrs) are all Rust crates.
 - **One binary, no bundled browser.** An app ships its own code plus the engine, not a copy of
   Chromium.
 
-The claim that matters most for users is that Iron uses far less disk and memory per app. We
+The claim that matters most for users is that Platypus uses far less disk and memory per app. We
 should measure it when the app shell exists, against a comparable Electron app, before we say
 it publicly.
 
@@ -43,7 +43,7 @@ These are planned, not built. The order may change.
 1. **An Electron-style app shell.** A way to write an app with React and TypeScript, with no
    game world required: window, menus, dialogs, file access, and the UI tree on its own. The
    TODO "App shell for UI-first apps" under "Later" covers the first step.
-2. **`@iron/api`.** A typed TypeScript surface for the engine's services (files, network,
+2. **`@platypus/api`.** A typed TypeScript surface for the engine's services (files, network,
    audio, windows), so apps don't need a separate process or IPC layer.
 3. **Web platform APIs,** in the order that unlocks the most apps:
    - **Files and fetch** (M6 Script IO): read and write files, HTTP requests.
@@ -60,13 +60,13 @@ These are planned, not built. The order may change.
 ## Where Electron is ahead
 
 - **The web platform is huge.** Electron gives every standard browser API and a large set of
-  npm packages. Iron will have a fraction of that at first, and each missing API is a limit.
+  npm packages. Platypus will have a fraction of that at first, and each missing API is a limit.
 - **Accessibility and text input.** Chromium's accessibility tree, IME support and text
-  shaping are years of work. Iron's text fields and IME exist, but they need more testing across
+  shaping are years of work. Platypus's text fields and IME exist, but they need more testing across
   platforms.
 - **Tooling.** Chrome DevTools, mature debuggers and profilers, and well-known packaging and
   updater tools.
-- **Predictability.** Every Electron app sees the same browser. Iron's renderer means each
+- **Predictability.** Every Electron app sees the same browser. Platypus's renderer means each
   platform's GPU driver matters, so we'll have more driver-specific testing to do.
 
 ## Open questions and risks

@@ -16,11 +16,11 @@ beforeEach(() => {
   _resetPhysicsComponentsForTests();
   _resetModelsForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const E = 2 ** 30;
@@ -56,7 +56,7 @@ describe("Model", () => {
     const early = m.instantiate({ colliders: "mesh" });
     expect(early.children.length).toBe(0);
     const ready = m.whenLoaded();
-    globalThis.__iron_models([m.id, JSON.stringify(house)]);
+    globalThis.__platypus_models([m.id, JSON.stringify(house)]);
     expect(await ready).toBe(m);
     const top = early.children[0]!;
     expect(top.name).toBe("House");
@@ -79,7 +79,7 @@ describe("Model", () => {
     const m = Model.load("assets/missing.glb");
     const go = m.instantiate();
     const ready = m.whenLoaded();
-    globalThis.__iron_models([m.id, null]);
+    globalThis.__platypus_models([m.id, null]);
     await expect(ready).rejects.toThrow("missing.glb");
     expect(go.children.length).toBe(0);
     expect(go).toBeInstanceOf(GameObject);
@@ -112,7 +112,7 @@ describe("skinned models and animations", () => {
     };
     const m = Model.load("worm.glb");
     const root = m.instantiate();
-    globalThis.__iron_models([m.id, JSON.stringify(worm)]);
+    globalThis.__platypus_models([m.id, JSON.stringify(worm)]);
     const body = root.findChild("Worm")!.findChild("Body")!;
     const skinned = body.getComponent(SkinnedMeshRenderer)!;
     const bones = skinned.bones.map((b) => b.name);
@@ -128,7 +128,7 @@ describe("skinned models and animations", () => {
     const anim = root.getComponent(Animation)!;
     expect(anim.clip).toBe(clip);
     anim.play();
-    globalThis.__iron_animate(0.5);
+    globalThis.__platypus_animate(0.5);
     const bone1 = root.findChild("Worm")!.findChild("Bone0")!.findChild("Bone1")!;
     expect(bone1.transform.localRotation.z).toBeCloseTo(0.2588 / 2, 2);
     // Step keys hold until the next.
@@ -155,7 +155,7 @@ describe("skinned models and animations", () => {
     };
     const m = Model.load("arm.glb");
     const root = m.instantiate();
-    globalThis.__iron_models([m.id, JSON.stringify(arm)]);
+    globalThis.__platypus_models([m.id, JSON.stringify(arm)]);
     const clip = m.animations[0]!;
     clip.wrapMode = "clampForever";
     // Halfway between the first two keys: still the quarter turn (it summed to zero before,

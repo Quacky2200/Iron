@@ -1,6 +1,6 @@
 {
   "name": "md-reader",
-  "title": "Iron Docs",
+  "title": "Platypus Docs",
   "prebuild": "bun gen-docs.ts",
   "include": ["content/**"],
   "display": {

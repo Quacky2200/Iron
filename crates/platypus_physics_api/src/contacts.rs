@@ -12,8 +12,8 @@
 
 use crate::comp::{self, Data, with_col};
 use crate::*;
-use iron_api::{Handle, iron_api};
-use iron_math::{Bounds, V2};
+use platypus_api::{Handle, platypus_api};
+use platypus_math::{Bounds, V2};
 
 /// One collision handed to the hooks.
 pub(crate) struct Slot {
@@ -118,7 +118,7 @@ fn points_of(h: u32) -> (u32, u32) {
     })
 }
 
-fn point_of<R: Default>(raw: u64, f: impl FnOnce(&iron_physics::ContactPoint) -> R) -> R {
+fn point_of<R: Default>(raw: u64, f: impl FnOnce(&platypus_physics::ContactPoint) -> R) -> R {
     let (h, i) = ((raw >> 32) as u32, raw as u32);
     let (start, len) = points_of(h);
     if i >= len {
@@ -252,7 +252,7 @@ raw_handle!(
 );
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[iron_api(
+#[platypus_api(
     namespace = "PhysicsContacts", quickjs,
     handles(
         GameObject = ObjectId,
@@ -566,7 +566,7 @@ pub mod contacts_api {
             slot(self.0, |c| xy(c.velocity))
         }
 
-        /// Always true: Iron has no effectors or contact modification that turn a contact's
+        /// Always true: Platypus has no effectors or contact modification that turn a contact's
         /// response off.
         #[property]
         pub fn enabled(self) -> bool {

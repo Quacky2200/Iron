@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_kinds"
+name = "platypus_kinds"
 version.workspace = true
 edition.workspace = true
 publish = false

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-# Writes bench/typed.ts: typed arrays, one block per element kind. Run from tools/iron_ts_tests:
+# Writes bench/typed.ts: typed arrays, one block per element kind. Run from tools/platypus_ts_tests:
 #   python3 bench/gen_typed_program.py && python3 bench/add_module.py typed ty 30000 313
 import os
 

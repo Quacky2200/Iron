@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use iron_render::testing::{assert_golden, shared_gpu};
-use iron_render::{Color, Gpu, OffscreenTarget};
+use platypus_render::testing::{assert_golden, shared_gpu};
+use platypus_render::{Color, Gpu, OffscreenTarget};
 
 fn gpu() -> std::sync::MutexGuard<'static, Gpu> {
     shared_gpu()

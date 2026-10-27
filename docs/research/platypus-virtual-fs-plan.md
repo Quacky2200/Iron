@@ -1,12 +1,12 @@
 # Virtual file system and `data/assets.dat`: assets the build cannot see (plan)
 
 Status: **research and plan, 2026-10-22.** Nothing here is built. This note builds on, and amends, the asset-pack design
-(`docs/research/iron-asset-packs.md`, "the pack design") and its step list (`docs/research/iron-asset-packs-plan.md`, "the pack
-plan"); read sections 2 to 6 of the pack design first. The container (`crates/iron_pack`: `.irpk`, `PackWriter`, `Pack`, `Vfs` over
-`DirSource` / `PackSource`) exists and is tested (`M9-API-1100..1112`); nothing in `iron_app` or `iron-build` uses it yet.
+(`docs/research/platypus-asset-packs.md`, "the pack design") and its step list (`docs/research/platypus-asset-packs-plan.md`, "the pack
+plan"); read sections 2 to 6 of the pack design first. The container (`crates/platypus_pack`: `.ppk`, `PackWriter`, `Pack`, `Vfs` over
+`DirSource` / `PackSource`) exists and is tested (`M9-API-1100..1112`); nothing in `platypus_app` or `platypus-build` uses it yet.
 
 The user's request: asset paths are not always fixed. `examples/emoji` builds them from templates (`assets/sfx/${n}.wav`), which
-`iron-build` cannot see, so a packaged build can miss sounds and art. Put asset extras into `data/assets.dat`, a flat table of entries
+`platypus-build` cannot see, so a packaged build can miss sounds and art. Put asset extras into `data/assets.dat`, a flat table of entries
 with no directory tree (like a flattened device tree, "FDT"). Give games a way to mark files as assets so they load from a virtual
 file system. Possibly list assets in a scene's JSON, and move assets that several scenes share into `assets.dat`. When a scene loads,
 look in the scene's own data first, then in `assets.dat`. The reasoning: the build cannot know every path the TypeScript needs, but
@@ -16,16 +16,16 @@ the engine already loads assets by path at run time, so it can look them up in a
 
 ### 1.1 How paths reach the engine today
 
-Every load takes a **game path** (`assets/x.png`, relative, checked by `iron_core::resolve_asset`), and the app reads
+Every load takes a **game path** (`assets/x.png`, relative, checked by `platypus_core::resolve_asset`), and the app reads
 `<asset root>/<path>` with `std::fs`. There are about 15 read sites (pack design 4.1). The ones that matter here are:
-`load_sound` (`crates/iron_app/src/main.rs:2854`; compiled games reach it through `native_pump.rs:22`), UI images and SVG
-(`crates/iron_render/src/ui/images.rs:172,232`), textures (`world_view.rs:742`), models and glTF URIs (`models.rs:84,113`), fonts and
+`load_sound` (`crates/platypus_app/src/main.rs:2854`; compiled games reach it through `native_pump.rs:22`), UI images and SVG
+(`crates/platypus_render/src/ui/images.rs:172,232`), textures (`world_view.rs:742`), models and glTF URIs (`models.rs:84,113`), fonts and
 runtime stylesheets (`main.rs:2838,2971`), `asset.readText` (`main.rs:1325`), cursors (`cursor.rs:16`), and scenes and prefabs
 (`native.rs:268-297`).
 
-| How a path is written | Can `iron-build` see it? | What happens today |
+| How a path is written | Can `platypus-build` see it? | What happens today |
 |---|---|---|
-| A string literal that names a whole existing file: `audio.load("assets/hit.wav")`, `<Image src="assets/a.svg">`, `"scenes/l1.scene.json"` | yes. `referenced_assets` (`tools/iron_build/src/lib.rs:338`) scans every `"`, `'` and backtick literal of the bundled source. It keeps a literal whose extension is an asset kind (`assets.rs:9`) or `.scene.json`, and that is an existing file | copied with its `.meta` into `dist/`, and listed in `game.irbundle` `assets` |
+| A string literal that names a whole existing file: `audio.load("assets/hit.wav")`, `<Image src="assets/a.svg">`, `"scenes/l1.scene.json"` | yes. `referenced_assets` (`tools/platypus_build/src/lib.rs:338`) scans every `"`, `'` and backtick literal of the bundled source. It keeps a literal whose extension is an asset kind (`assets.rs:9`) or `.scene.json`, and that is an existing file | copied with its `.meta` into `dist/`, and listed in `game.pbundle` `assets` |
 | A template or concatenation: `` `assets/sfx/${n}.wav` ``, `"assets/" + name + ".png"` | **no**. Literals containing `{` or `$` are skipped (`lib.rs:359`), and `"assets/"` alone is not a file | not in `dist/`, not in the bundle's `assets` list |
 | A literal held in data: `const P = [{ file: "assets/bunny.glb" }]`, then `Model.load(p.file)` (classics, materials) | yes, because the literal itself is in the source | as row 1 |
 | `url()` in an imported `.css` file | yes, through `css.rs`: up to 32 KiB becomes a `data:` URL, larger files are copied to `dist/name-<hash>.ext` | inlined or copied |
@@ -35,13 +35,13 @@ runtime stylesheets (`main.rs:2838,2971`), `asset.readText` (`main.rs:1325`), cu
 
 **The app does not read `dist/` for assets.** `resolve_bundle` (`main.rs:457`) takes the bundle from `<game>/dist/` and uses the
 **game folder** as both the code root and the asset root (`main.rs:204`). The `dist/assets/...` copies feed one thing only: the bundle's
-`assets` list, which `iron-build package` uses for the "essentials" it embeds. Emoji works in the dev loop because the app reads
+`assets` list, which `platypus-build package` uses for the "essentials" it embeds. Emoji works in the dev loop because the app reads
 `examples/emoji/assets/` directly. The "assets are found by looking in `dist/`" model in the request is how the build's *view* works,
 not the runtime's. That view is the part that is blind to templates.
 
 ### 1.2 What a packaged exe does with them
 
-`iron-build package` (`tools/iron_build/src/package.rs:271 collect_files`) embeds only the code (`game.irbundle`, `game.css`,
+`platypus-build package` (`tools/platypus_build/src/package.rs:271 collect_files`) embeds only the code (`game.pbundle`, `game.css`,
 `project.json`, the icon). It also embeds the bundle-named assets if together they come to at most 256 KiB. It copies the **data
 files** to `data/` beside the exe:
 
@@ -50,7 +50,7 @@ files** to `data/` beside the exe:
   exactly this blindness;
 - the other files of `dist/` (CSS copies) as `data/dist/...`.
 
-At run time `asset_root::locate_data` makes `data/` the asset root (`--data`, then `$IRON_DATA`, then `<exe dir>/<dataDir>`). There
+At run time `asset_root::locate_data` makes `data/` the asset root (`--data`, then `$PLATYPUS_DATA`, then `<exe dir>/<dataDir>`). There
 are no packs and no virtual file system: just a second real folder.
 
 ### 1.3 Which examples break
@@ -70,8 +70,8 @@ What each layout gets for emoji:
 |---|---|---|
 | Dev loop (game folder) | 79 / 79 | 77 / 77 |
 | `dist/` (what the build "knows") | **0 / 79** | **7 / 77** (the seven whole literals: `1f319`, `1f345`, `1f388`, `1f680-body/-flame/-stars`, `2764`) |
-| `iron-build package` today, default `include` | 79 / 79 (whole `assets/` copied) | 77 / 77 |
-| `iron-build package` with a narrowed `include` (e.g. `["assets/emoji"]`) | 0 / 79 | 77 / 77 |
+| `platypus-build package` today, default `include` | 79 / 79 (whole `assets/` copied) | 77 / 77 |
+| `platypus-build package` with a narrowed `include` (e.g. `["assets/emoji"]`) | 0 / 79 | 77 / 77 |
 | `include: ["assets/sfx/*.wav"]` (a glob) today | **0**. `include` takes no globs: a non-folder entry is treated as one file, `is_file()` fails, and it is **dropped silently** (`package.rs:298-319`) | as narrowed |
 | The pack plan as written (step 2: "assets nothing references are left out") | **0 / 79** | **7 / 77** |
 
@@ -85,7 +85,7 @@ current state is measured rather than inferred.
 
 ### 2.1 One path namespace
 
-- A key is a **game path**: relative, `/`-separated, no `..`, no scheme or drive. `iron_pack::normalize_path` turns `./assets\a//b.png`
+- A key is a **game path**: relative, `/`-separated, no `..`, no scheme or drive. `platypus_pack::normalize_path` turns `./assets\a//b.png`
   into `assets/a/b.png`. The same key works in the dev folder, in packs and in scripts; `guid:<32 hex>` and `data:` URLs stay as they
   are (`Vfs::read`).
 - Most keys are `assets/...`, but any path under the game folder is allowed (`scenes/`, `levels/`). Packs keep the full path: no prefix
@@ -96,12 +96,12 @@ current state is measured rather than inferred.
   The build refuses two included paths that differ only in case.
 - `.meta` files are never keys. Their `guid` and `importer` go into the entry (`Entry.guid`, `meta` text), as the pack design says.
 
-### 2.2 `assets.dat` is an `.irpk`; the "FDT" is its table of contents
+### 2.2 `assets.dat` is a `.ppk`; the "FDT" is its table of contents
 
-The flat table the request asks for already exists. The `.irpk` table of contents is a flat array of entries with **no directory tree**,
+The flat table the request asks for already exists. The `.ppk` table of contents is a flat array of entries with **no directory tree**,
 plus sorted index arrays:
 
-| An FDT-style entry wants | Where `.irpk` v1 has it |
+| An FDT-style entry wants | Where `.ppk` v1 has it |
 |---|---|
 | path hash | `PathSlot.path_hash` (FNV-1a 64, 16-byte slots sorted by `(hash, cooked, path)`, binary search) |
 | path string offset | `Entry.path_offset u32` + `path_len u16` into one string table (each distinct text once) |
@@ -110,12 +110,12 @@ plus sorted index arrays:
 | kind, flags | `kind u8` (texture, audio, svg, ...), flags (tombstone, contiguous, cooked) |
 | (extra) | `content_hash [16]`, importer `meta` text, CRC-32 per chunk, TOC and header CRCs, `pack_id` |
 
-**Recommendation: reuse `iron_pack`. Do not add a second format.** Call the file `assets.dat` if that name is preferred: the extension
+**Recommendation: reuse `platypus_pack`. Do not add a second format.** Call the file `assets.dat` if that name is preferred: the extension
 is cosmetic, the magic is `IRPK`. Honest differences from a minimal FDT:
 
 - *One level of indirection* (entry, then chunks), 24 bytes per 256 KiB chunk. It buys range reads inside compressed entries (streamed
   audio, texture mips later), per-chunk codecs (the 1/16 rule keeps mp3, ogg and png raw), parallel decompression, and the GPU-codec
-  path (`iron-directstorage-and-codecs.md`: 256 KiB is four GDeflate tiles). A stored entry is flagged *contiguous* and is one byte
+  path (`platypus-directstorage-and-codecs.md`: 256 KiB is four GDeflate tiles). A stored entry is flagged *contiguous* and is one byte
   range, which is exactly the FDT case, and is served zero-copy from the map.
 - *Two sorted indexes* (GUID and path hash) instead of one: 16 more bytes per entry, so lookups by GUID survive renames.
 - Measured cost (pack design 7): 142 bytes per entry with paths; 100k entries is a 14 MB TOC that opens in 3.7 ms mapped; `find_path`
@@ -124,7 +124,7 @@ is cosmetic, the magic is `IRPK`. Honest differences from a minimal FDT:
 ### 2.3 Files of a packaged game
 
 ```text
-MyGame.exe                 code only (payload: game.irbundle, game.css, project.json, icon)
+MyGame.exe                 code only (payload: game.pbundle, game.css, project.json, icon)
 data/
   index.json               manifest (pack design 3.1): packs in mount order, ids, scene -> pack
   assets.dat               role "global": what code, CSS, include globs and dynamic patterns name, plus what 2+ scenes share
@@ -134,7 +134,7 @@ data/
 dlc/<id>/index.json        (later)        mods/<name>/   (later, if the game allows mods)
 ```
 
-Changes from the pack design: **one** `assets.dat` replaces `global.irpk` and `shared.irpk`. Both were always mounted together, so
+Changes from the pack design: **one** `assets.dat` replaces `global.ppk` and `shared.ppk`. Both were always mounted together, so
 splitting them bought nothing at run time (this is decision 7, "one shared pack", taken). Packs are named `.dat`; `index.json` is
 kept. A scene's "own data" is its pack, and the scene file is that pack's first entry.
 
@@ -168,7 +168,7 @@ This gives the requested order: scene data, then `assets.dat`, then loose files.
 
 A merged index (`Vfs::freeze`, pack plan step 10) makes a lookup one hash probe however many packs there are.
 
-Dev loop: `Vfs::dir(game folder)` only. No packing; the `AssetWatcher` and `.iron/cooked` work as today. `iron <game> --packs` mounts
+Dev loop: `Vfs::dir(game folder)` only. No packing; the `AssetWatcher` and `.platypus/cooked` work as today. `platypus <game> --packs` mounts
 `<game>/dist/data/` instead, with the folder **below** it only under `--packs --fallback`, logging
 `asset "x" came from the game folder: it is not packed`. Shipping builds never have the folder layer.
 
@@ -200,7 +200,7 @@ A scene file goes into its own pack, even when code also names it (code naming a
 |---|---|---|---|---|
 | (a) `project.json` `include` / `exclude` globs | `"include": ["assets/**", "levels/*.json"]`, `"exclude": ["**/*.psd", "assets/wip/**"]`. Extends the existing `include` field: a plain folder still means `folder/**`. `*` stays inside one path part, `**` crosses parts. About 20 lines, no crate | yes | over-includes when written loosely | **escape hatch** |
 | (b) `.assets` manifest, `// @asset assets/sfx/*.wav` comments, or a compile-time `Assets.include("...")` call | a second syntax to learn and keep in sync; a call that does nothing at run time misleads readers | yes, if written | low | not recommended: (a) says the same in the file that already lists packaging rules |
-| (c) Pattern inference from the code | In `iron_ts` (it has an oxc AST and `oxc_ast_visit`), visit template literals and `+` chains whose parts include string literals. Each hole becomes `*` within one path part: `` `assets/sfx/${n}.${e}` `` gives `assets/sfx/*.*`, and `` `assets/emoji/${c}.svg` `` gives `assets/emoji/*.svg`. Keep a pattern only if it has a literal folder prefix and matches at least one file of an asset kind; otherwise warn `src/x.ts:12: dynamic asset path with no folder prefix; add an "include" glob`. **Full constant evaluation** (proving `n` ranges over `NAMES`) is feasible only in narrow cases: a top-level `const` array of literals iterated directly by `for..of` into the hole. Emoji's `extension(n)` (a call) and `s.code` (fields of objects pushed in a loop over `ROWS`) defeat it, so it would cover about 1 of the 5 emoji sites, against 5 of 5 for globbing | yes, all 5 sites | S to M; over-includes within one folder (fine for emoji: every match is used) | **on by default as a safety net**: adds its matches and reports them |
+| (c) Pattern inference from the code | In `platypus_ts` (it has an oxc AST and `oxc_ast_visit`), visit template literals and `+` chains whose parts include string literals. Each hole becomes `*` within one path part: `` `assets/sfx/${n}.${e}` `` gives `assets/sfx/*.*`, and `` `assets/emoji/${c}.svg` `` gives `assets/emoji/*.svg`. Keep a pattern only if it has a literal folder prefix and matches at least one file of an asset kind; otherwise warn `src/x.ts:12: dynamic asset path with no folder prefix; add an "include" glob`. **Full constant evaluation** (proving `n` ranges over `NAMES`) is feasible only in narrow cases: a top-level `const` array of literals iterated directly by `for..of` into the hole. Emoji's `extension(n)` (a call) and `s.code` (fields of objects pushed in a loop over `ROWS`) defeat it, so it would cover about 1 of the 5 emoji sites, against 5 of 5 for globbing | yes, all 5 sites | S to M; over-includes within one folder (fine for emoji: every match is used) | **on by default as a safety net**: adds its matches and reports them |
 | (d) Pack everything under `assets/` | the `include` default becomes `["assets/**"]` (what `package` already does with `["assets"]`) | yes | ships unused files (reported) | **default** |
 | (e) A scene's `"preload": ["assets/sfx/boss_*.wav"]` | files a scene's scripts load dynamically, placed by 2.5 (one scene: its pack) | n/a (emoji has no scenes) | S | optional, for locality only; never needed for correctness |
 
@@ -211,7 +211,7 @@ author has narrowed `include`, **(c)** pattern inference still adds the families
 request says the build cannot be trusted to know, and a missing sound in a shipped game costs more than a few spare megabytes. Open
 question 1 asks for confirmation.
 
-A dev-loop check catches the remaining gap before shipping: `iron-build build` writes `dist/assets.plan` (the sorted keys the packs
+A dev-loop check catches the remaining gap before shipping: `platypus-build build` writes `dist/assets.plan` (the sorted keys the packs
 would hold). While it exists, the dev app logs once per path:
 `asset "assets/x.wav" loaded, but a packaged build would not include it (add it to "include" in project.json)`.
 
@@ -245,9 +245,9 @@ Unchanged, and resolved through the `Vfs` with no script change: `Texture.load`,
 `Assets.guidToPath` / `pathToGuid` / `importer` / `count` / `pathAt` (the release asset database comes from `Vfs::entries()`, pack
 plan step 7).
 
-New, in `iron_engine_api::assets` (namespace `Assets`, already `#[iron_api(namespace = "Assets", quickjs)]`, so QuickJS games get
-the same functions with no extra work). They answer from the asset database the host fills (`set_assets`), so `iron_engine_api`
-gains no dependency on `iron_pack`:
+New, in `platypus_engine_api::assets` (namespace `Assets`, already `#[platypus_api(namespace = "Assets", quickjs)]`, so QuickJS games get
+the same functions with no extra work). They answer from the asset database the host fills (`set_assets`), so `platypus_engine_api`
+gains no dependency on `platypus_pack`:
 
 ```ts
 Assets.exists(path: string): boolean          // in a pack or the dev folder (a data: URL is true)
@@ -268,34 +268,34 @@ Assets.packOf(path: string): string           // "assets", "scene-level1", "" in
 - `audio.load` keeps returning a handle; the failure stays the existing logged error with the same text.
 
 **Hot reload.** The dev loop is unchanged (`DirSource`, `AssetWatcher`, `Assets.onChanged`). Packs are immutable: under `--packs`,
-watching `data/index.json` and remounting is optional. `iron-build dev` never packs. A rebuild refreshes `dist/assets.plan` (2.6).
+watching `data/index.json` and remounting is optional. `platypus-build dev` never packs. A rebuild refreshes `dist/assets.plan` (2.6).
 
 ## 4. Implementation plan
 
-Test IDs: `M9-API-1140..1149` (Rust, app), `M9-TS-2550..2559` (`iron_build`, `iron_ts`). Both ranges sit inside the pack plan's
+Test IDs: `M9-API-1140..1149` (Rust, app), `M9-TS-2550..2559` (`platypus_build`, `platypus_ts`). Both ranges sit inside the pack plan's
 blocks and are unused. One commit per phase step, all `CLAUDE.md` checks green. No new crates.
 
 ### Phase 0: make dynamic paths visible, emoji safe now (S)
 
-- `iron_core::project`: `include` accepts globs (`*`, `**`); new `exclude` (globs). The default include is `["assets/**"]`, and a plain
-  folder entry means `folder/**`. `glob.rs` in `iron_core` holds the 20-line matcher, used by `iron_build` now and by `Assets.list`
+- `platypus_core::project`: `include` accepts globs (`*`, `**`); new `exclude` (globs). The default include is `["assets/**"]`, and a plain
+  folder entry means `folder/**`. `glob.rs` in `platypus_core` holds the 20-line matcher, used by `platypus_build` now and by `Assets.list`
   later.
 - `package.rs collect_files`: expand globs. An entry that matches nothing is a **warning** (`include "assets/sfx/*.wv" matches no
   file`), never a silent drop.
-- `iron_ts::asset_patterns(program) -> Vec<(glob, file:line)>` (oxc visitor, 2.6 c). `iron_build::build` records the patterns in
-  `game.irbundle` as `"patterns"`, with their matches; prints `note:` lines; and `package` copies the matches too.
+- `platypus_ts::asset_patterns(program) -> Vec<(glob, file:line)>` (oxc visitor, 2.6 c). `platypus_build::build` records the patterns in
+  `game.pbundle` as `"patterns"`, with their matches; prints `note:` lines; and `package` copies the matches too.
 - Tests: `M9-TS-2550` the glob matcher (`*` in one part, `**` across parts, case-sensitive, `folder` = `folder/**`); `M9-TS-2551`
   pattern inference: a template, a `+` chain, nested templates in holes, refusing prefix-less patterns, emoji's five sites giving
   `assets/sfx/*.*` and `assets/emoji/*.svg`; `M9-TS-2552` `package` with a narrowed `include` still copies the pattern matches; an
   unmatched include warns; `exclude` removes files; `M9-TS-2553` (manual or `#[ignore]`, needs a built host and a GPU)
-  `iron-build package examples/emoji`, run from another folder with `--screenshot --frames 120` and `IRON_LOG_FILE` set: the log has no
+  `platypus-build package examples/emoji`, run from another folder with `--screenshot --frames 120` and `PLATYPUS_LOG_FILE` set: the log has no
   `not found`, and the screenshot shows the SVG emoji.
 - This fixes emoji for narrowed or glob `include`s and proves the default case. Size: about 300 lines plus tests.
 
 ### Phase 1: the pack build with `assets.dat` (M; amends pack plan steps 1 to 4)
 
 - Pack plan step 1 (manifest) as written, with pack names `assets` and `scene-<slug>` and files `*.dat`.
-- Step 2 (graph): add `patterns` and `included` (phase 0) and the scene `"preload"` key; drop `iron.pack.include` and `resources/**`
+- Step 2 (graph): add `patterns` and `included` (phase 0) and the scene `"preload"` key; drop `platypus.pack.include` and `resources/**`
   (they are now `include` globs: `resources/**` can be listed there).
 - Step 3 (plan): the placement rule of 2.5 (one `assets` pack replaces global and shared). Add `--source-only`: every entry in source
   form. This needs no cooker and is enough for emoji (and for SVG, audio and font-only games) until pack plan step 15 moves the cooker.
@@ -314,7 +314,7 @@ blocks and are unused. One commit per phase step, all `CLAUDE.md` checks green. 
 - Step 7, subset: `data.rs` mounts `data/index.json` (mapped on 64-bit) when the exe carries a payload and `data/index.json` exists,
   and otherwise falls back to today's loose `data/` folder as a `DirSource` (old packages keep working). Cooked forms from packs wait
   for the rest of step 7. Add the errors of section 3, the `DirSource` case check, and the dev `assets.plan` check.
-- Step 14, subset: `iron-build package --packs` = phase 1 pack, then copy `index.json` and the listed `.dat` files to `<out>/data/`, with
+- Step 14, subset: `platypus-build package --packs` = phase 1 pack, then copy `index.json` and the listed `.dat` files to `<out>/data/`, with
   no loose assets. The default stays loose until the user decides (open question 8).
 - Tests: `M9-API-1140` lookup order: a key in a scene pack and in `assets.dat` comes from the scene pack; a patch above both wins; a
   tombstone hides both; the folder layer answers only under `--fallback`; `M9-API-1141` the not-found message names every pack that was
@@ -325,8 +325,8 @@ blocks and are unused. One commit per phase step, all `CLAUDE.md` checks green. 
 
 ### Phase 3: `Assets.exists` / `list` / `packOf` (S)
 
-- `iron_engine_api::assets` adds the three functions. The host fills the database from `Vfs::entries()` (release) or a full
-  `DirSource` walk (dev; entries without a `.meta` get guid `""`). Update `tools/iron_ts/src/lower/engine_ts.d.ts` only if the shapes
+- `platypus_engine_api::assets` adds the three functions. The host fills the database from `Vfs::entries()` (release) or a full
+  `DirSource` walk (dev; entries without a `.meta` get guid `""`). Update `tools/platypus_ts/src/lower/engine_ts.d.ts` only if the shapes
   need it (the manifests give `Assets.*` already).
 - Tests: `M9-API-1146` `exists` and `list` against a fixed database (sorted output, glob rules shared with `M9-TS-2550`, `guid:` and
   `data:` cases); `M9-TS-2557` a compiled script calls `Assets.list("assets/sfx/*.wav")` and gets the sorted keys (host simulated as in
@@ -335,7 +335,7 @@ blocks and are unused. One commit per phase step, all `CLAUDE.md` checks green. 
 ### Then: the rest of the pack plan, unchanged
 
 Cooked forms from packs (step 7 rest), streamed audio from the map (8), scene prefetch (9), async loads and the merged index (10),
-refcounts (11), mip streaming (12), patches, DLC and mods (13), `iron_cook` (15), mobile (16), codecs (17).
+refcounts (11), mip streaming (12), patches, DLC and mods (13), `platypus_cook` (15), mobile (16), codecs (17).
 
 ### Risks
 
@@ -369,7 +369,7 @@ After it, emoji ships complete under any `include`, and the build tells the auth
 1. **Pack everything under `include` (default `assets/**`), unreferenced or not?** Recommended yes. It reverses pack design decision 5
    ("leave unreferenced out"), and it is what `package` does today.
 2. **Naming and split:** one `data/assets.dat` (global and shared merged) plus `scene-<slug>.dat`, with `IRPK` inside and `.dat` names.
-   Recommended. Or keep `.irpk` names, or separate global and shared packs (finer downloads, more files)?
+   Recommended. Or keep `.ppk` names, or separate global and shared packs (finer downloads, more files)?
 3. **Codec** (pack decision 1): LZ4 default. Is the `zstd` crate OK as a second codec, and is the `CODEC-1` prototype OK (DirectStorage,
    `gdeflate` and `zstd` downloads, a headless D3D12 probe on this machine)?
 4. **DLC and mods** (pack decisions 3 and 4): may DLC override base assets (recommended yes, like patches)? Mods from `mods/`, mounted
@@ -380,19 +380,19 @@ After it, emoji ships complete under any `include`, and the build tells the auth
    fallback (measured at 39% of cooked bytes in the test corpus)?
 7. **Case:** warn in the dev loop on a case mismatch (recommended), or make dev lookups case-sensitive too (stricter, and it may break
    existing games on Windows)?
-8. **Packaged default:** when packs land, should `iron-build package` write packs by default, with loose `data/` behind `--loose` for
+8. **Packaged default:** when packs land, should `platypus-build package` write packs by default, with loose `data/` behind `--loose` for
    debugging and modding, or stay loose until `--packs` is asked for?
 
 ## Unsafe paths
 
-The VFS lookup is the one choke point: every asset, font, sound, scene, CSS `url()` and future file-IO read goes through `iron_core::resolve_asset` (today it returns `None` for anything outside the game folder). The unsafe-path policy lives there, in the core engine, so it applies to QuickJS and compiled games alike (no per-tier code).
+The VFS lookup is the one choke point: every asset, font, sound, scene, CSS `url()` and future file-IO read goes through `platypus_core::resolve_asset` (today it returns `None` for anything outside the game folder). The unsafe-path policy lives there, in the core engine, so it applies to QuickJS and compiled games alike (no per-tier code).
 
 ### Modes
 - **Safe (default).** A path outside the game / data / virtual-FS roots (absolute, `..` escape, other drive, UNC, URL scheme, `file://`) is refused. **Decided:** a console / `Player.log` warning only (`asset not found: <requested> (resolved: <canonical path>, outside the game folders)`, once per distinct path); no popup and no in-app notice.
 - **Unsafe** (`--unsafe-paths`). Each unsafe access asks the user first (below). Without an answer the result is a denial.
 
 ### Where the flag lives, who may set it
-- `iron-build --unsafe-paths` / `iron-build package --unsafe-paths` writes `"unsafePaths": true` into the payload's project metadata; `iron_app --unsafe-paths` sets it at run time. Either enables the mode, nothing in game code can (no op, no `project.json` read at run time from a writable folder for packaged games: the value comes from the signed/packed payload or the command line).
+- `platypus-build --unsafe-paths` / `platypus-build package --unsafe-paths` writes `"unsafePaths": true` into the payload's project metadata; `platypus --unsafe-paths` sets it at run time. Either enables the mode, nothing in game code can (no op, no `project.json` read at run time from a writable folder for packaged games: the value comes from the signed/packed payload or the command line).
 - A downloaded game must not enable it silently: the flag only enables the prompt, it never grants. The popup appears even when the flag is baked in.
 
 ### The popup (decided: three choices, default Cancel)
@@ -418,11 +418,11 @@ Decide on the **canonical, final** path, after everything is resolved, never on 
 Every refusal and every decision (path, kind, decision, mode, source of the flag) goes to `Player.log`; granted session paths are listed in the log at exit.
 
 ### Tests (proposed IDs `M6-VFS-UNSAFE-01..`)
-01 safe mode refuses absolute, `..`, drive, UNC, `file://`; 02 warning text contains the resolved path; 03 symlink / junction out of the folder is unsafe; 04 `\\?\` and 8.3 and case variants canonicalise to the same decision; 05 prefix sibling (`game2`) is outside; 06 unsafe mode with a stub prompter: Cancel/Esc/close deny, Once is not cached, Session is; 07 flood limit; 08 headless auto-deny; 09 baked flag still prompts; 10 QuickJS and compiled tiers get the same result for one path list; 11 `iron-build` writes the metadata, runtime flag overrides nothing from game code.
+01 safe mode refuses absolute, `..`, drive, UNC, `file://`; 02 warning text contains the resolved path; 03 symlink / junction out of the folder is unsafe; 04 `\\?\` and 8.3 and case variants canonicalise to the same decision; 05 prefix sibling (`game2`) is outside; 06 unsafe mode with a stub prompter: Cancel/Esc/close deny, Once is not cached, Session is; 07 flood limit; 08 headless auto-deny; 09 baked flag still prompts; 10 QuickJS and compiled tiers get the same result for one path list; 11 `platypus-build` writes the metadata, runtime flag overrides nothing from game code.
 
 ### Phases and sizes
 1. Policy in `resolve_asset` (safe mode, warning, canonical checks, tests 01-05): S.
-2. Flag plumbing in `iron-build` / `iron-build package` / `iron_app`, project metadata (09, 11): S.
+2. Flag plumbing in `platypus-build` / `platypus-build package` / `platypus_app`, project metadata (09, 11): S.
 3. Prompter trait + native dialog + worker-thread channel + caching/flood (06-08): M.
 4. In-app notice and docs: S.
 
@@ -441,5 +441,5 @@ Every refusal and every decision (path, kind, decision, mode, source of the flag
 5. Textures named in code: store both cooked and source forms for now. **Note to revisit:** consider cooked only to reduce bloat.
 6. Textures whose sizes are not multiples of 4: keep the RGBA8 fallback for now.
 7. Lookups are case sensitive following the OS / platform defaults (the host file system's own rules for loose files). Pack keys are exact-case. Keeping a dev-loop warning for a case mismatch is still recommended, so a game that works on Windows does not fail on a case-sensitive platform.
-8. `package` stays loose (`data/`) until packs are tried and tested, then the default flips. **TODO:** track "flip `iron-build package` to write packs by default" (and a `--loose` switch for debugging and modding) in the TODO once packs have been exercised on real games.
+8. `package` stays loose (`data/`) until packs are tried and tested, then the default flips. **TODO:** track "flip `platypus-build package` to write packs by default" (and a `--loose` switch for debugging and modding) in the TODO once packs have been exercised on real games.
 9. Unsafe paths (section added by the plan agent if present): safe mode warns on the console only; unsafe mode asks per path with Allow once / Allow for this session / Cancel, default Cancel.

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Spline` (a path through knots, `iron_math::spline`) and `SplineAnimate` (a component that moves
+//! `Spline` (a path through knots, `platypus_math::spline`) and `SplineAnimate` (a component that moves
 //! its object along one), the script API of `js/engine/src/spline.ts` and the compiled facade made
 //! native. A `Spline` is a handle to a spline kept here per thread, so compiled scripts and
 //! QuickJS call the same code; a scene file saves one inline (`{"$type":"Spline", ..}`) inside the
 //! `SplineAnimate` that uses it. The host calls [`update`] once a frame next to
 //! `animation::update`; [`reset`] forgets everything (a reload).
 
-use iron_api::{Handle, iron_api};
-use iron_kinds::{AssetKind, Kind, asset_handle, asset_ref, object_ref};
-use iron_math::spline::{
+use platypus_api::{Handle, platypus_api};
+use platypus_kinds::{AssetKind, Kind, asset_handle, asset_ref, object_ref};
+use platypus_math::spline::{
     Alignment, Knot, LoopMode, Spline, SplineHit, SplineNearest, Tangent, animate_pose, animate_t,
 };
-use iron_math::{Q, V3, v3};
-use iron_scene::ObjectId;
-use iron_scene::api::{TransformRef, scene_api, with_scene};
+use platypus_math::{Q, V3, v3};
+use platypus_scene::ObjectId;
+use platypus_scene::api::{TransformRef, scene_api, with_scene};
 use serde_json::{Map, Value, json};
 use std::cell::RefCell;
 
@@ -234,7 +234,7 @@ pub fn update(dt: f64) {
     }
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Spline", quickjs, like,
     handles(Spline = SplineRef),
     values(Vector3 = V3 [x: f64, y: f64, z: f64]),
@@ -430,7 +430,7 @@ pub mod spline_api {
     }
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "SplineAnimate", quickjs, like,
     handles(
         SplineAnimate = SplineAnimateRef,
@@ -769,6 +769,6 @@ fn animate_kind() -> Kind {
 
 /// Registers the `SplineAnimate` scene-file kind and the `Spline` inline asset kind on this thread.
 pub fn register_kinds() {
-    iron_kinds::register(animate_kind());
-    iron_kinds::register_asset(spline_asset_kind());
+    platypus_kinds::register(animate_kind());
+    platypus_kinds::register_asset(spline_asset_kind());
 }

@@ -3,23 +3,23 @@
 //! `bench/anim_player.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_anim_player_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-684..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::anim_player_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::anim_player_t::*;
 use serde_json::Value;
 
 /// A new scene and no animation objects.
 fn reset() {
-    iron_engine_api::animation::reset();
-    iron_engine_api::camera::reset();
-    iron_scene::api::with_scene(|s| *s = iron_scene::Scene::new());
+    platypus_engine_api::animation::reset();
+    platypus_engine_api::camera::reset();
+    platypus_scene::api::with_scene(|s| *s = platypus_scene::Scene::new());
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
-    let mut scene = iron_scene::Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _serial = platypus_ts_tests::serial();
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_apl_init() };
     reset();
     f();

@@ -5,7 +5,7 @@
 // The view is abstract (`HandleView`: world to panel pixels and back), so the math is
 // tested without a camera; SceneView.tsx draws the parts as SVG and feeds it drags.
 
-import { Quaternion, type Ray, Vector3 } from "@iron/engine";
+import { Quaternion, type Ray, Vector3 } from "@platypus/engine";
 
 export type HandleTool = "move" | "rotate" | "scale";
 /** A part of a handle: an axis, or the centre (free move in the view, uniform scale). */

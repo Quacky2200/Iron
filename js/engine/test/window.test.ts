@@ -8,7 +8,7 @@ describe("Window", () => {
   });
 
   // M9-TS-2822
-  test("@iron/engine re-exports the global Window", async () => {
+  test("@platypus/engine re-exports the global Window", async () => {
     const stub = { main: { handle: 1 }, count: 1, isSupported: true, create: () => ({ handle: 2 }) };
     (globalThis as { Window?: unknown }).Window = stub;
     // A fresh copy of the module, so it reads the stub.

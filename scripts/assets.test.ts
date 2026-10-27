@@ -9,7 +9,7 @@ import { readMeta, scan, update } from "./assets.ts";
 
 let dir = "";
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "iron-meta-"));
+  dir = mkdtempSync(join(tmpdir(), "platypus-meta-"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });

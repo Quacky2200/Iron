@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enums, nullables and aliases of the real engine namespaces from QuickJS: the same native code
-//! compiled games call (`tools/iron_ts_tests/tests/engine_api/facade.rs`, M9-TS-3340). IDs are in
+//! compiled games call (`tools/platypus_ts_tests/tests/engine_api/facade.rs`, M9-TS-3340). IDs are in
 //! TESTS.md (M9-API-162x).
 mod common;
 use common::{js, throws, with_world};
@@ -83,22 +83,22 @@ fn engine_nullables_are_null_when_none_and_take_null() {
 #[test]
 fn result_records_have_strings_and_lists_of_records_are_arrays() {
     with_world(|ctx| {
-        iron_engine_api::screen::set_display(
+        platypus_engine_api::screen::set_display(
             "Windowed",
             (1024, 768),
             vec![
-                iron_engine_api::screen::Resolution {
+                platypus_engine_api::screen::Resolution {
                     width: 1920,
                     height: 1080,
                     refresh_rate: 144.0,
                 },
-                iron_engine_api::screen::Resolution {
+                platypus_engine_api::screen::Resolution {
                     width: 1280,
                     height: 720,
                     refresh_rate: 60.0,
                 },
             ],
-            iron_engine_api::screen::Resolution {
+            platypus_engine_api::screen::Resolution {
                 width: 1920,
                 height: 1080,
                 refresh_rate: 144.0,

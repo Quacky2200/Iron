@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_audio"
+name = "platypus_audio"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [dependencies]
-iron_core = { path = "../iron_core" }
+platypus_core = { path = "../platypus_core" }
 kira = "0.12.5"
 symphonia = { version = "0.6.1", default-features = false }
 mint = "0.5.9"

@@ -1,8 +1,8 @@
-// @iron-dev
+// @platypus-dev
 
 // src/refresh.tsx
-var import_engine = require("@iron/engine");
-var import_react = require("@iron/react");
+var import_engine = require("@platypus/engine");
+var import_react = require("@platypus/react");
 var import_react2 = require("react");
 var jsx_dev_runtime = require("react/jsx-dev-runtime");
 var bump = () => {};

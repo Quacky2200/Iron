@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use glam::{Quat, Vec3};
-use iron_core::Value;
+use platypus_core::Value;
 
 use crate::{ObjectId, Scene, Transform};
 
@@ -263,7 +263,7 @@ impl ScriptScene {
         self.object(id).ok_or_else(|| format!("no object {id}"))
     }
 
-    /// Objects the engine moved since the last call, as `__iron_scene(moved)`'s flat
+    /// Objects the engine moved since the last call, as `__platypus_scene(moved)`'s flat
     /// array: `id, px, py, pz, qx, qy, qz, qw, sx, sy, sz` (local) each.
     pub fn take_batch(&mut self) -> Vec<Value> {
         let mut out = Vec::with_capacity(self.engine_moved.len() * 11);

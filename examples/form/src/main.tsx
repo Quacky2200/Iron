@@ -71,7 +71,7 @@ function Button({
       tabIndex={0}
       disabled={disabled}
       onClick={press}
-      onKeyDown={(e: IronKeyboardEvent) => {
+      onKeyDown={(e: PlatypusKeyboardEvent) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           press();
@@ -90,7 +90,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
       tabIndex={0}
       checked={checked}
       onClick={() => onChange(!checked)}
-      onKeyDown={(e: IronKeyboardEvent) => {
+      onKeyDown={(e: PlatypusKeyboardEvent) => {
         if (e.key === " " || e.key === "Enter") {
           e.preventDefault();
           onChange(!checked);
@@ -128,8 +128,8 @@ function App() {
   const [saved, setSaved] = useState<Profile[]>(SAMPLES);
   const [status, setStatus] = useState("Fill in the form and press Save.");
   const [touched, setTouched] = useState(false);
-  const nameRef = useRef<IronElement>(null);
-  const listRef = useRef<IronElement>(null);
+  const nameRef = useRef<PlatypusElement>(null);
+  const listRef = useRef<PlatypusElement>(null);
   const pads = usePads();
 
   useEffect(() => nameRef.current?.focus(), []);
@@ -169,7 +169,7 @@ function App() {
       <box className="columns">
         <box
           className="card form"
-          onKeyDown={(e: IronKeyboardEvent) => {
+          onKeyDown={(e: PlatypusKeyboardEvent) => {
             // Enter submits from a one-line field (textareas take Enter for new lines).
             if (e.key === "Enter" && e.target.type === "input") save();
           }}

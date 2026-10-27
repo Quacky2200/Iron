@@ -1,7 +1,7 @@
 # UI tree, styles, layout, text and the draw list
 
-Crate: [iron_ui](../crates/iron_ui/src). Entry type: `UiTree` in
-[tree.rs](../crates/iron_ui/src/tree.rs). Pipeline overview: [README.md](README.md). Design
+Crate: [platypus_ui](../crates/platypus_ui/src). Entry type: `UiTree` in
+[tree.rs](../crates/platypus_ui/src/tree.rs). Pipeline overview: [README.md](README.md). Design
 background: [DESIGN.md](../DESIGN.md) section 5. CSS stylesheets are covered in [css.md](css.md).
 
 ```
@@ -11,7 +11,7 @@ Commit ops --apply_commit--> Node map + dirty sets
         restyle_dirty -> shape dirty text -> Taffy compute -> absolute Rects
                                   |  draw_list()
                                   v
-                          Vec<DrawCmd>  -->  iron_render
+                          Vec<DrawCmd>  -->  platypus_render
 ```
 
 ## Node model
@@ -24,9 +24,9 @@ is large). A `Node` holds:
 | `kind` | `"box"`, `"text"`, `"span"`, `"input"`, `"textarea"`, `"image"` (`IMAGE`), `"list"` (`LIST`), `"dialog"` (`DIALOG`), `"#text"` (`TEXT_NODE`), or `"root"` |
 | `parent`, `children` | Tree links (ordered) |
 | `style: taffy::Style` | Layout properties |
-| `visual: Visual` | Paint-only properties ([style.rs](../crates/iron_ui/src/style.rs)) |
+| `visual: Visual` | Paint-only properties ([style.rs](../crates/platypus_ui/src/style.rs)) |
 | `text` | Characters of a `#text` node |
-| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `src` (images), `open`/`modal`/`closedBy` (dialogs, `ClosedBy`), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/iron_ui/src/attrs.rs)) |
+| `attrs: Attrs`, `state: ElementState` | `className`, `id`, `disabled`, `checked`, `tabIndex`, `dir`, text field props (`value`, `defaultValue`, `placeholder`, `readOnly`, `rows`), `src` (images), `open`/`modal`/`closedBy` (dialogs, `ClosedBy`), `data-*`; `:hover`/`:active`/`:focus`/`:focus-visible` ([attrs.rs](../crates/platypus_ui/src/attrs.rs)) |
 | `inline` | Inline `style` declarations, in the order set (later wins) |
 | `generated` | `Some(Before/After)` for stylesheet-generated content |
 | `vars` | Computed custom properties (`Rc`, shared with the parent when unchanged) |
@@ -37,7 +37,7 @@ never reuses them. Generated `::before`/`::after`/`::marker`/`::backdrop` nodes 
 
 ## Commits and opcodes
 
-[opcodes.rs](../crates/iron_ui/src/opcodes.rs) defines eight opcodes shared with
+[opcodes.rs](../crates/platypus_ui/src/opcodes.rs) defines eight opcodes shared with
 [opcodes.ts](../js/react/src/opcodes.ts) (keep them in sync by hand):
 
 | Opcode | Args | Effect |
@@ -73,9 +73,9 @@ empty root, so a new bundle's reconciler can reuse ids from 1 (M4-HOT-09).
 
 ## Styles
 
-[style.rs](../crates/iron_ui/src/style.rs) `apply_style(&mut Style, &mut Visual, prop, &Value)` is
+[style.rs](../crates/platypus_ui/src/style.rs) `apply_style(&mut Style, &mut Visual, prop, &Value)` is
 the single place where a property name (camelCase) and a `Value` become state. Numbers are logical
-pixels; strings are CSS values parsed by Taffy's parser (layout) or Iron's own parsers (paint).
+pixels; strings are CSS values parsed by Taffy's parser (layout) or Platypus's own parsers (paint).
 Both inline styles and stylesheet declarations (after kebab-case to camelCase) go through it, so
 the two paths cannot drift. On error nothing changes (`StyleError`).
 
@@ -84,15 +84,15 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
   (`Corners<CornerRadius>`, each a horizontal and vertical `Len`), `shadows`, background layer lists, border colours, styles and image, `outline_*`, `mix_blend`, `filter_blur`, `filter_matrix`,
   `drop_shadows`, `backdrop_blur`, `backdrop_matrix`, mask lists (`mask_images/sizes/positions/repeats/modes`), `opacity`, `pointer_events`, `order`, `z_index`, `isolate`, `contents`, `fixed`, `overflow`, `clip_path`, `clip_rect`,
   `scrollbar_width/color`, `cursor`, `transform: Option<Arc<Transforms>>` (all transform properties; `None` at defaults) and `text: TextProps`.
-- [paint.rs](../crates/iron_ui/src/paint.rs) holds the parsers: radii, shadow lists, `Filter` chains (`ColorMatrix`, `DropShadow`),
+- [paint.rs](../crates/platypus_ui/src/paint.rs) holds the parsers: radii, shadow lists, `Filter` chains (`ColorMatrix`, `DropShadow`),
   backgrounds (`linear-gradient`, `radial-gradient`, `conic-gradient`, `repeating-*`, `url()`),
   `parse_layers` for comma lists, `BlendMode`, `MaskMode`, `BorderStyle`, `BorderImage`, `clip-path` shapes
   (`ClipPath` resolved to a `ClipShape` against the box), `Overflow`.
-  [svg_path.rs](../crates/iron_ui/src/svg_path.rs) turns a `path()` string into polygon contours.
-  [svg.rs](../crates/iron_ui/src/svg.rs) holds the inline `<svg>` helpers (see [svg.md](svg.md)).
-- [color.rs](../crates/iron_ui/src/color.rs): `Rgba::parse` for hex, `rgb()`, `hsl()`, named colours; modern colour functions and
-  `color-mix()` live in [color_fn.rs](../crates/iron_ui/src/color_fn.rs) (see [css.md](css.md#colours)).
-- [text_style.rs](../crates/iron_ui/src/text_style.rs): `TextProps` are the *specified* text
+  [svg_path.rs](../crates/platypus_ui/src/svg_path.rs) turns a `path()` string into polygon contours.
+  [svg.rs](../crates/platypus_ui/src/svg.rs) holds the inline `<svg>` helpers (see [svg.md](svg.md)).
+- [color.rs](../crates/platypus_ui/src/color.rs): `Rgba::parse` for hex, `rgb()`, `hsl()`, named colours; modern colour functions and
+  `color-mix()` live in [color_fn.rs](../crates/platypus_ui/src/color_fn.rs) (see [css.md](css.md#colours)).
+- [text_style.rs](../crates/platypus_ui/src/text_style.rs): `TextProps` are the *specified* text
   properties of one node; `ComputedText::child(&TextProps)` applies CSS inheritance.
   `UiTree::computed_text(id)` folds root-to-node. `is_text_prop` lets the tree know a style change
   affects text shaping. `direction` (`ltr`/`rtl`, enum `Direction`) is an inherited text property.
@@ -103,8 +103,8 @@ the two paths cannot drift. On error nothing changes (`StyleError`).
 
 ### Layout shorthands (M3d step 2a)
 
-All in `apply_style`/`copy_prop` ([style.rs](../crates/iron_ui/src/style.rs)); tests in
-[layout_props.rs](../crates/iron_ui/tests/layout_props.rs).
+All in `apply_style`/`copy_prop` ([style.rs](../crates/platypus_ui/src/style.rs)); tests in
+[layout_props.rs](../crates/platypus_ui/tests/layout_props.rs).
 
 - **`placeItems` / `placeSelf` / `placeContent`:** `<align> [<justify>]`; one value sets both axes.
 - **Grid:**
@@ -160,7 +160,7 @@ are resolved to pixels at restyle before `apply_style` sees them (so are the abs
 
 ## Layout
 
-[layout.rs](../crates/iron_ui/src/layout.rs) hides Taffy behind `trait LayoutEngine`
+[layout.rs](../crates/platypus_ui/src/layout.rs) hides Taffy behind `trait LayoutEngine`
 (`create_node`, `set_style`, `set_children`, `set_measured`, `mark_dirty`, `compute`, `layout`).
 `taffy::Style` doubles as the backend-neutral style type. Why the trait: DESIGN.md section 5.3 keeps
 Yoga as a fallback, and the JSON fixtures in `tests/layout` are generic over the engine (see
@@ -181,7 +181,7 @@ both (`M2-LAY-07`). `View` resolves calc handles through
 `crate::calc::resolve`, for containers (`resolve_calc_value`) and for measured leaves
 (`compute_leaf_layout`; the measure callback sizes text content).
 
-### calc ([calc.rs](../crates/iron_ui/src/calc.rs))
+### calc ([calc.rs](../crates/platypus_ui/src/calc.rs))
 
 Math that still has `%` after relative units are resolved is parsed into an `Expr` tree (`Px`,
 `Percent`, `Number`, add/sub/mul/div, `min`, `max`, `clamp`) and type-checked: lengths and
@@ -217,7 +217,7 @@ overflow), used for clipping, scrollbars and event data.
 
 ## Text
 
-[text.rs](../crates/iron_ui/src/text.rs) wraps Parley (`TextEngine` = `FontContext` +
+[text.rs](../crates/platypus_ui/src/text.rs) wraps Parley (`TextEngine` = `FontContext` +
 `LayoutContext<Brush>`; `Brush` is a struct carrying the run's colour, decoration lines/style/colour/thickness/underline offset, stroke width/colour, `smooth`, `hidden` (`visibility: hidden`) and `node` (the source node of the run's characters, set by `build_with_text`, `None` from `Brush::of(&ComputedText)`); `node_at(layout, x, y)` maps a point to that node via `Cluster::from_point_exact`, for span hit testing). Fonts: bundled Inter (variable, upright and
 italic) is always registered and put first for the generic sans-serif families; `with_system_fonts`
 adds platform fonts for fallback (CJK, emoji). Tests use `UiTree::new` (no system fonts) to stay
@@ -226,7 +226,7 @@ deterministic. `register_font` first runs the data through `decode_web_font`, wh
 anything else through; bad web font data is an error. It accepts overrides for family/weight/style (like `@font-face`), then
 replaces the `LayoutContext` because Parley caches family lookups, including misses.
 
-`iron_ui` enables Parley's `complex-scripts` feature, so word and line segmentation use ICU4X's
+`platypus_ui` enables Parley's `complex-scripts` feature, so word and line segmentation use ICU4X's
 dictionary segmenters. Japanese/Chinese word moves (Ctrl+Arrow) and double-click selection follow
 dictionary word boundaries, and Thai, Lao, Khmer and Burmese text without spaces wraps between
 words (M3-TXT-08). It adds about 3.8 MB to the release binary.
@@ -283,8 +283,8 @@ How inline content works:
 
 ### Text properties (M3d group 4)
 
-Parsed in [text_style.rs](../crates/iron_ui/src/text_style.rs) into `TextProps`; all inherited except
-`textOverflow` (`ComputedText::child` resets it). Tests: [text_props.rs](../crates/iron_ui/tests/text_props.rs),
+Parsed in [text_style.rs](../crates/platypus_ui/src/text_style.rs) into `TextProps`; all inherited except
+`textOverflow` (`ComputedText::child` resets it). Tests: [text_props.rs](../crates/platypus_ui/tests/text_props.rs),
 unit tests in `text_style.rs`, goldens `M3-TXT-10..15`.
 
 - **`textTransform`** (`TextTransform::apply`): applied to each run's text in `build_text_layout`;
@@ -308,7 +308,7 @@ unit tests in `text_style.rs`, goldens `M3-TXT-10..15`.
 - **`fontSmooth` / `WebkitFontSmoothing`:** `never`/`none` sets `GlyphRun.smooth = false` (crisp glyphs).
 - **`caretColor`:** used for the text field caret quad in `tree.rs` (`auto` is the text colour).
 - `dirty_text` is the set of roots to reshape; `text_build_count()` lets tests assert how often
-  shaping ran (used in [text.rs tests](../crates/iron_ui/tests/text.rs) to check that unrelated
+  shaping ran (used in [text.rs tests](../crates/platypus_ui/tests/text.rs) to check that unrelated
   changes do not reshape text).
 
 ## Lists (M3d step 5g)
@@ -351,7 +351,7 @@ attributes. `update_dialog` runs after restyle:
 
 ## Draw list
 
-[draw.rs](../crates/iron_ui/src/draw.rs): `Rect` (logical px, with `intersect/union/expand`,
+[draw.rs](../crates/platypus_ui/src/draw.rs): `Rect` (logical px, with `intersect/union/expand`,
 rounded hit testing), `Radii { x, y }` (per-corner horizontal and vertical radii, used by every
 shape), `ClipShape` (rect with elliptical corners, or an `Arc<Polygon>`; no longer `Copy`), and
 `enum DrawCmd`:
@@ -395,7 +395,7 @@ space). `draw_list` (root and fixed nodes) and the drag image pass `None` (`M2-D
 - **`background-clip: text`.** Gradients go into `TextCmd.fill` (image plus the element rect);
   the glyphs sample it.
 - **Borders.** `BorderStyle` is none, hidden, solid, dashed, dotted, double, groove, ridge, inset or
-  outset; Iron default is solid (not CSS none). Colours, styles and `currentColor` flags are per
+  outset; Platypus default is solid (not CSS none). Colours, styles and `currentColor` flags are per
   side (`border_colors`, `border_styles`, `border_currents`). `border_side` / `four_sides` /
   `set_border_style` handle the longhands; none and hidden zero the width. A uniform border stays
   in the `Quad`; anything else becomes `DrawCmd::Border`.
@@ -418,7 +418,7 @@ space). `draw_list` (root and fixed nodes) and the drag image pass `None` (`M2-D
   `saturate`, `grayscale`, `sepia`, `hue-rotate`, `invert`, `opacity` and (`filter` only)
   `drop-shadow`. Blurs add in quadrature; colour functions multiply, in order, into one `ColorMatrix`
   (4x5, row-major, straight-alpha sRGB). Drop shadows (no inset or spread, `currentColor` default)
-  become `LayerShadow`s with sigma = blur / 2. Iron applies blur, then colours, then shadows. A
+  become `LayerShadow`s with sigma = blur / 2. Platypus applies blur, then colours, then shadows. A
   layer is pushed for blur, a matrix, shadows, a mask, group opacity or a blend mode, and its
   `bounds` grow by `3 * blur` and by each shadow's offset and `3 * sigma`. `backdrop-filter` with
   `drop-shadow` is invalid.
@@ -457,7 +457,7 @@ Decisions worth knowing:
 
 ## Transforms
 
-[transform.rs](../crates/iron_ui/src/transform.rs) parses `transform` (every 2D and 3D function;
+[transform.rs](../crates/platypus_ui/src/transform.rs) parses `transform` (every 2D and 3D function;
 `parse_transform` gives `Vec<TransformFn>`, where `Fixed(Mat4)` is size-independent and
 `Translate(Len, Len, f32)` may hold percentages), `translate`, `rotate`, `scale`, `transform-origin`,
 `perspective`, `perspective-origin`, `transform-style` and `backface-visibility`. `apply_style` stores
@@ -534,7 +534,7 @@ them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin
   Changing `scrollbarWidth` re-runs `set_overflow` so the reserved size follows. The bar is still
   drawn as an overlay, now over the reserved strip, so content width does not jump when it appears.
 - **`overscrollBehavior`** (and `-x/-y/-inline/-block`): `Visual.overscroll_contain: [bool; 2]`,
-  true for `contain` and `none` (Iron has no overscroll glow or history gesture, so they are the
+  true for `contain` and `none` (Platypus has no overscroll glow or history gesture, so they are the
   same). `UiTree::contains_overscroll(id, axis)` is true only when the node is user-scrollable on
   that axis; `Interaction` uses it to stop chaining. Test: M3-SCR-01 (`tests/scroll.rs`).
 - Input handling, wheel chaining and the `scroll` event are in
@@ -543,7 +543,7 @@ them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin
 ## Text fields
 
 `<input>` and `<textarea>` are `box`-like elements (styled, bordered, clipped by CSS like any
-other) whose text is owned by an `Editor` in [editor.rs](../crates/iron_ui/src/editor.rs):
+other) whose text is owned by an `Editor` in [editor.rs](../crates/platypus_ui/src/editor.rs):
 `UiTree.editors: HashMap<NodeId, Editor>`, created in `CREATE` for `is_editor_kind` and removed with
 the node. Each `Editor` wraps a Parley `PlainEditor<Brush>` (text, selection, IME composition; DESIGN
 D7) plus `multiline`, `rows`, an optional placeholder layout, the field's own `scroll` and the last
@@ -615,4 +615,4 @@ Until the size is known it fits as if the natural size matched the box. `paint::
 
 ## Typed ops
 
-`iron_ui::opcodes::Op` is the decoded form of a commit op (`Create`, `SetStyle`, `AppendChild`, ...). `UiTree::apply_commit` decodes each `[opcode, ...args]` array with `Op::decode` (arity and argument types checked there, errors in op order) and applies it; `UiTree::apply_ops(&[Op])` applies already-typed ops as one batch. There is one applier (`apply_op`), shared by the React path and the planned native reconciler ([research/iron-ui-native.md](research/iron-ui-native.md)). A non-string style or attribute name now rejects the whole op instead of skipping the one pair. Test `M2-UI-OP-01`.
+`platypus_ui::opcodes::Op` is the decoded form of a commit op (`Create`, `SetStyle`, `AppendChild`, ...). `UiTree::apply_commit` decodes each `[opcode, ...args]` array with `Op::decode` (arity and argument types checked there, errors in op order) and applies it; `UiTree::apply_ops(&[Op])` applies already-typed ops as one batch. There is one applier (`apply_op`), shared by the React path and the planned native reconciler ([research/platypus-ui-native.md](research/platypus-ui-native.md)). A non-string style or attribute name now rejects the whole op instead of skipping the one pair. Test `M2-UI-OP-01`.

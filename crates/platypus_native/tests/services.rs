@@ -4,7 +4,7 @@
 //! prefabs, the cursor. IDs are in TESTS.md (M9-API-*).
 mod common;
 use common::{js, throws, with_world};
-use iron_engine_api::{app, assets, input, screen, time};
+use platypus_engine_api::{app, assets, input, screen, time};
 
 // M9-API-134
 //
@@ -137,11 +137,11 @@ fn rng_handles_and_random_agree_with_the_shims() {
         assert_eq!(out, r#"[true,true,true,true,true,"[object Rng]","{}"]"#);
         // The compiled shims on a Rng the script made give the same sequence.
         let k: rquickjs::Value = ctx.eval("globalThis.k = new Rng(5)").unwrap();
-        let raw = rquickjs::Class::<iron_api::qjs::HandleBox>::from_value(&k)
+        let raw = rquickjs::Class::<platypus_api::qjs::HandleBox>::from_value(&k)
             .unwrap()
             .borrow()
             .raw;
-        let from_shim = iron_engine_api::random::rng_api::iron_Rng_nextDouble(raw);
+        let from_shim = platypus_engine_api::random::rng_api::platypus_Rng_nextDouble(raw);
         let from_js: f64 = js(ctx, "new Rng(5).nextDouble()");
         assert_eq!(from_shim, from_js);
         assert!(throws(ctx, "new Rng('seed')").starts_with("TypeError"));
@@ -154,7 +154,7 @@ fn rng_handles_and_random_agree_with_the_shims() {
 #[test]
 fn scenes_load_instantiate_and_report_events() {
     with_world(|ctx| {
-        iron_scenes::register_engine_kinds();
+        platypus_scenes::register_engine_kinds();
         let out: String = js(
             ctx,
             r#"
@@ -219,7 +219,7 @@ fn cursor_and_screen_properties_pair_getters_and_setters() {
 // instances and callbacks that only the engine keeps; everything still answers correctly.
 #[test]
 fn gc_stress_with_handles_values_and_callbacks() {
-    use iron_scene::{Scene, api::enter};
+    use platypus_scene::{Scene, api::enter};
     let mut scene = Scene::new();
     let _scope = enter(&mut scene);
     let rt = rquickjs::Runtime::new().unwrap();
@@ -228,12 +228,12 @@ fn gc_stress_with_handles_values_and_callbacks() {
     struct Release;
     impl Drop for Release {
         fn drop(&mut self) {
-            iron_engine_api::input::reset();
+            platypus_engine_api::input::reset();
         }
     }
     let _release = Release;
     ctx.with(|ctx| {
-        iron_native::register_quickjs(&ctx).unwrap();
+        platypus_native::register_quickjs(&ctx).unwrap();
         let out: String = js(
             &ctx,
             r#"

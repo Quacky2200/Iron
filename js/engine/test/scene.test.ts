@@ -10,11 +10,11 @@ let ops: unknown[][] = [];
 beforeEach(() => {
   _resetSceneForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const near = (a: Vector3, b: Vector3) => a.distance(b) < 1e-5;
@@ -46,7 +46,7 @@ describe("GameObjects", () => {
     ops = [];
     gun.setParent(null);
     expect(near(gun.transform.localPosition, new Vector3(1, 1, 0))).toBe(true);
-    globalThis.__iron_flush();
+    globalThis.__platypus_flush();
     expect(ops.map((o) => o[0])).toEqual(["scene.parent", "scene.locals"]);
     expect(GameObject.roots).toEqual([ship, gun]);
 
@@ -82,7 +82,7 @@ describe("GameObjects", () => {
   test("engine moves update the mirror without echoing ops", () => {
     const box = new GameObject("box");
     ops = [];
-    globalThis.__iron_scene([box.id, 1, 2, 3, 0, 0, 0, 1, 1, 1, 1, 99, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
+    globalThis.__platypus_scene([box.id, 1, 2, 3, 0, 0, 0, 1, 1, 1, 1, 99, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
     expect(box.transform.position).toEqual(new Vector3(1, 2, 3));
     expect(ops).toEqual([]);
   });
@@ -103,23 +103,23 @@ describe("components", () => {
     expect(GameObject.findObjectOfType(Health)).toBe(hp);
 
     // The engine drives it by id.
-    globalThis.__iron_dispatch(spin.id, "onUpdate", 1);
+    globalThis.__platypus_dispatch(spin.id, "onUpdate", 1);
     expect(go.transform.eulerAngles.y).toBeCloseTo(45);
 
     hp.destroy();
     expect(go.getComponent(Health)).toBeUndefined();
     expect(ops.at(-1)).toEqual(["scene.removeComponent", hp.id]);
-    globalThis.__iron_destroy(hp.id);
+    globalThis.__platypus_destroy(hp.id);
   });
 
   test("engine-spawned components get the object the engine made", () => {
     register({ Spinner });
-    globalThis.__iron_create("Spinner", 7, 1 << 30, "Spinner");
+    globalThis.__platypus_create("Spinner", 7, 1 << 30, "Spinner");
     const go = GameObject.byId(1 << 30)!;
     expect(go.name).toBe("Spinner");
     expect(go.getComponent(Spinner)?.id).toBe(7);
-    expect(globalThis.__iron_registered()).toEqual(["Spinner"]);
-    globalThis.__iron_destroy(7);
+    expect(globalThis.__platypus_registered()).toEqual(["Spinner"]);
+    globalThis.__platypus_destroy(7);
     expect(go.components).toEqual([]);
   });
 });

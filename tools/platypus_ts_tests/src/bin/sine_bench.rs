@@ -2,18 +2,18 @@
 
 //! `sine_bench [frames]`: one frame of the sine-circle demo is the curve (361 points a degree,
 //! Catmull-Rom smoothed to 1,083 points) flattened to the list `render.stroke` takes. Compared:
-//! QuickJS computing it, QuickJS computing it and sending it to Rust through `__iron_op`
-//! (the old way), bun, and the native code `iron_ts` generated (computing it, then Rust reading
+//! QuickJS computing it, QuickJS computing it and sending it to Rust through `__platypus_op`
+//! (the old way), bun, and the native code `platypus_ts` generated (computing it, then Rust reading
 //! the array in place).
 //!
 //! The second part runs the demo's own class (`bench/sine_demo.ts`, copied verbatim from the
 //! commit before `LineRenderer2D`: `SineCircle.points()` building `Vector3` objects with a point
 //! every degree) the same three ways: QuickJS with the engine package's `Vector3`, bun, and the
 //! compiled code. One source, so it also shows what a swap-out costs.
-use iron_core::Value;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ts_rt::{Array, link_anchor};
-use iron_ts_tests::sine::*;
+use platypus_core::Value;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ts_rt::{Array, link_anchor};
+use platypus_ts_tests::sine::*;
 use std::process::Command;
 use std::time::Instant;
 
@@ -101,7 +101,7 @@ fn quickjs_demo(frames: usize, bundle: &str) -> (f64, f64) {
 fn bun_demo(frames: usize, dir: &std::path::Path) -> Option<(f64, f64)> {
     let out = Command::new("bun")
         .arg("--preload")
-        .arg(dir.join("bench/iron_stub.ts"))
+        .arg(dir.join("bench/platypus_stub.ts"))
         .arg(dir.join("bench/sine_demo_run.ts"))
         .arg(frames.to_string())
         .output()
@@ -117,20 +117,20 @@ fn bun_demo(frames: usize, dir: &std::path::Path) -> Option<(f64, f64)> {
 
 fn native_demo(frames: usize) -> (f64, f64) {
     let t = Instant::now();
-    let sum = unsafe { iron_ts_tests::sd::ts_sd_frames(frames as f64) };
+    let sum = unsafe { platypus_ts_tests::sd::ts_sd_frames(frames as f64) };
     (t.elapsed().as_secs_f64() * 1000.0, sum)
 }
 
 fn main() {
     assert_ne!(link_anchor(), 0);
-    iron_ts_tests::gc_mode_from_env();
+    platypus_ts_tests::gc_mode_from_env();
     unsafe { ts_sine_init() };
     let frames: usize = std::env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(1000);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let bundle_path = std::env::temp_dir().join("iron_ts_sine_bundle.js");
+    let bundle_path = std::env::temp_dir().join("platypus_ts_sine_bundle.js");
     let st = Command::new("bun")
         .arg("build")
         .arg(dir.join("bench/sine_bench.ts"))
@@ -165,8 +165,8 @@ fn main() {
     best("native, compute + copy", &mut || Some(native(frames, true)));
 
     // The demo's own class, verbatim.
-    unsafe { iron_ts_tests::sd::ts_sd_init() };
-    let demo_path = std::env::temp_dir().join("iron_ts_sine_demo_bundle.js");
+    unsafe { platypus_ts_tests::sd::ts_sd_init() };
+    let demo_path = std::env::temp_dir().join("platypus_ts_sine_demo_bundle.js");
     let st = Command::new("bun")
         .arg("build")
         .arg(dir.join("bench/sine_demo_run.ts"))

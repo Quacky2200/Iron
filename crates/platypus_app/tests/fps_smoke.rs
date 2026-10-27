@@ -7,18 +7,18 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn run(name: &str, flag: &str) -> (PathBuf, String) {
-    let dir = std::env::temp_dir().join(format!("iron-fps-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("platypus-fps-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let game = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello.js");
     let png = dir.join("out.png");
     let log = dir.join("run.log");
-    let status = Command::new(env!("CARGO_BIN_EXE_iron_app"))
+    let status = Command::new(env!("CARGO_BIN_EXE_platypus"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)
         .args(["--frames", "3", flag, "--force"]) // hello.js is a QuickJS bundle
-        .env("IRON_LOG_FILE", &log)
+        .env("PLATYPUS_LOG_FILE", &log)
         .status()
         .unwrap();
     assert!(status.success());

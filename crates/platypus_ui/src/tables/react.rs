@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The React names a game uses without importing them, and the module they are re-exported from
-//! (`react`, `@iron/react`). The signatures are TypeScript text (the hooks are generic over the
-//! program's own types); `tools/iron_ts` prints them and lowers the calls (`lower/jsx.rs`).
+//! (`react`, `@platypus/react`). The signatures are TypeScript text (the hooks are generic over the
+//! program's own types); `tools/platypus_ts` prints them and lowers the calls (`lower/jsx.rs`).
 
 /// The module a name is also exported from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Module {
     React,
-    IronReact,
+    PlatypusReact,
 }
 
 /// A global function; the same name twice is an overload.
@@ -80,17 +80,17 @@ pub const HOOKS: &[Func] = &[
     ),
 ];
 
-/// `createRoot` (`@iron/react`): the target is a world panel, a window or its handle; `render` takes
+/// `createRoot` (`@platypus/react`): the target is a world panel, a window or its handle; `render` takes
 /// the tree.
 pub const CREATE_ROOT: Func = Func {
     name: "createRoot",
-    module: Module::IronReact,
+    module: Module::PlatypusReact,
     sig: "(target?: WorldPanel | Window | number): { render(node: ReactNode): void; unmount(): void }",
 };
 
 /// The type names of `react` (everything else of `react` is a function of [`HOOKS`]).
 pub const REACT_TYPES: &[&str] = &["ReactNode"];
 
-/// The type names of `@iron/react` besides the event interfaces, the element components and
+/// The type names of `@platypus/react` besides the event interfaces, the element components and
 /// [`CREATE_ROOT`].
-pub const IRON_REACT_TYPES: &[&str] = &["IronStyle", "IronElement"];
+pub const PLATYPUS_REACT_TYPES: &[&str] = &["PlatypusStyle", "PlatypusElement"];

@@ -1,7 +1,7 @@
 # Rendering
 
-Crate: [iron_render](../crates/iron_render/src) (wgpu). It consumes the GPU-free
-`Vec<iron_ui::DrawCmd>` described in [ui-tree.md](ui-tree.md) and does not depend on winit. Design
+Crate: [platypus_render](../crates/platypus_render/src) (wgpu). It consumes the GPU-free
+`Vec<platypus_ui::DrawCmd>` described in [ui-tree.md](ui-tree.md) and does not depend on winit. Design
 background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `M3-TXT-*`,
 `M3-EVT-05` in [TESTS.md](../TESTS.md).
 
@@ -9,17 +9,17 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 
 | File | Role |
 |---|---|
-| [gpu.rs](../crates/iron_render/src/gpu.rs) | `Gpu` (instance, adapter, device, queue). `headless()` and `with_surface()` |
-| [surface.rs](../crates/iron_render/src/surface.rs) | `WindowSurface`: swapchain, resize, `present_with` |
-| [offscreen.rs](../crates/iron_render/src/offscreen.rs) | `OffscreenTarget`: texture + `read_pixels` (tests, screenshots) |
-| [lib.rs](../crates/iron_render/src/lib.rs) | `Color`, re-exports, `encode_clear` |
-| [ui/mod.rs](../crates/iron_render/src/ui/mod.rs) | `UiRenderer` and `render()` (the plan/record/submit pipeline) |
-| [ui/quad.wgsl](../crates/iron_render/src/ui/quad.wgsl) | Instanced shader: boxes, shadows, glyphs, gradients, clips, images |
-| [ui/effects.wgsl](../crates/iron_render/src/ui/effects.wgsl) | Fullscreen passes: blur, composite, blit |
-| [ui/atlas.rs](../crates/iron_render/src/ui/atlas.rs) | Glyph atlas (swash) |
-| [ui/gradient.rs](../crates/iron_render/src/ui/gradient.rs) | `iron_ui` gradients to the GPU struct |
-| [ui/images.rs](../crates/iron_render/src/ui/images.rs) | `url()` image cache, `background-size/position` math |
-| [testing.rs](../crates/iron_render/src/testing.rs) | Golden helpers and the shared test GPU |
+| [gpu.rs](../crates/platypus_render/src/gpu.rs) | `Gpu` (instance, adapter, device, queue). `headless()` and `with_surface()` |
+| [surface.rs](../crates/platypus_render/src/surface.rs) | `WindowSurface`: swapchain, resize, `present_with` |
+| [offscreen.rs](../crates/platypus_render/src/offscreen.rs) | `OffscreenTarget`: texture + `read_pixels` (tests, screenshots) |
+| [lib.rs](../crates/platypus_render/src/lib.rs) | `Color`, re-exports, `encode_clear` |
+| [ui/mod.rs](../crates/platypus_render/src/ui/mod.rs) | `UiRenderer` and `render()` (the plan/record/submit pipeline) |
+| [ui/quad.wgsl](../crates/platypus_render/src/ui/quad.wgsl) | Instanced shader: boxes, shadows, glyphs, gradients, clips, images |
+| [ui/effects.wgsl](../crates/platypus_render/src/ui/effects.wgsl) | Fullscreen passes: blur, composite, blit |
+| [ui/atlas.rs](../crates/platypus_render/src/ui/atlas.rs) | Glyph atlas (swash) |
+| [ui/gradient.rs](../crates/platypus_render/src/ui/gradient.rs) | `platypus_ui` gradients to the GPU struct |
+| [ui/images.rs](../crates/platypus_render/src/ui/images.rs) | `url()` image cache, `background-size/position` math |
+| [testing.rs](../crates/platypus_render/src/testing.rs) | Golden helpers and the shared test GPU |
 
 ## GPU setup
 
@@ -30,8 +30,8 @@ resolution limits. `WindowSurface` prefers an sRGB format, starts with `AutoNoVs
 (minimized: frames are skipped) and reconfigures on `Outdated`/`Lost`/`Suboptimal`.
 
 Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
-resizing jitter. `IRON_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On
-Windows the window class background is set to black (in `iron_platform`), so any area exposed by a
+resizing jitter. `PLATYPUS_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On
+Windows the window class background is set to black (in `platypus_platform`), so any area exposed by a
 resize before the next frame is black, not white.
 
 ## Colour and units
@@ -186,7 +186,7 @@ no layer is created).
 
 ## Shaders
 
-[quad.wgsl](../crates/iron_render/src/ui/quad.wgsl):
+[quad.wgsl](../crates/platypus_render/src/ui/quad.wgsl):
 
 - `vs_main`: six vertices per instance (two triangles), no vertex buffer data besides the instance;
   growth for AA and for outer shadows (`3 * sigma`); clipped to the clip bounds.
@@ -209,20 +209,20 @@ no layer is created).
   the box shape. For `border-image` it draws pieces as `KIND_IMAGE` with a texture sub-rect in
   `color0` (`images::border_image_axis` tiles an edge); piece edges are snapped to pixels.
 
-[effects.wgsl](../crates/iron_render/src/ui/effects.wgsl): `vs_fullscreen` (one oversized triangle),
+[effects.wgsl](../crates/platypus_render/src/ui/effects.wgsl): `vs_fullscreen` (one oversized triangle),
 `fs_blur` (1D Gaussian with `radius = ceil(3 sigma)`, max `MAX_BLUR_RADIUS` = 128), `fs_composite`
 (`filtered_source`, opacity, `mask_at` and clip coverage), `fs_composite_blend` (the same against a backdrop copy), `fs_blit`. The same `Clip` struct and coverage function are duplicated
 in both shader files; keep them in sync with `GpuClip` in mod.rs.
 
 ## Glyph atlas and images
 
-- [atlas.rs](../crates/iron_render/src/ui/atlas.rs): two pages (2048 R8 coverage, 1024 RGBA colour),
+- [atlas.rs](../crates/platypus_render/src/ui/atlas.rs): two pages (2048 R8 coverage, 1024 RGBA colour),
   `etagere` bucketed allocation, 1 px padding. Keys include font blob id, glyph id, size x 4,
   subpixel bin, variable-font coordinates, synthetic bold/skew, stroke width (x4; 0 for the fill). Strokes use swash's `Stroke`. Rasterized with `swash`. When a page
   fills, the whole atlas is cleared at the start of the next frame and visible glyphs re-rasterize.
-- [images.rs](../crates/iron_render/src/ui/images.rs): `ImageCache` keyed by URL; failures are
+- [images.rs](../crates/platypus_render/src/ui/images.rs): `ImageCache` keyed by URL; failures are
   cached too so they are reported once. `url()` values are `data:` URLs (decoded with
-  `decode_data_url`) or paths resolved by `iron_core::resolve_asset` against `set_asset_root` (the
+  `decode_data_url`) or paths resolved by `platypus_core::resolve_asset` against `set_asset_root` (the
   app sets it to the game folder). `UiRenderer::image_size(gpu, url)` loads through this cache so the app can report natural sizes for `image` elements. `tile_rect` implements `background-size`
   (`auto`/`cover`/`contain`/lengths) and `background-position`. `ImageSamplers` holds two repeating
   samplers, `smooth` (linear) and `nearest` (`image-rendering: pixelated`); each `LoadedImage` has a
@@ -241,9 +241,9 @@ pixel into the tile on repeating axes, skips the gradient outside the tile on ot
 
 `OffscreenTarget::with_format(gpu, w, h, format)` creates a `RENDER_ATTACHMENT | COPY_SRC` texture;
 `read_pixels` copies to a buffer with 256-byte row padding, maps it, and returns tightly packed RGBA8
-(top row first). The app's `--screenshot` path ([main.rs](../crates/iron_app/src/main.rs)
+(top row first). The app's `--screenshot` path ([main.rs](../crates/platypus_app/src/main.rs)
 `save_screenshot`) renders the draw list again into an `Rgba8UnormSrgb` offscreen target and writes
-a PNG with `iron_render::testing::write_png`. It still opens a window (frames run until the target
+a PNG with `platypus_render::testing::write_png`. It still opens a window (frames run until the target
 count), unlike tests, which are fully headless.
 
 ## Image tint
@@ -256,6 +256,6 @@ on both the tiled and the repeating path. Golden M3-GAME-01.
 ## Golden testing
 
 See [testing.md](testing.md). In short: `assert_golden(id, w, h, &pixels, tolerance)` in
-[testing.rs](../crates/iron_render/src/testing.rs) compares against `tests/golden/<id>.png`;
-`IRON_UPDATE_GOLDEN=1` rewrites references. `shared_gpu()` returns one `Gpu` per test binary behind a
+[testing.rs](../crates/platypus_render/src/testing.rs) compares against `tests/golden/<id>.png`;
+`PLATYPUS_UPDATE_GOLDEN=1` rewrites references. `shared_gpu()` returns one `Gpu` per test binary behind a
 mutex because creating devices from parallel threads can deadlock some Vulkan layers.

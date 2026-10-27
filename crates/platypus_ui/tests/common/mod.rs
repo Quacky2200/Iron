@@ -3,9 +3,9 @@
 //! Shared helpers for building small trees in integration tests.
 #![allow(dead_code)]
 
-use iron_core::{Commit, Value};
-use iron_ui::UiTree;
-use iron_ui::opcodes::*;
+use platypus_core::{Commit, Value};
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::*;
 
 pub fn n(id: u32) -> Value {
     Value::Number(id.into())

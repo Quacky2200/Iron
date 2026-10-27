@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Cloth` components: each simulates a copy of its object's mesh (`iron_physics::cloth`)
+//! `Cloth` components: each simulates a copy of its object's mesh (`platypus_physics::cloth`)
 //! on the fixed tick, holding pinned vertices where the object is and pushing vertices out
 //! of its sphere and capsule colliders, then hands the moved vertices to the renderer.
 //!
@@ -13,10 +13,10 @@
 
 use std::collections::HashMap;
 
-use iron_core::Value;
-use iron_core::glam::{Mat4, Vec3};
-use iron_physics::cloth::{Cloth, ClothCollider, ClothSettings};
-use iron_scene::ScriptScene;
+use platypus_core::Value;
+use platypus_core::glam::{Mat4, Vec3};
+use platypus_physics::cloth::{Cloth, ClothCollider, ClothSettings};
+use platypus_scene::ScriptScene;
 
 use crate::world_view::WorldViews;
 

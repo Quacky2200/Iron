@@ -7,9 +7,9 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::UiTree;
-use iron_ui::opcodes::SET_STYLE;
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::SET_STYLE;
 
 fn width(tree: &mut UiTree, id: u32) -> f32 {
     tree.layout_if_needed();
@@ -143,7 +143,7 @@ fn paint_and_text_properties_take_relative_units() {
     let mut tree = d.build("");
     tree.layout_if_needed();
     let v = tree.visual(NodeId(a)).unwrap();
-    assert_eq!(v.border_radius.top_left.x, iron_ui::Len::Px(20.0));
+    assert_eq!(v.border_radius.top_left.x, platypus_ui::Len::Px(20.0));
     assert!((tree.computed_text(NodeId(a)).letter_spacing - 1.0).abs() < 1e-4);
 }
 

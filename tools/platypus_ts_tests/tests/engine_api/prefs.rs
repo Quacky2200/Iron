@@ -3,13 +3,13 @@
 //! `bench/prefs.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_prefs_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-615..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::prefs_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::prefs_t::*;
 use serde_json::Value;
 
 /// The saved file had "saved.n" = 7.9 and "saved.s" = "hello".
 fn reset() {
-    use iron_engine_api::prefs::{self, Pref};
+    use platypus_engine_api::prefs::{self, Pref};
     prefs::reset();
     prefs::load([
         ("saved.n".to_string(), Pref::Num(7.9)),
@@ -18,9 +18,9 @@ fn reset() {
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_prf_init() };
     reset();
     f();

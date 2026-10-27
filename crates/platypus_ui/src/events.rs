@@ -3,10 +3,10 @@
 //! UI events (DESIGN D6). [`Pointer`] turns pointer input into DOM-style events and
 //! keeps `:hover` / `:active` up to date; [`crate::Interaction`] adds focus and keys
 //! and runs default actions. Dispatching to scripts is the caller's job:
-//! [`UiEvent::script_args`] are the arguments for `__iron_ui_event`, which
-//! `@iron/react` runs through capture and bubble phases.
+//! [`UiEvent::script_args`] are the arguments for `__platypus_ui_event`, which
+//! `@platypus/react` runs through capture and bubble phases.
 
-use iron_core::{NodeId, Value};
+use platypus_core::{NodeId, Value};
 
 use crate::attrs::ElementState;
 use crate::tree::UiTree;
@@ -174,7 +174,7 @@ pub struct Modifiers {
 }
 
 impl Modifiers {
-    /// shift = 1, ctrl = 2, alt = 4, meta = 8 (decoded by `@iron/react`).
+    /// shift = 1, ctrl = 2, alt = 4, meta = 8 (decoded by `@platypus/react`).
     pub fn bits(self) -> u32 {
         self.shift as u32
             | (self.ctrl as u32) << 1
@@ -275,7 +275,7 @@ impl UiEvent {
         self.path[0]
     }
 
-    /// Arguments for `__iron_ui_event(type, path, data, keys)`: `data` is `[x, y, button,
+    /// Arguments for `__platypus_ui_event(type, path, data, keys)`: `data` is `[x, y, button,
     /// buttons, detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop,
     /// scrollWidth, scrollHeight, clientWidth, clientHeight]` (`related` 0 for none) and
     /// `strings` is `[key, code]` for keyboard events, `[value]` for input events and

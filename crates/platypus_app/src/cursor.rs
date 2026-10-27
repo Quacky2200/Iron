@@ -5,14 +5,14 @@
 
 use std::path::Path;
 
-use iron_platform::CursorRgba;
+use platypus_platform::CursorRgba;
 
 /// Browsers ignore cursor images larger than this (CSS pixels) and use the next one.
 pub const MAX_CURSOR_SIZE: u32 = 128;
 
 /// Reads a cursor image from the game folder or a `data:` URL.
 pub fn read(root: &Path, url: &str) -> Option<Vec<u8>> {
-    iron_core::read_asset(root, url)
+    platypus_core::read_asset(root, url)
         .inspect_err(|e| tracing::warn!("cursor image: {e}"))
         .ok()
 }
@@ -113,12 +113,12 @@ mod tests {
     // M3-CUR-01
     #[test]
     fn every_css_cursor_keyword_maps_to_an_os_cursor() {
-        for keyword in iron_ui::CURSORS {
+        for keyword in platypus_ui::CURSORS {
             if matches!(*keyword, "auto" | "none") {
                 continue; // resolved by the tree / hides the cursor
             }
             assert!(
-                keyword.parse::<iron_platform::CursorIcon>().is_ok(),
+                keyword.parse::<platypus_platform::CursorIcon>().is_ok(),
                 "{keyword} has no OS cursor"
             );
         }

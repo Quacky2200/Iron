@@ -2,15 +2,15 @@
 
 //! `SceneManager`, `Scene` and `Prefab` from QuickJS: handles are opaque objects. IDs are in
 //! TESTS.md (M9-API-*).
-use iron_scene::{Scene, api::enter};
+use platypus_scene::{Scene, api::enter};
 use rquickjs::Ctx;
 
 fn run<R>(f: impl FnOnce(&Ctx<'_>) -> R) -> R {
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
-        iron_engine_api::register_quickjs(&ctx).unwrap();
-        iron_scenes::register_quickjs(&ctx).unwrap();
+        platypus_engine_api::register_quickjs(&ctx).unwrap();
+        platypus_scenes::register_quickjs(&ctx).unwrap();
         f(&ctx)
     })
 }
@@ -43,7 +43,7 @@ fn scenes_and_prefabs_are_handle_classes_in_quickjs() {
             JSON.stringify([
                 level.name, level.isLoaded, level.rootCount, level.rootAt(0).name,
                 SceneManager.sceneOf(go).name, SceneManager.getSceneByName('level').name,
-                String(level), String(prefab), JSON.stringify(level), JSON.parse(JSON.stringify(prefab)).includes('iron.prefab'),
+                String(level), String(prefab), JSON.stringify(level), JSON.parse(JSON.stringify(prefab)).includes('platypus.prefab'),
                 prefab.name, copy !== null && copy.name, level instanceof Scene,
                 noScene === null || noScene.isLoaded === false,
                 SceneManager.setActiveScene(level), SceneManager.getActiveScene().name,

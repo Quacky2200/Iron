@@ -1,57 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * @iron/react — render React components into Iron's engine-owned UI tree.
+ * @platypus/react — render React components into Platypus's engine-owned UI tree.
  *
  * ```tsx
- * import { createRoot } from "@iron/react";
+ * import { createRoot } from "@platypus/react";
  * createRoot().render(<box style={{ width: 100, height: 100, backgroundColor: "teal" }} />);
  * ```
  */
 
-import { _loadingGame } from "@iron/engine";
+import { _loadingGame } from "@platypus/engine";
 import { createElement, type ReactElement, type ReactNode, type Ref } from "react";
 import { ConcurrentRoot } from "react-reconciler/constants";
 
 import "./events.ts";
 import type {
-  IronAnimationEvent,
-  IronDragEvent,
-  IronFocusEvent,
-  IronInputEvent,
-  IronKeyboardEvent,
-  IronPointerEvent,
-  IronScrollEvent,
-  IronTransitionEvent,
-  IronWheelEvent,
+  PlatypusAnimationEvent,
+  PlatypusDragEvent,
+  PlatypusFocusEvent,
+  PlatypusInputEvent,
+  PlatypusKeyboardEvent,
+  PlatypusPointerEvent,
+  PlatypusScrollEvent,
+  PlatypusTransitionEvent,
+  PlatypusWheelEvent,
 } from "./events.ts";
 import { containerFor, type Instance, reconciler, screenContainer } from "./host.ts";
-import type { IronStyle } from "./style.ts";
+import type { PlatypusStyle } from "./style.ts";
 
-export type { IronStyle } from "./style.ts";
+export type { PlatypusStyle } from "./style.ts";
 export {
   type DroppedFile,
-  IronAnimationEvent,
-  IronDataTransfer,
-  IronDragEvent,
-  IronEvent,
-  IronFocusEvent,
-  IronInputEvent,
-  IronKeyboardEvent,
-  IronPointerEvent,
-  IronScrollEvent,
-  IronTransitionEvent,
-  IronWheelEvent,
+  PlatypusAnimationEvent,
+  PlatypusDataTransfer,
+  PlatypusDragEvent,
+  PlatypusEvent,
+  PlatypusFocusEvent,
+  PlatypusInputEvent,
+  PlatypusKeyboardEvent,
+  PlatypusPointerEvent,
+  PlatypusScrollEvent,
+  PlatypusTransitionEvent,
+  PlatypusWheelEvent,
 } from "./events.ts";
 export {
-  Instance as IronElement,
+  Instance as PlatypusElement,
   type ScrollBehavior,
   type ScrollIntoViewOptions,
   type ScrollLogicalPosition,
   type ScrollToOptions,
 } from "./host.ts";
 
-type PointerHandler = (event: IronPointerEvent) => void;
+type PointerHandler = (event: PlatypusPointerEvent) => void;
 
 /**
  * Event handlers, run React-style: `*Capture` handlers from the root down to the
@@ -80,31 +80,31 @@ export interface EventProps {
   onMouseMoveCapture?: PointerHandler;
   onMouseEnter?: PointerHandler;
   onMouseLeave?: PointerHandler;
-  onWheel?: (event: IronWheelEvent) => void;
-  onWheelCapture?: (event: IronWheelEvent) => void;
+  onWheel?: (event: PlatypusWheelEvent) => void;
+  onWheelCapture?: (event: PlatypusWheelEvent) => void;
   /** Keys go to the focused element (see `tabIndex`) and bubble. */
-  onKeyDown?: (event: IronKeyboardEvent) => void;
-  onKeyDownCapture?: (event: IronKeyboardEvent) => void;
-  onKeyUp?: (event: IronKeyboardEvent) => void;
-  onKeyUpCapture?: (event: IronKeyboardEvent) => void;
+  onKeyDown?: (event: PlatypusKeyboardEvent) => void;
+  onKeyDownCapture?: (event: PlatypusKeyboardEvent) => void;
+  onKeyUp?: (event: PlatypusKeyboardEvent) => void;
+  onKeyUpCapture?: (event: PlatypusKeyboardEvent) => void;
   /** Focus arrived on this element or a descendant (bubbles, like React DOM). */
-  onFocus?: (event: IronFocusEvent) => void;
-  onFocusCapture?: (event: IronFocusEvent) => void;
+  onFocus?: (event: PlatypusFocusEvent) => void;
+  onFocusCapture?: (event: PlatypusFocusEvent) => void;
   /** Focus left this element or a descendant. */
-  onBlur?: (event: IronFocusEvent) => void;
-  onBlurCapture?: (event: IronFocusEvent) => void;
+  onBlur?: (event: PlatypusFocusEvent) => void;
+  onBlurCapture?: (event: PlatypusFocusEvent) => void;
   /** The element scrolled (by the wheel, keys, its scrollbar or `scrollTo`). Doesn't bubble. */
-  onScroll?: (event: IronScrollEvent) => void;
+  onScroll?: (event: PlatypusScrollEvent) => void;
   /** A transition was created, passed its delay, finished, or was replaced / removed. Bubble. */
-  onTransitionRun?: (event: IronTransitionEvent) => void;
-  onTransitionStart?: (event: IronTransitionEvent) => void;
-  onTransitionEnd?: (event: IronTransitionEvent) => void;
-  onTransitionCancel?: (event: IronTransitionEvent) => void;
+  onTransitionRun?: (event: PlatypusTransitionEvent) => void;
+  onTransitionStart?: (event: PlatypusTransitionEvent) => void;
+  onTransitionEnd?: (event: PlatypusTransitionEvent) => void;
+  onTransitionCancel?: (event: PlatypusTransitionEvent) => void;
   /** A `@keyframes` animation started, began another iteration, finished, or was removed. Bubble. */
-  onAnimationStart?: (event: IronAnimationEvent) => void;
-  onAnimationIteration?: (event: IronAnimationEvent) => void;
-  onAnimationEnd?: (event: IronAnimationEvent) => void;
-  onAnimationCancel?: (event: IronAnimationEvent) => void;
+  onAnimationStart?: (event: PlatypusAnimationEvent) => void;
+  onAnimationIteration?: (event: PlatypusAnimationEvent) => void;
+  onAnimationEnd?: (event: PlatypusAnimationEvent) => void;
+  onAnimationCancel?: (event: PlatypusAnimationEvent) => void;
   /** This element took or lost pointer capture (`ref.setPointerCapture`). */
   onGotPointerCapture?: PointerHandler;
   onLostPointerCapture?: PointerHandler;
@@ -114,20 +114,20 @@ export interface EventProps {
    * element under the pointer: `onDragEnter`, `onDragOver` (prevent to accept a drop),
    * `onDragLeave`, `onDrop`. Files from the system arrive as `dataTransfer.files`.
    */
-  onDragStart?: (event: IronDragEvent) => void;
-  onDragStartCapture?: (event: IronDragEvent) => void;
-  onDrag?: (event: IronDragEvent) => void;
-  onDragCapture?: (event: IronDragEvent) => void;
-  onDragEnter?: (event: IronDragEvent) => void;
-  onDragEnterCapture?: (event: IronDragEvent) => void;
-  onDragOver?: (event: IronDragEvent) => void;
-  onDragOverCapture?: (event: IronDragEvent) => void;
-  onDragLeave?: (event: IronDragEvent) => void;
-  onDragLeaveCapture?: (event: IronDragEvent) => void;
-  onDrop?: (event: IronDragEvent) => void;
-  onDropCapture?: (event: IronDragEvent) => void;
-  onDragEnd?: (event: IronDragEvent) => void;
-  onDragEndCapture?: (event: IronDragEvent) => void;
+  onDragStart?: (event: PlatypusDragEvent) => void;
+  onDragStartCapture?: (event: PlatypusDragEvent) => void;
+  onDrag?: (event: PlatypusDragEvent) => void;
+  onDragCapture?: (event: PlatypusDragEvent) => void;
+  onDragEnter?: (event: PlatypusDragEvent) => void;
+  onDragEnterCapture?: (event: PlatypusDragEvent) => void;
+  onDragOver?: (event: PlatypusDragEvent) => void;
+  onDragOverCapture?: (event: PlatypusDragEvent) => void;
+  onDragLeave?: (event: PlatypusDragEvent) => void;
+  onDragLeaveCapture?: (event: PlatypusDragEvent) => void;
+  onDrop?: (event: PlatypusDragEvent) => void;
+  onDropCapture?: (event: PlatypusDragEvent) => void;
+  onDragEnd?: (event: PlatypusDragEvent) => void;
+  onDragEndCapture?: (event: PlatypusDragEvent) => void;
 }
 
 /** Attributes that CSS selectors can match. */
@@ -149,7 +149,7 @@ export interface ElementAttrs {
 }
 
 export interface BoxProps extends ElementAttrs, EventProps {
-  style?: IronStyle;
+  style?: PlatypusStyle;
   children?: ReactNode;
   key?: string | number | null;
   ref?: Ref<Instance>;
@@ -166,12 +166,12 @@ declare module "react" {
 }
 
 export interface TextProps extends ElementAttrs, EventProps {
-  style?: IronStyle;
+  style?: PlatypusStyle;
   children?: ReactNode;
   ref?: Ref<Instance>;
 }
 
-// React's own JSX types already define <text> (SVG) and <span> (HTML), so Iron's
+// React's own JSX types already define <text> (SVG) and <span> (HTML), so Platypus's
 // text elements are exposed as components. CSS type selectors still use `text`
 // and `span`.
 
@@ -182,7 +182,7 @@ export function Text({ children, ...props }: TextProps): ReactElement {
 
 /** Props shared by `Input` and `TextArea`. */
 export interface FieldProps extends Omit<ElementAttrs, "checked">, EventProps {
-  style?: IronStyle;
+  style?: PlatypusStyle;
   /** Controlled text: the field shows this and `onChange` reports edits. */
   value?: string;
   /** Initial text of an uncontrolled field. */
@@ -191,8 +191,8 @@ export interface FieldProps extends Omit<ElementAttrs, "checked">, EventProps {
   placeholder?: string;
   readOnly?: boolean;
   /** Every edit (typing, deleting, pasting); `e.target.value` is the new text. */
-  onChange?: (event: IronInputEvent) => void;
-  onInput?: (event: IronInputEvent) => void;
+  onChange?: (event: PlatypusInputEvent) => void;
+  onInput?: (event: PlatypusInputEvent) => void;
   ref?: Ref<Instance>;
 }
 
@@ -207,7 +207,7 @@ export function TextArea(props: FieldProps & { rows?: number }): ReactElement {
 }
 
 export interface ImageProps extends ElementAttrs, EventProps {
-  style?: IronStyle;
+  style?: PlatypusStyle;
   /** A path inside the game folder (like `loadFont`) or a `data:` URL. */
   src?: string;
   ref?: Ref<Instance>;
@@ -231,7 +231,7 @@ export function List({ children, ...props }: BoxProps): ReactElement {
 }
 
 export interface DialogProps extends ElementAttrs, EventProps {
-  style?: IronStyle;
+  style?: PlatypusStyle;
   children?: ReactNode;
   /** Shown while true; closed dialogs are `display: none`. */
   open?: boolean;
@@ -246,8 +246,8 @@ export interface DialogProps extends ElementAttrs, EventProps {
    * open), then `onClose`, where you set `open` to false.
    */
   closedBy?: "any" | "closerequest" | "none";
-  onCancel?: (event: IronPointerEvent) => void;
-  onClose?: (event: IronPointerEvent) => void;
+  onCancel?: (event: PlatypusPointerEvent) => void;
+  onClose?: (event: PlatypusPointerEvent) => void;
   ref?: Ref<Instance>;
 }
 
@@ -280,7 +280,7 @@ const reportError = (kind: string) => (error: unknown) => {
   console.error(`[react] ${kind}: ${e.message}${e.stack ? `\n${e.stack}` : ""}`);
 };
 
-/** The UI target ids of windows: `WINDOW_TARGET | handle` (`iron_core::WINDOW_TARGET`); the main window is the screen. */
+/** The UI target ids of windows: `WINDOW_TARGET | handle` (`platypus_core::WINDOW_TARGET`); the main window is the screen. */
 const WINDOW_TARGET = 0x4000_0000;
 
 /** What `createRoot` takes: the screen (nothing, or `Window.main`), a world panel (its component or id) or a window. */
@@ -324,7 +324,7 @@ export function createRoot(target?: RootTarget): Root {
     null,
     false,
     null,
-    "iron",
+    "platypus",
     reportError("uncaught error"),
     reportError("caught error"),
     reportError("recoverable error"),

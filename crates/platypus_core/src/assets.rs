@@ -122,7 +122,7 @@ static PLAN: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync:
 static WARNED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 /// Dev loop: the game paths a packaged build would hold (`dist/assets.plan`, written by
-/// `iron-build build`). Afterwards [`resolve_asset`] warns once for a file that exists but is not
+/// `platypus-build build`). Afterwards [`resolve_asset`] warns once for a file that exists but is not
 /// in it, since a packaged game would not find it.
 pub fn set_pack_plan(keys: impl IntoIterator<Item = String>) {
     let _ = PLAN.set(keys.into_iter().collect());
@@ -130,7 +130,7 @@ pub fn set_pack_plan(keys: impl IntoIterator<Item = String>) {
 
 /// The warning for a loaded `key` that a packaged build would not include, if any.
 pub fn plan_warning(plan: &std::collections::HashSet<String>, key: &str) -> Option<String> {
-    let skip = key.ends_with(".meta") || key.starts_with("dist/") || key.starts_with(".iron/");
+    let skip = key.ends_with(".meta") || key.starts_with("dist/") || key.starts_with(".platypus/");
     (!skip && !plan.contains(key)).then(|| {
         format!(
             "asset \"{key}\" loaded, but a packaged build would not include it (add it to \"include\" in project.json)"

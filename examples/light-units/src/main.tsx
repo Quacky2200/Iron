@@ -9,7 +9,7 @@
 // (`Camera.aperture` / `shutterSpeed` / `iso`): f/16, 1/200 s, ISO 200 suits the courtyard,
 // and the hall goes black; Space pauses the walk.
 //
-// The project chooses its light units in its package.json: "iron": { "lightUnits": "physical" }.
+// The project chooses its light units in its package.json: "platypus": { "lightUnits": "physical" }.
 
 /** Where sunlight travels: high, from the south-west, behind the camera as it walks in. */
 const SUN = new Vector3(0.35, -0.8, -0.45).normalized;

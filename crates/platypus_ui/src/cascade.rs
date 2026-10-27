@@ -6,7 +6,7 @@ use std::fmt;
 
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
-use iron_core::{NodeId, Value};
+use platypus_core::{NodeId, Value};
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
 use selectors::context::{
@@ -18,7 +18,7 @@ use selectors::parser::{Combinator, Component, Selector};
 use selectors::{Element, OpaqueElement};
 
 use crate::attrs::Attrs;
-use crate::css::{CssString, IronSelectors, PseudoClass, PseudoElement, Stylesheet};
+use crate::css::{CssString, PlatypusSelectors, PseudoClass, PseudoElement, Stylesheet};
 use crate::layout::LayoutEngine;
 use crate::tree::{ROOT, TEXT_NODE, UiTree};
 
@@ -99,7 +99,7 @@ impl<'a, L: LayoutEngine> NodeRef<'a, L> {
 }
 
 impl<'a, L: LayoutEngine> Element for NodeRef<'a, L> {
-    type Impl = IronSelectors;
+    type Impl = PlatypusSelectors;
 
     fn opaque(&self) -> OpaqueElement {
         // Attributes live in a boxed node, so their address is stable and unique.
@@ -183,7 +183,7 @@ impl<'a, L: LayoutEngine> Element for NodeRef<'a, L> {
     fn match_non_ts_pseudo_class(
         &self,
         pc: &PseudoClass,
-        _context: &mut MatchingContext<IronSelectors>,
+        _context: &mut MatchingContext<PlatypusSelectors>,
     ) -> bool {
         let state = self.tree.state(self.id);
         let disabled = self.tree.attrs(self.id).is_some_and(|a| a.disabled);
@@ -204,7 +204,7 @@ impl<'a, L: LayoutEngine> Element for NodeRef<'a, L> {
     fn match_pseudo_element(
         &self,
         _pe: &PseudoElement,
-        _context: &mut MatchingContext<IronSelectors>,
+        _context: &mut MatchingContext<PlatypusSelectors>,
     ) -> bool {
         false
     }
@@ -359,7 +359,7 @@ pub(crate) fn matched_declarations<L: LayoutEngine>(
     (normal, important)
 }
 
-/// CSS text as an Iron style value: plain numbers become numbers (so `opacity: .5`
+/// CSS text as a Platypus style value: plain numbers become numbers (so `opacity: .5`
 /// and `flex-grow: 1` work like their inline equivalents); everything else stays text.
 pub(crate) fn css_value(text: &str) -> Value {
     match text.trim().parse::<f64>() {
@@ -422,7 +422,7 @@ impl Deps {
         }
     }
 
-    fn add_selector(&mut self, selector: &Selector<IronSelectors>, start: Position) {
+    fn add_selector(&mut self, selector: &Selector<PlatypusSelectors>, start: Position) {
         let mut position = start;
         for component in selector.iter_raw_match_order() {
             if let Component::Combinator(c) = component {
@@ -442,7 +442,7 @@ impl Deps {
         }
     }
 
-    fn add_component(&mut self, component: &Component<IronSelectors>, position: Position) {
+    fn add_component(&mut self, component: &Component<PlatypusSelectors>, position: Position) {
         let key = match component {
             Component::Class(c) => Some(Key::Class(c.0.clone())),
             Component::ID(id) => Some(Key::Id(id.0.clone())),

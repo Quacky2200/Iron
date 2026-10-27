@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]
+//! `platypus_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]
 //! [--prefix p_] [--struct-base N] [--manifest api.json]...`:
 //! compile a TypeScript module to an object file. `--time N` repeats the compile N times and
 //! prints the best time of each phase.
@@ -8,7 +8,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(file) = args.first() else {
         eprintln!(
-            "usage: iron_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]"
+            "usage: platypus_ts <file.ts> [--dump-ir] [-o out.o] [--bindings out.rs] [--opt none|speed] [--time N]"
         );
         std::process::exit(2);
     };
@@ -30,13 +30,14 @@ fn main() {
         .filter(|w| w[0] == "--manifest")
         .map(|w| std::fs::read_to_string(&w[1]).expect("read manifest"))
         .collect();
-    let compile = || match iron_ts::compile_with_manifests(&src, &opt, &prefix, base, &manifests) {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let compile =
+        || match platypus_ts::compile_with_manifests(&src, &opt, &prefix, base, &manifests) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        };
     let out = compile();
     if let Some(n) = flag("--time").and_then(|n| n.parse::<usize>().ok()) {
         let (mut lo, mut cg) = (out.lower_time, out.codegen_time);

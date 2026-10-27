@@ -174,12 +174,12 @@ export class ParticleSystem extends Component {
     const key = JSON.stringify(pairs);
     if (key === this.sent) return;
     this.sent = key;
-    __iron_op("render.particles", this.id, this.gameObject.id, pairs, playOnAwake);
+    __platypus_op("render.particles", this.id, this.gameObject.id, pairs, playOnAwake);
   }
 
   private control(action: string, count?: number): void {
     this.sync();
-    __iron_op("render.particleControl", this.id, action, ...(count === undefined ? [] : [count]));
+    __platypus_op("render.particleControl", this.id, action, ...(count === undefined ? [] : [count]));
   }
 
   /** Starts (or resumes) emitting. */
@@ -220,7 +220,7 @@ export class ParticleSystem extends Component {
 
   override onDestroy(): void {
     systems.delete(this.id);
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 
   /** @internal The engine's report: count and whether it's alive. */
@@ -239,7 +239,7 @@ export class ParticleSystem extends Component {
   }
 }
 
-globalThis.__iron_particles = (changed: number[]) => {
+globalThis.__platypus_particles = (changed: number[]) => {
   for (let i = 0; i + 2 < changed.length; i += 3) {
     systems.get(changed[i]!)?._report(changed[i + 1]!, changed[i + 2] === 1);
   }

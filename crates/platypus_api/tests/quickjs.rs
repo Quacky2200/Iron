@@ -3,7 +3,7 @@
 //! Typed QuickJS bindings for value classes and strings: a JS string is a Rust `&str`/`String`, a
 //! value class is an object with the fields' names (a result is a new object). IDs are in
 //! TESTS.md (M9-API-*).
-use iron_api::{ValueType, iron_api};
+use platypus_api::{ValueType, platypus_api};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vec3 {
@@ -25,7 +25,7 @@ impl ValueType<3> for Vec3 {
     }
 }
 
-#[iron_api(namespace = "Geo", quickjs, values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
+#[platypus_api(namespace = "Geo", quickjs, values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
 pub mod geo {
     use super::Vec3;
 

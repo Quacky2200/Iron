@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Turning `iron_ui` gradients into the GPU representation the quad shader reads.
+//! Turning `platypus_ui` gradients into the GPU representation the quad shader reads.
 
-use iron_ui::{BackgroundImage, ColorStop, GradientDirection, Len, RadialShape, Rect};
+use platypus_ui::{BackgroundImage, ColorStop, GradientDirection, Len, RadialShape, Rect};
 
 const KIND_LINEAR: f32 = 0.0;
 const KIND_RADIAL: f32 = 1.0;
@@ -174,7 +174,7 @@ pub fn resolve_stops(stops: &[ColorStop], line_length: f32) -> Vec<([f32; 4], f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_ui::Rgba;
+    use platypus_ui::Rgba;
 
     fn stop(p: Option<Len>) -> ColorStop {
         ColorStop {
@@ -268,7 +268,7 @@ mod tests {
         let rect = Rect::new(10.0, 10.0, 60.0, 80.0);
         let conic = BackgroundImage::Conic {
             from: 90.0,
-            at: iron_ui::BackgroundPosition {
+            at: platypus_ui::BackgroundPosition {
                 x: Len::Percent(0.25),
                 y: Len::Px(5.0),
             },

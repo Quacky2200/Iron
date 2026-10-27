@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Partial / Required / Pick / Omit / Readonly for tests/lang/utility.rs. Each case (split at
-// `//## name`) defines `function t(): string`; the test compiles it with iron_ts (normal,
+// `//## name`) defines `function t(): string`; the test compiles it with platypus_ts (normal,
 // GC-stress, GC-off) and compares the result with bun's (`bun bench/gen_cases_expected.ts
 // utility_cases.ts`).
 //## partial_default_param

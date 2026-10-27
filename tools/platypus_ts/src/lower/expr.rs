@@ -987,13 +987,13 @@ impl<'a> Lowerer<'a> {
         self.manifest.records[rn].iter().all(|(_, f)| f.is_flat())
     }
 
-    /// `iron_api_result(i)`: the `i`-th number of the last list or record result.
+    /// `platypus_api_result(i)`: the `i`-th number of the last list or record result.
     fn flat_result(&mut self, i: Expr) -> Expr {
         let f = ExternFn {
             rest: false,
             optional_from: usize::MAX,
             defaults: Vec::new(),
-            symbol: "iron_api_result".into(),
+            symbol: "platypus_api_result".into(),
             params: vec![("i".into(), ExtTy::U32)],
             ret: ExtTy::F64,
         };
@@ -1118,13 +1118,13 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    /// `iron_api_result_str(i)`: the `i`-th string of the last result.
+    /// `platypus_api_result_str(i)`: the `i`-th string of the last result.
     fn str_result(&mut self, i: Expr) -> Expr {
         let item = ExternFn {
             rest: false,
             optional_from: usize::MAX,
             defaults: Vec::new(),
-            symbol: "iron_api_result_str".into(),
+            symbol: "platypus_api_result_str".into(),
             params: vec![("i".into(), ExtTy::U32)],
             ret: ExtTy::Str,
         };
@@ -1575,7 +1575,7 @@ impl<'a> Lowerer<'a> {
             bail!("{at}: Ui.styleObj(h, obj)")
         };
         let h = self.lower_expr(he, None)?;
-        // `style={..}` is an `IronStyle` (a list of property entries) when the ambient types are there.
+        // `style={..}` is a `PlatypusStyle` (a list of property entries) when the ambient types are there.
         let bag = if !attr && self.fids.contains_key("__apply_style") {
             Some(Ty::Arr(Box::new(self.named_type("StyleEntry")?)))
         } else {
@@ -2536,7 +2536,7 @@ impl<'a> Lowerer<'a> {
                     rest: false,
                     optional_from: usize::MAX,
                     defaults: Vec::new(),
-                    symbol: "iron_api_result_none".into(),
+                    symbol: "platypus_api_result_none".into(),
                     params: Vec::new(),
                     ret: ExtTy::Bool,
                 };
@@ -2598,7 +2598,7 @@ impl<'a> Lowerer<'a> {
                 return mk(ExprKind::Seq(pre, Box::new(result)), arr_ty);
             }
             // A list of numbers or handles: the call returns the count; the numbers are in the
-            // buffer and the ids behind `iron_api_result_id`.
+            // buffer and the ids behind `platypus_api_result_id`.
             ExtTy::F64List | ExtTy::HandleList(_) => {
                 let arr_ty = self.ext_ir(&f.ret);
                 let count = self.new_local(Ty::Num);
@@ -2630,7 +2630,7 @@ impl<'a> Lowerer<'a> {
                             rest: false,
                             optional_from: usize::MAX,
                             defaults: Vec::new(),
-                            symbol: "iron_api_result_id".into(),
+                            symbol: "platypus_api_result_id".into(),
                             params: vec![("i".into(), ExtTy::U32)],
                             ret: ExtTy::Handle(hn.clone()),
                         };
@@ -2713,7 +2713,7 @@ impl<'a> Lowerer<'a> {
                     rest: false,
                     optional_from: usize::MAX,
                     defaults: Vec::new(),
-                    symbol: "iron_api_result_str".into(),
+                    symbol: "platypus_api_result_str".into(),
                     params: vec![("i".into(), ExtTy::U32)],
                     ret: ExtTy::Str,
                 };
@@ -3290,7 +3290,7 @@ impl<'a> Lowerer<'a> {
             let el = (**el).clone();
             return self.lower_enum_record(o, el);
         }
-        // `{ width: 10, ...other }` where an `IronStyle` (a list of `StyleEntry`) is expected.
+        // `{ width: 10, ...other }` where a `PlatypusStyle` (a list of `StyleEntry`) is expected.
         if let Some(Ty::Arr(el)) = exp.map(|t| t.strip())
             && let Ty::Obj(esid) = el.strip()
             && self.m.structs[*esid].name == "StyleEntry"
@@ -3781,7 +3781,7 @@ impl<'a> Lowerer<'a> {
         )))
     }
 
-    /// An object literal as an `IronStyle`: a `StyleEntry` per property, spreads concatenated, so
+    /// An object literal as a `PlatypusStyle`: a `StyleEntry` per property, spreads concatenated, so
     /// a later entry of the same name wins when they are applied. A value that may be undefined
     /// makes an entry that applies nothing.
     fn lower_style_bag(&mut self, o: &'a ObjectExpression<'a>, aty: Ty) -> R<Expr> {

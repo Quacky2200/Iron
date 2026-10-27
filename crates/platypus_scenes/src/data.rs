@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Saving objects to scene data and building them back: the format of `js/engine/src/scenes.ts`
-//! (`iron.scene` version 1), over the component kinds in [`iron_kinds`].
+//! (`platypus.scene` version 1), over the component kinds in [`platypus_kinds`].
 //!
 //! Objects and components get file ids; a property that points at another object or component is
 //! saved as `{"$ref":"GameObject"|"Component","id":N}` and resolved after everything is built.
@@ -9,10 +9,10 @@
 //! copy as `{"$ref":..,"live":..}`.
 
 use glam::{Quat, Vec3};
-use iron_api::Handle;
-use iron_kinds::Kind;
-use iron_scene::api::with_scene;
-use iron_scene::{ObjectId, Scene, Transform};
+use platypus_api::Handle;
+use platypus_kinds::Kind;
+use platypus_scene::api::with_scene;
+use platypus_scene::{ObjectId, Scene, Transform};
 use serde_json::{Map, Value, json};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -55,7 +55,7 @@ fn prefab_of(object: ObjectId) -> Option<String> {
 /// The components on an object, kind by kind in registration order.
 pub(crate) fn components_of(raw: u64) -> Vec<(Rc<Kind>, u64)> {
     let mut out = Vec::new();
-    for k in iron_kinds::all() {
+    for k in platypus_kinds::all() {
         for h in (k.on)(raw) {
             out.push((k.clone(), h));
         }
@@ -65,7 +65,7 @@ pub(crate) fn components_of(raw: u64) -> Vec<(Rc<Kind>, u64)> {
 
 fn unsaved(object: ObjectId) -> bool {
     sc(|s| s.hide_flags(object) & DONT_SAVE != 0).unwrap_or(true)
-        || iron_kinds::object_extras()
+        || platypus_kinds::object_extras()
             .iter()
             .any(|e| (e.hidden)(object.to_raw()))
 }
@@ -117,7 +117,7 @@ impl Saver {
     /// An asset placeholder as the file holds it: a table id (shared kinds) or the inline
     /// definition. A kind that does not exist, or an asset that cannot be saved, is null.
     fn asset(&self, kind_name: &str, handle: u64) -> Value {
-        let Some(kind) = iron_kinds::get_asset(kind_name) else {
+        let Some(kind) = platypus_kinds::get_asset(kind_name) else {
             warn(format!("no asset kind {kind_name}; value dropped"));
             return Value::Null;
         };
@@ -256,7 +256,7 @@ impl Saver {
         if layer != 0 {
             d.insert("layer".into(), json!(layer));
         }
-        for extra in iron_kinds::object_extras() {
+        for extra in platypus_kinds::object_extras() {
             if let Some(v) = (extra.save)(object.to_raw()) {
                 d.insert(extra.key.clone(), v);
             }
@@ -401,7 +401,7 @@ impl Loader {
         if let Some(id) = d.get("id").and_then(Value::as_u64) {
             self.things.insert(id, Thing::Object(object));
         }
-        for extra in iron_kinds::object_extras() {
+        for extra in platypus_kinds::object_extras() {
             if let Some(v) = d.get(&extra.key) {
                 (extra.load)(object.to_raw(), v);
             }
@@ -416,7 +416,7 @@ impl Loader {
             .flatten()
         {
             let ty = c.get("type").and_then(Value::as_str).unwrap_or_default();
-            let Some(kind) = iron_kinds::get(ty) else {
+            let Some(kind) = platypus_kinds::get(ty) else {
                 warn(format!(
                     "{name}: unknown component {ty} (it is not registered with this game)"
                 ));
@@ -458,17 +458,17 @@ impl Loader {
             return Value::Null;
         };
         let type_name = def.get("type").and_then(Value::as_str).unwrap_or_default();
-        let Some(kind) = iron_kinds::get_asset(type_name) else {
+        let Some(kind) = platypus_kinds::get_asset(type_name) else {
             warn(format!("asset {id}: unknown type {type_name:?}"));
             return Value::Null;
         };
         if let Some(h) = self.asset_cache.borrow().get(id) {
-            return iron_kinds::asset_ref(&kind.name, *h);
+            return platypus_kinds::asset_ref(&kind.name, *h);
         }
         match (kind.create)(&self.resolve(def)) {
             Ok(h) => {
                 self.asset_cache.borrow_mut().insert(id.to_owned(), h);
-                iron_kinds::asset_ref(&kind.name, h)
+                platypus_kinds::asset_ref(&kind.name, h)
             }
             Err(e) => {
                 warn(format!("asset {id}: {e}"));
@@ -487,11 +487,11 @@ impl Loader {
             Value::Object(o)
                 if o.get("$type")
                     .and_then(Value::as_str)
-                    .and_then(iron_kinds::get_asset)
+                    .and_then(platypus_kinds::get_asset)
                     .is_some_and(|k| !k.shared) =>
             {
                 let name = o["$type"].as_str().unwrap_or_default();
-                let kind = iron_kinds::get_asset(name).expect("checked");
+                let kind = platypus_kinds::get_asset(name).expect("checked");
                 let def = Value::Object(
                     o.iter()
                         .filter(|(k, _)| *k != "$type")
@@ -499,7 +499,7 @@ impl Loader {
                         .collect(),
                 );
                 match (kind.create)(&def) {
-                    Ok(h) => iron_kinds::asset_ref(&kind.name, h),
+                    Ok(h) => platypus_kinds::asset_ref(&kind.name, h),
                     Err(e) => {
                         warn(format!("{name}: {e}"));
                         Value::Null
@@ -522,8 +522,12 @@ impl Loader {
                 }
                 let id = o.get("id").and_then(Value::as_u64).unwrap_or(0);
                 match (what, self.things.get(&id)) {
-                    ("GameObject", Some(Thing::Object(o))) => iron_kinds::object_ref(o.to_raw()),
-                    ("Component", Some(Thing::Component(k, h))) => iron_kinds::component_ref(k, *h),
+                    ("GameObject", Some(Thing::Object(o))) => {
+                        platypus_kinds::object_ref(o.to_raw())
+                    }
+                    ("Component", Some(Thing::Component(k, h))) => {
+                        platypus_kinds::component_ref(k, *h)
+                    }
                     _ => Value::Null,
                 }
             }

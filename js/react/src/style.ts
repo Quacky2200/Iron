@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Style properties understood by the engine (crates/iron_ui/src/style.rs).
+// Style properties understood by the engine (crates/platypus_ui/src/style.rs).
 // Numbers are logical pixels; strings are CSS values.
 
 type Length = number | string;
@@ -35,13 +35,13 @@ export type BlendMode =
   | "color"
   | "luminosity";
 
-export interface IronStyle {
+export interface PlatypusStyle {
   // Layout
   /** `contents` drops the box: children join the parent's layout. */
   display?: "flex" | "grid" | "block" | "none" | "contents";
   /** `fixed` places the element against the window and paints it above the tree. */
   position?: "relative" | "absolute" | "fixed";
-  /** Iron defaults to `border-box` (sizes include padding and border), unlike CSS. */
+  /** Platypus defaults to `border-box` (sizes include padding and border), unlike CSS. */
   boxSizing?: "border-box" | "content-box";
   width?: Length;
   height?: Length;
@@ -209,7 +209,7 @@ export interface IronStyle {
   borderRightColor?: string;
   borderBottomColor?: string;
   borderLeftColor?: string;
-  /** 1-4 styles. Iron's default is `solid`, so a width alone draws a border. */
+  /** 1-4 styles. Platypus's default is `solid`, so a width alone draws a border. */
   borderStyle?: string;
   borderTopStyle?: BorderStyle;
   borderRightStyle?: BorderStyle;
@@ -416,7 +416,7 @@ export interface IronStyle {
 type StyleValue = string | number | null;
 
 /** Flattens a style object into `[prop, value, ...]` pairs, skipping `undefined`. */
-export function styleEntries(style: IronStyle | undefined): StyleValue[] {
+export function styleEntries(style: PlatypusStyle | undefined): StyleValue[] {
   const out: StyleValue[] = [];
   if (!style) return out;
   for (const [prop, value] of Object.entries(style)) {
@@ -429,7 +429,7 @@ export function styleEntries(style: IronStyle | undefined): StyleValue[] {
  * Props whose values changed between two style objects, as `[prop, value, ...]`.
  * Removed props are sent as `null`, which resets them to their defaults.
  */
-export function styleDiff(prev: IronStyle | undefined, next: IronStyle | undefined): StyleValue[] {
+export function styleDiff(prev: PlatypusStyle | undefined, next: PlatypusStyle | undefined): StyleValue[] {
   const out: StyleValue[] = [];
   const a = (prev ?? {}) as Record<string, unknown>;
   const b = (next ?? {}) as Record<string, unknown>;
@@ -444,7 +444,7 @@ export function styleDiff(prev: IronStyle | undefined, next: IronStyle | undefin
 
 export type Overflow = "visible" | "hidden" | "clip" | "scroll" | "auto";
 
-/** CSS `cursor` keywords (crates/iron_ui/src/style.rs `CURSORS`). */
+/** CSS `cursor` keywords (crates/platypus_ui/src/style.rs `CURSORS`). */
 export type Cursor =
   | "auto"
   | "default"

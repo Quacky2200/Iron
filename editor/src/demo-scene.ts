@@ -18,7 +18,7 @@ import {
   ReflectionProbe,
   RenderSettings,
   Vector3,
-} from "@iron/engine";
+} from "@platypus/engine";
 
 const paint = (go: GameObject, color: Color, o: { metallic?: number; smoothness?: number } = {}) => {
   go.getComponent(MeshRenderer)!.material = Material.create({ color, ...o });

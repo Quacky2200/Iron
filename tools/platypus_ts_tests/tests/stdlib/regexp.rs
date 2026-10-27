@@ -4,12 +4,12 @@
 //! `exec`, `lastIndex`, flags, named groups and match objects. `bench/gen_regexp_expected.ts` ran
 //! the same file in bun; every function here must return what bun returned, in the normal, stress
 //! GC and collection-off modes. IDs are in TESTS.md (M9-TS-222..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::rex::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::rex::*;
 use serde_json::Value;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     unsafe { ts_re_init() };
     f();

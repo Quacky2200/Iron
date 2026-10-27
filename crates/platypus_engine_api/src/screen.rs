@@ -4,12 +4,12 @@
 //! scripts see it, and the rendering quality levels. The host feeds the window ([`update`],
 //! [`set_display`]) and reads what scripts asked for: [`state`] / [`take_requests`] for the
 //! window, [`quality`] / [`quality_version`] for quality. Quality levels come from the game's
-//! `package.json` ([`configure_quality`]) and the player's saved choice (`iron.quality` in
+//! `package.json` ([`configure_quality`]) and the player's saved choice (`platypus.quality` in
 //! PlayerPrefs, [`apply_default_quality`]).
 
 use crate::prefs;
-use iron_api::callback::{Listeners, emit};
-use iron_api::{Callback, iron_api};
+use platypus_api::callback::{Listeners, emit};
+use platypus_api::{Callback, platypus_api};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 
@@ -420,7 +420,7 @@ impl From<&Resolution> for DisplayMode {
     }
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Screen", quickjs,
     records(
         /// A size in pixels.
@@ -570,7 +570,7 @@ pub mod screen_api {
 
 // ---- QualitySettings ----
 
-/// The game's quality levels and default (`iron.quality` in its `package.json`):
+/// The game's quality levels and default (`platypus.quality` in its `package.json`):
 /// `{ "default": "Medium", "levels": { "Low": { "renderScale": 0.6 } } }`. Starts at the default
 /// level; the player's saved choice is applied by [`apply_default_quality`].
 pub fn configure_quality(manifest: &Value) {
@@ -595,11 +595,13 @@ pub fn configure_quality(manifest: &Value) {
     });
 }
 
-/// Applies the player's saved choice (PlayerPrefs `iron.quality`), else the default level. The
-/// starting state is not a choice to save.
+/// Applies the player's saved choice (PlayerPrefs `platypus.quality`, or `iron.quality` saved
+/// before the rename to Platypus), else the default level. The starting state is not a choice to
+/// save.
 pub fn apply_default_quality() {
-    let saved: Option<Value> =
-        prefs::json("iron.quality").and_then(|t| serde_json::from_str(&t).ok());
+    let saved: Option<Value> = prefs::json("platypus.quality")
+        .or_else(|| prefs::json("iron.quality"))
+        .and_then(|t| serde_json::from_str(&t).ok());
     st(|s| {
         let q = &mut s.quality;
         if let Some(saved) = saved
@@ -633,7 +635,7 @@ fn remember(s: &State) {
         "current": level_json(&s.quality.current),
     })
     .to_string();
-    prefs::set_json("iron.quality", &text);
+    prefs::set_json("platypus.quality", &text);
 }
 
 fn change(f: impl FnOnce(&mut QualityState)) {
@@ -652,7 +654,7 @@ pub enum ShadowKind {
     All,
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "QualitySettings", quickjs,
     enums(
         /// Which shadows are drawn: none, only hard ones, or soft ones too.

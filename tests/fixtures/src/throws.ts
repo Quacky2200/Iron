@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { Component, register } from "@iron/engine";
+import { Component, register } from "@platypus/engine";
 
 class Hello extends Component {
   override onUpdate(_dt: number) {

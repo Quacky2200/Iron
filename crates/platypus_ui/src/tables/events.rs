@@ -3,10 +3,10 @@
 //! UI events as a script sees them: the fields (and where they come from in the event's number and
 //! string lists), the event interfaces and the `on*` props.
 //!
-//! The slots index `UiEvent::script_args()` (`iron_ui::events`): `data` is `[x, y, button, buttons,
+//! The slots index `UiEvent::script_args()` (`platypus_ui::events`): `data` is `[x, y, button, buttons,
 //! detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop, scrollWidth,
 //! scrollHeight, clientWidth, clientHeight]`, `strings` is `[key, code]` for keyboard events and
-//! `[value]` for input events. `crates/iron_ui/tests/ui_tables.rs` checks the slots against it.
+//! `[value]` for input events. `crates/platypus_ui/tests/ui_tables.rs` checks the slots against it.
 
 /// Where a field's value comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub enum Init {
     Const(&'static str),
     /// The element that lost or gained focus (`data[9]`, 0 for none) as `{ id }`, or null.
     Related,
-    /// The drag's `IronDataTransfer` (one object from `dragstart` to `dragend`; the dragged files
+    /// The drag's `PlatypusDataTransfer` (one object from `dragstart` to `dragend`; the dragged files
     /// are the event's strings).
     Transfer,
     /// `dragend` of a drag that was dropped somewhere that accepted it (`detail` is 1).
@@ -85,7 +85,7 @@ pub const EVENT_FIELDS: &[EventField] = &[
     f("animationName", "string", Str(0)),
     f("elapsedTime", "number", Num(5)),
     f("pseudoElement", "string", Const("\"\"")),
-    f("dataTransfer", "IronDataTransfer", Transfer),
+    f("dataTransfer", "PlatypusDataTransfer", Transfer),
     f("dropped", "boolean", Dropped),
 ];
 
@@ -105,13 +105,13 @@ pub struct EventInterface {
 
 pub const EVENT_INTERFACES: &[EventInterface] = &[
     EventInterface {
-        name: "IronEvent",
+        name: "PlatypusEvent",
         extends: None,
         fields: &["type", "target"],
     },
     EventInterface {
-        name: "IronPointerEvent",
-        extends: Some("IronEvent"),
+        name: "PlatypusPointerEvent",
+        extends: Some("PlatypusEvent"),
         fields: &[
             "clientX",
             "clientY",
@@ -128,45 +128,45 @@ pub const EVENT_INTERFACES: &[EventInterface] = &[
         ],
     },
     EventInterface {
-        name: "IronWheelEvent",
-        extends: Some("IronPointerEvent"),
+        name: "PlatypusWheelEvent",
+        extends: Some("PlatypusPointerEvent"),
         fields: &["deltaX", "deltaY"],
     },
     EventInterface {
-        name: "IronKeyboardEvent",
-        extends: Some("IronEvent"),
+        name: "PlatypusKeyboardEvent",
+        extends: Some("PlatypusEvent"),
         fields: &[
             "key", "code", "repeat", "shiftKey", "ctrlKey", "altKey", "metaKey",
         ],
     },
     EventInterface {
-        name: "IronInputEvent",
-        extends: Some("IronEvent"),
+        name: "PlatypusInputEvent",
+        extends: Some("PlatypusEvent"),
         fields: &["value"],
     },
     EventInterface {
-        name: "IronFocusEvent",
-        extends: Some("IronEvent"),
+        name: "PlatypusFocusEvent",
+        extends: Some("PlatypusEvent"),
         fields: &["relatedTarget"],
     },
     EventInterface {
-        name: "IronTransitionEvent",
-        extends: Some("IronEvent"),
+        name: "PlatypusTransitionEvent",
+        extends: Some("PlatypusEvent"),
         fields: &["propertyName", "elapsedTime", "pseudoElement"],
     },
     EventInterface {
-        name: "IronAnimationEvent",
-        extends: Some("IronEvent"),
+        name: "PlatypusAnimationEvent",
+        extends: Some("PlatypusEvent"),
         fields: &["animationName", "elapsedTime", "pseudoElement"],
     },
     EventInterface {
-        name: "IronDragEvent",
-        extends: Some("IronPointerEvent"),
+        name: "PlatypusDragEvent",
+        extends: Some("PlatypusPointerEvent"),
         fields: &["dataTransfer", "dropped"],
     },
     EventInterface {
-        name: "IronScrollEvent",
-        extends: Some("IronEvent"),
+        name: "PlatypusScrollEvent",
+        extends: Some("PlatypusEvent"),
         fields: &[
             "scrollLeft",
             "scrollTop",
@@ -198,66 +198,82 @@ const fn ep(prop: &'static str, kind: &'static str, interface: &'static str) -> 
 /// listen to `focusin` / `focusout`. A `...Capture` suffix (`onClickCapture`) listens in the capture
 /// phase.
 pub const EVENT_PROPS: &[EventProp] = &[
-    ep("onClick", "click", "IronPointerEvent"),
-    ep("onDoubleClick", "dblclick", "IronPointerEvent"),
-    ep("onContextMenu", "contextmenu", "IronPointerEvent"),
-    ep("onPointerDown", "pointerdown", "IronPointerEvent"),
-    ep("onPointerUp", "pointerup", "IronPointerEvent"),
-    ep("onPointerMove", "pointermove", "IronPointerEvent"),
-    ep("onPointerEnter", "pointerenter", "IronPointerEvent"),
-    ep("onPointerLeave", "pointerleave", "IronPointerEvent"),
+    ep("onClick", "click", "PlatypusPointerEvent"),
+    ep("onDoubleClick", "dblclick", "PlatypusPointerEvent"),
+    ep("onContextMenu", "contextmenu", "PlatypusPointerEvent"),
+    ep("onPointerDown", "pointerdown", "PlatypusPointerEvent"),
+    ep("onPointerUp", "pointerup", "PlatypusPointerEvent"),
+    ep("onPointerMove", "pointermove", "PlatypusPointerEvent"),
+    ep("onPointerEnter", "pointerenter", "PlatypusPointerEvent"),
+    ep("onPointerLeave", "pointerleave", "PlatypusPointerEvent"),
     ep(
         "onGotPointerCapture",
         "gotpointercapture",
-        "IronPointerEvent",
+        "PlatypusPointerEvent",
     ),
     ep(
         "onLostPointerCapture",
         "lostpointercapture",
-        "IronPointerEvent",
+        "PlatypusPointerEvent",
     ),
-    ep("onMouseDown", "pointerdown", "IronPointerEvent"),
-    ep("onMouseUp", "pointerup", "IronPointerEvent"),
-    ep("onMouseMove", "pointermove", "IronPointerEvent"),
-    ep("onMouseEnter", "pointerenter", "IronPointerEvent"),
-    ep("onMouseLeave", "pointerleave", "IronPointerEvent"),
-    ep("onWheel", "wheel", "IronWheelEvent"),
-    ep("onKeyDown", "keydown", "IronKeyboardEvent"),
-    ep("onKeyUp", "keyup", "IronKeyboardEvent"),
-    ep("onChange", "input", "IronInputEvent"),
-    ep("onInput", "input", "IronInputEvent"),
-    ep("onFocus", "focusin", "IronFocusEvent"),
-    ep("onBlur", "focusout", "IronFocusEvent"),
-    ep("onScroll", "scroll", "IronScrollEvent"),
-    ep("onCancel", "cancel", "IronEvent"),
-    ep("onClose", "close", "IronEvent"),
-    ep("onTransitionRun", "transitionrun", "IronTransitionEvent"),
+    ep("onMouseDown", "pointerdown", "PlatypusPointerEvent"),
+    ep("onMouseUp", "pointerup", "PlatypusPointerEvent"),
+    ep("onMouseMove", "pointermove", "PlatypusPointerEvent"),
+    ep("onMouseEnter", "pointerenter", "PlatypusPointerEvent"),
+    ep("onMouseLeave", "pointerleave", "PlatypusPointerEvent"),
+    ep("onWheel", "wheel", "PlatypusWheelEvent"),
+    ep("onKeyDown", "keydown", "PlatypusKeyboardEvent"),
+    ep("onKeyUp", "keyup", "PlatypusKeyboardEvent"),
+    ep("onChange", "input", "PlatypusInputEvent"),
+    ep("onInput", "input", "PlatypusInputEvent"),
+    ep("onFocus", "focusin", "PlatypusFocusEvent"),
+    ep("onBlur", "focusout", "PlatypusFocusEvent"),
+    ep("onScroll", "scroll", "PlatypusScrollEvent"),
+    ep("onCancel", "cancel", "PlatypusEvent"),
+    ep("onClose", "close", "PlatypusEvent"),
+    ep(
+        "onTransitionRun",
+        "transitionrun",
+        "PlatypusTransitionEvent",
+    ),
     ep(
         "onTransitionStart",
         "transitionstart",
-        "IronTransitionEvent",
+        "PlatypusTransitionEvent",
     ),
-    ep("onTransitionEnd", "transitionend", "IronTransitionEvent"),
+    ep(
+        "onTransitionEnd",
+        "transitionend",
+        "PlatypusTransitionEvent",
+    ),
     ep(
         "onTransitionCancel",
         "transitioncancel",
-        "IronTransitionEvent",
+        "PlatypusTransitionEvent",
     ),
-    ep("onAnimationStart", "animationstart", "IronAnimationEvent"),
+    ep(
+        "onAnimationStart",
+        "animationstart",
+        "PlatypusAnimationEvent",
+    ),
     ep(
         "onAnimationIteration",
         "animationiteration",
-        "IronAnimationEvent",
+        "PlatypusAnimationEvent",
     ),
-    ep("onAnimationEnd", "animationend", "IronAnimationEvent"),
-    ep("onAnimationCancel", "animationcancel", "IronAnimationEvent"),
-    ep("onDragStart", "dragstart", "IronDragEvent"),
-    ep("onDrag", "drag", "IronDragEvent"),
-    ep("onDragEnter", "dragenter", "IronDragEvent"),
-    ep("onDragOver", "dragover", "IronDragEvent"),
-    ep("onDragLeave", "dragleave", "IronDragEvent"),
-    ep("onDrop", "drop", "IronDragEvent"),
-    ep("onDragEnd", "dragend", "IronDragEvent"),
+    ep("onAnimationEnd", "animationend", "PlatypusAnimationEvent"),
+    ep(
+        "onAnimationCancel",
+        "animationcancel",
+        "PlatypusAnimationEvent",
+    ),
+    ep("onDragStart", "dragstart", "PlatypusDragEvent"),
+    ep("onDrag", "drag", "PlatypusDragEvent"),
+    ep("onDragEnter", "dragenter", "PlatypusDragEvent"),
+    ep("onDragOver", "dragover", "PlatypusDragEvent"),
+    ep("onDragLeave", "dragleave", "PlatypusDragEvent"),
+    ep("onDrop", "drop", "PlatypusDragEvent"),
+    ep("onDragEnd", "dragend", "PlatypusDragEvent"),
 ];
 
 /// Event types that bubble in the DOM (and in React): the others reach only their target (and the
@@ -268,8 +284,8 @@ pub const NON_BUBBLING: &[&str] = &["pointerenter", "pointerleave", "scroll", "c
 pub const NOT_EXPOSED: &[(&str, &str)] = &[];
 
 /// What `dataTransfer` of a drag event is: declared next to the event interfaces and written as the
-/// compiled `UiDataTransfer` class by `tools/iron_ts` (`ui_dts.rs`).
-pub const DATA_TRANSFER_TS: &str = "interface IronDroppedFile {
+/// compiled `UiDataTransfer` class by `tools/platypus_ts` (`ui_dts.rs`).
+pub const DATA_TRANSFER_TS: &str = "interface PlatypusDroppedFile {
   /** The full path on this machine. */
   readonly path: string;
   /** The file (or folder) name. */
@@ -277,12 +293,12 @@ pub const DATA_TRANSFER_TS: &str = "interface IronDroppedFile {
 }
 
 /** What a drag carries, like the DOM's `DataTransfer`. */
-interface IronDataTransfer {
+interface PlatypusDataTransfer {
   /** Set in `dragover` to say what a drop would do. */
   dropEffect: \"none\" | \"copy\" | \"move\" | \"link\";
   effectAllowed: \"none\" | \"copy\" | \"move\" | \"link\" | \"copyMove\" | \"copyLink\" | \"linkMove\" | \"all\" | \"uninitialized\";
   /** Files dragged in from the system. */
-  readonly files: IronDroppedFile[];
+  readonly files: PlatypusDroppedFile[];
   readonly types: string[];
   setData(format: string, data: string): void;
   getData(format: string): string;

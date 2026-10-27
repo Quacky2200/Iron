@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use iron_core::Op;
+use platypus_core::Op;
 use rquickjs::context::EvalOptions;
 use rquickjs::function::Rest;
 use rquickjs::{Array, Context, Ctx, Exception, Function, Object, Runtime, Type};
@@ -13,22 +13,22 @@ use crate::{
     Value, tracing_log_sink,
 };
 
-/// Installs a native API into a context: what `#[iron_api(.., quickjs)]` generates as
-/// `register_quickjs` (for example `iron_scene::api::scene_api::register_quickjs`).
+/// Installs a native API into a context: what `#[platypus_api(.., quickjs)]` generates as
+/// `register_quickjs` (for example `platypus_scene::api::scene_api::register_quickjs`).
 pub type NativeInit = for<'js> fn(&Ctx<'js>) -> rquickjs::Result<()>;
 
 thread_local! {
-    /// Whether `__iron_op` calls are timed (a bench run), and their milliseconds so far.
+    /// Whether `__platypus_op` calls are timed (a bench run), and their milliseconds so far.
     static OP_TIME: std::cell::Cell<(bool, f64)> = const { std::cell::Cell::new((false, 0.0)) };
 }
 
-/// Times the `__iron_op` calls from now on (`iron --bench`: the part of script time spent
+/// Times the `__platypus_op` calls from now on (`platypus --bench`: the part of script time spent
 /// copying op arguments out of JavaScript).
 pub fn time_ops() {
     OP_TIME.with(|o| o.set((true, o.get().1)));
 }
 
-/// The milliseconds `__iron_op` calls took since the last call.
+/// The milliseconds `__platypus_op` calls took since the last call.
 pub fn take_op_time() -> f64 {
     OP_TIME.with(|o| {
         let (on, ms) = o.get();
@@ -73,10 +73,10 @@ impl QuickJsRuntime {
         }
     }
 
-    /// Installs a native API (`register_quickjs` of an `#[iron_api(.., quickjs)]` module) in the
+    /// Installs a native API (`register_quickjs` of an `#[platypus_api(.., quickjs)]` module) in the
     /// current context, and again in every context `reset()` makes. Engine handles in these APIs
-    /// are opaque objects (see `iron_api::qjs`). Register the value classes' modules
-    /// (`iron_math`) before the ones that use them.
+    /// are opaque objects (see `platypus_api::qjs`). Register the value classes' modules
+    /// (`platypus_math`) before the ones that use them.
     pub fn add_native(&mut self, init: NativeInit) -> Result<(), ScriptError> {
         self.natives.push(init);
         self.context
@@ -84,11 +84,11 @@ impl QuickJsRuntime {
     }
 
     /// [`ScriptRuntime::tick`] for one event domain: fires the timers that domain set (each with
-    /// that domain entered, through the host's `__iron_enter_domain` / `__iron_leave_domain`).
+    /// that domain entered, through the host's `__platypus_enter_domain` / `__platypus_leave_domain`).
     pub fn tick_domain(&mut self, now_ms: f64, domain: u32) -> Vec<ScriptError> {
         for _ in 0..MAX_TIMERS_PER_TICK {
             match self.call_global(
-                "__iron_fire_next_timer",
+                "__platypus_fire_next_timer",
                 &[now_ms.into(), f64::from(domain).into()],
             ) {
                 Ok(Value::Bool(true)) => continue,
@@ -116,9 +116,9 @@ impl QuickJsRuntime {
             }
         }
         // The script's turn is over: what it queued to send in one op (its objects'
-        // transforms, `__iron_flush` from @iron/engine) goes out before Rust reads anything.
+        // transforms, `__platypus_flush` from @platypus/engine) goes out before Rust reads anything.
         self.context.with(|ctx| {
-            if let Ok(flush) = ctx.globals().get::<_, Function>("__iron_flush")
+            if let Ok(flush) = ctx.globals().get::<_, Function>("__platypus_flush")
                 && let Err(e) = flush.call::<_, ()>(())
             {
                 let error = to_script_error(&ctx, e);
@@ -220,12 +220,12 @@ fn new_context(shared: &Rc<RefCell<Shared>>, natives: &[NativeInit]) -> (Runtime
     let runtime = Runtime::new().expect("QuickJS runtime");
     let context = Context::full(&runtime).expect("QuickJS context");
     context.with(|ctx| {
-        install_globals(&ctx, shared).expect("install Iron globals");
+        install_globals(&ctx, shared).expect("install Platypus globals");
         let mut opts = EvalOptions::default();
-        opts.filename = Some("iron:prelude.js".into());
+        opts.filename = Some("platypus:prelude.js".into());
         ctx.eval_with_options::<(), _>(PRELUDE, opts)
             .map_err(|e| to_script_error(&ctx, e))
-            .expect("Iron prelude");
+            .expect("Platypus prelude");
         for init in natives {
             init(&ctx)
                 .map_err(|e| to_script_error(&ctx, e))
@@ -272,7 +272,7 @@ fn install_globals<'js>(ctx: &Ctx<'js>, shared: &Rc<RefCell<Shared>>) -> rquickj
             }
         },
     )?;
-    globals.set("__iron_op", op)?;
+    globals.set("__platypus_op", op)?;
 
     let s = shared.clone();
     let commit = Function::new(
@@ -289,13 +289,13 @@ fn install_globals<'js>(ctx: &Ctx<'js>, shared: &Rc<RefCell<Shared>>) -> rquickj
             s.borrow_mut().commits.push((target, Commit { ops }));
         },
     )?;
-    globals.set("__iron_commit", commit)?;
+    globals.set("__platypus_commit", commit)?;
 
     let s = shared.clone();
     let report = Function::new(ctx.clone(), move |thrown: rquickjs::Value| {
         s.borrow_mut().errors.push(thrown_to_error(&thrown));
     })?;
-    globals.set("__iron_report_error", report)?;
+    globals.set("__platypus_report_error", report)?;
     Ok(())
 }
 

@@ -5,7 +5,7 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use iron_core::{Commit, NodeId, Value};
+use platypus_core::{Commit, NodeId, Value};
 use taffy::{Dimension, Display, Position, Size, Style};
 
 use crate::Rgba;
@@ -2125,7 +2125,7 @@ impl<L: LayoutEngine> UiTree<L> {
         is_inline(&node.kind) && !self.inside_inline_container(id)
     }
 
-    /// Whether `id` is inside an `svg` element (SVG content, not laid out by Iron).
+    /// Whether `id` is inside an `svg` element (SVG content, not laid out by Platypus).
     fn in_svg(&self, id: NodeId) -> bool {
         let mut at = self.parent(id);
         while let Some(n) = at {
@@ -4658,7 +4658,7 @@ impl<L: LayoutEngine> UiTree<L> {
     }
 
     /// Children in paint order (hit testing goes in reverse): by `zIndex` (auto is 0),
-    /// then `order`, then document order. Iron treats each z-indexed element as its
+    /// then `order`, then document order. Platypus treats each z-indexed element as its
     /// own stacking context: z-index orders siblings, not across ancestors.
     fn paint_order<'a>(&self, node: &'a Node) -> std::borrow::Cow<'a, [NodeId]> {
         let key = |id: &NodeId| {

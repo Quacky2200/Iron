@@ -2,18 +2,18 @@
 
 //! The native `Shapes` and `Spline` from compiled code, against the TypeScript the facade used to
 //! compile (`bench/outlines.ts`, prefix `otl_`), in the normal, stress GC and collection-off modes.
-use iron_scene::Scene;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::outlines_t::*;
+use platypus_scene::Scene;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::outlines_t::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     let run = || {
-        iron_engine_api::spline::reset();
+        platypus_engine_api::spline::reset();
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         unsafe { ts_otl_init() };
         f();
     };
@@ -24,7 +24,7 @@ fn in_every_gc_mode(f: impl Fn()) {
     ts_rt_gc_enable(false);
     run();
     ts_rt_gc_enable(true);
-    iron_engine_api::spline::reset();
+    platypus_engine_api::spline::reset();
 }
 
 fn text(p: *mut u8) -> String {
@@ -93,7 +93,7 @@ fn a_spline_animate_component_moves_its_object_each_update_and_pings_back() {
             (0.5, "4|1|2"),
             (0.5, "3|0.75|2.5"),
         ] {
-            iron_engine_api::spline::update(dt);
+            platypus_engine_api::spline::update(dt);
             assert_eq!(text(ts_otl_animateWhere()), want);
         }
     });

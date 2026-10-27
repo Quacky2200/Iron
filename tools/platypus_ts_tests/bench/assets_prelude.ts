@@ -4,7 +4,7 @@
 // importer as JSON text, a list by index).
 import { Assets as A } from "../../../js/engine/src/assets.ts";
 
-(globalThis as any).__iron_info = {
+(globalThis as any).__platypus_info = {
   assets: [
     { path: "textures/a.png", guid: "guid-a", importer: { type: "texture", filterMode: "point" } },
     { path: "sounds/b.ogg", guid: "guid-b", importer: { type: "audio" } },

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `#[iron_api]`: see the `iron_api` crate.
+//! `#[platypus_api]`: see the `platypus_api` crate.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -16,7 +16,7 @@ use syn::{
 /// Marks a module whose `pub fn`s are the script API of one namespace.
 ///
 /// ```ignore
-/// #[iron_api(namespace = "Time", quickjs, handles(GameObject = ObjectId),
+/// #[platypus_api(namespace = "Time", quickjs, handles(GameObject = ObjectId),
 ///            values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
 /// pub mod time_api {
 ///     /// Seconds since the last frame.
@@ -25,11 +25,11 @@ use syn::{
 /// ```
 ///
 /// Arguments: `namespace = "Name"` (required); `quickjs` (also generate `register_quickjs`);
-/// `handles(TsName = RustType, ...)` (types that implement `iron_api::Handle`);
+/// `handles(TsName = RustType, ...)` (types that implement `platypus_api::Handle`);
 /// `values(TsName = RustType [field: scalar, ...], ...)` (types that implement
-/// `iron_api::ValueType<N>`; scripts see a class with those fields).
+/// `platypus_api::ValueType<N>`; scripts see a class with those fields).
 #[proc_macro_attribute]
-pub fn iron_api(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn platypus_api(attr: TokenStream, item: TokenStream) -> TokenStream {
     match expand(attr.into(), item.into()) {
         Ok(t) => t.into(),
         Err(e) => e.to_compile_error().into(),
@@ -508,7 +508,7 @@ fn classify(ty: &Type, args: &Args) -> syn::Result<Kind> {
     let Some(name) = rust_name_of(ty) else {
         return Err(syn::Error::new(
             ty.span(),
-            "unsupported type in an iron_api function",
+            "unsupported type in a platypus_api function",
         ));
     };
     Ok(match name.as_str() {
@@ -563,10 +563,10 @@ fn scalar_ty(name: &str) -> TokenStream2 {
 
 fn scalar_manifest(name: &str) -> TokenStream2 {
     match name {
-        "f32" => quote!(::iron_api::Ty::F32),
-        "f64" => quote!(::iron_api::Ty::F64),
-        "i32" => quote!(::iron_api::Ty::I32),
-        _ => quote!(::iron_api::Ty::U32),
+        "f32" => quote!(::platypus_api::Ty::F32),
+        "f64" => quote!(::platypus_api::Ty::F64),
+        "i32" => quote!(::platypus_api::Ty::I32),
+        _ => quote!(::platypus_api::Ty::U32),
     }
 }
 
@@ -595,20 +595,20 @@ fn pair_ty(k: &Kind, args: &Args) -> String {
 /// The manifest `Ty` as tokens.
 fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
     match k {
-        Kind::Unit => quote!(::iron_api::Ty::Void),
-        Kind::Bool => quote!(::iron_api::Ty::Bool),
-        Kind::F64 => quote!(::iron_api::Ty::F64),
-        Kind::F32 => quote!(::iron_api::Ty::F32),
-        Kind::I32 => quote!(::iron_api::Ty::I32),
-        Kind::U32 => quote!(::iron_api::Ty::U32),
-        Kind::Str(_) => quote!(::iron_api::Ty::Str),
-        Kind::Handle(ts, _) => quote!(::iron_api::Ty::Handle(#ts)),
+        Kind::Unit => quote!(::platypus_api::Ty::Void),
+        Kind::Bool => quote!(::platypus_api::Ty::Bool),
+        Kind::F64 => quote!(::platypus_api::Ty::F64),
+        Kind::F32 => quote!(::platypus_api::Ty::F32),
+        Kind::I32 => quote!(::platypus_api::Ty::I32),
+        Kind::U32 => quote!(::platypus_api::Ty::U32),
+        Kind::Str(_) => quote!(::platypus_api::Ty::Str),
+        Kind::Handle(ts, _) => quote!(::platypus_api::Ty::Handle(#ts)),
         Kind::Value(i) => {
             let ts = &args.values[*i].ts;
-            quote!(::iron_api::Ty::Value(#ts))
+            quote!(::platypus_api::Ty::Value(#ts))
         }
-        Kind::F64s => quote!(::iron_api::Ty::F64s),
-        Kind::Strs(_) => quote!(::iron_api::Ty::Strs),
+        Kind::F64s => quote!(::platypus_api::Ty::F64s),
+        Kind::Strs(_) => quote!(::platypus_api::Ty::Strs),
         Kind::Callback(ks) => {
             let names: Vec<String> = ks
                 .iter()
@@ -634,30 +634,30 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
                 })
                 .collect();
             let ts = format!("({}) => void", params.join(", "));
-            quote!(::iron_api::Ty::Callback(#sig, #ts))
+            quote!(::platypus_api::Ty::Callback(#sig, #ts))
         }
         Kind::Values(i) => {
             let ts = &args.values[*i].ts;
             let arr = format!("{ts}[]");
-            quote!(::iron_api::Ty::Values(#ts, #arr))
+            quote!(::platypus_api::Ty::Values(#ts, #arr))
         }
         Kind::Handles(ts, _) => {
             let arr = format!("{ts}[]");
-            quote!(::iron_api::Ty::Handles(#ts, #arr))
+            quote!(::platypus_api::Ty::Handles(#ts, #arr))
         }
         Kind::Records(i) => {
             let n = &args.records[*i].ts;
             let arr = format!("{n}[]");
-            quote!(::iron_api::Ty::Records(#n, #arr))
+            quote!(::platypus_api::Ty::Records(#n, #arr))
         }
         Kind::Enum(i) | Kind::OptEnum(i) => {
             let ts = &args.enums[*i].ts;
-            quote!(::iron_api::Ty::Enum(#ts))
+            quote!(::platypus_api::Ty::Enum(#ts))
         }
         Kind::OptRecord(i) => {
             let name = format!("record:{}", args.records[*i].ts);
             let ts = format!("{} | null", args.records[*i].ts);
-            quote!(::iron_api::Ty::Opt(#name, #ts))
+            quote!(::platypus_api::Ty::Opt(#name, #ts))
         }
         Kind::Opt(inner) => {
             let (name, ts) = match &**inner {
@@ -669,11 +669,11 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
                 ),
                 _ => unreachable!("classify only builds Opt of f64, strings and values"),
             };
-            quote!(::iron_api::Ty::Opt(#name, #ts))
+            quote!(::platypus_api::Ty::Opt(#name, #ts))
         }
         Kind::Record(i) => {
             let ts = &args.records[*i].ts;
-            quote!(::iron_api::Ty::Record(#ts))
+            quote!(::platypus_api::Ty::Record(#ts))
         }
         Kind::List(inner) => {
             let (name, ts) = match &**inner {
@@ -697,7 +697,7 @@ fn manifest_ty(k: &Kind, args: &Args) -> TokenStream2 {
                 }
             };
             let arr = format!("{ts}[]");
-            quote!(::iron_api::Ty::List(#name, #arr))
+            quote!(::platypus_api::Ty::List(#name, #arr))
         }
     }
 }
@@ -735,7 +735,7 @@ fn abi_ty(k: &Kind) -> TokenStream2 {
 /// The type a QuickJS function takes or returns for it (handles travel as numbers).
 fn js_ty(k: &Kind) -> TokenStream2 {
     match k {
-        Kind::Handle(..) => quote!(::iron_api::rquickjs::Value<'js>),
+        Kind::Handle(..) => quote!(::platypus_api::rquickjs::Value<'js>),
         other => abi_ty(other),
     }
 }
@@ -743,7 +743,7 @@ fn js_ty(k: &Kind) -> TokenStream2 {
 /// Turns the ABI value `x` into the Rust parameter type.
 fn from_abi(k: &Kind, x: TokenStream2) -> TokenStream2 {
     match k {
-        Kind::Handle(_, rust) => quote!(<#rust as ::iron_api::Handle>::from_raw(#x)),
+        Kind::Handle(_, rust) => quote!(<#rust as ::platypus_api::Handle>::from_raw(#x)),
         _ => x,
     }
 }
@@ -752,18 +752,18 @@ fn from_abi(k: &Kind, x: TokenStream2) -> TokenStream2 {
 fn js_param_ty(k: &Kind) -> TokenStream2 {
     match k {
         Kind::Str(_) | Kind::Enum(_) | Kind::OptEnum(_) => quote!(::std::string::String),
-        Kind::Value(_) => quote!(::iron_api::rquickjs::Object<'js>),
+        Kind::Value(_) => quote!(::platypus_api::rquickjs::Object<'js>),
         Kind::Opt(inner) => {
             let t = js_param_ty(inner);
             quote!(::std::option::Option<#t>)
         }
-        Kind::OptRecord(_) => quote!(::std::option::Option<::iron_api::rquickjs::Value<'js>>),
+        Kind::OptRecord(_) => quote!(::std::option::Option<::platypus_api::rquickjs::Value<'js>>),
         Kind::F64s => quote!(::std::vec::Vec<f64>),
         Kind::Strs(_) => quote!(::std::vec::Vec<::std::string::String>),
-        Kind::Callback(_) => quote!(::iron_api::rquickjs::Function<'js>),
-        Kind::Values(_) => quote!(::std::vec::Vec<::iron_api::rquickjs::Object<'js>>),
-        Kind::Handles(..) => quote!(::std::vec::Vec<::iron_api::rquickjs::Value<'js>>),
-        Kind::Records(_) => quote!(::iron_api::rquickjs::Value<'js>),
+        Kind::Callback(_) => quote!(::platypus_api::rquickjs::Function<'js>),
+        Kind::Values(_) => quote!(::std::vec::Vec<::platypus_api::rquickjs::Object<'js>>),
+        Kind::Handles(..) => quote!(::std::vec::Vec<::platypus_api::rquickjs::Value<'js>>),
+        Kind::Records(_) => quote!(::platypus_api::rquickjs::Value<'js>),
         other => js_ty(other),
     }
 }
@@ -828,11 +828,11 @@ fn js_default(k: &Kind) -> TokenStream2 {
         Kind::F64 => quote!(f64::NAN),
         Kind::F32 => quote!(f32::NAN),
         Kind::I32 | Kind::U32 => quote!(0),
-        Kind::Handle(..) => quote!(::iron_api::rquickjs::Value::new_null(ctx.clone())),
+        Kind::Handle(..) => quote!(::platypus_api::rquickjs::Value::new_null(ctx.clone())),
         Kind::F64s | Kind::Strs(_) | Kind::Values(_) | Kind::Handles(..) => {
             quote!(::std::vec::Vec::new())
         }
-        Kind::Records(_) => quote!(::iron_api::rquickjs::Value::new_undefined(ctx.clone())),
+        Kind::Records(_) => quote!(::platypus_api::rquickjs::Value::new_undefined(ctx.clone())),
         Kind::OptRecord(_) | Kind::Opt(_) => quote!(::std::option::Option::None),
         Kind::Str(_) | Kind::Enum(_) | Kind::OptEnum(_) => quote!(::std::string::String::new()),
         _ => quote!(compile_error!("this parameter type cannot be optional")),
@@ -843,13 +843,13 @@ fn js_default(k: &Kind) -> TokenStream2 {
 fn js_ret_ty(k: &Kind) -> TokenStream2 {
     match k {
         Kind::Str(_) | Kind::Enum(_) => quote!(::std::string::String),
-        Kind::Value(_) | Kind::Record(_) => quote!(::iron_api::rquickjs::Object<'js>),
-        Kind::List(_) | Kind::Records(_) => quote!(::iron_api::rquickjs::Array<'js>),
+        Kind::Value(_) | Kind::Record(_) => quote!(::platypus_api::rquickjs::Object<'js>),
+        Kind::List(_) | Kind::Records(_) => quote!(::platypus_api::rquickjs::Array<'js>),
         Kind::Opt(inner) => {
             let t = js_ret_ty(inner);
             quote!(::std::option::Option<#t>)
         }
-        Kind::OptRecord(_) => quote!(::iron_api::rquickjs::Value<'js>),
+        Kind::OptRecord(_) => quote!(::platypus_api::rquickjs::Value<'js>),
         other => js_ty(other),
     }
 }
@@ -864,8 +864,8 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
             let rust = &v.rust;
             let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
             quote! {
-                <#rust as ::iron_api::ValueType<#n>>::from_parts(match &#x {
-                    Some(o) => ::iron_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?,
+                <#rust as ::platypus_api::ValueType<#n>>::from_parts(match &#x {
+                    Some(o) => ::platypus_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?,
                     None => [f64::NAN; #n],
                 })
             }
@@ -886,7 +886,7 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
                         match #parse(&s) {
                             ::std::option::Option::Some(v) => ::std::option::Option::Some(v),
                             ::std::option::Option::None => {
-                                return Err(::iron_api::rquickjs::Exception::throw_type(
+                                return Err(::platypus_api::rquickjs::Exception::throw_type(
                                     &ctx,
                                     &::std::format!("`{}` is not a {}", s, #ts),
                                 ));
@@ -901,8 +901,8 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
             quote! {
                 match &#x {
                     Some(v) if !v.is_null() && !v.is_undefined() => {
-                        ::iron_api::json_record_value(
-                            &::iron_api::qjs::value_to_json(&ctx, v)?,
+                        ::platypus_api::json_record_value(
+                            &::platypus_api::qjs::value_to_json(&ctx, v)?,
                             #from,
                         )
                     }
@@ -918,8 +918,8 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
                 let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
                 quote! {
                     match &#x {
-                        Some(o) => Some(<#rust as ::iron_api::ValueType<#n>>::from_parts(
-                            ::iron_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?
+                        Some(o) => Some(<#rust as ::platypus_api::ValueType<#n>>::from_parts(
+                            ::platypus_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?
                         )),
                         None => None,
                     }
@@ -942,7 +942,7 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
                         match #parse(&s) {
                             ::std::option::Option::Some(v) => v,
                             ::std::option::Option::None => {
-                                return Err(::iron_api::rquickjs::Exception::throw_type(
+                                return Err(::platypus_api::rquickjs::Exception::throw_type(
                                     &ctx,
                                     &::std::format!("`{}` is not a {}", s, #ts),
                                 ));
@@ -958,8 +958,8 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
             let rust = &v.rust;
             let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
             quote! {
-                <#rust as ::iron_api::ValueType<#n>>::from_parts(
-                    ::iron_api::qjs::value_parts(&ctx, &#x, [ #( #names ),* ])?
+                <#rust as ::platypus_api::ValueType<#n>>::from_parts(
+                    ::platypus_api::qjs::value_parts(&ctx, &#x, [ #( #names ),* ])?
                 )
             }
         }
@@ -967,7 +967,7 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
             let tys: Vec<TokenStream2> = ks
                 .iter()
                 .map(|k| match k {
-                    Kind::Handle(_, rust) => quote!(::iron_api::callback::HandleArg<#rust>),
+                    Kind::Handle(_, rust) => quote!(::platypus_api::callback::HandleArg<#rust>),
                     Kind::Str(_) => quote!(::std::string::String),
                     Kind::Bool => quote!(bool),
                     Kind::I32 => quote!(i32),
@@ -981,8 +981,8 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
                 .zip(&names)
                 .map(|(k, n)| match k {
                     Kind::Handle(ts, _) => quote! {
-                        args.push_arg(::iron_api::qjs::handle_new(
-                            ctx, #ts, ::iron_api::Handle::to_raw(#n.0),
+                        args.push_arg(::platypus_api::qjs::handle_new(
+                            ctx, #ts, ::platypus_api::Handle::to_raw(#n.0),
                         )?)?;
                     },
                     Kind::Str(_) | Kind::Bool => quote!(args.push_arg(#n)?;),
@@ -992,9 +992,9 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
             let count = ks.len();
             quote! {
                 {
-                    let kept = ::iron_api::qjs::keep_function(#x);
-                    ::iron_api::Callback::<( #( #tys, )* )>::from_fn(move |( #( #names, )* )| {
-                        ::iron_api::qjs::call_function(&kept, #count, |ctx, args| {
+                    let kept = ::platypus_api::qjs::keep_function(#x);
+                    ::platypus_api::Callback::<( #( #tys, )* )>::from_fn(move |( #( #names, )* )| {
+                        ::platypus_api::qjs::call_function(&kept, #count, |ctx, args| {
                             #( #pushes )*
                             Ok(())
                         });
@@ -1014,8 +1014,8 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
                 &{
                     let mut items = ::std::vec::Vec::with_capacity(#x.len());
                     for o in &#x {
-                        items.push(<#rust as ::iron_api::ValueType<#n>>::from_parts(
-                            ::iron_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?
+                        items.push(<#rust as ::platypus_api::ValueType<#n>>::from_parts(
+                            ::platypus_api::qjs::value_parts(&ctx, o, [ #( #names ),* ])?
                         ));
                     }
                     items
@@ -1024,21 +1024,21 @@ fn js_arg(k: &Kind, x: TokenStream2, args: &Args, opt: bool) -> TokenStream2 {
         }
         Kind::Records(i) => {
             let from = format_ident!("__from_json_{}", args.records[*i].ts);
-            quote!(&::iron_api::qjs::json_records(&ctx, &#x, #from)?)
+            quote!(&::platypus_api::qjs::json_records(&ctx, &#x, #from)?)
         }
         Kind::Handles(ts, rust) => quote! {
             &{
                 let mut items = ::std::vec::Vec::with_capacity(#x.len());
                 for o in &#x {
-                    items.push(<#rust as ::iron_api::Handle>::from_raw(
-                        ::iron_api::qjs::handle_arg(&ctx, o, #ts)?
+                    items.push(<#rust as ::platypus_api::Handle>::from_raw(
+                        ::platypus_api::qjs::handle_arg(&ctx, o, #ts)?
                     ));
                 }
                 items
             }
         },
         Kind::Handle(ts, rust) => quote! {
-            <#rust as ::iron_api::Handle>::from_raw(::iron_api::qjs::handle_arg(&ctx, &#x, #ts)?)
+            <#rust as ::platypus_api::Handle>::from_raw(::platypus_api::qjs::handle_arg(&ctx, &#x, #ts)?)
         },
         other => from_abi(other, x),
     }
@@ -1057,18 +1057,18 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
             let _ = &names;
             // The marker first says "these are the fields", not constructor arguments.
             quote! {
-                let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(#call);
-                let class: ::iron_api::rquickjs::function::Constructor =
+                let parts = <#rust as ::platypus_api::ValueType<#n>>::to_parts(#call);
+                let class: ::platypus_api::rquickjs::function::Constructor =
                     ctx.globals().get(#ts)?;
-                let raw: ::iron_api::rquickjs::Value = ctx.globals().get("__iron_raw")?;
-                let mut args = ::iron_api::rquickjs::function::Args::new(ctx.clone(), 1 + #n);
+                let raw: ::platypus_api::rquickjs::Value = ctx.globals().get("__platypus_raw")?;
+                let mut args = ::platypus_api::rquickjs::function::Args::new(ctx.clone(), 1 + #n);
                 args.push_arg(raw)?;
                 #( args.push_arg(parts[#idx])?; )*
                 class.construct_args(args)
             }
         }
         Kind::Handle(ts, _) => {
-            quote!(::iron_api::qjs::handle_new(&ctx, #ts, ::iron_api::Handle::to_raw(#call)))
+            quote!(::platypus_api::qjs::handle_new(&ctx, #ts, ::platypus_api::Handle::to_raw(#call)))
         }
         Kind::Enum(i) => {
             let name = enum_fn(&args.enums[*i].ts, "name");
@@ -1091,7 +1091,7 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
             quote! {
                 match #call {
                     Some(r) => #build(&ctx, &r).map(|o| o.into_value()),
-                    None => Ok(::iron_api::rquickjs::Value::new_null(ctx.clone())),
+                    None => Ok(::platypus_api::rquickjs::Value::new_null(ctx.clone())),
                 }
             }
         }
@@ -1106,7 +1106,7 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
             let build = format_ident!("__js_rec_{}", args.records[*i].ts);
             quote! {
                 let items = #call;
-                let arr = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                let arr = ::platypus_api::rquickjs::Array::new(ctx.clone())?;
                 for (n, item) in items.iter().enumerate() {
                     arr.set(n, #build(&ctx, item)?)?;
                 }
@@ -1129,7 +1129,7 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
                     quote!(#name(*item))
                 }
                 Kind::Handle(ts, _) => {
-                    quote!(::iron_api::qjs::handle_new(&ctx, #ts, ::iron_api::Handle::to_raw(*item))?)
+                    quote!(::platypus_api::qjs::handle_new(&ctx, #ts, ::platypus_api::Handle::to_raw(*item))?)
                 }
                 Kind::F64 => quote!(*item),
                 _ => {
@@ -1138,7 +1138,7 @@ fn js_result(k: &Kind, call: TokenStream2, args: &Args) -> TokenStream2 {
             };
             quote! {
                 let items = #call;
-                let arr = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                let arr = ::platypus_api::rquickjs::Array::new(ctx.clone())?;
                 for (n, item) in items.iter().enumerate() {
                     arr.set(n, #elem)?;
                 }
@@ -1180,7 +1180,7 @@ fn enum_first(e: &EnumDecl) -> TokenStream2 {
 
 fn to_abi(k: &Kind, x: TokenStream2, args: &Args) -> TokenStream2 {
     match k {
-        Kind::Handle(..) => quote!(::iron_api::Handle::to_raw(#x)),
+        Kind::Handle(..) => quote!(::platypus_api::Handle::to_raw(#x)),
         Kind::Enum(i) => {
             let index = enum_fn(&args.enums[*i].ts, "index");
             quote!(#index(#x))
@@ -1359,7 +1359,7 @@ fn api_of(
     if sig.asyncness.is_some() || !sig.generics.params.is_empty() {
         return Err(syn::Error::new(
             sig.span(),
-            "an iron_api function cannot be async or generic",
+            "a platypus_api function cannot be async or generic",
         ));
     }
     let mut has_receiver = false;
@@ -1735,7 +1735,7 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             let params = names.iter().map(|p| quote!(#p: #part)).collect();
             let rust = &v.rust;
             let conv = quote! {
-                <#rust as ::iron_api::ValueType<#n>>::from_parts([ #( #names as f64 ),* ])
+                <#rust as ::platypus_api::ValueType<#n>>::from_parts([ #( #names as f64 ),* ])
             };
             (params, conv)
         }
@@ -1757,7 +1757,7 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             let from = format_ident!("__from_json_{}", args.records[*i].ts);
             (
                 vec![quote!(#name: *const u8)],
-                quote!(unsafe { ::iron_api::script_json_record(#name, #from) }),
+                quote!(unsafe { ::platypus_api::script_json_record(#name, #from) }),
             )
         }
         Kind::Opt(inner) => match &**inner {
@@ -1775,7 +1775,7 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
                             ::std::option::Option::None
                         } else {
                             ::std::option::Option::Some(
-                                <#rust as ::iron_api::ValueType<#n>>::from_parts(parts)
+                                <#rust as ::platypus_api::ValueType<#n>>::from_parts(parts)
                             )
                         }
                     }
@@ -1795,9 +1795,9 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             // The script string's object; `script_str` reads it (no copy unless it has a lone
             // surrogate).
             let conv = if *owned {
-                quote!(unsafe { ::iron_api::script_str(#name) }.into_owned())
+                quote!(unsafe { ::platypus_api::script_str(#name) }.into_owned())
             } else {
-                quote!(&*unsafe { ::iron_api::script_str(#name) })
+                quote!(&*unsafe { ::platypus_api::script_str(#name) })
             };
             (vec![quote!(#name: *const u8)], conv)
         }
@@ -1805,7 +1805,7 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             let tys: Vec<TokenStream2> = ks
                 .iter()
                 .map(|k| match k {
-                    Kind::Handle(_, rust) => quote!(::iron_api::callback::HandleArg<#rust>),
+                    Kind::Handle(_, rust) => quote!(::platypus_api::callback::HandleArg<#rust>),
                     Kind::Str(_) => quote!(::std::string::String),
                     Kind::Bool => quote!(bool),
                     Kind::I32 => quote!(i32),
@@ -1815,15 +1815,15 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
                 .collect();
             (
                 vec![quote!(#name: *const u8)],
-                quote!(unsafe { ::iron_api::Callback::<( #( #tys, )* )>::from_script(#name) }),
+                quote!(unsafe { ::platypus_api::Callback::<( #( #tys, )* )>::from_script(#name) }),
             )
         }
         Kind::F64s => (
             vec![quote!(#name: *const u8)],
-            quote!(unsafe { ::iron_api::script_f64s(#name) }),
+            quote!(unsafe { ::platypus_api::script_f64s(#name) }),
         ),
         Kind::Strs(owned) => {
-            let read = quote!(unsafe { ::iron_api::script_strs(#name) });
+            let read = quote!(unsafe { ::platypus_api::script_strs(#name) });
             (
                 vec![quote!(#name: *const u8)],
                 if *owned { read } else { quote!(&#read) },
@@ -1835,22 +1835,22 @@ fn shim_param(name: &Ident, k: &Kind, args: &Args) -> (Vec<TokenStream2>, TokenS
             let rust = &v.rust;
             (
                 vec![quote!(#name: *const u8)],
-                quote!(&unsafe { ::iron_api::script_values::<#n, #rust>(#name) }),
+                quote!(&unsafe { ::platypus_api::script_values::<#n, #rust>(#name) }),
             )
         }
         Kind::Records(i) => {
             let from = format_ident!("__from_json_{}", args.records[*i].ts);
             (
                 vec![quote!(#name: *const u8)],
-                quote!(&unsafe { ::iron_api::script_json_records(#name, #from) }),
+                quote!(&unsafe { ::platypus_api::script_json_records(#name, #from) }),
             )
         }
         Kind::Handles(_, rust) => (
             vec![quote!(#name: *const u8)],
             quote! {
-                &unsafe { ::iron_api::script_handles(#name) }
+                &unsafe { ::platypus_api::script_handles(#name) }
                     .into_iter()
-                    .map(<#rust as ::iron_api::Handle>::from_raw)
+                    .map(<#rust as ::platypus_api::Handle>::from_raw)
                     .collect::<::std::vec::Vec<_>>()
             },
         ),
@@ -2015,47 +2015,47 @@ fn rec_ty_ts(t: &RecTy, args: &Args) -> String {
 /// The manifest `Ty` of a field type.
 fn rec_ty_manifest(t: &RecTy, args: &Args) -> TokenStream2 {
     match t {
-        RecTy::F64 => quote!(::iron_api::Ty::F64),
-        RecTy::Bool => quote!(::iron_api::Ty::Bool),
-        RecTy::Str => quote!(::iron_api::Ty::Str),
+        RecTy::F64 => quote!(::platypus_api::Ty::F64),
+        RecTy::Bool => quote!(::platypus_api::Ty::Bool),
+        RecTy::Str => quote!(::platypus_api::Ty::Str),
         RecTy::Value(i, false) => {
             let n = &args.values[*i].ts;
-            quote!(::iron_api::Ty::Value(#n))
+            quote!(::platypus_api::Ty::Value(#n))
         }
         RecTy::Value(i, true) => {
             let n = &args.values[*i].ts;
             let like = format!("{n}Like");
-            quote!(::iron_api::Ty::Like(#n, #like))
+            quote!(::platypus_api::Ty::Like(#n, #like))
         }
         RecTy::Enum(i) => {
             let n = &args.enums[*i].ts;
-            quote!(::iron_api::Ty::Enum(#n))
+            quote!(::platypus_api::Ty::Enum(#n))
         }
         RecTy::Opt(inner) => {
             let name = rec_ty_name(inner, args);
             let ts = rec_ty_ts(t, args);
-            quote!(::iron_api::Ty::Opt(#name, #ts))
+            quote!(::platypus_api::Ty::Opt(#name, #ts))
         }
-        RecTy::Pairs => quote!(::iron_api::Ty::List("pair", "[number, number][]")),
-        RecTy::Numbers => quote!(::iron_api::Ty::List("f64", "number[]")),
+        RecTy::Pairs => quote!(::platypus_api::Ty::List("pair", "[number, number][]")),
+        RecTy::Numbers => quote!(::platypus_api::Ty::List("f64", "number[]")),
         RecTy::Records(i) => {
             let n = &args.records[*i].ts;
             let arr = format!("{n}[]");
-            quote!(::iron_api::Ty::Records(#n, #arr))
+            quote!(::platypus_api::Ty::Records(#n, #arr))
         }
         RecTy::Record(i) => {
             let n = &args.records[*i].ts;
-            quote!(::iron_api::Ty::Record(#n))
+            quote!(::platypus_api::Ty::Record(#n))
         }
-        RecTy::Dict => quote!(::iron_api::Ty::Dict("f64", "Record<string, number>")),
+        RecTy::Dict => quote!(::platypus_api::Ty::Dict("f64", "Record<string, number>")),
         RecTy::Handle(i) => {
             let n = &args.handles[*i].0;
-            quote!(::iron_api::Ty::Handle(#n))
+            quote!(::platypus_api::Ty::Handle(#n))
         }
         RecTy::Handles(i) => {
             let name = format!("handle:{}", args.handles[*i].0);
             let arr = format!("{}[]", args.handles[*i].0);
-            quote!(::iron_api::Ty::List(#name, #arr))
+            quote!(::platypus_api::Ty::List(#name, #arr))
         }
     }
 }
@@ -2070,7 +2070,7 @@ fn rec_flat_stmt(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
         RecTy::Value(i, _) => {
             let v = &args.values[*i];
             let (rust, n) = (&v.rust, v.fields.len());
-            quote!(out.extend_from_slice(&<#rust as ::iron_api::ValueType<#n>>::to_parts(#x));)
+            quote!(out.extend_from_slice(&<#rust as ::platypus_api::ValueType<#n>>::to_parts(#x));)
         }
         RecTy::Enum(i) => {
             let index = enum_fn(&args.enums[*i].ts, "index");
@@ -2092,42 +2092,44 @@ fn rec_flat_stmt(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
 /// The JSON value of a field of type `t` held by the reference `x` (not optional).
 fn rec_json_value(t: &RecTy, x: TokenStream2, args: &Args) -> TokenStream2 {
     match t {
-        RecTy::F64 | RecTy::Bool => quote!(::iron_api::serde_json::json!(*#x)),
-        RecTy::Str => quote!(::iron_api::serde_json::json!(#x)),
+        RecTy::F64 | RecTy::Bool => quote!(::platypus_api::serde_json::json!(*#x)),
+        RecTy::Str => quote!(::platypus_api::serde_json::json!(#x)),
         RecTy::Value(i, _) => {
             let v = &args.values[*i];
             let (rust, n) = (&v.rust, v.fields.len());
-            quote!(::iron_api::serde_json::json!(
-                <#rust as ::iron_api::ValueType<#n>>::to_parts(*#x).to_vec()
+            quote!(::platypus_api::serde_json::json!(
+                <#rust as ::platypus_api::ValueType<#n>>::to_parts(*#x).to_vec()
             ))
         }
         RecTy::Enum(i) => {
             let name = enum_fn(&args.enums[*i].ts, "name");
-            quote!(::iron_api::serde_json::json!(#name(*#x)))
+            quote!(::platypus_api::serde_json::json!(#name(*#x)))
         }
-        RecTy::Numbers => quote!(::iron_api::serde_json::json!(#x.clone())),
+        RecTy::Numbers => quote!(::platypus_api::serde_json::json!(#x.clone())),
         RecTy::Records(i) => {
             let to = format_ident!("__to_json_{}", args.records[*i].ts);
-            quote!(::iron_api::serde_json::Value::Array(#x.iter().map(#to).collect()))
+            quote!(::platypus_api::serde_json::Value::Array(#x.iter().map(#to).collect()))
         }
         RecTy::Record(i) => {
             let to = format_ident!("__to_json_{}", args.records[*i].ts);
             quote!(#to(#x))
         }
-        RecTy::Dict => quote!(::iron_api::serde_json::Value::Array(
+        RecTy::Dict => quote!(::platypus_api::serde_json::Value::Array(
             #x.iter()
-                .map(|(k, v)| ::iron_api::serde_json::json!([k, v]))
+                .map(|(k, v)| ::platypus_api::serde_json::json!([k, v]))
                 .collect()
         )),
-        RecTy::Pairs => quote!(::iron_api::serde_json::Value::Array(
+        RecTy::Pairs => quote!(::platypus_api::serde_json::Value::Array(
             #x.iter()
-                .map(|p| ::iron_api::serde_json::json!([p.0, p.1]))
+                .map(|p| ::platypus_api::serde_json::json!([p.0, p.1]))
                 .collect()
         )),
-        RecTy::Handle(_) => quote!(::iron_api::serde_json::json!(::iron_api::Handle::to_raw(*#x))),
-        RecTy::Handles(_) => quote!(::iron_api::serde_json::Value::Array(
+        RecTy::Handle(_) => {
+            quote!(::platypus_api::serde_json::json!(::platypus_api::Handle::to_raw(*#x)))
+        }
+        RecTy::Handles(_) => quote!(::platypus_api::serde_json::Value::Array(
             #x.iter()
-                .map(|h| ::iron_api::serde_json::json!(::iron_api::Handle::to_raw(*h)))
+                .map(|h| ::platypus_api::serde_json::json!(::platypus_api::Handle::to_raw(*h)))
                 .collect()
         )),
         RecTy::Opt(_) => quote!(compile_error!("nested option")),
@@ -2146,7 +2148,7 @@ fn rec_json_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStr
                             m.insert(#key.to_string(), #v);
                         }
                         ::std::option::Option::Some(::std::option::Option::None) => {
-                            m.insert(#key.to_string(), ::iron_api::serde_json::Value::Null);
+                            m.insert(#key.to_string(), ::platypus_api::serde_json::Value::Null);
                         }
                         ::std::option::Option::None => {}
                     }
@@ -2180,8 +2182,8 @@ fn rec_parse_value(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenS
             let (rust, n) = (&v.rust, v.fields.len());
             let names: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
             quote! {
-                ::iron_api::json_value_parts::<#n>(#x, [ #( #names ),* ])
-                    .map(<#rust as ::iron_api::ValueType<#n>>::from_parts)
+                ::platypus_api::json_value_parts::<#n>(#x, [ #( #names ),* ])
+                    .map(<#rust as ::platypus_api::ValueType<#n>>::from_parts)
                     .ok_or_else(#bad)
             }
         }
@@ -2189,7 +2191,7 @@ fn rec_parse_value(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenS
             let parse = enum_fn(&args.enums[*i].ts, "parse");
             quote!(#x.as_str().and_then(#parse).ok_or_else(#bad))
         }
-        RecTy::Pairs => quote!(::iron_api::json_pairs(#x).ok_or_else(#bad)),
+        RecTy::Pairs => quote!(::platypus_api::json_pairs(#x).ok_or_else(#bad)),
         RecTy::Record(i) => {
             let from = format_ident!("__from_json_{}", args.records[*i].ts);
             quote!(#from(#x))
@@ -2222,14 +2224,14 @@ fn rec_parse_value(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenS
             #x.as_array()
                 .and_then(|a| {
                     a.iter()
-                        .map(::iron_api::serde_json::Value::as_f64)
+                        .map(::platypus_api::serde_json::Value::as_f64)
                         .collect::<::std::option::Option<::std::vec::Vec<f64>>>()
                 })
                 .ok_or_else(#bad)
         },
         RecTy::Handle(i) => {
             let rust = format_ident!("{}", args.handles[*i].1);
-            quote!(#x.as_u64().map(<#rust as ::iron_api::Handle>::from_raw).ok_or_else(#bad))
+            quote!(#x.as_u64().map(<#rust as ::platypus_api::Handle>::from_raw).ok_or_else(#bad))
         }
         RecTy::Handles(i) => {
             let rust = format_ident!("{}", args.handles[*i].1);
@@ -2237,7 +2239,7 @@ fn rec_parse_value(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenS
                 #x.as_array()
                     .and_then(|a| {
                         a.iter()
-                            .map(|y| y.as_u64().map(<#rust as ::iron_api::Handle>::from_raw))
+                            .map(|y| y.as_u64().map(<#rust as ::platypus_api::Handle>::from_raw))
                             .collect::<::std::option::Option<::std::vec::Vec<_>>>()
                     })
                     .ok_or_else(#bad)
@@ -2267,7 +2269,7 @@ fn rec_parse_field(t: &RecTy, key: &str, args: &Args) -> TokenStream2 {
                 let v = rec_parse_value(inner, key, quote!(x), args);
                 quote! {
                     match obj.get(#key) {
-                        ::std::option::Option::None | ::std::option::Option::Some(::iron_api::serde_json::Value::Null) => {
+                        ::std::option::Option::None | ::std::option::Option::Some(::platypus_api::serde_json::Value::Null) => {
                             ::std::result::Result::Ok(::std::option::Option::None)
                         }
                         ::std::option::Option::Some(x) => #v.map(::std::option::Option::Some),
@@ -2304,15 +2306,15 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
         }
         RecTy::Handle(i) => {
             let ts = &args.handles[*i].0;
-            quote!(o.set(#key, ::iron_api::qjs::handle_new(ctx, #ts, ::iron_api::Handle::to_raw(*#x))?)?;)
+            quote!(o.set(#key, ::platypus_api::qjs::handle_new(ctx, #ts, ::platypus_api::Handle::to_raw(*#x))?)?;)
         }
         RecTy::Handles(i) => {
             let ts = &args.handles[*i].0;
             quote! {
                 {
-                    let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                    let list = ::platypus_api::rquickjs::Array::new(ctx.clone())?;
                     for (i, h) in #x.iter().enumerate() {
-                        list.set(i, ::iron_api::qjs::handle_new(ctx, #ts, ::iron_api::Handle::to_raw(*h))?)?;
+                        list.set(i, ::platypus_api::qjs::handle_new(ctx, #ts, ::platypus_api::Handle::to_raw(*h))?)?;
                     }
                     o.set(#key, list)?;
                 }
@@ -2324,7 +2326,7 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
         }
         RecTy::Dict => quote! {
             {
-                let dict = ::iron_api::rquickjs::Object::new(ctx.clone())?;
+                let dict = ::platypus_api::rquickjs::Object::new(ctx.clone())?;
                 for (name, value) in #x.iter() {
                     dict.set(name.as_str(), *value)?;
                 }
@@ -2335,7 +2337,7 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
             let build = format_ident!("__js_rec_{}", args.records[*i].ts);
             quote! {
                 {
-                    let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                    let list = ::platypus_api::rquickjs::Array::new(ctx.clone())?;
                     for (i, y) in #x.iter().enumerate() {
                         list.set(i, #build(ctx, y)?)?;
                     }
@@ -2345,7 +2347,7 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
         }
         RecTy::Numbers => quote! {
             {
-                let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                let list = ::platypus_api::rquickjs::Array::new(ctx.clone())?;
                 for (i, n) in #x.iter().enumerate() {
                     list.set(i, *n)?;
                 }
@@ -2354,9 +2356,9 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
         },
         RecTy::Pairs => quote! {
             {
-                let list = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                let list = ::platypus_api::rquickjs::Array::new(ctx.clone())?;
                 for (i, p) in #x.iter().enumerate() {
-                    let pair = ::iron_api::rquickjs::Array::new(ctx.clone())?;
+                    let pair = ::platypus_api::rquickjs::Array::new(ctx.clone())?;
                     pair.set(0, p.0)?;
                     pair.set(1, p.1)?;
                     list.set(i, pair)?;
@@ -2371,7 +2373,7 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
                     match #x {
                         ::std::option::Option::Some(::std::option::Option::Some(y)) => { #set }
                         ::std::option::Option::Some(::std::option::Option::None) => {
-                            o.set(#key, ::iron_api::rquickjs::Value::new_null(ctx.clone()))?;
+                            o.set(#key, ::platypus_api::rquickjs::Value::new_null(ctx.clone()))?;
                         }
                         ::std::option::Option::None => {}
                     }
@@ -2389,10 +2391,10 @@ fn rec_js_stmt(t: &RecTy, key: &str, x: TokenStream2, args: &Args) -> TokenStrea
 
 fn kind_tokens(t: Tag) -> TokenStream2 {
     match t {
-        Tag::Static => quote!(::iron_api::FnKind::Static),
-        Tag::Method => quote!(::iron_api::FnKind::Method),
-        Tag::Get => quote!(::iron_api::FnKind::Get),
-        Tag::Set => quote!(::iron_api::FnKind::Set),
+        Tag::Static => quote!(::platypus_api::FnKind::Static),
+        Tag::Method => quote!(::platypus_api::FnKind::Method),
+        Tag::Get => quote!(::platypus_api::FnKind::Get),
+        Tag::Set => quote!(::platypus_api::FnKind::Set),
     }
 }
 
@@ -2405,7 +2407,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let Some((_, items)) = &module.content else {
         return Err(syn::Error::new(
             module.span(),
-            "#[iron_api] needs an inline module: `pub mod name { ... }`",
+            "#[platypus_api] needs an inline module: `pub mod name { ... }`",
         ));
     };
     // The module's items as they will be emitted: `#[property]` markers are ours, not Rust's.
@@ -2539,10 +2541,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .iter()
                 .map(|(n, t)| {
                     let ty = scalar_manifest(t);
-                    quote!(::iron_api::ValueField { name: #n, ty: #ty })
+                    quote!(::platypus_api::ValueField { name: #n, ty: #ty })
                 })
                 .collect();
-            quote!(::iron_api::ValueDef { name: #ts, fields: &[ #( #fields ),* ] })
+            quote!(::platypus_api::ValueDef { name: #ts, fields: &[ #( #fields ),* ] })
         })
         .collect();
 
@@ -2552,7 +2554,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let mut class_order: Vec<String> = Vec::new();
     let mut class_entries: Vec<Vec<TokenStream2>> = Vec::new();
     let mut shims = Vec::new();
-    // `("iron_X_f", iron_X_f as usize)` for each shim: the table a JIT resolves imports from.
+    // `("platypus_X_f", platypus_X_f as usize)` for each shim: the table a JIT resolves imports from.
     let mut symbol_entries: Vec<TokenStream2> = Vec::new();
     let mut js_sets = Vec::new();
     // Namespace functions by script name: a name with several versions (overloads) dispatches by
@@ -2587,7 +2589,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             .as_ref()
             .map(|(ts, _)| ts.clone())
             .unwrap_or_else(|| ns.clone());
-        let symbol = format!("iron_{owner}_{}", a.stem);
+        let symbol = format!("platypus_{owner}_{}", a.stem);
         let symbol_ident = format_ident!("{}", symbol);
         symbol_entries.push(quote!((#symbol, #symbol_ident as *const () as usize)));
         let doc = &a.doc;
@@ -2599,7 +2601,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         if has_receiver {
             let ts = &a.class.as_ref().expect("receiver implies a class").0;
             pnames.push("this".into());
-            ptys.push(quote!(::iron_api::Ty::Handle(#ts)));
+            ptys.push(quote!(::platypus_api::Ty::Handle(#ts)));
         }
         if let Some((_, k)) = &a.value_recv {
             pnames.push("this".into());
@@ -2674,13 +2676,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             None => quote!(::std::option::Option::None),
         };
         let entry = quote! {
-            ::iron_api::Function {
+            ::platypus_api::Function {
                 kind: #kind,
                 name: #js_name,
                 rust_name: #rust_name,
                 symbol: #symbol,
                 doc: #doc,
-                params: &[ #( ::iron_api::Param { name: #pnames, ty: #ptys, optional: #popts, default: #pdefaults, rest: #prests, doc: #pdocs, ts: #pts } ),* ],
+                params: &[ #( ::platypus_api::Param { name: #pnames, ty: #ptys, optional: #popts, default: #pdefaults, rest: #prests, doc: #pdocs, ts: #pts } ),* ],
                 ret: #ret_m,
                 options_after: #options_after,
                 nullable: #nullable,
@@ -2722,7 +2724,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let receiver = if has_receiver {
             abi_params.push(quote!(this: u64));
             let (_, rust) = a.class.as_ref().expect("receiver implies a class");
-            Some(quote!(<#rust as ::iron_api::Handle>::from_raw(this)))
+            Some(quote!(<#rust as ::platypus_api::Handle>::from_raw(this)))
         } else {
             None
         };
@@ -2753,7 +2755,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out: *mut #part ) {
                     let parts = match #call {
                         ::std::option::Option::Some(v) => {
-                            <#rust as ::iron_api::ValueType<#n>>::to_parts(v)
+                            <#rust as ::platypus_api::ValueType<#n>>::to_parts(v)
                         }
                         ::std::option::Option::None => [f64::NAN; #n],
                     };
@@ -2772,7 +2774,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 /// `out` points to room for the value's fields.
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out: *mut #part ) {
-                    let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(#call);
+                    let parts = <#rust as ::platypus_api::ValueType<#n>>::to_parts(#call);
                     #( unsafe { *out.add(#idx) = parts[#idx] as #part; } )*
                 }
             });
@@ -2787,11 +2789,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out_len: *mut i64 ) -> *const u8 {
                     let text = #to(&#call).to_string();
-                    unsafe { ::iron_api::return_string(text, out_len) }
+                    unsafe { ::platypus_api::return_string(text, out_len) }
                 }
             });
         } else if let Kind::Record(i) = &a.ret {
-            // A record result: its numbers stay in `iron_api`'s per-thread buffer.
+            // A record result: its numbers stay in `platypus_api`'s per-thread buffer.
             let flat = format_ident!("__flat_{}", args.records[*i].ts);
             shims.push(quote! {
                 #[unsafe(no_mangle)]
@@ -2800,15 +2802,15 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     let mut out = ::std::vec::Vec::new();
                     let mut strs = ::std::vec::Vec::new();
                     #flat(&r, &mut out, &mut strs);
-                    ::iron_api::return_flat(out);
-                    ::iron_api::return_strings(strs);
+                    ::platypus_api::return_flat(out);
+                    ::platypus_api::return_strings(strs);
                 }
             });
         } else if let Kind::List(inner) = &a.ret
             && matches!(**inner, Kind::Str(_))
         {
-            // A list of strings: the strings stay in `iron_api`'s per-thread list and the caller
-            // reads them with `iron_api_result_str(i)`; the shim returns how many there are.
+            // A list of strings: the strings stay in `platypus_api`'s per-thread list and the caller
+            // reads them with `platypus_api_result_str(i)`; the shim returns how many there are.
             let unsafe_kw = if a.params.iter().any(|(_, k)| {
                 matches!(
                     k,
@@ -2833,7 +2835,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 pub #unsafe_kw extern "C" fn #symbol_ident( #( #abi_params ),* ) -> u32 {
                     let items: ::std::vec::Vec<::std::string::String> = #call;
                     let count = items.len() as u32;
-                    ::iron_api::return_strings(items);
+                    ::platypus_api::return_strings(items);
                     count
                 }
             });
@@ -2845,7 +2847,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     let v = &args.values[*i];
                     let n = v.fields.len();
                     let rust = &v.rust;
-                    quote!(out.extend_from_slice(&<#rust as ::iron_api::ValueType<#n>>::to_parts(*item));)
+                    quote!(out.extend_from_slice(&<#rust as ::platypus_api::ValueType<#n>>::to_parts(*item));)
                 }
                 Kind::Record(i) => {
                     let flat = format_ident!("__flat_{}", args.records[*i].ts);
@@ -2855,7 +2857,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     let index = enum_fn(&args.enums[*i].ts, "index");
                     quote!(out.push(#index(*item) as f64);)
                 }
-                Kind::Handle(..) => quote!(ids.push(::iron_api::Handle::to_raw(*item));),
+                Kind::Handle(..) => quote!(ids.push(::platypus_api::Handle::to_raw(*item));),
                 Kind::F64 => quote!(out.push(*item);),
                 _ => unreachable!("classify only builds lists of values, enums and records"),
             };
@@ -2889,9 +2891,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     for item in &items {
                         #push
                     }
-                    ::iron_api::return_flat(out);
-                    ::iron_api::return_strings(strs);
-                    ::iron_api::return_ids(ids);
+                    ::platypus_api::return_flat(out);
+                    ::platypus_api::return_strings(strs);
+                    ::platypus_api::return_ids(ids);
                     items.len() as u32
                 }
             });
@@ -2904,8 +2906,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out_len: *mut i64 ) -> *const u8 {
                     let items = #call;
-                    let text = ::iron_api::serde_json::Value::Array(items.iter().map(#to).collect()).to_string();
-                    unsafe { ::iron_api::return_string(text, out_len) }
+                    let text = ::platypus_api::serde_json::Value::Array(items.iter().map(#to).collect()).to_string();
+                    unsafe { ::platypus_api::return_string(text, out_len) }
                 }
             });
         } else if let Kind::OptRecord(i) = &a.ret {
@@ -2920,7 +2922,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                         ::std::option::Option::Some(r) => #to(&r).to_string(),
                         ::std::option::Option::None => ::std::string::String::from("null"),
                     };
-                    unsafe { ::iron_api::return_string(text, out_len) }
+                    unsafe { ::platypus_api::return_string(text, out_len) }
                 }
             });
         } else if let Kind::Opt(inner) = &a.ret
@@ -2932,18 +2934,18 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 /// `out_len` is valid for a write.
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out_len: *mut i64 ) -> *const u8 {
-                    unsafe { ::iron_api::return_string_opt(#call, out_len) }
+                    unsafe { ::platypus_api::return_string_opt(#call, out_len) }
                 }
             });
         } else if let Kind::Str(_) = &a.ret {
-            // A string result: the text stays in `iron_api`'s per-thread buffer and the caller
+            // A string result: the text stays in `platypus_api`'s per-thread buffer and the caller
             // copies it into a script string at once.
             shims.push(quote! {
                 /// # Safety
                 /// `out_len` is valid for a write.
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn #symbol_ident( #( #abi_params, )* out_len: *mut i64 ) -> *const u8 {
-                    unsafe { ::iron_api::return_string(#call, out_len) }
+                    unsafe { ::platypus_api::return_string(#call, out_len) }
                 }
             });
         } else {
@@ -2993,14 +2995,14 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 a.value_recv.iter().chain(&a.params[..n_user]).collect();
             let is_opt = |n: &Ident| a.optional.contains(&n.to_string());
             let recv_param = if has_receiver {
-                quote!(this: ::iron_api::rquickjs::function::This<::iron_api::rquickjs::Value<'js>>,)
+                quote!(this: ::platypus_api::rquickjs::function::This<::platypus_api::rquickjs::Value<'js>>,)
             } else {
                 quote!()
             };
             let recv_bind = match handle_class {
                 Some((ts, rust)) if has_receiver => quote! {
-                    let recv = <#rust as ::iron_api::Handle>::from_raw(
-                        ::iron_api::qjs::recv_arg(&ctx, &this.0, #ts)?
+                    let recv = <#rust as ::platypus_api::Handle>::from_raw(
+                        ::platypus_api::qjs::recv_arg(&ctx, &this.0, #ts)?
                     );
                 },
                 _ => quote!(),
@@ -3015,7 +3017,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 .map(|(n, k)| {
                     let t = js_param_ty(k);
                     if is_opt(n) {
-                        quote!(#n: ::iron_api::rquickjs::function::Opt<::std::option::Option<#t>>)
+                        quote!(#n: ::platypus_api::rquickjs::function::Opt<::std::option::Option<#t>>)
                     } else {
                         quote!(#n: #t)
                     }
@@ -3047,10 +3049,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 let res_cb = js_arg(&res_kind, quote!(__resolve), &args, false);
                 let rej_cb = js_arg(&rej_kind, quote!(__rejecter), &args, false);
                 (
-                    quote!(::iron_api::rquickjs::Promise<'js>),
+                    quote!(::platypus_api::rquickjs::Promise<'js>),
                     quote! {
-                        let (__promise, __resolve, __reject) = ::iron_api::rquickjs::Promise::new(&ctx)?;
-                        let __rejecter = ::iron_api::qjs::error_rejecter(&ctx, __reject)?;
+                        let (__promise, __resolve, __reject) = ::platypus_api::rquickjs::Promise::new(&ctx)?;
+                        let __rejecter = ::platypus_api::qjs::error_rejecter(&ctx, __reject)?;
                         #call_path( #( #js_args, )* #res_cb, #rej_cb );
                         Ok(__promise)
                     },
@@ -3059,10 +3061,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 // The token goes into a function that stops the listener.
                 let off_fn = format_ident!("{}", off);
                 (
-                    quote!(::iron_api::rquickjs::Function<'js>),
+                    quote!(::platypus_api::rquickjs::Function<'js>),
                     quote! {
                         let token = #call_path( #( #js_args ),* );
-                        ::iron_api::rquickjs::Function::new(ctx.clone(), move || {
+                        ::platypus_api::rquickjs::Function::new(ctx.clone(), move || {
                             let _ = #off_fn(token);
                         })
                     },
@@ -3096,9 +3098,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             };
             let opts_prelude = if a.options {
                 quote! {
-                    let __opts: ::std::option::Option<::iron_api::rquickjs::Object<'js>> =
+                    let __opts: ::std::option::Option<::platypus_api::rquickjs::Object<'js>> =
                         if rest.0.len() == #opts_at + 1 {
-                            ::iron_api::qjs::options_object(&ctx, &rest.0[#opts_at])
+                            ::platypus_api::qjs::options_object(&ctx, &rest.0[#opts_at])
                         } else {
                             None
                         };
@@ -3122,7 +3124,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                             quote! {
                                 match &__opts {
                                     Some(o) => {
-                                        let v: ::iron_api::rquickjs::Value<'js> = o.get(#key)?;
+                                        let v: ::platypus_api::rquickjs::Value<'js> = o.get(#key)?;
                                         if v.is_undefined() || v.is_null() { None } else { Some(v) }
                                     }
                                     None => rest.0.get(#i).filter(|v| !v.is_undefined() && !v.is_null()).cloned(),
@@ -3139,7 +3141,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                                 let #n: #t = {
                                     let mut items = ::std::vec::Vec::new();
                                     for v in rest.0.iter().skip(#i) {
-                                        items.push(::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?);
+                                        items.push(::platypus_api::rquickjs::FromJs::from_js(&ctx, v.clone())?);
                                     }
                                     items
                                 };
@@ -3148,7 +3150,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                             quote! {
                                 let #n: ::std::option::Option<#t> = match #slot {
                                     Some(v) => {
-                                        Some(::iron_api::rquickjs::FromJs::from_js(&ctx, v)?)
+                                        Some(::platypus_api::rquickjs::FromJs::from_js(&ctx, v)?)
                                     }
                                     None => None,
                                 };
@@ -3161,7 +3163,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                             quote! {
                                 let #n: #t = match #slot {
                                     Some(v) => {
-                                        ::iron_api::rquickjs::FromJs::from_js(&ctx, v)?
+                                        ::platypus_api::rquickjs::FromJs::from_js(&ctx, v)?
                                     }
                                     None => #d,
                                 };
@@ -3174,9 +3176,9 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                             };
                             quote! {
                                 let #n: #t = match #required_slot {
-                                    Some(v) => ::iron_api::rquickjs::FromJs::from_js(&ctx, v.clone())?,
+                                    Some(v) => ::platypus_api::rquickjs::FromJs::from_js(&ctx, v.clone())?,
                                     None => {
-                                        return Err(::iron_api::rquickjs::Exception::throw_type(
+                                        return Err(::platypus_api::rquickjs::Exception::throw_type(
                                             &ctx,
                                             "missing argument",
                                         ));
@@ -3187,10 +3189,10 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                     })
                     .collect();
                 quote! {
-                    | ctx: ::iron_api::rquickjs::Ctx<'js>,
+                    | ctx: ::platypus_api::rquickjs::Ctx<'js>,
                       #recv_param
-                      rest: ::iron_api::rquickjs::function::Rest<::iron_api::rquickjs::Value<'js>> |
-                        -> ::iron_api::rquickjs::Result<#js_ret> {
+                      rest: ::platypus_api::rquickjs::function::Rest<::platypus_api::rquickjs::Value<'js>> |
+                        -> ::platypus_api::rquickjs::Result<#js_ret> {
                         #recv_bind
                         #opts_prelude
                         #( #binds )*
@@ -3199,8 +3201,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 }
             } else {
                 quote! {
-                    | ctx: ::iron_api::rquickjs::Ctx<'js>, #recv_param #( #js_params ),* |
-                        -> ::iron_api::rquickjs::Result<#js_ret> {
+                    | ctx: ::platypus_api::rquickjs::Ctx<'js>, #recv_param #( #js_params ),* |
+                        -> ::platypus_api::rquickjs::Result<#js_ret> {
                         let _ = &ctx;
                         #recv_bind
                         #( #js_defaults )*
@@ -3209,7 +3211,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 }
             };
             if let Some((ts, _)) = a.class.as_ref().filter(|_| a.value_recv.is_some()) {
-                let hidden = format!("__iron_vm_{ts}_{js_name}");
+                let hidden = format!("__platypus_vm_{ts}_{js_name}");
                 js_value_methods.entry(ts.clone()).or_default().push((
                     js_name.clone(),
                     a.tag == Tag::Get,
@@ -3218,7 +3220,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 js_hidden.push(quote! {
                     ctx.globals().set(
                         #hidden,
-                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                        ::platypus_api::rquickjs::Function::new(ctx.clone(), #closure)?,
                     )?;
                 });
                 continue;
@@ -3234,14 +3236,14 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 };
                 if let Some(ts) = ctor_of {
                     let hidden = if handle_class.is_some() {
-                        format!("__iron_hcreate_{ts}")
+                        format!("__platypus_hcreate_{ts}")
                     } else {
-                        format!("__iron_create_{ts}")
+                        format!("__platypus_create_{ts}")
                     };
                     js_hidden.push(quote! {
                         ctx.globals().set(
                             #hidden,
-                            ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                            ::platypus_api::rquickjs::Function::new(ctx.clone(), #closure)?,
                         )?;
                     });
                 }
@@ -3299,13 +3301,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let holder = if target.is_empty() || *target == args.namespace {
             quote!(ns)
         } else {
-            quote!(ctx.globals().get::<_, ::iron_api::rquickjs::Object>(#target)?)
+            quote!(ctx.globals().get::<_, ::platypus_api::rquickjs::Object>(#target)?)
         };
         if let [(closure, _, _)] = versions.as_slice() {
             js_sets.push(quote! {
                 #holder.set(
                     #name,
-                    ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                    ::platypus_api::rquickjs::Function::new(ctx.clone(), #closure)?,
                 )?;
             });
             continue;
@@ -3313,11 +3315,11 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         // Several versions: each is a hidden function, and a dispatcher picks one by argument count.
         let mut branches = String::new();
         for (i, (closure, min, max)) in versions.iter().enumerate() {
-            let hidden = format!("__iron_ov_{}_{target}_{name}_{i}", args.namespace);
+            let hidden = format!("__platypus_ov_{}_{target}_{name}_{i}", args.namespace);
             js_hidden.push(quote! {
                 ctx.globals().set(
                     #hidden,
-                    ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                    ::platypus_api::rquickjs::Function::new(ctx.clone(), #closure)?,
                 )?;
             });
             branches +=
@@ -3327,7 +3329,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             "(function(...a) {{ const n = a.length; {branches}throw new TypeError('{name}: no version takes ' + n + ' arguments'); }})"
         );
         js_sets.push(quote! {
-            #holder.set(#name, ctx.eval::<::iron_api::rquickjs::Function, _>(#src)?)?;
+            #holder.set(#name, ctx.eval::<::platypus_api::rquickjs::Function, _>(#src)?)?;
         });
     }
 
@@ -3344,20 +3346,20 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let holder = if *target == args.namespace {
             quote!(ns)
         } else {
-            quote!(ctx.globals().get::<_, ::iron_api::rquickjs::Object>(#target)?)
+            quote!(ctx.globals().get::<_, ::platypus_api::rquickjs::Object>(#target)?)
         };
         // One version is the function; several are hidden functions behind a dispatcher by
         // argument count that passes `this` on.
         let func = if let [(closure, _, _)] = versions.as_slice() {
-            quote!(::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?)
+            quote!(::platypus_api::rquickjs::Function::new(ctx.clone(), #closure)?)
         } else {
             let mut branches = String::new();
             for (i, (closure, min, max)) in versions.iter().enumerate() {
-                let hidden = format!("__iron_ovm_{}_{target}_{name}_{i}", args.namespace);
+                let hidden = format!("__platypus_ovm_{}_{target}_{name}_{i}", args.namespace);
                 js_hidden.push(quote! {
                     ctx.globals().set(
                         #hidden,
-                        ::iron_api::rquickjs::Function::new(ctx.clone(), #closure)?,
+                        ::platypus_api::rquickjs::Function::new(ctx.clone(), #closure)?,
                     )?;
                 });
                 branches += &format!(
@@ -3367,14 +3369,14 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             let src = format!(
                 "(function(...a) {{ const n = a.length; {branches}throw new TypeError('{name}: no version takes ' + n + ' arguments'); }})"
             );
-            quote!(ctx.eval::<::iron_api::rquickjs::Function, _>(#src)?)
+            quote!(ctx.eval::<::platypus_api::rquickjs::Function, _>(#src)?)
         };
         js_sets.push(quote! {
             {
-                let proto: ::iron_api::rquickjs::Object = #holder.get("prototype")?;
+                let proto: ::platypus_api::rquickjs::Object = #holder.get("prototype")?;
                 proto.prop(
                     #name,
-                    ::iron_api::rquickjs::object::Property::from(#func)
+                    ::platypus_api::rquickjs::object::Property::from(#func)
                         .writable()
                         .configurable(),
                 )?;
@@ -3385,23 +3387,23 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let holder = if *target == args.namespace {
             quote!(ns)
         } else {
-            quote!(ctx.globals().get::<_, ::iron_api::rquickjs::Object>(#target)?)
+            quote!(ctx.globals().get::<_, ::platypus_api::rquickjs::Object>(#target)?)
         };
         let acc = match (get, set) {
             (Some(g), Some(st)) => {
-                quote!(::iron_api::rquickjs::object::Accessor::from(#g).set(#st).configurable())
+                quote!(::platypus_api::rquickjs::object::Accessor::from(#g).set(#st).configurable())
             }
             (Some(g), None) => {
-                quote!(::iron_api::rquickjs::object::Accessor::from(#g).configurable())
+                quote!(::platypus_api::rquickjs::object::Accessor::from(#g).configurable())
             }
             (None, Some(st)) => {
-                quote!(::iron_api::rquickjs::object::Accessor::new_set(#st).configurable())
+                quote!(::platypus_api::rquickjs::object::Accessor::new_set(#st).configurable())
             }
             (None, None) => continue,
         };
         js_sets.push(quote! {
             {
-                let proto: ::iron_api::rquickjs::Object = #holder.get("prototype")?;
+                let proto: ::platypus_api::rquickjs::Object = #holder.get("prototype")?;
                 proto.prop(#name, #acc)?;
             }
         });
@@ -3412,17 +3414,17 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         let holder = if *target == args.namespace {
             quote!(ns)
         } else {
-            quote!(ctx.globals().get::<_, ::iron_api::rquickjs::Object>(#target)?)
+            quote!(ctx.globals().get::<_, ::platypus_api::rquickjs::Object>(#target)?)
         };
         let acc = match (get, set) {
             (Some(g), Some(st)) => {
-                quote!(::iron_api::rquickjs::object::Accessor::from(#g).set(#st).configurable())
+                quote!(::platypus_api::rquickjs::object::Accessor::from(#g).set(#st).configurable())
             }
             (Some(g), None) => {
-                quote!(::iron_api::rquickjs::object::Accessor::from(#g).configurable())
+                quote!(::platypus_api::rquickjs::object::Accessor::from(#g).configurable())
             }
             (None, Some(st)) => {
-                quote!(::iron_api::rquickjs::object::Accessor::new_set(#st).configurable())
+                quote!(::platypus_api::rquickjs::object::Accessor::new_set(#st).configurable())
             }
             (None, None) => continue,
         };
@@ -3432,13 +3434,13 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     for (name, (get, set)) in &js_props {
         let acc = match (get, set) {
             (Some(g), Some(st)) => {
-                quote!(::iron_api::rquickjs::object::Accessor::from(#g).set(#st).enumerable())
+                quote!(::platypus_api::rquickjs::object::Accessor::from(#g).set(#st).enumerable())
             }
             (Some(g), None) => {
-                quote!(::iron_api::rquickjs::object::Accessor::from(#g).enumerable())
+                quote!(::platypus_api::rquickjs::object::Accessor::from(#g).enumerable())
             }
             (None, Some(st)) => {
-                quote!(::iron_api::rquickjs::object::Accessor::new_set(#st).enumerable())
+                quote!(::platypus_api::rquickjs::object::Accessor::new_set(#st).enumerable())
             }
             (None, None) => continue,
         };
@@ -3446,7 +3448,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     }
     // One JS class per value type: a constructor taking the fields, and its methods and getters.
     let mut js_class_stmts: Vec<TokenStream2> = Vec::new();
-    let mut ns_init = quote!(::iron_api::rquickjs::Object::new(ctx.clone())?);
+    let mut ns_init = quote!(::platypus_api::rquickjs::Object::new(ctx.clone())?);
     for v in &args.values {
         let ts = &v.ts;
         let fields: Vec<&String> = v.fields.iter().map(|(n, _)| n).collect();
@@ -3485,7 +3487,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             .join(", ");
         let count = fields.len();
         let mut src = format!(
-            "globalThis.{ts} ??= class {ts} {{ constructor(...a) {{ if (a[0] === globalThis.__iron_raw) {{ {} }} else if (globalThis.__iron_create_{ts}) {{ const v = globalThis.__iron_create_{ts}(...a); {} }} else {{ {} }} }} toJSON() {{ return [{to_json}]; }} static fromJSON(v) {{ if (Array.isArray(v)) {{ if (v.length !== {count}) throw new TypeError('the array has the wrong number of values'); return new {ts}(globalThis.__iron_raw, ...v); }} if (v === null || typeof v !== 'object') throw new TypeError('expected an array of numbers or an object'); return new {ts}(globalThis.__iron_raw, {from_obj}); }} }};",
+            "globalThis.{ts} ??= class {ts} {{ constructor(...a) {{ if (a[0] === globalThis.__platypus_raw) {{ {} }} else if (globalThis.__platypus_create_{ts}) {{ const v = globalThis.__platypus_create_{ts}(...a); {} }} else {{ {} }} }} toJSON() {{ return [{to_json}]; }} static fromJSON(v) {{ if (Array.isArray(v)) {{ if (v.length !== {count}) throw new TypeError('the array has the wrong number of values'); return new {ts}(globalThis.__platypus_raw, ...v); }} if (v === null || typeof v !== 'object') throw new TypeError('expected an array of numbers or an object'); return new {ts}(globalThis.__platypus_raw, {from_obj}); }} }};",
             raw.join(" "),
             copy.join(" "),
             plain.join(" ")
@@ -3504,32 +3506,32 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         if *ts == args.namespace {
             // The namespace object is the class itself: `Color.white` is a static of `Color`.
             let src = format!("{src} {ts}");
-            ns_init = quote!(ctx.eval::<::iron_api::rquickjs::Object, _>(#src)?);
+            ns_init = quote!(ctx.eval::<::platypus_api::rquickjs::Object, _>(#src)?);
         } else {
             js_class_stmts.push(quote!(ctx.eval::<(), _>(#src)?;));
         }
     }
-    // One JS class per handle type: an opaque object (see `iron_api::qjs`), made once; each module
+    // One JS class per handle type: an opaque object (see `platypus_api::qjs`), made once; each module
     // adds its members to the prototype. `new X(..)` calls the static `create`.
     for (ts, _) in &args.handles {
         // A namespace object already holding the name (the scene's `Scene` helper functions next to
         // the `Scene` class) is merged into the class, which wins.
         let src = format!(
-            "{{ const old = globalThis.{ts}; if (typeof old !== 'function') {{ globalThis.{ts} = class {ts} {{ constructor(...a) {{ const c = globalThis.__iron_hcreate_{ts}; if (!c) throw new TypeError('{ts} cannot be constructed'); return c(...a); }} }}; if (old) for (const k of Object.getOwnPropertyNames(old)) Object.defineProperty(globalThis.{ts}, k, Object.getOwnPropertyDescriptor(old, k)); }} }} Object.defineProperty({ts}.prototype, Symbol.toStringTag, {{ value: '{ts}', configurable: true }});"
+            "{{ const old = globalThis.{ts}; if (typeof old !== 'function') {{ globalThis.{ts} = class {ts} {{ constructor(...a) {{ const c = globalThis.__platypus_hcreate_{ts}; if (!c) throw new TypeError('{ts} cannot be constructed'); return c(...a); }} }}; if (old) for (const k of Object.getOwnPropertyNames(old)) Object.defineProperty(globalThis.{ts}, k, Object.getOwnPropertyDescriptor(old, k)); }} }} Object.defineProperty({ts}.prototype, Symbol.toStringTag, {{ value: '{ts}', configurable: true }});"
         );
         if *ts == args.namespace {
             // The namespace object is the class itself, as for a value class.
             let src = format!("{src} {ts}");
-            ns_init = quote!(ctx.eval::<::iron_api::rquickjs::Object, _>(#src)?);
+            ns_init = quote!(ctx.eval::<::platypus_api::rquickjs::Object, _>(#src)?);
         } else {
             js_class_stmts.push(quote!(ctx.eval::<(), _>(#src)?;));
             // `Scene.GameObject` is the same class as the global.
             js_sets.push(quote! {
-                ns.set(#ts, ctx.globals().get::<_, ::iron_api::rquickjs::Value>(#ts)?)?;
+                ns.set(#ts, ctx.globals().get::<_, ::platypus_api::rquickjs::Value>(#ts)?)?;
             });
         }
     }
-    // ---- enums: manifest entries, helper functions, `iron_<Enum>_name` / `_parse` shims ----
+    // ---- enums: manifest entries, helper functions, `platypus_<Enum>_name` / `_parse` shims ----
     let mut enum_defs: Vec<TokenStream2> = Vec::new();
     let mut enum_items: Vec<TokenStream2> = Vec::new();
     for e in args.enums.iter().filter(|e| !e.external) {
@@ -3551,19 +3553,20 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         } else {
             e.doc.clone()
         };
-        enum_defs
-            .push(quote!(::iron_api::EnumDef { name: #ts, doc: #doc, values: &[ #( #names ),* ] }));
+        enum_defs.push(
+            quote!(::platypus_api::EnumDef { name: #ts, doc: #doc, values: &[ #( #names ),* ] }),
+        );
         let parse = enum_fn(ts, "parse");
         let name = enum_fn(ts, "name");
         let index = enum_fn(ts, "index");
         let from_index = enum_fn(ts, "from_index");
         let names_const = format_ident!("{}_NAMES", snake(ts).to_uppercase());
-        let name_sym = format_ident!("iron_{}_name", ts);
-        let parse_sym = format_ident!("iron_{}_parse", ts);
+        let name_sym = format_ident!("platypus_{}_name", ts);
+        let parse_sym = format_ident!("platypus_{}_parse", ts);
         symbol_entries
-            .push(quote!((concat!("iron_", #ts, "_name"), #name_sym as *const () as usize)));
+            .push(quote!((concat!("platypus_", #ts, "_name"), #name_sym as *const () as usize)));
         symbol_entries
-            .push(quote!((concat!("iron_", #ts, "_parse"), #parse_sym as *const () as usize)));
+            .push(quote!((concat!("platypus_", #ts, "_parse"), #parse_sym as *const () as usize)));
         enum_items.push(quote! {
             /// The names scripts see, in index order.
             pub const #names_const: &[&str] = &[ #( #names ),* ];
@@ -3605,7 +3608,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn #name_sym(i: i32, out_len: *mut i64) -> *const u8 {
                 let text = #from_index(i).map_or("", #name);
-                unsafe { ::iron_api::return_string(text, out_len) }
+                unsafe { ::platypus_api::return_string(text, out_len) }
             }
 
             /// `TypeName.parse(s)` for compiled code: the index of a script name, or -1.
@@ -3614,23 +3617,23 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             /// `s` is a live script string (or null).
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn #parse_sym(s: *const u8) -> i32 {
-                #parse(&unsafe { ::iron_api::script_str(s) }).map_or(-1, #index)
+                #parse(&unsafe { ::platypus_api::script_str(s) }).map_or(-1, #index)
             }
         });
         if args.quickjs {
             js_sets.push(quote! {
                 {
-                    let object = match ctx.globals().get::<_, ::iron_api::rquickjs::Value>(#ts)? {
+                    let object = match ctx.globals().get::<_, ::platypus_api::rquickjs::Value>(#ts)? {
                         v if v.is_object() && !v.is_function() => v.into_object().expect("checked"),
-                        _ => ::iron_api::rquickjs::Object::new(ctx.clone())?,
+                        _ => ::platypus_api::rquickjs::Object::new(ctx.clone())?,
                     };
-                    object.set("name", ::iron_api::rquickjs::Function::new(
+                    object.set("name", ::platypus_api::rquickjs::Function::new(
                         ctx.clone(),
                         |i: i32| -> ::std::option::Option<::std::string::String> {
                             #from_index(i).map(|v| #name(v).to_string())
                         },
                     ))?;
-                    object.set("parse", ::iron_api::rquickjs::Function::new(
+                    object.set("parse", ::platypus_api::rquickjs::Function::new(
                         ctx.clone(),
                         |s: ::std::string::String| -> i32 { #parse(&s).map_or(-1, #index) },
                     ))?;
@@ -3695,7 +3698,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
                 Err(e) => return Err(syn::Error::new(fname.span(), e)),
             };
             let mty = rec_ty_manifest(&ty, &args);
-            fields.push(quote!(::iron_api::RecordField { name: #key, ty: #mty, doc: #doc }));
+            fields.push(quote!(::platypus_api::RecordField { name: #key, ty: #mty, doc: #doc }));
             flat_ok &= rec_flat(&ty);
             if rec_flat(&ty) {
                 flat_stmts.push(rec_flat_stmt(&ty, quote!(r.#fname), &args));
@@ -3721,7 +3724,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         // The JSON forms: how a record travels as an argument or an optional result.
         record_items.push(quote! {
             #[allow(dead_code, unused_variables)]
-            fn #from_json(v: &::iron_api::serde_json::Value) -> ::std::result::Result<#rust, ::std::string::String> {
+            fn #from_json(v: &::platypus_api::serde_json::Value) -> ::std::result::Result<#rust, ::std::string::String> {
                 let ::std::option::Option::Some(obj) = v.as_object() else {
                     return ::std::result::Result::Err(::std::string::String::from("not an object"));
                 };
@@ -3729,23 +3732,23 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             }
 
             #[allow(dead_code)]
-            fn #to_json(r: &#rust) -> ::iron_api::serde_json::Value {
-                let mut m = ::iron_api::serde_json::Map::new();
+            fn #to_json(r: &#rust) -> ::platypus_api::serde_json::Value {
+                let mut m = ::platypus_api::serde_json::Map::new();
                 #( #json_stmts )*
-                ::iron_api::serde_json::Value::Object(m)
+                ::platypus_api::serde_json::Value::Object(m)
             }
         });
         record_defs.push(
-            quote!(::iron_api::RecordDef { name: #ts, doc: #rec_doc, fields: &[ #( #fields ),* ] }),
+            quote!(::platypus_api::RecordDef { name: #ts, doc: #rec_doc, fields: &[ #( #fields ),* ] }),
         );
         if args.quickjs {
             record_items.push(quote! {
                 #[allow(dead_code)]
                 fn #build<'js>(
-                    ctx: &::iron_api::rquickjs::Ctx<'js>,
+                    ctx: &::platypus_api::rquickjs::Ctx<'js>,
                     r: &#rust,
-                ) -> ::iron_api::rquickjs::Result<::iron_api::rquickjs::Object<'js>> {
-                    let o = ::iron_api::rquickjs::Object::new(ctx.clone())?;
+                ) -> ::platypus_api::rquickjs::Result<::platypus_api::rquickjs::Object<'js>> {
+                    let o = ::platypus_api::rquickjs::Object::new(ctx.clone())?;
                     #( #js_stmts )*
                     Ok(o)
                 }
@@ -3763,14 +3766,14 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             record_items.push(quote! {
                 #[allow(dead_code)]
                 fn #build<'js>(
-                    ctx: &::iron_api::rquickjs::Ctx<'js>,
+                    ctx: &::platypus_api::rquickjs::Ctx<'js>,
                     v: #rust,
-                ) -> ::iron_api::rquickjs::Result<::iron_api::rquickjs::Object<'js>> {
-                    let parts = <#rust as ::iron_api::ValueType<#n>>::to_parts(v);
-                    let class: ::iron_api::rquickjs::function::Constructor =
+                ) -> ::platypus_api::rquickjs::Result<::platypus_api::rquickjs::Object<'js>> {
+                    let parts = <#rust as ::platypus_api::ValueType<#n>>::to_parts(v);
+                    let class: ::platypus_api::rquickjs::function::Constructor =
                         ctx.globals().get(#ts)?;
-                    let raw: ::iron_api::rquickjs::Value = ctx.globals().get("__iron_raw")?;
-                    let mut args = ::iron_api::rquickjs::function::Args::new(ctx.clone(), 1 + #n);
+                    let raw: ::platypus_api::rquickjs::Value = ctx.globals().get("__platypus_raw")?;
+                    let mut args = ::platypus_api::rquickjs::function::Args::new(ctx.clone(), 1 + #n);
                     args.push_arg(raw)?;
                     #( args.push_arg(parts[#idx])?; )*
                     class.construct_args(args)
@@ -3793,29 +3796,29 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let quickjs = if args.quickjs {
         quote! {
             /// Installs the namespace as a QuickJS global, with typed arguments (no `Value` array,
-            /// no op queue). A handle is an opaque object of its class there (see `iron_api::qjs`).
+            /// no op queue). A handle is an opaque object of its class there (see `platypus_api::qjs`).
             pub fn register_quickjs<'js>(
-                ctx: &::iron_api::rquickjs::Ctx<'js>,
-            ) -> ::iron_api::rquickjs::Result<()> {
-                if ctx.globals().get::<_, ::iron_api::rquickjs::Value>("__iron_raw")?.is_undefined() {
-                    ctx.globals().set("__iron_raw", ::iron_api::rquickjs::Object::new(ctx.clone())?)?;
+                ctx: &::platypus_api::rquickjs::Ctx<'js>,
+            ) -> ::platypus_api::rquickjs::Result<()> {
+                if ctx.globals().get::<_, ::platypus_api::rquickjs::Value>("__platypus_raw")?.is_undefined() {
+                    ctx.globals().set("__platypus_raw", ::platypus_api::rquickjs::Object::new(ctx.clone())?)?;
                 }
                 #( #js_class_stmts )*
                 let ns = #ns_init;
                 #( #js_hidden )*
                 #( #js_sets )*
-                ::iron_api::qjs::install_namespace(ctx, #ns, ns)?;
+                ::platypus_api::qjs::install_namespace(ctx, #ns, ns)?;
                 #(
                     {
-                        let space: ::iron_api::rquickjs::Object = ctx.globals().get(#ns)?;
-                        let f: ::iron_api::rquickjs::Value = space.get(#global_names)?;
+                        let space: ::platypus_api::rquickjs::Object = ctx.globals().get(#ns)?;
+                        let f: ::platypus_api::rquickjs::Value = space.get(#global_names)?;
                         ctx.globals().set(#global_names, f)?;
                     }
                 )*
                 #(
                     ctx.globals().set(
                         #js_alias_names,
-                        ctx.globals().get::<_, ::iron_api::rquickjs::Value>(#js_alias_targets)?,
+                        ctx.globals().get::<_, ::platypus_api::rquickjs::Value>(#js_alias_targets)?,
                     )?;
                 )*
                 Ok(())
@@ -3830,7 +3833,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
         .zip(&class_entries)
         .map(|(c, fs)| {
             let doc = class_docs.get(c).cloned().unwrap_or_default();
-            quote!(::iron_api::ClassDef { name: #c, doc: #doc, functions: &[ #( #fs ),* ] })
+            quote!(::platypus_api::ClassDef { name: #c, doc: #doc, functions: &[ #( #fs ),* ] })
         })
         .collect();
 
@@ -3843,8 +3846,8 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             #(#out_items)*
 
             /// What this namespace exports to scripts.
-            pub const MANIFEST: ::iron_api::Namespace = ::iron_api::Namespace {
-                symbols: ::iron_api::SymbolTable(iron_symbols),
+            pub const MANIFEST: ::platypus_api::Namespace = ::platypus_api::Namespace {
+                symbols: ::platypus_api::SymbolTable(platypus_symbols),
                 name: #ns,
                 doc: #module_doc,
                 like: #like,
@@ -3863,7 +3866,7 @@ fn expand(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
             #( #record_items )*
 
             /// The shims' names and addresses, for a JIT.
-            pub fn iron_symbols() -> Vec<(&'static str, usize)> {
+            pub fn platypus_symbols() -> Vec<(&'static str, usize)> {
                 vec![ #( #symbol_entries ),* ]
             }
 

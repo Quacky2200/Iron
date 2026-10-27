@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A desktop-style menubar drawn by Iron's UI: click or Alt+letter opens a menu, hover
+// A desktop-style menubar drawn by Platypus's UI: click or Alt+letter opens a menu, hover
 // moves between open menus, arrows/Home/End/Enter/Escape navigate, a press outside
 // closes, and items' accelerators work from anywhere (menu.ts has the logic).
 
-import { input } from "@iron/engine";
-import { type IronElement, type IronKeyboardEvent, type IronPointerEvent, Text } from "@iron/react";
+import { input } from "@platypus/engine";
+import { type PlatypusElement, type PlatypusKeyboardEvent, type PlatypusPointerEvent, Text } from "@platypus/react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -45,7 +45,7 @@ function run(item: MenuItem) {
 
 export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProps) {
   const [state, setState] = useState<MenuState>(initialState);
-  const bar = useRef<IronElement>(null);
+  const bar = useRef<PlatypusElement>(null);
   // Listeners below read the latest values without resubscribing.
   const latest = useRef({ menus, state });
   latest.current = { menus, state };
@@ -94,7 +94,7 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
     });
   }, []);
 
-  const onKeyDown = (e: IronKeyboardEvent) => {
+  const onKeyDown = (e: PlatypusKeyboardEvent) => {
     const result = menuKey(menus, state, e.key);
     if (!result.handled) return;
     e.preventDefault();
@@ -108,17 +108,17 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
 
   const renderList = (items: MenuItem[], level: number) => (
     <box
-      className={level === 0 ? "iron-menu" : "iron-menu iron-submenu"}
-      onPointerDown={(e: IronPointerEvent) => {
+      className={level === 0 ? "platypus-menu" : "platypus-menu platypus-submenu"}
+      onPointerDown={(e: PlatypusPointerEvent) => {
         // Not the menubar item's toggle, and the bar keeps focus.
         e.stopPropagation();
         e.preventDefault();
       }}
     >
       {items.map((item, i) => {
-        if (item.separator) return <box key={i} className="iron-menu-separator" />;
+        if (item.separator) return <box key={i} className="platypus-menu-separator" />;
         const highlighted = state.path[level] === i;
-        const classes = ["iron-menu-item", highlighted && "highlighted", item.disabled && "disabled"].filter(Boolean).join(" ");
+        const classes = ["platypus-menu-item", highlighted && "highlighted", item.disabled && "disabled"].filter(Boolean).join(" ");
         return (
           <box
             key={i}
@@ -127,17 +127,17 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
               if (!selectable(item)) return;
               setState((s) => ({ ...s, path: [...s.path.slice(0, level), i] }));
             }}
-            onClick={(e: IronPointerEvent) => {
+            onClick={(e: PlatypusPointerEvent) => {
               e.stopPropagation();
               choose(item);
             }}
           >
-            <Text className="iron-menu-check">{item.checked ? "✓" : ""}</Text>
-            <Text className="iron-menu-label">{item.label ?? ""}</Text>
+            <Text className="platypus-menu-check">{item.checked ? "✓" : ""}</Text>
+            <Text className="platypus-menu-label">{item.label ?? ""}</Text>
             {item.submenu ? (
-              <box className="iron-chevron" />
+              <box className="platypus-chevron" />
             ) : (
-              <Text className="iron-menu-accel">{item.accelerator ? acceleratorLabel(item.accelerator) : ""}</Text>
+              <Text className="platypus-menu-accel">{item.accelerator ? acceleratorLabel(item.accelerator) : ""}</Text>
             )}
             {highlighted && item.submenu && !item.disabled ? renderList(item.submenu, level + 1) : null}
           </box>
@@ -149,7 +149,7 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
   return (
     <box
       ref={bar}
-      className={className ? `iron-menubar ${className}` : "iron-menubar"}
+      className={className ? `platypus-menubar ${className}` : "platypus-menubar"}
       tabIndex={-1}
       onKeyDown={onKeyDown}
       onBlur={() => {
@@ -159,14 +159,14 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
     >
       {state.open ? (
         // Covers the window behind the menus: a press anywhere else closes them.
-        <box className="iron-menu-backdrop" onPointerDown={close} />
+        <box className="platypus-menu-backdrop" onPointerDown={close} />
       ) : null}
-      <box className="iron-menubar-items">
+      <box className="platypus-menubar-items">
         {menus.map((menu, i) => (
           <box
             key={menu.label}
-            className={i === state.top ? "iron-menubar-item active" : "iron-menubar-item"}
-            onPointerDown={(e: IronPointerEvent) => {
+            className={i === state.top ? "platypus-menubar-item active" : "platypus-menubar-item"}
+            onPointerDown={(e: PlatypusPointerEvent) => {
               if (e.button !== 0) return;
               // Keep the bar's focus (a press would move it to the nearest focusable).
               e.preventDefault();

@@ -5,7 +5,7 @@
 //! finishes later). The host starts the registered classes only when the startup is done.
 //!
 //! Both are per thread, like the heap. [`startup_reset`] clears them before a program's top level
-//! runs (`iron_ts::jit::Game::init` does it, so a hot reload starts clean).
+//! runs (`platypus_ts::jit::Game::init` does it, so a hot reload starts clean).
 
 use super::*;
 use std::cell::RefCell;

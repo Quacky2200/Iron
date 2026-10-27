@@ -2,14 +2,14 @@
 
 //! The whole sine-circle demo component (`bench/sine_demo_full.ts`: the `SineDemo` class and its
 //! tweens, copied from commit 9dc2f51 with the single edit its header lists) compiled by
-//! iron_ts and driven by the Rust host against the declared engine API: a camera is made, the
+//! platypus_ts and driven by the Rust host against the declared engine API: a camera is made, the
 //! curve is drawn as gizmo lines, keys change the formula and pause the demo, the music is asked
 //! for. IDs are in TESTS.md (M9-TS-596..).
-use iron_engine_api::audio::{self, AudioCommand};
-use iron_engine_api::{camera, gizmos, input};
-use iron_scene::Scene;
-use iron_ts_rt::{NativeHost, link_anchor};
-use iron_ts_tests::sdf;
+use platypus_engine_api::audio::{self, AudioCommand};
+use platypus_engine_api::{camera, gizmos, input};
+use platypus_scene::Scene;
+use platypus_ts_rt::{NativeHost, link_anchor};
+use platypus_ts_tests::sdf;
 
 fn all(_: u64) -> bool {
     true
@@ -17,8 +17,8 @@ fn all(_: u64) -> bool {
 
 fn fresh_host() -> NativeHost {
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_ui::link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_ui::link_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     gizmos::reset();
     camera::reset();
     audio::reset();
@@ -35,9 +35,9 @@ fn fresh_host() -> NativeHost {
 // spline steps each, closed: 1,083 lines).
 #[test]
 fn the_demo_wakes_up_makes_a_camera_loads_music_and_draws_the_curve() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let mut host = fresh_host();
     host.spawn("SineDemo", None).expect("spawns");
     let cams = camera::cameras();
@@ -61,9 +61,9 @@ fn the_demo_wakes_up_makes_a_camera_loads_music_and_draws_the_curve() {
 // curve), a digit picks another formula, F5 adds the centre ring (24 more lines).
 #[test]
 fn keys_start_the_music_change_the_formula_and_show_the_centre() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let mut host = fresh_host();
     host.spawn("SineDemo", None).expect("spawns");
     let first = gizmos::take_frame().expect("frame 1");

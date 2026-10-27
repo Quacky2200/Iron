@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The pack build of `iron-build package --packs`: the data files of a game written as `.irpk`
-//! packs (`iron_pack`) instead of a loose `data/` folder.
+//! The pack build of `platypus-build package --packs`: the data files of a game written as `.ppk`
+//! packs (`platypus_pack`) instead of a loose `data/` folder.
 //!
 //! - `assets.dat`: everything the code may load at any time (named by the code, reached by a
 //!   dynamic path, selected by `include`) and the assets two or more scenes share.
 //! - `scene-<slug>.dat`: one scene file (the first entry) and the assets only that scene uses.
 //! - `index.json`: the packs in mount order.
 //!
-//! The placement rule is section 2.5 of `docs/research/iron-virtual-fs-plan.md`. Files stay in
-//! source form: textures and models are not cooked here (the cooker lives in `iron_app`).
+//! The placement rule is section 2.5 of `docs/research/platypus-virtual-fs-plan.md`. Files stay in
+//! source form: textures and models are not cooked here (the cooker lives in `platypus_app`).
 //! The output depends only on the files, never on the time or the machine.
 
 use crate::include::Reason;
 use crate::package::DataFile;
-use iron_core::payload;
-use iron_pack::{AssetKind, Codec, EntrySpec, Guid, Pack, PackSummary, PackWriter, WriteOptions};
+use platypus_core::payload;
+use platypus_pack::{
+    AssetKind, Codec, EntrySpec, Guid, Pack, PackSummary, PackWriter, WriteOptions,
+};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -439,7 +441,7 @@ pub fn write(plan: &PackPlan, dir: &Path, codec: Codec) -> Result<PackReport, St
             |w| {
                 for e in &pack.entries {
                     let data = std::fs::read(&e.src).map_err(|err| {
-                        iron_pack::Error::Invalid(format!("{}: {err}", e.src.display()))
+                        platypus_pack::Error::Invalid(format!("{}: {err}", e.src.display()))
                     })?;
                     let meta_text =
                         std::fs::read_to_string(format!("{}.meta", e.src.display())).ok();
@@ -502,7 +504,7 @@ pub fn write(plan: &PackPlan, dir: &Path, codec: Codec) -> Result<PackReport, St
     Ok(report)
 }
 
-/// `iron-build pack-info <file>`: header, codecs and entries of a pack.
+/// `platypus-build pack-info <file>`: header, codecs and entries of a pack.
 pub fn info(path: &Path) -> Result<String, String> {
     let pack = Pack::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let h = pack.header();
@@ -573,7 +575,7 @@ mod tests {
     use super::*;
 
     fn game(tag: &str, files: &[(&str, &str)]) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("iron_packs_{tag}_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_packs_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         for (p, c) in files {
             let f = d.join(p);
@@ -797,11 +799,11 @@ mod tests {
         assert_eq!(assets.verify().unwrap(), assets.len());
 
         // Through the Vfs the way a runtime mounts them: assets at the bottom, scenes above.
-        let mut vfs = iron_pack::Vfs::new();
-        vfs.mount(std::sync::Arc::new(iron_pack::PackSource::new(
+        let mut vfs = platypus_pack::Vfs::new();
+        vfs.mount(std::sync::Arc::new(platypus_pack::PackSource::new(
             "assets", assets,
         )));
-        vfs.mount(std::sync::Arc::new(iron_pack::PackSource::new(
+        vfs.mount(std::sync::Arc::new(platypus_pack::PackSource::new(
             "scene-l", scene,
         )));
         assert_eq!(&*vfs.read("assets/only.png").unwrap(), b"PNGDATA");

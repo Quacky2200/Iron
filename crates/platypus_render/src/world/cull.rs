@@ -3,7 +3,7 @@
 //! Frustum culling: what a camera can't see isn't drawn. Meshes are tested by their
 //! bounding boxes, lights by the spheres they reach.
 
-use iron_core::glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
+use platypus_core::glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 
 /// The index of the near plane in [`Frustum`]'s planes.
 const NEAR: usize = 4;
@@ -133,12 +133,12 @@ mod tests {
     // M5-CUL-01
     #[test]
     fn frustums_keep_what_cameras_see() {
-        let view = iron_core::glam::camera::rh::view::look_at_mat4(
+        let view = platypus_core::glam::camera::rh::view::look_at_mat4(
             Vec3::new(0.0, 0.0, 5.0),
             Vec3::ZERO,
             Vec3::Y,
         );
-        let proj = iron_core::glam::camera::rh::proj::directx::perspective(
+        let proj = platypus_core::glam::camera::rh::proj::directx::perspective(
             60f32.to_radians(),
             1.0,
             0.1,
@@ -172,7 +172,7 @@ mod tests {
         assert!(!f.sphere(Vec3::new(12.0, 0.0, 0.0), 2.0));
         assert!(f.sphere(Vec3::new(12.0, 0.0, 0.0), 10.0));
         // Orthographic too.
-        let ortho = iron_core::glam::camera::rh::proj::directx::orthographic(
+        let ortho = platypus_core::glam::camera::rh::proj::directx::orthographic(
             -2.0, 2.0, -2.0, 2.0, 0.1, 50.0,
         );
         let f = Frustum::from_view_proj(ortho * view);
@@ -226,7 +226,7 @@ mod tests {
         assert_eq!((lo, hi), (Vec3::splat(-2.0), Vec3::new(6.0, 2.0, 2.0)));
         assert_eq!(skinned_aabb(Vec3::ZERO, Vec3::ONE, &[]), None);
         // An orthographic light 1 to 10 m down -z: a box behind its near plane still casts.
-        let light = iron_core::glam::camera::rh::proj::directx::orthographic(
+        let light = platypus_core::glam::camera::rh::proj::directx::orthographic(
             -1.0, 1.0, -1.0, 1.0, 1.0, 10.0,
         );
         let f = Frustum::from_view_proj(light);

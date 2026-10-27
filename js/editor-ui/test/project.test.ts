@@ -18,7 +18,7 @@ import {
 let ops: unknown[][] = [];
 beforeEach(() => {
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
   _resetProjectForTests();
 });
 
@@ -45,7 +45,7 @@ test("project paths join, split into breadcrumbs and refuse moves into themselve
 });
 
 // M5-DND-08
-test("file ops are requests answered through __iron_editor_fs", async () => {
+test("file ops are requests answered through __platypus_editor_fs", async () => {
   const listing = listDir("assets");
   const copied = copyIn(["C:/in/a.png"], "assets");
   const moved = moveInto("a.png", "../x");
@@ -54,7 +54,7 @@ test("file ops are requests answered through __iron_editor_fs", async () => {
     ["editor.copyIn", 2, ["C:/in/a.png"], "assets"],
     ["editor.move", 3, "a.png", "../x"],
   ]);
-  globalThis.__iron_editor_fs([
+  globalThis.__platypus_editor_fs([
     1,
     true,
     JSON.stringify({ path: "assets", entries: [{ name: "ui", dir: true, size: 0 }] }),

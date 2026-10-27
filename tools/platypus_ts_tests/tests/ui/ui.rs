@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Compiled TSX components rendered by the native reconciler (`bench/ui.ts`): JSX, hooks, keyed
-//! lists and events written as ordinary TypeScript, run through `iron_ts_ui` and `iron_ui_native`
+//! lists and events written as ordinary TypeScript, run through `platypus_ts_ui` and `platypus_ui_native`
 //! into a real `UiTree`. Each test runs normally and with a collection at every allocation.
 //! IDs are in TESTS.md (M9-TS-575..).
-use iron_core::NodeId;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::uic::*;
-use iron_ui::{Input, Interaction, ROOT, UiTree};
-use iron_ui_native::{Event, Runtime};
+use platypus_core::NodeId;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::uic::*;
+use platypus_ui::{Input, Interaction, ROOT, UiTree};
+use platypus_ui_native::{Event, Runtime};
 use std::sync::Mutex;
 
 /// The scripts' globals are shared; one test at a time.
 static SERIAL: Mutex<()> = Mutex::new(());
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_ui::link_anchor(), 0);
+    assert_ne!(platypus_ts_ui::link_anchor(), 0);
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     unsafe { ts_uic_init() };
     f();
@@ -44,16 +44,16 @@ fn dump(tree: &UiTree, id: NodeId) -> String {
     format!("{kind}({})", kids.join(","))
 }
 
-fn no_errors(errors: Vec<iron_ui::UiError>) {
+fn no_errors(errors: Vec<platypus_ui::UiError>) {
     assert!(errors.is_empty(), "{errors:?}");
-    let script = iron_ts_ui::take_errors();
+    let script = platypus_ts_ui::take_errors();
     assert!(script.is_empty(), "{script:?}");
 }
 
 struct Ui {
     tree: UiTree,
     rt: Runtime,
-    root: iron_ui_native::RootId,
+    root: platypus_ui_native::RootId,
     inter: Interaction,
 }
 
@@ -70,7 +70,7 @@ impl Ui {
     }
 
     fn show(&mut self, handle: u64) {
-        let el = iron_ts_ui::element_from(handle);
+        let el = platypus_ts_ui::element_from(handle);
         no_errors(self.rt.render(self.root, el, &mut self.tree));
     }
 
@@ -85,13 +85,13 @@ impl Ui {
     }
 
     /// One input through the interaction layer, its events running the compiled handlers like the
-    /// app does (`iron_ui_native::event_of`). Returns the event types it sent, in order.
+    /// app does (`platypus_ui_native::event_of`). Returns the event types it sent, in order.
     fn input(&mut self, input: Input) -> Vec<&'static str> {
         let rt = &mut self.rt;
         let mut sent = Vec::new();
         self.inter.handle(&mut self.tree, input, &mut |e| {
             sent.push(e.kind.name());
-            match iron_ui_native::event_of(e) {
+            match platypus_ui_native::event_of(e) {
                 Some(mut ev) => rt.dispatch_handlers(&mut ev),
                 None => false,
             }
@@ -336,7 +336,8 @@ fn use_reducer_applies_actions_to_the_latest_state() {
 
 /// The component table the compiler exported: name -> (id, hooks).
 fn signatures() -> std::collections::HashMap<String, (u32, String)> {
-    let text = unsafe { iron_api::script_str(ts_uic___uiSignatures() as *const u8) }.into_owned();
+    let text =
+        unsafe { platypus_api::script_str(ts_uic___uiSignatures() as *const u8) }.into_owned();
     text.split(';')
         .map(|e| {
             let mut p = e.splitn(3, ':');
@@ -377,10 +378,10 @@ fn refresh_keeps_state_unless_the_component_is_remounted() {
         ui.click(b);
         assert_eq!(ui.dump(), "root(box(text(text:n=),text:5))");
         let id = signatures()["Counter"].0;
-        let el = iron_ts_ui::element_from(unsafe { ts_uic_counterApp() });
+        let el = platypus_ts_ui::element_from(unsafe { ts_uic_counterApp() });
         no_errors(ui.rt.refresh(ui.root, el, &[], &mut ui.tree));
         assert_eq!(ui.dump(), "root(box(text(text:n=),text:5))", "state kept");
-        let el = iron_ts_ui::element_from(unsafe { ts_uic_counterApp() });
+        let el = platypus_ts_ui::element_from(unsafe { ts_uic_counterApp() });
         no_errors(ui.rt.refresh(ui.root, el, &[id], &mut ui.tree));
         assert_eq!(
             ui.dump(),
@@ -514,7 +515,7 @@ fn a_function_that_returns_a_value_is_an_event_handler() {
         let before = text(unsafe { ts_uic_tapLogText() });
         for b in &boxes {
             ui.click(*b);
-            iron_ts_rt::ts_rt_gc_collect();
+            platypus_ts_rt::ts_rt_gc_collect();
         }
         let after = text(unsafe { ts_uic_tapLogText() });
         assert_eq!(after[before.len()..], *"nsmoenm");
@@ -789,14 +790,14 @@ fn an_external_store_and_a_literal_union_state_re_render() {
 // (`block: "start"`, `inline: "nearest"`, `behavior: "auto"`; `scrollTo` keeps a missing axis).
 #[test]
 fn scroll_calls_on_a_ref_take_the_doms_option_objects() {
-    use iron_ts_ui::NodeCommand;
-    use iron_ui::{ScrollAlign as A, ScrollBehavior as B};
+    use platypus_ts_ui::NodeCommand;
+    use platypus_ui::{ScrollAlign as A, ScrollBehavior as B};
     in_every_gc_mode(|| {
-        let _ = iron_ts_ui::take_node_commands();
+        let _ = platypus_ts_ui::take_node_commands();
         let mut ui = Ui::new();
         ui.show(unsafe { ts_uic_scrollCallsApp() });
         let id = ui.tree.children(ROOT)[0].0;
-        let got = iron_ts_ui::take_node_commands();
+        let got = platypus_ts_ui::take_node_commands();
         let into = |block, behavior| NodeCommand::ScrollIntoView {
             id,
             block,

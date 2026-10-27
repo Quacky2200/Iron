@@ -5,8 +5,8 @@
 //! zone; every function here must return what bun returned in every zone, in the normal, stress GC
 //! and collection-off modes. IDs are in TESTS.md (M9-TS-277..). The columns ICU4X cannot match are
 //! not in the test program; `docs/differences.md` lists them.
-use iron_ts_rt::{Str, link_anchor, ts_rt_date_set_zone, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::dfm::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_date_set_zone, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::dfm::*;
 use serde_json::Value;
 
 const ZONES: [&str; 5] = [
@@ -19,7 +19,7 @@ const ZONES: [&str; 5] = [
 
 /// Runs `f(zone)` in every zone and GC mode.
 fn in_every_mode(f: impl Fn(&str)) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     unsafe { ts_df_init() };
     for zone in ZONES {

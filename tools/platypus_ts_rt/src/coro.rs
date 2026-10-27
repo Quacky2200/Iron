@@ -5,7 +5,7 @@
 //! stack, a linked list of frames that sit in each function's native frame, so a coroutine only needs
 //! its frame chain kept apart: its first frame (`bottom`) is linked to whoever resumed it on every
 //! resume, and while it is suspended the collector walks `saved_top` down to `bottom` itself.
-//! See `docs/research/iron-ts-generators-and-proxy.md`.
+//! See `docs/research/platypus-ts-generators-and-proxy.md`.
 
 use super::*;
 use corosensei::stack::DefaultStack;

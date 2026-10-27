@@ -2,9 +2,9 @@
 
 //! `Assets.exists` / `list` / `packOf` from compiled programs (`bench/assets_native.ts`), with the
 //! index the host fills, in the normal, stress GC and collection-off modes (M9-TS-2557).
-use iron_engine_api::assets;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::assets_native_t::*;
+use platypus_engine_api::assets;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::assets_native_t::*;
 
 fn index() {
     assets::reset();
@@ -24,9 +24,9 @@ fn text(p: *mut u8) -> String {
 // M9-TS-2557
 #[test]
 fn a_compiled_program_lists_the_sorted_keys_of_a_glob() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_asn_init() };
     let want = "2|assets/sfx/a.wav,assets/sfx/b.wav|true|false|true|boss|none|empty";
     index();

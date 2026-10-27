@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cooking (`iron --cook [game]`): textures and models prepared ahead of time, so games
+//! Cooking (`platypus --cook [game]`): textures and models prepared ahead of time, so games
 //! load them without decoding images, making mip levels or parsing glTF.
 //!
 //! - Textures: every mip level made, then block-compressed where the size allows (BC1
@@ -8,13 +8,15 @@
 //! - Models: their meshes (ready to upload) and textures (cooked the same way) with
 //!   the description scripts get.
 //!
-//! Cooked files go to `.iron/cooked/<game path>.tex` / `.model`. At run time a cooked file
+//! Cooked files go to `.platypus/cooked/<game path>.tex` / `.model`. At run time a cooked file
 //! newer than its source replaces it (a texture only when its colour space and mipmaps
 //! match what was asked for). GPUs without BC get the blocks decoded first.
 
 use std::path::{Path, PathBuf};
 
-use iron_render::{CookedTexture, MeshData, TexelFormat, TextureData, TextureFilter, TextureWrap};
+use platypus_render::{
+    CookedTexture, MeshData, TexelFormat, TextureData, TextureFilter, TextureWrap,
+};
 use serde_json::Value;
 
 use crate::models::{EngineIds, Model};
@@ -293,7 +295,7 @@ pub fn cook_texture(data: &TextureData) -> CookedTexture {
     } else {
         TexelFormat::Bc3
     };
-    let mips = iron_render::mip_chain(data)
+    let mips = platypus_render::mip_chain(data)
         .into_iter()
         .map(|(px, w, h)| encode(&px, w, h, format))
         .collect();
@@ -580,13 +582,13 @@ fn renumber(v: &mut Value, map: &std::collections::HashMap<u32, u32>) {
 
 /// Where a game file's cooked form goes.
 pub fn cooked_path(root: &Path, src: &str, extension: &str) -> PathBuf {
-    root.join(".iron/cooked")
+    root.join(".platypus/cooked")
         .join(format!("{}.{extension}", crate::reload::asset_key(src)))
 }
 
 /// The cooked file for `src` if it's newer than the source.
 fn fresh(root: &Path, src: &str, extension: &str) -> Option<Vec<u8>> {
-    let source = iron_core::resolve_asset(root, src)?;
+    let source = platypus_core::resolve_asset(root, src)?;
     let cooked = cooked_path(root, src, extension);
     let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     if modified(&cooked)? < modified(&source)? {
@@ -676,7 +678,7 @@ fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 fn cook_texture_file(root: &Path, src: &str, importer: &Value) -> Result<(), String> {
-    let path = iron_core::resolve_asset(root, src).ok_or("outside the game folder")?;
+    let path = platypus_core::resolve_asset(root, src).ok_or("outside the game folder")?;
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     let image = image::load_from_memory(&bytes)
         .map_err(|e| e.to_string())?
@@ -849,7 +851,7 @@ mod tests {
         assert_eq!(uncook_texture(&cook_texture(&odd)).rgba, odd.rgba);
 
         // A game folder: cook it, then the cooked forms load (and stale ones don't).
-        let dir = std::env::temp_dir().join(format!("iron-cook-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-cook-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("assets")).unwrap();
         let mut png = Vec::new();

@@ -4,10 +4,10 @@ An upstream report for [dimforge/rapier](https://github.com/dimforge/rapier). Po
 2026-10-19 as [issue #1047](https://github.com/dimforge/rapier/issues/1047) and
 [PR #1048](https://github.com/dimforge/rapier/pull/1048) (branch `fix/plane-locked-friction` on
 Quacky2200/rapier).
-Iron works around the bug itself (`iron_physics`, `Physics::set_constraints`), so nothing here
-is needed to build Iron.
+Platypus works around the bug itself (`platypus_physics`, `Physics::set_constraints`), so nothing here
+is needed to build Platypus.
 
-In Iron it hit every Rigidbody2D (2D runs in the same 3D rapier world, kept in the x-y plane by
+In Platypus it hit every Rigidbody2D (2D runs in the same 3D rapier world, kept in the x-y plane by
 this lock) and `examples/physics`: neither had any friction. `rapier2d` itself is unaffected; its
 friction solve handles one direction at a time.
 

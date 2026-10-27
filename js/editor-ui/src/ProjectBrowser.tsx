@@ -4,7 +4,7 @@
 // in from the system are copied into the folder they're dropped on (or the one shown);
 // items dragged inside it move into a folder (a row, a breadcrumb, or `..`).
 
-import { type IronDragEvent, Text } from "@iron/react";
+import { type PlatypusDragEvent, Text } from "@platypus/react";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -32,7 +32,7 @@ export interface ProjectBrowserProps {
 const TOOLBAR = 28;
 
 /** What a drag over a folder would do there, if anything. */
-function dropAction(e: IronDragEvent, dir: string): "copy" | "move" | null {
+function dropAction(e: PlatypusDragEvent, dir: string): "copy" | "move" | null {
   if (e.dataTransfer.files.length) return "copy";
   const from = e.dataTransfer.getData(PROJECT_PATH_TYPE);
   return from && canMoveInto(from, dir) ? "move" : null;
@@ -61,7 +61,7 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
   );
   useEffect(() => {
     if (root) void refresh(path);
-    else setStatus("No project folder (run iron_editor <folder>)");
+    else setStatus("No project folder (run platypus_editor <folder>)");
   }, [path, root]);
 
   const open = (dir: string) => {
@@ -71,7 +71,7 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
 
   /** Drag handlers that make `dir` a drop target. */
   const target = (dir: string) => ({
-    onDragOver: (e: IronDragEvent) => {
+    onDragOver: (e: PlatypusDragEvent) => {
       const action = dropAction(e, dir);
       if (!action) return;
       e.preventDefault();
@@ -80,7 +80,7 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
       e.dataTransfer.dropEffect = action;
       setOver(dir);
     },
-    onDrop: (e: IronDragEvent) => {
+    onDrop: (e: PlatypusDragEvent) => {
       const action = dropAction(e, dir);
       if (!action) return;
       e.stopPropagation();
@@ -112,26 +112,26 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
 
   return (
     <box
-      className="iron-project"
+      className="platypus-project"
       style={{ width, height }}
       onDragLeave={() => setOver(null)}
       onDragEnd={() => setOver(null)}
       {...target(path)}
     >
-      <box className="iron-project-toolbar" style={{ height: TOOLBAR }}>
+      <box className="platypus-project-toolbar" style={{ height: TOOLBAR }}>
         {crumbs(path, rootName).map((c, i) => (
-          <box key={c.path} className={over === c.path && c.path !== path ? "iron-project-crumb over" : "iron-project-crumb"} onClick={() => open(c.path)} {...target(c.path)}>
+          <box key={c.path} className={over === c.path && c.path !== path ? "platypus-project-crumb over" : "platypus-project-crumb"} onClick={() => open(c.path)} {...target(c.path)}>
             <Text>{i === 0 ? c.name : `/ ${c.name}`}</Text>
           </box>
         ))}
         <box style={{ flexGrow: 1 }} />
-        <Text className="iron-project-status">{status}</Text>
-        <box className="iron-project-button" onClick={() => void refresh()}>
+        <Text className="platypus-project-status">{status}</Text>
+        <box className="platypus-project-button" onClick={() => void refresh()}>
           <Text>Refresh</Text>
         </box>
       </box>
       <VirtualList
-        className={over === path ? "iron-project-list over" : "iron-project-list"}
+        className={over === path ? "platypus-project-list over" : "platypus-project-list"}
         count={rows.length}
         rowHeight={rowHeight}
         height={listHeight}
@@ -148,12 +148,12 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
         renderRow={(i) => {
           const row = rows[i]!;
           const full = row.up ? parentPath(path) : joinPath(path, row.name);
-          const classes = ["iron-project-row", row.dir && "dir", row.dir && over === full && "over"].filter(Boolean).join(" ");
+          const classes = ["platypus-project-row", row.dir && "dir", row.dir && over === full && "over"].filter(Boolean).join(" ");
           return (
             <box
               className={classes}
               draggable={!row.up}
-              onDragStart={(e: IronDragEvent) => {
+              onDragStart={(e: PlatypusDragEvent) => {
                 e.dataTransfer.setData(PROJECT_PATH_TYPE, full);
                 e.dataTransfer.setData("text/plain", full);
                 e.dataTransfer.effectAllowed = "move";
@@ -161,9 +161,9 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
               onDoubleClick={() => row.dir && open(full)}
               {...(row.dir ? target(full) : {})}
             >
-              <box className={row.dir ? "iron-project-icon folder" : "iron-project-icon file"} />
-              <Text className="iron-project-name">{row.name}</Text>
-              <Text className="iron-project-size">{row.dir ? "" : formatSize(row.size)}</Text>
+              <box className={row.dir ? "platypus-project-icon folder" : "platypus-project-icon file"} />
+              <Text className="platypus-project-name">{row.name}</Text>
+              <Text className="platypus-project-size">{row.dir ? "" : formatSize(row.size)}</Text>
             </box>
           );
         }}

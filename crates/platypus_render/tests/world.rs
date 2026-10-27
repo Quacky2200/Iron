@@ -3,15 +3,15 @@
 //! The 3D world pass (M5.a): planes through a perspective camera, with screen UI
 //! blended over them.
 
-use iron_core::glam::{Mat4, Quat, Vec3};
-use iron_core::{Commit, Value};
-use iron_render::testing::{assert_golden, shared_gpu};
-use iron_render::{
+use platypus_core::glam::{Mat4, Quat, Vec3};
+use platypus_core::{Commit, Value};
+use platypus_render::testing::{assert_golden, shared_gpu};
+use platypus_render::{
     ALL_LAYERS, Color, OffscreenTarget, RenderTarget, TextureData, TextureFilter, TextureWrap,
     UiRenderer, WorldCamera, WorldQuad, WorldRenderer, WorldTexture,
 };
-use iron_ui::UiTree;
-use iron_ui::opcodes::*;
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::*;
 
 fn op(code: u32, args: &[Value]) -> Value {
     let mut v = vec![Value::Number(code.into())];
@@ -24,8 +24,8 @@ fn place(position: Vec3, rotation: Quat, size: (f32, f32)) -> Mat4 {
 }
 
 /// A 4×4 checker, red and white, as a texture.
-fn checker(gpu: &iron_render::Gpu) -> wgpu::TextureView {
-    use iron_render::wgpu;
+fn checker(gpu: &platypus_render::Gpu) -> wgpu::TextureView {
+    use platypus_render::wgpu;
     let mut pixels = Vec::new();
     for y in 0..4 {
         for x in 0..4 {
@@ -62,7 +62,7 @@ fn checker(gpu: &iron_render::Gpu) -> wgpu::TextureView {
     );
     texture.create_view(&Default::default())
 }
-use iron_render::wgpu;
+use platypus_render::wgpu;
 
 // M5-RND-05
 #[test]
@@ -82,7 +82,7 @@ fn planes_in_perspective_with_ui_over_them() {
     // A camera 4 m back and 2 m up, looking at the origin.
     let eye = Vec3::new(0.0, 2.0, 4.0);
     let camera_world =
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse();
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse();
     let camera = WorldCamera::perspective(
         camera_world,
         60.0,
@@ -171,7 +171,7 @@ fn planes_in_perspective_with_ui_over_them() {
 // M5-RND-06
 #[test]
 fn cameras_draw_into_their_viewports_by_depth() {
-    use iron_render::{Projection, WorldView, viewport_size};
+    use platypus_render::{Projection, WorldView, viewport_size};
     let gpu = shared_gpu();
     let size = (320, 160);
     let target =
@@ -192,7 +192,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
         ),
     ];
     let look = |eye: Vec3| {
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse()
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse()
     };
     // Left half: perspective from the front; right half: orthographic from above.
     let left = [0.0, 0.0, 0.5, 1.0];
@@ -322,7 +322,7 @@ fn cameras_draw_into_their_viewports_by_depth() {
 // M5-RND-07
 #[test]
 fn lit_primitives_with_lights() {
-    use iron_render::{Light, LightKind, MeshInstance, primitive_id};
+    use platypus_render::{Light, LightKind, MeshInstance, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -336,7 +336,7 @@ fn lit_primitives_with_lights() {
     };
     let eye = Vec3::new(0.0, 2.5, 6.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
             .inverse(),
         50.0,
         0.1,
@@ -354,13 +354,13 @@ fn lit_primitives_with_lights() {
         unlit: false,
         texture: None,
         tiling: [1.0, 1.0, 0.0, 0.0],
-        glow: iron_render::MeshGlow::None,
+        glow: platypus_render::MeshGlow::None,
         cast_shadows: true,
         mirror: None,
         layer: 0,
         ..Default::default()
     };
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
         MeshInstance {
             model: Mat4::from_scale(Vec3::splat(0.6)),
@@ -442,7 +442,7 @@ fn checker_data(
 // M5-RND-08
 #[test]
 fn textured_meshes_and_sprites() {
-    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, primitive_id};
+    use platypus_render::{Light, LightKind, MeshGlow, MeshInstance, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -486,7 +486,7 @@ fn textured_meshes_and_sprites() {
 
     let eye = Vec3::new(0.0, 2.5, 6.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
             .inverse(),
         50.0,
         0.1,
@@ -510,7 +510,7 @@ fn textured_meshes_and_sprites() {
         layer: 0,
         ..Default::default()
     };
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![
         // A floor tiled 6 times: mipmaps keep the distance from shimmering.
         mesh(
@@ -588,7 +588,7 @@ fn textured_meshes_and_sprites() {
 // M5-RND-09
 #[test]
 fn glows_bloom_and_spot_beams() {
-    use iron_render::{
+    use platypus_render::{
         BEAM_MESH, Bloom, DEFAULT_PARTICLE_TEXTURE, Light, LightKind, MeshGlow, MeshInstance,
         primitive_id,
     };
@@ -605,7 +605,7 @@ fn glows_bloom_and_spot_beams() {
     };
     let eye = Vec3::new(0.0, 2.0, 6.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y)
             .inverse(),
         50.0,
         0.1,
@@ -633,7 +633,7 @@ fn glows_bloom_and_spot_beams() {
     let spot_at = Vec3::new(-1.6, 3.0, 0.0);
     let spot_dir = Vec3::new(0.45, -1.0, 0.0).normalize();
     let spot_rot = Quat::from_rotation_arc(Vec3::NEG_Z, spot_dir);
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.05, 0.05, 0.06];
     v.meshes = vec![
         mesh(
@@ -729,7 +729,7 @@ fn glows_bloom_and_spot_beams() {
 // M5-RND-10
 #[test]
 fn directional_shadows() {
-    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, Shadows, primitive_id};
+    use platypus_render::{Light, LightKind, MeshGlow, MeshInstance, Shadows, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -743,7 +743,7 @@ fn directional_shadows() {
     };
     let eye = Vec3::new(0.0, 3.0, 6.5);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, 0.0), Vec3::Y)
             .inverse(),
         50.0,
         0.1,
@@ -767,7 +767,7 @@ fn directional_shadows() {
         layer: 0,
         ..Default::default()
     };
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.12, 0.12, 0.14];
     v.meshes = vec![
         mesh(
@@ -824,7 +824,7 @@ fn directional_shadows() {
 // M5-RND-11
 #[test]
 fn pbr_material_grid_under_a_sky() {
-    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, Sky, primitive_id};
+    use platypus_render::{Light, LightKind, MeshGlow, MeshInstance, Sky, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -838,7 +838,7 @@ fn pbr_material_grid_under_a_sky() {
     };
     let eye = Vec3::new(0.0, 1.6, 7.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.1, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.1, 0.0), Vec3::Y)
             .inverse(),
         42.0,
         0.1,
@@ -870,7 +870,7 @@ fn pbr_material_grid_under_a_sky() {
             ..Default::default()
         }
     };
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.skybox = true;
     // Columns: rough to smooth; rows: dielectric, half, metal.
     v.meshes = (0..5)
@@ -905,7 +905,7 @@ fn pbr_material_grid_under_a_sky() {
 // M5-RND-12
 #[test]
 fn planar_mirror() {
-    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, Mirror, Sky, primitive_id};
+    use platypus_render::{Light, LightKind, MeshGlow, MeshInstance, Mirror, Sky, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -920,8 +920,12 @@ fn planar_mirror() {
     // Looking at the mirror wall from an angle, from in front and to the right.
     let eye = Vec3::new(2.4, 1.9, 6.8);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(-0.2, 1.0, -1.0), Vec3::Y)
-            .inverse(),
+        platypus_core::glam::camera::rh::view::look_at_mat4(
+            eye,
+            Vec3::new(-0.2, 1.0, -1.0),
+            Vec3::Y,
+        )
+        .inverse(),
         50.0,
         0.1,
         100.0,
@@ -944,7 +948,7 @@ fn planar_mirror() {
         layer: 0,
         ..Default::default()
     };
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.skybox = true;
     let mirror_at = Vec3::new(0.0, 1.25, -1.5);
     v.meshes = vec![
@@ -1027,7 +1031,9 @@ fn planar_mirror() {
 // M5-RND-13
 #[test]
 fn reflection_probe_in_a_room() {
-    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, ReflectionProbe, primitive_id};
+    use platypus_render::{
+        Light, LightKind, MeshGlow, MeshInstance, ReflectionProbe, primitive_id,
+    };
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -1041,7 +1047,7 @@ fn reflection_probe_in_a_room() {
     };
     let eye = Vec3::new(0.0, 1.5, 3.4);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y)
             .inverse(),
         60.0,
         0.05,
@@ -1065,7 +1071,7 @@ fn reflection_probe_in_a_room() {
         layer: 0,
         ..Default::default()
     };
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.25, 0.25, 0.25];
     // A 4 m room: red and green side walls, a blue back wall, white floor and ceiling,
     // open behind the camera; a chrome ball and a rough gold one in the middle.
@@ -1138,7 +1144,7 @@ fn reflection_probe_in_a_room() {
 // M5-RND-14
 #[test]
 fn quality_low_and_high() {
-    use iron_render::{
+    use platypus_render::{
         Light, LightKind, MeshGlow, MeshInstance, ShadowQuality, Shadows, primitive_id,
     };
     let gpu = shared_gpu();
@@ -1146,8 +1152,12 @@ fn quality_low_and_high() {
     let scene = || {
         let eye = Vec3::new(0.0, 2.2, 5.0);
         let camera = WorldCamera::perspective(
-            iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.6, 0.0), Vec3::Y)
-                .inverse(),
+            platypus_core::glam::camera::rh::view::look_at_mat4(
+                eye,
+                Vec3::new(0.0, 0.6, 0.0),
+                Vec3::Y,
+            )
+            .inverse(),
             45.0,
             0.1,
             50.0,
@@ -1170,7 +1180,7 @@ fn quality_low_and_high() {
             layer: 0,
             ..Default::default()
         };
-        let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+        let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
         v.meshes.push(MeshInstance {
             mesh: primitive_id("plane").unwrap(),
             ..bar(Mat4::from_scale(Vec3::splat(0.5)), [0.75, 0.75, 0.72, 1.0])
@@ -1245,7 +1255,9 @@ fn quality_low_and_high() {
 // M5-RND-15
 #[test]
 fn light_and_mirror_culling_masks() {
-    use iron_render::{Light, LightKind, MeshGlow, MeshInstance, Mirror, Shadows, primitive_id};
+    use platypus_render::{
+        Light, LightKind, MeshGlow, MeshInstance, Mirror, Shadows, primitive_id,
+    };
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -1259,8 +1271,12 @@ fn light_and_mirror_culling_masks() {
     };
     let eye = Vec3::new(1.8, 2.4, 6.5);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.8, -0.5), Vec3::Y)
-            .inverse(),
+        platypus_core::glam::camera::rh::view::look_at_mat4(
+            eye,
+            Vec3::new(0.0, 0.8, -0.5),
+            Vec3::Y,
+        )
+        .inverse(),
         50.0,
         0.1,
         50.0,
@@ -1284,7 +1300,7 @@ fn light_and_mirror_culling_masks() {
         ..Default::default()
     };
     let mirror_at = Vec3::new(0.0, 1.2, -1.8);
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.1, 0.1, 0.12];
     v.meshes = vec![
         mesh(
@@ -1369,7 +1385,7 @@ fn light_and_mirror_culling_masks() {
 // M5-CUL-02
 #[test]
 fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
-    use iron_render::{
+    use platypus_render::{
         Light, LightKind, MeshGlow, MeshInstance, Shadows, WorldStats, primitive_id,
     };
     let gpu = shared_gpu();
@@ -1386,7 +1402,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
     // Straight down at the floor from 4 m up: a 60 degree view covers about 4.6 m.
     let eye = Vec3::new(0.0, 4.0, 0.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::NEG_Z).inverse(),
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::NEG_Z).inverse(),
         60.0,
         0.1,
         50.0,
@@ -1409,7 +1425,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
         layer: 0,
         ..Default::default()
     };
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.1, 0.1, 0.1];
     v.meshes = vec![
         mesh("plane", Mat4::IDENTITY, true),
@@ -1502,7 +1518,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
     // Looking along the ground under a high sun: a figure behind the camera is in the sun's
     // shadow map (it covers round the camera) but its shadow falls behind it, out of view.
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(
+        platypus_core::glam::camera::rh::view::look_at_mat4(
             Vec3::new(0.0, 1.5, 0.0),
             Vec3::new(0.0, 1.0, -10.0),
             Vec3::Y,
@@ -1514,7 +1530,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
         size,
         Color::rgb(0.0, 0.0, 0.0),
     );
-    let mut w = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut w = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     w.lights = vec![v.lights[0]];
     w.meshes = vec![
         mesh(
@@ -1541,7 +1557,7 @@ fn frustum_culling_skips_what_cameras_cant_see_but_keeps_its_shadows() {
 // M5-CUL-06
 #[test]
 fn a_render_texture_camera_counts_for_what_was_seen() {
-    use iron_render::MeshInstance;
+    use platypus_render::MeshInstance;
     let gpu = shared_gpu();
     let size = (64, 64);
     let target =
@@ -1555,7 +1571,7 @@ fn a_render_texture_camera_counts_for_what_was_seen() {
     };
     let camera = |eye: Vec3, at: Vec3| {
         WorldCamera::perspective(
-            iron_core::glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y).inverse(),
+            platypus_core::glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y).inverse(),
             60.0,
             0.1,
             50.0,
@@ -1565,11 +1581,11 @@ fn a_render_texture_camera_counts_for_what_was_seen() {
     };
     // A figure at the origin; the screen's camera looks away from it.
     let figure = MeshInstance {
-        mesh: iron_render::primitive_id("cube").unwrap(),
+        mesh: platypus_render::primitive_id("cube").unwrap(),
         visibility_key: 7,
         ..Default::default()
     };
-    let mut screen = iron_render::WorldView::new(
+    let mut screen = platypus_render::WorldView::new(
         camera(Vec3::new(0.0, 1.0, 5.0), Vec3::new(0.0, 1.0, 20.0)),
         [0.0, 0.0, 1.0, 1.0],
     );
@@ -1580,7 +1596,7 @@ fn a_render_texture_camera_counts_for_what_was_seen() {
     // A second camera draws it into a render texture (what a tool window shows through an
     // `image`: secondary windows draw no world of their own): seen.
     world.set_render_texture(&gpu, 3, (32, 32));
-    let mut monitor = iron_render::WorldView::new(
+    let mut monitor = platypus_render::WorldView::new(
         camera(Vec3::new(0.0, 1.0, 5.0), Vec3::ZERO),
         [0.0, 0.0, 1.0, 1.0],
     );
@@ -1593,7 +1609,7 @@ fn a_render_texture_camera_counts_for_what_was_seen() {
 // M5-CUL-05
 #[test]
 fn skinned_meshes_are_culled_by_their_bones_and_leave_shadow_maps_they_miss() {
-    use iron_render::{Light, LightKind, MeshData, MeshInstance, Shadows};
+    use platypus_render::{Light, LightKind, MeshData, MeshInstance, Shadows};
     let gpu = shared_gpu();
     let size = (96, 96);
     let target =
@@ -1626,7 +1642,7 @@ fn skinned_meshes_are_culled_by_their_bones_and_leave_shadow_maps_they_miss() {
     assert!(world.set_mesh(&gpu, 9, &cube));
     // Looking down at the origin from 6 m; the sun's maps cover what is near the camera.
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(
+        platypus_core::glam::camera::rh::view::look_at_mat4(
             Vec3::new(0.0, 6.0, 0.01),
             Vec3::ZERO,
             Vec3::NEG_Z,
@@ -1638,7 +1654,7 @@ fn skinned_meshes_are_culled_by_their_bones_and_leave_shadow_maps_they_miss() {
         size,
         Color::rgb(0.0, 0.0, 0.0),
     );
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     // Three figures by their bones: under the camera, 4 m off screen beside it (but in the
     // sun's maps), and 200 m away (in neither). Their `model` is ignored.
     v.bones = vec![
@@ -1765,7 +1781,7 @@ fn backdrop_blur_over_the_world_blurs_the_world() {
     assert!(errors.is_empty(), "{errors:?}");
     tree.layout_if_needed();
     let cmds = tree.draw_list();
-    assert!(iron_render::needs_backdrop(&cmds));
+    assert!(platypus_render::needs_backdrop(&cmds));
 
     // The app's path: the world into the backdrop texture, the UI over a copy of it.
     let mut ui = UiRenderer::new(&gpu);
@@ -1829,7 +1845,7 @@ fn painted(
 // M5-RND-17
 #[test]
 fn material_maps_and_rendering_modes() {
-    use iron_render::{
+    use platypus_render::{
         Light, LightKind, MaterialMaps, MeshInstance, RenderMode, Shadows, Sky, primitive_id,
     };
     let gpu = shared_gpu();
@@ -1909,7 +1925,7 @@ fn material_maps_and_rendering_modes() {
     );
     let eye = Vec3::new(0.0, 2.4, 6.2);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.7, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.7, 0.0), Vec3::Y)
             .inverse(),
         45.0,
         0.1,
@@ -1919,7 +1935,7 @@ fn material_maps_and_rendering_modes() {
     );
     let at = |x: f32, y: f32, z: f32| Mat4::from_translation(Vec3::new(x, y, z));
     let id = |name: &str| primitive_id(name).unwrap();
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.skybox = true;
     v.meshes = vec![
         // The floor, catching the cut-out's shadow with holes.
@@ -2033,7 +2049,9 @@ fn material_maps_and_rendering_modes() {
 // M5-RND-18
 #[test]
 fn tonemapping_exposure_and_fxaa() {
-    use iron_render::{Grading, Light, LightKind, MeshInstance, Sky, Tonemapping, primitive_id};
+    use platypus_render::{
+        Grading, Light, LightKind, MeshInstance, Sky, Tonemapping, primitive_id,
+    };
     let gpu = shared_gpu();
     let size = (200, 150);
     let target =
@@ -2049,15 +2067,19 @@ fn tonemapping_exposure_and_fxaa() {
     let scene = |fxaa: bool| {
         let eye = Vec3::new(0.0, 1.4, 4.2);
         let camera = WorldCamera::perspective(
-            iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.6, 0.0), Vec3::Y)
-                .inverse(),
+            platypus_core::glam::camera::rh::view::look_at_mat4(
+                eye,
+                Vec3::new(0.0, 0.6, 0.0),
+                Vec3::Y,
+            )
+            .inverse(),
             45.0,
             0.1,
             50.0,
             size,
             Color::rgb(0.0, 0.0, 0.0),
         );
-        let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+        let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
         v.skybox = true;
         v.fxaa = fxaa;
         let ball = |x: f32, color: [f32; 4]| MeshInstance {
@@ -2162,7 +2184,7 @@ fn tonemapping_exposure_and_fxaa() {
 // M5-RND-19
 #[test]
 fn a_camera_draws_into_a_render_texture_shown_on_a_monitor() {
-    use iron_render::{Light, LightKind, MeshInstance, primitive_id};
+    use platypus_render::{Light, LightKind, MeshInstance, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -2226,10 +2248,10 @@ fn a_camera_draws_into_a_render_texture_shown_on_a_monitor() {
         volumetric: 1.0,
     }];
     let look = |eye: Vec3, at: Vec3| {
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y).inverse()
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y).inverse()
     };
     // The texture camera looks down from above and behind, in a yellow fog colour.
-    let mut security = iron_render::WorldView::new(
+    let mut security = platypus_render::WorldView::new(
         WorldCamera::perspective(
             look(Vec3::new(0.0, 4.0, -4.0), Vec3::new(0.3, 0.4, 0.0)),
             55.0,
@@ -2243,7 +2265,7 @@ fn a_camera_draws_into_a_render_texture_shown_on_a_monitor() {
     security.meshes = meshes.clone();
     security.lights = lights.clone();
     security.target_texture = Some(SCREEN_TEXTURE);
-    let mut main = iron_render::WorldView::new(
+    let mut main = platypus_render::WorldView::new(
         WorldCamera::perspective(
             look(Vec3::new(0.5, 2.2, 6.0), Vec3::new(0.8, 0.8, 0.0)),
             45.0,
@@ -2267,7 +2289,7 @@ fn a_camera_draws_into_a_render_texture_shown_on_a_monitor() {
 // M5-RND-20
 #[test]
 fn cascaded_sun_spot_and_point_light_shadows() {
-    use iron_render::{Light, LightKind, MeshInstance, ReflectionProbe, Shadows, primitive_id};
+    use platypus_render::{Light, LightKind, MeshInstance, ReflectionProbe, Shadows, primitive_id};
     let gpu = shared_gpu();
     let size = (360, 220);
     let target =
@@ -2286,15 +2308,19 @@ fn cascaded_sun_spot_and_point_light_shadows() {
     });
     let eye = Vec3::new(0.0, 3.0, 9.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, -6.0), Vec3::Y)
-            .inverse(),
+        platypus_core::glam::camera::rh::view::look_at_mat4(
+            eye,
+            Vec3::new(0.0, 0.5, -6.0),
+            Vec3::Y,
+        )
+        .inverse(),
         50.0,
         0.1,
         200.0,
         size,
         Color::rgb(0.03, 0.03, 0.05),
     );
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.08, 0.08, 0.1];
     // A long floor with posts receding into the distance (the sun's cascades), a cube
     // under a spot light on the left and a ring of pillars round a point light on the
@@ -2395,7 +2421,7 @@ fn cascaded_sun_spot_and_point_light_shadows() {
 // M5-RND-21
 #[test]
 fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
-    use iron_render::{Light, LightKind, MeshData, MeshInstance, Shadows, primitive_id};
+    use platypus_render::{Light, LightKind, MeshData, MeshInstance, Shadows, primitive_id};
     let gpu = shared_gpu();
     let size = (240, 200);
     let target =
@@ -2445,7 +2471,7 @@ fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
     let bones = vec![Mat4::IDENTITY, bone1 * Mat4::from_translation(-joint)];
     let eye = Vec3::new(0.0, 1.4, 4.5);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.9, 0.0), Vec3::Y)
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.9, 0.0), Vec3::Y)
             .inverse(),
         45.0,
         0.1,
@@ -2453,7 +2479,7 @@ fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
         size,
         Color::rgb(0.05, 0.06, 0.09),
     );
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.bones = bones.into();
     v.meshes = vec![
         MeshInstance {
@@ -2491,7 +2517,7 @@ fn skinned_tube_bends_with_its_bones_and_casts_a_bent_shadow() {
 // M5-RND-22
 #[test]
 fn editor_grid_lies_on_the_ground_with_coloured_axes_behind_objects() {
-    use iron_render::{MeshInstance, primitive_id};
+    use platypus_render::{MeshInstance, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -2506,7 +2532,7 @@ fn editor_grid_lies_on_the_ground_with_coloured_axes_behind_objects() {
     let mut world = WorldRenderer::new(&gpu);
     let eye = Vec3::new(6.0, 4.0, 8.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse(),
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse(),
         60.0,
         0.1,
         500.0,
@@ -2514,7 +2540,7 @@ fn editor_grid_lies_on_the_ground_with_coloured_axes_behind_objects() {
         Color::rgb(0.2, 0.2, 0.22),
     );
     let view_proj = camera.view_proj;
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.grid = true;
     // An unlit cube on the origin hides the axes' crossing.
     v.meshes = vec![MeshInstance {
@@ -2549,7 +2575,7 @@ fn editor_grid_lies_on_the_ground_with_coloured_axes_behind_objects() {
 // M5-RND-23
 #[test]
 fn gizmo_lines_keep_their_width_and_show_faintly_behind_things() {
-    use iron_render::{GizmoLine, MeshInstance, primitive_id};
+    use platypus_render::{GizmoLine, MeshInstance, primitive_id};
     let gpu = shared_gpu();
     let size = (240, 160);
     let target =
@@ -2564,7 +2590,7 @@ fn gizmo_lines_keep_their_width_and_show_faintly_behind_things() {
     let mut world = WorldRenderer::new(&gpu);
     let eye = Vec3::new(0.0, 0.0, 6.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse(),
+        platypus_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y).inverse(),
         50.0,
         0.1,
         100.0,
@@ -2572,7 +2598,7 @@ fn gizmo_lines_keep_their_width_and_show_faintly_behind_things() {
         Color::rgb(0.0, 0.0, 0.0),
     );
     let view_proj = camera.view_proj;
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.meshes = vec![MeshInstance {
         mesh: primitive_id("cube").unwrap(),
         color: [0.2, 0.2, 0.25, 1.0],
@@ -2629,7 +2655,7 @@ fn gizmo_lines_keep_their_width_and_show_faintly_behind_things() {
 // M5-RND-24
 #[test]
 fn strokes_are_smooth_capsules_with_round_joins_and_hide_behind_things() {
-    use iron_render::{MeshInstance, Projection, Stroke, primitive_id};
+    use platypus_render::{MeshInstance, Projection, Stroke, primitive_id};
     let gpu = shared_gpu();
     let size = (240, 160);
     let target =
@@ -2652,7 +2678,7 @@ fn strokes_are_smooth_capsules_with_round_joins_and_hide_behind_things() {
         Color::rgb(0.0, 0.0, 0.0),
     );
     let view_proj = camera.view_proj;
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     // A grey cube in front of where the blue stroke runs.
     v.meshes = vec![MeshInstance {
         mesh: primitive_id("cube").unwrap(),
@@ -2753,7 +2779,7 @@ fn strokes_are_smooth_capsules_with_round_joins_and_hide_behind_things() {
 // M5-RND-25
 #[test]
 fn fills_follow_their_rule_and_sit_under_their_outlines() {
-    use iron_render::{FillRule, FillVertex, Projection, Stroke, tessellate_fill};
+    use platypus_render::{FillRule, FillVertex, Projection, Stroke, tessellate_fill};
     let gpu = shared_gpu();
     let size = (240, 160);
     let target =
@@ -2775,7 +2801,7 @@ fn fills_follow_their_rule_and_sit_under_their_outlines() {
         Color::rgb(0.0, 0.0, 0.0),
     );
     let view_proj = camera.view_proj;
-    let mut v = iron_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
+    let mut v = platypus_render::WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     let mut fill = |points: &[[f32; 2]], rule: FillRule, color: [f32; 4]| {
         for p in tessellate_fill(points, rule) {
             v.fills.push(FillVertex {
@@ -2881,7 +2907,7 @@ fn close_to(a: [u8; 3], b: [u8; 3], tolerance: i32) -> bool {
 // M7-FOG-01
 #[test]
 fn fog_modes_fade_things_towards_the_fog_colour_with_distance() {
-    use iron_render::{
+    use platypus_render::{
         Fog, FogMode, MeshInstance, Projection, WorldView, primitive_id, viewport_size,
     };
     let gpu = shared_gpu();
@@ -3016,7 +3042,9 @@ fn fog_modes_fade_things_towards_the_fog_colour_with_distance() {
 // M7-FOG-04
 #[test]
 fn height_fog_lies_low_and_covers_the_horizon() {
-    use iron_render::{Fog, FogMode, HeightFog, MeshInstance, Projection, WorldView, primitive_id};
+    use platypus_render::{
+        Fog, FogMode, HeightFog, MeshInstance, Projection, WorldView, primitive_id,
+    };
     let gpu = shared_gpu();
     let size = (320, 240);
     let target =
@@ -3120,7 +3148,7 @@ fn height_fog_lies_low_and_covers_the_horizon() {
 // M7-FOG-05
 #[test]
 fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
-    use iron_render::{
+    use platypus_render::{
         Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
         primitive_id, viewport_size,
     };
@@ -3191,7 +3219,7 @@ fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
         .enumerate()
         .map(|(k, &rect)| {
             let camera = WorldCamera::perspective(
-                iron_core::glam::camera::rh::view::look_at_mat4(
+                platypus_core::glam::camera::rh::view::look_at_mat4(
                     Vec3::new(0.0, 1.5, 8.0),
                     Vec3::new(0.0, 3.0, 0.0),
                     Vec3::Y,
@@ -3255,7 +3283,7 @@ fn sunlight_through_a_slatted_roof_makes_shafts_in_volumetric_fog() {
 // M7-FOG-10
 #[test]
 fn god_rays_keep_a_grates_thin_shadows_sharp() {
-    use iron_render::{
+    use platypus_render::{
         Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
         primitive_id, viewport_size,
     };
@@ -3326,7 +3354,7 @@ fn god_rays_keep_a_grates_thin_shadows_sharp() {
         .enumerate()
         .map(|(k, &rect)| {
             let camera = WorldCamera::perspective(
-                iron_core::glam::camera::rh::view::look_at_mat4(
+                platypus_core::glam::camera::rh::view::look_at_mat4(
                     Vec3::new(0.0, 1.5, 8.0),
                     Vec3::new(0.0, 3.0, 0.0),
                     Vec3::Y,
@@ -3387,8 +3415,8 @@ fn god_rays_keep_a_grates_thin_shadows_sharp() {
 /// A grate of thin bars for a roof, a floor and a back wall in exponential fog, lit by a
 /// sun tilted `tilt` degrees from straight down (towards +x), seen from under the roof
 /// through a low light volume: `WorldView`s for `size`, and their cameras.
-fn grate_view(size: (u32, u32), tilt: f32) -> iron_render::WorldView {
-    use iron_render::{
+fn grate_view(size: (u32, u32), tilt: f32) -> platypus_render::WorldView {
+    use platypus_render::{
         Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
         primitive_id,
     };
@@ -3436,7 +3464,7 @@ fn grate_view(size: (u32, u32), tilt: f32) -> iron_render::WorldView {
         volumetric: 1.0,
     };
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(
+        platypus_core::glam::camera::rh::view::look_at_mat4(
             Vec3::new(0.0, 1.5, 8.0),
             Vec3::new(0.0, 3.0, 0.0),
             Vec3::Y,
@@ -3468,7 +3496,7 @@ fn grate_view(size: (u32, u32), tilt: f32) -> iron_render::WorldView {
 }
 
 /// Green along a row of `grate_view`'s back wall, 3 m up, seen through the air under the roof.
-fn grate_row(view: &iron_render::WorldView, size: (u32, u32), pixels: &[u8]) -> Vec<i32> {
+fn grate_row(view: &platypus_render::WorldView, size: (u32, u32), pixels: &[u8]) -> Vec<i32> {
     (-30..=30)
         .map(|i| {
             let c = view
@@ -3484,14 +3512,14 @@ fn grate_row(view: &iron_render::WorldView, size: (u32, u32), pixels: &[u8]) -> 
 
 /// The same grate rendered by a new renderer for `frames` frames, the sun at `tilt`.
 fn grate_render(size: (u32, u32), tilts: &[f32]) -> Vec<u8> {
-    grate_render_with(size, tilts, iron_render::Denoising::Both)
+    grate_render_with(size, tilts, platypus_render::Denoising::Both)
 }
 
 /// As `grate_render`, with the light volume's denoising.
 fn grate_render_with(
     size: (u32, u32),
     tilts: &[f32],
-    denoising: iron_render::Denoising,
+    denoising: platypus_render::Denoising,
 ) -> Vec<u8> {
     let gpu = shared_gpu();
     let target =
@@ -3530,7 +3558,7 @@ fn the_light_volume_averages_its_cells_over_frames_into_smooth_beams() {
     let one = grate_row(
         &view,
         size,
-        &grate_render_with(size, &frames, iron_render::Denoising::None),
+        &grate_render_with(size, &frames, platypus_render::Denoising::None),
     );
     let many = grate_row(&view, size, &grate_render(size, &frames));
     assert!(
@@ -3569,7 +3597,7 @@ fn the_light_volume_follows_a_turning_sun_without_trailing_its_old_beams() {
 // M7-EXP-01
 #[test]
 fn auto_exposure_adapts_dim_and_bright_views_to_the_same_grey_and_takes_time_to() {
-    use iron_render::{AutoExposure, Grading, WorldView};
+    use platypus_render::{AutoExposure, Grading, WorldView};
     let gpu = shared_gpu();
     let size = (64, 48);
     let target =
@@ -3631,7 +3659,7 @@ fn auto_exposure_adapts_dim_and_bright_views_to_the_same_grey_and_takes_time_to(
 fn exposure_frames(
     world: &mut WorldRenderer,
     size: (u32, u32),
-    views: &[iron_render::WorldView],
+    views: &[platypus_render::WorldView],
     frames: usize,
 ) -> Vec<i32> {
     let gpu = shared_gpu();
@@ -3659,7 +3687,7 @@ fn exposure_frames(
 }
 
 /// An empty view of one flat brightness over `viewport`, for camera `key`.
-fn flat_view(level: f64, viewport: [f32; 4], key: u32) -> iron_render::WorldView {
+fn flat_view(level: f64, viewport: [f32; 4], key: u32) -> platypus_render::WorldView {
     let size = (64, 48);
     let camera = WorldCamera::perspective(
         Mat4::IDENTITY,
@@ -3669,14 +3697,14 @@ fn flat_view(level: f64, viewport: [f32; 4], key: u32) -> iron_render::WorldView
         size,
         Color::rgb(level, level, level),
     );
-    let mut v = iron_render::WorldView::new(camera, viewport);
+    let mut v = platypus_render::WorldView::new(camera, viewport);
     v.exposure_key = key;
     v
 }
 
 /// A dim view with an emissive patch in its lower half (`patch`: its brightness).
-fn patch_view(dim: f64, patch: f32) -> iron_render::WorldView {
-    use iron_render::{MeshInstance, primitive_id};
+fn patch_view(dim: f64, patch: f32) -> platypus_render::WorldView {
+    use platypus_render::{MeshInstance, primitive_id};
     let mut v = flat_view(dim, [0.0, 0.0, 1.0, 1.0], 0);
     v.meshes.push(MeshInstance {
         mesh: primitive_id("quad").unwrap(),
@@ -3693,8 +3721,8 @@ fn patch_view(dim: f64, patch: f32) -> iron_render::WorldView {
     v
 }
 
-fn auto_grading(auto: iron_render::AutoExposure) -> iron_render::Grading {
-    iron_render::Grading {
+fn auto_grading(auto: platypus_render::AutoExposure) -> platypus_render::Grading {
+    platypus_render::Grading {
         auto_exposure: Some(auto),
         delta_time: 1.0 / 60.0,
         ..Default::default()
@@ -3704,7 +3732,7 @@ fn auto_grading(auto: iron_render::AutoExposure) -> iron_render::Grading {
 // M7-EXP-02
 #[test]
 fn each_camera_adapts_on_its_own_even_on_one_screen() {
-    use iron_render::AutoExposure;
+    use platypus_render::AutoExposure;
     let size = (128, 48);
     let mut world = WorldRenderer::new(&shared_gpu());
     world.grading = auto_grading(AutoExposure::default());
@@ -3726,12 +3754,12 @@ fn each_camera_adapts_on_its_own_even_on_one_screen() {
 // M7-EXP-03
 #[test]
 fn histogram_metering_ignores_a_small_bright_patch_between_its_percentiles() {
-    use iron_render::AutoExposure;
+    use platypus_render::AutoExposure;
     let size = (64, 48);
     let render = |low: f32, high: f32| {
         let mut world = WorldRenderer::new(&shared_gpu());
         world.grading = auto_grading(AutoExposure {
-            metering: iron_render::Metering::Average,
+            metering: platypus_render::Metering::Average,
             low_percent: low,
             high_percent: high,
             ..Default::default()
@@ -3745,7 +3773,7 @@ fn histogram_metering_ignores_a_small_bright_patch_between_its_percentiles() {
     let alone = {
         let mut world = WorldRenderer::new(&shared_gpu());
         world.grading = auto_grading(AutoExposure {
-            metering: iron_render::Metering::Average,
+            metering: platypus_render::Metering::Average,
             ..Default::default()
         });
         exposure_frames(
@@ -3768,13 +3796,13 @@ fn histogram_metering_ignores_a_small_bright_patch_between_its_percentiles() {
 // M7-EXP-04
 #[test]
 fn auto_exposure_blends_into_the_manual_exposure_over_its_transition() {
-    use iron_render::AutoExposure;
+    use platypus_render::AutoExposure;
     let size = (64, 48);
     let views = [flat_view(0.01, [0.0, 0.0, 1.0, 1.0], 0)];
     let mut world = WorldRenderer::new(&shared_gpu());
     // The manual exposure leaves light as it is (EV100 -log2(1.2)): the dim view stays dim.
     let fixed = -(1.2f32.log2());
-    world.grading = iron_render::Grading {
+    world.grading = platypus_render::Grading {
         fixed_ev: Some(fixed),
         transition: 1.0,
         ..auto_grading(AutoExposure::default())
@@ -3785,7 +3813,7 @@ fn auto_exposure_blends_into_the_manual_exposure_over_its_transition() {
     let after = exposure_frames(&mut world, size, &views, 60)[0];
     let manual = {
         let mut w = WorldRenderer::new(&shared_gpu());
-        w.grading = iron_render::Grading {
+        w.grading = platypus_render::Grading {
             fixed_ev: Some(fixed),
             ..Default::default()
         };
@@ -3805,7 +3833,7 @@ fn auto_exposure_blends_into_the_manual_exposure_over_its_transition() {
 // M7-EXP-05
 #[test]
 fn scripts_read_each_cameras_exposure_back_and_can_reset_it() {
-    use iron_render::AutoExposure;
+    use platypus_render::AutoExposure;
     let size = (64, 48);
     let mut world = WorldRenderer::new(&shared_gpu());
     world.grading = auto_grading(AutoExposure::default());
@@ -3847,7 +3875,7 @@ fn scripts_read_each_cameras_exposure_back_and_can_reset_it() {
 // M7-EXP-06
 #[test]
 fn a_soft_floor_and_a_curve_keep_dark_places_darker_than_full_adaptation() {
-    use iron_render::AutoExposure;
+    use platypus_render::AutoExposure;
     let size = (64, 48);
     let views = [flat_view(0.005, [0.0, 0.0, 1.0, 1.0], 0)];
     let render = |auto: AutoExposure| {
@@ -3861,7 +3889,7 @@ fn a_soft_floor_and_a_curve_keep_dark_places_darker_than_full_adaptation() {
         dark_below: 3.0,
         ..Default::default()
     });
-    let mut curve = [[0.0; 2]; iron_render::MAX_CURVE_POINTS];
+    let mut curve = [[0.0; 2]; platypus_render::MAX_CURVE_POINTS];
     curve[0] = [-4.0, -2.0];
     curve[1] = [4.0, 0.0];
     let curved = render(AutoExposure {
@@ -3876,7 +3904,7 @@ fn a_soft_floor_and_a_curve_keep_dark_places_darker_than_full_adaptation() {
 // M7-RP-02
 #[test]
 fn a_quality_levels_pipeline_asset_leaves_out_shafts_and_caps_lights() {
-    use iron_render::{Fog, FogMode, Light, LightKind, PipelineAsset, VolumetricFog};
+    use platypus_render::{Fog, FogMode, Light, LightKind, PipelineAsset, VolumetricFog};
     let size = (64, 48);
     // Forty point lights in view: a level capped at 32 draws the nearest 32 (no directional:
     // no main light).
@@ -3910,7 +3938,7 @@ fn a_quality_levels_pipeline_asset_leaves_out_shafts_and_caps_lights() {
         max_additional_lights: 32,
         ..Default::default()
     };
-    let render = |asset: PipelineAsset, view: &iron_render::WorldView| {
+    let render = |asset: PipelineAsset, view: &platypus_render::WorldView| {
         let mut world = WorldRenderer::new(&shared_gpu());
         world.pipeline = asset;
         let pixel = exposure_frames(&mut world, size, std::slice::from_ref(view), 1)[0];
@@ -3929,7 +3957,7 @@ fn a_quality_levels_pipeline_asset_leaves_out_shafts_and_caps_lights() {
 // M7-RP-03
 #[test]
 fn a_pipeline_assets_hdr_and_additional_light_shadows_settings_apply() {
-    use iron_render::{Light, LightKind, PipelineAsset, Shadows, Tonemapping};
+    use platypus_render::{Light, LightKind, PipelineAsset, Shadows, Tonemapping};
     let size = (64, 48);
     // A bright view, past white: tonemapped it rolls off; without HDR it clips.
     let bright = [flat_view(3.0, [0.0, 0.0, 1.0, 1.0], 0)];
@@ -3981,7 +4009,7 @@ fn a_pipeline_assets_hdr_and_additional_light_shadows_settings_apply() {
 // M7-HD-01
 #[test]
 fn real_world_units_pre_expose_light_too_bright_for_the_hdr_target() {
-    use iron_render::AutoExposure;
+    use platypus_render::AutoExposure;
     let size = (64, 48);
     // Sunlit concrete in real units is thousands of nits; past fp16's 65504 the HDR target
     // overflows (or clamps). A view at 200000 nits: pre-exposed (real-world units on), it
@@ -4012,7 +4040,7 @@ fn real_world_units_pre_expose_light_too_bright_for_the_hdr_target() {
 // M7-FOG-15
 #[test]
 fn a_spot_light_behind_a_wall_puts_no_haze_in_front_of_it() {
-    use iron_render::{
+    use platypus_render::{
         Fog, FogMode, Light, LightKind, MeshInstance, Shadows, VolumetricFog, WorldView,
         primitive_id,
     };
@@ -4032,7 +4060,7 @@ fn a_spot_light_behind_a_wall_puts_no_haze_in_front_of_it() {
     // reach a little behind it, into the beam, and reading them showed its round
     // cross-section on the wall.
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(
+        platypus_core::glam::camera::rh::view::look_at_mat4(
             Vec3::new(0.0, 1.5, 2.0),
             Vec3::new(0.0, 1.5, 0.0),
             Vec3::Y,
@@ -4099,7 +4127,7 @@ fn a_spot_light_behind_a_wall_puts_no_haze_in_front_of_it() {
 // M7-CLOUD-01
 #[test]
 fn a_cloud_layer_covers_the_sky_behind_the_distance_fog() {
-    use iron_render::{CloudLayer, Fog, FogMode, WorldView};
+    use platypus_render::{CloudLayer, Fog, FogMode, WorldView};
     let size = (64, 48);
     let gpu = shared_gpu();
     let target =
@@ -4113,7 +4141,7 @@ fn a_cloud_layer_covers_the_sky_behind_the_distance_fog() {
     };
     // Looking up at a blue background through dense red fog (which the background ignores).
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(
+        platypus_core::glam::camera::rh::view::look_at_mat4(
             Vec3::ZERO,
             Vec3::new(0.0, 1.0, -0.3),
             Vec3::Z,
@@ -4160,7 +4188,7 @@ fn a_cloud_layer_covers_the_sky_behind_the_distance_fog() {
 // M7-SPOT-01
 #[test]
 fn a_pyramid_spot_light_lights_a_wide_thin_rectangle_turned_with_its_object() {
-    use iron_render::{Light, LightKind, MeshInstance, WorldView, primitive_id};
+    use platypus_render::{Light, LightKind, MeshInstance, WorldView, primitive_id};
     let size = (160, 120);
     let gpu = shared_gpu();
     let target =
@@ -4173,7 +4201,7 @@ fn a_pyramid_spot_light_lights_a_wide_thin_rectangle_turned_with_its_object() {
         scale: 1.0,
     };
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(
+        platypus_core::glam::camera::rh::view::look_at_mat4(
             Vec3::new(0.0, 0.0, 5.0),
             Vec3::ZERO,
             Vec3::Y,
@@ -4237,7 +4265,7 @@ fn a_pyramid_spot_light_lights_a_wide_thin_rectangle_turned_with_its_object() {
 // M7-FOG-13
 /// How much the haze changes from one frame to the next with the camera still under a
 /// grate's beams (all of it noise): the mean change in green over the frame (0..255).
-fn grate_shimmer(volumetric: iron_render::VolumetricFog) -> f32 {
+fn grate_shimmer(volumetric: platypus_render::VolumetricFog) -> f32 {
     let gpu = shared_gpu();
     let size = (320, 160);
     let target =
@@ -4256,7 +4284,7 @@ fn grate_shimmer(volumetric: iron_render::VolumetricFog) -> f32 {
         let turn = Mat4::IDENTITY;
         let _ = i;
         v.camera = WorldCamera::perspective(
-            (iron_core::glam::camera::rh::view::look_at_mat4(
+            (platypus_core::glam::camera::rh::view::look_at_mat4(
                 Vec3::new(0.0, 1.5, 8.0),
                 Vec3::new(0.0, 3.0, 0.0),
                 Vec3::Y,
@@ -4298,7 +4326,7 @@ fn grate_shimmer(volumetric: iron_render::VolumetricFog) -> f32 {
 
 #[test]
 fn more_history_and_samples_take_the_shimmer_out_of_fine_beams() {
-    use iron_render::{Denoising, VolumetricFog};
+    use platypus_render::{Denoising, VolumetricFog};
     let base = VolumetricFog {
         intensity: 0.25,
         distance: 30.0,
@@ -4327,7 +4355,7 @@ fn more_history_and_samples_take_the_shimmer_out_of_fine_beams() {
 
 /// The grate's beams after `frames` frames, the camera turning `turn` degrees a frame towards
 /// the same final view whatever `turn` is.
-fn grate_after(volumetric: iron_render::VolumetricFog, turn: f32, frames: usize) -> Vec<u8> {
+fn grate_after(volumetric: platypus_render::VolumetricFog, turn: f32, frames: usize) -> Vec<u8> {
     let gpu = shared_gpu();
     let size = (320, 160);
     let target =
@@ -4346,7 +4374,7 @@ fn grate_after(volumetric: iron_render::VolumetricFog, turn: f32, frames: usize)
         // Turning towards the final view, which every run ends on.
         let left = (frames - 1 - i) as f32 * turn;
         v.camera = WorldCamera::perspective(
-            iron_core::glam::camera::rh::view::look_at_mat4(
+            platypus_core::glam::camera::rh::view::look_at_mat4(
                 Vec3::new(0.0, 1.5, 8.0),
                 Vec3::new(0.0, 3.0, 0.0),
                 Vec3::Y,
@@ -4369,7 +4397,7 @@ fn grate_after(volumetric: iron_render::VolumetricFog, turn: f32, frames: usize)
 
 /// How far a turning camera's beams are from a still camera's (settled) at the same view:
 /// blur and smear, the mean change in green (0..255).
-fn grate_smear(volumetric: iron_render::VolumetricFog) -> f32 {
+fn grate_smear(volumetric: platypus_render::VolumetricFog) -> f32 {
     let still = grate_after(volumetric, 0.0, 120);
     let moving = grate_after(volumetric, 0.15, 120);
     let d: i64 = moving
@@ -4383,7 +4411,7 @@ fn grate_smear(volumetric: iron_render::VolumetricFog) -> f32 {
 // M7-FOG-14
 #[test]
 fn turning_cameras_beams_stay_close_to_a_still_cameras() {
-    use iron_render::VolumetricFog;
+    use platypus_render::VolumetricFog;
     let base = VolumetricFog {
         intensity: 0.25,
         distance: 30.0,
@@ -4417,7 +4445,7 @@ fn a_change_of_manual_exposure_eases_over_the_transition() {
     let size = (64, 48);
     let views = [flat_view(0.05, [0.0, 0.0, 1.0, 1.0], 0)];
     let mut world = WorldRenderer::new(&shared_gpu());
-    world.grading = iron_render::Grading {
+    world.grading = platypus_render::Grading {
         fixed_ev: Some(0.0),
         transition: 1.0,
         delta_time: 1.0 / 60.0,
@@ -4430,7 +4458,7 @@ fn a_change_of_manual_exposure_eases_over_the_transition() {
     let after = exposure_frames(&mut world, size, &views, 40)[0];
     let target = {
         let mut w = WorldRenderer::new(&shared_gpu());
-        w.grading = iron_render::Grading {
+        w.grading = platypus_render::Grading {
             fixed_ev: Some(2.0),
             ..Default::default()
         };
@@ -4450,7 +4478,7 @@ fn a_change_of_manual_exposure_eases_over_the_transition() {
 // M7-FOG-06
 #[test]
 fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {
-    use iron_render::{FogVolume, MeshInstance, Projection, WorldView, primitive_id};
+    use platypus_render::{FogVolume, MeshInstance, Projection, WorldView, primitive_id};
     let gpu = shared_gpu();
     let size = (320, 200);
     let target =
@@ -4556,7 +4584,7 @@ fn fog_volumes_hold_mist_in_a_box_with_soft_edges() {
 // M7-FOG-07
 #[test]
 fn fog_culls_what_it_hides_and_counts_it() {
-    use iron_render::{
+    use platypus_render::{
         Fog, FogMode, MeshInstance, Projection, WorldStats, WorldView, primitive_id,
     };
     let gpu = shared_gpu();
@@ -4665,7 +4693,7 @@ fn fog_culls_what_it_hides_and_counts_it() {
 // M7-FOG-08
 #[test]
 fn spot_and_point_lights_light_the_fog_with_sharp_cones_and_round_glows() {
-    use iron_render::{
+    use platypus_render::{
         Fog, FogMode, Light, LightKind, Projection, VolumetricFog, WorldView, viewport_size,
     };
     let gpu = shared_gpu();
@@ -4695,8 +4723,8 @@ fn spot_and_point_lights_light_the_fog_with_sharp_cones_and_round_glows() {
     let mut v = WorldView::new(camera, [0.0, 0.0, 1.0, 1.0]);
     v.ambient = [0.0; 3];
     // A black wall behind, for the view rays to end on.
-    v.meshes = vec![iron_render::MeshInstance {
-        mesh: iron_render::primitive_id("cube").unwrap(),
+    v.meshes = vec![platypus_render::MeshInstance {
+        mesh: platypus_render::primitive_id("cube").unwrap(),
         model: Mat4::from_scale_rotation_translation(
             Vec3::new(40.0, 20.0, 0.2),
             Quat::IDENTITY,
@@ -4780,7 +4808,7 @@ fn spot_and_point_lights_light_the_fog_with_sharp_cones_and_round_glows() {
 // M7-FOG-02
 #[test]
 fn orthographic_fog_goes_by_depth_and_covers_quads_shapes_and_strokes() {
-    use iron_render::{FillVertex, Fog, FogMode, Projection, Stroke, WorldView};
+    use platypus_render::{FillVertex, Fog, FogMode, Projection, Stroke, WorldView};
     let gpu = shared_gpu();
     let size = (240, 160);
     let target =

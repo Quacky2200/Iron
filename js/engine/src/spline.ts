@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Splines (Unity's Splines package, the core of it): a path through knots, smooth unless told
-// otherwise. The maths is native (`iron_math::spline`, the same code compiled games call); the
+// otherwise. The maths is native (`platypus_math::spline`, the same code compiled games call); the
 // app installs `Spline` as a global class. This file types it for bundled games and adds the
 // `SplineAnimate` component, which stays a script component (a bundled game's `GameObject` is
 // the op-based one in `scene.ts`, so the native component cannot be attached to it) but leaves

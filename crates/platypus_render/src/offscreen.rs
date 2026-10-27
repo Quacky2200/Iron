@@ -50,7 +50,7 @@ impl OffscreenTarget {
         self.height = height;
         self.texture = (width > 0 && height > 0).then(|| {
             gpu.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("iron offscreen"),
+                label: Some("platypus offscreen"),
                 size: wgpu::Extent3d {
                     width,
                     height,
@@ -83,7 +83,7 @@ impl OffscreenTarget {
         let padded = unpadded.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
             * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("iron readback"),
+            label: Some("platypus readback"),
             size: u64::from(padded * self.height),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,

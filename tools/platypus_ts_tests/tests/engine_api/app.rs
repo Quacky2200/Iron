@@ -3,13 +3,13 @@
 //! `bench/app.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_app_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-621..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::app_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::app_t::*;
 use serde_json::Value;
 
 /// The manifest and the machine as the engine installs them.
 fn reset() {
-    use iron_engine_api::app::{self, AppInfo, SystemInfo};
+    use platypus_engine_api::app::{self, AppInfo, SystemInfo};
     app::reset();
     app::take_requests();
     app::set_app(AppInfo {
@@ -49,9 +49,9 @@ fn reset() {
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_apc_init() };
     reset();
     f();
@@ -112,7 +112,7 @@ fn settable_matches_the_original() {
 // M9-TS-3361
 #[test]
 fn application_args_and_quit_with_an_exit_code_are_native() {
-    use iron_engine_api::app::{self, AppInfo, Request};
+    use platypus_engine_api::app::{self, AppInfo, Request};
     let src = "export function t(): string {
   const a = Application.args;
   a.push(\"changed\");
@@ -149,8 +149,8 @@ fn application_args_and_quit_with_an_exit_code_are_native() {
 // returned function stops the listener.
 #[test]
 fn input_on_hears_keys_buttons_and_axes_with_their_fields() {
-    use iron_engine_api::input;
-    let _serial = iron_ts_tests::serial();
+    use platypus_engine_api::input;
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let src = "const log: string[] = [];
 let stopKeys: () => void = () => {};
@@ -162,11 +162,11 @@ export function setup(): void {
 }
 export function stop(): void { stopKeys(); }
 export function result(): string { return log.join(\" \"); }";
-    let mut manifests = iron_engine_api::iron_math::manifests();
-    manifests.extend(iron_engine_api::manifests());
-    let game = iron_ts::jit::compile_and_load(
+    let mut manifests = platypus_engine_api::platypus_math::manifests();
+    manifests.extend(platypus_engine_api::manifests());
+    let game = platypus_ts::jit::compile_and_load(
         src,
-        &iron_ts::jit::JitOptions {
+        &platypus_ts::jit::JitOptions {
             prefix: "inq_",
             struct_base: 2_330_000,
             manifests: &manifests,

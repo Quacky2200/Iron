@@ -2,9 +2,9 @@
 
 //! UI scale (s&box's ScreenPanel scaling): screen UI is laid out in "UI pixels" and
 //! drawn bigger or smaller, so a menu designed for 1080p fills a 4K window the same.
-//! Set from scripts with `setUiScale` in `@iron/engine`.
+//! Set from scripts with `setUiScale` in `@platypus/engine`.
 
-use iron_core::Value;
+use platypus_core::Value;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum UiScale {

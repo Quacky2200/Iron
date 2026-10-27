@@ -1,14 +1,14 @@
-Iron
+Platypus
 ====
 
-Iron is new game engine built (you guessed it) in rust. We hope you enjoy it.
+Platypus is new game engine built (you guessed it) in rust. We hope you enjoy it.
 
 Our goal is focusing on utilising Open Source toolkits to bring you the latest
 game development from all the latest technology. We acknoledge Rust can be a
 controversial yet it's also one of the most popular and growing languages today
 due to its memory safety and the amount of projects created within it.
 
-What Iron has to offer:
+What Platypus has to offer:
 =======================
 
 One of the problems in the current game engine arena in recent history was
@@ -22,7 +22,7 @@ awful reviews (as seen in [https://sbox.game/news/rethinking](S&Box blogpost
 - Rethinking by Garry). We hope that the next improvements will help their
 platform tremendously.
 
-In the immediate future this is partly why Iron exists so that we can make
+In the immediate future this is partly why Platypus exists so that we can make
 games immediately without licensing issues, with Open Source software and
 with the same greatness as other game engines.
 
@@ -35,7 +35,7 @@ S&Box who impressed me with their Razor flexbox system.
 Licence:
 ========
 
-Iron is licensed under the Apache License, Version 2.0 (Apache-2.0). The full
+Platypus is licensed under the Apache License, Version 2.0 (Apache-2.0). The full
 text is in [LICENSE](LICENSE). (It was private until there was a working demo;
 there now is one.)
 
@@ -43,7 +43,7 @@ Every source file we write starts with the line
 `SPDX-License-Identifier: Apache-2.0` in that file's comment syntax (`//` for
 Rust, TypeScript, JavaScript and WGSL, `/* */` for CSS, `#` for Python, shell
 and TOML), after a `#!` line if there is one. New files need it too: the
-`M9-LIC-01` test (`tools/iron_build/tests/spdx_headers.rs`) fails for a tracked
+`M9-LIC-01` test (`tools/platypus_build/tests/spdx_headers.rs`) fails for a tracked
 source file without it. Generated files, built fixtures and third-party code
 are left out; the test's exclusion list says which.
 
@@ -56,7 +56,7 @@ ICU4X, the Unicode Consortium's Rust library, instead of ICU4C, the C++
 library the browsers use. The reasons are space and simplicity:
 
  - ICU4X is plain Rust, so it links into the game executable with the rest of
-   Iron: no C++ toolchain, no separate native library to ship, and the same
+   Platypus: no C++ toolchain, no separate native library to ship, and the same
    build on Windows, Linux, macOS and (later) consoles and the web.
  - Its data is split by locale and by feature, so a game only carries the
    languages it lists in its package.json (a set of main markets such as US,
@@ -75,5 +75,5 @@ If a game needs the exact browser behaviour and every locale, an optional
 build (the icu-full feature, using ICU4C through rust_icu) is planned. It needs
 a native ICU installed at build time and makes the executable larger, so it
 is off by default. The plan and its status are in
-docs/research/iron-ts-intl-datetime.md.
+docs/research/platypus-ts-intl-datetime.md.
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Iron's UI core: the node tree built from React commits, CSS-like styles,
+//! Platypus's UI core: the node tree built from React commits, CSS-like styles,
 //! layout (Taffy behind the [`LayoutEngine`] trait) and a GPU-free draw list.
 //!
 //! Pipeline (DESIGN.md §5.1): `Commit` ops → [`UiTree`] → layout → [`DrawCmd`]s → renderer.

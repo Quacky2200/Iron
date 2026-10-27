@@ -4,7 +4,7 @@
 // height, so lists of a million rows cost the same as ten. The engine scrolls the
 // container; rows are placed absolutely inside a spacer as tall as the whole list.
 
-import { type IronElement, type IronKeyboardEvent, type IronScrollEvent, type IronStyle, Text } from "@iron/react";
+import { type PlatypusElement, type PlatypusKeyboardEvent, type PlatypusScrollEvent, type PlatypusStyle, Text } from "@platypus/react";
 import { type ReactNode, type Ref, useImperativeHandle, useRef, useState } from "react";
 
 import { keyIndex, maxScroll, scrollForIndex, visibleRange } from "./virtual.ts";
@@ -33,9 +33,9 @@ export interface VirtualListProps {
   overscan?: number;
   /** After every scroll: the offset and whether the end is in view. */
   onScroll?: (scrollTop: number, atEnd: boolean) => void;
-  onKeyDown?: (event: IronKeyboardEvent) => void;
+  onKeyDown?: (event: PlatypusKeyboardEvent) => void;
   className?: string;
-  style?: IronStyle;
+  style?: PlatypusStyle;
   /** Shown when there are no rows. */
   empty?: ReactNode;
   ref?: Ref<VirtualListHandle>;
@@ -57,7 +57,7 @@ export function VirtualList({
   empty,
   ref,
 }: VirtualListProps) {
-  const box = useRef<IronElement>(null);
+  const box = useRef<PlatypusElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   // The latest offset, also between renders (scrollTo's event arrives a frame later).
   const top = useRef(0);
@@ -91,7 +91,7 @@ export function VirtualList({
     rows.push(
       <box
         key={i}
-        className={i === selected ? "iron-vrow selected" : "iron-vrow"}
+        className={i === selected ? "platypus-vrow selected" : "platypus-vrow"}
         style={{ position: "absolute", left: 0, right: 0, top: i * rowHeight, height: rowHeight }}
         onPointerDown={() => onSelect?.(i)}
       >
@@ -103,15 +103,15 @@ export function VirtualList({
   return (
     <box
       ref={box}
-      className={className ? `iron-vlist ${className}` : "iron-vlist"}
+      className={className ? `platypus-vlist ${className}` : "platypus-vlist"}
       tabIndex={0}
       style={{ overflowY: "auto", overflowX: "hidden", height, ...style }}
-      onScroll={(e: IronScrollEvent) => {
+      onScroll={(e: PlatypusScrollEvent) => {
         top.current = e.scrollTop;
         setScrollTop(e.scrollTop);
         onScroll?.(e.scrollTop, e.scrollTop >= maxScroll(count, rowHeight, height) - 1);
       }}
-      onKeyDown={(e: IronKeyboardEvent) => {
+      onKeyDown={(e: PlatypusKeyboardEvent) => {
         onKeyDown?.(e);
         if (e.defaultPrevented || !keyboard) return;
         const to = keyIndex(e.key, selected, count, Math.floor(height / rowHeight));
@@ -123,7 +123,7 @@ export function VirtualList({
     >
       <box style={{ position: "relative", height: count * rowHeight, flexShrink: 0, width: "100%" }}>{rows}</box>
       {count === 0 && empty ? (
-        <box className="iron-vlist-empty" style={{ position: "absolute", left: 0, right: 0, top: 0 }}>
+        <box className="platypus-vlist-empty" style={{ position: "absolute", left: 0, right: 0, top: 0 }}>
           {typeof empty === "string" ? <Text>{empty}</Text> : empty}
         </box>
       ) : null}

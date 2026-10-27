@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The original animation module over a scene with no engine behind it, plus the native API's names
-// where they differ (see docs/research/iron-native-animation.md): text JSON, event arguments instead
+// where they differ (see docs/research/platypus-native-animation.md): text JSON, event arguments instead
 // of an object, a transform read back at f32 precision (the native scene stores floats), and
 // `Transform.setParent`.
 import "./hypot_patch.ts";
@@ -9,7 +9,7 @@ import { AnimationClip, AnimationCurve, Keyframe } from "../../../js/engine/src/
 import { Quaternion, Vector3 } from "../../../js/engine/src/math.ts";
 import { GameObject, Transform, _resetSceneForTests } from "../../../js/engine/src/scene.ts";
 
-(globalThis as any).__iron_op = () => {};
+(globalThis as any).__platypus_op = () => {};
 _resetSceneForTests();
 
 const fr = Math.fround;

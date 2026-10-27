@@ -9,7 +9,7 @@
 loadFont({ family: "Charm", src: "assets/fonts/Charm-Regular.ttf", weight: 400 });
 loadFont({ family: "Charm", src: "assets/fonts/Charm-Bold.ttf", weight: 700 });
 
-const card: IronStyle = {
+const card: PlatypusStyle = {
   backgroundColor: "#1c222c",
   borderRadius: 12,
   border: "1px solid rgba(255,255,255,0.08)",
@@ -18,7 +18,7 @@ const card: IronStyle = {
   gap: 8,
 };
 
-function Card({ title, children, style }: { title: string; children?: ReactNode; style?: IronStyle }) {
+function Card({ title, children, style }: { title: string; children?: ReactNode; style?: PlatypusStyle }) {
   return (
     <box style={{ ...card, ...style }}>
       <Text style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", color: "#7f8a9c" }}>
@@ -45,7 +45,7 @@ function Clock() {
 }
 
 const lorem =
-  "Iron lays out text with Parley and Taffy: this paragraph wraps to the width of its card, and the card grows to fit it. Resize the window to watch it reflow.";
+  "Platypus lays out text with Parley and Taffy: this paragraph wraps to the width of its card, and the card grows to fit it. Resize the window to watch it reflow.";
 
 function App() {
   return (
@@ -61,7 +61,7 @@ function App() {
       }}
     >
       <Text style={{ fontSize: 34, fontWeight: 800 }}>
-        Text in <Span style={{ color: "#ff8a5e" }}>Iron</Span>
+        Text in <Span style={{ color: "#ff8a5e" }}>Platypus</Span>
       </Text>
 
       <box style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, flexGrow: 1 }}>

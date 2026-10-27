@@ -5,17 +5,17 @@
 //! last frame's drawing (one frame late), then the renderers under culled objects are watched while
 //! this frame draws (`MeshInstance::visibility_key`, `WorldRenderer::seen`).
 //!
-//! **The safeguard** (Iron's, Unity has none): a culled animator writes no bone transforms, so
+//! **The safeguard** (Platypus's, Unity has none): a culled animator writes no bone transforms, so
 //! what hangs on its bones would be left behind. An animated object is never culled (always
 //! seen) while any object strictly below it has a physics component (Rigidbody, a collider, a
 //! joint, a rope; 2D too), an `AudioSource`, a `ParticleSystem`, a `Light` or a script component
 //! (a game's class). A warning names the first such object and component, once per animated
-//! object. The answer is kept until the set of components changes (`iron_kinds::
+//! object. The answer is kept until the set of components changes (`platypus_kinds::
 //! components_version`) or the culled objects or their tree versions do.
 
 use super::render_sync::SKIN_BASE;
-use iron_api::Handle;
-use iron_scene::{ObjectId, Scene, ScriptObject, ScriptScene};
+use platypus_api::Handle;
+use platypus_scene::{ObjectId, Scene, ScriptObject, ScriptScene};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
@@ -93,16 +93,16 @@ impl Guard {
 /// Every component the safeguard looks for, with its object: physics components, `AudioSource`s,
 /// `ParticleSystem`s, `Light`s and script components.
 pub(crate) fn blockers() -> Vec<(ObjectId, &'static str)> {
-    let mut out = iron_physics_api::component_objects();
+    let mut out = platypus_physics_api::component_objects();
     out.extend(
-        iron_engine_api::audio_components::source_objects()
+        platypus_engine_api::audio_components::source_objects()
             .into_iter()
             .map(|o| (o, "AudioSource")),
     );
-    iron_render_api::for_each_particle_system(|_, d| out.push((d.object, "ParticleSystem")));
-    iron_render_api::for_each_light(|_, d| out.push((d.object, "Light")));
+    platypus_render_api::for_each_particle_system(|_, d| out.push((d.object, "ParticleSystem")));
+    platypus_render_api::for_each_light(|_, d| out.push((d.object, "Light")));
     out.extend(
-        iron_ts_rt::live_components()
+        platypus_ts_rt::live_components()
             .into_iter()
             .filter(|&(o, _)| o != 0)
             .map(|(o, class)| (ObjectId::from_raw(o), class)),
@@ -113,8 +113,8 @@ pub(crate) fn blockers() -> Vec<(ObjectId, &'static str)> {
 /// Whether each culled object had a renderer seen; objects with no renderers are seen.
 pub(crate) struct Sight(HashMap<ObjectId, bool>);
 
-impl iron_animation::Visibility for Sight {
-    fn visible(&mut self, _: &iron_scene::Scene, root: ObjectId) -> bool {
+impl platypus_animation::Visibility for Sight {
+    fn visible(&mut self, _: &platypus_scene::Scene, root: ObjectId) -> bool {
         self.0.get(&root).copied().unwrap_or(true)
     }
 }
@@ -135,7 +135,7 @@ impl Watch {
         self.drawn.clone_from(&self.watched);
         self.seen.clear();
         self.seen.extend(keys.iter().map(|k| k - 1));
-        iron_render_api::set_seen_renderers(self.seen.iter().map(|&id| renderer_id(id)));
+        platypus_render_api::set_seen_renderers(self.seen.iter().map(|&id| renderer_id(id)));
     }
 
     /// What the last frame saw of each of `roots` (through any renderer on it or below it), and
@@ -150,7 +150,7 @@ impl Watch {
         blockers: impl FnOnce() -> Vec<(ObjectId, &'static str)>,
     ) -> Sight {
         let mut roots = roots.to_vec();
-        let components = iron_kinds::components_version();
+        let components = platypus_kinds::components_version();
         for w in self
             .guard
             .filter(&scene.scene, &mut roots, components, blockers)
@@ -158,14 +158,15 @@ impl Watch {
             tracing::warn!(target: "animation", "{w}");
         }
         self.watched.clear();
-        self.watched.extend(
-            iron_render_api::watched_renderers()
-                .into_iter()
-                .map(|r| match r {
-                    iron_render_api::RendererId::Mesh(id) => id,
-                    iron_render_api::RendererId::Skinned(id) => SKIN_BASE + id,
-                }),
-        );
+        self.watched
+            .extend(
+                platypus_render_api::watched_renderers()
+                    .into_iter()
+                    .map(|r| match r {
+                        platypus_render_api::RendererId::Mesh(id) => id,
+                        platypus_render_api::RendererId::Skinned(id) => SKIN_BASE + id,
+                    }),
+            );
         let mut out = HashMap::new();
         if roots.is_empty() {
             return Sight(out);
@@ -190,17 +191,17 @@ impl Watch {
 }
 
 /// A renderer table id as its component (skinned renderers from `SKIN_BASE`).
-fn renderer_id(id: u32) -> iron_render_api::RendererId {
+fn renderer_id(id: u32) -> platypus_render_api::RendererId {
     match id.checked_sub(SKIN_BASE) {
-        Some(skinned) => iron_render_api::RendererId::Skinned(skinned),
-        None => iron_render_api::RendererId::Mesh(id),
+        Some(skinned) => platypus_render_api::RendererId::Skinned(skinned),
+        None => platypus_render_api::RendererId::Mesh(id),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_animation::Visibility;
+    use platypus_animation::Visibility;
 
     /// A log written to memory.
     #[derive(Clone, Default)]
@@ -307,7 +308,7 @@ mod tests {
             "one warning naming the object and component"
         );
         // A component added anywhere, or a new link below a culled object: worked out again.
-        iron_kinds::components_changed();
+        platypus_kinds::components_changed();
         w.sight(&scene, renderers(), &[f, o], blockers);
         assert_eq!(asked.get(), 2);
         scene.scene.set_parent(sword, Some(ob), false);
@@ -321,7 +322,7 @@ mod tests {
             "the sword's sound keeps it going"
         );
         // The collider gone (the next version): the figure culls again.
-        iron_kinds::components_changed();
+        platypus_kinds::components_changed();
         w.note_seen(&[]);
         w.sight(&scene, renderers(), &[f, o], Vec::new);
         w.note_seen(&[]);
@@ -332,19 +333,19 @@ mod tests {
     // M5-ANI-14
     #[test]
     fn the_safeguard_finds_physics_lights_particles_sounds_and_scripts() {
-        let mut scene = iron_scene::Scene::new();
+        let mut scene = platypus_scene::Scene::new();
         let (a, b, c, d) = (
             scene.create("a"),
             scene.create("b"),
             scene.create("c"),
             scene.create("d"),
         );
-        let _scope = iron_scene::api::enter(&mut scene);
-        iron_render_api::reset();
-        let light = iron_render_api::attach_light(a);
-        let particles = iron_render_api::attach_particle_system(b);
-        let source = iron_engine_api::audio_components::attach_source(c);
-        let collider = iron_physics_api::BoxColliderRef::attach(d);
+        let _scope = platypus_scene::api::enter(&mut scene);
+        platypus_render_api::reset();
+        let light = platypus_render_api::attach_light(a);
+        let particles = platypus_render_api::attach_particle_system(b);
+        let source = platypus_engine_api::audio_components::attach_source(c);
+        let collider = platypus_physics_api::BoxColliderRef::attach(d);
         let found = blockers();
         for want in [
             (a, "Light"),
@@ -354,25 +355,25 @@ mod tests {
         ] {
             assert!(found.contains(&want), "{want:?} in {found:?}");
         }
-        let v = iron_kinds::components_version();
-        iron_render_api::remove_light(light);
-        assert!(iron_kinds::components_version() > v, "removing counts");
-        iron_render_api::remove_particle_system(particles);
-        iron_engine_api::audio_components::remove_source(source);
+        let v = platypus_kinds::components_version();
+        platypus_render_api::remove_light(light);
+        assert!(platypus_kinds::components_version() > v, "removing counts");
+        platypus_render_api::remove_particle_system(particles);
+        platypus_engine_api::audio_components::remove_source(source);
         collider.destroy();
         assert!(blockers().is_empty());
-        iron_render_api::reset();
+        platypus_render_api::reset();
     }
 
     // M5-CUL-04
     #[test]
     fn renderers_scripts_ask_is_visible_of_are_watched_and_told_what_was_seen() {
-        iron_render_api::reset();
+        platypus_render_api::reset();
         let scene = ScriptScene::new();
         let mut w = Watch::default();
         let (mesh, skinned) = (
-            iron_render_api::MeshRendererRef(4),
-            iron_render_api::SkinnedMeshRendererRef(2),
+            platypus_render_api::MeshRendererRef(4),
+            platypus_render_api::SkinnedMeshRendererRef(2),
         );
         let skin_id = SKIN_BASE + 2;
         assert!(!mesh.is_visible() && !skinned.is_visible());
@@ -385,6 +386,6 @@ mod tests {
         assert!(skinned.is_visible());
         w.note_seen(&[5]);
         assert!(mesh.is_visible() && !skinned.is_visible());
-        iron_render_api::reset();
+        platypus_render_api::reset();
     }
 }

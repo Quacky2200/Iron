@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 pub use components::{ComponentHost, load_game, reload, spawn_each};
 pub use error::ScriptError;
-pub use iron_core::{Commit, OpBuffer, Value};
+pub use platypus_core::{Commit, OpBuffer, Value};
 pub use quickjs::{QuickJsRuntime, take_op_time, time_ops};
 
 /// Script-side support code every backend evaluates in a fresh context (timers).
@@ -42,12 +42,12 @@ pub fn tracing_log_sink() -> LogSink {
     })
 }
 
-/// A JavaScript engine embedded in Iron.
+/// A JavaScript engine embedded in Platypus.
 ///
 /// Every backend provides the same globals to scripts:
 /// - `console.log/info/warn/error/debug(...)` → the log sink
-/// - `__iron_op(name, ...args)` → queues an op, collected with [`ScriptRuntime::drain_ops`]
-/// - `__iron_commit(ops)` → one UI commit, collected with [`ScriptRuntime::drain_commits`]
+/// - `__platypus_op(name, ...args)` → queues an op, collected with [`ScriptRuntime::drain_ops`]
+/// - `__platypus_commit(ops)` → one UI commit, collected with [`ScriptRuntime::drain_commits`]
 /// - `setTimeout` / `clearTimeout` (from [`PRELUDE`]) driven by [`ScriptRuntime::tick`]
 /// - `queueMicrotask` and promises; pending jobs run before every call returns to Rust
 pub trait ScriptRuntime {
@@ -74,7 +74,7 @@ pub trait ScriptRuntime {
     fn drain_commits(&mut self) -> Vec<Commit>;
 
     /// Takes every UI commit since the last drain, in order, with the UI tree each is for
-    /// (`__iron_commit(ops, target)`: 0 is the screen, others are world panels).
+    /// (`__platypus_commit(ops, target)`: 0 is the screen, others are world panels).
     fn drain_targeted_commits(&mut self) -> Vec<(u32, Commit)> {
         self.drain_commits().into_iter().map(|c| (0, c)).collect()
     }

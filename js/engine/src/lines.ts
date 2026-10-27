@@ -221,7 +221,7 @@ export class LineRenderer2D extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 
   private send(): void {
@@ -236,7 +236,7 @@ export class LineRenderer2D extends Component {
     }
     const c = this._color;
     const f = this._fillColor;
-    __iron_op(
+    __platypus_op(
       "render.stroke",
       this.id,
       this.gameObject.id,

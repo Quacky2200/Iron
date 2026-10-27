@@ -3,13 +3,13 @@
 //! `bench/assets.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_assets_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-617..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::assets_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::assets_t::*;
 use serde_json::Value;
 
 /// The game has two assets with `.meta` files.
 fn reset() {
-    use iron_engine_api::assets::{self, AssetEntry};
+    use platypus_engine_api::assets::{self, AssetEntry};
     assets::reset();
     assets::set_assets(vec![
         AssetEntry {
@@ -26,9 +26,9 @@ fn reset() {
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_ast_init() };
     reset();
     f();

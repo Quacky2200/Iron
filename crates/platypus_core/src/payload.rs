@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The payload of a single-file game: an archive appended to the engine host's executable
-//! (`iron-build package` writes it, `iron_app` reads it; see `docs/iron-build.md`).
+//! (`platypus-build package` writes it, `platypus_app` reads it; see `docs/platypus-build.md`).
 //!
 //! ```text
 //! [host exe bytes][entry data...][table of contents][trailer]
@@ -13,11 +13,12 @@
 //! The trailer is the last thing in the file, so a reader needs only the end of the file:
 //! an executable without a payload has no `IRONPAYL` there. Signing (Authenticode) appends
 //! a certificate and hides the trailer: sign last and keep the payload before it (see
-//! `docs/research/iron-code-signing.md`).
+//! `docs/research/platypus-code-signing.md`).
 
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path};
 
+/// Kept from before the rename to Platypus, so packaged games of either name read the same.
 const MAGIC: &[u8; 8] = b"IRONPAYL";
 /// The format version this code reads and writes.
 pub const VERSION: u32 = 1;
@@ -338,7 +339,7 @@ mod tests {
 
     fn sample() -> Vec<(String, Vec<u8>)> {
         vec![
-            ("dist/game.irbundle".into(), b"{\"format\":1}".repeat(50)),
+            ("dist/game.pbundle".into(), b"{\"format\":1}".repeat(50)),
             ("assets/tiny.bin".into(), vec![1, 2, 3]),
             ("assets/ünï.txt".into(), vec![7; 1000]),
         ]
@@ -396,7 +397,7 @@ mod tests {
         let mut bad = file.clone();
         bad[3] ^= 0xff; // inside the first entry
         let mut a = Archive::new(Cursor::new(bad)).unwrap().unwrap();
-        assert!(a.read("dist/game.irbundle").is_err());
+        assert!(a.read("dist/game.pbundle").is_err());
         let mut newer = file.clone();
         let n = newer.len();
         newer[n - 24] = 9; // version
@@ -432,7 +433,8 @@ mod tests {
         let mut file = Vec::new();
         write_payload(&mut file, &sample()).unwrap();
         let mut a = Archive::new(Cursor::new(file.clone())).unwrap().unwrap();
-        let dir = std::env::temp_dir().join(format!("iron_payload_test_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("platypus_payload_test_{}", std::process::id()));
         a.extract(&dir).unwrap();
         assert_eq!(
             std::fs::read(dir.join("assets/tiny.bin")).unwrap(),

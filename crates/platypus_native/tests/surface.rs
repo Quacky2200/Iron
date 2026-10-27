@@ -8,7 +8,7 @@ fn with_all<R>(f: impl FnOnce(&rquickjs::Ctx<'_>) -> R) -> R {
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
-        iron_native::register_quickjs(&ctx).unwrap();
+        platypus_native::register_quickjs(&ctx).unwrap();
         f(&ctx)
     })
 }
@@ -22,7 +22,7 @@ fn every_manifest_function_exists_in_quickjs() {
     with_all(|ctx| {
         let mut missing = Vec::new();
         let mut count = 0;
-        for text in iron_native::manifests() {
+        for text in platypus_native::manifests() {
             let m: Value = serde_json::from_str(&text).unwrap();
             let ns = m["namespace"].as_str().unwrap().to_string();
             for f in m["functions"].as_array().into_iter().flatten() {
@@ -83,7 +83,7 @@ fn every_component_property_round_trips() {
     common::with_world(|ctx| {
         let mut failures = Vec::new();
         let mut checked = 0;
-        for text in iron_native::manifests() {
+        for text in platypus_native::manifests() {
             let m: Value = serde_json::from_str(&text).unwrap();
             for c in m["classes"].as_array().into_iter().flatten() {
                 let class = c["name"].as_str().unwrap();

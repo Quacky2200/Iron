@@ -3,7 +3,7 @@
 //! `Time`: game time, scaled by `timeScale`. The host calls [`advance`] once per frame with the
 //! real frame length; scripts read the rest.
 
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 use std::cell::Cell;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -67,7 +67,7 @@ pub fn reset() {
     STATE.with(|s| s.set(START));
 }
 
-#[iron_api(namespace = "Time", quickjs)]
+#[platypus_api(namespace = "Time", quickjs)]
 pub mod time_api {
     use super::{STARTED, STATE};
 

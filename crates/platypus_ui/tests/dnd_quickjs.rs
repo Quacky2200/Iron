@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Drag and drop end to end (M5-DND-09): [`Interaction`] runs the drag, `@iron/react`
+//! Drag and drop end to end (M5-DND-09): [`Interaction`] runs the drag, `@platypus/react`
 //! runs the handlers inside QuickJS (the `dataTransfer` carries the data, preventing
 //! `dragover` accepts), and the re-render comes back as a commit. Uses
 //! `tests/fixtures/dnd.js`, built by Bun from `tests/fixtures/src/dnd.tsx`.
 
-use iron_core::{NodeId, Value};
-use iron_script::conformance::capture_logs;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Input, Interaction, ROOT, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_script::conformance::capture_logs;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ui::{Input, Interaction, ROOT, UiTree};
 
 const DND: &str = include_str!("../../../tests/fixtures/dnd.js");
 
@@ -59,7 +59,7 @@ impl Game {
         let rt = &mut self.rt;
         self.ui.handle(&mut self.tree, input, &mut |e| {
             let prevented = rt
-                .call_global("__iron_ui_event", &e.script_args())
+                .call_global("__platypus_ui_event", &e.script_args())
                 .unwrap_or_else(|err| panic!("{err}"))
                 == Value::Bool(true);
             if e.kind.is_drag() {

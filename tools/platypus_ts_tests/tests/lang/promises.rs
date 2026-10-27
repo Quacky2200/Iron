@@ -2,15 +2,15 @@
 
 //! `bench/promises.ts` against bun (`bench/gen_promises_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-408..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_run_loop};
-use iron_ts_tests::promises_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_run_loop};
+use platypus_ts_tests::promises_t::*;
 use serde_json::Value;
 
 // The program's globals are shared, so the tests take turns.
 static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     assert_ne!(link_anchor(), 0);
     unsafe { ts_pr_init() };

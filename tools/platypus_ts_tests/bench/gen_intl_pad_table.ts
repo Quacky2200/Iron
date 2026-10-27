@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Writes iron_ts_rt/src/intl_pad.rs: for each main-market locale, whether ICU4C pads a numeric
+// Writes platypus_ts_rt/src/intl_pad.rs: for each main-market locale, whether ICU4C pads a numeric
 // month, day and hour to two digits in the default numeric patterns (CLDR `availableFormats`
 // `yMd`, `Md`, `Hm`, `Hms`). ICU4X's semantic patterns do not carry this, so `Intl.DateTimeFormat`
 // looks it up. The hour depends on the width asked for the minute (and second), so both are probed.
 // Run it again when the locale list or the reference engine changes:
 //   bun bench/gen_intl_pad_table.ts
-// The locale list is the `icu-lite` data set (docs/research/iron-ts-intl-datetime.md).
+// The locale list is the `icu-lite` data set (docs/research/platypus-ts-intl-datetime.md).
 const LOCALES = [
   "en-US", "en-GB", "en-CA", "en-AU", "en-IN", "de-DE", "de-AT", "de-CH", "fr-FR", "fr-CA", "es-ES", "es-MX", "it-IT", "pt-BR", "pt-PT",
   "nl-NL", "sv-SE", "da-DK", "nb-NO", "fi-FI", "pl-PL", "cs-CZ", "el-GR", "tr-TR", "ru-RU", "uk-UA", "ja-JP", "ko-KR", "zh-CN", "zh-TW", "hi-IN",
@@ -76,5 +76,5 @@ pub(crate) fn padding(tag: &str) -> Option<Padding> {
         .map(|r| r.1)
 }
 `;
-await Bun.write(import.meta.dir + "/../../iron_ts_rt/src/intl_pad.rs", out);
+await Bun.write(import.meta.dir + "/../../platypus_ts_rt/src/intl_pad.rs", out);
 console.log("wrote", LOCALES.length, "locales");

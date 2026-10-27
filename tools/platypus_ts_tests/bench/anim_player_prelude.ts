@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The original Animation component over a scene with no engine behind it (see anim_clips_prelude.ts),
-// with `Animations.updateAll(dt)` = the lifecycle start of new components and `__iron_animate(dt)`,
+// with `Animations.updateAll(dt)` = the lifecycle start of new components and `__platypus_animate(dt)`,
 // and a component on every animated object that records the clip events it is called with
 // (the native `Animations.takeEvents()` reports them as `object|function|parameter` lines).
 import "./anim_clips_prelude.ts";
@@ -30,7 +30,7 @@ const started = new WeakSet<object>();
       go.children.forEach(visit);
     };
     GameObject.roots.forEach(visit);
-    (globalThis as any).__iron_animate(dt);
+    (globalThis as any).__platypus_animate(dt);
   },
   takeEvents() { const text = log.join("\n"); log.length = 0; return text; },
 };

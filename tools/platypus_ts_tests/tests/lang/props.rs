@@ -3,8 +3,8 @@
 //! `@property` reflection tables (`bench/props.ts`): the generated `PROPS_<Class>` constants tell a
 //! host which fields are properties, where they are and what they hold, and the host reads and
 //! writes them with no script running. IDs are in TESTS.md (M9-TS-139..).
-use iron_ts_rt::{link_anchor, ts_rt_gc_stress};
-use iron_ts_tests::prop::*;
+use platypus_ts_rt::{link_anchor, ts_rt_gc_stress};
+use platypus_ts_tests::prop::*;
 
 fn offset(table: &[(&str, usize, &str)], name: &str) -> usize {
     table.iter().find(|e| e.0 == name).expect("a property").1
@@ -16,7 +16,7 @@ fn offset(table: &[(&str, usize, &str)], name: &str) -> usize {
 // type names say what a scene loader has to parse.
 #[test]
 fn the_table_lists_the_marked_fields_with_offsets_and_types() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_eq!(
         PROPS_Player,
         &[
@@ -44,7 +44,7 @@ fn the_table_lists_the_marked_fields_with_offsets_and_types() {
 // code sees the new values; a subclass object works through its base class's table too.
 #[test]
 fn writing_a_property_through_the_table_changes_what_the_script_sees() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     ts_rt_gc_stress(true);
     unsafe {

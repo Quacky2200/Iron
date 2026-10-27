@@ -5,17 +5,17 @@ Status: proposal (2026-10-17). Nothing here is built yet. It covers how game scr
 implemented and policed in Rust.
 
 Grounded in: [DESIGN.md](../../DESIGN.md) §3, §4.3 ("no filesystem or network access by default"),
-§8.3 (multiplayer transport), [scripting.md](../scripting.md), `crates/iron_script/src`
-(`quickjs.rs`, `prelude.js`), `js/engine/src`, `iron_core::resolve_asset`, and `App::tick` in
-`crates/iron_app/src/main.rs`.
+§8.3 (multiplayer transport), [scripting.md](../scripting.md), `crates/platypus_script/src`
+(`quickjs.rs`, `prelude.js`), `js/engine/src`, `platypus_core::resolve_asset`, and `App::tick` in
+`crates/platypus_app/src/main.rs`.
 
 ## 1. Recommendation in short
 
 | Area | Recommendation |
 |---|---|
-| Async bridge | Promises live in JS. JS allocates a request id, sends an op, keeps `{resolve, reject}` in a `Map`. Rust finishes the work on worker threads and, once per frame, calls one global `__iron_io(events)` with every completion. Same pattern as timers. Do not use rquickjs `futures` / `Ctx::spawn`. |
-| Binary data | Add `Value::Bytes(Vec<u8>)` to `iron_core::Value`, mapped to `ArrayBuffer` / `Uint8Array`. |
-| Runtime | One `tokio` multi-thread runtime with 1 to 2 workers, created lazily on the first IO op, in a new `iron_io` crate. QUIC (`quinn`) is tokio-based, so this is not a throwaway choice. |
+| Async bridge | Promises live in JS. JS allocates a request id, sends an op, keeps `{resolve, reject}` in a `Map`. Rust finishes the work on worker threads and, once per frame, calls one global `__platypus_io(events)` with every completion. Same pattern as timers. Do not use rquickjs `futures` / `Ctx::spawn`. |
+| Binary data | Add `Value::Bytes(Vec<u8>)` to `platypus_core::Value`, mapped to `ArrayBuffer` / `Uint8Array`. |
+| Runtime | One `tokio` multi-thread runtime with 1 to 2 workers, created lazily on the first IO op, in a new `platypus_io` crate. QUIC (`quinn`) is tokio-based, so this is not a throwaway choice. |
 | HTTP | `reqwest` 0.13 (rustls + platform verifier by default), custom DNS resolver for SSRF pinning, our own redirect loop. |
 | WebSocket | `tokio-tungstenite` 0.30 over the same runtime and TLS config. |
 | TLS | rustls 0.23 everywhere, with `rustls-platform-verifier` for OS trust stores. No native-tls. |
@@ -26,11 +26,11 @@ Grounded in: [DESIGN.md](../../DESIGN.md) §3, §4.3 ("no filesystem or network 
 
 ## 2. What exists today
 
-- `__iron_op(name, ...args)` pushes an `Op` onto `Shared.ops`. It returns nothing. `App::tick`
+- `__platypus_op(name, ...args)` pushes an `Op` onto `Shared.ops`. It returns nothing. `App::tick`
   drains ops once per frame (after component updates and timers) and matches on `op.name`.
 - Rust calls JS with `call_global`, which ends with `run_jobs()`, so promise reactions and
   microtasks run before control returns to Rust.
-- Timers live entirely in JS (`prelude.js`). Rust only calls `__iron_fire_next_timer(now)`. Rust
+- Timers live entirely in JS (`prelude.js`). Rust only calls `__platypus_fire_next_timer(now)`. Rust
   never holds a JS function.
 - `Value` is `Null | Bool | Number | String | Array`. There is no byte type and no object type.
 - JS allocates ids for things it creates (stylesheets in `addStyleSheet`).
@@ -53,23 +53,23 @@ JS (script thread)                      Rust main thread                 IO thre
 p = asyncOp("io.fetch", ...)
   id = nextId++
   pending.set(id, {resolve, reject})
-  __iron_op("io.fetch", id, ...)  ──▶  drain_ops() ─▶ IoHost::submit ─▶  policy check, request
+  __platypus_op("io.fetch", id, ...)  ──▶  drain_ops() ─▶ IoHost::submit ─▶  policy check, request
                                                                           ...
                                         IoHost::poll() ◀── mpsc ◀──────── Completion{id, result}
-                                        call_global("__iron_io", [batch])
-  __iron_io(batch): for each event,
+                                        call_global("__platypus_io", [batch])
+  __platypus_io(batch): for each event,
     pending.get(id).resolve(value)
   run_jobs(): .then() callbacks run
 ```
 
-- **JS owns the promise.** `asyncOp` lives in `@iron/engine` (or the prelude). It allocates an id,
+- **JS owns the promise.** `asyncOp` lives in `@platypus/engine` (or the prelude). It allocates an id,
   stores the resolvers in a `Map`, and sends a normal op. Nothing new is needed in the
   `ScriptRuntime` trait.
-- **Rust owns the work.** `IoHost` (new crate `iron_io`) takes ops whose name starts with `io.`,
+- **Rust owns the work.** `IoHost` (new crate `platypus_io`) takes ops whose name starts with `io.`,
   runs them on the tokio runtime, and sends results back through a `std::sync::mpsc` (or
   `crossbeam-channel`) channel. Worker threads never touch QuickJS.
 - **One crossing per frame.** `IoHost::poll()` drains the channel. The app calls
-  `__iron_io(events)` once with a flat array of events. `call_global` then runs microtasks, so
+  `__platypus_io(events)` once with a flat array of events. `call_global` then runs microtasks, so
   `await fetch(...)` continuations run in the same frame.
 - **Cancellation** is an op too: `io.abort(id)`. Rust keeps a `HashMap<id, AbortHandle>` and drops
   the task. JS rejects the promise with `AbortError` straight away; a late completion for an
@@ -82,7 +82,7 @@ p = asyncOp("io.fetch", ...)
 
 Proposed order inside `App::tick`:
 
-1. `io.poll()` then `__iron_io(events)`: promises resolve and microtasks run.
+1. `io.poll()` then `__platypus_io(events)`: promises resolve and microtasks run.
 2. Component updates (fixed 60 Hz loop, as today).
 3. `scripts.tick(now)`: timers.
 4. Drain commits, then drain ops. `io.*` ops go to `IoHost::submit`.
@@ -138,7 +138,7 @@ like styles (TODO.md D2).
 | `io.file.write` | `id, root, path, data (string \| bytes)` |
 | `io.file.stat` / `io.file.list` / `io.file.delete` | `id, root, path` |
 
-Events (Rust → JS), one batch per frame: `__iron_io([[...], [...]])`.
+Events (Rust → JS), one batch per frame: `__platypus_io([[...], [...]])`.
 
 | Event | Fields |
 |---|---|
@@ -187,7 +187,7 @@ Versions are the latest stable on crates.io on 2026-10-17 (from the crates.io AP
 
 Recommendation: **tokio**, multi-thread flavour with 1 to 2 workers, built lazily on the first
 `io.*` op so games without IO start no threads. Put networking behind a cargo feature (`net`) on
-`iron_io` / `iron_app` so size can be measured and the feature dropped for builds that do not need
+`platypus_io` / `platypus_app` so size can be measured and the feature dropped for builds that do not need
 it. File IO can use `tokio::task::spawn_blocking` on the same runtime.
 
 ### 4.2 reqwest, ureq or hyper
@@ -274,7 +274,7 @@ including 127.0.0.1 unless the server runs with `-allowlocalhttp`.
 
 **Browsers:** no raw sockets; a list of
 [forbidden request headers](https://developer.mozilla.org/en-US/docs/Glossary/Forbidden_header_name);
-mixed content blocking (HTTPS pages cannot load HTTP); CORS (does not apply to Iron: there is no
+mixed content blocking (HTTPS pages cannot load HTTP); CORS (does not apply to Platypus: there is no
 web origin to protect, so header and address rules replace it); redirect limit of 20 in the
 [Fetch standard](https://fetch.spec.whatwg.org/#http-redirect-fetch); WebSocket
 [`close()`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/close) only accepts code 1000
@@ -288,14 +288,14 @@ request / revoke`.
 **Bun:** no sandbox; full Node-style access. Its API shapes are worth copying, its trust model is
 not.
 
-### 5.2 Iron's network policy
+### 5.2 Platypus's network policy
 
 Threat model: a downloaded game, written by someone the player does not know. Risks are attacks on
 the player's LAN (router admin pages, cloud metadata at `169.254.169.254`), using players as a
 botnet, leaking data to unknown hosts, and resource abuse.
 
-1. **Off by default** (DESIGN §4.3). A game opts in through its manifest (Iron has none yet; a
-   `game.json` or an `iron` block in `package.json` would also carry the org/game ident used for the
+1. **Off by default** (DESIGN §4.3). A game opts in through its manifest (Platypus has none yet; a
+   `game.json` or a `platypus` block in `package.json` would also carry the org/game ident used for the
    data folder):
    ```json
    { "ident": "acme.spacegame",
@@ -309,7 +309,7 @@ botnet, leaking data to unknown hosts, and resource abuse.
    gamepad. The manifest list is the prompt. Add an editor/launcher permission screen later if
    needed.
 3. **Schemes:** `https` and `wss` only for shipped or downloaded games. `http` and `ws` only to
-   loopback in dev runs (an unpacked game folder started with `iron <folder>`, or the editor).
+   loopback in dev runs (an unpacked game folder started with `platypus <folder>`, or the editor).
 4. **Address guard, always on**, even for allowed hosts, judged on resolved addresses:
    - refuse IP literals in URLs (except loopback in dev runs);
    - refuse if **any** resolved address is loopback, unspecified (`0.0.0.0`, `::`), private
@@ -317,7 +317,7 @@ botnet, leaking data to unknown hosts, and resource abuse.
      multicast, broadcast, documentation or reserved ranges, or the IPv4-mapped forms of these;
    - dev runs may reach loopback on any port, with a log line.
 5. **DNS pinning.** s&box resolves once to check and the HTTP stack resolves again to connect,
-   which leaves a small DNS rebinding window. Iron should resolve once inside a custom
+   which leaves a small DNS rebinding window. Platypus should resolve once inside a custom
    `reqwest::dns::Resolve`, filter the addresses, and return only approved ones, so the
    connection goes to exactly what was checked. The WebSocket path connects its own `TcpStream`
    to the approved address.
@@ -330,7 +330,7 @@ botnet, leaking data to unknown hosts, and resource abuse.
 8. **Headers:** reject the browser forbidden list (as s&box: `Host`, `Content-Length`,
    `Connection`, `Transfer-Encoding`, `Upgrade`, `TE`, `Trailer`, `Keep-Alive`, `Expect`, `Via`,
    `Origin`, `Referer`, `Date`, `DNT`, `Accept-Charset`, `Accept-Encoding`, `Access-Control-Request-*`,
-   `Proxy-*`, `Sec-*`). The engine sets `User-Agent: Iron/<version> (<game ident>)`. No cookie jar;
+   `Proxy-*`, `Sec-*`). The engine sets `User-Agent: Platypus/<version> (<game ident>)`. No cookie jar;
    a game can set `Cookie` itself.
 9. **Limits** (defaults; the manifest may raise some within hard caps):
 
@@ -358,7 +358,7 @@ Two roots, named like s&box's `Mounted` and `Data`:
 | Root | Where | Access |
 |---|---|---|
 | `game` | The game folder today; the pack file later (DESIGN §6) | Read-only |
-| `data` | Per game: `<OS app data>/Iron/<org>/<game>/` (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_DATA_HOME` on Linux, the app's files dir on Android/iOS) | Read-write |
+| `data` | Per game: `<OS app data>/Platypus/<org>/<game>/` (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_DATA_HOME` on Linux, the app's files dir on Android/iOS) | Read-write |
 
 Later, maybe: `cache` (may be deleted any time, s&box `Cache`) and an org-shared root. Not in the
 first version.
@@ -383,24 +383,24 @@ Rules:
 - **No file watching, no file handles, no append** at first.
 
 Reuse: `resolve_asset` stays the first gate for both roots, and a new
-`iron_core::resolve_data_path` adds the stricter name rules, so CSS `url()`, `loadFont` and the
+`platypus_core::resolve_data_path` adds the stricter name rules, so CSS `url()`, `loadFont` and the
 file API share one definition of "inside the game".
 
-## 6. JS API proposal (`@iron/engine`)
+## 6. JS API proposal (`@platypus/engine`)
 
 Goal: code written for the browser or Bun ports with few changes. Install `fetch`, `Headers`,
 `Response`, `Request`, `WebSocket`, `AbortController`, `AbortSignal`, `URL`, `URLSearchParams`,
-`TextEncoder`, `TextDecoder`, `EventTarget` and `Event` as globals when `@iron/engine` loads (like
-the `__iron_*` hooks), so npm libraries that call `fetch` work. Declare their types in
+`TextEncoder`, `TextDecoder`, `EventTarget` and `Event` as globals when `@platypus/engine` loads (like
+the `__platypus_*` hooks), so npm libraries that call `fetch` work. Declare their types in
 `globals.ts` (the project has no DOM lib), and declare only what is implemented.
 
 ### 6.1 Support classes
 
 - `TextEncoder` / `TextDecoder` (UTF-8 only): two small native functions in `install_globals`
-  (`__iron_utf8_encode`, `__iron_utf8_decode`) wrapped in JS classes. Pure helpers, no engine
+  (`__platypus_utf8_encode`, `__platypus_utf8_decode`) wrapped in JS classes. Pure helpers, no engine
   access.
 - `URL` / `URLSearchParams`: QuickJS has neither. Options: a small JS implementation in
-  `@iron/engine` (enough for parsing, `searchParams`, `href`), or a polyfill package bundled by
+  `@platypus/engine` (enough for parsing, `searchParams`, `href`), or a polyfill package bundled by
   Bun. Rust re-parses with the `url` crate anyway, so the JS one only needs to be convenient, not
   authoritative.
 - `EventTarget`, `Event`, `MessageEvent`, `CloseEvent`, `AbortController`, `AbortSignal`
@@ -503,7 +503,7 @@ Shaped like `Bun.file` / `Bun.write` ([Bun file I/O](https://bun.sh/docs/api/fil
 to a root, and all async (Bun's `size` is a sync property; ours is `stat()`):
 
 ```ts
-interface IronFile {
+interface PlatypusFile {
   readonly name: string;                 // path within its root
   exists(): Promise<boolean>;
   stat(): Promise<{ size: number; modified: number; isDirectory: boolean }>;
@@ -516,7 +516,7 @@ interface IronFile {
 interface FileEntry { name: string; isDirectory: boolean; size: number; modified: number }
 
 interface ReadonlyRoot {
-  file(path: string): IronFile;
+  file(path: string): PlatypusFile;
   list(dir?: string): Promise<FileEntry[]>;
 }
 
@@ -534,7 +534,7 @@ export declare const files: { readonly game: ReadonlyRoot; readonly data: Writab
 ```
 
 ```ts
-import { files } from "@iron/engine";
+import { files } from "@platypus/engine";
 const save = await files.data.readJson("save.json", { level: 1 });
 await files.data.writeJson("save.json", { ...save, level: save.level + 1 });
 const intro = await files.game.file("text/intro.txt").text();
@@ -577,7 +577,7 @@ const intro = await files.game.file("text/intro.txt").text();
 (downgrade, auth stripping, hop limit), host wildcard matching, file name rules, reserved names.
 Table-driven, one row per case.
 
-**Rust, local servers** (integration tests in `iron_io/tests`):
+**Rust, local servers** (integration tests in `platypus_io/tests`):
 - An HTTP server on `127.0.0.1:0` built with hyper (or wiremock) in the test, with a policy that
   allows loopback (`Policy::for_tests()`), since the real policy blocks it. Cover status codes,
   headers, large bodies over the limit, gzip bombs, slow servers (timeouts), redirects (including
@@ -598,8 +598,8 @@ use it, so they never open sockets.
 late completions are ignored; `Value::Bytes` round trips; the per-frame event budget.
 
 **JS** (`bun test`): `Headers`, `Response`, `URL`, `TextEncoder`, `WebSocket` state machine and
-close-code validation, with a fake `__iron_op` and hand-fed `__iron_io` batches. Note that Bun's
-own globals (`fetch`, `WebSocket`) exist under `bun test`; tests must import Iron's
+close-code validation, with a fake `__platypus_op` and hand-fed `__platypus_io` batches. Note that Bun's
+own globals (`fetch`, `WebSocket`) exist under `bun test`; tests must import Platypus's
 implementations explicitly, not use the globals.
 
 **Files:** temp-dir tests for traversal attempts, reserved names, quotas, atomic writes (kill
@@ -616,7 +616,7 @@ Suggested test IDs: `IO-BRG-*` (bridge), `IO-FS-*` (files), `IO-NET-*` (fetch an
 
 | Phase | Work | Size | Depends on |
 |---|---|---|---|
-| 1. Bridge | `Value::Bytes`; `asyncOp` and the `__iron_io` batch in `@iron/engine`; `iron_io` crate with `IoHost`, generations, event budget, `FakeTransport`; TextEncoder/TextDecoder natives; conformance tests; wire into `App::tick` | S to M (2 to 3 days) | Nothing |
+| 1. Bridge | `Value::Bytes`; `asyncOp` and the `__platypus_io` batch in `@platypus/engine`; `platypus_io` crate with `IoHost`, generations, event budget, `FakeTransport`; TextEncoder/TextDecoder natives; conformance tests; wire into `App::tick` | S to M (2 to 3 days) | Nothing |
 | 2. Files | Game manifest with `ident`; `resolve_data_path`; `game` and `data` roots with cap-std; quotas; atomic writes; `files` API and types; an example that saves settings | M (3 to 4 days) | 1 |
 | 3. fetch | tokio runtime (lazy), reqwest client, policy (manifest hosts, address guard, pinned resolver, redirects, headers, limits); `fetch`/`Headers`/`Request`/`Response`/`AbortController`/`URL`; local-server and TLS tests; `cargo bloat` check | M to L (1 to 1.5 weeks) | 1 |
 | 4. WebSocket | tokio-tungstenite on the pinned connector; events, binary, close codes, backpressure, limits; echo-server tests; a chat example against a local server | M (4 to 5 days) | 3 |

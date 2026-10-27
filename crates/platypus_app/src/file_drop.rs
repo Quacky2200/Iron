@@ -4,13 +4,13 @@
 //! (`HoveredFile`, `DroppedFile`, `HoveredFileCancelled`) and no positions while the
 //! system drags, so the files are gathered here and handed to the screen's UI once a
 //! frame as drag inputs, at the cursor position asked of the system
-//! (`iron_platform::cursor_in_window`, else the last known pointer).
+//! (`platypus_platform::cursor_in_window`, else the last known pointer).
 
 use std::path::Path;
 
-use iron_core::NodeId;
-use iron_platform::InputEvent;
-use iron_ui::Input;
+use platypus_core::NodeId;
+use platypus_platform::InputEvent;
+use platypus_ui::Input;
 
 use super::{App, Surface};
 
@@ -106,7 +106,7 @@ impl App {
             .gfx
             .as_ref()
             .and_then(|g| g.window.as_ref())
-            .and_then(|w| iron_platform::cursor_in_window(w))
+            .and_then(|w| platypus_platform::cursor_in_window(w))
             .or(self.pointer_px.map(|(x, y)| (f64::from(x), f64::from(y))))
             .map(|(x, y)| ((x / scale) as f32, (y / scale) as f32));
         for input in self.file_drag.inputs(cursor) {
@@ -119,10 +119,10 @@ impl App {
     }
 
     /// `dragImage id x y` (`dataTransfer.setDragImage`): id 0 for none.
-    pub(super) fn drag_image_op(&mut self, args: &[iron_core::Value]) {
+    pub(super) fn drag_image_op(&mut self, args: &[platypus_core::Value]) {
         let num = |i: usize| {
             args.get(i)
-                .and_then(iron_core::Value::as_f64)
+                .and_then(platypus_core::Value::as_f64)
                 .unwrap_or(0.0)
         };
         let id = (num(0) > 0.0).then(|| NodeId(num(0) as u32));

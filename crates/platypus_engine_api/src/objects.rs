@@ -3,14 +3,14 @@
 //! Small pieces of the object model: the `HideFlags` constants (flags that keep an object out of
 //! the editor views and saved scenes; combine with `|`).
 
-use iron_api::iron_api;
-use iron_scene::ObjectId;
+use platypus_api::platypus_api;
+use platypus_scene::ObjectId;
 
 /// Cleans up after objects the script destroyed: the engine components on them are removed, and
 /// the list is returned so the host can drop its own (a `NativeHost` runs `onDestroy` with
 /// `destroy_on_objects`). Call it after running scripts, once a frame.
 pub fn process_destroyed() -> Vec<ObjectId> {
-    let list = iron_scene::api::take_destroyed();
+    let list = platypus_scene::api::take_destroyed();
     for o in &list {
         crate::camera::remove_on(*o);
         crate::audio_components::remove_on(*o);
@@ -19,7 +19,7 @@ pub fn process_destroyed() -> Vec<ObjectId> {
     list
 }
 
-#[iron_api(namespace = "HideFlags", quickjs)]
+#[platypus_api(namespace = "HideFlags", quickjs)]
 pub mod hide_flags_api {
     #[property]
     #[js_name = "None"]

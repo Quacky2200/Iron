@@ -17,7 +17,7 @@ use rquickjs::{
 /// What a handle object holds: the id and the class it was made as (`Transform` and `GameObject`
 /// can share an id but are not interchangeable).
 #[derive(Trace, JsLifetime)]
-#[rquickjs::class(rename = "IronHandle")]
+#[rquickjs::class(rename = "PlatypusHandle")]
 pub struct HandleBox {
     #[qjs(skip_trace)]
     pub raw: u64,
@@ -156,7 +156,7 @@ pub fn keep_function<'js>(f: Function<'js>) -> Function<'static> {
 
 /// Calls a kept function with `n` arguments made by `fill`. An exception (or a conversion error)
 /// is not propagated: the engine called, not a script, so it is recorded for
-/// `iron_api::callback::take_errors`.
+/// `platypus_api::callback::take_errors`.
 pub fn call_function(
     f: &Function<'static>,
     n: usize,

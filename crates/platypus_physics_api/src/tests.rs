@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Unit tests of the physics components (`M9-API-200..`): they work on `comp.rs` and the kinds
-//! directly; the compiled-program tests are in `tools/iron_ts_tests/tests/engine/physics.rs`.
+//! directly; the compiled-program tests are in `tools/platypus_ts_tests/tests/engine/physics.rs`.
 
 use crate::comp::{self, ColShape};
 use crate::{add_collider, reset, step, take_contacts};
 use glam::{Quat, Vec3};
-use iron_api::Handle;
-use iron_math::{V2, V3};
-use iron_scene::{ObjectId, Scene};
+use platypus_api::Handle;
+use platypus_math::{V2, V3};
+use platypus_scene::{ObjectId, Scene};
 use serde_json::{Map, json};
 
 fn make(name: &str) -> ObjectId {
-    iron_scene::api::with_scene(|s| s.create(name)).unwrap()
+    platypus_scene::api::with_scene(|s| s.create(name)).unwrap()
 }
 
 fn place(o: ObjectId, x: f32, y: f32, z: f32) {
-    iron_scene::api::with_scene(|s| s.set_world(o, Vec3::new(x, y, z), Quat::IDENTITY));
+    platypus_scene::api::with_scene(|s| s.set_world(o, Vec3::new(x, y, z), Quat::IDENTITY));
 }
 
 fn pos(o: ObjectId) -> Vec3 {
-    iron_scene::api::with_scene(|s| s.world(o).position).unwrap()
+    platypus_scene::api::with_scene(|s| s.world(o).position).unwrap()
 }
 
 fn run(n: usize) {
@@ -55,7 +55,7 @@ fn setup() -> Scene {
 #[test]
 fn a_rigidbody_with_a_box_rests_on_the_floor() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     floor();
     let o = make("box");
     place(o, 0.0, 4.0, 0.0);
@@ -72,7 +72,7 @@ fn a_rigidbody_with_a_box_rests_on_the_floor() {
 #[test]
 fn moving_a_kinematic_object_moves_its_body() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let o = make("platform");
     let rb = comp::rb_attach(o, false);
     comp::rb_set_kind(rb, "kinematic");
@@ -95,7 +95,7 @@ fn moving_a_kinematic_object_moves_its_body() {
 #[test]
 fn colliders_follow_the_object_scale() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let o = make("wall");
     comp::col_attach(o, unit_box());
     run(1);
@@ -111,11 +111,11 @@ fn colliders_follow_the_object_scale() {
         )
     };
     assert_eq!(ray(1.2), 0, "a 1 m box is not at x = 1.2");
-    iron_scene::api::with_scene(|s| {
+    platypus_scene::api::with_scene(|s| {
         let t = s.local(o).unwrap();
         s.set_local(
             o,
-            iron_scene::Transform {
+            platypus_scene::Transform {
                 scale: Vec3::splat(3.0),
                 ..t
             },
@@ -132,7 +132,7 @@ fn colliders_follow_the_object_scale() {
 #[test]
 fn centers_and_triggers_report_through_collider_info() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     floor();
     let zone = make("zone");
     place(zone, 0.0, 2.0, 0.0);
@@ -179,7 +179,7 @@ fn centers_and_triggers_report_through_collider_info() {
 #[test]
 fn joints_hold_bodies() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let anchor = make("anchor");
     place(anchor, 0.0, 5.0, 0.0);
     let arb = comp::rb_attach(anchor, false);
@@ -224,7 +224,7 @@ fn joints_hold_bodies() {
 #[test]
 fn a_rope_hangs_from_its_object() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let o = make("rope");
     place(o, 0.0, 5.0, 0.0);
     let r = comp::add_comp(o, comp::Data::Rope(comp::rope_new()));
@@ -247,7 +247,7 @@ fn a_rope_hangs_from_its_object() {
 #[test]
 fn a_character_walks_on_the_floor() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     floor();
     let o = make("hero");
     place(o, 0.0, 3.0, 0.0);
@@ -275,7 +275,7 @@ fn a_character_walks_on_the_floor() {
 #[test]
 fn two_d_bodies_keep_their_z() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let ground = make("ground");
     comp::col_attach(
         ground,
@@ -316,12 +316,12 @@ fn two_d_bodies_keep_their_z() {
 #[test]
 fn kinds_save_and_load_physics_components() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
-    iron_kinds::clear();
+    let _scope = platypus_scene::api::enter(&mut scene);
+    platypus_kinds::clear();
     crate::register_kinds();
     let a = make("a");
     let b = make("b");
-    let bx = iron_kinds::get("BoxCollider").unwrap();
+    let bx = platypus_kinds::get("BoxCollider").unwrap();
     let h = (bx.create)(a.to_raw()).unwrap();
     let mut props = Map::new();
     props.insert(
@@ -345,9 +345,9 @@ fn kinds_save_and_load_physics_components() {
     assert_eq!((bx.on)(b.to_raw()), vec![h2]);
 
     // A joint's reference to a Rigidbody keeps its placeholder.
-    let rb = iron_kinds::get("Rigidbody").unwrap();
+    let rb = platypus_kinds::get("Rigidbody").unwrap();
     let r = (rb.create)(a.to_raw()).unwrap();
-    let hinge = iron_kinds::get("HingeJoint").unwrap();
+    let hinge = platypus_kinds::get("HingeJoint").unwrap();
     let j = (hinge.create)(b.to_raw()).unwrap();
     let mut jp = Map::new();
     jp.insert(
@@ -372,7 +372,7 @@ fn kinds_save_and_load_physics_components() {
 #[test]
 fn destroying_an_object_removes_its_physics() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let o = make("rock");
     comp::rb_attach(o, false);
     comp::col_attach(o, unit_box());
@@ -397,7 +397,7 @@ fn destroying_an_object_removes_its_physics() {
     // An object removed from the scene loses its physics at the next step.
     let p = make("pebble");
     comp::col_attach(p, unit_box());
-    iron_scene::api::with_scene(|s| s.destroy(p));
+    platypus_scene::api::with_scene(|s| s.destroy(p));
     run(1);
     assert_eq!(down(()), 0);
 }

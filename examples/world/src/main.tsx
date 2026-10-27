@@ -244,7 +244,7 @@ function Hud() {
           gap: 4,
         }}
       >
-        <text style={{ color: "#e8eefc", fontSize: 18, fontWeight: 600 }}>Iron — GameObjects in 3D</text>
+        <text style={{ color: "#e8eefc", fontSize: 18, fontWeight: 600 }}>Platypus — GameObjects in 3D</text>
         <text style={{ color: "#9fb0cc", fontSize: 14 }}>{`Camera orbiting · ${t.toFixed(1)} s`}</text>
       </box>
     </box>

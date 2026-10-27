@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * @iron/editor-ui — the editor's UI components, drawn by Iron's own UI: a menubar,
+ * @platypus/editor-ui — the editor's UI components, drawn by Platypus's own UI: a menubar,
  * docking panels, a virtualized list, a tree view, a log console and a project
  * browser. The models (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`,
  * `project.ts`) are plain functions,
@@ -10,7 +10,7 @@
 
 import "./editor-ui.css";
 
-import { Screen } from "@iron/engine";
+import { Screen } from "@platypus/engine";
 import { useSyncExternalStore } from "react";
 
 export * from "./console.ts";

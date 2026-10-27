@@ -5,7 +5,7 @@
 //! A template literal or a `+` chain with a literal folder in front (`` `assets/sfx/${n}.wav` ``,
 //! `"assets/" + name + ".png"`) can name many files. Each hole becomes `*` (one path part), so
 //! the first is `assets/sfx/*.wav`. Whole literals are reported as they are, so a build can warn
-//! about one that names no file. Plan: `docs/research/iron-virtual-fs-plan.md` section 2.6 (c).
+//! about one that names no file. Plan: `docs/research/platypus-virtual-fs-plan.md` section 2.6 (c).
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::*;

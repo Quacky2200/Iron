@@ -1,12 +1,12 @@
 {
-  "name": "iron-fixtures",
+  "name": "platypus-fixtures",
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "dependencies": {
-    "@iron/engine": "workspace:*",
-    "@iron/react": "workspace:*",
+    "@platypus/engine": "workspace:*",
+    "@platypus/react": "workspace:*",
     "react": "19.3.1"
   },
   "devDependencies": {
@@ -25,7 +25,7 @@
     "build:rigidbodies": "bun build src/rigidbodies.ts --outfile rigidbodies.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "build:physics2d": "bun build src/physics2d.ts --outfile physics2d.js --format iife --define process.env.NODE_ENV='\"production\"'",
     "typecheck": "tsc --noEmit -p .",
-    "build:refresh": "bun build ../../js/react/src/vendor.ts --outfile refresh-vendor.js --format iife --minify --define process.env.NODE_ENV='\"development\"' && bun build src/refresh.tsx --outfile refresh-v1.js --format cjs --target browser --react-fast-refresh --external react --external 'react/*' --external '@iron/*' --define process.env.NODE_ENV='\"development\"' --banner '// @iron-dev' --define LABEL='\"v1\"' && bun build src/refresh.tsx --outfile refresh-v2.js --format cjs --target browser --react-fast-refresh --external react --external 'react/*' --external '@iron/*' --define process.env.NODE_ENV='\"development\"' --banner '// @iron-dev' --define LABEL='\"v2\"'",
+    "build:refresh": "bun build ../../js/react/src/vendor.ts --outfile refresh-vendor.js --format iife --minify --define process.env.NODE_ENV='\"development\"' && bun build src/refresh.tsx --outfile refresh-v1.js --format cjs --target browser --react-fast-refresh --external react --external 'react/*' --external '@platypus/*' --define process.env.NODE_ENV='\"development\"' --banner '// @platypus-dev' --define LABEL='\"v1\"' && bun build src/refresh.tsx --outfile refresh-v2.js --format cjs --target browser --react-fast-refresh --external react --external 'react/*' --external '@platypus/*' --define process.env.NODE_ENV='\"development\"' --banner '// @platypus-dev' --define LABEL='\"v2\"'",
     "build:dnd": "bun build src/dnd.tsx --outfile dnd.js --format iife --minify --define process.env.NODE_ENV='\"production\"'",
     "build:render_error": "bun build src/render_error.tsx --outfile render_error.js --format iife --define process.env.NODE_ENV='\"production\"'"
   }

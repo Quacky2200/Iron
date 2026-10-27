@@ -4,7 +4,7 @@
 //! (M9-API-14xx, M9-TS-28xx).
 mod common;
 use common::{js, with_world};
-use iron_engine_api::window::{self, WindowRef, WindowRequest};
+use platypus_engine_api::window::{self, WindowRef, WindowRequest};
 
 // M9-API-1433
 #[test]

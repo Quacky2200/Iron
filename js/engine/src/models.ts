@@ -111,7 +111,7 @@ export class Model {
     this.id = nextModel++;
     this.src = src;
     models.set(this.id, this);
-    __iron_op("render.model", this.id, src);
+    __platypus_op("render.model", this.id, src);
   }
 
   /** Loads a `.glb` or `.gltf` from the game folder, or `"guid:<guid>"` (once per file). */
@@ -277,7 +277,7 @@ export class Model {
   }
 }
 
-globalThis.__iron_models = (loaded: unknown[]) => {
+globalThis.__platypus_models = (loaded: unknown[]) => {
   for (let i = 0; i + 1 < loaded.length; i += 2) {
     const m = models.get(loaded[i] as number);
     const json = loaded[i + 1];

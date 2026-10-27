@@ -3,19 +3,19 @@
 //! `bench/datetime.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_datetime_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-643..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::datetime_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::datetime_t::*;
 use serde_json::Value;
 
 /// Local time is New York time, as the generator ran.
 fn reset() {
-    iron_engine_api::datetime::set_zone(Some("America/New_York")).unwrap();
+    platypus_engine_api::datetime::set_zone(Some("America/New_York")).unwrap();
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_dtm_init() };
     reset();
     f();

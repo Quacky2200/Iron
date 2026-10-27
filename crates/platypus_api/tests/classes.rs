@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Handle classes in `#[iron_api]`: methods, properties and statics declared in ordinary `impl`
+//! Handle classes in `#[platypus_api]`: methods, properties and statics declared in ordinary `impl`
 //! blocks of the handle's Rust type. IDs are in TESTS.md (M9-API-*).
-use iron_api::{FnKind, Handle, Ty, iron_api};
+use platypus_api::{FnKind, Handle, Ty, platypus_api};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,7 +32,7 @@ thread_local! {
     static HP: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
 }
 
-#[iron_api(namespace = "Things", handles(Thing = ThingId, Part = PartId))]
+#[platypus_api(namespace = "Things", handles(Thing = ThingId, Part = PartId))]
 pub mod things {
     use super::{HP, PartId, ThingId};
 
@@ -103,15 +103,15 @@ fn class_functions_are_listed_per_class_with_a_receiver_first() {
             .unwrap_or_else(|| panic!("{n} {k:?}"))
     };
     let create = by_name("create", FnKind::Static);
-    assert_eq!(create.symbol, "iron_Thing_create");
+    assert_eq!(create.symbol, "platypus_Thing_create");
     assert_eq!(create.params.len(), 1);
     let get = by_name("health", FnKind::Get);
-    assert_eq!(get.symbol, "iron_Thing_health");
+    assert_eq!(get.symbol, "platypus_Thing_health");
     assert_eq!(get.params[0].name, "this");
     assert_eq!(get.params[0].ty, Ty::Handle("Thing"));
     // `set_health` next to the `#[property] health` is the property's setter.
     let set = by_name("health", FnKind::Set);
-    assert_eq!(set.symbol, "iron_Thing_setHealth");
+    assert_eq!(set.symbol, "platypus_Thing_setHealth");
     assert_eq!(set.params.len(), 2);
     let damage = by_name("damage", FnKind::Method);
     assert_eq!(damage.ret, Ty::Bool);
@@ -147,16 +147,16 @@ fn the_declaration_file_has_classes_with_accessors_methods_and_statics() {
 // M9-API-18
 #[test]
 fn the_shims_take_the_receiver_first_and_call_the_methods() {
-    let a = things::iron_Thing_create(10.0);
+    let a = things::platypus_Thing_create(10.0);
     assert_ne!(a, 0);
-    assert_eq!(things::iron_Thing_health(a), 10.0);
-    things::iron_Thing_setHealth(a, 7.0);
-    assert!(things::iron_Thing_damage(a, 3.0));
-    assert!(!things::iron_Thing_damage(a, 9.0));
-    assert_eq!(things::iron_Thing_health(a), -5.0);
+    assert_eq!(things::platypus_Thing_health(a), 10.0);
+    things::platypus_Thing_setHealth(a, 7.0);
+    assert!(things::platypus_Thing_damage(a, 3.0));
+    assert!(!things::platypus_Thing_damage(a, 9.0));
+    assert_eq!(things::platypus_Thing_health(a), -5.0);
     // A property that returns another handle class, and a method back.
-    let part = things::iron_Thing_part(a);
-    assert_eq!(things::iron_Part_weight(part), -10.0);
-    assert_eq!(things::iron_Part_owner(part), a);
-    assert_eq!(things::iron_Things_count(), 1);
+    let part = things::platypus_Thing_part(a);
+    assert_eq!(things::platypus_Part_weight(part), -10.0);
+    assert_eq!(things::platypus_Part_owner(part), a);
+    assert_eq!(things::platypus_Things_count(), 1);
 }

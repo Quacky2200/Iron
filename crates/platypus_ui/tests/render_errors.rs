@@ -3,9 +3,9 @@
 //! A React render error must not take the engine down (M2-LAY-06): React unmounts the
 //! root after an uncaught error, and the UI tree applies that commit and lays out.
 
-use iron_script::conformance::capture_logs;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ui::UiTree;
+use platypus_script::conformance::capture_logs;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ui::UiTree;
 
 const RENDER_ERROR: &str = include_str!("../../../tests/fixtures/render_error.js");
 

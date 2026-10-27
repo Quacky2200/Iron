@@ -1,15 +1,15 @@
 # Scene and objects
 
-Crates and packages: [iron_scene](../crates/iron_scene/src) (Rust),
-[iron_script/components.rs](../crates/iron_script/src/components.rs) (component lifecycle),
-[js/engine](../js/engine/src) (`@iron/engine`), plus the wiring in
-[iron_app/main.rs](../crates/iron_app/src/main.rs). Design background:
+Crates and packages: [platypus_scene](../crates/platypus_scene/src) (Rust),
+[platypus_script/components.rs](../crates/platypus_script/src/components.rs) (component lifecycle),
+[js/engine](../js/engine/src) (`@platypus/engine`), plus the wiring in
+[platypus_app/main.rs](../crates/platypus_app/src/main.rs). Design background:
 [DESIGN.md](../DESIGN.md) section 7.5. Milestone M5.a. How cameras and planes reach the screen is in
 [world-rendering.md](world-rendering.md).
 
 ## GameObjects in Rust
 
-[lib.rs](../crates/iron_scene/src/lib.rs) has `Scene`, a generational arena of GameObjects. Each has a
+[lib.rs](../crates/platypus_scene/src/lib.rs) has `Scene`, a generational arena of GameObjects. Each has a
 name, an enabled flag, a parent, children and a local `Transform` (position, rotation, scale).
 There is no ECS: parent and child links plus a dirty flag per object are enough for small scenes.
 
@@ -25,12 +25,12 @@ There is no ECS: parent and child links plus a dirty flag per object are enough 
   ones.
 
 Components do not live in the scene. Script components are in `ComponentHost`, physics bodies in
-`iron_physics`, cameras, meshes, lights, sprites, particles and panels in the app. They refer to
+`platypus_physics`, cameras, meshes, lights, sprites, particles and panels in the app. They refer to
 objects by id. Bodies are tied to their objects by `physics.attach` (see below).
 
 ## Script ids and engine ids
 
-Scripts hold numbers, never engine references. [script.rs](../crates/iron_scene/src/script.rs) has
+Scripts hold numbers, never engine references. [script.rs](../crates/platypus_scene/src/script.rs) has
 `ScriptScene`, which wraps a `Scene` and maps the script's object ids (`ScriptObject`, a `u32`) to
 `ObjectId`s, like UI nodes and physics bodies.
 
@@ -69,7 +69,7 @@ Scripts change the scene with ops. `App::tick` matches the `scene.` prefix and c
 handles it:
 
 - `ComponentAdded` calls `ComponentHost::adopt` (the script already created the instance).
-- `ComponentRemoved` calls `ComponentHost::remove` (`onDestroy`, then `__iron_destroy`).
+- `ComponentRemoved` calls `ComponentHost::remove` (`onDestroy`, then `__platypus_destroy`).
 - `Destroyed(objects)` calls `remove_on_objects`, then `WorldViews::forget_objects` and
   `Panels::forget_objects`, so cameras, planes, panels and components on those objects go too.
 
@@ -83,10 +83,10 @@ records the object, and `take_batch` returns a flat array, 11 numbers per object
 id, px, py, pz, qx, qy, qz, qw, sx, sy, sz      (local transform)
 ```
 
-`App::send_scene_moves` calls `__iron_scene(moved)` once per fixed tick, after physics steps. Physics is
-the usual source: `Attachments::step` ([physics_sync.rs](../crates/iron_app/src/physics_sync.rs)) calls
+`App::send_scene_moves` calls `__platypus_scene(moved)` once per fixed tick, after physics steps. Physics is
+the usual source: `Attachments::step` ([physics_sync.rs](../crates/platypus_app/src/physics_sync.rs)) calls
 `set_world_from_engine` for each attached body that moved. It
-skips the call when the batch is empty or the bundle has no `__iron_scene` (probed at startup and
+skips the call when the batch is empty or the bundle has no `__platypus_scene` (probed at startup and
 after a reload as `scene_events`). Script-made changes are never echoed back. The JS side updates the
 mirror without queueing ops.
 
@@ -96,19 +96,19 @@ all their descendants (as script ids, once each) and empties the list. Physics c
 so attached bodies follow objects that scripts moved
 ([physics-and-audio.md](physics-and-audio.md#components-on-gameobjects-m5a2)).
 
-## The typed script API (`iron_scene::api`)
+## The typed script API (`platypus_scene::api`)
 
-[api.rs](../crates/iron_scene/src/api.rs) declares a `Scene` namespace with `#[iron_api]` (see
-[iron-api.md](iron-api.md)), next to the op-based `ScriptScene`, which is untouched. Compiled
-TypeScript ([iron-ts.md](iron-ts.md)) calls its generated shims directly, with no op queue. The
+[api.rs](../crates/platypus_scene/src/api.rs) declares a `Scene` namespace with `#[platypus_api]` (see
+[platypus-api.md](platypus-api.md)), next to the op-based `ScriptScene`, which is untouched. Compiled
+TypeScript ([platypus-ts.md](platypus-ts.md)) calls its generated shims directly, with no op queue. The
 functions: `create`, `destroy`, `exists`, `count`, `parent`, `setParent(object, parent, keepWorld)`,
 `enabled`/`setEnabled`, `active`, `layer`/`setLayer`, and position, rotation and scale in local space
 (`localPosition`, ...) plus `position` and `rotation` in world space, with `Vector3` and `Quaternion`
 value classes (glam's `Vec3` and `Quat`) on `GameObject` handles. Strings cross the boundary
-(see [iron-api.md](iron-api.md#strings)): `GameObject.name` and `GameObject.find(name)`.
+(see [platypus-api.md](platypus-api.md#strings)): `GameObject.name` and `GameObject.find(name)`.
 
 Next to those namespace functions there are two handle classes, declared in `impl` blocks inside the
-same module (see [iron-api.md](iron-api.md#handle-classes)):
+same module (see [platypus-api.md](platypus-api.md#handle-classes)):
 
 | Class | Rust type | Members |
 |---|---|---|
@@ -116,39 +116,39 @@ same module (see [iron-api.md](iron-api.md#handle-classes)):
 | `Transform` | `TransformRef(ObjectId)` | `gameObject` (read-only), `position`, `rotation` (world), `localPosition`, `localRotation`, `localScale`, `parent` (read-only, a `Transform`, 0 for a root), method `setParent(parent, keepWorld)` |
 
 `TransformRef` shares the object's raw handle, so `go.transform` is the same number as `go` seen as
-another class and `t.gameObject` gives the object back. Shims are named `iron_GameObject_create`,
-`iron_Transform_setPosition(this, x, y, z)` and so on, with the receiver first. A script writes
+another class and `t.gameObject` gives the object back. Shims are named `platypus_GameObject_create`,
+`platypus_Transform_setPosition(this, x, y, z)` and so on, with the receiver first. A script writes
 `child.transform.setParent(parent.transform, false)` and `go.transform.position = new Vector3(1, 2, 3)`;
 the old `Scene.setParent(..)` style functions remain.
 
 The value classes have math methods too, declared as free functions marked `#[method(Vector3)]` /
-`#[getter(Vector3)]` / `#[method(Quaternion)]` (see [iron-api.md](iron-api.md#value-classes)):
+`#[getter(Vector3)]` / `#[method(Quaternion)]` (see [platypus-api.md](platypus-api.md#value-classes)):
 
 | Class | Members |
 |---|---|
 | `Vector3` | methods `add`, `sub`, `scale(s)`, `dot`, `cross`, `distance`, `lerp(b, t)`; getters `magnitude`, `normalized` (the zero vector stays zero) |
 | `Quaternion` | methods `mul(b)` (`b` applied first, like Unity's `a * b`), `rotate(v)`; getter `inverse` |
 
-Scripts write `a.add(b).scale(2)`, `v.magnitude` and `q.rotate(v)`. Shims are `iron_Vector3_add` and so
+Scripts write `a.add(b).scale(2)`, `v.magnitude` and `q.rotate(v)`. Shims are `platypus_Vector3_add` and so
 on, with the receiver's fields first. They live in the `Scene` namespace module for now (a second
 crate sharing `Vector3` will move them to a math namespace). No operators (`a + b`) and no static
 functions (`Vector3.zero`) yet.
 
 - **Handles.** `ObjectId`'s raw handle is `((generation + 1) << 32) | index`, so no live object is 0
   (0 is `null` in `GameObject | null`; `from_raw(0)` gets a generation no slot has and misses).
-- **The scene.** `iron_scene::api::enter(&mut scene)` makes a scene current on the thread until the
-  returned scope is dropped (the `iron_api::context` thread-local). With none, or for a stale id, the
+- **The scene.** `platypus_scene::api::enter(&mut scene)` makes a scene current on the thread until the
+  returned scope is dropped (the `platypus_api::context` thread-local). With none, or for a stale id, the
   functions answer with defaults: no object, `false`, `0`, the origin, the identity rotation, scale one.
-- **Not wired in.** Nothing in `iron_app` calls `enter` yet, and the engine's scripts still use
-  `scene.*` ops. Only tests drive it: [tests/api.rs](../crates/iron_scene/tests/api.rs) (`M9-API-12..15`, `19`)
-  and the compiled `bench/scene.ts` in `tools/iron_ts_tests` (`M9-TS-151..161`; the math methods are
-  `M9-TS-159..161`, the macro side `M9-API-20` in `iron_api`; names and `find` are `M9-TS-183..186`).
+- **Not wired in.** Nothing in `platypus_app` calls `enter` yet, and the engine's scripts still use
+  `scene.*` ops. Only tests drive it: [tests/api.rs](../crates/platypus_scene/tests/api.rs) (`M9-API-12..15`, `19`)
+  and the compiled `bench/scene.ts` in `tools/platypus_ts_tests` (`M9-TS-151..161`; the math methods are
+  `M9-TS-159..161`, the macro side `M9-API-20` in `platypus_api`; names and `find` are `M9-TS-183..186`).
 
 ## Transform batching
 
 `Transform` setters do not send an op each. They queue the transform in `pendingTransforms`, and
 `flushTransforms()` sends all of them in one `scene.locals` op. Every other `scene.*` op calls
-`flushTransforms()` first, so op order holds. It is exposed as `__iron_flush`; the runtime calls it at the end
+`flushTransforms()` first, so op order holds. It is exposed as `__platypus_flush`; the runtime calls it at the end
 of `run_jobs()` (after `load_bundle`, `eval` and `call_global`). World `position` and `rotation` getters and
 setters skip the parent maths when the parent's world transform is identity, and `parentWorld()` is one
 recursive `world()` walk.
@@ -159,39 +159,39 @@ recursive `world()` walk.
 
 | Call | Purpose |
 |---|---|
-| `spawn_on(rt, class, object, name)` | Creates the instance with `__iron_create(class, id, object, name)`. `spawn` is the same without an object. |
+| `spawn_on(rt, class, object, name)` | Creates the instance with `__platypus_create(class, id, object, name)`. `spawn` is the same without an object. |
 | `adopt(id, class, object)` | Takes over a component a script created with `addComponent`. |
-| `remove(rt, id)` | `onDestroy` if it had started and has the hook, then `__iron_destroy`. |
+| `remove(rt, id)` | `onDestroy` if it had started and has the hook, then `__platypus_destroy`. |
 | `remove_on_objects(rt, objects)` | `remove` for every component on destroyed objects. |
 | `fixed_update`, `update_active`, `pre_render` | The per-tick and per-frame hooks below. Each takes an `active(object)` closure. |
 
-**Hooks are looked up once.** On a component's first run the host calls `__iron_hooks(id)`, which
+**Hooks are looked up once.** On a component's first run the host calls `__platypus_hooks(id)`, which
 returns the names of its lifecycle methods, and stores them. A missing hook costs nothing. If the
-bundle has no `__iron_hooks`, every hook is assumed present. Components on inactive objects are
-skipped. A component that throws is logged, disabled and destroyed; the others keep running. Hooks run in batches through `__iron_run` ([scripting.md](scripting.md#componenthost-and-ironengine)).
+bundle has no `__platypus_hooks`, every hook is assumed present. Components on inactive objects are
+skipped. A component that throws is logged, disabled and destroyed; the others keep running. Hooks run in batches through `__platypus_run` ([scripting.md](scripting.md#componenthost-and-ironengine)).
 
 **Order.** `App::tick` runs, per frame:
 
 1. For each fixed 60 Hz tick (at most 5 catch-up ticks): `onStart` for new components, then
    `onFixedUpdate(dt)` for all; `apply_script_output`; `step_physics`; `send_scene_moves`.
 2. `ScriptRuntime::tick` (timers and microtasks).
-3. `apply_script_output`, then `update_active`: `__iron_tick(dt)` advances script `Time` and returns the
-   scaled `dt`; then `onStart` for new components and `onUpdate(dt)` for all; then `__iron_animate(dt)`
+3. `apply_script_output`, then `update_active`: `__platypus_tick(dt)` advances script `Time` and returns the
+   scaled `dt`; then `onStart` for new components and `onUpdate(dt)` for all; then `__platypus_animate(dt)`
    (animation players pose their objects, see [animation-3d.md](animation-3d.md#when-it-runs)); then
    `onLateUpdate(dt)` for all. `dt` is the frame length, capped at `MAX_FRAME_DT` (0.1 s).
 4. `apply_script_output`, `update_audio`, `Input::Refresh` for the screen and every panel.
 5. Drawing: `pre_render` runs `onPreRender()`, then `apply_script_output`, then
-   `__iron_screen(width, height, scale)` if the size changed, then the world and UI are drawn.
+   `__platypus_screen(width, height, scale)` if the size changed, then the world and UI are drawn.
 
 `onAwake` is not called by the host's loop. `GameObject.addComponent` calls it right after creating the
-instance and setting its props, and `__iron_create` does too (for `spawn_on`), both before any `onStart`.
+instance and setting its props, and `__platypus_create` does too (for `spawn_on`), both before any `onStart`.
 So components can set up things other components look for right away (a physics component makes its
 body there).
 
 `onDestroy` runs when the component or its object is removed. `onStart` always runs before the first
 other hook, in whichever step reaches the component first.
 
-`onApplicationPause(paused)` and `onApplicationFocus(focused)` are optional too. `__iron_focus` calls them
+`onApplicationPause(paused)` and `onApplicationFocus(focused)` are optional too. `__platypus_focus` calls them
 on components of active objects when the window loses or gains focus, or the game pauses in the background
 (pause first, then focus, as in Unity); see [platform.md](platform.md#focus-and-pausing).
 
@@ -219,7 +219,7 @@ s&box.
   `onStart`, `onUpdate(dt)`, `onLateUpdate(dt)`, `onFixedUpdate(dt)`, `onPreRender()`, `onDestroy()`.
 - Optional hooks `onAwake()` and `onReload()` (above) too.
 - `register({ Name: Class }, { spawn })`. Registering names a class for scene files. Unless `spawn` is
-  `false`, it is also a starting component (the engine makes one on its own object); `__iron_registered`
+  `false`, it is also a starting component (the engine makes one on its own object); `__platypus_registered`
   lists only those. Engine classes such as `Camera` are not registered by games: scenes find them by
   class name (`_registerBuiltIns`, called from `scenes.ts`).
 - `@property` ([property.ts](../js/engine/src/property.ts)): a standard decorator for fields and
@@ -240,7 +240,7 @@ them to profile.
 
 **Time and timers** ([clock.ts](../js/engine/src/clock.ts)). `Time` (`time`, `deltaTime`,
 `unscaledDeltaTime`, `fixedDeltaTime`, `frameCount`, `timeScale`, `realtimeSinceStartup`) advances in
-`__iron_tick`. `timeScale` scales the `dt` components get; physics is not scaled yet. `TimeSince`
+`__platypus_tick`. `timeScale` scales the `dt` components get; physics is not scaled yet. `TimeSince`
 (`now`, `ago`, `seconds`, `over`), `TimeUntil` (`in`, `seconds`, `done`, `fraction`) and awaitable
 `Task.delay`, `delaySeconds` and `frame` (resolves at the next tick). `Task.delay` uses `setTimeout`,
 so it runs on engine time.
@@ -263,16 +263,16 @@ stack, other objects as JSON (cycles marked). `Log.trace` is `console.debug`.
 Press sets roll over in an `onTick` listener, so they follow `Time`.
 
 **Screen** ([screen.ts](../js/engine/src/screen.ts)). `Screen.width`, `height` (UI pixels, what
-pointer events use), `scale` and `aspect`, set by `__iron_screen`. Window mode, resolutions and `setResolution` are in [platform.md](platform.md).
+pointer events use), `scale` and `aspect`, set by `__platypus_screen`. Window mode, resolutions and `setResolution` are in [platform.md](platform.md).
 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
 `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
-`args` (the command line's arguments after `--`, `iron game -- --level 2`, from `__iron_info.app.args`), `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
-`quit(exitCode)`, which `iron` exits with; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
-and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__iron_info` from the
-game's `project.json` (see docs/iron-build.md; formerly the `iron` section of `package.json`:  `title`, `company`, `identifier`
+`args` (the command line's arguments after `--`, `platypus game -- --level 2`, from `__platypus_info.app.args`), `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
+`quit(exitCode)`, which `platypus` exits with; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
+and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__platypus_info` from the
+game's `project.json` (see docs/platypus-build.md; formerly the `platypus` section of `package.json`:  `title`, `company`, `identifier`
 `icon`, a PNG used for the window icon, and `display`, the default window mode and size; the title is the window title) and the machine
-([info.rs](../crates/iron_app/src/info.rs)). It evaluates it **before the bundle's top level runs**
+([info.rs](../crates/platypus_app/src/info.rs)). It evaluates it **before the bundle's top level runs**
 (and again for a reloaded runtime). GPU and screen fields are added once the window and renderer exist,
 and the script is evaluated again; `prefs` and `display` sections are added too (see [platform.md](platform.md)). `quit()` sends `app.quit`, which sets the app's `done` flag.
 
@@ -295,13 +295,13 @@ world of objects. A "scene" here is a set of root GameObjects that scripts keep 
 **Scenes and roots.** Every root GameObject has `_scene`. Children belong to their root's scene. New
 roots go into the **active** scene. A game starts with one empty scene named `Main`.
 
-**File format.** `SceneData` is plain JSON (`format: "iron.scene"`, `version: 1`). Objects nest through
+**File format.** `SceneData` is plain JSON (`format: "platypus.scene"`, `version: 1`). Objects nest through
 `children`. Ids are unique in the file and are what references point at (components share the
 numbering with objects).
 
 ```json
 {
-  "format": "iron.scene", "version": 1, "name": "Level 1",
+  "format": "platypus.scene", "version": 1, "name": "Level 1",
   "renderSettings": { "ambientLight": { "$type": "Color", "value": [0.1, 0.1, 0.1, 1] } },
   "assets": { "mesh1": { "type": "Mesh", "vertices": [], "triangles": [], "normals": [], "uv": [] } },
   "objects": [{
@@ -356,12 +356,12 @@ A component type that isn't registered is skipped with a warning.
 
 **Reading files.** `loadSceneAsync("scenes/level.scene.json")` sends `asset.readText id path`. The app
 resolves the path inside the game folder (`resolve_asset`, so escaping it is refused), reads it and
-answers with `__iron_asset_text([id, text | null, ...])` after the op batch. `null` (missing,
+answers with `__platypus_asset_text([id, text | null, ...])` after the op batch. `null` (missing,
 unreadable or outside the folder) rejects the promise. Bundled data
 (`import level from "./level.scene.json"`) needs no read.
 
 In compiled games `loadSceneAsync(path, mode)` and `Prefab.load(path)` are promises too: the program asks
-(`iron_scenes::request_load` / `request_prefab`), the host reads the file from the game folder in the same
+(`platypus_scenes::request_load` / `request_prefab`), the host reads the file from the game folder in the same
 tick (`Native::load_requested_scenes`), the scene loads (its `path` is set before `onSceneLoaded` runs) and
 the promise resolves; any failure (missing file, bad JSON, path outside the folder) rejects with an `Error`
 (`onSceneLoadFailed` natively). Code after the `await` runs in that tick.
@@ -376,7 +376,7 @@ only `instantiate` uses). With no parent the copy goes into the original's scene
 **world** placement; with a parent it keeps the local transform. `position` and `rotation` override.
 
 **Prefabs.** `Prefab` (Unity's prefab asset) is one object tree in the scene file's format, kept for
-placing copies. `PrefabData` is `{ format: "iron.prefab", version: 1, name, root, assets? }`, where
+placing copies. `PrefabData` is `{ format: "platypus.prefab", version: 1, name, root, assets? }`, where
 `root` is a `GameObjectData` and `assets` holds the meshes and textures it shares by id.
 
 - `Prefab.fromObject(go)` captures an object and everything under it as it is now (the same `Saver`
@@ -392,7 +392,7 @@ placing copies. `PrefabData` is `{ format: "iron.prefab", version: 1, name, root
   saved as `GameObjectData.prefab`, for tools. Saved scenes still hold the object in full.
 
 **Start scene.** `startScene` in the game's `project.json` reaches scripts as
-`__iron_info.app.startScene`. When `scenes.ts` is imported it loads that file additively, makes it
+`__platypus_info.app.startScene`. When `scenes.ts` is imported it loads that file additively, makes it
 active and drops `Main` if nothing is in it. Starting components still spawn next to it. A failure
 is logged as `start scene <path>: ...`.
 
@@ -434,11 +434,11 @@ Hierarchy and Scene view list `visibleObjects()`, which leaves out `HideInHierar
 
 ## Tests
 
-`M5-OBJ-01..03` are in [tests/scene.rs](../crates/iron_scene/tests/scene.rs) (hierarchy, world
+`M5-OBJ-01..03` are in [tests/scene.rs](../crates/platypus_scene/tests/scene.rs) (hierarchy, world
 transforms, moved sets). `M5-SCN-01..04` cover scenes: `js/engine/test/scenes.test.ts` (round trips, `SceneManager`,
-`instantiate`) and `M5-SCN-02` in [tests/scripts.rs](../crates/iron_scene/tests/scripts.rs) (save and
+`instantiate`) and `M5-SCN-02` in [tests/scripts.rs](../crates/platypus_scene/tests/scripts.rs) (save and
 load in QuickJS with fixture `tests/fixtures/src/scene.ts`). `M5-PRE-01` (prefabs: capture, copies,
 references, JSON, files) is in `scenes.test.ts` too. `examples/scenes` is the manual check.
-`M5-OBJ-06..08` are in [tests/scripts.rs](../crates/iron_scene/tests/scripts.rs)
+`M5-OBJ-06..08` are in [tests/scripts.rs](../crates/platypus_scene/tests/scripts.rs)
 (ops, move batch, lifecycle order, running `tests/fixtures/src/scene.ts` in QuickJS). JS units are
 `js/engine/test/{scene,math,time,helpers,camera}.test.ts`. See [testing.md](testing.md).

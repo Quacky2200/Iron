@@ -4,11 +4,11 @@
 //! (M2-INT-01, M2-INT-02). Uses `tests/fixtures/boxes.js`, built by Bun from
 //! `tests/fixtures/src/boxes.tsx`.
 
-use iron_core::{Commit, NodeId, Value};
-use iron_script::conformance::capture_logs;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ui::opcodes::{CREATE, REMOVE_CHILD};
-use iron_ui::{DrawCmd, ROOT, Rect, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_script::conformance::capture_logs;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ui::opcodes::{CREATE, REMOVE_CHILD};
+use platypus_ui::{DrawCmd, ROOT, Rect, UiTree};
 
 const BOXES: &str = include_str!("../../../tests/fixtures/boxes.js");
 
@@ -93,7 +93,7 @@ fn react_bundle_renders_into_the_ui_tree() {
     });
     assert_eq!(
         header_quad.unwrap().radii,
-        iron_ui::Radii::circular([8.0; 4])
+        platypus_ui::Radii::circular([8.0; 4])
     );
 }
 

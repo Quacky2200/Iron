@@ -4,7 +4,7 @@
 //! IDs are in TESTS.md (M9-API-*).
 mod common;
 use common::{js, throws, with_world};
-use iron_render_api::{RenderCommand, take_commands};
+use platypus_render_api::{RenderCommand, take_commands};
 
 // M9-API-139
 //
@@ -41,7 +41,7 @@ fn light_and_mesh_renderer_components() {
             out,
             r#"["spot",0.5,2.5,40,"soft",true,true,"sphere",0.8,"off","transparent",[1,0,0,1],"[object Light]","[object Material]","[object Mesh]"]"#
         );
-        let lights = iron_render_api::lights();
+        let lights = platypus_render_api::lights();
         assert_eq!(lights.len(), 1);
         assert_eq!(lights[0].1.intensity, 2.5);
         assert!(throws(ctx, "light.intensity = 'bright'").starts_with("TypeError"));
@@ -128,7 +128,7 @@ fn render_settings_primitives_lines_and_cloth() {
             out,
             "[true,0.7,0.3,-1,true,3,1,0.2,0.3,30,\"sphere\",1,2,true]"
         );
-        assert!(iron_render_api::settings().bloom.is_some());
+        assert!(platypus_render_api::settings().bloom.is_some());
         assert!(throws(ctx, "line.positions = 3").starts_with("TypeError"));
         assert!(throws(ctx, "RenderSettings.ambientLight = 5").starts_with("TypeError"));
     });
@@ -145,11 +145,11 @@ fn particle_callbacks_run_when_the_host_reports() {
             ctx,
             "globalThis.stopped = 0; globalThis.ps2 = ParticleSystem.attach(GameObject.create()); ps2.onStopped(() => { stopped++; }); 0",
         );
-        let id = iron_render_api::particle_systems()[0].0;
-        iron_render_api::report_particles(id, 5, true);
+        let id = platypus_render_api::particle_systems()[0].0;
+        platypus_render_api::report_particles(id, 5, true);
         let none: f64 = js(ctx, "stopped");
         assert_eq!(none, 0.0, "still alive");
-        iron_render_api::report_particles(id, 0, false);
+        platypus_render_api::report_particles(id, 0, false);
         let once: f64 = js(ctx, "stopped");
         assert_eq!(once, 1.0);
     });

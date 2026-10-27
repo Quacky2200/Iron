@@ -2,7 +2,7 @@
 
 Status: **decisions taken, two questions open** (2026-10-20). Next after scenes in the order the user gave (components, math, physics,
 audio, rendering). `physics.ts` (bodies, colliders, joints, raycasts), `physics-components.ts` (Rigidbody, the collider
-components, CharacterController, joints, Rope) and `physics2d.ts` are 1,860 lines over `crates/iron_physics`, which already
+components, CharacterController, joints, Rope) and `physics2d.ts` are 1,860 lines over `crates/platypus_physics`, which already
 simulates everything. What is left is the script surface, and three pieces of boundary the compiler does not have yet.
 
 ## 1. What is needed that does not exist
@@ -15,12 +15,12 @@ simulates everything. What is left is the script surface, and three pieces of bo
 
 ## 2. Shape
 
-- `iron_physics` keeps the rapier world and script-chosen ids. A new `crates/iron_physics_api` (or a module of `iron_engine_api`)
+- `platypus_physics` keeps the rapier world and script-chosen ids. A new `crates/platypus_physics_api` (or a module of `platypus_engine_api`)
   declares `Rigidbody`, `BoxCollider`, `SphereCollider`, `CapsuleCollider`, `MeshCollider`, `CharacterController`, the joints
-  and `Physics` (`gravity`, `raycast`, `overlap*`) with `#[iron_api]`, as handle classes whose objects are the GameObjects
+  and `Physics` (`gravity`, `raycast`, `overlap*`) with `#[platypus_api]`, as handle classes whose objects are the GameObjects
   (like `Camera`): `go.addComponent(Rigidbody, { mass: 2 })`, `go.getComponent(BoxCollider)` through `findOn`.
-- Each registers a **kind** (`iron_kinds`), so scene files with physics components load, and `instantiate` copies them.
-- A fixed tick is `physics::step(dt)` and then `sync` writes the moved bodies back into `iron_scene` (the existing
+- Each registers a **kind** (`platypus_kinds`), so scene files with physics components load, and `instantiate` copies them.
+- A fixed tick is `physics::step(dt)` and then `sync` writes the moved bodies back into `platypus_scene` (the existing
   `take_moved` / `attach` path) and returns the contact events for the host.
 - 2D physics is the same registry with a `2D` suffix and the z axis locked, as `physics2d.ts` does today.
 
@@ -88,7 +88,7 @@ class Collision {
 }
 ```
 
-`NativeHost::dispatch_physics(active)` takes `iron_physics_api::take_contacts()`, maps colliders to objects with
+`NativeHost::dispatch_physics(active)` takes `platypus_physics_api::take_contacts()`, maps colliders to objects with
 `object_of_collider` and tells the components of both objects (a collider with no object tells nobody).
 `dispatch_contacts(&[ContactEvent], active)` is the same with events made by hand. Sensors call the trigger hooks, solid contacts
 the collision hooks. `Stay` is made by the host: every pair that began and has not ended gets `onCollisionStay` /

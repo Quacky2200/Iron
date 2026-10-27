@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The native backend: a game compiled by `iron_ts` (TypeScript to machine code) and run in this
+//! The native backend: a game compiled by `platypus_ts` (TypeScript to machine code) and run in this
 //! process, instead of a QuickJS bundle.
 //!
-//! A native game is `dist/game.irbundle` (JSON written by `iron-build`: the bundled TypeScript
+//! A native game is `dist/game.pbundle` (JSON written by `platypus-build`: the bundled TypeScript
 //! source plus the stylesheet and asset list) or a bare `.ts` / `.tsx` file. [`Native::load`]
 //! JIT-compiles the source with the manifests of every engine namespace, runs the program's top
 //! level (`register(..)`, `UiRoot.mount(..)`) and spawns the starting components. A module with a
 //! top-level `await` keeps the program from starting: until every module has finished evaluating
-//! (`iron_ts_rt::startup_state`) the registered classes are not spawned, the start scene is not
+//! (`platypus_ts_rt::startup_state`) the registered classes are not spawned, the start scene is not
 //! loaded and no component hook runs, while the timers, microtasks and the UI the top level
 //! mounted keep going. After that the app calls the `Native` methods where it called QuickJS
 //! before:
@@ -21,26 +21,26 @@
 //! | UI events | [`Native::ui_events`] (pointer, keys, focus) to the `Runtime` |
 //! | hot reload | [`Native::reload`] |
 //!
-//! Every call runs with the app's scene made current (`iron_scene::api::enter`), because compiled
+//! Every call runs with the app's scene made current (`platypus_scene::api::enter`), because compiled
 //! code reaches the scene through a per-thread pointer, not through an argument.
 //!
 //! UI events run through the handlers while the interaction layer handles the input, so
 //! `preventDefault()` stops default actions as in the QuickJS path.
 
 use anyhow::{Context, Result, anyhow, bail};
-use iron_scene::Scene;
-use iron_ts::jit::{Game, JitOptions, compile_and_load};
-use iron_ts_rt::{
+use platypus_scene::Scene;
+use platypus_ts::jit::{Game, JitOptions, compile_and_load};
+use platypus_ts_rt::{
     NativeHost, StartupState, startup_state, ts_rt_microtasks_run, ts_rt_timers_advance,
 };
-use iron_ui::{UiEvent, UiTree};
-use iron_ui_native::{Event, RootId, Runtime};
+use platypus_ui::{UiEvent, UiTree};
+use platypus_ui_native::{Event, RootId, Runtime};
 use std::path::Path;
 
 /// The first node id the native reconciler hands out; below it are the ids of React's side.
 const FIRST_NODE: u32 = 1 << 30;
 
-/// What `iron-build` wrote (`dist/game.irbundle`), or a bare source file.
+/// What `platypus-build` wrote (`dist/game.pbundle`), or a bare source file.
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)] // css, assets and title are for the asset and window setup that follows
 pub struct Bundle {
@@ -57,7 +57,10 @@ impl Bundle {
     pub fn read(path: &Path) -> Result<Bundle> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        if path.extension().is_some_and(|e| e == "irbundle") {
+        if path
+            .extension()
+            .is_some_and(|e| e == "pbundle" || e == "irbundle")
+        {
             Bundle::parse(&text).with_context(|| path.display().to_string())
         } else {
             Ok(Bundle {
@@ -90,16 +93,20 @@ impl Bundle {
     }
 }
 
-/// Is this path a native bundle (rather than a QuickJS `game.js`)?
+/// The bundle name `platypus-build` wrote before the rename to Platypus (still read).
+pub const LEGACY_BUNDLE: &str = "game.irbundle";
+
+/// Is this path a native bundle (rather than a QuickJS `game.js`)? `.irbundle` is the name
+/// from before the rename to Platypus.
 pub fn is_native(path: &Path) -> bool {
     path.extension()
-        .is_some_and(|e| e == "irbundle" || e == "ts" || e == "tsx")
+        .is_some_and(|e| e == "pbundle" || e == "irbundle" || e == "ts" || e == "tsx")
 }
 
-/// What `iron-build dev` wrote to `dist/.iron-reload` for a failed build (`{"seq":N,"ok":false,
+/// What `platypus-build dev` wrote to `dist/.platypus-reload` for a failed build (`{"seq":N,"ok":false,
 /// "error":".."}`); `None` when the last build worked or there is no such file.
 pub fn failed_build(bundle: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(bundle.with_file_name(".iron-reload")).ok()?;
+    let text = std::fs::read_to_string(bundle.with_file_name(".platypus-reload")).ok()?;
     parse_reload_note(&text)
 }
 
@@ -111,9 +118,9 @@ fn parse_reload_note(text: &str) -> Option<String> {
 
 /// The manifests a game is compiled against: every engine namespace and the UI bridge.
 fn manifests() -> Vec<String> {
-    let mut all = iron_native::manifests();
-    all.push(iron_ts_ui::manifest_json());
-    all.push(iron_ts_ui::root_manifest_json());
+    let mut all = platypus_native::manifests();
+    all.push(platypus_ts_ui::manifest_json());
+    all.push(platypus_ts_ui::root_manifest_json());
     all
 }
 
@@ -130,10 +137,10 @@ extern "C" fn console_hook(level: i32, text: *const u8, len: usize) {
 
 /// Registers the scene-file kinds of every engine crate, once per thread.
 fn register_kinds() {
-    iron_scenes::register_engine_kinds();
-    iron_render_api::register_kinds();
-    iron_engine_api::audio_components::register_kinds();
-    iron_physics_api::register_kinds();
+    platypus_scenes::register_engine_kinds();
+    platypus_render_api::register_kinds();
+    platypus_engine_api::audio_components::register_kinds();
+    platypus_physics_api::register_kinds();
 }
 
 /// A compiled game in the running app.
@@ -148,10 +155,10 @@ pub struct Native {
     remount: Option<Vec<u32>>,
     /// `createRoot(panel).render(..)` calls: the panel's handle and its root element, for the
     /// app (each panel has its own tree and runtime).
-    panel_mounts: Vec<(u64, iron_ui_native::Element)>,
+    panel_mounts: Vec<(u64, platypus_ui_native::Element)>,
     /// `createRoot(win).render(..)` calls for windows other than the main one: the window's handle
     /// and its root element, for the app (each window has its own tree and runtime).
-    window_mounts: Vec<(u64, iron_ui_native::Element)>,
+    window_mounts: Vec<(u64, platypus_ui_native::Element)>,
     /// Windows without a key that the last reload asks the app to close.
     reload_closes: Vec<u32>,
     /// Sets the engine state the program reads at start (`Application`, quality levels, layers):
@@ -168,7 +175,7 @@ pub struct Native {
     warn_after: std::time::Duration,
     /// A reload whose program is still starting: what is put back once it has started.
     deferred_reload: Option<DeferredReload>,
-    /// The scene to load once the program has started (`iron.startScene`).
+    /// The scene to load once the program has started (`platypus.startScene`).
     pending_start_scene: Option<String>,
     /// The game folder: scene files the program loads come from here.
     root: Option<std::path::PathBuf>,
@@ -184,11 +191,11 @@ struct DeferredReload {
 }
 
 fn active(o: u64) -> bool {
-    use iron_api::Handle;
-    iron_scene::api::scene_api::active(iron_scene::ObjectId::from_raw(o))
+    use platypus_api::Handle;
+    platypus_scene::api::scene_api::active(platypus_scene::ObjectId::from_raw(o))
 }
 
-fn log_faults(faults: Vec<iron_ts_rt::Fault>) {
+fn log_faults(faults: Vec<platypus_ts_rt::Fault>) {
     for f in faults {
         tracing::error!(target: "script", "{}.{} threw; the component is disabled", f.class, f.hook);
     }
@@ -211,21 +218,21 @@ impl Native {
         env: Box<dyn Fn()>,
     ) -> Result<Native> {
         let generation = 0;
-        iron_ts_rt::ts_rt_set_console(Some(console_hook));
+        platypus_ts_rt::ts_rt_set_console(Some(console_hook));
         // Timers and promise jobs keep the event domain (window family) that made them.
-        iron_ts_rt::ts_rt_set_domain_hooks(
-            Some(iron_engine_api::window::runtime_current_domain),
-            Some(iron_engine_api::window::runtime_enter_domain),
-            Some(iron_engine_api::window::runtime_leave_domain),
+        platypus_ts_rt::ts_rt_set_domain_hooks(
+            Some(platypus_engine_api::window::runtime_current_domain),
+            Some(platypus_engine_api::window::runtime_enter_domain),
+            Some(platypus_engine_api::window::runtime_leave_domain),
         );
         register_kinds();
         let game = Self::compile(&bundle, generation)?;
-        let mut lap = iron_ts::timing::Lap::start();
+        let mut lap = platypus_ts::timing::Lap::start();
         let mut rt = Runtime::new(FIRST_NODE);
-        let screen_root = rt.create_root(iron_ui::ROOT);
+        let screen_root = rt.create_root(platypus_ui::ROOT);
         env();
         let host = {
-            let _scope = iron_scene::api::enter(scene);
+            let _scope = platypus_scene::api::enter(scene);
             game.init().map_err(|e| anyhow!("{e}"))?;
             NativeHost::new(game.classes().map_err(|e| anyhow!("{e}"))?)
         };
@@ -262,7 +269,7 @@ impl Native {
     }
 
     fn compile(bundle: &Bundle, generation: u32) -> Result<Game> {
-        let mut lap = iron_ts::timing::Lap::start();
+        let mut lap = platypus_ts::timing::Lap::start();
         let manifests = manifests();
         lap.mark("engine manifests (JSON)");
         compile_and_load(
@@ -272,7 +279,7 @@ impl Native {
                 // Programs of different generations share one heap: their headers must differ.
                 struct_base: generation * 100_000,
                 manifests: &manifests,
-                symbols: iron_ts_ui::symbols(),
+                symbols: platypus_ts_ui::symbols(),
                 ..Default::default()
             },
         )
@@ -321,8 +328,8 @@ impl Native {
                     }
                 }
                 if let Some(path) = self.pending_start_scene.take() {
-                    let _scope = iron_scene::api::enter(scene);
-                    iron_scenes::request_load(&path, false);
+                    let _scope = platypus_scene::api::enter(scene);
+                    platypus_scenes::request_load(&path, false);
                 }
             }
             StartupState::Failed { module, message } => {
@@ -347,10 +354,10 @@ impl Native {
     }
 
     fn spawn_classes(&mut self, scene: &mut Scene, classes: &[&'static str]) {
-        use iron_api::Handle;
-        let _scope = iron_scene::api::enter(scene);
+        use platypus_api::Handle;
+        let _scope = platypus_scene::api::enter(scene);
         for &class in classes {
-            let go = iron_scene::ObjectId::create();
+            let go = platypus_scene::ObjectId::create();
             go.set_name(class);
             if let Err(e) = self.host.spawn(class, Some(go.to_raw())) {
                 tracing::error!(target: "script", "{e}");
@@ -361,7 +368,7 @@ impl Native {
     /// A text asset (scene, prefab) through the asset file system.
     fn read_text(&self, path: &str) -> Result<String, String> {
         match self.root.as_deref() {
-            Some(root) => iron_core::read_asset_string(root, path).map_err(|e| e.to_string()),
+            Some(root) => platypus_core::read_asset_string(root, path).map_err(|e| e.to_string()),
             None => Err("no asset folder".to_string()),
         }
     }
@@ -369,28 +376,28 @@ impl Native {
     /// Scene files the program asked for (`SceneManager.load`): read from the game folder.
     /// Runs with the scene current.
     fn load_requested_scenes(&mut self) {
-        for (id, path) in iron_scenes::take_load_requests() {
+        for (id, path) in platypus_scenes::take_load_requests() {
             let text = self.read_text(&path);
             let result = match text {
-                Ok(text) => iron_scenes::finish_load(id, &text),
+                Ok(text) => platypus_scenes::finish_load(id, &text),
                 Err(e) => {
                     // Drops the request; `loadSceneAsync` rejects.
-                    iron_scenes::fail_load(id, &e);
+                    platypus_scenes::fail_load(id, &e);
                     Err(e)
                 }
             };
             if let Err(e) = result {
                 tracing::error!(target: "script", "loading scene `{path}`: {e}");
             }
-            for w in iron_scenes::take_warnings() {
+            for w in platypus_scenes::take_warnings() {
                 tracing::warn!(target: "script", "scene `{path}`: {w}");
             }
         }
-        for (id, path) in iron_scenes::take_prefab_requests() {
+        for (id, path) in platypus_scenes::take_prefab_requests() {
             let text = self.read_text(&path);
             let result = match &text {
-                Ok(text) => iron_scenes::finish_prefab(id, Ok(text)),
-                Err(e) => iron_scenes::finish_prefab(id, Err(e)),
+                Ok(text) => platypus_scenes::finish_prefab(id, Ok(text)),
+                Err(e) => platypus_scenes::finish_prefab(id, Err(e)),
             };
             if let Err(e) = result {
                 tracing::error!(target: "script", "loading prefab `{path}`: {e}");
@@ -403,7 +410,7 @@ impl Native {
         self.root = Some(root.to_path_buf());
     }
 
-    /// Loads the manifest's `iron.startScene` (a single-mode load, like the scripts' own).
+    /// Loads the manifest's `platypus.startScene` (a single-mode load, like the scripts' own).
     pub fn start_scene(&mut self, scene: &mut Scene, ui: &mut UiTree, path: &str) {
         if !self.started {
             // After the last module has finished (`advance_startup`).
@@ -411,33 +418,33 @@ impl Native {
             return;
         }
         self.with_scene(scene, ui, || {
-            iron_scenes::request_load(path, false);
+            platypus_scenes::request_load(path, false);
         });
     }
 
     /// Objects the program destroyed: components on them and the engine's data for them go too.
     /// Runs with the scene current.
     fn pump_destroyed(&mut self) {
-        let gone = iron_engine_api::objects::process_destroyed();
+        let gone = platypus_engine_api::objects::process_destroyed();
         self.objects_destroyed(&gone);
     }
 
-    fn objects_destroyed(&mut self, gone: &[iron_scene::ObjectId]) {
-        use iron_api::Handle;
+    fn objects_destroyed(&mut self, gone: &[platypus_scene::ObjectId]) {
+        use platypus_api::Handle;
         if gone.is_empty() {
             return;
         }
         let raws: Vec<u64> = gone.iter().map(|o| o.to_raw()).collect();
         self.host.destroy_on_objects(&raws);
-        iron_render_api::destroyed(gone);
+        platypus_render_api::destroyed(gone);
         for o in gone {
-            iron_physics_api::object_destroyed(*o);
+            platypus_physics_api::object_destroyed(*o);
         }
         log_faults(self.host.settle());
     }
 
     /// The world panel roots the program mounted since the last call.
-    pub fn take_panel_mounts(&mut self) -> Vec<(u64, iron_ui_native::Element)> {
+    pub fn take_panel_mounts(&mut self) -> Vec<(u64, platypus_ui_native::Element)> {
         std::mem::take(&mut self.panel_mounts)
     }
 
@@ -447,7 +454,7 @@ impl Native {
     }
 
     /// The window roots the program mounted since the last call (window handle, root element).
-    pub fn take_window_mounts(&mut self) -> Vec<(u64, iron_ui_native::Element)> {
+    pub fn take_window_mounts(&mut self) -> Vec<(u64, platypus_ui_native::Element)> {
         std::mem::take(&mut self.window_mounts)
     }
 
@@ -457,28 +464,28 @@ impl Native {
         // (the continuation of an `await`) have finished its last module.
         self.advance_startup(scene);
         {
-            let _scope = iron_scene::api::enter(scene);
+            let _scope = platypus_scene::api::enter(scene);
             ts_rt_microtasks_run();
         }
         self.advance_startup(scene);
-        let _scope = iron_scene::api::enter(scene);
+        let _scope = platypus_scene::api::enter(scene);
         if self.started {
             log_faults(self.host.settle());
         }
         self.pump_destroyed();
         self.load_requested_scenes();
         // Scene events reach the program's listeners once the world is consistent.
-        iron_scenes::dispatch();
+        platypus_scenes::dispatch();
         // A `loadSceneAsync` promise settled by that dispatch continues in this tick.
         ts_rt_microtasks_run();
         if self.started {
             log_faults(self.host.settle());
         }
         // `createRoot(win)`: the main window is the screen; other windows get their root from the app.
-        let mut mounts: Vec<(u64, u64)> = iron_ts_ui::take_mounts();
-        for (window, handle) in iron_ts_ui::take_window_mounts() {
-            let w = iron_engine_api::window::WindowRef(window as u32);
-            if !iron_engine_api::window::can_set_up(w) {
+        let mut mounts: Vec<(u64, u64)> = platypus_ts_ui::take_mounts();
+        for (window, handle) in platypus_ts_ui::take_window_mounts() {
+            let w = platypus_engine_api::window::WindowRef(window as u32);
+            if !platypus_engine_api::window::can_set_up(w) {
                 tracing::warn!(target: "script", "createRoot(window {window}): that window belongs to another family; ignored");
                 continue;
             }
@@ -486,12 +493,12 @@ impl Native {
                 mounts.push((0, handle));
             } else {
                 self.window_mounts
-                    .push((window, iron_ts_ui::element_from(handle)));
+                    .push((window, platypus_ts_ui::element_from(handle)));
             }
         }
         for (target, handle) in mounts {
             tracing::debug!(target, handle, "mount");
-            let element = iron_ts_ui::element_from(handle);
+            let element = platypus_ts_ui::element_from(handle);
             if target == 0 {
                 let errors = match self.remount.take() {
                     // After a reload every component renders again with its new code.
@@ -508,7 +515,7 @@ impl Native {
         for e in self.rt.flush(ui) {
             tracing::warn!(target: "ui", "{e}");
         }
-        for e in iron_ts_ui::take_errors() {
+        for e in platypus_ts_ui::take_errors() {
             tracing::error!(target: "script", "{e}");
         }
     }
@@ -517,9 +524,9 @@ impl Native {
     /// contact hooks run.
     pub fn fixed_tick(&mut self, scene: &mut Scene, ui: &mut UiTree, dt: f64) {
         if self.started {
-            let _scope = iron_scene::api::enter(scene);
+            let _scope = platypus_scene::api::enter(scene);
             log_faults(self.host.fixed_update(dt, &active));
-            iron_physics_api::step();
+            platypus_physics_api::step();
             log_faults(self.host.dispatch_physics(&active));
         }
         self.after_script(scene, ui);
@@ -528,8 +535,8 @@ impl Native {
     /// One frame: the game clock, timers, then `onUpdate` and `onLateUpdate`.
     pub fn frame(&mut self, scene: &mut Scene, ui: &mut UiTree, dt: f64, now_ms: f64) {
         {
-            let _scope = iron_scene::api::enter(scene);
-            iron_engine_api::time::advance(dt);
+            let _scope = platypus_scene::api::enter(scene);
+            platypus_engine_api::time::advance(dt);
             ts_rt_timers_advance(now_ms);
             ts_rt_microtasks_run();
             if self.started {
@@ -542,12 +549,12 @@ impl Native {
     /// Last-moment changes before drawing (`onPreRender`).
     pub fn pre_render(&mut self, scene: &mut Scene, ui: &mut UiTree) {
         {
-            let _scope = iron_scene::api::enter(scene);
+            let _scope = platypus_scene::api::enter(scene);
             if self.started {
                 log_faults(self.host.pre_render(&active));
             }
             // Emitters and the listener follow their objects.
-            iron_engine_api::audio_components::pre_render();
+            platypus_engine_api::audio_components::pre_render();
         }
         self.after_script(scene, ui);
     }
@@ -559,7 +566,7 @@ impl Native {
             return false;
         };
         set_target_kind(self.rt.host_kind(ev.target));
-        let _scope = iron_scene::api::enter(scene);
+        let _scope = platypus_scene::api::enter(scene);
         self.rt.dispatch_handlers(&mut ev)
     }
 
@@ -581,11 +588,16 @@ impl Native {
         }
     }
 
-    /// An input event for the game's `input` API, in the argument form `__iron_input` takes
+    /// An input event for the game's `input` API, in the argument form `__platypus_input` takes
     /// (`keydown code key repeat`, `mousemove x y`, `gamepadbutton id name value`, ...).
-    pub fn game_input(&mut self, scene: &mut Scene, ui: &mut UiTree, args: &[iron_core::Value]) {
+    pub fn game_input(
+        &mut self,
+        scene: &mut Scene,
+        ui: &mut UiTree,
+        args: &[platypus_core::Value],
+    ) {
         {
-            let _scope = iron_scene::api::enter(scene);
+            let _scope = platypus_scene::api::enter(scene);
             super::game_input::apply_native(args);
         }
         self.after_script(scene, ui);
@@ -596,11 +608,11 @@ impl Native {
         &mut self,
         scene: &mut Scene,
         ui: &mut UiTree,
-        ids: &[iron_engine_api::audio::PlaybackRef],
+        ids: &[platypus_engine_api::audio::PlaybackRef],
     ) {
         {
-            let _scope = iron_scene::api::enter(scene);
-            iron_engine_api::audio::ended(ids);
+            let _scope = platypus_scene::api::enter(scene);
+            platypus_engine_api::audio::ended(ids);
         }
         self.after_script(scene, ui);
     }
@@ -615,8 +627,8 @@ impl Native {
         paused: bool,
     ) {
         {
-            let _scope = iron_scene::api::enter(scene);
-            let change = iron_engine_api::app::set_focus(focused, paused);
+            let _scope = platypus_scene::api::enter(scene);
+            let change = platypus_engine_api::app::set_focus(focused, paused);
             if change.focus_changed && self.started {
                 log_faults(self.host.application_focus(focused, &active));
             }
@@ -635,7 +647,7 @@ impl Native {
         f: impl FnOnce() -> R,
     ) -> R {
         let r = {
-            let _scope = iron_scene::api::enter(scene);
+            let _scope = platypus_scene::api::enter(scene);
             f()
         };
         self.after_script(scene, ui);
@@ -649,19 +661,19 @@ impl Native {
             &mut self.host,
             NativeHost::new(Vec::new()),
         ));
-        iron_engine_api::input::reset();
-        iron_engine_api::assets::reset();
-        iron_engine_api::app::reset();
-        iron_engine_api::screen::reset();
-        iron_engine_api::audio::reset();
-        iron_engine_api::audio_components::reset();
-        iron_engine_api::spline::reset();
-        iron_engine_api::animation::reset();
-        iron_engine_api::camera::reset();
-        iron_render_api::reset();
-        iron_physics_api::reset();
-        iron_scenes::reset();
-        iron_engine_api::window::reset();
+        platypus_engine_api::input::reset();
+        platypus_engine_api::assets::reset();
+        platypus_engine_api::app::reset();
+        platypus_engine_api::screen::reset();
+        platypus_engine_api::audio::reset();
+        platypus_engine_api::audio_components::reset();
+        platypus_engine_api::spline::reset();
+        platypus_engine_api::animation::reset();
+        platypus_engine_api::camera::reset();
+        platypus_render_api::reset();
+        platypus_physics_api::reset();
+        platypus_scenes::reset();
+        platypus_engine_api::window::reset();
     }
 
     /// The class names of the running game.
@@ -683,12 +695,12 @@ impl Native {
             for r in scene.roots().to_vec() {
                 gone.extend(scene.destroy(r));
             }
-            let _scope = iron_scene::api::enter(scene);
+            let _scope = platypus_scene::api::enter(scene);
             {
                 self.objects_destroyed(&gone);
                 let mut handles = Vec::new();
                 for (i, text) in saved.iter().enumerate() {
-                    match iron_scenes::load_scene(text, i > 0) {
+                    match platypus_scenes::load_scene(text, i > 0) {
                         Ok(h) => handles.push(h),
                         Err(e) => {
                             tracing::error!(target: "script", "reload: restoring a scene: {e}")
@@ -696,9 +708,9 @@ impl Native {
                     }
                 }
                 if let Some(h) = handles.get(active) {
-                    iron_scenes::set_active(*h);
+                    platypus_scenes::set_active(*h);
                 }
-                for w in iron_scenes::take_warnings() {
+                for w in platypus_scenes::take_warnings() {
                     tracing::warn!(target: "script", "reload: {w}");
                 }
             }
@@ -735,16 +747,17 @@ impl Native {
             .map(|(c, _)| c)
             .collect();
         let (saved, active) = {
-            let _scope = iron_scene::api::enter(scene);
-            let n = iron_scenes::scene_count();
+            let _scope = platypus_scene::api::enter(scene);
+            let n = platypus_scenes::scene_count();
             let saved: Vec<String> = (0..n)
-                .filter_map(|i| iron_scenes::serialize(iron_scenes::scene_at(i)))
+                .filter_map(|i| platypus_scenes::serialize(platypus_scenes::scene_at(i)))
                 .collect();
-            let active = (0..n).position(|i| iron_scenes::scene_at(i) == iron_scenes::active());
+            let active =
+                (0..n).position(|i| platypus_scenes::scene_at(i) == platypus_scenes::active());
             (saved, active.unwrap_or(0))
         };
         // The old code's window listeners go; windows with a key stay for the new code to claim.
-        self.reload_closes = iron_engine_api::window::reload_begin()
+        self.reload_closes = platypus_engine_api::window::reload_begin()
             .into_iter()
             .map(|w| w.0)
             .collect();
@@ -754,21 +767,21 @@ impl Native {
             &mut self.host,
             NativeHost::new(Vec::new()),
         ));
-        iron_engine_api::input::reset();
-        iron_engine_api::assets::reset();
-        iron_engine_api::app::reset();
-        iron_engine_api::screen::reset();
-        iron_engine_api::audio::reset();
-        iron_engine_api::audio_components::reset();
-        iron_engine_api::spline::reset();
-        iron_engine_api::animation::reset();
-        iron_engine_api::camera::reset();
-        iron_render_api::reset();
+        platypus_engine_api::input::reset();
+        platypus_engine_api::assets::reset();
+        platypus_engine_api::app::reset();
+        platypus_engine_api::screen::reset();
+        platypus_engine_api::audio::reset();
+        platypus_engine_api::audio_components::reset();
+        platypus_engine_api::spline::reset();
+        platypus_engine_api::animation::reset();
+        platypus_engine_api::camera::reset();
+        platypus_render_api::reset();
         super::native_render::reconfigure();
-        iron_physics_api::reset();
-        iron_scenes::reset();
+        platypus_physics_api::reset();
+        platypus_scenes::reset();
         // Timers and awaits of the old code would run it against the new world.
-        iron_ts_rt::ts_rt_events_clear();
+        platypus_ts_rt::ts_rt_events_clear();
         *scene = Scene::new();
         self.game = game;
         self.generation = generation;
@@ -779,8 +792,8 @@ impl Native {
         self.startup_warned = false;
         self.deferred_reload = None;
         {
-            let _scope = iron_scene::api::enter(scene);
-            iron_engine_api::time::reset();
+            let _scope = platypus_scene::api::enter(scene);
+            platypus_engine_api::time::reset();
             (self.env)();
             self.game.init().map_err(|e| anyhow!("{e}"))?;
             let host = NativeHost::new(self.game.classes().map_err(|e| anyhow!("{e}"))?);
@@ -822,13 +835,13 @@ thread_local! {
 /// The element kind of the target of the event about to be dispatched (what `e.target.type`
 /// answers: the compiled side asks for the current event's target only).
 pub fn set_target_kind(kind: Option<String>) {
-    iron_ts_ui::set_target_kind_resolver(|_| TARGET_KIND.with(|k| k.borrow().clone()));
+    platypus_ts_ui::set_target_kind_resolver(|_| TARGET_KIND.with(|k| k.borrow().clone()));
     TARGET_KIND.with(|k| *k.borrow_mut() = kind.unwrap_or_default());
 }
 
 /// A UI event of the interaction layer as the native reconciler's event.
 pub fn to_event(e: &UiEvent) -> Option<Event> {
-    iron_ui_native::event_of(e)
+    platypus_ui_native::event_of(e)
 }
 
 /// The program's `__uiSignatures()` text (`Name:ID:hook,hook;...`), empty when it has no UI.
@@ -838,12 +851,12 @@ fn signatures_of(game: &Game) -> String {
     };
     // SAFETY: the compiled function takes nothing and returns a live string.
     let p = unsafe {
-        std::mem::transmute::<usize, unsafe extern "C" fn() -> *const iron_ts_rt::Str>(f)()
+        std::mem::transmute::<usize, unsafe extern "C" fn() -> *const platypus_ts_rt::Str>(f)()
     };
     if p.is_null() {
         return String::new();
     }
-    String::from_utf16_lossy(&unsafe { iron_ts_rt::Str::from_raw(p) }.to_utf16())
+    String::from_utf16_lossy(&unsafe { platypus_ts_rt::Str::from_raw(p) }.to_utf16())
 }
 
 /// Component id to its hook list.
@@ -861,8 +874,8 @@ fn parse_signatures(text: &str) -> std::collections::HashMap<u32, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_ui::events::Modifiers;
-    use iron_ui::{EventKind, ROOT};
+    use platypus_ui::events::Modifiers;
+    use platypus_ui::{EventKind, ROOT};
 
     fn bundle(src: &str) -> Bundle {
         Bundle {
@@ -878,7 +891,7 @@ mod tests {
         (n, scene, ui)
     }
 
-    fn dump(tree: &UiTree, id: iron_core::NodeId) -> String {
+    fn dump(tree: &UiTree, id: platypus_core::NodeId) -> String {
         let kind = tree.kind(id).unwrap_or("?");
         if kind == "#text" {
             return format!("text:{}", tree.text(id).unwrap_or(""));
@@ -900,8 +913,20 @@ mod tests {
         assert!(Bundle::parse(r#"{"format":2,"source":""}"#).is_err());
         assert!(Bundle::parse(r#"{"format":1}"#).is_err());
         assert!(Bundle::parse("not json").is_err());
-        assert!(is_native(Path::new("dist/game.irbundle")));
+        assert!(is_native(Path::new("dist/game.pbundle")));
         assert!(!is_native(Path::new("dist/game.js")));
+    }
+
+    // M9-REN-01
+    #[test]
+    fn a_bundle_from_before_the_rename_is_still_native() {
+        assert!(is_native(Path::new("dist/game.irbundle")));
+        let d = std::env::temp_dir().join(format!("platypus_legacy_bundle_{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join(LEGACY_BUNDLE);
+        std::fs::write(&p, r#"{"format":1,"source":"let a = 1;"}"#).unwrap();
+        assert_eq!(Bundle::read(&p).unwrap().source, "let a = 1;");
+        std::fs::remove_dir_all(&d).ok();
     }
 
     // M9-API-611
@@ -1130,7 +1155,7 @@ mod tests {
     // M9-API-803
     #[test]
     fn audio_commands_come_out_and_finished_sounds_run_on_ended() {
-        use iron_engine_api::audio::{AudioCommand, PlaybackRef};
+        use platypus_engine_api::audio::{AudioCommand, PlaybackRef};
         let (mut n, mut scene, mut ui) = start(
             "class Ding extends Component {
                onStart(): void {
@@ -1143,7 +1168,7 @@ mod tests {
              register(Ding);",
         );
         n.frame(&mut scene, &mut ui, 0.016, 16.0);
-        let cmds = iron_engine_api::audio::take_commands();
+        let cmds = platypus_engine_api::audio::take_commands();
         assert!(matches!(cmds.first(), Some(AudioCommand::Load { .. })));
         let play = cmds
             .iter()
@@ -1184,11 +1209,11 @@ mod tests {
         n.frame(&mut scene, &mut ui, 0.016, 16.0);
         let go = scene.find("Watch").unwrap();
         n.with_scene(&mut scene, &mut ui, || {
-            iron_engine_api::screen::update(800, 600, 1.0)
+            platypus_engine_api::screen::update(800, 600, 1.0)
         });
         assert_eq!(scene.local(go).unwrap().position.x, 800.0);
         n.with_scene(&mut scene, &mut ui, || {
-            iron_engine_api::screen::quality_api::set_quality_level(2.0)
+            platypus_engine_api::screen::quality_api::set_quality_level(2.0)
         });
         assert_eq!(scene.local(go).unwrap().scale.x, 3.0);
         n.focus_changed(&mut scene, &mut ui, false, true);
@@ -1208,7 +1233,7 @@ mod tests {
         assert!(scene.find("A").is_none() && scene.find("B").is_none());
         assert!(scene.find("C").is_some());
         assert_eq!(
-            iron_ts_rt::registered_classes(),
+            platypus_ts_rt::registered_classes(),
             [
                 ("B".to_string(), false),
                 ("A".to_string(), false),
@@ -1272,10 +1297,10 @@ mod tests {
              register(Registered);
 ",
         );
-        let text = r#"{"format":"iron.scene","version":1,"name":"s","objects":[{"name":"o","components":[{"type":"Forgotten"}]}]}"#;
+        let text = r#"{"format":"platypus.scene","version":1,"name":"s","objects":[{"name":"o","components":[{"type":"Forgotten"}]}]}"#;
         let warnings = n.with_scene(&mut scene, &mut ui, || {
-            iron_scenes::load_scene(text, false).expect("the scene loads");
-            iron_scenes::take_warnings()
+            platypus_scenes::load_scene(text, false).expect("the scene loads");
+            platypus_scenes::take_warnings()
         });
         let all = warnings.join(
             "
@@ -1323,11 +1348,12 @@ register(B);
     // M9-API-806
     #[test]
     fn scene_files_load_from_the_game_folder_and_assets_changed_runs_its_closure() {
-        let dir = std::env::temp_dir().join(format!("iron-native-scene-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("platypus-native-scene-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("lvl.scene.json"),
-            r#"{"format":"iron.scene","version":1,"name":"Second","objects":[]}"#,
+            r#"{"format":"platypus.scene","version":1,"name":"Second","objects":[]}"#,
         )
         .unwrap();
         let (mut n, mut scene, mut ui) = start(
@@ -1349,7 +1375,7 @@ register(B);
         n.frame(&mut scene, &mut ui, 0.016, 16.0);
         assert_eq!(scene.local(go).unwrap().position.x, 4.0);
         n.with_scene(&mut scene, &mut ui, || {
-            iron_engine_api::assets::changed(["a.png".to_string()]);
+            platypus_engine_api::assets::changed(["a.png".to_string()]);
         });
         assert_eq!(scene.local(go).unwrap().scale.x, 5.0);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1358,11 +1384,12 @@ register(B);
     // M9-API-1512
     #[test]
     fn load_scene_async_is_a_promise_that_resolves_with_the_scene_in_the_tick_it_loads() {
-        let dir = std::env::temp_dir().join(format!("iron-native-await-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("platypus-native-await-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("lvl.scene.json"),
-            r#"{"format":"iron.scene","version":1,"name":"Second","objects":[]}"#,
+            r#"{"format":"platypus.scene","version":1,"name":"Second","objects":[]}"#,
         )
         .unwrap();
         let (mut n, mut scene, mut ui) = start(
@@ -1389,7 +1416,8 @@ register(B);
     // M9-API-1513
     #[test]
     fn load_scene_async_rejects_with_an_error_for_a_missing_file_and_a_bad_one() {
-        let dir = std::env::temp_dir().join(format!("iron-native-reject-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("platypus-native-reject-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("bad.scene.json"), "not json").unwrap();
         let (mut n, mut scene, mut ui) = start(
@@ -1422,7 +1450,7 @@ register(B);
     #[test]
     fn code_awaiting_in_a_destroyed_object_runs_on_without_touching_freed_memory() {
         // Garbage collection at every allocation, poisoned: a dangling pointer would show.
-        iron_ts_rt::ts_rt_gc_stress(true);
+        platypus_ts_rt::ts_rt_gc_stress(true);
         let (mut n, mut scene, mut ui) = start(
             "class Probe extends Component {}
              class Victim extends Component {
@@ -1455,7 +1483,7 @@ register(B);
         // The code after the await ran, saw its object gone (`exists()`), and writing to the
         // dead object did nothing.
         assert_eq!(scene.local(probe).unwrap().position.x, 2.0);
-        iron_ts_rt::ts_rt_gc_stress(false);
+        platypus_ts_rt::ts_rt_gc_stress(false);
     }
 
     // M9-API-1515
@@ -1507,17 +1535,17 @@ register(B);
         let (mut n, mut scene, mut ui) = start(&game.replace("RATE", "77"));
         n.frame(&mut scene, &mut ui, 0.016, 0.0);
         n.frame(&mut scene, &mut ui, 0.016, 50.0);
-        assert!(iron_engine_api::app::take_requests().is_empty());
+        assert!(platypus_engine_api::app::take_requests().is_empty());
         n.reload(bundle(&game.replace("RATE", "88")), &mut scene, &mut ui)
             .expect("reloads");
         // The old await would set 77 at 100 ms; the new code starts its own wait at its first frame.
         n.frame(&mut scene, &mut ui, 0.016, 60.0);
         n.frame(&mut scene, &mut ui, 0.016, 120.0);
         n.frame(&mut scene, &mut ui, 0.016, 300.0);
-        let rates: Vec<_> = iron_engine_api::app::take_requests()
+        let rates: Vec<_> = platypus_engine_api::app::take_requests()
             .into_iter()
             .filter_map(|r| match r {
-                iron_engine_api::app::Request::TargetFrameRate(r) => Some(r),
+                platypus_engine_api::app::Request::TargetFrameRate(r) => Some(r),
                 _ => None,
             })
             .collect();
@@ -1527,11 +1555,12 @@ register(B);
     // M9-API-1517
     #[test]
     fn prefab_load_is_a_promise_of_the_prefab_and_rejects_for_a_missing_file() {
-        let dir = std::env::temp_dir().join(format!("iron-native-prefab-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("platypus-native-prefab-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("thing.prefab.json"),
-            r#"{"format":"iron.prefab","version":1,"name":"Thing","root":{"id":1,"name":"Made"}}"#,
+            r#"{"format":"platypus.prefab","version":1,"name":"Thing","root":{"id":1,"name":"Made"}}"#,
         )
         .unwrap();
         let (mut n, mut scene, mut ui) = start(

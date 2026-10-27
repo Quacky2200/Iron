@@ -7,9 +7,9 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::{SET_ATTRS, SET_STYLE};
-use iron_ui::{DrawCmd, Input, Interaction, Rgba, UiEvent, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::{SET_ATTRS, SET_STYLE};
+use platypus_ui::{DrawCmd, Input, Interaction, Rgba, UiEvent, UiTree};
 
 /// Page: a focusable `opener` box at the top-left, a `fixed` box with a huge
 /// `zIndex`, and a 100x60 dialog (closed) holding two focusable boxes.

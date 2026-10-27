@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Scene files, `instantiate`, prefabs and `SceneManager` for compiled programs
-//! (`bench/scenes.ts`, `iron_scenes`). IDs are in TESTS.md (M9-TS-712..).
-use iron_api::Handle;
-use iron_scene::api::scene_api as api;
-use iron_scene::{ObjectId, Scene};
-use iron_ts_rt::{NativeHost, Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_str_new};
-use iron_ts_tests::scenes_t::*;
+//! (`bench/scenes.ts`, `platypus_scenes`). IDs are in TESTS.md (M9-TS-712..).
+use platypus_api::Handle;
+use platypus_scene::api::scene_api as api;
+use platypus_scene::{ObjectId, Scene};
+use platypus_ts_rt::{
+    NativeHost, Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_str_new,
+};
+use platypus_ts_tests::scenes_t::*;
 use serde_json::{Value, json};
 
-const ARENA: &str = r#"{"format":"iron.scene","version":1,"name":"Arena","objects":[
+const ARENA: &str = r#"{"format":"platypus.scene","version":1,"name":"Arena","objects":[
  {"id":1,"name":"Cam","position":[0,2,5],"components":[
    {"id":2,"type":"Camera","properties":{"fieldOfView":50,"backgroundColor":{"$type":"Color","value":[0.1,0.2,0.3,1]}}}]},
  {"id":3,"name":"Hero","position":[1,0,0],"scale":[2,2,2],"layer":3,"components":[
@@ -21,7 +23,7 @@ const ARENA: &str = r#"{"format":"iron.scene","version":1,"name":"Arena","object
     {"id":8,"type":"Hologram","properties":{"intensity":2}}]}]}
 ]}"#;
 
-const OTHER: &str = r#"{"format":"iron.scene","version":1,"name":"Other","objects":[
+const OTHER: &str = r#"{"format":"platypus.scene","version":1,"name":"Other","objects":[
  {"id":1,"name":"Solo","components":[{"id":2,"type":"Bobber","properties":{"height":9}}]}]}"#;
 
 fn s(text: &str) -> *mut u8 {
@@ -39,15 +41,15 @@ fn obj(raw: u64) -> ObjectId {
 
 /// A fresh world per GC mode: a scene, a host with the program's classes and no scene state.
 fn in_every_gc_mode(f: impl Fn(&mut NativeHost)) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let run = || {
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
-        iron_scenes::reset();
-        iron_engine_api::camera::reset();
-        iron_engine_api::animation::reset();
-        iron_scenes::take_warnings();
+        let _scope = platypus_scene::api::enter(&mut scene);
+        platypus_scenes::reset();
+        platypus_engine_api::camera::reset();
+        platypus_engine_api::animation::reset();
+        platypus_scenes::take_warnings();
         unsafe { ts_scf_init() };
         let mut host = NativeHost::new(classes());
         f(&mut host);
@@ -62,7 +64,7 @@ fn in_every_gc_mode(f: impl Fn(&mut NativeHost)) {
 }
 
 fn child_of(o: ObjectId) -> ObjectId {
-    iron_scene::api::with_scene(|sc| sc.children(o)[0]).unwrap()
+    platypus_scene::api::with_scene(|sc| sc.children(o)[0]).unwrap()
 }
 
 // M9-TS-712
@@ -81,7 +83,7 @@ fn a_scene_file_loads_into_objects_and_components() {
         let hero = obj(ts_scf_rootAt(1.0));
         let pal = child_of(hero);
         assert_eq!(
-            iron_scene::api::with_scene(|sc| (
+            platypus_scene::api::with_scene(|sc| (
                 sc.name(hero).unwrap().to_owned(),
                 sc.layer(hero),
                 sc.local(hero).unwrap(),
@@ -91,14 +93,17 @@ fn a_scene_file_loads_into_objects_and_components() {
             .0,
             "Hero"
         );
-        let local = iron_scene::api::with_scene(|sc| sc.local(hero).unwrap()).unwrap();
+        let local = platypus_scene::api::with_scene(|sc| sc.local(hero).unwrap()).unwrap();
         assert_eq!((local.position.x, local.scale.y), (1.0, 2.0));
-        assert_eq!(iron_scene::api::with_scene(|sc| sc.layer(hero)).unwrap(), 3);
-        assert!(!iron_scene::api::with_scene(|sc| sc.enabled(pal)).unwrap());
+        assert_eq!(
+            platypus_scene::api::with_scene(|sc| sc.layer(hero)).unwrap(),
+            3
+        );
+        assert!(!platypus_scene::api::with_scene(|sc| sc.enabled(pal)).unwrap());
         // The camera.
-        let c = iron_engine_api::camera::camera_on(cam).expect("a camera");
+        let c = platypus_engine_api::camera::camera_on(cam).expect("a camera");
         let (fov, bg) =
-            iron_engine_api::camera::with_camera(c, |d| (d.fov, d.background.b)).unwrap();
+            platypus_engine_api::camera::with_camera(c, |d| (d.fov, d.background.b)).unwrap();
         assert_eq!((fov, bg), (50.0, 0.3));
         // The program's components.
         assert_eq!(ts_scf_speedOf(hero.to_raw()), 90.0);
@@ -108,7 +113,7 @@ fn a_scene_file_loads_into_objects_and_components() {
         assert_eq!(ts_scf_buddyObject(hero.to_raw()), pal.to_raw());
         assert_eq!(ts_scf_targetObject(hero.to_raw()), pal.to_raw());
         // Hologram is not a kind of this game.
-        let warnings = iron_scenes::take_warnings();
+        let warnings = platypus_scenes::take_warnings();
         assert!(
             warnings
                 .iter()
@@ -132,7 +137,7 @@ fn a_scene_saves_and_loads_back_the_same() {
         ts_scf_loadScene(s(ARENA));
         host.settle();
         let first: Value = serde_json::from_str(&text(ts_scf_saved())).unwrap();
-        assert_eq!(first["format"], "iron.scene");
+        assert_eq!(first["format"], "platypus.scene");
         assert_eq!(first["name"], "Arena");
         let hero = &first["objects"][1];
         assert_eq!(hero["name"], "Hero");
@@ -187,7 +192,7 @@ fn instantiate_copies_an_object_tree_and_remaps_references() {
         assert_eq!(ts_scf_buddyObject(copy.to_raw()), copy_pal.to_raw());
         assert_eq!(ts_scf_targetObject(copy.to_raw()), copy_pal.to_raw());
         assert_eq!(ts_scf_bobHeight(copy_pal.to_raw()), 1.5);
-        let p = iron_scene::api::with_scene(|sc| {
+        let p = platypus_scene::api::with_scene(|sc| {
             (
                 sc.world(copy).position.x,
                 sc.world(copy).scale.x,
@@ -218,11 +223,11 @@ fn instantiate_options_and_references_outside_the_copy() {
         let pal = child_of(hero);
         let cam = obj(ts_scf_rootAt(0.0));
         let at = obj(ts_scf_copyAt(hero.to_raw(), 5.0, 6.0, 7.0));
-        let w = iron_scene::api::with_scene(|sc| sc.world(at).position).unwrap();
+        let w = platypus_scene::api::with_scene(|sc| sc.world(at).position).unwrap();
         assert_eq!((w.x, w.y, w.z), (5.0, 6.0, 7.0));
         let under = obj(ts_scf_copyUnder(pal.to_raw(), cam.to_raw()));
         assert_eq!(
-            iron_scene::api::with_scene(|sc| sc.parent(under)).unwrap(),
+            platypus_scene::api::with_scene(|sc| sc.parent(under)).unwrap(),
             Some(cam)
         );
         // Pal's spinner points at nothing; link it to Hero's, then copy Pal: the copy's buddy is
@@ -251,13 +256,12 @@ fn scenes_load_additively_unload_and_keep_objects() {
             "Arena",
             "additive does not change the active scene"
         );
-        let events = iron_scenes::take_events();
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, iron_scenes::SceneEvent::Loaded { additive: true, .. }))
-        );
-        assert!(iron_scenes::set_active(other as u32));
+        let events = platypus_scenes::take_events();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            platypus_scenes::SceneEvent::Loaded { additive: true, .. }
+        )));
+        assert!(platypus_scenes::set_active(other as u32));
         assert_eq!(text(ts_scf_activeName()), "Other");
         assert_eq!(ts_scf_rootCount(), 1.0);
         let solo = obj(ts_scf_rootAt(0.0));
@@ -268,15 +272,15 @@ fn scenes_load_additively_unload_and_keep_objects() {
         ts_scf_loadScene(s(OTHER));
         assert_eq!(ts_scf_sceneCount(), 1.0);
         assert!(
-            !iron_scene::api::with_scene(|sc| sc.contains(solo)).unwrap(),
+            !platypus_scene::api::with_scene(|sc| sc.contains(solo)).unwrap(),
             "the old scene's objects are gone"
         );
         assert!(
-            iron_scene::api::with_scene(|sc| sc.contains(hero)).unwrap(),
+            platypus_scene::api::with_scene(|sc| sc.contains(hero)).unwrap(),
             "kept"
         );
         // Unloading destroys: the destroyed objects are reported once for the host.
-        let gone = iron_engine_api::objects::process_destroyed();
+        let gone = platypus_engine_api::objects::process_destroyed();
         assert!(!gone.is_empty());
         host.destroy_on_objects(&gone.iter().map(|o| o.to_raw()).collect::<Vec<_>>());
     });
@@ -295,15 +299,15 @@ fn prefabs_place_copies() {
         assert_eq!(ts_scf_prefabOf(hero.to_raw()), 4.0, "named like the object");
         let placed = obj(ts_scf_placePrefab(hero.to_raw(), 3.0, 0.0, 0.0));
         host.settle();
-        let pos = iron_scene::api::with_scene(|sc| sc.world(placed).position.x).unwrap();
+        let pos = platypus_scene::api::with_scene(|sc| sc.world(placed).position.x).unwrap();
         assert_eq!(pos, 3.0);
         assert_eq!(ts_scf_speedOf(placed.to_raw()), 90.0);
         let pal = child_of(placed);
         assert_eq!(ts_scf_buddyObject(placed.to_raw()), pal.to_raw());
-        let json = iron_scenes::prefab_json(iron_scenes::prefab_from_object(hero));
+        let json = platypus_scenes::prefab_json(platypus_scenes::prefab_from_object(hero));
         let v: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["format"], "iron.prefab");
-        assert!(iron_scenes::prefab_from_data(&json, None).is_ok());
+        assert_eq!(v["format"], "platypus.prefab");
+        assert!(platypus_scenes::prefab_from_data(&json, None).is_ok());
     });
 }
 
@@ -337,10 +341,10 @@ fn the_example_scene_files_load() {
             .unwrap();
         let first_orb = (0..root_count)
             .map(|i| obj(ts_scf_rootAt(i as f64)))
-            .find(|o| iron_scene::api::with_scene(|sc| sc.name(*o) == Some("Orb 1")).unwrap())
+            .find(|o| platypus_scene::api::with_scene(|sc| sc.name(*o) == Some("Orb 1")).unwrap())
             .unwrap();
         assert_eq!(ts_scf_bobHeight(first_orb.to_raw()), expected);
-        let warnings = iron_scenes::take_warnings();
+        let warnings = platypus_scenes::take_warnings();
         // The engine's own rendering components load now (M9-TS-1226); only the game's are unknown.
         assert!(
             !warnings
@@ -352,10 +356,10 @@ fn the_example_scene_files_load() {
         // The camera came with its saved field of view.
         let cam = (0..root_count)
             .map(|i| obj(ts_scf_rootAt(i as f64)))
-            .find(|o| iron_engine_api::camera::camera_on(*o).is_some())
+            .find(|o| platypus_engine_api::camera::camera_on(*o).is_some())
             .unwrap();
-        let fov = iron_engine_api::camera::with_camera(
-            iron_engine_api::camera::camera_on(cam).unwrap(),
+        let fov = platypus_engine_api::camera::with_camera(
+            platypus_engine_api::camera::camera_on(cam).unwrap(),
             |d| f64::from(d.fov),
         )
         .unwrap();

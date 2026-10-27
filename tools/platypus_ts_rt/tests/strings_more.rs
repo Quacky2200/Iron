@@ -3,7 +3,7 @@
 //! Strings, part two, against JavaScript: trimming, case mapping, `at`, `repeat`, padding,
 //! `split` / `join`, and number <-> string conversion. `tests/strings_more_expected.json` is what
 //! bun answers (second half of `tests/gen_strings.ts`). IDs are in TESTS.md (M9-TS-173..).
-use iron_ts_rt::*;
+use platypus_ts_rt::*;
 use serde_json::Value;
 
 fn units(v: &Value) -> Vec<u16> {

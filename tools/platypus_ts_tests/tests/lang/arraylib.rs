@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The array library compiled by `iron_ts` (`bench/arraylib.ts`). The expected numbers are what
+//! The array library compiled by `platypus_ts` (`bench/arraylib.ts`). The expected numbers are what
 //! bun computes from the same file. Every test runs three times: normally, with a collection at
 //! every allocation, and with collection off. IDs are in TESTS.md (M9-TS-92..).
-use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::al::*;
+use platypus_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::al::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     unsafe { ts_al_init() };
     f();
@@ -146,7 +146,7 @@ fn sorting_200_items_gives_a_stable_order() {
 #[test]
 fn sorting_with_collections_during_the_comparator_loses_nothing() {
     ts_rt_gc_stress(true);
-    let before = iron_ts_rt::gc_stats().collections;
+    let before = platypus_ts_rt::gc_stats().collections;
     assert_ne!(link_anchor(), 0);
     unsafe {
         ts_al_init();
@@ -156,7 +156,7 @@ fn sorting_with_collections_during_the_comparator_loses_nothing() {
     }
     ts_rt_gc_stress(false);
     assert!(
-        iron_ts_rt::gc_stats().collections > before,
+        platypus_ts_rt::gc_stats().collections > before,
         "stress mode collected nothing"
     );
 }
@@ -166,11 +166,11 @@ fn sorting_with_collections_during_the_comparator_loses_nothing() {
 fn array_operations_on_objects_in_a_loop_survive_collections() {
     in_every_gc_mode(|| assert_eq!(unsafe { ts_al_allocating(20.0) }, 726.0));
     ts_rt_gc_stress(true);
-    let before = iron_ts_rt::gc_stats().collections;
+    let before = platypus_ts_rt::gc_stats().collections;
     unsafe { assert_eq!(ts_al_allocating(20.0), 726.0) };
     ts_rt_gc_stress(false);
     assert!(
-        iron_ts_rt::gc_stats().collections > before,
+        platypus_ts_rt::gc_stats().collections > before,
         "stress mode collected nothing"
     );
 }

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Inheritance compiled by `iron_ts` (`bench/inherit.ts`). The expected numbers are what bun
+//! Inheritance compiled by `platypus_ts` (`bench/inherit.ts`). The expected numbers are what bun
 //! computes from the same file. Every test runs three times: normally, with a collection at every
 //! allocation, and with collection off. IDs are in TESTS.md (M9-TS-120..).
-use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::inh::*;
+use platypus_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::inh::*;
 
 /// The statics are module variables, so the tests take turns and `ts_init` runs before each mode.
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     assert_ne!(link_anchor(), 0);
     unsafe { ts_inh_init() };
@@ -150,14 +150,14 @@ fn virtual_calls_instanceof_and_subclass_arrays_survive_collections() {
     in_every_gc_mode(|| assert_eq!(unsafe { ts_inh_allocating(40.0) }, 196499.0));
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     ts_rt_gc_stress(true);
-    let before = iron_ts_rt::gc_stats().collections;
+    let before = platypus_ts_rt::gc_stats().collections;
     unsafe {
         ts_inh_init();
         assert_eq!(ts_inh_allocating(40.0), 196499.0);
     }
     ts_rt_gc_stress(false);
     assert!(
-        iron_ts_rt::gc_stats().collections > before,
+        platypus_ts_rt::gc_stats().collections > before,
         "stress mode collected nothing"
     );
 }

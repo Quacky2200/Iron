@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Test harness for the native code `iron_ts` generates from `sim.ts`: the generated bindings
+//! Test harness for the native code `platypus_ts` generates from `sim.ts`: the generated bindings
 //! (layouts, tags, extern functions) plus helpers to build state from Rust.
 #![allow(non_snake_case, clippy::not_unsafe_ptr_arg_deref)] // a test harness: every pointer comes from the generated code
 
@@ -174,7 +174,7 @@ pub mod eng {
 /// Uses the demo engine API, so that every binary linking this crate also links its shims (the
 /// `engine` module's object calls them, and the linker only takes a crate that something uses).
 pub fn demo_api_anchor() -> usize {
-    iron_demo_api::link_anchor()
+    platypus_demo_api::link_anchor()
 }
 
 /// Compiled scripts driving the real scene (`bench/scene.ts`), prefix `scn_`.
@@ -249,7 +249,7 @@ pub mod uip {
     include!(concat!(env!("OUT_DIR"), "/ui_perf_bindings.rs"));
 }
 
-/// Compiled code calling `iron_engine_api` (`bench/engine2.ts`), prefix `en2_`.
+/// Compiled code calling `platypus_engine_api` (`bench/engine2.ts`), prefix `en2_`.
 #[allow(
     dead_code,
     non_camel_case_types,
@@ -276,24 +276,27 @@ pub mod sdf {
 /// Keeps the engine API shims linked into every binary: the `engine2` module's object calls them.
 pub fn engine_api_anchor() -> usize {
     [
-        iron_engine_api::color::color_api::iron_Color_white as *const () as usize,
-        iron_engine_api::time::time_api::iron_Time_time as *const () as usize,
-        iron_engine_api::input::input_api::iron_input_getKey as *const () as usize,
-        iron_engine_api::gizmos::gizmos_api::iron_Gizmos_clear as *const () as usize,
-        iron_engine_api::camera::camera_api::iron_Camera_attach as *const () as usize,
-        iron_engine_api::screen::screen_api::iron_Screen_width as *const () as usize,
-        iron_engine_api::screen::quality_api::iron_QualitySettings_vSyncCount as *const () as usize,
-        iron_engine_api::color::color_api::iron_Color_lerp as *const () as usize,
-        iron_engine_api::audio::audio_api::iron_audio_load as *const () as usize,
-        iron_scenes::scene_manager_api::iron_SceneManager_loadScene as *const () as usize,
-        iron_physics_api::physics_api::iron_Physics_step as *const () as usize,
-        iron_physics_api::components::components_api::iron_Rigidbody_attach as *const () as usize,
-        iron_physics_api::joints::joints_api::iron_FixedJoint_attach as *const () as usize,
-        iron_physics_api::physics2d::physics2d_api::iron_Rigidbody2D_attach as *const () as usize,
-        iron_render_api::mesh_api::iron_Mesh_create as *const () as usize,
-        iron_render_api::texture_api::iron_Texture_load as *const () as usize,
-        iron_render_api::light_api::iron_Light_attach as *const () as usize,
-        iron_engine_api::window::window_api::iron_Window_create as *const () as usize,
+        platypus_engine_api::color::color_api::platypus_Color_white as *const () as usize,
+        platypus_engine_api::time::time_api::platypus_Time_time as *const () as usize,
+        platypus_engine_api::input::input_api::platypus_input_getKey as *const () as usize,
+        platypus_engine_api::gizmos::gizmos_api::platypus_Gizmos_clear as *const () as usize,
+        platypus_engine_api::camera::camera_api::platypus_Camera_attach as *const () as usize,
+        platypus_engine_api::screen::screen_api::platypus_Screen_width as *const () as usize,
+        platypus_engine_api::screen::quality_api::platypus_QualitySettings_vSyncCount as *const ()
+            as usize,
+        platypus_engine_api::color::color_api::platypus_Color_lerp as *const () as usize,
+        platypus_engine_api::audio::audio_api::platypus_audio_load as *const () as usize,
+        platypus_scenes::scene_manager_api::platypus_SceneManager_loadScene as *const () as usize,
+        platypus_physics_api::physics_api::platypus_Physics_step as *const () as usize,
+        platypus_physics_api::components::components_api::platypus_Rigidbody_attach as *const ()
+            as usize,
+        platypus_physics_api::joints::joints_api::platypus_FixedJoint_attach as *const () as usize,
+        platypus_physics_api::physics2d::physics2d_api::platypus_Rigidbody2D_attach as *const ()
+            as usize,
+        platypus_render_api::mesh_api::platypus_Mesh_create as *const () as usize,
+        platypus_render_api::texture_api::platypus_Texture_load as *const () as usize,
+        platypus_render_api::light_api::platypus_Light_attach as *const () as usize,
+        platypus_engine_api::window::window_api::platypus_Window_create as *const () as usize,
     ]
     .iter()
     .fold(0, |a, p| a ^ p)
@@ -302,14 +305,14 @@ pub fn engine_api_anchor() -> usize {
 #[used]
 static ENGINE_API: fn() -> usize = engine_api_anchor;
 
-/// Keeps the UI bridge (`iron_ts_ui`) linked into every binary of this crate: the `ui` module's
+/// Keeps the UI bridge (`platypus_ts_ui`) linked into every binary of this crate: the `ui` module's
 /// object calls its `ts_ui_*` functions.
 #[used]
-static UI_BRIDGE: fn() -> usize = iron_ts_ui::link_anchor;
+static UI_BRIDGE: fn() -> usize = platypus_ts_ui::link_anchor;
 
-/// Uses `iron_scene`, so that binaries linking this crate also link its `Scene` API shims.
+/// Uses `platypus_scene`, so that binaries linking this crate also link its `Scene` API shims.
 pub fn scene_anchor() -> usize {
-    iron_scene::Scene::new().len()
+    platypus_scene::Scene::new().len()
 }
 
 /// Strings in compiled code (`bench/strings.ts`), prefix `str_`.
@@ -1092,7 +1095,7 @@ pub mod gap {
     include!(concat!(env!("OUT_DIR"), "/gap_bindings.rs"));
 }
 
-use iron_ts_rt::{
+use platypus_ts_rt::{
     Array, Closure, ts_rt_arr_new, ts_rt_arr_push, ts_rt_closure_new, ts_rt_gc_stress,
     ts_rt_obj_new, ts_rt_root_add,
 };
@@ -1110,12 +1113,12 @@ pub fn root<T>(p: *mut T) -> *mut T {
     p
 }
 
-/// `IRON_TS_GC=stress` collects at every allocation of generated code and poisons freed memory
+/// `PLATYPUS_TS_GC=stress` collects at every allocation of generated code and poisons freed memory
 /// (a missing root then crashes loudly); `off` never collects on its own.
 pub fn gc_mode_from_env() {
-    match std::env::var("IRON_TS_GC").as_deref() {
+    match std::env::var("PLATYPUS_TS_GC").as_deref() {
         Ok("stress") => ts_rt_gc_stress(true),
-        Ok("off") => iron_ts_rt::ts_rt_gc_enable(false),
+        Ok("off") => platypus_ts_rt::ts_rt_gc_enable(false),
         _ => {}
     }
 }

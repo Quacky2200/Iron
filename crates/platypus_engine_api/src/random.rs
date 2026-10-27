@@ -7,8 +7,8 @@
 //! The vector-valued members (`insideUnitCircle`, `onUnitSphere`, `insideUnitSphere`, `rotation`)
 //! draw their numbers in the order `random.ts` does.
 
-use iron_api::{Handle, iron_api};
-use iron_math::{Q, V2, V3};
+use platypus_api::{Handle, platypus_api};
+use platypus_math::{Q, V2, V3};
 use std::cell::RefCell;
 
 /// mulberry32: 32 bits of state.
@@ -127,7 +127,7 @@ fn seed_of(seed: f64) -> Mulberry {
     }
 }
 
-#[iron_api(namespace = "Rng", quickjs, handles(Rng = RngRef), values(
+#[platypus_api(namespace = "Rng", quickjs, handles(Rng = RngRef), values(
     Vector2 = V2 [x: f64, y: f64],
     Vector3 = V3 [x: f64, y: f64, z: f64],
     Quaternion = Q [x: f64, y: f64, z: f64, w: f64]))]
@@ -208,7 +208,7 @@ pub mod rng_api {
     }
 }
 
-#[iron_api(namespace = "Random", quickjs, values(
+#[platypus_api(namespace = "Random", quickjs, values(
     Vector2 = V2 [x: f64, y: f64],
     Vector3 = V3 [x: f64, y: f64, z: f64],
     Quaternion = Q [x: f64, y: f64, z: f64, w: f64]))]

@@ -3,7 +3,7 @@
 //! The script API of the animation controller and the `Animator` component: `AnimationParameter`,
 //! `AnimationCondition`, `AnimationTransition`, `AnimationBlendTree`, `AnimationNode` (a state),
 //! `AnimationController`, the chained `AnimationBuilder` that makes them, and `Animator`. The design
-//! is `docs/research/iron-native-animation.md` (section 8); the original is `AnimatorController` and
+//! is `docs/research/platypus-native-animation.md` (section 8); the original is `AnimatorController` and
 //! `Animator` in `js/engine/src/animation.ts`.
 //!
 //! Differences: the pieces are classes (and a builder) instead of object literals, a parameter
@@ -12,13 +12,13 @@
 //! text (`toJson()`).
 
 use crate::animation::ClipRef;
-use iron_animation::{
+use platypus_animation::{
     AnimParameter, AnimatorPlayer, BlendChild, BlendTree, Condition, ConditionMode, Controller,
     ControllerId, CullingMode, Motion, Node, NodeId, Param, ParameterType, Transition,
     TransitionId, with_world,
 };
-use iron_api::{Handle, iron_api};
-use iron_scene::ObjectId;
+use platypus_api::{Handle, platypus_api};
+use platypus_scene::ObjectId;
 use std::cell::RefCell;
 
 macro_rules! handle {
@@ -51,15 +51,15 @@ fn non_empty(s: &str) -> Option<String> {
     (!s.is_empty()).then(|| s.to_string())
 }
 
-fn clip_id(c: ClipRef) -> iron_animation::ClipId {
-    iron_animation::ClipId(c.0 as u32)
+fn clip_id(c: ClipRef) -> platypus_animation::ClipId {
+    platypus_animation::ClipId(c.0 as u32)
 }
 
 fn nan_or(x: Option<f64>) -> f64 {
     x.unwrap_or(f64::NAN)
 }
 
-#[iron_api(namespace = "AnimationParameter", quickjs, handles(AnimationParameter = ParameterRef))]
+#[platypus_api(namespace = "AnimationParameter", quickjs, handles(AnimationParameter = ParameterRef))]
 pub mod animation_parameter_api {
     use super::*;
 
@@ -89,7 +89,7 @@ pub mod animation_parameter_api {
         pub fn name(self) -> String {
             with_world(|w| {
                 w.graphs
-                    .parameter(iron_animation::ParameterId(self.0 as u32))
+                    .parameter(platypus_animation::ParameterId(self.0 as u32))
                     .map(|p| p.name.clone())
                     .unwrap_or_default()
             })
@@ -100,7 +100,7 @@ pub mod animation_parameter_api {
         pub fn type_name(self) -> String {
             with_world(|w| {
                 w.graphs
-                    .parameter(iron_animation::ParameterId(self.0 as u32))
+                    .parameter(platypus_animation::ParameterId(self.0 as u32))
                     .map(|p| p.ty.name().to_string())
                     .unwrap_or_default()
             })
@@ -111,7 +111,7 @@ pub mod animation_parameter_api {
         pub fn default_value(self) -> f64 {
             with_world(|w| {
                 w.graphs
-                    .parameter(iron_animation::ParameterId(self.0 as u32))
+                    .parameter(platypus_animation::ParameterId(self.0 as u32))
                     .and_then(|p| p.default)
                     .map_or(f64::NAN, Param::number)
             })
@@ -119,7 +119,7 @@ pub mod animation_parameter_api {
     }
 }
 
-#[iron_api(namespace = "AnimationCondition", quickjs, handles(AnimationCondition = ConditionRef))]
+#[platypus_api(namespace = "AnimationCondition", quickjs, handles(AnimationCondition = ConditionRef))]
 pub mod animation_condition_api {
     use super::*;
 
@@ -144,7 +144,7 @@ pub mod animation_condition_api {
         pub fn parameter(self) -> String {
             with_world(|w| {
                 w.graphs
-                    .condition(iron_animation::ConditionId(self.0 as u32))
+                    .condition(platypus_animation::ConditionId(self.0 as u32))
                     .map(|c| c.parameter.clone())
                     .unwrap_or_default()
             })
@@ -154,7 +154,7 @@ pub mod animation_condition_api {
         pub fn mode(self) -> String {
             with_world(|w| {
                 w.graphs
-                    .condition(iron_animation::ConditionId(self.0 as u32))
+                    .condition(platypus_animation::ConditionId(self.0 as u32))
                     .map(|c| c.mode.name().to_string())
                     .unwrap_or_default()
             })
@@ -164,7 +164,7 @@ pub mod animation_condition_api {
         pub fn threshold(self) -> f64 {
             with_world(|w| {
                 w.graphs
-                    .condition(iron_animation::ConditionId(self.0 as u32))
+                    .condition(platypus_animation::ConditionId(self.0 as u32))
                     .map_or(f64::NAN, |c| nan_or(c.threshold))
             })
         }
@@ -173,7 +173,7 @@ pub mod animation_condition_api {
             with_world(|w| {
                 if let Some(c) = w
                     .graphs
-                    .condition_mut(iron_animation::ConditionId(self.0 as u32))
+                    .condition_mut(platypus_animation::ConditionId(self.0 as u32))
                 {
                     c.threshold = none_if_nan(v);
                 }
@@ -186,7 +186,7 @@ fn transition<R>(t: TransitionRef, f: impl FnOnce(&mut Transition) -> R) -> Opti
     with_world(|w| w.graphs.transition_mut(TransitionId(t.0 as u32)).map(f))
 }
 
-#[iron_api(namespace = "AnimationTransition", quickjs, handles(
+#[platypus_api(namespace = "AnimationTransition", quickjs, handles(
     AnimationTransition = TransitionRef, AnimationCondition = ConditionRef))]
 pub mod animation_transition_api {
     use super::*;
@@ -262,7 +262,7 @@ pub mod animation_transition_api {
         pub fn add_condition(self, condition: ConditionRef) {
             transition(self, |t| {
                 t.conditions
-                    .push(iron_animation::ConditionId(condition.0 as u32))
+                    .push(platypus_animation::ConditionId(condition.0 as u32))
             });
         }
 
@@ -282,7 +282,7 @@ pub mod animation_transition_api {
     }
 }
 
-#[iron_api(namespace = "AnimationBlendTree", quickjs, handles(
+#[platypus_api(namespace = "AnimationBlendTree", quickjs, handles(
     AnimationBlendTree = BlendRef, AnimationClip = ClipRef))]
 pub mod animation_blend_tree_api {
     use super::*;
@@ -305,7 +305,7 @@ pub mod animation_blend_tree_api {
         pub fn parameter(self) -> String {
             with_world(|w| {
                 w.graphs
-                    .blend(iron_animation::BlendId(self.0 as u32))
+                    .blend(platypus_animation::BlendId(self.0 as u32))
                     .map(|b| b.parameter.clone())
                     .unwrap_or_default()
             })
@@ -315,7 +315,10 @@ pub mod animation_blend_tree_api {
         #[optional(time_scale)]
         pub fn add_child(self, clip: ClipRef, threshold: f64, time_scale: f64) {
             with_world(|w| {
-                if let Some(b) = w.graphs.blend_mut(iron_animation::BlendId(self.0 as u32)) {
+                if let Some(b) = w
+                    .graphs
+                    .blend_mut(platypus_animation::BlendId(self.0 as u32))
+                {
                     b.children.push(BlendChild {
                         clip: clip_id(clip),
                         threshold,
@@ -329,7 +332,7 @@ pub mod animation_blend_tree_api {
         pub fn child_count(self) -> f64 {
             with_world(|w| {
                 w.graphs
-                    .blend(iron_animation::BlendId(self.0 as u32))
+                    .blend(platypus_animation::BlendId(self.0 as u32))
                     .map_or(0.0, |b| b.children.len() as f64)
             })
         }
@@ -340,7 +343,7 @@ fn node<R>(n: NodeRef, f: impl FnOnce(&mut Node) -> R) -> Option<R> {
     with_world(|w| w.graphs.node_mut(NodeId(n.0 as u32)).map(f))
 }
 
-#[iron_api(namespace = "AnimationNode", quickjs, handles(
+#[platypus_api(namespace = "AnimationNode", quickjs, handles(
     AnimationNode = NodeRef, AnimationClip = ClipRef, AnimationBlendTree = BlendRef))]
 pub mod animation_node_api {
     use super::*;
@@ -368,7 +371,7 @@ pub mod animation_node_api {
                 with_world(|w| {
                     w.graphs.add_node(Node {
                         name: name.to_string(),
-                        motion: Motion::Blend(iron_animation::BlendId(tree.0 as u32)),
+                        motion: Motion::Blend(platypus_animation::BlendId(tree.0 as u32)),
                         speed: None,
                         speed_parameter: None,
                     })
@@ -483,7 +486,7 @@ pub struct TransitionData {
     pub offset: Option<f64>,
 }
 
-#[iron_api(namespace = "AnimationController", quickjs, handles(
+#[platypus_api(namespace = "AnimationController", quickjs, handles(
     AnimationController = ControllerRef, AnimationParameter = ParameterRef,
     AnimationNode = NodeRef, AnimationTransition = TransitionRef, AnimationBuilder = BuilderRef,
     AnimationClip = ClipRef),
@@ -537,7 +540,7 @@ pub mod animation_controller_api {
         pub fn add_parameter(self, parameter: ParameterRef) {
             controller(self, |c| {
                 c.parameters
-                    .push(iron_animation::ParameterId(parameter.0 as u32))
+                    .push(platypus_animation::ParameterId(parameter.0 as u32))
             });
         }
 
@@ -718,7 +721,7 @@ struct BuilderState {
     /// The transition `when`, `exitTime`, `duration` and `offset` apply to.
     transition: Option<TransitionId>,
     /// The blend tree `child` adds to.
-    blend: Option<iron_animation::BlendId>,
+    blend: Option<platypus_animation::BlendId>,
 }
 
 thread_local! {
@@ -733,7 +736,7 @@ fn builder<R>(b: BuilderRef, f: impl FnOnce(&mut BuilderState) -> R) -> Option<R
     })
 }
 
-#[iron_api(namespace = "AnimationBuilder", quickjs, handles(
+#[platypus_api(namespace = "AnimationBuilder", quickjs, handles(
     AnimationBuilder = BuilderRef, AnimationController = ControllerRef, AnimationClip = ClipRef))]
 pub mod animation_builder_api {
     use super::*;
@@ -746,7 +749,8 @@ pub mod animation_builder_api {
             if let Some(c) = builder(self, |b| b.controller) {
                 with_world(|w| {
                     if let Some(c) = w.graphs.controller_mut(c) {
-                        c.parameters.push(iron_animation::ParameterId(p.0 as u32));
+                        c.parameters
+                            .push(platypus_animation::ParameterId(p.0 as u32));
                     }
                 });
             }
@@ -781,7 +785,7 @@ pub mod animation_builder_api {
             let tree = BlendRef::create(parameter);
             let n = NodeRef::blend(name, tree);
             if let Some(c) = builder(self, |b| {
-                b.blend = Some(iron_animation::BlendId(tree.0 as u32));
+                b.blend = Some(platypus_animation::BlendId(tree.0 as u32));
                 b.controller
             }) {
                 controller(ControllerRef(u64::from(c.0)), |c| {
@@ -870,7 +874,7 @@ pub mod animation_builder_api {
 
 fn animator<R>(
     a: AnimatorRef,
-    f: impl FnOnce(&mut AnimatorPlayer, &iron_animation::World) -> R,
+    f: impl FnOnce(&mut AnimatorPlayer, &platypus_animation::World) -> R,
 ) -> Option<R> {
     with_world(|w| {
         let mut p = w.animators.get((a.0 as usize).wrapping_sub(1))?.clone();
@@ -888,7 +892,7 @@ pub struct StateSummary {
     pub length: f64,
 }
 
-#[iron_api(namespace = "Animator", quickjs, handles(
+#[platypus_api(namespace = "Animator", quickjs, handles(
     Animator = AnimatorRef, AnimationController = ControllerRef, GameObject = ObjectId),
     enums(
         /// What an `Animator` does while none of its object's renderers was drawn (by a camera or
@@ -988,8 +992,8 @@ pub mod animator_api {
                 let i = (self.0 as usize).checked_sub(1)?;
                 let mut p = w.animators.get(i)?.clone();
                 let mut events = Vec::new();
-                iron_scene::api::with_scene(|scene| {
-                    let mut sink = iron_animation::RegistrySink { other: None };
+                platypus_scene::api::with_scene(|scene| {
+                    let mut sink = platypus_animation::RegistrySink { other: None };
                     p.animate_seen(w, scene, &mut sink, delta_time, &mut events, true);
                 });
                 w.animators[i] = p;
@@ -1118,13 +1122,13 @@ pub mod animator_api {
 mod tests {
     use super::*;
     use crate::animation::AnimationRef;
-    use iron_animation::CullingType;
+    use platypus_animation::CullingType;
 
     // M5-ANI-12
     #[test]
     fn culling_modes_are_set_on_the_components_and_list_their_objects() {
         crate::animation::reset();
-        let mut scene = iron_scene::Scene::new();
+        let mut scene = platypus_scene::Scene::new();
         let (a, b) = (scene.create("a"), scene.create("b"));
         let animator = AnimatorRef::attach(a);
         let animation = AnimationRef::attach(b);
@@ -1141,8 +1145,8 @@ mod tests {
     /// Never seen.
     struct Unseen;
 
-    impl iron_animation::Visibility for Unseen {
-        fn visible(&mut self, _: &iron_scene::Scene, _: ObjectId) -> bool {
+    impl platypus_animation::Visibility for Unseen {
+        fn visible(&mut self, _: &platypus_scene::Scene, _: ObjectId) -> bool {
             false
         }
     }
@@ -1152,11 +1156,11 @@ mod tests {
     fn update_poses_a_culled_or_disabled_animator_by_hand() {
         use crate::animation::{ClipRef, CurveRef};
         crate::animation::reset();
-        let mut scene = iron_scene::Scene::new();
+        let mut scene = platypus_scene::Scene::new();
         let go = scene.create("Figure");
         let arm = scene.create("Arm");
         scene.set_parent(arm, Some(go), false);
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         // A looping 2 s clip moving the arm's x from 0 to 2, an event at 1 s.
         let clip = ClipRef::create("swing");
         clip.set_wrap_mode("loop");
@@ -1172,7 +1176,7 @@ mod tests {
         let animator = AnimatorRef::attach(go);
         animator.set_controller(controller);
         animator.set_culling_mode(CullingMode::CullCompletely);
-        let x = || iron_scene::api::with_scene(|s| s.local(arm).unwrap().position.x).unwrap();
+        let x = || platypus_scene::api::with_scene(|s| s.local(arm).unwrap().position.x).unwrap();
         let frame = |dt| {
             crate::animation::update_culled(dt, None, &mut Unseen);
         };

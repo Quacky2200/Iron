@@ -53,7 +53,7 @@ def write_glb(path, positions, normals, uvs, indices, material):
     while len(blob) % 4:
         blob.append(0)
     doc = {
-        "asset": {"version": "2.0", "generator": "Iron make_models.py"},
+        "asset": {"version": "2.0", "generator": "Platypus make_models.py"},
         "scene": 0,
         "scenes": [{"nodes": [0]}],
         "nodes": [{"name": path.stem, "mesh": 0}],

@@ -1,51 +1,58 @@
-# iron-build: building a game with iron_ts
+# platypus-build: building a game with platypus_ts
 
-`tools/iron_build` (binary `iron-build`) builds a game folder written in TypeScript for `iron_app` with **no bun and no
+`tools/platypus_build` (binary `platypus-build`) builds a game folder written in TypeScript for `platypus_app` with **no bun and no
 `node_modules`**. Only `tsc` is optional, for type checking while developing. It lives in the `tools` workspace:
 
 ```
 cd tools
-cargo run -p iron_build -- build ../examples/hello
+cargo run -p platypus_build -- build ../examples/hello
 ```
 
 | Command | What |
 |---|---|
 | `build <game> [--no-tsc] [--aot] [--cook] [--no-compile] [--no-prebuild]` | Builds `<game>/dist`. |
-| `types [<game>] [--out file]` | Writes `<game>/types/iron.d.ts` (type declarations for `tsc`). |
+| `types [<game>] [--out file]` | Writes `<game>/types/platypus.d.ts` (type declarations for `tsc`). |
 | `assets <folder>... [--prune]` | Writes `.meta` GUID files (the port of `scripts/assets.ts`). |
 | `dev <game> [--no-tsc]` | Rebuilds on every change and signals the running app. |
-| `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/iron.d.ts` (`bun run typecheck:examples`). |
+| `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/platypus.d.ts` (`bun run typecheck:examples`). |
 | `init [<dir>] [flags]` | Writes a default `project.json` (see "`project.json`"). |
 | `package <game> [flags]` | One executable for the game: `dist/<exe>.exe` (see "Packaging a single executable"). |
 
 ## QuickJS is deprecated (`--force`)
 
-`iron_app` runs games compiled by `iron-build build` (`dist/game.irbundle`, native). A folder (or bundle file) that has only the
-QuickJS form (`dist/game.js`, from bun) is **deprecated**: `iron_app` logs the deprecation note (stderr and `Player.log`) and exits
+`platypus_app` runs games compiled by `platypus-build build` (`dist/game.pbundle`, native). A folder (or bundle file) that has only the
+QuickJS form (`dist/game.js`, from bun) is **deprecated**: `platypus_app` logs the deprecation note (stderr and `Player.log`) and exits
 with a non-zero status without running, unless `--force` is given, which logs the note once and runs it as before. This holds for
-`--screenshot` runs too. A folder with both runs the native bundle, with no note. `iron_editor` is itself a QuickJS program (`editor/`)
+`--screenshot` runs too. A folder with both runs the native bundle, with no note. `platypus_editor` is itself a QuickJS program (`editor/`)
 and counts as forced: it logs the note once and runs. Nothing is removed: the QuickJS crates, `js/` packages and the Rust tests that use
 them as libraries keep working (removal plan: TODO.md, "QuickJS deprecated").
 
 ## `project.json`: the project file
 
-A game's product metadata lives in `project.json` in the game folder (`iron_core::project`, shared by `iron-build` and `iron_app`).
-`project.json` is the **only** game config: a game needs no `package.json` and no `node_modules` (the examples have none; `iron-build`
-builds them, and plain `tsc` cannot check them since the engine names are globals from the generated `types/iron.d.ts`: use
-`iron-build check --tsc`). A folder with a `project.json` is a game: `iron-build check <dir>` and the examples test find games that way.
+A game's product metadata lives in `project.json` in the game folder (`platypus_core::project`, shared by `platypus-build` and `platypus_app`).
+`project.json` is the **only** game config: a game needs no `package.json` and no `node_modules` (the examples have none; `platypus-build`
+builds them, and plain `tsc` cannot check them since the engine names are globals from the generated `types/platypus.d.ts`: use
+`platypus-build check --tsc`). A folder with a `project.json` is a game: `platypus-build check <dir>` and the examples test find games that way.
 A leading `//` comment line is allowed; otherwise plain JSON.
 
 - **`name` is the only required field.** Without it (or with `"name": ""`) the load fails with an error naming the file.
   `{ "name": "hello" }` is a complete project.
 - **An omitted field takes its default silently**: the title is `${firstName}'s Game`, the company `${firstName}'s Company`, the license
   `private`, the version `0.1.0`, and so on (table below).
-- **An explicitly empty string stays empty** (`"company": ""`: no default is substituted). `iron-build build` and `iron-build package` print
+- **An explicitly empty string stays empty** (`"company": ""`: no default is substituted). `platypus-build build` and `platypus-build package` print
   one warning per empty metadata field (`title`, `company`, `identifier`, `version`, `description`, `copyright`, `license`), e.g.
-  `warning: C:\Games\fox\project.json: "company" is empty (the exe's version info will have no company)`. `iron-build check` never does.
+  `warning: C:\Games\fox\project.json: "company" is empty (the exe's version info will have no company)`. `platypus-build check` never does.
   `package` also warns (it never blocks) when `company`, `copyright` or `license` were left out and so still hold their defaults.
-- **Deprecated fallback:** a folder with no `project.json` but a `package.json` with an `iron` section still works: the loader reads that
+- **Deprecated fallback:** a folder with no `project.json` but a `package.json` with a `platypus` section still works: the loader reads that
   section (without templates) plus the file's `name`, `version`, `author` and `description` (and the old defaults: title `${name}`, empty
   company, version `0.0.0`). It is found as a game by `check` too. With a `project.json`, `package.json` is not read at all.
+- **Names from before the rename to Platypus** (the engine was called Iron) are still read: a `package.json` section called `iron`
+  (`platypus` wins when both exist), `dist/game.irbundle` when there is no `game.pbundle` (the host logs a deprecation note),
+  scene and prefab files with `"format": "iron.scene"` / `"iron.prefab"`, `import .. from "@iron/engine"` (erased like
+  `@platypus/*`; `tsc` only knows the new names), the saved quality choice under PlayerPrefs `iron.quality`, and the settings
+  folder `Iron/<title>` of a game without a company when no `Platypus/<title>` exists yet. The binary magics of packaged
+  games (`IRONPAYL`), packs (`IRPK`) and cooked files (`IRTX`, `IRMD`) are unchanged, so old packs and caches still open.
+  Environment variables, crate names and the cooked folder (`.platypus/`, was `.iron/`) have no fallback. Tests `M9-REN-01..04`.
 
 ```json
 {
@@ -67,7 +74,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
 | `name` | **required** (in the deprecated `package.json` fallback: its `name`, else the folder name) | project name (`${name}`); not shown to players |
 | `title` | `${firstName}'s Game` | window title (the initial value; the game can change it at run time), `ProductName`, settings folder |
 | `company` | `${firstName}'s Company` | `CompanyName`, settings folder |
-| `identifier` | `dev.iron.${name}` | reverse-DNS id (`Application.identifier`); sanitised: each dot part keeps letters, digits, `-`, `_`, empty parts go, a part starting with a digit gets `_` |
+| `identifier` | `dev.platypus.${name}` | reverse-DNS id (`Application.identifier`); sanitised: each dot part keeps letters, digits, `-`, `_`, empty parts go, a part starting with a digit gets `_` |
 | `version` | `0.1.0` | `FileVersion`, `ProductVersion` |
 | `description` | `${title}` | `FileDescription` |
 | `license` | `private` | `private` (all rights reserved), `custom`, or an SPDX id: MIT, Apache-2.0, GPL-2.0-only/-or-later, GPL-3.0-only/-or-later, LGPL-2.1-only, LGPL-3.0-only, AGPL-3.0-only, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Unlicense, CC0-1.0, CC-BY-4.0, CC-BY-SA-4.0, Zlib, BSL-1.0, 0BSD (case-insensitive; `UNLICENSED` means `private`). Anything else is an error naming the file and line |
@@ -78,7 +85,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
 | `main` | first of `src/main.tsx`, `src/main.ts`, `src/index.tsx`, ... | entry file |
 | `startScene` | none | scene loaded at start |
 | `prebuild` | none | a command run in the game folder before compiling (`cmd /C` on Windows, `sh -c` elsewhere), e.g. to write generated sources (`md-reader`: `bun gen-docs.ts`); a failing command stops the build; `--no-prebuild` skips it |
-| `layers`, `quality`, `display` | none | layer names, quality levels and default, window mode and size (as before in `iron`) |
+| `layers`, `quality`, `display` | none | layer names, quality levels and default, window mode and size (as before in `platypus`) |
 | `fps`, `runInBackground` | on / false | FPS counter, `Application.runInBackground` |
 | `dataDir`, `include`, `exclude` | `data`, `["assets/**"]`, none | data folder name beside the exe; what `package` copies to it: paths, folders or globs (`*` inside one path part, `**` across parts, `?`; case-sensitive; a plain folder means `folder/**`), minus the `exclude` globs. An `include` entry that matches no file is a warning |
 | `windows`, `macos`, `linux`, `android`, `ios` | none | an object whose keys replace the top-level ones when building for that platform |
@@ -111,7 +118,7 @@ templates nor the person who built it. Non-private licenses: the license text (`
 and the PE version info gets `Comments` = `License: <id>`. `custom` without a file is an error; an SPDX license without a file only
 sets the metadata.
 
-`iron-build init [<dir>] [--name n] [--title t] [--company c] [--description d] [--icon file.png|ico] [--version v]
+`platypus-build init [<dir>] [--name n] [--title t] [--company c] [--description d] [--icon file.png|ico] [--version v]
 [--identifier id] [--license private|MIT|...] [--force]` writes the default `project.json` of the example above (the values you give
 replace only their own line), refuses to overwrite one without `--force`, creates a minimal `src/main.ts` (a `Hello` component
 logging `hello`) when the folder has no `src/`, adds `dist/` and `*.meta` to a `.gitignore` that already exists, copies `--icon`
@@ -130,14 +137,14 @@ as the templates resolve now:
 
 ## What a build does
 
-1. **Config.** `project.json` (deprecated fallback: `package.json` `iron`, see "`project.json`") -> `title`, `company`, `identifier`, `main`; `tsconfig.json` (comments and trailing commas allowed)
+1. **Config.** `project.json` (deprecated fallback: `package.json` `platypus`, see "`project.json`") -> `title`, `company`, `identifier`, `main`; `tsconfig.json` (comments and trailing commas allowed)
    -> `include` (default `src`) and `compilerOptions.jsx`. The entry is `main`, else the first of `src/main.tsx`, `src/main.ts`,
    `src/index.tsx`, `src/index.ts`, `main.tsx`, `main.ts`.
-2. **Module graph** (`iron_ts::modules`, below): the entry and every file it imports become one source text.
+2. **Module graph** (`platypus_ts::modules`, below): the entry and every file it imports become one source text.
 3. **`tsc --noEmit`** with the generated config of "Type declarations" below, when a `tsconfig.json` exists and `tsc` is found
    (`node_modules/.bin/tsc` in the game folder or any parent, else on the `PATH`). A missing `tsc` is only a note; a failing one
    stops the build. `--no-tsc` skips it (`check` skips it unless `--tsc`; `check --full` prints every error).
-4. **Compile.** The bundle is compiled with all engine manifests (the lists of `iron_native::manifests()` plus `Ui`), so lowering
+4. **Compile.** The bundle is compiled with all engine manifests (the lists of `platypus_native::manifests()` plus `Ui`), so lowering
    and code generation errors show up now. Errors name `file:line` of the original file. `--aot` also writes `dist/game.o` and
    `dist/game_bindings.rs` (the object file for a release build that links the game into the executable).
 5. **Stylesheets.** `import "./x.css"` lines are collected in import order into `dist/game.css` (`css.rs`): `@import` is
@@ -147,26 +154,26 @@ as the templates resolve now:
 6. **Assets.** `.meta` files are made for new assets (`assets.rs`; existing ones and their GUIDs are kept; a moved file keeps its
    GUID when the move is unambiguous). Every string literal of the program that names an existing asset file under the game folder
    (`Texture.load("assets/x.png")`, `Model.load`, `loadFont`, `scenes/*.scene.json`, sounds) is copied with its `.meta` to the same
-   relative path in `dist/`. Paths follow `iron_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then
-   runs `iron <game> --cook` (the engine's cooker) when `target/{release,debug}/iron_app` is found.
-7. **`dist/game.irbundle`**, written atomically (temporary file and rename).
+   relative path in `dist/`. Paths follow `platypus_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then
+   runs `platypus <game> --cook` (the engine's cooker) when `target/{release,debug}/platypus` is found.
+7. **`dist/game.pbundle`**, written atomically (temporary file and rename).
 
 ## Dynamic asset paths and `dist/assets.plan`
 
 The build also reads the code's template literals and `+` chains with a literal folder first
-(`iron_ts::assetpaths`, an oxc visitor). Each hole becomes `*` (one path part): `` `assets/sfx/${n}.${ext}` `` is `assets/sfx/*.*`,
+(`platypus_ts::assetpaths`, an oxc visitor). Each hole becomes `*` (one path part): `` `assets/sfx/${n}.${ext}` `` is `assets/sfx/*.*`,
 `"assets/" + name + ".png"` is `assets/*.png`. A pattern needs a literal folder before the first hole and a file name with a dot
-that ends in `*` or an asset extension. `iron-build build` prints one `note:` per pattern (`src/sfx.ts:60: dynamic path
+that ends in `*` or an asset extension. `platypus-build build` prints one `note:` per pattern (`src/sfx.ts:60: dynamic path
 assets/sfx/*.* reaches 79 file(s): ...`), warns about a pattern that reaches no asset file and about a whole asset-looking
-literal (`"assets/a.png"`) that names no file, and records the patterns and their matches in `game.irbundle` as `patterns`
+literal (`"assets/a.png"`) that names no file, and records the patterns and their matches in `game.pbundle` as `patterns`
 (`glob`, `at`, `matches`). `package` copies the matches too, so a narrowed `include` still ships what the code builds.
 
 `dist/assets.plan` lists, one per line, the files a packaged build would hold (include minus exclude, named assets, `startScene`,
-pattern matches, `dist/` copies from CSS). In the dev loop `iron_app` reads it and `iron_core::resolve_asset` logs once per path
+pattern matches, `dist/` copies from CSS). In the dev loop `platypus_app` reads it and `platypus_core::resolve_asset` logs once per path
 `asset "assets/x.wav" loaded, but a packaged build would not include it (add it to "include" in project.json)` for a file that
 exists but is not in the plan.
 
-## `game.irbundle`
+## `game.pbundle`
 
 JSON, `format` 1:
 
@@ -177,15 +184,15 @@ JSON, `format` 1:
   "patterns": [{ "glob": "assets/sfx/*.*", "at": "src/sfx.ts:60", "matches": ["assets/sfx/a.wav"] }] }
 ```
 
-`source` has no `@iron/*` or `react` imports: the host compiles it with the engine manifests and the `Ui` manifest. A host reads
+`source` has no `@platypus/*` or `react` imports: the host compiles it with the engine manifests and the `Ui` manifest. A host reads
 `format`, `entry`, `source`, `title`, `company`, `identifier`, `css` (relative to `dist/`, or `null`) and `assets`.
 
-## Module graph (`tools/iron_ts/src/modules.rs`)
+## Module graph (`tools/platypus_ts/src/modules.rs`)
 
-`iron_ts::modules::bundle(entry)` (and `compile_program`) writes the files, dependencies first, into one text, by *editing byte
+`platypus_ts::modules::bundle(entry)` (and `compile_program`) writes the files, dependencies first, into one text, by *editing byte
 ranges* of the originals (comments and JSX stay as written; erased statements keep their newlines):
 
-- `import ... from "@iron/..."` and `"react"` are erased. Names come from the manifests and the ambient prelude; an aliased import
+- `import ... from "@platypus/..."` and `"react"` are erased. Names come from the manifests and the ambient prelude; an aliased import
   (`import { Color as C }`) is renamed to the real name (`Color`). Default and namespace imports of libraries are erased and the name
   is left as it is.
 - Relative imports (`./x`, `../y.ts`, `./dir` -> `dir/index.ts`; `.js` specifiers try `.ts`/`.tsx`) are followed, including
@@ -195,8 +202,8 @@ ranges* of the originals (comments and JSX stay as written; erased statements ke
   `const __default_<path> = ...`.
 - Bare imports (`"foo"`, `"foo/sub"`) are files of the `modules/` folder next to the entry ("Modules and packages" below).
 - Top-level names that two files declare are renamed in the dependency (`helper` -> `helper_2`); the entry's names win. Names the
-  engine declares as globals (`Random`, `Vector2`, `Color`, ...) count as taken too (`iron_build` passes the names of
-  `types/iron.d.ts`), so a module's own `class Random` becomes `Random_2` there and in what imports it, and the engine's `Random`
+  engine declares as globals (`Random`, `Vector2`, `Color`, ...) count as taken too (`platypus_build` passes the names of
+  `types/platypus.d.ts`), so a module's own `class Random` becomes `Random_2` there and in what imports it, and the engine's `Random`
   elsewhere stays the engine's.
   Shorthand properties keep their key (`{ count }` -> `{ count: n_2 }`).
 - Top-level statements run in source order in the program's `init`, together with the top-level `const`/`let` and expression
@@ -223,7 +230,7 @@ looked up in the `modules/` folder next to the entry file (`src/modules/` for `s
 | `from "foo/sub/file"` | `src/modules/foo/sub/file.ts`, `src/modules/foo/sub/file/index.ts` |
 
 The same rules as relative imports apply (`.js` specifiers try `.ts`, `index` files, re-exports, `import type`), files inside a module
-may import each other relatively or by name, and a file reached twice is in the bundle once. `@iron/*` and `react` are always erased
+may import each other relatively or by name, and a file reached twice is in the bundle once. `@platypus/*` and `react` are always erased
 and win over a module of that name. `import "./x.css"` is unaffected. `examples/hello` has `src/modules/greet.ts`, imported as
 `import { greeting } from "greet"`.
 
@@ -235,7 +242,7 @@ import { lerp } from "mathx";
 ```
 
 **Using a TypeScript package:** copy its `.ts` source into `src/modules/<name>/` (keep its licence file next to it) and import it by
-`<name>`. It compiles only if its code is in the subset iron_ts supports (typed function bodies, classes, generics, no dynamic
+`<name>`. It compiles only if its code is in the subset platypus_ts supports (typed function bodies, classes, generics, no dynamic
 features). What will not compile:
 
 - CommonJS / UMD packages (`require`, `module.exports`), and packages that ship only `.js` plus `.d.ts` (the compiler needs types
@@ -257,21 +264,21 @@ entry's folder), so `tsc` resolves the same files as the compiler. For an editor
 { "compilerOptions": { "paths": { "*": ["./src/modules/*"] } } }
 ```
 
-(all the examples have it). **Hot reload:** `iron-build dev` watches the game folder recursively (`dist`, `node_modules`, `types` and
+(all the examples have it). **Hot reload:** `platypus-build dev` watches the game folder recursively (`dist`, `node_modules`, `types` and
 dot folders aside), so a change in `src/modules` rebuilds and reloads like any other source.
 
 What was decided *not* to build (`node_modules` resolution, a packages section in `project.json`, licence generation, fetching from
-registries, `any`, native plugins) is in `docs/research/iron-external-packages.md`.
+registries, `any`, native plugins) is in `docs/research/platypus-external-packages.md`.
 
-## Type declarations (`iron-build types`)
+## Type declarations (`platypus-build types`)
 
-**A game needs no import.** Every engine and UI name is a TypeScript **global** in `types/iron.d.ts`: `Vector3`, `GameObject`,
-`Component`, `register`, `Physics`, `Time`, `input`, `audio`, `Screen`, `createRoot`, `Text`, `useState`, `IronStyle`, ... The compiler
+**A game needs no import.** Every engine and UI name is a TypeScript **global** in `types/platypus.d.ts`: `Vector3`, `GameObject`,
+`Component`, `register`, `Physics`, `Time`, `input`, `audio`, `Screen`, `createRoot`, `Text`, `useState`, `PlatypusStyle`, ... The compiler
 resolves them from the manifests and the ambient prelude whether or not the file imports anything. The old forms still work:
-`import { Vector3 } from "@iron/engine"`, `import { useState } from "react"` and `import { createRoot } from "@iron/react"` type-check
+`import { Vector3 } from "@platypus/engine"`, `import { useState } from "react"` and `import { createRoot } from "@platypus/react"` type-check
 (the file also declares those three modules, each as `export import X = globalThis.X` re-exports) and the compiler erases them.
 
-The file (`iron_ts::types_dts`, one deterministic file, about 3000 lines) is, in order:
+The file (`platypus_ts::types_dts`, one deterministic file, about 3000 lines) is, in order:
 
 1. **The manifests** as top-level `declare class` / `declare namespace` / `declare type`: handle and value classes with constructors
    and fields, statics, methods, properties, namespaces; callbacks as function types; no doc comments (the manifests have none).
@@ -280,14 +287,14 @@ The file (`iron_ts::types_dts`, one deterministic file, about 3000 lines) is, in
    handle class (one with `static create`) gets constructors `new Material()`, `new Material({ color })`, `new GameObject(name, { .. })`
    and `Class.create({ .. })` with its writable properties as keys. A component handle (it has `gameObject`) also gets `transform` and
    `getComponent(Class)`. A parameter list never has a required parameter after an optional one (the later ones become optional).
-2. **The UI declarations** (`tools/iron_ts/src/ui_dts.rs`, from the tables of `crates/iron_ui/src/tables`): `IronStyle` (one entry per style
-   property: name, TypeScript type, doc; `iron_ui` tests that `apply_style` applies each and that nothing it applies is missing), the
-   event interfaces and `IronProps` (attributes and `on*` props with their event types), `JSX.IntrinsicElements` and the
+2. **The UI declarations** (`tools/platypus_ts/src/ui_dts.rs`, from the tables of `crates/platypus_ui/src/tables`): `PlatypusStyle` (one entry per style
+   property: name, TypeScript type, doc; `platypus_ui` tests that `apply_style` applies each and that nothing it applies is missing), the
+   event interfaces and `PlatypusProps` (attributes and `on*` props with their event types), `JSX.IntrinsicElements` and the
    `Text`/`Span`/`Input`/`TextArea`/`Image`/`List`/`Dialog` components (from the element table), the hooks and `createRoot` (raw
-   TypeScript signatures kept as data next to the tables), `IronElement` (the `UiNode` class of the `Ui` manifest) and `console`. The
+   TypeScript signatures kept as data next to the tables), `PlatypusElement` (the `UiNode` class of the `Ui` manifest) and `console`. The
    same tables write the compiled side (`StyleValue`, `StyleEntry`, the `UiEvent` class whose fields read the event slots of
    `UiEvent::script_args`) and decide which event type an `on*` prop listens to (`onChange` is `input`, `onFocus` is `focusin`).
-3. **The compiler built-ins** (`tools/iron_ts/src/builtins.rs`): one entry per declaration the compiler itself gives a program, with
+3. **The compiler built-ins** (`tools/platypus_ts/src/builtins.rs`): one entry per declaration the compiler itself gives a program, with
    its signature and doc and the code that lowers it named next to it: the `Component` base class (written from the hooks the host
    calls, `components::HOOKS` / `hook_param`), `register`, `property`, `ComponentClass`, `ClassOf`, the timers (`setTimeout`,
    `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask`), `GameObjectOptions` / `InstantiateObjectOptions` and the
@@ -299,46 +306,46 @@ The file (`iron_ts::types_dts`, one deterministic file, about 3000 lines) is, in
    namespace is a `function` / `const`); a constructor replaces the generated ones. The `<Value>Like` types (`Vector3Like`, ...)
    are written for the value classes the declarations name.
    No `.d.ts`, no `include_str!` of one and no Python file under `tools/` is written by hand: the guard `M9-TS-3100`
-   (`tools/iron_build/tests/generated_dts.rs`) is strict, and `M9-TS-3101` checks that no built-in declares an engine name again and
+   (`tools/platypus_build/tests/generated_dts.rs`) is strict, and `M9-TS-3101` checks that no built-in declares an engine name again and
    that every class a built-in member belongs to exists.
-4. **The three modules** (`@iron/engine`, `@iron/react`, `react`) as re-exports.
+4. **The three modules** (`@platypus/engine`, `@platypus/react`, `react`) as re-exports.
 
-`iron-build build` passes the file to `tsc` itself: it writes `dist/.tsc/iron.d.ts` and `dist/.tsc/tsconfig.json` (which extends the
+`platypus-build build` passes the file to `tsc` itself: it writes `dist/.tsc/platypus.d.ts` and `dist/.tsc/tsconfig.json` (which extends the
 game's `tsconfig.json`, keeps its `include`, lists the declarations in `files`, and sets `moduleDetection: force` so top-level names of
 a file never merge with the engine globals, and `jsx: preserve` so no `react/jsx-runtime` is needed) and runs `tsc -p` on it. A game
-folder therefore needs **no `node_modules`, no `@iron/*` or `react` packages and no `types` entry in its `tsconfig.json`**; `tsc` is
+folder therefore needs **no `node_modules`, no `@platypus/*` or `react` packages and no `types` entry in its `tsconfig.json`**; `tsc` is
 found in `node_modules/.bin` of the game folder or a parent, in the checkout the tool was built from, or on the `PATH`. For an editor
-(which reads `tsconfig.json`, not our generated one) run `iron-build types` and add `"types"` to `include` and
+(which reads `tsconfig.json`, not our generated one) run `platypus-build types` and add `"types"` to `include` and
 `"moduleDetection": "force"` to `compilerOptions`. A top-level name of a game that is also an engine name (`class Scene`) shadows the
 engine's inside that file; the compiler lowers one program, so such a name is renamed or avoided (the examples do).
 
-## The dev loop (`iron-build dev`)
+## The dev loop (`platypus-build dev`)
 
 The watcher polls modification times (200 ms; no dependency) of everything in the game folder except `dist`, `node_modules`,
-`target`, `types` and dot folders, waits 100 ms for a second save, rebuilds, and writes `dist/.iron-reload` **after**
-`dist/game.irbundle`:
+`target`, `types` and dot folders, waits 100 ms for a second save, rebuilds, and writes `dist/.platypus-reload` **after**
+`dist/game.pbundle`:
 
 ```json
 { "seq": 7, "ok": true }
 { "seq": 8, "ok": false, "error": "text of the build error" }
 ```
 
-The app watches that one file; a new `seq` means reload `game.irbundle` (on `ok: false` log the error and keep the old code; the old
+The app watches that one file; a new `seq` means reload `game.pbundle` (on `ok: false` log the error and keep the old code; the old
 bundle is untouched). Hot reload keeps state the way the QuickJS reload does (scene save/restore, `onReload`).
 
-## Packaging a single executable (`iron-build package`)
+## Packaging a single executable (`platypus-build package`)
 
 ```
-iron-build package <game> [--host iron_app.exe] [--out file] [--no-build] [--no-tsc]
+platypus-build package <game> [--host platypus.exe] [--out file] [--no-build] [--no-tsc]
     [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d]
     [--icon file.png|.ico] [--sign-cmd "signtool sign /fd sha256 ... {exe}"] [--data-dir name] [--no-data]
     [--packs [--report]]
 ```
 
 It builds the game (unless `--no-build`), then writes `<game>/dist/<exe>.exe` (no extension on other systems): a copy of the
-engine host (`iron_app`) with the game's **icon and version info** written into its PE resources (Windows hosts only) and the game's
+engine host (`platypus_app`) with the game's **icon and version info** written into its PE resources (Windows hosts only) and the game's
 **code appended as a payload**, and copies the **assets into a `data/` folder beside it**. Assets are never embedded: games have
-gigabytes of them. The result runs from any folder as long as `data/` is next to it; `iron_app <game folder>` is unchanged.
+gigabytes of them. The result runs from any folder as long as `data/` is next to it; `platypus <game folder>` is unchanged.
 
 ```
 dist/                      (or the folder of --out)
@@ -352,11 +359,11 @@ dist/                      (or the folder of --out)
 The command prints the exe size, the number and size of the embedded files, and the number and total size of the copied asset
 files. `--data-dir <name>` is one plain folder name (no separators, not hidden); the exe is told the name (`dataDir` in its
 payload's `project.json`). `--no-data` is for a build that packs the assets itself: nothing is copied, the exe still looks for the
-folder (or `--data` / `$IRON_DATA`). Nothing is deleted from an existing data folder; files with the same path are overwritten.
+folder (or `--data` / `$PLATYPUS_DATA`). Nothing is deleted from an existing data folder; files with the same path are overwritten.
 
-### `--packs`: assets in packs (opt-in, phase 1 of `docs/research/iron-virtual-fs-plan.md`)
+### `--packs`: assets in packs (opt-in, phase 1 of `docs/research/platypus-virtual-fs-plan.md`)
 
-`iron-build package <game> --packs` writes the data files as `.irpk` packs (`crates/iron_pack`, LZ4 by default; `--codec zstd` uses the `zstd` crate, one frame per 256 KiB chunk so ranges still read per chunk; `iron-build pack-info` shows the codec of every entry, `index.json` the pack set's) instead of loose files:
+`platypus-build package <game> --packs` writes the data files as `.ppk` packs (`crates/platypus_pack`, LZ4 by default; `--codec zstd` uses the `zstd` crate, one frame per 256 KiB chunk so ranges still read per chunk; `platypus-build pack-info` shows the codec of every entry, `index.json` the pack set's) instead of loose files:
 
 ```
 data/
@@ -377,21 +384,21 @@ The build prints, per pack, the entries by reason (`assets.dat: 157 entries (cod
 files of each reason; `--report` lists every file. The output is deterministic (the same files give the same bytes) and an old
 `assets.dat`, `scene-*.dat` or `index.json` in the folder is removed first. Textures and models stay in **source form** for now (no
 cooker in the build; a note says so); both cooked and source forms is the decision for later, with a note to revisit cooked only.
-`iron-build pack-info <file.dat>` lists a pack: version, id, entries, codec totals and one row per entry (kind, size, stored size,
+`platypus-build pack-info <file.dat>` lists a pack: version, id, entries, codec totals and one row per entry (kind, size, stored size,
 codec, GUID, path).
 
-**A running game reads them** (phase 2, see "Where the assets are read from"): `iron_app` mounts `data/index.json` through `Vfs`. The
-default stays loose; flipping it is a TODO (`tools/iron_ts/TODO.md`, asset packs). `emoji` with `--packs`: one `assets.dat`, 157
+**A running game reads them** (phase 2, see "Where the assets are read from"): `platypus_app` mounts `data/index.json` through `Vfs`. The
+default stays loose; flipping it is a TODO (`tools/platypus_ts/TODO.md`, asset packs). `emoji` with `--packs`: one `assets.dat`, 157
 entries, 6.41 MB raw, 5.93 MB on disk.
 
-**The host** is `--host`, else `$IRON_HOST`, else the newest of `iron_app` next to `iron-build` and `target/{release,debug}/iron_app`
+**The host** is `--host`, else `$PLATYPUS_HOST`, else the newest of `platypus` next to `platypus-build` and `target/{release,debug}/platypus`
 found going up from the game folder and the current folder, by modified time (a stale release build no longer wins over a fresh
 debug one; it lacked payload support and died with a missing `game.js`). `package` prints `host: <path>` first. A host that already carries a payload is stripped first, so
 a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much smaller: ship release.
 
 **Metadata** (command line, then the `project.json` field, then the default; the table lists the flags, the fields are in "`project.json`"):
 
-| Field | `iron.` key / flag | Falls back to | Used for |
+| Field | `platypus.` key / flag | Falls back to | Used for |
 |---|---|---|---|
 | title | `title` / `--title` | `${firstName}'s Game` | window title, `ProductName`, settings folder |
 | exe | `exe` / `--exe` | the title (made file-name safe; `.exe` is dropped) | file name, `InternalName`, `OriginalFilename` |
@@ -400,15 +407,15 @@ a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much
 | copyright | `copyright` / `--copyright` | `Copyright (c) <company>` (empty when the company is empty) | `LegalCopyright` |
 | description | `description` / `--description` | the title | `FileDescription` (what Task Manager shows) |
 | icon | `icon` / `--icon` | none (the host's own icon stays) | exe icon; window and taskbar icon at run time |
-| identifier | `identifier` | `dev.iron.<name>` | `Application.identifier` |
+| identifier | `identifier` | `dev.platypus.<name>` | `Application.identifier` |
 
 The icon is a `.png` (any size; centred on a transparent square when not square) or an `.ico`. A PNG is converted in-process
 (`icon.rs`, `image` crate) to an `.ico` of 16, 32, 48 and 256 px, and `pe.rs` writes it with the `editpe` crate (the whole `.rsrc`
 section is parsed and rebuilt; no `rc.exe`, no other tool). The version info is a VS_VERSIONINFO block with the string table
-`040904b0` (US English, Unicode) and the matching `Translation`. The same icon file goes into the payload (`iron-icon.png|ico`) and
+`040904b0` (US English, Unicode) and the matching `Translation`. The same icon file goes into the payload (`platypus-icon.png|ico`) and
 `icon` of the payload's `project.json` points to it, so the window and taskbar icon come from the same file.
 
-**The payload** (`iron_core::payload`, format version 1) is appended after the host (and after the resource edit):
+**The payload** (`platypus_core::payload`, format version 1) is appended after the host (and after the resource edit):
 
 ```
 [host exe][entry data...][table of contents][32-byte trailer]
@@ -420,11 +427,11 @@ Entries are deflate-compressed (`flate2`, stored when it does not help or under 
 read. Paths are relative, `/` separated and checked (`payload::safe_path`: no `..`, empty or `.` parts, drive letters, backslashes);
 a table with an unsafe path is refused. **What goes in** (paths relative to the game folder):
 
-- `dist/game.irbundle` and `dist/game.css` (CSS with its small `data:` URLs inlined by the build).
+- `dist/game.pbundle` and `dist/game.css` (CSS with its small `data:` URLs inlined by the build).
 - `project.json`, the resolved project (so `Application`, the window, the icon and the settings folder agree with the exe's
   version info) plus `dataDir` (the folder name) and `dataRequired` (see below), a small `package.json` (name, version,
-  description, npm `license`), and `iron-icon.*`.
-- **Essentials**: the assets the bundle itself names (`assets` in `game.irbundle`, no `.meta`), but **only if together they are at
+  description, npm `license`), and `platypus-icon.*`.
+- **Essentials**: the assets the bundle itself names (`assets` in `game.pbundle`, no `.meta`), but **only if together they are at
   most 256 KiB** (`ESSENTIALS_LIMIT`, all or none: one byte over and none is embedded). A large file is never embedded.
 
 Everything else is **not** in the exe: textures, models, sounds, fonts, scene files, `.meta` files. Those are the **data files**,
@@ -441,41 +448,41 @@ copied to `data/` with the same relative paths:
 `dataRequired` is **false** when the game has no data files (hello) or when the embedded essentials are all of them (a `.meta`
 file does not count): such a game also starts without a `data/` folder. Otherwise it is true.
 
-**How the exe finds its payload.** At startup `iron_app` (`payload.rs`, called from `parse_args` in `main.rs`; not in `iron_editor`)
-opens its own executable and looks for the trailer at the end of the file (a plain `iron_app` has none: `Ok(None)`, normal start). If
+**How the exe finds its payload.** At startup `platypus_app` (`payload.rs`, called from `parse_args` in `main.rs`; not in `platypus_editor`)
+opens its own executable and looks for the trailer at the end of the file (a plain `platypus_app` has none: `Ok(None)`, normal start). If
 the file is a signed PE it also looks right before the Authenticode certificate table (data directory 4, 8-byte aligned), so a payload
 survives signing. The payload's table of contents is hashed into an id; the files are extracted once into
-`<per-user cache>/Iron/games/<exe name>-<id>/` (`%LOCALAPPDATA%`, `~/Library/Caches`, `$XDG_CACHE_HOME` or `~/.cache`) beside a
-`.iron-extracted` marker (extracted to a temporary folder and renamed, so a crash or a second instance never sees half a game), and
+`<per-user cache>/Platypus/games/<exe name>-<id>/` (`%LOCALAPPDATA%`, `~/Library/Caches`, `$XDG_CACHE_HOME` or `~/.cache`) beside a
+`.platypus-extracted` marker (extracted to a temporary folder and renamed, so a crash or a second instance never sees half a game), and
 the game runs with that folder as its **code folder** (bundle, CSS, `project.json`, icon): `--screenshot` and `--frames` still apply,
 any folder argument is ignored. A new build has a new id, extracts again and removes the older folders of the same exe name. An
 unchanged game starts at once. The extracted folder is small (code only), so a second copy costs almost nothing.
 
-**Where the assets are read from.** The *asset root* (`crates/iron_app/src/asset_root.rs`, `AssetRoot`, `locate_data`) is separate
+**Where the assets are read from.** The *asset root* (`crates/platypus_app/src/asset_root.rs`, `AssetRoot`, `locate_data`) is separate
 from the code folder; a game folder run has the same folder for both, as before. For a packaged exe the first of these that exists:
 
 1. `--data <folder>` on the command line (an error if it is not a folder),
-2. `$IRON_DATA` (same),
+2. `$PLATYPUS_DATA` (same),
 3. `<folder of the exe>/<dataDir>` (default `data`),
 4. the extracted code folder, but only if `dataRequired` is false (the essentials are there; hello needs nothing).
 
 Otherwise the program stops with an error that names the folder it looked for and the two overrides, e.g. "the game's data folder
-was not found (looked for `C:\Games\mygame\data`). Put the `data` folder that `iron-build package` wrote beside the program, or
-pass --data <folder> or set IRON_DATA." (to the log and stderr; the exe is a GUI program, so start it from a terminal to see it).
+was not found (looked for `C:\Games\mygame\data`). Put the `data` folder that `platypus-build package` wrote beside the program, or
+pass --data <folder> or set PLATYPUS_DATA." (to the log and stderr; the exe is a GUI program, so start it from a terminal to see it).
 Textures, models, sounds, fonts, scenes, `url()`s and `@import`s in the CSS (rebased onto the CSS file's place in the code folder, so
 `dist/font.ttf` is found as `data/dist/font.ttf`), GUID `.meta` files and the asset watcher all use the asset root. `Application`,
 the window title and icon and the PlayerPrefs folder come from the code folder's `project.json` (the identifier), not from the data.
 
-**The file system over that folder** (`asset_root::mount`, `iron_pack::Vfs`; `docs/research/iron-virtual-fs-plan.md` phase 2). At
-start `iron_app` mounts, bottom to top: the folder itself only when it holds no packs (a game folder in the dev loop, or a loose
+**The file system over that folder** (`asset_root::mount`, `platypus_pack::Vfs`; `docs/research/platypus-virtual-fs-plan.md` phase 2). At
+start `platypus_app` mounts, bottom to top: the folder itself only when it holds no packs (a game folder in the dev loop, or a loose
 `data/` from an older package), else `assets.dat` and then every scene pack, from `index.json` (any `assets.dat` / `scene-*.dat` are
 found by name when there is no manifest). All packs are mounted at start, never per scene, so a script can load a path that only
-another scene's pack holds. Lookups go from the top: scene data, then `assets.dat`, then the folder. `iron_core::set_asset_fs`
-installs it for every loader; `iron_core::read_asset(root, path)` (which falls back to `root/path` when none is installed, as
+another scene's pack holds. Lookups go from the top: scene data, then `assets.dat`, then the folder. `platypus_core::set_asset_fs`
+installs it for every loader; `platypus_core::read_asset(root, path)` (which falls back to `root/path` when none is installed, as
 tests do) is the one call textures, sprites, models (and the textures a glTF names), sounds, fonts, `url()` / `@import` in CSS, SVG
 images, cursors, scenes, prefabs and `Assets`/`asset.readText` make. A streamed sound (`audio.load(path, true)`) is read in 256 KiB
-windows through the pack's chunk table (`Vfs::open_range`, `iron_core::RangeRead`), so a big compressed sound is never inflated whole.
-The asset database scripts see (`__iron_info.assets`) lists the `.meta` assets of the folder and of the packs. Packs are read-only:
+windows through the pack's chunk table (`Vfs::open_range`, `platypus_core::RangeRead`), so a big compressed sound is never inflated whole.
+The asset database scripts see (`__platypus_info.assets`) lists the `.meta` assets of the folder and of the packs. Packs are read-only:
 the asset watcher runs only over a folder.
 
 Errors name where the lookup went, top to bottom: `asset "assets/sfx/boom.wav" not found in scene data, assets.dat or folder`
@@ -486,19 +493,19 @@ ignores case (Windows, macOS) a loose load of `assets/SFX/Boom.wav` still works 
 (`M9-API-1143`) fires on loads only, not on listing.
 
 `--sign-cmd "<command>"` runs after the file is complete: `{exe}` is replaced by the quoted path and the command goes through
-`cmd /S /C` (Windows) or `sh -c`. A failing command fails the package. Nothing is signed by Iron itself; see
-`docs/research/iron-code-signing.md` (order: resources and payload first, sign last).
+`cmd /S /C` (Windows) or `sh -c`. A failing command fails the package. Nothing is signed by Platypus itself; see
+`docs/research/platypus-code-signing.md` (order: resources and payload first, sign last).
 
-**Not done** (also in `tools/iron_ts/TODO.md`): macOS `.app` bundle with `Info.plist` and `.icns`, Linux `.desktop` file and icon
+**Not done** (also in `tools/platypus_ts/TODO.md`): macOS `.app` bundle with `Info.plist` and `.icns`, Linux `.desktop` file and icon
 theme entry, the X11/Wayland window class (winit's default is used), the Windows `AppUserModelID` for taskbar grouping, a Windows
-application manifest (DPI awareness, long paths), cooked assets (`.iron/cooked`) in the payload, an optional in-memory file system.
+application manifest (DPI awareness, long paths), cooked assets (`.platypus/cooked`) in the payload, an optional in-memory file system.
 
 ### The same bundle on iOS and Android (plan only)
 
-Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--aot` object `dist/game.o` + `game_bindings.rs`),
+Nothing here is built yet. The inputs are the same: `game.pbundle` (or the `--aot` object `dist/game.o` + `game_bindings.rs`),
 `game.css`, assets and the metadata of the table above.
 
-- **iOS** forbids writable-executable memory, so the Cranelift JIT that `iron_app` uses to compile `game.irbundle` at start cannot run:
+- **iOS** forbids writable-executable memory, so the Cranelift JIT that `platypus_app` uses to compile `game.pbundle` at start cannot run:
   the game must be built with `--aot` (an object file for `aarch64-apple-ios`, linked into the app binary with the engine host as a
   static library) and the bundle's source is not shipped at all. The app is an `.app` folder (host binary, `dist/`, `assets/`,
   `Info.plist` from the metadata: `CFBundleName` = title, `CFBundleIdentifier` = identifier, `CFBundleShortVersionString` = version,
@@ -511,23 +518,23 @@ Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--a
   and the version fills `versionName` / `versionCode`. Packaging (`aapt2`, zip alignment, `apksigner` or bundletool) can be done
   from Rust or by calling the SDK tools; signing needs a keystore.
 - Both need the `--aot` path to cover all of the engine API first (today the examples run through the JIT) and a mobile windowing and
-  input layer in `iron_platform`.
+  input layer in `platypus_platform`.
 
-## Benchmarks (`iron --bench`, `iron-build bench`)
+## Benchmarks (`platypus --bench`, `platypus-build bench`)
 
-`iron <game> --bench` runs a game with **no OS window**: the main window is an offscreen texture
-(`iron_app/src/frame_target.rs`), the platform is `iron_platform::FakePlatform` (secondary windows virtual, as in screenshot
+`platypus <game> --bench` runs a game with **no OS window**: the main window is an offscreen texture
+(`platypus_app/src/frame_target.rs`), the platform is `platypus_platform::FakePlatform` (secondary windows virtual, as in screenshot
 runs), and there is no vsync or frame cap. Each frame waits for the GPU work of the frame before it (like a swapchain queueing one
 frame), so GPU time counts. It warms up, measures, and writes JSON (`--bench-out file`, else stdout): fps, mean / median / p95 /
 p99 / worst frame ms, and the mean split into `script` (game code: hooks, timers, the UI it renders), `sync` (a compiled game's
 `sync_native_render`: animation, splines, cameras, registries into `WorldViews`; 0 under QuickJS, which does that in script),
 `render` (layout and draw list, world, GPU wait) and `other`; start-up (process start to the first frame), load time and peak
 working set. Finer splits: `syncParts` (where `sync_native_render` goes: resources, line renderers, settings, each kind of
-component, panels, texts, ...; `iron_app/src/sync_profile.rs`), `startupParts` (log and asset mount, bundle read, asset index,
-UI tree and fonts, the compiler's phases from `iron_ts::timing`: engine manifests, source rewrites, oxc parse, type inference and
+component, panels, texts, ...; `platypus_app/src/sync_profile.rs`), `startupParts` (log and asset mount, bundle read, asset index,
+UI tree and fonts, the compiler's phases from `platypus_ts::timing`: engine manifests, source rewrites, oxc parse, type inference and
 lowering, throw analysis, IR passes, Cranelift code generation, JIT linking; the program's top level and starting components; the
 headless GPU device, renderer set-up and the first frame; plus the program's and prelude's line counts), `opsApplyMs` (applying
-what scripts queued: React commits and a QuickJS game's ops, part of `other`) and `opMarshalMs` (QuickJS: copying `__iron_op`
+what scripts queued: React commits and a QuickJS game's ops, part of `other`) and `opMarshalMs` (QuickJS: copying `__platypus_op`
 arguments out of JavaScript, part of `script`). The timers run only in bench runs. Flags: `--warmup N` (120), `--frames N` (600), `--fixed-dt s` (every frame advances the game's clock by exactly
 `s`, so runs are comparable whatever their speed), `--size WxH`, `--bench-shots dir` (a PNG after each segment, to check the
 input did what it should), `--force` for a QuickJS bundle as usual.
@@ -539,15 +546,15 @@ frames count from the segment's start (its warm-up included); kinds are `key` (`
 `button`; `count` and `every` repeat one. They are sent as the platform sends the OS's (`window_input`), so both backends see
 the same input. The examples' scripts are in `tools/bench/inputs/<name>.json` (the example sources stay unchanged).
 
-`iron-build bench <examples> [--only a,b] [--base main] [--no-quickjs] [--no-host-build] [--frames N] [--timeout s]` builds the
-release host (`cargo build --release -p iron_app`), every example natively, and the base branch's QuickJS originals:
+`platypus-build bench <examples> [--only a,b] [--base main] [--no-quickjs] [--no-host-build] [--frames N] [--timeout s]` builds the
+release host (`cargo build --release -p platypus_app`), every example natively, and the base branch's QuickJS originals:
 `git archive <base>` into a folder of the OS temp dir (deleted afterwards), `bun install`, then each example's own
 `bun run build`, with files git does not hold (fonts kept out of git, downloaded models) copied in from the branch's folder. It
 runs both with `--fixed-dt 1/60 --size 1280x720` and writes `docs/benchmarks/results.json` and the generated part of
 `docs/benchmarks.md` (between its `bench:begin` / `bench:end` markers; text around them is kept). To re-run:
 
 ```bash
-cd tools && cargo run -q -p iron_build -- bench ../examples
+cd tools && cargo run -q -p platypus_build -- bench ../examples
 ```
 
 ## Tests
@@ -556,15 +563,15 @@ cd tools && cargo run -q -p iron_build -- bench ../examples
 game with scripted keys.
 
 `M9-API-1000..1005` the payload format (round trip, no trailer, unsafe paths, damage and duplicates, extraction and id, a payload before
-a certificate table), `M9-API-1010..1011` the runtime side (`iron_app/src/payload.rs`), `M9-TS-2400..2402` metadata, `2410..2412` file
+a certificate table), `M9-API-1010..1011` the runtime side (`platypus_app/src/payload.rs`), `M9-TS-2400..2402` metadata, `2410..2412` file
 collection and a full package with the sign hook, `2420..2421` icon conversion, `2430` the PE resource round trip, `2440` (ignored
-unless asked: `cargo test -p iron_build -- --ignored standalone`, needs a built host and a GPU) the standalone run,
-`M9-API-1200..1205` the asset root and mounting (`iron_app/src/asset_root.rs`), `M9-API-1145..1149` lookup order and the not-found message, the case check, ranged reads, sounds and SVGs from packs, `M9-API-1144` zstd chunks, `M9-TS-2550..2553` globs, dynamic path inference, include/exclude and the packaged emoji run, `2554..2559` the pack build (placement, determinism, byte-identical read back, case), `M9-API-1143` the dev `assets.plan` warning, `M9-TS-2600..2603` the payload/data split, the data-folder name and
+unless asked: `cargo test -p platypus_build -- --ignored standalone`, needs a built host and a GPU) the standalone run,
+`M9-API-1200..1205` the asset root and mounting (`platypus_app/src/asset_root.rs`), `M9-API-1145..1149` lookup order and the not-found message, the case check, ranged reads, sounds and SVGs from packs, `M9-API-1144` zstd chunks, `M9-TS-2550..2553` globs, dynamic path inference, include/exclude and the packaged emoji run, `2554..2559` the pack build (placement, determinism, byte-identical read back, case), `M9-API-1143` the dev `assets.plan` warning, `M9-TS-2600..2603` the payload/data split, the data-folder name and
 `--data-dir` / `--no-data`, `2610` (ignored, `-- --ignored standalone_data`) a packaged game reading `data/` and the missing-folder error.
 
-`M9-API-1300..1318` the project loader (`iron_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license, required `name`, silent defaults, empty fields: `1321..1322`), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples (found by `project.json`, none has a `package.json`), `2722` and `2724` the empty-field warnings (build, package; not check), `2723` package default warnings, `2725` game discovery.
+`M9-API-1300..1318` the project loader (`platypus_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license, required `name`, silent defaults, empty fields: `1321..1322`), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples (found by `project.json`, none has a `package.json`), `2722` and `2724` the empty-field warnings (build, package; not check), `2723` package default warnings, `2725` game discovery.
 
 `M9-TS-1800..1806` module graph, `1810` declarations, `1830..1831` `.meta` files, `1840` CSS bundling, `1850..1852` config and a
-full build, `1860..1861` the dev status file and the change fingerprint. `bun run typecheck:examples` (`iron-build check ../examples --tsc`, from `tools`)
+full build, `1860..1861` the dev status file and the change fingerprint. `bun run typecheck:examples` (`platypus-build check ../examples --tsc`, from `tools`)
 builds all 45 examples and prints a table; failures there are missing language or engine features, listed in
-`docs/research/iron-examples-on-iron-ts.md`.
+`docs/research/platypus-examples-on-platypus-ts.md`.

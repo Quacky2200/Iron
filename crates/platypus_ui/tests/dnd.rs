@@ -7,9 +7,9 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{NodeId, Value};
-use iron_ui::opcodes::SET_ATTRS;
-use iron_ui::{DrawCmd, Input, Interaction, UiEvent, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_ui::opcodes::SET_ATTRS;
+use platypus_ui::{DrawCmd, Input, Interaction, UiEvent, UiTree};
 
 /// Records dispatched events as `(type, target)`; `prevent` lists the types whose
 /// default the "script" prevents.

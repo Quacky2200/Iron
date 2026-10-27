@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Generates `generated.rs` (into `OUT_DIR`): the plain data of iron_render_api. A *component* is a
+//! Generates `generated.rs` (into `OUT_DIR`): the plain data of platypus_render_api. A *component* is a
 //! per-thread registry of data, a handle class (attach / findOn / gameObject / one property per
 //! field) and a scene-file kind. An *asset* (Material, Sprite) is the same without an object:
 //! `create()`, `copy()` and an asset kind (inline `$type` in scene files). The specs are in
@@ -576,7 +576,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         w(&mut o, "");
         w(&mut o, "pub fn attach_{low}(object: ObjectId) -> {ref} {");
         w(&mut o, "    bump_{low}s();");
-        w(&mut o, "    iron_kinds::components_changed();");
+        w(&mut o, "    platypus_kinds::components_changed();");
         w(&mut o, "    let r = {store}.with(|v| {");
         w(&mut o, "        let mut v = v.borrow_mut();");
         w(&mut o, "        v.push(Some({data}::new(object)));");
@@ -603,7 +603,7 @@ fn gen_component(c: &Component) -> Vec<String> {
     w(&mut o, "    });");
     w(&mut o, "    bump_{low}s();");
     if !asset {
-        w(&mut o, "    iron_kinds::components_changed();");
+        w(&mut o, "    platypus_kinds::components_changed();");
     }
     w(&mut o, "}");
     w(&mut o, "");
@@ -753,7 +753,7 @@ fn gen_component(c: &Component) -> Vec<String> {
         attr += &format!(", records({})", c.extra_records.join(", "));
     }
     w(&mut o, "");
-    o.push(format!("#[iron_api({attr})]"));
+    o.push(format!("#[platypus_api({attr})]"));
     w(&mut o, "pub mod {low}_api {");
     w(&mut o, "    use super::*;");
     w(&mut o, "");
@@ -998,11 +998,11 @@ fn main() {
     for c in components::COMPONENTS {
         if c.asset {
             out.push(format!(
-                "    iron_kinds::register_asset({}_asset_kind());",
+                "    platypus_kinds::register_asset({}_asset_kind());",
                 c.low
             ));
         } else {
-            out.push(format!("    iron_kinds::register({}_kind());", c.low));
+            out.push(format!("    platypus_kinds::register({}_kind());", c.low));
         }
     }
     out.push("}".into());

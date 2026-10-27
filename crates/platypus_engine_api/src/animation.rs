@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The script API of animation: `Keyframe`, `AnimationCurve` and `AnimationClip` over
-//! `iron_animation`. The design and what differs from `js/engine/src/animation.ts` is
-//! `docs/research/iron-native-animation.md`.
+//! `platypus_animation`. The design and what differs from `js/engine/src/animation.ts` is
+//! `docs/research/platypus-native-animation.md`.
 //!
 //! Differences so far: a curve is built key by key (`fromPoints` waits for arrays), a clip's
 //! target is a class name string (`"Light"`), an event parameter is a number, and `toJSON()` is
 //! text (`toJson()`), with `AnimationClip.fromJson(text)`.
 
-use iron_animation::{
+use platypus_animation::{
     Binding, ClipEvent, ClipId, Curve, CurveId, Keyframe, NoComponents, Parameter, WrapMode,
     with_world,
 };
-use iron_api::{Handle, iron_api};
-use iron_scene::ObjectId;
+use platypus_api::{Handle, platypus_api};
+use platypus_scene::ObjectId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CurveRef(pub u64);
@@ -59,7 +59,7 @@ fn new_curve(c: Curve) -> CurveRef {
     CurveRef(u64::from(with_world(|w| w.add_curve(c)).0))
 }
 
-#[iron_api(namespace = "Keyframe", quickjs, values(
+#[platypus_api(namespace = "Keyframe", quickjs, values(
     Keyframe = Keyframe [time: f64, value: f64, inTangent: f64, outTangent: f64]))]
 pub mod keyframe_api {
     use super::{Keyframe, zero_if_nan};
@@ -77,13 +77,13 @@ pub mod keyframe_api {
     }
 }
 
-#[iron_api(namespace = "AnimationCurve", quickjs, handles(AnimationCurve = CurveRef), values(
+#[platypus_api(namespace = "AnimationCurve", quickjs, handles(AnimationCurve = CurveRef), values(
     Keyframe = Keyframe [time: f64, value: f64, inTangent: f64, outTangent: f64],
     Vector2 = V2 [x: f64, y: f64]))]
 pub mod animation_curve_api {
     use super::{Curve, CurveRef, Keyframe, WrapMode, new_curve, with_world, zero_if_nan};
-    use iron_animation::PointMode;
-    use iron_math::V2;
+    use platypus_animation::PointMode;
+    use platypus_math::V2;
 
     impl CurveRef {
         /// An empty curve (add keys with `addKey`).
@@ -213,7 +213,7 @@ pub mod animation_curve_api {
     }
 }
 
-#[iron_api(namespace = "AnimationClip", quickjs, handles(
+#[platypus_api(namespace = "AnimationClip", quickjs, handles(
     AnimationClip = ClipRef, AnimationCurve = CurveRef, GameObject = ObjectId))]
 pub mod animation_clip_api {
     use super::{
@@ -226,7 +226,7 @@ pub mod animation_clip_api {
         pub fn create(name: &str) -> ClipRef {
             let n = if name.is_empty() { "clip" } else { name };
             ClipRef(u64::from(
-                with_world(|w| w.add_clip(iron_animation::clip::Clip::new(n))).0,
+                with_world(|w| w.add_clip(platypus_animation::clip::Clip::new(n))).0,
             ))
         }
 
@@ -362,8 +362,8 @@ pub mod animation_clip_api {
         /// Poses `go` as the clip is at `time` (Unity's `SampleAnimation`).
         pub fn sample_animation(self, go: ObjectId, time: f64) {
             with_world(|w| {
-                iron_scene::api::with_scene(|scene| {
-                    iron_animation::sample(scene, w, &mut NoComponents, go, self.id(), time)
+                platypus_scene::api::with_scene(|scene| {
+                    platypus_animation::sample(scene, w, &mut NoComponents, go, self.id(), time)
                 })
             });
         }
@@ -383,7 +383,7 @@ pub mod animation_clip_api {
 
 // ---- the Animation component ----
 
-use iron_animation::{AnimationPlayer, RegistrySink, register_setter, register_type};
+use platypus_animation::{AnimationPlayer, RegistrySink, register_setter, register_type};
 use std::cell::{Cell, RefCell};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -428,7 +428,7 @@ impl StateRef {
 
 fn player<R>(
     a: AnimationRef,
-    f: impl FnOnce(&mut AnimationPlayer, &iron_animation::World) -> R,
+    f: impl FnOnce(&mut AnimationPlayer, &platypus_animation::World) -> R,
 ) -> Option<R> {
     with_world(|w| {
         let mut p = w.players.get(a.index())?.clone();
@@ -440,7 +440,7 @@ fn player<R>(
 
 fn state<R>(
     s: StateRef,
-    f: impl FnOnce(&mut iron_animation::AnimState, &iron_animation::World) -> R,
+    f: impl FnOnce(&mut platypus_animation::AnimState, &platypus_animation::World) -> R,
 ) -> Option<R> {
     let (pi, si) = s.parts();
     with_world(|w| {
@@ -453,13 +453,13 @@ fn state<R>(
 
 thread_local! {
     /// The clip events that came due and were not taken yet.
-    static EVENTS: RefCell<Vec<iron_animation::FiredEvent>> = const { RefCell::new(Vec::new()) };
+    static EVENTS: RefCell<Vec<platypus_animation::FiredEvent>> = const { RefCell::new(Vec::new()) };
     static REGISTERED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Keeps clip events that came due outside the frame's update (`Animator.update`) for
 /// `Animations.takeEvents()`.
-pub(crate) fn keep_events(events: &[iron_animation::FiredEvent]) {
+pub(crate) fn keep_events(events: &[platypus_animation::FiredEvent]) {
     EVENTS.with(|e| e.borrow_mut().extend(events.iter().cloned()));
 }
 
@@ -498,23 +498,23 @@ pub(crate) fn ensure_registered() {
 /// ones of a game).
 pub fn update(
     dt: f64,
-    other: Option<&mut dyn iron_animation::PropertySink>,
-) -> Vec<iron_animation::FiredEvent> {
-    update_culled(dt, other, &mut iron_animation::AllVisible)
+    other: Option<&mut dyn platypus_animation::PropertySink>,
+) -> Vec<platypus_animation::FiredEvent> {
+    update_culled(dt, other, &mut platypus_animation::AllVisible)
 }
 
 /// [`update`], with `visible` saying which animated objects were seen last frame (for those whose
 /// `cullingMode` / `cullingType` culls).
 pub fn update_culled(
     dt: f64,
-    other: Option<&mut dyn iron_animation::PropertySink>,
-    visible: &mut dyn iron_animation::Visibility,
-) -> Vec<iron_animation::FiredEvent> {
+    other: Option<&mut dyn platypus_animation::PropertySink>,
+    visible: &mut dyn platypus_animation::Visibility,
+) -> Vec<platypus_animation::FiredEvent> {
     ensure_registered();
     let mut sink = RegistrySink { other };
     let events = with_world(|w| {
-        iron_scene::api::with_scene(|scene| {
-            iron_animation::update_culled(w, scene, &mut sink, dt, visible)
+        platypus_scene::api::with_scene(|scene| {
+            platypus_animation::update_culled(w, scene, &mut sink, dt, visible)
         })
     })
     .unwrap_or_default();
@@ -524,16 +524,16 @@ pub fn update_culled(
 
 /// The objects whose `Animator` or `Animation` may be culled (the host watches their renderers).
 pub fn culled_roots() -> Vec<ObjectId> {
-    with_world(|w| iron_animation::culled_roots(w))
+    with_world(|w| platypus_animation::culled_roots(w))
 }
 
 /// Forgets every animation object and pending event (a test, or a new game).
 pub fn reset() {
-    iron_animation::clip::reset();
+    platypus_animation::clip::reset();
     EVENTS.with(|e| e.borrow_mut().clear());
 }
 
-#[iron_api(namespace = "Animation", quickjs, handles(
+#[platypus_api(namespace = "Animation", quickjs, handles(
     Animation = AnimationRef, AnimationState = StateRef, AnimationClip = ClipRef, GameObject = ObjectId),
     enums(
         /// What an `Animation` does while none of its object's renderers was drawn (last frame):
@@ -544,7 +544,7 @@ pub mod animation_component_api {
     use super::{
         AnimationPlayer, AnimationRef, ClipId, ClipRef, ObjectId, StateRef, player, with_world,
     };
-    use iron_animation::CullingType;
+    use platypus_animation::CullingType;
 
     impl AnimationRef {
         /// Adds an `Animation` to a GameObject (what `go.addComponent(Animation)` does).
@@ -686,10 +686,10 @@ pub mod animation_component_api {
     }
 }
 
-#[iron_api(namespace = "AnimationState", quickjs, handles(AnimationState = StateRef, AnimationClip = ClipRef))]
+#[platypus_api(namespace = "AnimationState", quickjs, handles(AnimationState = StateRef, AnimationClip = ClipRef))]
 pub mod animation_state_api {
     use super::{ClipRef, StateRef, state};
-    use iron_animation::WrapMode;
+    use platypus_animation::WrapMode;
 
     impl StateRef {
         #[property]
@@ -771,7 +771,7 @@ pub mod animation_state_api {
     }
 }
 
-#[iron_api(namespace = "Animations", quickjs)]
+#[platypus_api(namespace = "Animations", quickjs)]
 pub mod animations_api {
     use super::{EVENTS, update};
 
@@ -789,12 +789,14 @@ pub mod animations_api {
             .iter()
             .map(|e| {
                 let name =
-                    iron_scene::api::with_scene(|s| s.name(e.object).unwrap_or("").to_string())
+                    platypus_scene::api::with_scene(|s| s.name(e.object).unwrap_or("").to_string())
                         .unwrap_or_default();
                 let param = match &e.parameter {
-                    Some(iron_animation::Parameter::Num(n)) => iron_math::jsnum::to_string(*n),
-                    Some(iron_animation::Parameter::Str(s)) => s.clone(),
-                    Some(iron_animation::Parameter::Bool(b)) => b.to_string(),
+                    Some(platypus_animation::Parameter::Num(n)) => {
+                        platypus_math::jsnum::to_string(*n)
+                    }
+                    Some(platypus_animation::Parameter::Str(s)) => s.clone(),
+                    Some(platypus_animation::Parameter::Bool(b)) => b.to_string(),
                     None => String::new(),
                 };
                 format!("{name}|{}|{param}", e.function_name)

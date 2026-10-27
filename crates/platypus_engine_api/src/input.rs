@@ -10,9 +10,9 @@
 //! TypeScript's `input.on(type, fn)` returned an unsubscribe function).
 
 use crate::window::{self, DomainId};
-use iron_api::callback::{Listeners, emit};
-use iron_api::{Callback, iron_api};
-use iron_math::V2;
+use platypus_api::callback::{Listeners, emit};
+use platypus_api::{Callback, platypus_api};
+use platypus_math::V2;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
@@ -504,7 +504,7 @@ const MOUSE_SENSITIVITY: f64 = 0.1;
 /// Keyboard, mouse and gamepads. Input belongs to the window's event domain: it reads the keys of the window
 /// family whose code is running; main-game components always read the main window's, an isolated window's keys
 /// never reach it (send a message), and focus loss clears held keys. See docs/windows.md.
-#[iron_api(
+#[platypus_api(
     namespace = "input", quickjs,
     values(Vector2 = V2 [x: f64, y: f64]),
     enums(
@@ -546,8 +546,8 @@ pub mod input_api {
         InputEvent, InputEventType, MOUSE_SENSITIVITY, PadState, STATE, axis_def, button_def,
         mouse_code, pad_state, value_of,
     };
-    use iron_api::Callback;
-    use iron_math::V2;
+    use platypus_api::Callback;
+    use platypus_math::V2;
 
     /// Every connected gamepad.
     pub fn gamepads() -> Vec<PadState> {

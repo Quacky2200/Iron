@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Value classes in `#[iron_api]`: a few numbers that scripts see as an object, passed across the
+//! Value classes in `#[platypus_api]`: a few numbers that scripts see as an object, passed across the
 //! C ABI as one scalar per field (a result through a trailing pointer). IDs are in TESTS.md
 //! (M9-API-*).
-use iron_api::{Ty, ValueType, iron_api};
+use platypus_api::{Ty, ValueType, platypus_api};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vec3 {
@@ -25,7 +25,7 @@ impl ValueType<3> for Vec3 {
     }
 }
 
-#[iron_api(namespace = "Vec", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
+#[platypus_api(namespace = "Vec", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
 pub mod vec_api {
     use super::Vec3;
 
@@ -90,15 +90,15 @@ fn the_manifest_and_declarations_describe_the_value_class() {
 // trailing pointer.
 #[test]
 fn the_shims_pass_a_value_as_scalars_and_return_one_through_a_pointer() {
-    assert_eq!(vec_api::iron_Vec_length(3.0, 0.0, 4.0), 5.0);
+    assert_eq!(vec_api::platypus_Vec_length(3.0, 0.0, 4.0), 5.0);
     let mut out = [0.0f32; 3];
-    unsafe { vec_api::iron_Vec_scaled(1.0, 2.0, 3.0, 2.0, out.as_mut_ptr()) };
+    unsafe { vec_api::platypus_Vec_scaled(1.0, 2.0, 3.0, 2.0, out.as_mut_ptr()) };
     assert_eq!(out, [2.0, 4.0, 6.0]);
-    unsafe { vec_api::iron_Vec_cross(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, out.as_mut_ptr()) };
+    unsafe { vec_api::platypus_Vec_cross(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, out.as_mut_ptr()) };
     assert_eq!(out, [0.0, 0.0, 1.0]);
 }
 
-#[iron_api(namespace = "VecMath", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
+#[platypus_api(namespace = "VecMath", values(Vector3 = Vec3 [x: f32, y: f32, z: f32]))]
 pub mod vec_methods {
     use super::Vec3;
 
@@ -143,7 +143,7 @@ fn value_class_methods_and_getters_are_declared_inside_the_value_class() {
         .iter()
         .find(|f| f.name == "scale")
         .unwrap();
-    assert_eq!(scale.symbol, "iron_Vector3_scale");
+    assert_eq!(scale.symbol, "platypus_Vector3_scale");
     assert_eq!(scale.params[0].name, "this");
     assert_eq!(scale.params[0].ty, Ty::Value("Vector3"));
     let d = m.to_dts();
@@ -152,8 +152,8 @@ fn value_class_methods_and_getters_are_declared_inside_the_value_class() {
     assert!(d.contains("get magnitude(): number;"), "{d}");
     assert!(!d.contains("declare type Vector3"), "{d}");
     // The shims take the value as its fields first.
-    assert_eq!(vec_methods::iron_Vector3_magnitude(3.0, 4.0, 0.0), 5.0);
+    assert_eq!(vec_methods::platypus_Vector3_magnitude(3.0, 4.0, 0.0), 5.0);
     let mut out = [0.0f32; 3];
-    unsafe { vec_methods::iron_Vector3_scale(1.0, 2.0, 3.0, 2.0, out.as_mut_ptr()) };
+    unsafe { vec_methods::platypus_Vector3_scale(1.0, 2.0, 3.0, 2.0, out.as_mut_ptr()) };
     assert_eq!(out, [2.0, 4.0, 6.0]);
 }

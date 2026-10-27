@@ -3,13 +3,13 @@
 //! `bench/inputs.ts` compiled against the native engine API and compared with the original
 //! TypeScript run in bun (`bench/gen_inputs_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-627..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::inputs_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::inputs_t::*;
 use serde_json::Value;
 
 /// The engine's input events (as `bench/inputs_prelude.ts` sends them), then the frame tick.
 fn reset() {
-    use iron_engine_api::{input, time};
+    use platypus_engine_api::{input, time};
     input::reset();
     time::reset();
     input::key_down("KeyW", false);
@@ -34,9 +34,9 @@ fn reset() {
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     unsafe { ts_inp_init() };
     reset();
     f();

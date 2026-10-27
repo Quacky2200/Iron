@@ -110,7 +110,7 @@ pub fn console_reaches_log_sink(rt: &mut dyn ScriptRuntime) {
 // M1-SCR-05
 pub fn reset_wipes_globals(rt: &mut dyn ScriptRuntime) {
     let logs = capture_logs(rt);
-    rt.load_bundle("a.js", "globalThis.leftover = 1; __iron_op('pending');")
+    rt.load_bundle("a.js", "globalThis.leftover = 1; __platypus_op('pending');")
         .unwrap();
     rt.reset();
     assert_eq!(rt.eval("typeof leftover").unwrap(), "undefined".into());
@@ -119,7 +119,7 @@ pub fn reset_wipes_globals(rt: &mut dyn ScriptRuntime) {
         "ops from before reset must be dropped"
     );
     // Natives and the log sink survive the reset.
-    rt.load_bundle("b.js", "console.log('after'); __iron_op('x');")
+    rt.load_bundle("b.js", "console.log('after'); __platypus_op('x');")
         .unwrap();
     assert_eq!(logs.borrow().last().unwrap().1, "after");
     assert_eq!(rt.drain_ops().len(), 1);
@@ -129,7 +129,7 @@ pub fn reset_wipes_globals(rt: &mut dyn ScriptRuntime) {
 pub fn ops_arrive_in_order(rt: &mut dyn ScriptRuntime) {
     rt.load_bundle(
         "ops.js",
-        "for (let i = 0; i < 3; i++) __iron_op('create', i, 'box'); __iron_op('flush');",
+        "for (let i = 0; i < 3; i++) __platypus_op('create', i, 'box'); __platypus_op('flush');",
     )
     .unwrap();
     let ops: Vec<_> = rt.drain_ops().into_iter().collect();
@@ -146,7 +146,7 @@ pub fn ops_arrive_in_order(rt: &mut dyn ScriptRuntime) {
 pub fn typed_arrays_arrive_as_number_lists(rt: &mut dyn ScriptRuntime) {
     rt.load_bundle(
         "typed.js",
-        "__iron_op('mesh', new Float32Array([0.5, -2, 3]), new Uint32Array([0, 1, 2]),          new Float32Array([1, 2, 3, 4]).subarray(1, 3), new Uint8Array([255]));",
+        "__platypus_op('mesh', new Float32Array([0.5, -2, 3]), new Uint32Array([0, 1, 2]),          new Float32Array([1, 2, 3, 4]).subarray(1, 3), new Uint8Array([255]));",
     )
     .unwrap();
     let ops: Vec<_> = rt.drain_ops().into_iter().collect();
@@ -289,8 +289,8 @@ pub fn microtasks_run_between_timers(rt: &mut dyn ScriptRuntime) {
 pub fn commits_arrive_whole_and_in_order(rt: &mut dyn ScriptRuntime) {
     rt.load_bundle(
         "commit.js",
-        "__iron_commit([[0, 1, 'box'], [2, 0, 1]]);
-         __iron_commit([[8, 1]]);",
+        "__platypus_commit([[0, 1, 'box'], [2, 0, 1]]);
+         __platypus_commit([[8, 1]]);",
     )
     .unwrap();
     let commits = rt.drain_commits();
@@ -311,7 +311,7 @@ pub fn reset_drops_pending_timers_and_commits(rt: &mut dyn ScriptRuntime) {
     let logs = capture_logs(rt);
     rt.load_bundle(
         "pending.js",
-        "setTimeout(() => console.log('old timer'), 1); __iron_commit([[0, 1, 'box']]);",
+        "setTimeout(() => console.log('old timer'), 1); __platypus_commit([[0, 1, 'box']]);",
     )
     .unwrap();
     rt.reset();

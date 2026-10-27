@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron <game> --bench`: a windowless, uncapped frame loop that times every frame and writes
-//! the result as JSON (`docs/iron-build.md`, "Benchmarks").
+//! `platypus <game> --bench`: a windowless, uncapped frame loop that times every frame and writes
+//! the result as JSON (`docs/platypus-build.md`, "Benchmarks").
 //!
 //! No OS window is made: the main window is an offscreen texture, the platform is the fake one
-//! (`iron_platform::FakePlatform`, secondary windows virtual as in screenshot runs), and input
+//! (`platypus_platform::FakePlatform`, secondary windows virtual as in screenshot runs), and input
 //! comes from a script of segments (`--bench-input spec.json`) sent the way the platform sends
 //! the OS's. Each frame waits for the GPU work of the one before (a swapchain queueing one frame),
 //! so GPU time counts too.
@@ -14,8 +14,8 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use iron_platform::{FakePlatform, GamepadEvent, InputEvent, MouseButton, WheelDelta};
-use iron_platform::{WindowKey, WindowSpec};
+use platypus_platform::{FakePlatform, GamepadEvent, InputEvent, MouseButton, WheelDelta};
+use platypus_platform::{WindowKey, WindowSpec};
 use serde_json::{Value, json};
 
 use super::App;
@@ -395,7 +395,7 @@ pub(crate) struct FrameTimes {
     pub render: f64,
     /// Applying what scripts queued (React commits, a QuickJS game's ops): part of `other`.
     pub ops: f64,
-    /// QuickJS: copying `__iron_op` arguments out of JavaScript (part of `script`).
+    /// QuickJS: copying `__platypus_op` arguments out of JavaScript (part of `script`).
     pub op_marshal: f64,
 }
 
@@ -458,7 +458,7 @@ fn text_centre(app: &mut App, text: &str) -> Option<(f64, f64)> {
     app.ui.layout_if_needed();
     let ui = &app.ui;
     let mut blocks = Vec::new();
-    let mut stack = vec![iron_ui::ROOT];
+    let mut stack = vec![platypus_ui::ROOT];
     while let Some(id) = stack.pop() {
         if !ui.is_displayed(id) {
             continue;
@@ -491,8 +491,8 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
         )?,
         None => Spec::idle(args),
     };
-    let mut lap = iron_ts::timing::Lap::start();
-    let gpu = iron_render::Gpu::headless().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let mut lap = platypus_ts::timing::Lap::start();
+    let gpu = platypus_render::Gpu::headless().map_err(|e| anyhow::anyhow!("{e}"))?;
     lap.mark("GPU device (headless)");
     let target = FrameTarget::offscreen(&gpu, size.0, size.1);
     let adapter = gpu.adapter_name();
@@ -521,7 +521,7 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
     let mut startup_parts = Vec::new();
     let mut pads = std::collections::HashSet::new();
     crate::sync_profile::enable();
-    iron_script::time_ops();
+    platypus_script::time_ops();
     let mut run_frames = |p: &mut FakePlatform<App>, count: u32, input: &[(u32, Step)]| {
         let mut times = Vec::with_capacity(count as usize);
         let mut parts = Vec::with_capacity(count as usize);
@@ -541,7 +541,7 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
             app.sync_time = Duration::ZERO;
             app.render_time = Duration::ZERO;
             app.ops_time = Duration::ZERO;
-            iron_script::take_op_time();
+            platypus_script::take_op_time();
             let t = Instant::now();
             while let Some((_, step)) = input.get(next).filter(|(at, _)| *at <= f) {
                 next += 1;
@@ -574,8 +574,8 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
             let total = t.elapsed();
             if startup_ms.is_none() {
                 startup_ms = Some(since_start().as_secs_f64() * 1000.0);
-                iron_ts::timing::add("first frame", total.as_secs_f64() * 1000.0);
-                startup_parts = iron_ts::timing::take();
+                platypus_ts::timing::add("first frame", total.as_secs_f64() * 1000.0);
+                startup_parts = platypus_ts::timing::take();
             }
             let app = p.app();
             times.push(FrameTimes {
@@ -584,7 +584,7 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
                 sync: app.sync_time.as_secs_f64() * 1000.0,
                 render: app.render_time.as_secs_f64() * 1000.0,
                 ops: app.ops_time.as_secs_f64() * 1000.0,
-                op_marshal: iron_script::take_op_time(),
+                op_marshal: platypus_script::take_op_time(),
             });
             parts.push(crate::sync_profile::take());
         }

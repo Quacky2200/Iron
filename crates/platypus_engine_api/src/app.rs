@@ -5,7 +5,7 @@
 //! game's code runs; scripts read them, and their few writes (`targetFrameRate`,
 //! `runInBackground`, `quit()`) come back to the host through [`take_requests`].
 
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 use std::cell::RefCell;
 
 /// The game's manifest.
@@ -17,13 +17,13 @@ pub struct AppInfo {
     pub company_name: String,
     pub identifier: String,
     pub engine_version: String,
-    /// True in `iron_editor`.
+    /// True in `platypus_editor`.
     pub is_editor: bool,
-    /// The manifest's `iron.runInBackground`.
+    /// The manifest's `platypus.runInBackground`.
     pub run_in_background: bool,
     /// The manifest's frame rate, or -1.
     pub target_frame_rate: i32,
-    /// The command line's arguments after `--` (`iron game -- --level 2`).
+    /// The command line's arguments after `--` (`platypus game -- --level 2`).
     pub args: Vec<String>,
 }
 
@@ -125,7 +125,7 @@ struct State {
     focused: bool,
     paused: bool,
     requests: Vec<Request>,
-    focus_listeners: iron_api::callback::Listeners<(bool,)>,
+    focus_listeners: platypus_api::callback::Listeners<(bool,)>,
 }
 
 thread_local! {
@@ -162,7 +162,7 @@ pub fn set_focus(focused: bool, paused: bool) -> FocusChange {
         (change, s.focus_listeners.snapshot())
     });
     if change.focus_changed {
-        iron_api::callback::emit(&cbs, (focused,));
+        platypus_api::callback::emit(&cbs, (focused,));
     }
     change
 }
@@ -193,7 +193,7 @@ fn sys<R>(f: impl FnOnce(&SystemInfo) -> R) -> R {
     STATE.with(|s| f(&s.borrow().system))
 }
 
-#[iron_api(namespace = "Application", quickjs)]
+#[platypus_api(namespace = "Application", quickjs)]
 pub mod application_api {
     use super::{Request, STATE, app, sys};
 
@@ -203,7 +203,7 @@ pub mod application_api {
         app(|a| a.name.clone())
     }
 
-    /// The title it shows (`iron.title`, else the name). Unity's `productName`.
+    /// The title it shows (`platypus.title`, else the name). Unity's `productName`.
     #[property]
     pub fn product_name() -> String {
         app(|a| a.product_name.clone())
@@ -219,13 +219,13 @@ pub mod application_api {
         app(|a| a.company_name.clone())
     }
 
-    /// Reverse-DNS id (`iron.identifier`).
+    /// Reverse-DNS id (`platypus.identifier`).
     #[property]
     pub fn identifier() -> String {
         app(|a| a.identifier.clone())
     }
 
-    /// Iron's version (Unity's `unityVersion`).
+    /// Platypus's version (Unity's `unityVersion`).
     #[property]
     pub fn engine_version() -> String {
         app(|a| a.engine_version.clone())
@@ -243,7 +243,7 @@ pub mod application_api {
         sys(|s| s.language.clone())
     }
 
-    /// Whether this runs in the editor (`iron_editor`) rather than the player (`iron`).
+    /// Whether this runs in the editor (`platypus_editor`) rather than the player (`platypus`).
     #[property]
     pub fn is_editor() -> bool {
         app(|a| a.is_editor)
@@ -275,7 +275,7 @@ pub mod application_api {
     }
 
     /// Keep running while the window is in the background (unfocused or minimised). Off by
-    /// default (`iron.runInBackground` in `package.json` changes that): then the game pauses.
+    /// default (`platypus.runInBackground` in `package.json` changes that): then the game pauses.
     #[property]
     pub fn run_in_background() -> bool {
         STATE.with(|s| {
@@ -307,7 +307,7 @@ pub mod application_api {
     /// Calls `f(focused)` when the window gains or loses focus; returns a token for
     /// `offFocusChanged` (the TypeScript returned an unsubscribe function).
     #[subscription(off = "off_focus_changed")]
-    pub fn on_focus_changed(f: iron_api::Callback<(bool,)>) -> u32 {
+    pub fn on_focus_changed(f: platypus_api::Callback<(bool,)>) -> u32 {
         STATE.with(|s| s.borrow_mut().focus_listeners.add(f))
     }
 
@@ -317,14 +317,14 @@ pub mod application_api {
     }
 
     /// The command line's arguments for the game: everything after `--`
-    /// (`iron examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`. A copy
+    /// (`platypus examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`. A copy
     /// each read.
     #[property]
     pub fn args() -> Vec<String> {
         app(|a| a.args.clone())
     }
 
-    /// Closes the game after this frame; `iron` exits with `exit_code` (0, success, by default;
+    /// Closes the game after this frame; `platypus` exits with `exit_code` (0, success, by default;
     /// a fraction is cut off, as `Math.trunc`).
     #[optional(exit_code = 0.0)]
     pub fn quit(exit_code: f64) {
@@ -338,7 +338,7 @@ pub mod application_api {
 }
 
 /// The machine. GPU and screen details arrive once the window opens.
-#[iron_api(namespace = "SystemInfo", quickjs)]
+#[platypus_api(namespace = "SystemInfo", quickjs)]
 pub mod system_info_api {
     use super::sys;
 

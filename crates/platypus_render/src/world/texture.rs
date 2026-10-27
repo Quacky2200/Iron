@@ -106,7 +106,7 @@ impl TexelFormat {
     }
 }
 
-/// A texture prepared ahead of time (`iron --cook`): every mip level made, possibly
+/// A texture prepared ahead of time (`platypus --cook`): every mip level made, possibly
 /// block-compressed, ready to upload as it is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CookedTexture {

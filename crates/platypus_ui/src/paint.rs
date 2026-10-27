@@ -18,7 +18,7 @@ pub enum Len {
 
 impl Len {
     /// Parses `12px`, `12` (only `0` is valid unitless CSS, but numbers are pixels
-    /// everywhere else in Iron, so any number is accepted) or `50%`.
+    /// everywhere else in Platypus, so any number is accepted) or `50%`.
     pub fn parse(s: &str) -> Option<Self> {
         let s = s.trim();
         if let Some(p) = s.strip_suffix('%') {
@@ -257,7 +257,7 @@ pub struct DropShadow {
 }
 
 /// `filter` / `backdropFilter`: a chain of functions. Colour functions combine into
-/// one matrix; blurs combine (their deviations add in quadrature). Iron applies
+/// one matrix; blurs combine (their deviations add in quadrature). Platypus applies
 /// the blur, then the colours, then the drop shadows, whatever the order written.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Filter {
@@ -1166,7 +1166,7 @@ impl BorderImage {
     }
 }
 
-/// `border-style` for one side. Iron's default is `solid` (a width alone draws a
+/// `border-style` for one side. Platypus's default is `solid` (a width alone draws a
 /// border, as in s&box); CSS's is `none`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BorderStyle {
@@ -1284,7 +1284,7 @@ impl BlendMode {
 }
 
 /// `mask-mode`: what of the mask image counts. `match-source` is alpha for images
-/// and gradients (Iron has no SVG `<mask>` elements).
+/// and gradients (Platypus has no SVG `<mask>` elements).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MaskMode {
     #[default]

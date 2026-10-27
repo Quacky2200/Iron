@@ -3,7 +3,7 @@
 //! The first batch of modules moved from `js/engine` to Rust (random, layers, log, prefs, assets,
 //! app, time classes) through their QuickJS bindings and host functions. IDs are in TESTS.md
 //! (M9-API-37..).
-use iron_engine_api::{app, assets, clock, datetime, input, layers, log, prefs, random, time};
+use platypus_engine_api::{app, assets, clock, datetime, input, layers, log, prefs, random, time};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -149,9 +149,9 @@ fn player_prefs_read_write_and_report_changes() {
         ]
     );
     assert!(prefs::take_changes().is_empty());
-    prefs::set_json("iron.quality", r#"{"level":2}"#);
+    prefs::set_json("platypus.quality", r#"{"level":2}"#);
     assert_eq!(
-        prefs::json("iron.quality").as_deref(),
+        prefs::json("platypus.quality").as_deref(),
         Some(r#"{"level":2}"#)
     );
     prefs::reset();

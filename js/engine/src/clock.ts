@@ -3,7 +3,7 @@
 // Game time, the Unity / s&box way: `Time` (deltaTime, time, frameCount, timeScale),
 // s&box's `TimeSince` / `TimeUntil`, and awaitable delays (`Task`).
 //
-// The engine advances `Time` once per frame (`__iron_tick`, called by Rust before the
+// The engine advances `Time` once per frame (`__platypus_tick`, called by Rust before the
 // components' `onUpdate`). Times are in seconds as numbers but come from millisecond
 // clocks: there's no sub-millisecond (µs/ns) timing; don't use these to profile.
 
@@ -80,7 +80,7 @@ export function _resetTimeForTests() {
   timeScale = 1;
 }
 
-globalThis.__iron_tick = (dt: number) => {
+globalThis.__platypus_tick = (dt: number) => {
   unscaledDeltaTime = dt;
   deltaTime = dt * timeScale;
   unscaledTime += dt;

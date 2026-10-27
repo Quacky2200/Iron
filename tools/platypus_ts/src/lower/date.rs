@@ -2,7 +2,7 @@
 
 //! `Date`: an object of the prelude class `Date` whose one field `t` is the time value (milliseconds
 //! since the epoch, NaN when invalid). The calendar, local time and parsing are in the runtime
-//! (`iron_ts_rt/src/date.rs`); this file lowers the constructor, the statics and the methods.
+//! (`platypus_ts_rt/src/date.rs`); this file lowers the constructor, the statics and the methods.
 //! `toString`, `toTimeString` and the `toLocale*` family need time zone names and locale data, which
 //! come with `Intl`; until then they are compile errors.
 

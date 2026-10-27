@@ -15,7 +15,7 @@ import {
   register,
   SphereCollider,
   Vector3,
-} from "@iron/engine";
+} from "@platypus/engine";
 
 const log: string[] = [];
 let crate: GameObject;

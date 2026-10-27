@@ -14,15 +14,15 @@ beforeEach(() => {
   _resetAudioForTests();
   _resetAudioComponentsForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const audioOps = () => ops.filter((o) => String(o[0]).startsWith("audio."));
-const ended = (...ids: number[]) => (globalThis as { __iron_audio: (e: number[]) => void }).__iron_audio(ids);
+const ended = (...ids: number[]) => (globalThis as { __platypus_audio: (e: number[]) => void }).__platypus_audio(ids);
 
 // M5-AUD-01
 describe("AudioSource", () => {

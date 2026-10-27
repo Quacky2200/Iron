@@ -3,7 +3,7 @@
 //! Records with lists of numbers and of records, a function called with one object of all its
 //! parameters (`#[options(.., object)]`), and a class function declared twice. IDs are in TESTS.md
 //! (M9-API-1640..).
-use iron_api::{Handle, iron_api};
+use platypus_api::{Handle, platypus_api};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
@@ -35,7 +35,7 @@ thread_local! {
     static LEVEL: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Lists", quickjs,
     handles(Cell = Cell),
     records(
@@ -145,7 +145,7 @@ fn records_hold_lists_of_numbers_and_of_records() {
         .find(|r| r["name"] == "Row")
         .unwrap();
     assert_eq!(row["fields"][1]["type"], "list:f64");
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
@@ -179,7 +179,7 @@ fn a_function_called_with_one_object_declares_it_and_quickjs_reads_the_keys() {
     assert_eq!(sum["optionsName"], "SumOptions");
     // `#[global]`: also a global function of the same name.
     assert_eq!(sum["global"], true);
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
@@ -233,7 +233,7 @@ fn a_setter_can_have_a_second_version_and_a_class_a_positional_constructor() {
     let ctor = fns.iter().find(|f| f["constructor"] == true).unwrap();
     assert_eq!(ctor["name"], "construct");
     // QuickJS: the first version of the setter is the script's.
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {

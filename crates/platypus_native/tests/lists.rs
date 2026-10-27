@@ -2,7 +2,7 @@
 
 //! Lists of handles, numbers and values as parameters, results and properties of the real engine
 //! namespaces from QuickJS: the same native code compiled games call
-//! (`tools/iron_ts_tests/tests/engine_api/facade.rs`, M9-TS-3350). IDs are in TESTS.md (M9-API-163x).
+//! (`tools/platypus_ts_tests/tests/engine_api/facade.rs`, M9-TS-3350). IDs are in TESTS.md (M9-API-163x).
 mod common;
 use common::{js, throws, with_world};
 

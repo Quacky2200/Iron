@@ -2,7 +2,7 @@
 
 //! `createRoot(target?).render(<App/>)` for compiled games: the program hands its root element to
 //! the host with `UiRoot.mount(target, element)` and the host renders it with its
-//! `iron_ui_native::Runtime`. Target 0 is the screen; another number is a world panel's handle. A window
+//! `platypus_ui_native::Runtime`. Target 0 is the screen; another number is a world panel's handle. A window
 //! (`createRoot(win)`) goes to [`take_window_mounts`].
 //!
 //! Mounting again on the same target replaces the root (a hot reload does that); the host takes

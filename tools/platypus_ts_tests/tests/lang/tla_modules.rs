@@ -5,8 +5,8 @@
 //! order). The cases of `bench/tla_modules_cases.txt` are bundled, run in the normal, stress GC
 //! and collection-off modes and compared with bun running the files as real modules
 //! (`bench/gen_tla_modules_expected.ts`). IDs are in TESTS.md.
-use iron_ts::jit::{JitOptions, compile_and_load};
-use iron_ts_rt::{
+use platypus_ts::jit::{JitOptions, compile_and_load};
+use platypus_ts_rt::{
     StartupState, Str, link_anchor, startup_state, ts_rt_gc_enable, ts_rt_gc_stress, ts_rt_run_loop,
 };
 use serde_json::Value;
@@ -41,13 +41,13 @@ fn expected(name: &str) -> String {
     v[name].as_str().unwrap().to_string()
 }
 
-fn bundle_of(files: &HashMap<String, String>) -> iron_ts::modules::Bundle {
-    iron_ts::modules::bundle_with("main.ts", &|p| files.get(p).cloned()).unwrap()
+fn bundle_of(files: &HashMap<String, String>) -> platypus_ts::modules::Bundle {
+    platypus_ts::modules::bundle_with("main.ts", &|p| files.get(p).cloned()).unwrap()
 }
 
 /// Runs the program (init, then the event loop) in the three GC modes; the results must agree.
 fn run_files(files: &HashMap<String, String>, prefix: &'static str, base: u32) -> String {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let game = compile_and_load(
         &bundle_of(files).source,
@@ -113,9 +113,9 @@ bun_tests! {
 #[test]
 fn module_markers_exist_only_when_a_module_awaits() {
     let files = files_of("modules_without_an_await_keep_their_order");
-    assert!(!bundle_of(&files).source.contains("__iron_module"));
+    assert!(!bundle_of(&files).source.contains("__platypus_module"));
     let files = files_of("importer_waits_for_the_awaiting_module");
-    assert!(bundle_of(&files).source.contains("__iron_module"));
+    assert!(bundle_of(&files).source.contains("__platypus_module"));
 }
 
 // M9-TS-3209
@@ -124,7 +124,7 @@ fn module_markers_exist_only_when_a_module_awaits() {
 // never runs.
 #[test]
 fn a_rejected_top_level_await_fails_the_startup_naming_the_module() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let files: HashMap<String, String> = [
         (
             "bad.ts".to_string(),
@@ -154,11 +154,11 @@ fn a_rejected_top_level_await_fails_the_startup_naming_the_module() {
         let s = String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(text, len) });
         LOG.with(|l| l.borrow_mut().push(format!("{level}:{s}")));
     }
-    iron_ts_rt::ts_rt_set_console(Some(hook));
+    platypus_ts_rt::ts_rt_set_console(Some(hook));
     game.init().unwrap();
     assert!(matches!(startup_state(), StartupState::Pending(_)));
     ts_rt_run_loop();
-    iron_ts_rt::ts_rt_set_console(None);
+    platypus_ts_rt::ts_rt_set_console(None);
     match startup_state() {
         StartupState::Failed { module, message } => {
             assert_eq!(module, "bad.ts");
@@ -186,7 +186,7 @@ fn a_rejected_top_level_await_fails_the_startup_naming_the_module() {
 // uses it); it is done once the await finishes.
 #[test]
 fn a_pending_module_is_named_until_it_finishes() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let files = files_of("a_sibling_runs_while_the_other_is_pending");
     let game = compile_and_load(
         &bundle_of(&files).source,

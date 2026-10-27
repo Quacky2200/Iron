@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use iron_core::Value;
-use iron_physics::{Contact, Physics};
+use platypus_core::Value;
+use platypus_physics::{Contact, Physics};
 
 fn num(v: f64) -> Value {
     Value::Number(v)
@@ -235,7 +235,7 @@ fn raycasts_answer_after_the_step() {
     assert_eq!((rays[1].query, rays[1].hit), (10, None));
 
     // Flat on the wire: query, collider (-1: miss), distance, normal.
-    let args = iron_physics::Batch {
+    let args = platypus_physics::Batch {
         rays,
         ..Default::default()
     }
@@ -515,7 +515,7 @@ fn friction_stops_a_box_locked_to_a_plane() {
         assert!(slid < 2.0, "locks {t:?} {r:?}: slid {slid} m");
     }
 
-    // The plane lock still holds (Iron pins z itself for this combination): shoved along z,
+    // The plane lock still holds (Platypus pins z itself for this combination): shoved along z,
     // moved by `position`, the box stays in its plane.
     let mut p = Physics::new();
     floor(&mut p);

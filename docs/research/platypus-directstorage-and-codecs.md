@@ -1,7 +1,7 @@
 # DirectStorage and the pack codec (research)
 
 Status: **research, 2026-10-21.** Question from the user: should Windows DirectStorage decide the compression codec of asset packs
-(`crates/iron_pack`, design `iron-asset-packs.md`), given that xz-like codecs decompress slowly on the CPU, and how do zstd, gzip/deflate
+(`crates/platypus_pack`, design `platypus-asset-packs.md`), given that xz-like codecs decompress slowly on the CPU, and how do zstd, gzip/deflate
 and LZ4 compare with what DirectStorage can decompress? Answer in short: **no, not as the one codec**. DirectStorage pays off through
 its I/O path and GPU decompression of large GPU-bound payloads (textures, vertex buffers); the pack format already carries a codec per
 chunk, so a Windows-only fast path can be a **second codec on texture and mesh chunks of a Windows build**, not the format's default.
@@ -79,11 +79,11 @@ the months ahead" (blog, 2026-03-11). No GA date was found.
 - NVIDIA: uncompressed streaming tops out near 3 GB/s on PCIe Gen3; NVMe up to 7 GB/s; GPU decompression multiplies the effective rate
   by the ratio.
 
-These are whole-pipeline numbers on game-like data with ideal staging buffers; none is for Iron's data or this machine.
+These are whole-pipeline numbers on game-like data with ideal staging buffers; none is for Platypus's data or this machine.
 
-### 1.5 Iron's renderer and DirectStorage
+### 1.5 Platypus's renderer and DirectStorage
 
-- **Backend**: DirectStorage writes only into **D3D12** resources. Iron runs **Vulkan by default on Windows** (`WGPU_BACKEND=dx12`
+- **Backend**: DirectStorage writes only into **D3D12** resources. Platypus runs **Vulkan by default on Windows** (`WGPU_BACKEND=dx12`
   switches, CLAUDE.md). A DirectStorage GPU path therefore means making DX12 the default on Windows, or keeping it DX12-only; on Vulkan
   only the CPU path (`MEMORY` destination) works.
 - **Interop with wgpu 30** (Cargo.lock: `wgpu` 30.0.1, `wgpu-hal` 30.0.1 with `windows` 0.62.2): `wgpu::Device::as_hal::<Dx12>()` gives
@@ -101,7 +101,7 @@ These are whole-pipeline numbers on game-like data with ideal staging buffers; n
 - **Rust bindings**: no DirectStorage module was found in `windows` 0.62 (DirectStorage is not in the Windows SDK metadata; it ships its
   own `Microsoft.Direct3D.DirectStorage.winmd` since 1.2, so `windows-bindgen` can generate bindings from it). Crates: `direct-storage`
   0.7.1 (Tsukisoft, MIT/Apache-2.0, 2025-09-09, binds DirectStorage 1.3, loads the DLLs with `libloading`, unofficial, 16 stars);
-  `microsoft-directstorage` is yanked. Neither is in Iron's lock files.
+  `microsoft-directstorage` is yanked. Neither is in Platypus's lock files.
 - **Licence**: headers MIT; the DLLs under "Microsoft Software License Terms for the Microsoft DirectStorage SDK": object code from the
   distributables list may ship with an app that adds significant functionality; no reverse engineering. The DLLs are Windows only and
   sit next to the exe (about the same model as the Agility SDK). The GDeflate reference code and the zstd shader live in
@@ -138,12 +138,12 @@ beyond NVIDIA was not checked.
 ### 3.1 General numbers (Silesia corpus, single thread)
 
 lzbench 2.4, AMD EPYC 9555P 3.2 GHz, turbo off (the lzbench README, read 2026-10-21). Ratio = compressed / original (lower is better).
-Iron's own numbers on its own corpus (in-crate LZ4, `miniz_oxide` deflate, Windows, 24 threads) are in `iron-asset-packs.md` section 7.
+Platypus's own numbers on its own corpus (in-crate LZ4, `miniz_oxide` deflate, Windows, 24 threads) are in `platypus-asset-packs.md` section 7.
 
-| Codec | Compress MB/s | Decompress MB/s | Size | License | Rust crate | In Iron's lock files |
+| Codec | Compress MB/s | Decompress MB/s | Size | License | Rust crate | In Platypus's lock files |
 |---|---|---|---|---|---|---|
 | memcpy | 24,075 | 24,002 | 100% | | | |
-| LZ4 1.10 | 550 | 3,832 | 47.6% | BSD-2 | `lz4_flex` (pure Rust, MIT; safe decode about 85% of C) | no (in-crate decoder in `iron_pack/src/lz4.rs`) |
+| LZ4 1.10 | 550 | 3,832 | 47.6% | BSD-2 | `lz4_flex` (pure Rust, MIT; safe decode about 85% of C) | no (in-crate decoder in `platypus_pack/src/lz4.rs`) |
 | LZ4HC -9 / -12 | 31.9 / 10.4 | 3,703 / 3,813 | 36.8% / 36.5% | BSD-2 | `lz4_flex` has no HC encoder; C `lz4` crate | no |
 | zstd 1.5.7 -1 | 411 | 1,351 | 34.5% | BSD or GPLv2 | `zstd` (C, `cc`), `ruzstd` (pure Rust, MIT) | no (`cc` 1.8 is; `zstd-sys` is not) |
 | zstd -22 (`--ultra`) | 1.99 | 1,087 | 24.7% | | | |
@@ -158,7 +158,7 @@ Iron's own numbers on its own corpus (in-crate LZ4, `miniz_oxide` deflate, Windo
 zstd levels 3, 9 and 19 are not in this table: zstd's decode speed barely depends on the level (1.0 to 1.4 GB/s between -1 and -22
 above), and the ratio moves between the -1 and -22 rows; compression speed falls from hundreds of MB/s (-1, -3) to a few MB/s (-19).
 Long-window (`--long`) and dictionary modes help small entries (scene JSON, many small prefabs) most; multithreaded zstd frames speed
-up compression, not decompression of one frame (Iron's chunks are independent, so decode is already parallel per chunk). `ruzstd` decodes
+up compression, not decompression of one frame (Platypus's chunks are independent, so decode is already parallel per chunk). `ruzstd` decodes
 1.4x (incompressible data) to 3.5x (enwik9) slower than C zstd and its encoder has four levels (about 1, 3, 7, 11).
 
 The user's worry is right: **xz/LZMA decode at 80 to 120 MB/s per core**, 30 to 50 times slower than LZ4, for about 2x smaller output
@@ -174,7 +174,7 @@ a smaller penalty (400 MB/s).
   plus lossy entropy reduction, for zstd; licence not verified), Basis Universal (Apache-2.0: ETC1S/UASTC transcoded to BC/ASTC/ETC at
   load, zstd supercompression in KTX2), Crunch (older, ETC1S's ancestor). This is cooker work and independent of the container codec,
   except GACL, which is tied to DirectStorage zstd.
-- **Meshes** (f32 streams, u32 indices): LZ4 1.6, deflate-6 2.26 on Iron's models (measured). Byte-shuffling the vertex streams or
+- **Meshes** (f32 streams, u32 indices): LZ4 1.6, deflate-6 2.26 on Platypus's models (measured). Byte-shuffling the vertex streams or
   meshoptimizer-style encoding gains more than any codec switch (a cooker follow-up).
 - **Audio**: ogg/mp3/opus/flac are stored (1/16 rule); wav compresses a little. No codec question.
 - **Scene JSON, fonts, data**: small; ratios 5 to 10 with any codec; zstd with a dictionary is best for many small entries.
@@ -194,11 +194,11 @@ zstd) or hardware/GPU decompression.
 
 ## 4. Other platforms
 
-| Platform | Fast loading API | Codecs it decompresses | Fits Iron's `.irpk`? |
+| Platform | Fast loading API | Codecs it decompresses | Fits Platypus's `.ppk`? |
 |---|---|---|---|
-| Windows (D3D12) | DirectStorage | GDeflate (GPU/CPU), zstd (1.4 preview), custom (CPU) | yes: requests are (file, offset, size, format), Iron's chunks map to requests |
+| Windows (D3D12) | DirectStorage | GDeflate (GPU/CPU), zstd (1.4 preview), custom (CPU) | yes: requests are (file, offset, size, format), Platypus's chunks map to requests |
 | Windows/Linux/Android (Vulkan) | `VK_EXT_memory_decompression` (GDeflate 1.0, GPU memory to GPU memory; the I/O is the app's) | GDeflate | yes, as chunk payloads; driver coverage unknown |
-| macOS 13 / iOS 16 and later (Metal 3) | `MTLIOCommandQueue` (fast resource loading: loads into `MTLBuffer` / `MTLTexture` / bytes) | zlib, LZFSE, LZ4, LZMA, LZBitmap (`MTLIOCompressionMethod`) | **no for compressed data**: compressed files must be written by `MTLIOCreateCompressionContext(path, method, chunkSize)` in Apple's own chunked file format (WWDC22 sample: 64 KiB chunks, zlib) and opened with `makeIOFileHandle(url:compressionMethod:)`; Iron's own container can only use the uncompressed handle with offsets |
+| macOS 13 / iOS 16 and later (Metal 3) | `MTLIOCommandQueue` (fast resource loading: loads into `MTLBuffer` / `MTLTexture` / bytes) | zlib, LZFSE, LZ4, LZMA, LZBitmap (`MTLIOCompressionMethod`) | **no for compressed data**: compressed files must be written by `MTLIOCreateCompressionContext(path, method, chunkSize)` in Apple's own chunked file format (WWDC22 sample: 64 KiB chunks, zlib) and opened with `makeIOFileHandle(url:compressionMethod:)`; Platypus's own container can only use the uncompressed handle with offsets |
 | Android | none: `AAssetManager` reads from the APK (stored entries, `AAsset_openFileDescriptor64`), mmap | none (CPU) | yes (already designed: packs stored uncompressed in the APK) |
 | Linux | `io_uring` (async reads, no decompression) | none (CPU) | yes |
 | Xbox (GDK) | DirectStorage for Xbox (hardware decompression) | zlib-class LZ and BCPack (not verified) | needs a console build of the packer; out of scope until a console target exists |
@@ -214,31 +214,31 @@ loader reads as is.
 The format already allows it: the codec is a byte **per chunk**, `index.json` names the pack codec, and the content hash is over raw
 bytes. What it needs:
 
-1. `iron-build pack --target windows|macos|linux|android|ios` (default: the host) with a per-target codec table **by entry kind**, e.g.
+1. `platypus-build pack --target windows|macos|linux|android|ios` (default: the host) with a per-target codec table **by entry kind**, e.g.
    Windows+DirectStorage: textures and meshes GDeflate (or zstd), everything else LZ4; others: LZ4 everywhere. The plan (entries, GUIDs,
    order, split) is the same for every target; only the stored chunk bytes differ.
 2. One `dist/data-<target>/` per target; `index.json` gets `"target"` and per-kind `"codecs"`. The pack id is a TOC hash, so two
    targets get different ids, and the manifest id check keeps a Windows `data/` from being mounted by a macOS build by mistake.
 3. Readers must decode every codec they might meet on the CPU (a GDeflate chunk on a machine without DirectStorage or on Vulkan), so
-   each codec added to a target's table needs a CPU decoder in `iron_pack` on that target, even when it is slow. For GDeflate that is a
+   each codec added to a target's table needs a CPU decoder in `platypus_pack` on that target, even when it is slow. For GDeflate that is a
    C++ dependency on Windows only.
 4. Stores and patches: Steam depots per OS already split builds; patch packs (plan step 13) are per target too. Disk and upload cost:
    N targets = N packs of the same assets (no change to how each is built).
 
-## 5. What this means for Iron
+## 5. What this means for Platypus
 
 1. **DirectStorage's biggest win does not need a new codec.** With stored or LZ4 chunks, DirectStorage still gives the BypassIO/NVMe
    read path, batched requests and fewer CPU copies; LZ4 then goes through the custom decompression queue (CPU) into an upload heap,
-   or `MEMORY` destinations. Iron's packs are already DirectStorage-ready for that: entries over 4 KiB start on 4 KiB boundaries, chunks
+   or `MEMORY` destinations. Platypus's packs are already DirectStorage-ready for that: entries over 4 KiB start on 4 KiB boundaries, chunks
    are 256 KiB raw (above the 32 KiB minimum), each chunk has its own offset, size and codec.
-2. **The GPU path only pays for GPU-bound bytes** (BC textures, vertex/index buffers) and only on D3D12, which Iron does not use by
-   default today. Iron's in-crate LZ4 reads 0.9 to 1.9 GB/s per core (a tuned decoder 3 to 4 GB/s) on a 24-thread machine: CPU LZ4 on
+2. **The GPU path only pays for GPU-bound bytes** (BC textures, vertex/index buffers) and only on D3D12, which Platypus does not use by
+   default today. Platypus's in-crate LZ4 reads 0.9 to 1.9 GB/s per core (a tuned decoder 3 to 4 GB/s) on a 24-thread machine: CPU LZ4 on
    8 threads is above NVMe speed, so GPU decompression wins on CPU time, not wall time, unless the ratio is much better than LZ4's.
 3. **GDeflate vs zstd for that path.** GDeflate: stable since 1.1 (2022), deflate ratio, a Vulkan twin, but a C++ encoder/decoder
    dependency and deflate's slow CPU fallback (about 0.8 GB/s per core). zstd: better ratio than deflate, 1.0 to 1.4 GB/s CPU decode, the
    same codec could serve every platform's CPU path, GACL for BC data, but in DirectStorage only as a preview with a production warning
    and vendor drivers due in 2H 2026. Microsoft is clearly moving to zstd; GDeflate remains supported.
-4. **Chunking**: Iron's 256 KiB chunk is exactly the zstd shader's sweet spot and four GDeflate tiles (a 256 KiB GDeflate stream is one
+4. **Chunking**: Platypus's 256 KiB chunk is exactly the zstd shader's sweet spot and four GDeflate tiles (a 256 KiB GDeflate stream is one
    request with four 64 KiB tiles), so no format change is needed for either; `chunk_log2 = 16` (64 KiB) would only matter if each chunk
    had to be a single GDeflate tile (Vulkan EXT regions are one tile each: a 256 KiB chunk becomes four regions).
 5. **Texture layout for DirectStorage** (plan step 12, `IRTX` v2): with a `BUFFER` destination, DirectStorage writes the whole entry
@@ -258,7 +258,7 @@ bytes. What it needs:
 | deflate (codec 2) | keep as built (pure Rust, in the lock) for download-bound targets until zstd lands | no new dependency | firm |
 | xz/LZMA, Brotli | **no** as pack codecs (80 to 420 MB/s decode) | load-time cost | firm |
 | (b) GDeflate chunk mode for Windows | **reserve codec 4 = GDeflate now** (one line in `format.rs`), build it only if `CODEC-1` says so; same 256 KiB chunks, 4 KiB-aligned entries | stable DirectStorage GPU path today, but needs DX12 by default and a C++ dependency, and zstd may make it moot | **pending (`CODEC-1`)** |
-| DirectStorage itself | later, after the `iron_app` seam (plan step 10), as a Windows loader behind the `Vfs` (`AssetSource::read_into_gpu` style), stored and LZ4 chunks first (custom queue) | the I/O win is codec-independent | firm direction, timing open |
+| DirectStorage itself | later, after the `platypus_app` seam (plan step 10), as a Windows loader behind the `Vfs` (`AssetSource::read_into_gpu` style), stored and LZ4 chunks first (custom queue) | the I/O win is codec-independent | firm direction, timing open |
 | (c) ship first | LZ4 + none + deflate as built; the `IRTX` v2 layout rules of 5.5 in plan step 12; per-target codec tables (4.1) only when a second codec exists | nothing waits on DirectStorage | firm |
 
 ### TODO `CODEC-1`: decide the Windows GPU codec (GDeflate, zstd, or none)
@@ -266,12 +266,12 @@ bytes. What it needs:
 Needs the user's OK first: new crates/downloads (`direct-storage` or bindings from the winmd, the DirectStorage NuGet DLLs, `gdeflate`,
 `zstd`), and a DX12 window or headless D3D12 device on a PC with known GPU instability (prefer a headless probe, no window).
 
-Prototype (`crates/iron_pack/examples/ds_probe.rs` or a scratch crate, not shipped): a corpus of **2 GB of photographic BC1/BC3/BC7
+Prototype (`crates/platypus_pack/examples/ds_probe.rs` or a scratch crate, not shipped): a corpus of **2 GB of photographic BC1/BC3/BC7
 textures with mips and 500 MB of meshes** (not the flat renders of the asset-packs note), packed four ways: LZ4, zstd -9 (also with GACL
 shuffle if available), GDeflate (DirectStorage's `IDStorageCompressionCodec`, best level), stored. Load everything into GPU buffers
 with a **cold cache** (`FILE_FLAG_NO_BUFFERING` reads, or after a reboot) on this machine's NVMe:
 
-1. `iron_pack` mmap/pread + LZ4 on 8 threads + `queue.write_buffer` (today's path);
+1. `platypus_pack` mmap/pread + LZ4 on 8 threads + `queue.write_buffer` (today's path);
 2. DirectStorage 1.3 with stored and LZ4 chunks (custom queue), `BUFFER` destination imported into wgpu (`create_buffer_from_hal`);
 3. DirectStorage 1.3 GDeflate, GPU decompression;
 4. DirectStorage 1.4 zstd, GPU and CPU (only if 1.4 is GA by then, else noted as preview).
@@ -283,7 +283,7 @@ needs at most half of (1)'s CPU time at no more than 1.1x its wall time**, with 
 wgpu interop passes a correctness test (bytes in the wgpu buffer equal the raw entry; a texture copied from it equals a direct upload,
 `shared_gpu()` golden style). Prefer zstd over GDeflate when both pass and DirectStorage 1.4 is GA (one codec for every platform's CPU
 path); otherwise GDeflate. If neither passes, keep LZ4 and use DirectStorage (2) only for its I/O path, or not at all if (2) is not at
-least 1.2x faster than (1). Write the numbers into this note and the decision into `iron-asset-packs.md` section 10.
+least 1.2x faster than (1). Write the numbers into this note and the decision into `platypus-asset-packs.md` section 10.
 
 ## 7. Not verified
 

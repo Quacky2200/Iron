@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_ts"
+name = "platypus_ts"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [dependencies]
-iron_ts_rt = { path = "../iron_ts_rt" }
-iron_api = { path = "../../crates/iron_api", default-features = false }
-iron_ui = { path = "../../crates/iron_ui" }
+platypus_ts_rt = { path = "../platypus_ts_rt" }
+platypus_api = { path = "../../crates/platypus_api", default-features = false }
+platypus_ui = { path = "../../crates/platypus_ui" }
 cranelift-codegen = "0.136.3"
 cranelift-frontend = "0.136.3"
 cranelift-module = "0.136.3"

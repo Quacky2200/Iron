@@ -2,12 +2,12 @@
 
 // In-place reloads of the game's code (dev builds, where React and the engine live in a
 // vendor bundle that stays loaded). The engine wraps each load of the game's code in
-// `__iron_hot_begin()` / `__iron_hot_end()`:
+// `__platypus_hot_begin()` / `__platypus_hot_end()`:
 //
 // - What the game's top level set up last time is undone first (its style sheets), so
 //   running the new top level doesn't add things twice.
 // - Afterwards, live components of registered classes are moved onto the new classes
-//   (their fields kept), and React re-renders what changed (`@iron/react` hooks in).
+//   (their fields kept), and React re-renders what changed (`@platypus/react` hooks in).
 
 import { _patchClasses } from "./scene.ts";
 
@@ -31,11 +31,11 @@ export function _onHotEnd(f: () => void): void {
 }
 
 declare global {
-  var __iron_hot_begin: (() => void) | undefined;
-  var __iron_hot_end: (() => string[]) | undefined;
+  var __platypus_hot_begin: (() => void) | undefined;
+  var __platypus_hot_end: (() => string[]) | undefined;
 }
 
-globalThis.__iron_hot_begin = () => {
+globalThis.__platypus_hot_begin = () => {
   const old = undo;
   undo = [];
   for (const f of old) {
@@ -49,7 +49,7 @@ globalThis.__iron_hot_begin = () => {
 };
 
 /** Returns the names of component classes whose live instances kept the old code. */
-globalThis.__iron_hot_end = () => {
+globalThis.__platypus_hot_end = () => {
   loading = false;
   const stale = _patchClasses();
   if (stale.length) {

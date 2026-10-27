@@ -1,4 +1,4 @@
-# iron_ts: Symbol, iterators, generators, async and Proxy (design note, for review)
+# platypus_ts: Symbol, iterators, generators, async and Proxy (design note, for review)
 
 Both topics are **STOP** items in `TODO.md` M9.b2: nothing here is built. The questions are at the end.
 What exists today: `for...of` over arrays, strings, `Map`, `Set` and typed arrays is compiled to loops
@@ -7,7 +7,7 @@ by the compiler (`lower/arrays.rs`, `lower/maps.rs`); a user class cannot be ite
 
 ## 1. `Symbol`
 
-Symbols are values with identity, used as property keys. Iron objects are fixed-layout structs, so
+Symbols are values with identity, used as property keys. Platypus objects are fixed-layout structs, so
 only keys known at compile time can work.
 
 - `Symbol.iterator`, `asyncIterator`, `toPrimitive`, `hasInstance`, `toStringTag`, `species` ...: compile

@@ -5,8 +5,8 @@
 //! `rendering.ts`, in the same order of operations.
 
 use crate::{LightData, lights};
-use iron_math::V3;
-use iron_scene::api::scene_api;
+use platypus_math::V3;
+use platypus_scene::api::scene_api;
 
 fn dot(a: V3, b: V3) -> f64 {
     a.x * b.x + a.y * b.y + a.z * b.z
@@ -86,7 +86,7 @@ pub(crate) fn illuminance(point: V3, normal: Option<V3>, shadows: bool) -> f64 {
                 y: point.y + (dir.y / len) * 0.02,
                 z: point.z + (dir.z / len) * 0.02,
             };
-            if iron_physics_api::physics_api::raycast(from, dir, distance).0 != 0 {
+            if platypus_physics_api::physics_api::raycast(from, dir, distance).0 != 0 {
                 lit = 0.0;
             }
         }

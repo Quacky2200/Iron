@@ -4,7 +4,7 @@
 // with hundreds of thousands of nodes stay fast. Selection, expansion and focus live
 // in a `TreeState` the parent owns (tree.ts has the logic).
 
-import { Input, type IronElement, type IronKeyboardEvent, type IronPointerEvent, Text } from "@iron/react";
+import { Input, type PlatypusElement, type PlatypusKeyboardEvent, type PlatypusPointerEvent, Text } from "@platypus/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { clickSelect, flatten, type TreeNode, type TreeRow, type TreeState, toggle, treeKey } from "./tree.ts";
@@ -34,7 +34,7 @@ export interface TreeViewProps<T> {
 
 /** The default rename field: Enter or leaving it renames, Escape cancels. */
 function RenameField({ initial, done }: { initial: string; done: (name: string | null) => void }) {
-  const field = useRef<IronElement>(null);
+  const field = useRef<PlatypusElement>(null);
   const [value, setValue] = useState(initial);
   const finished = useRef(false);
   const finish = (name: string | null) => {
@@ -46,10 +46,10 @@ function RenameField({ initial, done }: { initial: string; done: (name: string |
   return (
     <Input
       ref={field}
-      className="iron-tree-rename"
+      className="platypus-tree-rename"
       value={value}
       onChange={(e) => setValue(e.value)}
-      onKeyDown={(e: IronKeyboardEvent) => {
+      onKeyDown={(e: PlatypusKeyboardEvent) => {
         e.stopPropagation();
         if (e.key === "Enter") finish(value);
         else if (e.key === "Escape") finish(null);
@@ -93,12 +93,12 @@ export function TreeView<T>({
     const row = rows[i]!;
     const { node } = row;
     const selected = state.selected.has(node.id);
-    const classes = ["iron-tree-row", selected && "selected", state.focus === node.id && "focused"].filter(Boolean).join(" ");
+    const classes = ["platypus-tree-row", selected && "selected", state.focus === node.id && "focused"].filter(Boolean).join(" ");
     return (
       <box
         className={classes}
         style={{ paddingLeft: 4 + row.depth * indent, height: rowHeight }}
-        onPointerDown={(e: IronPointerEvent) => {
+        onPointerDown={(e: PlatypusPointerEvent) => {
           if (e.button !== 0) return;
           onStateChange(clickSelect(rows, state, node.id, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }));
         }}
@@ -109,16 +109,16 @@ export function TreeView<T>({
         }}
       >
         <box
-          className={row.hasChildren ? "iron-tree-twisty" : "iron-tree-twisty leaf"}
-          onPointerDown={(e: IronPointerEvent) => {
+          className={row.hasChildren ? "platypus-tree-twisty" : "platypus-tree-twisty leaf"}
+          onPointerDown={(e: PlatypusPointerEvent) => {
             if (!row.hasChildren) return;
             e.stopPropagation();
             onStateChange(toggle(state, node.id));
           }}
         >
-          {row.hasChildren ? <box className={row.expanded ? "iron-chevron open" : "iron-chevron"} /> : null}
+          {row.hasChildren ? <box className={row.expanded ? "platypus-chevron open" : "platypus-chevron"} /> : null}
         </box>
-        {renderIcon ? <box className="iron-tree-icon">{renderIcon(node, row)}</box> : null}
+        {renderIcon ? <box className="platypus-tree-icon">{renderIcon(node, row)}</box> : null}
         {renaming === node.id ? (
           renderRename ? (
             renderRename(node, finishRename(node))
@@ -128,7 +128,7 @@ export function TreeView<T>({
         ) : renderLabel ? (
           renderLabel(node, row)
         ) : (
-          <Text className="iron-tree-label">{node.label}</Text>
+          <Text className="platypus-tree-label">{node.label}</Text>
         )}
       </box>
     );
@@ -137,13 +137,13 @@ export function TreeView<T>({
   return (
     <VirtualList
       ref={list}
-      className={className ? `iron-tree ${className}` : "iron-tree"}
+      className={className ? `platypus-tree ${className}` : "platypus-tree"}
       count={rows.length}
       rowHeight={rowHeight}
       height={height}
       keyboard={false}
       renderRow={renderRow}
-      onKeyDown={(e: IronKeyboardEvent) => {
+      onKeyDown={(e: PlatypusKeyboardEvent) => {
         if (renaming) return;
         const focused = rows[focusIndex];
         if (e.key === "F2" && focused && onRename) {

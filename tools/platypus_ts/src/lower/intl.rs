@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Intl`, step I1: `normalize`, `localeCompare`, `toLocaleUpperCase`/`toLocaleLowerCase` and
-//! `Intl.Collator`. The work is in the runtime (`iron_ts_rt/src/intl.rs`, ICU4X). Locale arguments
+//! `Intl.Collator`. The work is in the runtime (`platypus_ts_rt/src/intl.rs`, ICU4X). Locale arguments
 //! are strings or array literals of strings; an options argument must be an object literal with
 //! literal values (it is turned into a `key=value;...` string here, so the runtime never sees an
 //! object). A collator is an object of the prelude class `Intl_Collator` holding an id.

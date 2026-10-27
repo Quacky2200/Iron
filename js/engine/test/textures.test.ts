@@ -16,11 +16,11 @@ beforeEach(() => {
   _resetPhysicsComponentsForTests();
   _resetTexturesForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const renderOps = () => ops.filter((o) => String(o[0]).startsWith("render."));
@@ -32,7 +32,7 @@ describe("textures", () => {
     expect(renderOps()).toEqual([["render.texture", 1, "assets/crate.png", "point", "repeat", true, null, null, null, 1, false]]);
     expect(t.isLoaded).toBe(false);
     const ready = t.whenLoaded();
-    globalThis.__iron_textures([[1, 64, 32]]);
+    globalThis.__platypus_textures([[1, 64, 32]]);
     expect(await ready).toBe(t);
     expect([t.width, t.height, t.isLoaded]).toEqual([64, 32, true]);
     t.wrapMode = "clamp";
@@ -44,7 +44,7 @@ describe("textures", () => {
   test("a failed load rejects whenLoaded", async () => {
     const t = Texture.load("assets/missing.png");
     const ready = t.whenLoaded();
-    globalThis.__iron_textures([[t.id, 0, 0]]);
+    globalThis.__platypus_textures([[t.id, 0, 0]]);
     expect(t.failed).toBe(true);
     await expect(ready).rejects.toThrow("missing.png");
   });
@@ -84,7 +84,7 @@ describe("sprites", () => {
 
   test("grid cuts a sheet left to right, top to bottom; size is in units", () => {
     const sheet = Texture.load("assets/sheet.png");
-    globalThis.__iron_textures([[sheet.id, 64, 32]]);
+    globalThis.__platypus_textures([[sheet.id, 64, 32]]);
     const cells = Sprite.grid(sheet, 4, 2, undefined, 32);
     expect(cells.length).toBe(8);
     // The first cell is the top-left: y counts up from the bottom.

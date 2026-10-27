@@ -3,7 +3,7 @@
 //! Typed arrays (`Int8Array` .. `Float64Array`, `Uint8ClampedArray`): `new`, `from`, the in-place
 //! methods (`fill`, `set`, `reverse`, `sort`), `slice`, and every read-only array method through a
 //! `number[]` copy. Element reads and writes are in the code generator (`typed_load`/`typed_store`),
-//! the runtime is `iron_ts_rt/src/typed.rs`. `subarray`, `new X(buffer, offset, length)` and `.buffer`
+//! the runtime is `platypus_ts_rt/src/typed.rs`. `subarray`, `new X(buffer, offset, length)` and `.buffer`
 //! make views that share memory; `ArrayBuffer` and `DataView` are prelude classes.
 
 use super::expr::{mk, num};

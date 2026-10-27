@@ -77,10 +77,10 @@ impl<'a> Lowerer<'a> {
             TSType::TSSymbolKeyword(_) => self.named_type("Symbol_")?,
             TSType::TSBooleanKeyword(_) => Ty::Bool,
             TSType::TSStringKeyword(_) => Ty::Str,
-            // `object` (a bag of properties, in practice a style): an `IronStyle` when the program
+            // `object` (a bag of properties, in practice a style): a `PlatypusStyle` when the program
             // has the UI prelude.
             TSType::TSObjectKeyword(_) if self.class_decls.contains_key("StyleEntry") => {
-                self.named_type("IronStyle")?
+                self.named_type("PlatypusStyle")?
             }
             // `typeof TABLE`: the type of a top-level constant, from its initialiser.
             TSType::TSTypeQuery(q) => {
@@ -396,12 +396,12 @@ impl<'a> Lowerer<'a> {
                         {
                             return Ok(Ty::Arr(Box::new(self.ty(args[1], hint)?)));
                         }
-                        // `Record<string, unknown>` (a bag of style properties) is an `IronStyle`.
+                        // `Record<string, unknown>` (a bag of style properties) is a `PlatypusStyle`.
                         if matches!(args[0], TSType::TSStringKeyword(_))
                             && matches!(args[1], TSType::TSUnknownKeyword(_))
                             && self.class_decls.contains_key("StyleEntry")
                         {
-                            return self.named_type("IronStyle");
+                            return self.named_type("PlatypusStyle");
                         }
                         // `Record<string, V>`: a dictionary, a `Map<string, V>`.
                         if matches!(args[0], TSType::TSStringKeyword(_)) {

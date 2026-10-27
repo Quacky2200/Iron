@@ -129,11 +129,11 @@ impl WindowSurface {
 
 /// Frames the swapchain may queue. One shows resizes and input soonest, but on DX12
 /// it made live resizing jitter (checked by hand on an RTX 5080), so DX12 queues two.
-/// `IRON_FRAME_LATENCY` (1 or 2) overrides it for comparing on other machines; more
+/// `PLATYPUS_FRAME_LATENCY` (1 or 2) overrides it for comparing on other machines; more
 /// would only add input lag.
 fn frame_latency(backend: wgpu::Backend) -> u32 {
     let default = if backend == wgpu::Backend::Dx12 { 2 } else { 1 };
-    std::env::var("IRON_FRAME_LATENCY")
+    std::env::var("PLATYPUS_FRAME_LATENCY")
         .ok()
         .and_then(|v| v.trim().parse().ok())
         .filter(|n| (1..=2).contains(n))

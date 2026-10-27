@@ -342,14 +342,14 @@ describe("console", () => {
 
   // M5-EDT-19
   test("repeats collapse with counts, and filters count and search", () => {
-    const log = [entry(1, "info", "a"), entry(2, "warn", "b"), entry(3, "info", "a"), entry(4, "info", "a"), entry(5, "error", "a"), entry(6, "debug", "d", "iron_app")];
+    const log = [entry(1, "info", "a"), entry(2, "warn", "b"), entry(3, "info", "a"), entry(4, "info", "a"), entry(5, "error", "a"), entry(6, "debug", "d", "platypus_app")];
     expect(collapse(log).map((r) => `${r.entry.message}x${r.count}@${r.entry.seq}`)).toEqual(["ax3@1", "bx1@2", "ax1@5", "dx1@6"]);
     expect(countLevels(log)).toEqual({ info: 4, warn: 1, error: 1 });
     const all = { info: true, warn: true, error: true, search: "", collapse: false };
     expect(consoleRows(log, all).length).toBe(6);
     expect(consoleRows(log, { ...all, info: false }).map((r) => r.entry.seq)).toEqual([2, 5]);
     expect(consoleRows(log, { ...all, search: "B" }).map((r) => r.entry.seq)).toEqual([2]);
-    expect(consoleRows(log, { ...all, search: "iron_" }).map((r) => r.entry.seq)).toEqual([6]);
+    expect(consoleRows(log, { ...all, search: "platypus_" }).map((r) => r.entry.seq)).toEqual([6]);
     expect(consoleRows(log, { ...all, collapse: true }).map((r) => r.count)).toEqual([3, 1, 1, 1]);
   });
 });

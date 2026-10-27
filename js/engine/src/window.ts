@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Windows: `Window.main` is the original window (title, size, events); `Window.create({ .. })` opens more,
-// each with its own UI (`createRoot(win).render(<Panel />)` from `@iron/react`). The class itself is native:
+// each with its own UI (`createRoot(win).render(<Panel />)` from `@platypus/react`). The class itself is native:
 // the app installs it as the global `Window`, with the same members compiled games have (design:
-// docs/research/iron-windows.md). This module has the types and re-exports the global.
+// docs/research/platypus-windows.md). This module has the types and re-exports the global.
 
 /** How a window looks and behaves: "normal" (own taskbar button), "tool" (owned palette, small caption, no taskbar
  *  button), "dialog", "popup" (undecorated, never takes focus), "borderless", "child" (embedded where the platform
@@ -44,7 +44,7 @@ export interface WindowOptions {
 
 /** One window (a handle: the OS window and its UI live in the engine). */
 export interface Window {
-  /** Iron's id: 1 for the main window, then 2, 3, ... never reused in a run. */
+  /** Platypus's id: 1 for the main window, then 2, 3, ... never reused in a run. */
   readonly handle: number;
   /** The OS handle as a number (HWND, NSView pointer, X11 window id); 0 when there is none. */
   readonly nativeHandle: number;

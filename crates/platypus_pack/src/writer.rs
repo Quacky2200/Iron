@@ -340,7 +340,7 @@ impl PackWriter<BufWriter<std::fs::File>> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let tmp = path.with_extension("irpk-tmp");
+        let tmp = path.with_extension("ppk-tmp");
         let file = std::fs::File::create(&tmp)?;
         let mut w = PackWriter::new(BufWriter::new(file), opts)?;
         let result = fill(&mut w).and_then(|_| w.finish());

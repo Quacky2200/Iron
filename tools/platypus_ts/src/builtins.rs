@@ -4,8 +4,8 @@
 //! `register` and `@property`, timers, the generic `GameObject` members, the typed window
 //! messages, `Random.pick<T>`, and a few members whose script type is wider than the native one.
 //! One entry per declaration (its TypeScript signature and doc; decision 1 of
-//! docs/research/iron-generated-dts-plan.md: a raw signature in this table counts as generated
-//! from Rust). `types_dts.rs` prints them into `types/iron.d.ts`: a member inside the generated
+//! docs/research/platypus-generated-dts-plan.md: a raw signature in this table counts as generated
+//! from Rust). `types_dts.rs` prints them into `types/platypus.d.ts`: a member inside the generated
 //! class or namespace of its owner (it replaces a native member of the same name), a top-level
 //! declaration after the engine's. Each entry's comment names the code that lowers it.
 
@@ -15,7 +15,7 @@ use crate::lower::components::{CONTACT_HOOKS, HOOKS, hook_param};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Place {
     /// A top-level declaration of this name (its text is the whole declaration, `declare`
-    /// included); `@iron/engine` re-exports it.
+    /// included); `@platypus/engine` re-exports it.
     Top(&'static str),
     /// A static member of a generated class, or a member of a generated namespace. The signature
     /// is written as a class member (`pick<T>(..): T;`, `readonly roots: T;`); inside a namespace it
@@ -348,7 +348,7 @@ pub fn top_level() -> String {
     s
 }
 
-/// The names the top-level declarations give (`@iron/engine` re-exports them).
+/// The names the top-level declarations give (`@platypus/engine` re-exports them).
 pub fn top_names() -> Vec<&'static str> {
     let mut names = vec!["Component"];
     names.extend(of(|p| matches!(p, Place::Top(_))).map(|b| match b.place {

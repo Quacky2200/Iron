@@ -8,7 +8,7 @@
 
 use std::str::FromStr;
 
-use iron_core::Value;
+use platypus_core::Value;
 use taffy::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, FlexWrap, GridAutoFlow,
     GridPlacement, GridTemplateComponent, GridTemplateTracks, LengthPercentage,
@@ -93,7 +93,7 @@ pub struct Visual {
     /// `zIndex`: paint order among siblings (`None` is `auto`).
     pub z_index: Option<i32>,
     /// `isolation: isolate` (accepted; every z-indexed element already stacks on its
-    /// own in Iron's simplified model).
+    /// own in Platypus's simplified model).
     pub isolate: bool,
     /// `overflowX`, `overflowY` as specified (see [`Overflow::computed`]).
     pub overflow: [Overflow; 2],
@@ -105,7 +105,7 @@ pub struct Visual {
     /// `scrollbarWidth`: `auto`, `thin` or `none` (hidden, still scrollable).
     pub scrollbar_width: ScrollbarWidth,
     /// `scrollbarGutter: stable`: reserve the scrollbar's space even before the content
-    /// overflows (Iron's scrollbars otherwise overlay the content).
+    /// overflows (Platypus's scrollbars otherwise overlay the content).
     pub scrollbar_gutter: bool,
     /// `overscrollBehavior` (x, y): `true` for `contain` / `none`, which stop scrolling
     /// from passing to the scroll containers outside once this one hits its end.
@@ -280,7 +280,7 @@ impl ScrollbarWidth {
 }
 
 /// A CSS-wide keyword: `initial`, `inherit`, `unset`, or `revert` / `revert-layer`
-/// (which act like `unset`, as Iron has no user-agent stylesheet).
+/// (which act like `unset`, as Platypus has no user-agent stylesheet).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WideKeyword {
     Initial,
@@ -433,7 +433,7 @@ fn apply_property(
                 parse_kw::<Position>(k).ok_or_else(invalid)?
             };
         }
-        // Iron (like Taffy and s&box) defaults to border-box; CSS's default is content-box.
+        // Platypus (like Taffy and s&box) defaults to border-box; CSS's default is content-box.
         "boxSizing" => {
             style.box_sizing = match kw()?.trim() {
                 "border-box" => taffy::BoxSizing::BorderBox,
@@ -806,7 +806,7 @@ fn apply_property(
         | "transformStyle"
         | "backfaceVisibility"
         | "WebkitBackfaceVisibility" => {
-            // `scale: 1.5` and `perspective: 800` (pixels) take numbers, as `IronStyle` declares.
+            // `scale: 1.5` and `perspective: 800` (pixels) take numbers, as `PlatypusStyle` declares.
             let text;
             let s = match (prop, value) {
                 ("scale", Value::Number(n)) => {
@@ -1147,7 +1147,7 @@ fn apply_property(
         | "scrollPaddingLeft"
         | "scrollPaddingBlock"
         | "scrollPaddingInline" => {
-            // `auto` is 0 here: Iron has no UA-chosen padding.
+            // `auto` is 0 here: Platypus has no UA-chosen padding.
             let one = |t: &str| match t {
                 "auto" => Some(0.0),
                 t => match Len::parse(t) {
@@ -1625,7 +1625,7 @@ fn parse_kw<T: FromStr>(s: &str) -> Option<T> {
 }
 
 /// A unitless number inside a CSS string (`"0"` in `"0 20px"`). CSS only allows
-/// unitless zero, but numbers mean pixels everywhere in Iron, so any number is
+/// unitless zero, but numbers mean pixels everywhere in Platypus, so any number is
 /// accepted. Taffy's parser rejects these, so they're handled first.
 fn plain_number(s: &str) -> Option<f32> {
     s.trim().parse().ok()
@@ -2152,7 +2152,7 @@ mod tests {
         assert_eq!(style.border.top, LengthPercentage::length(2.0));
         assert_eq!(style.border.right, LengthPercentage::length(0.0));
         assert_eq!(style.border.left, LengthPercentage::length(0.0));
-        // Iron draws a width alone (default style solid).
+        // Platypus draws a width alone (default style solid).
         let (_, v) = apply("borderWidth", 2.0.into()).unwrap();
         assert_eq!(v.border_styles, [BorderStyle::Solid; 4]);
     }

@@ -2,18 +2,18 @@
 
 //! `@property` save and load, `getComponent` and `addComponent` for compiled components driven by
 //! `NativeHost` (`bench/components2.ts`). IDs are in TESTS.md (M9-TS-601..).
-use iron_api::Handle;
-use iron_scene::Scene;
-use iron_scene::api::scene_api as api;
-use iron_ts_rt::{NativeHost, PropValue, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::cm2::*;
+use platypus_api::Handle;
+use platypus_scene::Scene;
+use platypus_scene::api::scene_api as api;
+use platypus_ts_rt::{NativeHost, PropValue, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::cm2::*;
 
 fn all(_: u64) -> bool {
     true
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     unsafe { ts_cm2_init() };
     f();
@@ -30,7 +30,7 @@ fn in_every_gc_mode(f: impl Fn()) {
 fn log() -> String {
     let p = unsafe { ts_cm2_logText() };
     String::from_utf16_lossy(
-        &unsafe { iron_ts_rt::Str::from_raw(p as *const iron_ts_rt::Str) }.to_utf16(),
+        &unsafe { platypus_ts_rt::Str::from_raw(p as *const platypus_ts_rt::Str) }.to_utf16(),
     )
 }
 
@@ -83,7 +83,7 @@ fn properties_are_read_and_written_through_the_table() {
         host.set_property(h, "label", PropValue::Str("héros 🛡".into()))
             .unwrap();
         // A collection between the write and the read must keep the new string alive.
-        iron_ts_rt::ts_rt_gc_collect();
+        platypus_ts_rt::ts_rt_gc_collect();
         assert_eq!(host.get_property(h, "hp"), Ok(PropValue::Num(42.5)));
         assert_eq!(host.get_property(h, "armor"), Ok(PropValue::Num(0.0)));
         assert_eq!(host.get_property(h, "alive"), Ok(PropValue::Bool(false)));
@@ -150,7 +150,7 @@ fn saved_properties_load_into_another_component() {
 #[test]
 fn get_component_and_add_component_work_between_compiled_components() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| {
         let go = api::create();
         let other = api::create();

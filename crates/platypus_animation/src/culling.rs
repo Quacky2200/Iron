@@ -5,7 +5,7 @@
 //! the default animates always.
 
 use crate::clip::World;
-use iron_scene::{ObjectId, Scene};
+use platypus_scene::{ObjectId, Scene};
 
 /// What an `Animator` does while its object is not visible (Unity's `AnimatorCullingMode`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

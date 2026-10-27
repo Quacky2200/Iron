@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { Quaternion, Ray, Vector3 } from "@iron/engine";
+import { Quaternion, Ray, Vector3 } from "@platypus/engine";
 
 import { beginDrag, dragTo, type HandleFrame, type HandleView, handleShapes, pickHandle } from "../src/handles.ts";
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The TypeScript `@iron/engine` shapes that the native API holds differently: functions the
+//! The TypeScript `@platypus/engine` shapes that the native API holds differently: functions the
 //! compiler writes from the manifests (subscriptions, promises, globals, object arguments) and the
 //! typed window messages (`messages.rs`), appended to a program that names them, or calls expanded
 //! at compile time (`createPrimitive`, `Random.pick`).
@@ -342,7 +342,7 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
     (out != src).then_some(out)
 }
 
-// The facade: members of the TypeScript `@iron/engine` that the native API has in another shape
+// The facade: members of the TypeScript `@platypus/engine` that the native API has in another shape
 // are written by the compiler (`extend_source`, appended to a program that names them) as
 // functions called `__x<kind>_<Class>_<member>`:
 //

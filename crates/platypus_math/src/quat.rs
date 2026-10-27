@@ -8,7 +8,7 @@
 
 use crate::jsnum::{self, clamp, clamp01, hypot};
 use crate::math::{DEG, V3, V4, v3, v4};
-use iron_api::{ValueType, iron_api};
+use platypus_api::{ValueType, platypus_api};
 
 /// `Quaternion`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -186,7 +186,7 @@ impl Q {
     }
 }
 
-#[iron_api(namespace = "Quaternion", quickjs, values(
+#[platypus_api(namespace = "Quaternion", quickjs, values(
     Quaternion = Q [x: f64, y: f64, z: f64, w: f64],
     Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod quaternion_api {
@@ -454,7 +454,7 @@ impl M4 {
     }
 }
 
-#[iron_api(namespace = "Matrix4x4", quickjs, values(
+#[platypus_api(namespace = "Matrix4x4", quickjs, values(
     Matrix4x4 = M4 [m0: f64, m1: f64, m2: f64, m3: f64, m4: f64, m5: f64, m6: f64, m7: f64,
                     m8: f64, m9: f64, m10: f64, m11: f64, m12: f64, m13: f64, m14: f64, m15: f64],
     Vector3 = V3 [x: f64, y: f64, z: f64],

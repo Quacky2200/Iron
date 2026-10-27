@@ -14,7 +14,7 @@
 //! however much overdraw there is.
 
 use bytemuck::{Pod, Zeroable};
-use iron_core::glam::{Mat4, Vec3};
+use platypus_core::glam::{Mat4, Vec3};
 
 use crate::Gpu;
 

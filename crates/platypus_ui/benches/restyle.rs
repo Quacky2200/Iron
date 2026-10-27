@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! M3-BEN-01: CSS restyle cost on an editor-like UI of ~2,250 nodes with a
-//! realistic stylesheet. Run with `cargo bench -p iron_ui --bench restyle`.
+//! realistic stylesheet. Run with `cargo bench -p platypus_ui --bench restyle`.
 
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::*;
-use iron_ui::{ElementState, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::*;
+use platypus_ui::{ElementState, UiTree};
 
 pub const STYLESHEET: &str = r#"
 :root { --accent: #3fa9f5; --row-h: 22px; --pad: 8px }

@@ -10,14 +10,14 @@ let commits: { ops: Op[]; target: number | undefined }[] = [];
 
 beforeEach(() => {
   commits = [];
-  (globalThis as { __iron_commit?: unknown }).__iron_commit = (ops: Op[], target?: number) => {
+  (globalThis as { __platypus_commit?: unknown }).__platypus_commit = (ops: Op[], target?: number) => {
     commits.push({ ops, target });
   };
   resetForTests();
   _resetRootForTests();
 });
 afterEach(() => {
-  delete (globalThis as { __iron_commit?: unknown }).__iron_commit;
+  delete (globalThis as { __platypus_commit?: unknown }).__platypus_commit;
 });
 
 describe("createRoot of a window", () => {

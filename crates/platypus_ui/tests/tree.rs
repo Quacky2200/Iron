@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::*;
-use iron_ui::{DrawCmd, Quad, ROOT, Rect, Rgba, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::*;
+use platypus_ui::{DrawCmd, Quad, ROOT, Rect, Rgba, UiTree};
 
 fn op(code: u32, args: &[Value]) -> Value {
     let mut v = vec![Value::Number(code.into())];
@@ -293,7 +293,7 @@ fn effects_are_emitted_in_css_paint_order() {
         ]
     );
     let DrawCmd::Quad(q) = &cmds[4] else { panic!() };
-    assert_eq!(q.radii, iron_ui::Radii::circular([8.0, 0.0, 8.0, 0.0]));
+    assert_eq!(q.radii, platypus_ui::Radii::circular([8.0, 0.0, 8.0, 0.0]));
     // The layer covers the larger shadow (box offset 2 down, grown by its blur of 4:
     // x -4..104, y -2..106) plus 3x the filter blur (12) on every side.
     let DrawCmd::PushLayer { bounds, .. } = cmds[1] else {
@@ -411,10 +411,10 @@ fn backgrounds_and_shadows_without_a_fill_still_draw() {
     assert_eq!(shape(&cmds), ["quad 50", "shadow 0"]);
     let DrawCmd::Quad(q) = &cmds[0] else { panic!() };
     let fill = q.images.first().expect("gradient fill");
-    assert_eq!(fill.size, iron_ui::BackgroundSize::Cover);
+    assert_eq!(fill.size, platypus_ui::BackgroundSize::Cover);
     assert!(matches!(
         *fill.image,
-        iron_ui::BackgroundImage::Linear { .. }
+        platypus_ui::BackgroundImage::Linear { .. }
     ));
 }
 
@@ -450,7 +450,7 @@ fn text_nodes_and_text_blocks() {
             append(0, 1),
         ],
     );
-    assert_eq!(tree.kind(NodeId(3)), Some(iron_ui::TEXT_NODE));
+    assert_eq!(tree.kind(NodeId(3)), Some(platypus_ui::TEXT_NODE));
     assert_eq!(tree.text(NodeId(5)), Some("big"));
     assert_eq!(tree.text_content(NodeId(2)), "Hello big world");
 
@@ -634,7 +634,7 @@ fn text_blocks_draw_glyphs_decorations_and_shadows() {
         "glyphs advance left to right"
     );
     // The underline spans the run, just below the baseline, in the text colour.
-    let iron_ui::TextDecoration {
+    let platypus_ui::TextDecoration {
         rect: line, color, ..
     } = text.decorations[0];
     assert_eq!(color, Rgba::new(1.0, 0.0, 0.0, 1.0));

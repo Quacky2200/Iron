@@ -27,11 +27,11 @@ beforeEach(() => {
   _resetPhysicsForTests();
   _resetPhysicsComponentsForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const physicsOps = () => ops.filter((o) => String(o[0]).startsWith("physics."));
@@ -63,7 +63,7 @@ describe("physics components", () => {
     // Removing the Rigidbody leaves static colliders; removing those drops the body.
     ops = [];
     rb.destroy();
-    globalThis.__iron_dispatch(rb.id, "onDestroy");
+    globalThis.__platypus_dispatch(rb.id, "onDestroy");
     expect(physicsOps()).toEqual([["physics.set", 1, "kind", "fixed"]]);
   });
 
@@ -111,7 +111,7 @@ describe("physics components", () => {
     const zone = new GameObject("zone");
     const cz = zone.addComponent(BoxCollider, { isTrigger: true });
     const id = (c: Collider) => c.handle!.id;
-    globalThis.__iron_physics([], [1, id(ca), id(cb), 0, 4, 0, id(ca), id(cb), 0, 0, 1, id(ca), id(cz), 1, 0], [], []);
+    globalThis.__platypus_physics([], [1, id(ca), id(cb), 0, 4, 0, id(ca), id(cb), 0, 0, 1, id(ca), id(cz), 1, 0], [], []);
     expect(log).toEqual(["a hit b at 4", "b hit a at 4", "a left b", "b left a", "a entered zone"]);
   });
 });

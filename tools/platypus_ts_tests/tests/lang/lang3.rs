@@ -6,7 +6,7 @@
 //! GC and collection-off modes and are compared with bun (`bench/gen_cases_expected.ts`). IDs are
 //! in TESTS.md (M9-TS-3313..).
 use crate::cases::{case, run, run_with};
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 use serde_json::Value;
 
 const CASES: &str = include_str!("../../bench/lang3_cases.ts");
@@ -46,7 +46,7 @@ bun_tests! {
 //
 // `xs.flat(depth) as number[]` with a depth that does not reach the numbers: bun returns the
 // nested arrays under a wrong type; here the cast names the problem with a TypeError (documented
-// in docs/iron-ts.md, so no bun comparison).
+// in docs/platypus-ts.md, so no bun comparison).
 #[test]
 fn a_cast_of_a_flat_result_to_a_member_type_throws_when_the_depth_is_too_shallow() {
     let got = run(
@@ -80,7 +80,7 @@ fn object_assign_of_a_dictionary_value_of_the_wrong_type_throws_naming_the_key()
 }
 
 /// A small host API with string array parameters (`&[String]` and `Vec<String>`).
-#[iron_api(namespace = "Words")]
+#[platypus_api(namespace = "Words")]
 pub mod words_api {
     /// The words with a separator between them.
     pub fn join(words: &[String], sep: &str) -> String {

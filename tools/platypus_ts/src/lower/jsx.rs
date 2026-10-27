@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! JSX and hooks for the native UI (`iron_ui_native`), as a source rewrite before parsing.
+//! JSX and hooks for the native UI (`platypus_ui_native`), as a source rewrite before parsing.
 //!
 //! - `<box style={{ width: 10 }} onClick={f}>kids</box>` becomes builder calls of the `Ui`
 //!   namespace: `Ui.child(Ui.on(Ui.style(Ui.begin("box"), "width", 10), "click", __handler(f)), ...)`.
@@ -28,8 +28,8 @@ use std::collections::{HashMap, HashSet};
 /// generated from the tables (`ui_dts::prelude`).
 pub const UI_PRELUDE: &str = include_str!("ui.ts");
 
-/// The `Ui` namespace (`iron_ts_ui::manifest_json()`), embedded so that JSX needs no manifest from
-/// the caller. Regenerate with `cargo run -p iron_ts_ui --example manifest`.
+/// The `Ui` namespace (`platypus_ts_ui::manifest_json()`), embedded so that JSX needs no manifest from
+/// the caller. Regenerate with `cargo run -p platypus_ts_ui --example manifest`.
 pub const UI_MANIFEST: &str = include_str!("ui_manifest.json");
 
 /// `UiRoot.mount(target, element)`: what `createRoot(target).render(element)` becomes (the host takes
@@ -66,9 +66,9 @@ fn is_element_expr(e: &Expression<'_>) -> bool {
     )
 }
 
-/// The intrinsic element a capitalised `@iron/react` component name stands for.
+/// The intrinsic element a capitalised `@platypus/react` component name stands for.
 fn intrinsic_alias(name: &str) -> Option<&'static str> {
-    iron_ui::tables::elements::tag_of_component(name)
+    platypus_ui::tables::elements::tag_of_component(name)
 }
 
 /// A stable component id from its name (FNV-1a, 31 bits).
@@ -134,7 +134,7 @@ struct Finder<'s> {
     forward: HashSet<String>,
     /// The setters of `const [x, setX] = useState(..)` anywhere in the program.
     setters: HashSet<String>,
-    /// Top-level functions, classes and constants of the program (they shadow the `@iron/react` aliases).
+    /// Top-level functions, classes and constants of the program (they shadow the `@platypus/react` aliases).
     declared: HashSet<String>,
     /// The ones that are functions: `useState(read)` calls `read` for the first value.
     declared_fns: HashSet<String>,
@@ -202,7 +202,7 @@ impl<'s> Finder<'s> {
                 return String::new();
             }
         };
-        // `<Text>`, `<Input>` ... from `@iron/react` are the intrinsic elements, unless the program
+        // `<Text>`, `<Input>` ... from `@platypus/react` are the intrinsic elements, unless the program
         // declares a component of that name.
         let (name, is_component) = match intrinsic_alias(&name) {
             Some(lower) if is_component && !self.declared.contains(&name) => {
@@ -305,7 +305,7 @@ impl<'s> Finder<'s> {
                     let v = self.attr_value(&a.value, at);
                     // The event type of the prop comes from the table (`onChange` is `input`, `onFocus`
                     // is `focusin`); a name it lacks listens to its lower-cased name.
-                    let (mut kind, capture) = match iron_ui::tables::events::kind_of_prop(n) {
+                    let (mut kind, capture) = match platypus_ui::tables::events::kind_of_prop(n) {
                         Some((k, c)) => (k.to_string(), c),
                         None => {
                             let k = n[2..].to_lowercase();
@@ -863,7 +863,7 @@ fn desugar_passes(src: &str) -> R<Option<String>> {
             // Otherwise it is a JSX error: report the TSX parser's, with its line in the user's
             // source (the passes keep the line count).
             let d = &ret.diagnostics[0];
-            if std::env::var_os("IRON_TS_DUMP_SRC").is_some() {
+            if std::env::var_os("PLATYPUS_TS_DUMP_SRC").is_some() {
                 eprintln!("{cur}");
             }
             return Err(match d.labels.first() {
@@ -1200,7 +1200,7 @@ mod tests {
     fn components_stand_for_the_elements_of_the_table() {
         let t = lowered("export function A(): UiElement { return <TextArea rows={3} />; }");
         assert!(t.contains("Ui.begin(\"textarea\")"), "{t}");
-        for e in iron_ui::tables::elements::ELEMENTS {
+        for e in platypus_ui::tables::elements::ELEMENTS {
             if let Some(c) = e.component {
                 assert_eq!(intrinsic_alias(c), Some(e.tag));
             }

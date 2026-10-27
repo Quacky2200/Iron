@@ -24,11 +24,11 @@ Engine features exercised:
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/fog-white-room
-cd .. && cargo run --release -p iron_app -- examples/fog-white-room
+cd tools && cargo run -q -p platypus_build -- build ../examples/fog-white-room
+cd .. && cargo run --release -p platypus_app -- examples/fog-white-room
 ```
 
-Screenshot run: `iron_app examples/fog-white-room --screenshot out.png --frames 120` (the interactive window has
+Screenshot run: `platypus_app examples/fog-white-room --screenshot out.png --frames 120` (the interactive window has
 crashed some GPUs; the screenshot run is safest).
 
 ## Structure

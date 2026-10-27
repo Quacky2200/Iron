@@ -3,7 +3,7 @@
 use winit::event::{ElementState, Ime, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, ModifiersState, NamedKey, PhysicalKey};
 
-/// Iron's platform-independent input events.
+/// Platypus's platform-independent input events.
 #[derive(Clone, Debug, PartialEq)]
 pub enum InputEvent {
     /// Named like the DOM's `KeyboardEvent`: `code` is the physical key (`"KeyW"`, layout
@@ -134,7 +134,7 @@ impl From<winit::event::MouseButton> for MouseButton {
     }
 }
 
-/// Converts a winit window event into an Iron event. Events Iron doesn't use yet return `None`.
+/// Converts a winit window event into a Platypus event. Events Platypus doesn't use yet return `None`.
 pub fn convert_window_event(event: &WindowEvent) -> Option<InputEvent> {
     match event {
         WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),

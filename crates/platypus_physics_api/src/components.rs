@@ -8,7 +8,7 @@
 
 use crate::comp::{self, ColShape, Data, ShapeTag, with_col, with_rb};
 use crate::*;
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 
 fn colg<R: Default>(h: u32, f: impl FnOnce(&comp::Col) -> R) -> R {
     with_col(h, |c| f(c)).unwrap_or_default()
@@ -64,7 +64,7 @@ fn rb_body_id(h: u32) -> u32 {
 /// Moves the object to a world position (and rotation) the way setting its transform does.
 fn move_object(h: u32, position: Option<V3>, rotation: Option<Q>) {
     let object = comp::comp_object(h);
-    iron_scene::api::with_scene(|sc| {
+    platypus_scene::api::with_scene(|sc| {
         if !sc.contains(object) {
             return;
         }
@@ -180,7 +180,7 @@ pub(crate) fn is_grounded(h: u32) -> bool {
 }
 
 fn character_simple_move(h: u32, speed: V3) -> bool {
-    let dt = iron_engine_api::time::time_api::delta_time();
+    let dt = platypus_engine_api::time::time_api::delta_time();
     let grounded = is_grounded(h);
     // A little downward pull on the ground keeps it grounded on slopes.
     let fall = with_col(h, |c| match &mut c.shape {
@@ -217,7 +217,7 @@ pub(crate) fn count_rigidbodies() -> u32 {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[iron_api(
+#[platypus_api(
     namespace = "PhysicsComponents", quickjs,
     handles(
         GameObject = ObjectId,
@@ -997,7 +997,7 @@ pub mod components_api {
     }
 }
 
-#[iron_api(namespace = "ForceMode", quickjs)]
+#[platypus_api(namespace = "ForceMode", quickjs)]
 pub mod force_mode_api {
     /// A force in newtons, over one fixed step (call it from `onFixedUpdate`).
     #[property]
@@ -1028,7 +1028,7 @@ pub mod force_mode_api {
     }
 }
 
-#[iron_api(namespace = "RigidbodyConstraints", quickjs)]
+#[platypus_api(namespace = "RigidbodyConstraints", quickjs)]
 pub mod constraints_api {
     #[property]
     #[js_name = "None"]

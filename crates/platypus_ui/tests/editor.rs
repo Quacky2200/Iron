@@ -7,10 +7,10 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::events::Modifiers;
-use iron_ui::opcodes::SET_ATTRS;
-use iron_ui::{Clipboard, DrawCmd, Input, Interaction, Rect, UiEvent, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::events::Modifiers;
+use platypus_ui::opcodes::SET_ATTRS;
+use platypus_ui::{Clipboard, DrawCmd, Input, Interaction, Rect, UiEvent, UiTree};
 
 struct Field {
     tree: UiTree,
@@ -471,7 +471,7 @@ fn placeholders_rewrap_when_the_field_resizes() {
     let narrow = height(&mut f);
     let errors = f.tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_STYLE,
+            platypus_ui::opcodes::SET_STYLE,
             &[n(f.id.0), "width".into(), px(600.0)],
         )],
     });
@@ -557,8 +557,8 @@ fn caret_color_paints_the_caret() {
             })
             .unwrap()
     };
-    let red = iron_ui::Rgba::new(1.0, 0.0, 0.0, 1.0);
-    let blue = iron_ui::Rgba::new(0.0, 0.0, 1.0, 1.0);
+    let red = platypus_ui::Rgba::new(1.0, 0.0, 0.0, 1.0);
+    let blue = platypus_ui::Rgba::new(0.0, 0.0, 1.0, 1.0);
     assert_eq!(caret_color(&[("caretColor", "red".into())]), red);
     assert_eq!(
         caret_color(&[("color", "blue".into()), ("caretColor", "auto".into())]),

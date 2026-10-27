@@ -4,7 +4,7 @@
 //! written. These tests only compile; running is the host's business.
 
 fn compile(src: &str, manifests: &[String]) -> Result<(), String> {
-    iron_ts::compile_with_manifests(src, "speed", "rf_", 100, manifests).map(|_| ())
+    platypus_ts::compile_with_manifests(src, "speed", "rf_", 100, manifests).map(|_| ())
 }
 
 fn ok(src: &str) {
@@ -143,11 +143,11 @@ export function App(): UiElement {
 #[test]
 fn ambient_react_types_resolve() {
     ok(r#"
-const card: IronStyle = { width: 100, padding: "4px", color: "red" };
-function Row(props: { label: string; children: React.ReactNode; style?: IronStyle }): UiElement {
+const card: PlatypusStyle = { width: 100, padding: "4px", color: "red" };
+function Row(props: { label: string; children: React.ReactNode; style?: PlatypusStyle }): UiElement {
   return <box style={{ ...card, ...props.style, flexGrow: 1 }}><text>{props.label}</text>{props.children}</box>;
 }
-const blob = (left: number, size: number): IronStyle => ({ left, width: size });
+const blob = (left: number, size: number): PlatypusStyle => ({ left, width: size });
 export function App(): UiElement {
   return <Row label="a" style={blob(1, 2)}>x</Row>;
 }
@@ -162,7 +162,7 @@ export function App(): UiElement {
   const [s, setS] = useState("");
   return (
     <box
-      onKeyDown={(e: IronKeyboardEvent) => { if (e.shiftKey && e.code === "Enter" && !e.ctrlKey) setS(e.key); }}
+      onKeyDown={(e: PlatypusKeyboardEvent) => { if (e.shiftKey && e.code === "Enter" && !e.ctrlKey) setS(e.key); }}
       onWheel={(e) => { setS(String(e.deltaY)); }}
       onScroll={(e) => { setS(String(e.scrollTop)); }}
       onChange={(e) => setS(e.target.value)}
@@ -177,7 +177,7 @@ export function App(): UiElement {
 fn a_node_ref_can_focus_blur_and_scroll() {
     ok(r#"
 export function App(): UiElement {
-  const r = useRef<IronElement>(null);
+  const r = useRef<PlatypusElement>(null);
   useEffect(() => { r.current?.focus(); r.current?.scrollTo(0, 10); r.current?.blur(); }, []);
   return <box ref={r} />;
 }
@@ -211,7 +211,7 @@ export function App(): UiElement { return <box><Maybe on={true} /></box>; }
 // M9-TS-1615
 #[test]
 fn create_root_render_mounts_the_element_from_a_top_level_statement() {
-    let out = iron_ts::compile_with_manifests(
+    let out = platypus_ts::compile_with_manifests(
         "function App(): UiElement { return <box>hi</box>; }
 createRoot().render(<App />);",
         "speed",

@@ -6,8 +6,8 @@
 mod common;
 
 use common::Dom;
-use iron_core::Commit;
-use iron_ui::UiTree;
+use platypus_core::Commit;
+use platypus_ui::UiTree;
 
 const CSS: &str = ".row { flex-direction: row; width: 100%; height: 100% }
     .side { width: 120px }

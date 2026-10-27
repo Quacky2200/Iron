@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use iron_core::ComponentId;
+use platypus_core::ComponentId;
 
 use crate::{ScriptError, ScriptRuntime, Value};
 
-/// Drives script components through the JS-side host installed by `@iron/engine`:
-/// `__iron_registered()`, `__iron_create(class, id, object, name)`, `__iron_hooks(id)`,
-/// `__iron_dispatch(id, method, ...args)`, `__iron_run(method, ids, ...args)` (one hook
-/// on many components in one call), `__iron_destroy(id)` and, once per frame,
-/// `__iron_tick(dt)` (which advances script `Time` and returns the scaled `dt`).
+/// Drives script components through the JS-side host installed by `@platypus/engine`:
+/// `__platypus_registered()`, `__platypus_create(class, id, object, name)`, `__platypus_hooks(id)`,
+/// `__platypus_dispatch(id, method, ...args)`, `__platypus_run(method, ids, ...args)` (one hook
+/// on many components in one call), `__platypus_destroy(id)` and, once per frame,
+/// `__platypus_tick(dt)` (which advances script `Time` and returns the scaled `dt`).
 ///
 /// The lifecycle follows Unity / s&box: `onStart` once before anything else, then
 /// `onFixedUpdate(dt)` on each fixed tick ([`Self::fixed_update`]), `onUpdate(dt)` and
@@ -24,11 +24,11 @@ use crate::{ScriptError, ScriptRuntime, Value};
 pub struct ComponentHost {
     next_id: u32,
     components: Vec<Entry>,
-    /// Whether the bundle has `__iron_tick` (checked on the first update).
+    /// Whether the bundle has `__platypus_tick` (checked on the first update).
     tick_hook: Option<bool>,
-    /// Whether the bundle has `__iron_animate` (animation players).
+    /// Whether the bundle has `__platypus_animate` (animation players).
     animate_hook: Option<bool>,
-    /// Whether the bundle has `__iron_run` (hooks batched into one call each).
+    /// Whether the bundle has `__platypus_run` (hooks batched into one call each).
     run_hook: Option<bool>,
     /// The last frame's scaled length (`frame_dt`).
     frame_dt: f64,
@@ -73,7 +73,7 @@ impl Hooks {
 /// Asks JS which lifecycle methods a component has (all of them if the bundle can't
 /// say, so nothing is skipped).
 fn hooks(rt: &mut dyn ScriptRuntime, id: ComponentId) -> Hooks {
-    let Ok(Value::Array(names)) = rt.call_global("__iron_hooks", &[id.raw().into()]) else {
+    let Ok(Value::Array(names)) = rt.call_global("__platypus_hooks", &[id.raw().into()]) else {
         return Hooks {
             start: true,
             fixed_update: true,
@@ -105,13 +105,13 @@ impl ComponentHost {
 
     /// Component class names the loaded bundle registered.
     pub fn registered_classes(rt: &mut dyn ScriptRuntime) -> Result<Vec<String>, ScriptError> {
-        match rt.call_global("__iron_registered", &[])? {
+        match rt.call_global("__platypus_registered", &[])? {
             Value::Array(items) => Ok(items
                 .into_iter()
                 .filter_map(|v| v.as_str().map(str::to_owned))
                 .collect()),
             other => Err(ScriptError::new(format!(
-                "__iron_registered returned {other:?}, expected an array"
+                "__platypus_registered returned {other:?}, expected an array"
             ))),
         }
     }
@@ -139,7 +139,7 @@ impl ComponentHost {
         if let Some(object) = object {
             args.extend([object.into(), name.into()]);
         }
-        rt.call_global("__iron_create", &args)?;
+        rt.call_global("__platypus_create", &args)?;
         self.next_id += 1;
         self.adopt(id, class, object);
         Ok(id)
@@ -171,7 +171,7 @@ impl ComponentHost {
         {
             tracing::error!(component = %id, class = %entry.class, "onDestroy: {e}");
         }
-        let _ = rt.call_global("__iron_destroy", &[id.raw().into()]);
+        let _ = rt.call_global("__platypus_destroy", &[id.raw().into()]);
     }
 
     /// Removes every component on these GameObjects (destroyed with their objects).
@@ -196,7 +196,7 @@ impl ComponentHost {
         self.update_active(rt, dt, &|_| true)
     }
 
-    /// Runs one frame: `__iron_tick(dt)` (script time; it may scale `dt`), then, for
+    /// Runs one frame: `__platypus_tick(dt)` (script time; it may scale `dt`), then, for
     /// components on active objects, `onStart()` if new and `onUpdate(dt)`, then
     /// `onLateUpdate(dt)` for all of them. A component that throws is reported and
     /// disabled; the others keep running. Returns the errors raised.
@@ -207,15 +207,15 @@ impl ComponentHost {
         active: &dyn Fn(u32) -> bool,
     ) -> Vec<(ComponentId, ScriptError)> {
         let has_tick = *self.tick_hook.get_or_insert_with(|| {
-            rt.eval("typeof __iron_tick === 'function'")
+            rt.eval("typeof __platypus_tick === 'function'")
                 .is_ok_and(|v| v == Value::Bool(true))
         });
         let mut dt = dt;
         if has_tick {
-            match rt.call_global("__iron_tick", &[dt.into()]) {
+            match rt.call_global("__platypus_tick", &[dt.into()]) {
                 Ok(Value::Number(scaled)) if scaled.is_finite() && scaled >= 0.0 => dt = scaled,
                 Ok(_) => {}
-                Err(e) => tracing::error!(target: "script", "__iron_tick: {e}"),
+                Err(e) => tracing::error!(target: "script", "__platypus_tick: {e}"),
             }
         }
         self.frame_dt = dt;
@@ -223,11 +223,11 @@ impl ComponentHost {
         // Animation poses objects after updates set its parameters, before late updates
         // (cameras following animated things) read them.
         let has_animate = *self.animate_hook.get_or_insert_with(|| {
-            rt.eval("typeof __iron_animate === 'function'")
+            rt.eval("typeof __platypus_animate === 'function'")
                 .is_ok_and(|v| v == Value::Bool(true))
         });
-        if has_animate && let Err(e) = rt.call_global("__iron_animate", &[dt.into()]) {
-            tracing::error!(target: "script", "__iron_animate: {e}");
+        if has_animate && let Err(e) = rt.call_global("__platypus_animate", &[dt.into()]) {
+            tracing::error!(target: "script", "__platypus_animate: {e}");
         }
         errors.extend(self.run(rt, "onLateUpdate", &[dt.into()], active));
         errors
@@ -261,7 +261,7 @@ impl ComponentHost {
     /// ones first. Components added while this runs (`addComponent` in a script) are
     /// adopted when the ops are applied, so the list doesn't change under us.
     ///
-    /// With `__iron_run`, one call runs the method on a whole run of components (a call
+    /// With `__platypus_run`, one call runs the method on a whole run of components (a call
     /// into JS per component cost more than many hooks do); a new component's `onStart`
     /// ends the run, so everything still happens in the same order.
     fn run(
@@ -272,7 +272,7 @@ impl ComponentHost {
         active: &dyn Fn(u32) -> bool,
     ) -> Vec<(ComponentId, ScriptError)> {
         let batched = *self.run_hook.get_or_insert_with(|| {
-            rt.eval("typeof __iron_run === 'function'")
+            rt.eval("typeof __platypus_run === 'function'")
                 .is_ok_and(|v| v == Value::Bool(true))
         });
         if !batched {
@@ -304,7 +304,7 @@ impl ComponentHost {
         errors
     }
 
-    /// Calls `method` on the components at these indices in one `__iron_run`; one that
+    /// Calls `method` on the components at these indices in one `__platypus_run`; one that
     /// throws is disabled and the rest after it still run.
     fn run_batch(
         &mut self,
@@ -324,10 +324,10 @@ impl ComponentHost {
             all.push(method.into());
             all.push(Value::Array(ids));
             all.extend_from_slice(args);
-            let Err(e) = rt.call_global("__iron_run", &all) else {
+            let Err(e) = rt.call_global("__platypus_run", &all) else {
                 break;
             };
-            let at = match rt.eval("globalThis.__iron_run_at") {
+            let at = match rt.eval("globalThis.__platypus_run_at") {
                 Ok(Value::Number(n)) if n >= 0.0 && (from + n as usize) < batch.len() => n as usize,
                 // Not a component's throw (the call itself failed): blame the first.
                 _ => 0,
@@ -349,11 +349,11 @@ impl ComponentHost {
         let entry = &mut self.components[i];
         tracing::error!(component = %entry.id, class = %entry.class, "{e}; component disabled");
         entry.enabled = false;
-        let _ = rt.call_global("__iron_destroy", &[entry.id.raw().into()]);
+        let _ = rt.call_global("__platypus_destroy", &[entry.id.raw().into()]);
         errors.push((entry.id, e));
     }
 
-    /// [`Self::run`] one component at a time, for bundles without `__iron_run`.
+    /// [`Self::run`] one component at a time, for bundles without `__platypus_run`.
     fn run_each(
         &mut self,
         rt: &mut dyn ScriptRuntime,
@@ -383,7 +383,7 @@ impl ComponentHost {
             if let Err(e) = result {
                 tracing::error!(component = %entry.id, class = %entry.class, "{e}; component disabled");
                 entry.enabled = false;
-                let _ = rt.call_global("__iron_destroy", &[entry.id.raw().into()]);
+                let _ = rt.call_global("__platypus_destroy", &[entry.id.raw().into()]);
                 errors.push((entry.id, e));
             }
         }
@@ -439,23 +439,23 @@ pub fn reload<R: ScriptRuntime>(
 }
 
 /// Runs a dev build's game code (CommonJS, its imports from the vendor bundle) inside
-/// `__iron_hot_begin` / `__iron_hot_end`, which undo its last top level and move live
+/// `__platypus_hot_begin` / `__platypus_hot_end`, which undo its last top level and move live
 /// components onto the new classes.
 pub fn load_game<R: ScriptRuntime>(rt: &mut R, name: &str, code: &str) -> Result<(), ScriptError> {
     let has = |rt: &mut R, f: &str| {
         rt.eval(&format!("typeof {f} === 'function'"))
             .is_ok_and(|v| v == Value::Bool(true))
     };
-    if has(rt, "__iron_hot_begin") {
-        rt.call_global("__iron_hot_begin", &[])?;
+    if has(rt, "__platypus_hot_begin") {
+        rt.call_global("__platypus_hot_begin", &[])?;
     }
     // The wrapper shares the code's first line, so error line numbers stay right.
     let wrapped = format!(
-        "(function (require, module, exports) {{ {code}\n}})(globalThis.__iron_require, {{ exports: {{}} }}, {{}});"
+        "(function (require, module, exports) {{ {code}\n}})(globalThis.__platypus_require, {{ exports: {{}} }}, {{}});"
     );
     let loaded = rt.load_bundle(name, &wrapped);
-    if has(rt, "__iron_hot_end") {
-        rt.call_global("__iron_hot_end", &[])?;
+    if has(rt, "__platypus_hot_end") {
+        rt.call_global("__platypus_hot_end", &[])?;
     }
     loaded
 }
@@ -482,5 +482,5 @@ fn dispatch(
     all.push(id.raw().into());
     all.push(method.into());
     all.extend_from_slice(args);
-    rt.call_global("__iron_dispatch", &all)
+    rt.call_global("__platypus_dispatch", &all)
 }

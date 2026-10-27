@@ -1,7 +1,7 @@
 # Scene, components and scene files in Rust: design note
 
 Status: **decided by the plan, built in steps; steps 1 to 3 done (members, lookups, lifecycle, `instantiate`, prefabs, `SceneManager`, the loader/saver); hot-reload state, async loads and more kinds next** (2026-10-19). The user asked for `scene.ts` and the component model, then
-`scenes.ts`. Most of the object model is native already (`iron_scene`, `NativeHost`, `getComponent`/`addComponent`, `@property`
+`scenes.ts`. Most of the object model is native already (`platypus_scene`, `NativeHost`, `getComponent`/`addComponent`, `@property`
 save and load, the animation components). This note says what is left, how `scenes.ts` fits when most engine components are not
 ported yet, and the order.
 
@@ -9,16 +9,16 @@ ported yet, and the order.
 
 | Part | Where |
 |---|---|
-| Objects, hierarchy, names, layers, enabled/active, local and world transforms (floats) | `iron_scene::Scene` |
-| `GameObject`/`Transform` API: create, destroy, name, enabled, layer, set parent, local/world position/rotation, local scale | `iron_scene::api::scene_api` |
-| Compiled components: lifecycle (`onAwake`, `onStart`, `onUpdate`, `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`), `getComponent`/`addComponent` (exact class), `@property` get/set/save/load | `iron_ts_rt::NativeHost` |
+| Objects, hierarchy, names, layers, enabled/active, local and world transforms (floats) | `platypus_scene::Scene` |
+| `GameObject`/`Transform` API: create, destroy, name, enabled, layer, set parent, local/world position/rotation, local scale | `platypus_scene::api::scene_api` |
+| Compiled components: lifecycle (`onAwake`, `onStart`, `onUpdate`, `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`), `getComponent`/`addComponent` (exact class), `@property` get/set/save/load | `platypus_ts_rt::NativeHost` |
 | Engine components with their own registries | `Camera`, `Animation`, `Animator` (by object) |
 
 ## 2. What `scene.ts` has that is not native
 
 1. **Transform**: `eulerAngles`, `localEulerAngles`, `lossyScale`, `forward/right/up`, `translate`, `rotate`, `lookAt`,
    `transformPoint`, `inverseTransformPoint`, `transformDirection`. Pure functions of the transform: Rust, in `scene_api`, using
-   the `iron_math` types. The scene stores floats, so results differ from the TypeScript's doubles in the last digits; the tests
+   the `platypus_math` types. The scene stores floats, so results differ from the TypeScript's doubles in the last digits; the tests
    compare rounded values.
 2. **GameObject**: `children`, `findChild`, `root`, `destroyed`, `hideFlags`, `id`, `byId`, `roots`, `GameObject.find`,
    `getComponents`, `getComponentInChildren`, `removeComponent`, `findObjectOfType`, `instantiate`, `dontDestroyOnLoad`,
@@ -29,7 +29,7 @@ ported yet, and the order.
    `onReload()`.
 4. **`getComponent(Base)` finds subclasses** (`instanceof`): the class table carries each class's ancestors.
 5. **Destroy**: destroying an object removes its components from every registry (compiled ones with `onDestroy`, engine ones).
-   One function does it (`iron_engine_api::objects::destroyed(&[ObjectId])`) and the host calls it with what `Scene::destroy`
+   One function does it (`platypus_engine_api::objects::destroyed(&[ObjectId])`) and the host calls it with what `Scene::destroy`
    returned.
 6. **`instantiate`**: copies an object with its children and components; references inside the copy point at the copies. Compiled
    components are copied through their reflection table (save, spawn, load, then remap references); engine components through a
@@ -37,13 +37,13 @@ ported yet, and the order.
 
 ## 3. Scene files (`scenes.ts`)
 
-The file format is `SceneData` (`iron.scene` version 1: objects with transform, children, components with `@property` values,
+The file format is `SceneData` (`platypus.scene` version 1: objects with transform, children, components with `@property` values,
 render settings, shared assets); `examples/scenes` has real files, so Rust reads and writes the same JSON.
 
 `scenes.ts` is coupled to every engine component (rendering, physics, audio, particles, cloth, models, textures), and most are not
 native yet. So the loader is generic:
 
-- A **component kind** registers with `iron_scenes::register_kind(name, KindFns { create(object) -> id, save(id) -> JSON,
+- A **component kind** registers with `platypus_scenes::register_kind(name, KindFns { create(object) -> id, save(id) -> JSON,
   load(id, JSON, ctx), clone(id, object, ctx), destroy(id) })`. `Camera`, `Animation` and `Animator` register now; every
   later port registers its components the same way and scene files with them start to load. An unknown type in a file is a warning
   and the component is skipped, as the TypeScript does for unregistered names.
@@ -55,14 +55,14 @@ native yet. So the loader is generic:
   script API takes scene data as text (`SceneManager.loadScene(json)`); `loadSceneAsync(path)` becomes a host request (the host
   reads the file and calls back), since file access belongs to the app.
 - **Prefabs** are scene data for one object; `Prefab.instantiate` is `instantiate` over loaded data.
-- **Hot-reload state** (`__iron_save_state` / restore) is the same save and load with `reload` mode, done after the loader.
+- **Hot-reload state** (`__platypus_save_state` / restore) is the same save and load with `reload` mode, done after the loader.
 
 ## 4. Order
 
 1. Transform members, GameObject members, Component base (`transform`, `destroy`), subclass-aware `getComponent`,
    `getComponents` and friends for compiled classes, destroy aggregation. Bun-compared (rounded) against `scene.ts`.
 2. `instantiate` for objects with compiled and animation components.
-3. `iron_scenes`: the generic loader/saver and `SceneManager`, with the three kinds above, tested against the real example
+3. `platypus_scenes`: the generic loader/saver and `SceneManager`, with the three kinds above, tested against the real example
    scene files and the original saver's output.
 4. Hot-reload state, `dontDestroyOnLoad`, async load requests.
 

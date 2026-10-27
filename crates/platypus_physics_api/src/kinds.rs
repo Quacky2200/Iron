@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Component kinds (`iron_kinds`) of the physics components, so scene files with them load and
+//! Component kinds (`platypus_kinds`) of the physics components, so scene files with them load and
 //! `instantiate` copies them. [`register_kinds`] registers them on this thread (the host calls it
 //! with the other engine kinds). Properties are saved under the TypeScript names; a collider's
 //! `material` is `{ dynamicFriction, bounciness }`, and a reference to a Rigidbody is the
@@ -9,10 +9,10 @@
 use crate::comp::{
     self, ColShape, Data, Jt, RopeD, ShapeTag, with_col, with_comp, with_joint, with_rb, with_rope,
 };
-use iron_api::Handle;
-use iron_kinds::{Kind, Props};
-use iron_math::{V2, V3};
-use iron_scene::ObjectId;
+use platypus_api::Handle;
+use platypus_kinds::{Kind, Props};
+use platypus_math::{V2, V3};
+use platypus_scene::ObjectId;
 use serde_json::{Map, Value, json};
 
 const CLASSES: [&str; 18] = [
@@ -599,6 +599,6 @@ pub fn component_objects() -> Vec<(ObjectId, &'static str)> {
 /// earlier one).
 pub fn register_kinds() {
     for class in CLASSES {
-        iron_kinds::register(kind(class));
+        platypus_kinds::register(kind(class));
     }
 }

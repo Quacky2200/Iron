@@ -6,10 +6,10 @@
 
 use std::collections::HashMap;
 
-use iron_core::Value;
-use iron_core::glam::{Quat, Vec3};
-use iron_physics::{Batch, Physics};
-use iron_scene::ScriptScene;
+use platypus_core::Value;
+use platypus_core::glam::{Quat, Vec3};
+use platypus_physics::{Batch, Physics};
+use platypus_scene::ScriptScene;
 
 /// Bodies attached to GameObjects, both ways.
 #[derive(Default)]
@@ -46,7 +46,7 @@ impl Attachments {
 
     /// One physics step with the scene: bodies follow the objects scripts moved, the
     /// world steps, then objects follow the bodies that moved. Returns the step's batch
-    /// (for `__iron_physics`).
+    /// (for `__platypus_physics`).
     pub fn step(&self, physics: &mut Physics, scene: &mut ScriptScene) -> Batch {
         for object in scene.take_script_moved() {
             let (Some(&body), Some(id)) = (self.object_bodies.get(&object), scene.object(object))
@@ -74,9 +74,9 @@ impl Attachments {
 
 #[cfg(test)]
 mod tests {
-    use iron_core::ComponentId;
-    use iron_scene::SceneEvent;
-    use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
+    use platypus_core::ComponentId;
+    use platypus_scene::SceneEvent;
+    use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
 
     use super::*;
 
@@ -128,11 +128,12 @@ mod tests {
             let batch = attached.step(&mut physics, &mut scene);
             let moved = scene.take_batch();
             if !moved.is_empty() {
-                rt.call_global("__iron_scene", &[Value::Array(moved)])
+                rt.call_global("__platypus_scene", &[Value::Array(moved)])
                     .unwrap();
             }
             if !batch.is_empty() {
-                rt.call_global("__iron_physics", &batch.to_args()).unwrap();
+                rt.call_global("__platypus_physics", &batch.to_args())
+                    .unwrap();
             }
             // Promise callbacks (raycast answers).
             let errors = rt.tick(f64::from(tick) * 1000.0 / 60.0);

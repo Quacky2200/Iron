@@ -9,8 +9,8 @@
 //! and normalise as in TypeScript. Differences: parse failures log an error and give an invalid
 //! value (NaN) instead of throwing, and `DateTime.parse` knows the ISO 8601 forms only.
 
-use iron_api::{ValueType, iron_api};
 use jiff::{Timestamp, tz::TimeZone};
+use platypus_api::{ValueType, platypus_api};
 use std::cell::RefCell;
 
 const MS_PER_SECOND: f64 = 1000.0;
@@ -274,7 +274,7 @@ fn parse_span(text: &str) -> Option<f64> {
     Some(if neg { -ms } else { ms })
 }
 
-#[iron_api(namespace = "TimeSpan", quickjs, values(TimeSpan = Span [totalMilliseconds: f64]))]
+#[platypus_api(namespace = "TimeSpan", quickjs, values(TimeSpan = Span [totalMilliseconds: f64]))]
 pub mod time_span_api {
     use super::{
         MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, MS_PER_SECOND, Span, invalid_span, parse_span,
@@ -836,7 +836,7 @@ fn add_months(t: Dt, months: f64) -> Dt {
     }
 }
 
-#[iron_api(namespace = "DateTime", quickjs, values(
+#[platypus_api(namespace = "DateTime", quickjs, values(
     DateTime = Dt [epochMilliseconds: f64, utc: f64],
     TimeSpan = Span [totalMilliseconds: f64]))]
 pub mod date_time_api {

@@ -34,7 +34,7 @@ safest option because the interactive window may crash some GPUs. For one execut
 
 ## How it works
 
-1. **Shared style object.** `card` is an `PlatypusStyle` (radius, border, shadow, padding, column flex); the
+1. **Shared style object.** `card` is a `PlatypusStyle` (radius, border, shadow, padding, column flex); the
    `Card` component spreads it and lets callers override:
 
 ```tsx

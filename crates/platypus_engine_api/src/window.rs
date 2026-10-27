@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Window`: the game's windows as scripts see them (design: `docs/research/iron-windows.md`). The
+//! `Window`: the game's windows as scripts see them (design: `docs/research/platypus-windows.md`). The
 //! main window exists from the start; `Window.create({ .. })` makes more, each with its own UI root.
 //!
 //! Per-thread state with host functions, like `screen.rs`. The host (the app, through the platform)
@@ -16,8 +16,8 @@
 //! its creator, until [`end_frame`].
 
 use crate::log::{Level, emit as log_emit};
-use iron_api::callback::{HandleArg, Listeners, emit};
-use iron_api::{Callback, Handle, iron_api};
+use platypus_api::callback::{HandleArg, Listeners, emit};
+use platypus_api::{Callback, Handle, platypus_api};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -54,7 +54,7 @@ impl DomainId {
     }
 }
 
-/// How a window looks and behaves (design section 4); the host maps it to `iron_platform`'s kind.
+/// How a window looks and behaves (design section 4); the host maps it to `platypus_platform`'s kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Style {
     #[default]
@@ -392,7 +392,7 @@ struct Stash {
 fn main_state() -> WindowState {
     WindowState {
         key: String::new(),
-        title: "Iron".into(),
+        title: "Platypus".into(),
         style: Style::Normal,
         parent: None,
         position: None,
@@ -1414,12 +1414,12 @@ fn add_listener<A: Clone + 'static>(
 /// JavaScript over the `...Json` natives for QuickJS games: the typed-looking `postMessage`, `request`,
 /// `onMessage`, `onRequest`, the named events (`emit`, `on`, `ask`, `answer`, `Window.emitAll`) and `Window.broadcast` / `Window.onMessage` / `Window.onRequest`. The wire
 /// form is JSON text: `JSON.stringify` with a replacer that throws a `TypeError` for functions and engine
-/// handle objects (`__iron_is_handle`), `JSON.parse` on the way in. Compiled code lowers the same calls
-/// onto the same natives (`tools/iron_ts/src/lower/messages.rs`), with the types checked at compile time.
+/// handle objects (`__platypus_is_handle`), `JSON.parse` on the way in. Compiled code lowers the same calls
+/// onto the same natives (`tools/platypus_ts/src/lower/messages.rs`), with the types checked at compile time.
 pub const QUICKJS_PRELUDE: &str = r#"
 (function () {
   const W = globalThis.Window;
-  const isHandle = globalThis.__iron_is_handle;
+  const isHandle = globalThis.__platypus_is_handle;
   const where = (key) => (key === '' ? 'the message' : '"' + key + '"');
   const replacer = function (key, v) {
     if (typeof v === 'function') {
@@ -1511,33 +1511,36 @@ pub const QUICKJS_PRELUDE: &str = r#"
 
 /// Installs the `Window` class and its JavaScript helpers in a QuickJS context (use this rather than
 /// `window_api::register_quickjs` alone: that one has no `postMessage` / `request` / `onMessage`).
-pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
+pub fn register_quickjs<'js>(
+    ctx: &platypus_api::rquickjs::Ctx<'js>,
+) -> platypus_api::rquickjs::Result<()> {
     window_api::register_quickjs(ctx)?;
     ctx.globals().set(
-        "__iron_is_handle",
-        iron_api::rquickjs::Function::new(ctx.clone(), |v: iron_api::rquickjs::Value<'_>| {
-            iron_api::qjs::is_handle(&v)
-        })?,
+        "__platypus_is_handle",
+        platypus_api::rquickjs::Function::new(
+            ctx.clone(),
+            |v: platypus_api::rquickjs::Value<'_>| platypus_api::qjs::is_handle(&v),
+        )?,
     )?;
     ctx.eval::<(), _>(QUICKJS_PRELUDE)?;
-    // The timers prelude (`iron_script`) tags timers with the domain current when they were set.
+    // The timers prelude (`platypus_script`) tags timers with the domain current when they were set.
     ctx.globals().set(
-        "__iron_domain",
-        iron_api::rquickjs::Function::new(ctx.clone(), || runtime_current_domain())?,
+        "__platypus_domain",
+        platypus_api::rquickjs::Function::new(ctx.clone(), || runtime_current_domain())?,
     )?;
     ctx.globals().set(
-        "__iron_enter_domain",
-        iron_api::rquickjs::Function::new(ctx.clone(), |d: u32| runtime_enter_domain(d))?,
+        "__platypus_enter_domain",
+        platypus_api::rquickjs::Function::new(ctx.clone(), |d: u32| runtime_enter_domain(d))?,
     )?;
     ctx.globals().set(
-        "__iron_leave_domain",
-        iron_api::rquickjs::Function::new(ctx.clone(), || runtime_leave_domain())?,
+        "__platypus_leave_domain",
+        platypus_api::rquickjs::Function::new(ctx.clone(), || runtime_leave_domain())?,
     )?;
     Ok(())
 }
 
 /// The game's windows. `Window.main` is the original one; `Window.create({ .. })` makes more.
-#[iron_api(
+#[platypus_api(
     namespace = "Window", quickjs,
     handles(Window = WindowRef),
     enums(
@@ -1703,7 +1706,7 @@ pub mod window_api {
 
         // ---- Identity ----
 
-        /// Iron's id: 1 for the main window, then 2, 3, ... never reused in a run.
+        /// Platypus's id: 1 for the main window, then 2, 3, ... never reused in a run.
         #[property]
         pub fn handle(self) -> f64 {
             f64::from(self.0)

@@ -7,8 +7,8 @@
 //! `onChanged(fn)`: here `onChanged(fn)` returns a token for `offChanged(token)` and `fn` gets the
 //! changed paths as one string, a path per line; `takeChanges()` polls the same list.
 
-use iron_api::callback::{Listeners, emit};
-use iron_api::iron_api;
+use platypus_api::callback::{Listeners, emit};
+use platypus_api::platypus_api;
 use std::cell::RefCell;
 
 /// One asset's database entry.
@@ -101,10 +101,10 @@ pub fn resolve(src: &str) -> String {
     }
 }
 
-#[iron_api(namespace = "Assets", quickjs)]
+#[platypus_api(namespace = "Assets", quickjs)]
 pub mod assets_api {
     use super::{STATE, clean};
-    use iron_api::Callback;
+    use platypus_api::Callback;
 
     /// Calls `f(paths)` when asset files change on disk (the paths, one per line); returns a token
     /// for `offChanged`.
@@ -193,7 +193,7 @@ pub mod assets_api {
             s.borrow()
                 .index
                 .iter()
-                .filter(|(k, _)| iron_core::glob::include_match(glob.trim(), k))
+                .filter(|(k, _)| platypus_core::glob::include_match(glob.trim(), k))
                 .map(|(k, _)| k.clone())
                 .collect()
         })

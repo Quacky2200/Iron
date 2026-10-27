@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Compiled UI components for the native reconciler (`iron_ui_native` through `iron_ts_ui`): JSX,
+// Compiled UI components for the native reconciler (`platypus_ui_native` through `platypus_ts_ui`): JSX,
 // useState, useRef, useMemo, useEffect and keyed lists, written as ordinary TSX.
 
 interface CounterProps {
@@ -446,25 +446,25 @@ export function evLogText(): string {
   return s;
 }
 
-function relatedId(e: IronFocusEvent): number {
+function relatedId(e: PlatypusFocusEvent): number {
   return e.relatedTarget === null ? 0 : e.relatedTarget.id;
 }
 
 function FocusForm(): UiElement {
   return (
     <box
-      onFocusCapture={(e: IronFocusEvent) => note("cap-focus:" + e.type)}
-      onBlurCapture={(e: IronFocusEvent) => note("cap-blur:" + e.type)}
-      onFocus={(e: IronFocusEvent) => note("form-focus:" + e.type)}
-      onBlur={(e: IronFocusEvent) => note("form-blur:" + e.type)}
+      onFocusCapture={(e: PlatypusFocusEvent) => note("cap-focus:" + e.type)}
+      onBlurCapture={(e: PlatypusFocusEvent) => note("cap-blur:" + e.type)}
+      onFocus={(e: PlatypusFocusEvent) => note("form-focus:" + e.type)}
+      onBlur={(e: PlatypusFocusEvent) => note("form-blur:" + e.type)}
     >
       <input
-        onFocus={(e: IronFocusEvent) => note("a-focus:" + relatedId(e))}
-        onBlur={(e: IronFocusEvent) => note("a-blur:" + relatedId(e))}
+        onFocus={(e: PlatypusFocusEvent) => note("a-focus:" + relatedId(e))}
+        onBlur={(e: PlatypusFocusEvent) => note("a-blur:" + relatedId(e))}
       />
       <input
-        onFocus={(e: IronFocusEvent) => note("b-focus:" + relatedId(e))}
-        onBlur={(e: IronFocusEvent) => note("b-blur:" + relatedId(e))}
+        onFocus={(e: PlatypusFocusEvent) => note("b-focus:" + relatedId(e))}
+        onBlur={(e: PlatypusFocusEvent) => note("b-blur:" + relatedId(e))}
       />
     </box>
   );
@@ -480,12 +480,12 @@ function Fader(): UiElement {
     <box
       style={{ width: 50, height: 50, opacity: on ? 0 : 1, transition: "opacity 1s linear" }}
       onClick={() => setOn(!on)}
-      onTransitionRun={(e: IronTransitionEvent) => note("run:" + e.propertyName + ":" + e.elapsedTime)}
-      onTransitionStart={(e: IronTransitionEvent) => note("start:" + e.propertyName)}
-      onTransitionEnd={(e: IronTransitionEvent) =>
+      onTransitionRun={(e: PlatypusTransitionEvent) => note("run:" + e.propertyName + ":" + e.elapsedTime)}
+      onTransitionStart={(e: PlatypusTransitionEvent) => note("start:" + e.propertyName)}
+      onTransitionEnd={(e: PlatypusTransitionEvent) =>
         note("end:" + e.propertyName + ":" + e.elapsedTime + ":" + e.pseudoElement.length)
       }
-      onTransitionCancel={(e: IronTransitionEvent) => note("cancel:" + e.propertyName)}
+      onTransitionCancel={(e: PlatypusTransitionEvent) => note("cancel:" + e.propertyName)}
     />
   );
 }
@@ -499,10 +499,10 @@ function Pulser(): UiElement {
     <box
       className="pulse"
       style={{ width: 50, height: 50 }}
-      onAnimationStart={(e: IronAnimationEvent) => note("astart:" + e.animationName)}
-      onAnimationIteration={(e: IronAnimationEvent) => note("aiter:" + e.animationName + ":" + e.elapsedTime)}
-      onAnimationEnd={(e: IronAnimationEvent) => note("aend:" + e.animationName + ":" + e.elapsedTime)}
-      onAnimationCancel={(e: IronAnimationEvent) => note("acancel:" + e.animationName)}
+      onAnimationStart={(e: PlatypusAnimationEvent) => note("astart:" + e.animationName)}
+      onAnimationIteration={(e: PlatypusAnimationEvent) => note("aiter:" + e.animationName + ":" + e.elapsedTime)}
+      onAnimationEnd={(e: PlatypusAnimationEvent) => note("aend:" + e.animationName + ":" + e.elapsedTime)}
+      onAnimationCancel={(e: PlatypusAnimationEvent) => note("acancel:" + e.animationName)}
     />
   );
 }
@@ -517,24 +517,24 @@ function Dragger(): UiElement {
       <box
         draggable
         style={{ position: "absolute", left: 0, top: 0, width: 50, height: 50 }}
-        onDragStart={(e: IronDragEvent) => {
+        onDragStart={(e: PlatypusDragEvent) => {
           e.dataTransfer.setData("Text/Plain", "hello");
           e.dataTransfer.effectAllowed = "move";
           note("dragstart:" + e.dataTransfer.types.join(","));
         }}
-        onDragEnd={(e: IronDragEvent) =>
+        onDragEnd={(e: PlatypusDragEvent) =>
           note("dragend:" + e.dropped + ":" + e.dataTransfer.getData("text/plain") + ":" + e.dataTransfer.dropEffect)
         }
       />
       <box
         style={{ position: "absolute", left: 100, top: 0, width: 50, height: 50 }}
-        onDragEnter={(e: IronDragEvent) => note("enter:" + e.dataTransfer.getData("text/plain"))}
-        onDragOver={(e: IronDragEvent) => {
+        onDragEnter={(e: PlatypusDragEvent) => note("enter:" + e.dataTransfer.getData("text/plain"))}
+        onDragOver={(e: PlatypusDragEvent) => {
           e.dataTransfer.dropEffect = "move";
           e.preventDefault();
         }}
-        onDragLeave={(e: IronDragEvent) => note("leave")}
-        onDrop={(e: IronDragEvent) => {
+        onDragLeave={(e: PlatypusDragEvent) => note("leave")}
+        onDrop={(e: PlatypusDragEvent) => {
           const names: string[] = [];
           for (let i = 0; i < e.dataTransfer.files.length; i++) names.push(e.dataTransfer.files[i].name);
           note("drop:" + e.dataTransfer.getData("text/plain") + ":" + names.join("+") + ":" + e.dataTransfer.types.join(","));
@@ -552,9 +552,9 @@ function Hover(): UiElement {
   return (
     <box
       style={{ width: 50, height: 50 }}
-      onMouseEnter={(e: IronPointerEvent) => note("menter")}
-      onMouseLeave={(e: IronPointerEvent) => note("mleave")}
-      onMouseMove={(e: IronPointerEvent) => note("mmove")}
+      onMouseEnter={(e: PlatypusPointerEvent) => note("menter")}
+      onMouseLeave={(e: PlatypusPointerEvent) => note("mleave")}
+      onMouseMove={(e: PlatypusPointerEvent) => note("mmove")}
     >
       <box style={{ width: 20, height: 20 }} />
     </box>
@@ -567,10 +567,10 @@ export function hoverApp(): UiElement {
 
 function Scroller(): UiElement {
   return (
-    <box onScroll={(e: IronScrollEvent) => note("outer-scroll")}>
+    <box onScroll={(e: PlatypusScrollEvent) => note("outer-scroll")}>
       <box
         style={{ width: 100, height: 100, overflow: "scroll" }}
-        onScroll={(e: IronScrollEvent) => note("scroll:" + e.scrollTop)}
+        onScroll={(e: PlatypusScrollEvent) => note("scroll:" + e.scrollTop)}
       >
         <box style={{ width: 100, height: 400 }} />
       </box>

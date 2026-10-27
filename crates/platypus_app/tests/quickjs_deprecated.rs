@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The QuickJS backend is deprecated: `iron_app` refuses a QuickJS bundle unless `--force` is
+//! The QuickJS backend is deprecated: `platypus_app` refuses a QuickJS bundle unless `--force` is
 //! given, and leaves native bundles alone (headless `--screenshot` runs; they need a GPU, like
 //! the other rendering tests).
 
@@ -14,18 +14,18 @@ struct Run {
 }
 
 fn run(name: &str, game: PathBuf, extra: &[&str]) -> Run {
-    let dir = std::env::temp_dir().join(format!("iron-qjs-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("platypus-qjs-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let png = dir.join("out.png");
     let log = dir.join("run.log");
-    let output = Command::new(env!("CARGO_BIN_EXE_iron_app"))
+    let output = Command::new(env!("CARGO_BIN_EXE_platypus"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)
         .args(["--frames", "3", "--no-fps"])
         .args(extra)
-        .env("IRON_LOG_FILE", &log)
+        .env("PLATYPUS_LOG_FILE", &log)
         .output()
         .unwrap();
     Run {
@@ -47,7 +47,7 @@ fn a_quickjs_game_without_force_exits_non_zero_with_the_deprecation_message() {
     assert!(!r.png.exists());
     assert!(r.log.contains("QuickJS backend is deprecated"), "{}", r.log);
     assert!(r.log.contains("--force"), "{}", r.log);
-    assert!(r.log.contains("iron-build build"), "{}", r.log);
+    assert!(r.log.contains("platypus-build build"), "{}", r.log);
 }
 
 // M9-APP-04
@@ -67,7 +67,7 @@ fn a_quickjs_game_with_force_runs_and_warns_once() {
 // M9-APP-05
 #[test]
 fn a_native_game_is_unaffected_by_the_gate() {
-    let dir = std::env::temp_dir().join(format!("iron-qjs-native-src-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("platypus-qjs-native-src-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("game.ts");
     std::fs::write(&src, "console.log(\"native hello\");\n").unwrap();

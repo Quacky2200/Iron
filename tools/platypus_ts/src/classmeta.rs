@@ -16,7 +16,7 @@ pub struct ClassMeta {
     /// The struct ids of the class's ancestors.
     pub bases: Vec<u64>,
     pub create: String,
-    /// The nine hooks of `iron_ts_rt::NativeHost` (awake, start, update, ...), in its order.
+    /// The nine hooks of `platypus_ts_rt::NativeHost` (awake, start, update, ...), in its order.
     pub hooks: [Option<String>; 9],
     /// `onCollisionEnter/Exit/Stay` and `onTriggerEnter/Exit/Stay`.
     pub contact_hooks: [Option<String>; 6],
@@ -41,11 +41,11 @@ pub fn class_meta(m: &Module) -> Vec<ClassMeta> {
     let sym = |n: &str| format!("ts_{}{}", m.prefix, n);
     let mut out = Vec::new();
     for f in m.funcs.iter().filter(|f| f.exported) {
-        let Some(class) = f.name.strip_prefix("iron_new_") else {
+        let Some(class) = f.name.strip_prefix("platypus_new_") else {
             continue;
         };
         let find = |h: &str| {
-            let name = format!("iron_hook_{class}_{h}");
+            let name = format!("platypus_hook_{class}_{h}");
             m.funcs
                 .iter()
                 .any(|g| g.exported && g.name == name)

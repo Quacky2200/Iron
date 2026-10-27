@@ -3,8 +3,8 @@
 //! Where the main window's frames go: its swapchain, or (for `--bench`) an offscreen texture
 //! with no OS window at all.
 
-use iron_render::wgpu;
-use iron_render::{Gpu, OffscreenTarget, WindowSurface};
+use platypus_render::wgpu;
+use platypus_render::{Gpu, OffscreenTarget, WindowSurface};
 
 use super::Gfx;
 

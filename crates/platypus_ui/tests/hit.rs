@@ -6,8 +6,8 @@
 mod common;
 
 use common::{Dom, px};
-use iron_core::NodeId;
-use iron_ui::UiTree;
+use platypus_core::NodeId;
+use platypus_ui::UiTree;
 
 fn hit(tree: &mut UiTree, x: f32, y: f32) -> Option<u32> {
     tree.hit_test(x, y).map(|id| id.0)

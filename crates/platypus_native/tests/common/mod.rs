@@ -2,26 +2,26 @@
 
 //! Shared setup: a QuickJS context with the whole native API and a current scene.
 #![allow(dead_code)]
-use iron_scene::{Scene, api::enter};
+use platypus_scene::{Scene, api::enter};
 use rquickjs::{Ctx, FromJs};
 
 /// Runs `f` with every native API installed, a fresh world on this thread and a current scene.
 /// Engine state that holds script callbacks is cleared before the runtime is dropped.
 pub fn with_world<R>(f: impl FnOnce(&Ctx<'_>) -> R) -> R {
-    iron_physics_api::reset();
-    iron_render_api::reset();
-    iron_engine_api::camera::reset();
-    iron_engine_api::input::reset();
-    iron_engine_api::audio::reset();
-    iron_engine_api::audio_components::reset();
-    iron_engine_api::spline::reset();
-    iron_engine_api::gizmos::reset();
-    iron_engine_api::assets::reset();
-    iron_engine_api::app::reset();
-    iron_engine_api::screen::reset();
-    iron_engine_api::animation::reset();
-    iron_engine_api::window::reset();
-    iron_scenes::reset();
+    platypus_physics_api::reset();
+    platypus_render_api::reset();
+    platypus_engine_api::camera::reset();
+    platypus_engine_api::input::reset();
+    platypus_engine_api::audio::reset();
+    platypus_engine_api::audio_components::reset();
+    platypus_engine_api::spline::reset();
+    platypus_engine_api::gizmos::reset();
+    platypus_engine_api::assets::reset();
+    platypus_engine_api::app::reset();
+    platypus_engine_api::screen::reset();
+    platypus_engine_api::animation::reset();
+    platypus_engine_api::window::reset();
+    platypus_scenes::reset();
     let mut scene = Scene::new();
     let _scope = enter(&mut scene);
     let rt = rquickjs::Runtime::new().unwrap();
@@ -29,7 +29,7 @@ pub fn with_world<R>(f: impl FnOnce(&Ctx<'_>) -> R) -> R {
     // Callbacks hold script functions: release them before the runtime goes (also on a panic).
     let _release = Release;
     ctx.with(|ctx| {
-        iron_native::register_quickjs(&ctx).unwrap();
+        platypus_native::register_quickjs(&ctx).unwrap();
         f(&ctx)
     })
 }
@@ -38,15 +38,15 @@ struct Release;
 
 impl Drop for Release {
     fn drop(&mut self) {
-        iron_engine_api::input::reset();
-        iron_engine_api::assets::reset();
-        iron_engine_api::app::reset();
-        iron_engine_api::screen::reset();
-        iron_engine_api::audio::reset();
-        iron_engine_api::audio_components::reset();
-        iron_engine_api::window::reset();
-        iron_render_api::reset();
-        iron_scenes::reset();
+        platypus_engine_api::input::reset();
+        platypus_engine_api::assets::reset();
+        platypus_engine_api::app::reset();
+        platypus_engine_api::screen::reset();
+        platypus_engine_api::audio::reset();
+        platypus_engine_api::audio_components::reset();
+        platypus_engine_api::window::reset();
+        platypus_render_api::reset();
+        platypus_scenes::reset();
     }
 }
 

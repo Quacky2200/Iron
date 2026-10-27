@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compiled components driven by `iron_ts_rt::NativeHost` over the real scene
+//! Compiled components driven by `platypus_ts_rt::NativeHost` over the real scene
 //! (`bench/components.ts`): `class X extends Component` + `register(X)`, the lifecycle the
 //! QuickJS `ComponentHost` has, no script engine. IDs are in TESTS.md (M9-TS-556..).
-use iron_api::Handle;
-use iron_scene::Scene;
-use iron_scene::api::scene_api as api;
-use iron_ts_rt::{NativeHost, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::cmp::*;
+use platypus_api::Handle;
+use platypus_scene::Scene;
+use platypus_scene::api::scene_api as api;
+use platypus_ts_rt::{NativeHost, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::cmp::*;
 use std::sync::Mutex;
 
 /// The scripts' globals (`awakes`, `order`) are shared; one test at a time.
@@ -18,7 +18,7 @@ fn all(_: u64) -> bool {
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     unsafe { ts_cmp_init() };
@@ -62,7 +62,7 @@ fn the_bindings_list_the_registered_classes_and_their_hooks() {
 #[test]
 fn a_component_updates_its_game_object_every_frame() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| {
         let go = api::create();
         let mut host = NativeHost::new(classes());
@@ -91,7 +91,7 @@ fn order() -> f64 {
 #[test]
 fn hooks_run_in_the_hosts_order_and_start_runs_once() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| {
         let a = api::create();
         let b = api::create();
@@ -114,7 +114,7 @@ fn hooks_run_in_the_hosts_order_and_start_runs_once() {
 #[test]
 fn subclasses_inherit_hooks_and_inactive_objects_are_skipped() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| {
         let a = api::create();
         let b = api::create();
@@ -142,7 +142,7 @@ fn subclasses_inherit_hooks_and_inactive_objects_are_skipped() {
 #[test]
 fn a_throwing_component_is_disabled_and_the_others_run() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| {
         let a = api::create();
         let mut host = NativeHost::new(classes());
@@ -165,7 +165,7 @@ fn a_throwing_component_is_disabled_and_the_others_run() {
 #[test]
 fn fixed_update_reaches_only_classes_with_the_hook() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| {
         let a = api::create();
         let mut host = NativeHost::new(classes());

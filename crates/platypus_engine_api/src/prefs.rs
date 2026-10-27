@@ -2,9 +2,9 @@
 
 //! `PlayerPrefs`: numbers and strings by key (Unity's). The host loads the saved values at start
 //! ([`load`]) and applies what scripts changed ([`take_changes`]) to the file; keys starting with
-//! `iron.` are the engine's own (window mode, quality level).
+//! `platypus.` are the engine's own (window mode, quality level).
 
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -59,7 +59,7 @@ pub fn set(key: &str, value: Pref) {
     });
 }
 
-/// A JSON text kept under an engine key (`iron.quality`).
+/// A JSON text kept under an engine key (`platypus.quality`).
 pub fn json(key: &str) -> Option<String> {
     match get(key) {
         Some(Pref::Str(s)) => Some(s),
@@ -83,7 +83,7 @@ fn number(key: &str) -> Option<f64> {
     }
 }
 
-#[iron_api(namespace = "PlayerPrefs", quickjs)]
+#[platypus_api(namespace = "PlayerPrefs", quickjs)]
 pub mod prefs_api {
     use super::{Change, Pref, STATE, get, number, set};
 

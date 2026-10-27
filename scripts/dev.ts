@@ -6,9 +6,9 @@
 //   bun ../../scripts/dev.ts --once   build once
 //
 // It writes two bundles to dist/: `vendor.js` (React, the reconciler, the refresh
-// runtime, @iron/engine and @iron/react; built once) and `game.js` (the game's own code,
+// runtime, @platypus/engine and @platypus/react; built once) and `game.js` (the game's own code,
 // CommonJS with those left external, with Fast Refresh registrations, marked
-// `// @iron-dev`). A running `iron` window then reloads game.js in place: React keeps
+// `// @platypus-dev`). A running `platypus` window then reloads game.js in place: React keeps
 // its state and the world stays as it is. A production `bun run build` makes one
 // self-contained game.js instead.
 import { existsSync, rmSync } from "node:fs";
@@ -56,11 +56,11 @@ const args = [
   "--external",
   "react/*",
   "--external",
-  "@iron/*",
+  "@platypus/*",
   "--define",
   `process.env.NODE_ENV=${define["process.env.NODE_ENV"]}`,
   "--banner",
-  "// @iron-dev",
+  "// @platypus-dev",
   ...(once ? [] : ["--watch", "--no-clear-screen"]),
 ];
 const game = Bun.spawn([process.execPath, ...args], { stdout: "inherit", stderr: "inherit" });

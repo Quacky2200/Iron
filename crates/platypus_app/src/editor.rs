@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! What only the editor (`iron_editor`) does: where its UI lives, the project folder,
-//! feeding the log to its console (`__iron_log`) and the `editor.*` ops (opening code,
-//! project files). In `iron` the ops are refused, so games can't use them.
+//! What only the editor (`platypus_editor`) does: where its UI lives, the project folder,
+//! feeding the log to its console (`__platypus_log`) and the `editor.*` ops (opening code,
+//! project files). In `platypus` the ops are refused, so games can't use them.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use iron_core::Value;
-use iron_script::ScriptRuntime;
+use platypus_core::Value;
+use platypus_script::ScriptRuntime;
 
 use super::{logging, project};
 
 static PROJECT: OnceLock<PathBuf> = OnceLock::new();
 
-/// Sets the project folder the editor works on (`iron_editor [project]`), once.
+/// Sets the project folder the editor works on (`platypus_editor [project]`), once.
 pub fn set_project(dir: &Path) {
     let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
     let _ = PROJECT.set(dir);
@@ -26,8 +26,8 @@ pub fn project() -> Option<&'static Path> {
     PROJECT.get().map(PathBuf::as_path)
 }
 
-/// Whether this program is `iron_editor` (the same source is built as both binaries).
-pub const ENABLED: bool = same(env!("CARGO_BIN_NAME").as_bytes(), b"iron_editor");
+/// Whether this program is `platypus_editor` (the same source is built as both binaries).
+pub const ENABLED: bool = same(env!("CARGO_BIN_NAME").as_bytes(), b"platypus_editor");
 
 const fn same(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
@@ -43,10 +43,10 @@ const fn same(a: &[u8], b: &[u8]) -> bool {
     true
 }
 
-/// The editor's UI (a game folder with `dist/game.js`): `IRON_EDITOR_UI`, else an
+/// The editor's UI (a game folder with `dist/game.js`): `PLATYPUS_EDITOR_UI`, else an
 /// `editor` folder next to the program (a packaged editor), else the workspace's.
 pub fn ui_folder() -> PathBuf {
-    if let Some(dir) = std::env::var_os("IRON_EDITOR_UI").filter(|v| !v.is_empty()) {
+    if let Some(dir) = std::env::var_os("PLATYPUS_EDITOR_UI").filter(|v| !v.is_empty()) {
         return dir.into();
     }
     let packaged = std::env::current_exe()
@@ -72,12 +72,12 @@ fn workspace_root() -> PathBuf {
 pub struct EditorHost {
     /// Set by `editor.logHistory`: the scripts want the log.
     subscribed: bool,
-    /// The last record sent to `__iron_log`.
+    /// The last record sent to `__platypus_log`.
     sent: u64,
     /// Files and folders dropped on the window: the only outside paths
     /// `editor.copyIn` copies from.
     dropped: HashSet<PathBuf>,
-    /// Answers for `__iron_editor_fs`: `[id, ok, json or error, ...]`.
+    /// Answers for `__platypus_editor_fs`: `[id, ok, json or error, ...]`.
     results: Vec<Value>,
 }
 
@@ -87,14 +87,14 @@ impl EditorHost {
         self.dropped.extend(files.iter().map(PathBuf::from));
     }
 
-    /// Once per frame: answers to file ops go to `__iron_editor_fs([id, ok, data,
-    /// ...])`, and log records the scripts haven't seen to `__iron_log([seq, level,
+    /// Once per frame: answers to file ops go to `__platypus_editor_fs([id, ok, data,
+    /// ...])`, and log records the scripts haven't seen to `__platypus_log([seq, level,
     /// target, message, timeMs, ...])`.
     pub fn pump(&mut self, scripts: &mut dyn ScriptRuntime) {
         if !self.results.is_empty() {
             let results = std::mem::take(&mut self.results);
-            if let Err(e) = scripts.call_global("__iron_editor_fs", &[Value::Array(results)]) {
-                tracing::error!("script error in __iron_editor_fs: {e}");
+            if let Err(e) = scripts.call_global("__platypus_editor_fs", &[Value::Array(results)]) {
+                tracing::error!("script error in __platypus_editor_fs: {e}");
             }
         }
         if !self.subscribed {
@@ -117,16 +117,16 @@ impl EditorHost {
                 ]
             })
             .collect();
-        if let Err(e) = scripts.call_global("__iron_log", &[Value::Array(flat)]) {
+        if let Err(e) = scripts.call_global("__platypus_log", &[Value::Array(flat)]) {
             // Not logged as an error: that would come straight back here.
-            eprintln!("script error in __iron_log: {e}");
+            eprintln!("script error in __platypus_log: {e}");
         }
     }
 
     /// Runs an `editor.*` op (`name` without the prefix). `root` is the UI's folder.
     pub fn op(&mut self, name: &str, args: &[Value], root: &Path) {
         if !ENABLED {
-            tracing::warn!("editor.{name}: editor ops only work in iron_editor");
+            tracing::warn!("editor.{name}: editor ops only work in platypus_editor");
             return;
         }
         match name {
@@ -201,7 +201,7 @@ impl EditorHost {
 fn open_file(file: &str, line: u32, col: u32, root: &Path) {
     let cwd = std::env::current_dir().unwrap_or_default();
     let path = resolve_source(file, &[cwd, root.to_path_buf(), workspace_root()]);
-    let template = std::env::var("IRON_EDITOR_OPEN").ok();
+    let template = std::env::var("PLATYPUS_EDITOR_OPEN").ok();
     let Some((program, args)) = open_command(
         template.as_deref(),
         &path.to_string_lossy(),
@@ -210,7 +210,7 @@ fn open_file(file: &str, line: u32, col: u32, root: &Path) {
         which,
     ) else {
         tracing::info!(
-            "can't open {}:{line}:{col}: no `code` (VS Code) on PATH; set IRON_EDITOR_OPEN, e.g. \"code -g {{file}}:{{line}}:{{col}}\"",
+            "can't open {}:{line}:{col}: no `code` (VS Code) on PATH; set PLATYPUS_EDITOR_OPEN, e.g. \"code -g {{file}}:{{line}}:{{col}}\"",
             path.display()
         );
         return;
@@ -246,7 +246,7 @@ pub fn resolve_source(file: &str, roots: &[PathBuf]) -> PathBuf {
 }
 
 /// The program and arguments that open `file` at `line:col`. A template (from
-/// `IRON_EDITOR_OPEN`) is split like a shell would (double quotes group) and gets
+/// `PLATYPUS_EDITOR_OPEN`) is split like a shell would (double quotes group) and gets
 /// `{file}`, `{line}` and `{col}` filled in; without one, VS Code's `code -g` if `find`
 /// finds it on PATH.
 pub fn open_command(
@@ -371,7 +371,7 @@ mod tests {
     // M5-EDT-16
     #[test]
     fn relative_sources_resolve_against_the_first_root_that_has_them() {
-        let dir = std::env::temp_dir().join(format!("iron-editor-src-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-editor-src-{}", std::process::id()));
         let (a, b) = (dir.join("a"), dir.join("b"));
         std::fs::create_dir_all(b.join("src")).unwrap();
         std::fs::create_dir_all(&a).unwrap();
@@ -387,7 +387,7 @@ mod tests {
     // M5-EDT-17
     #[test]
     fn editor_ops_are_refused_outside_the_editor() {
-        // Tests run as the `iron` binary, where `ENABLED` is false.
+        // Tests run as the `platypus` binary, where `ENABLED` is false.
         let mut host = EditorHost::default();
         host.op("logHistory", &[], Path::new("."));
         assert_eq!(host.subscribed, ENABLED);

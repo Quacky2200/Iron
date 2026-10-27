@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron_ts`: an ahead-of-time compiler for Iron's TypeScript gameplay code.
-//! TypeScript (oxc) -> typed Iron IR -> Cranelift object file. See `docs/research/iron-ts-spike.md`.
+//! `platypus_ts`: an ahead-of-time compiler for Platypus's TypeScript gameplay code.
+//! TypeScript (oxc) -> typed Platypus IR -> Cranelift object file. See `docs/research/platypus-ts-spike.md`.
 
 pub mod assetpaths;
 pub mod builtins;
@@ -65,7 +65,7 @@ pub fn compile_with(
     compile_with_manifests(src, opt, prefix, struct_base, &[])
 }
 
-/// Like `compile_with`, with engine API manifests (the JSON `iron_api` generates): the TypeScript
+/// Like `compile_with`, with engine API manifests (the JSON `platypus_api` generates): the TypeScript
 /// can call `Namespace.function(...)` and the call is a direct call of the function's symbol.
 pub fn compile_with_manifests(
     src: &str,
@@ -699,8 +699,8 @@ export function f(): number { return 1; }";
     #[test]
     fn calls_of_the_engine_api_are_checked_against_the_manifest() {
         let manifest = r#"{"namespace":"Eng","handles":["Thing"],"functions":[
-            {"name":"add","symbol":"iron_Eng_add","params":[{"name":"a","type":"f64"},{"name":"b","type":"f64"}],"returns":"f64"},
-            {"name":"make","symbol":"iron_Eng_make","params":[],"returns":"handle:Thing"}]}"#
+            {"name":"add","symbol":"platypus_Eng_add","params":[{"name":"a","type":"f64"},{"name":"b","type":"f64"}],"returns":"f64"},
+            {"name":"make","symbol":"platypus_Eng_make","params":[],"returns":"handle:Thing"}]}"#
             .to_string();
         let ok = lower::lower_source_with(
             "export function f(): number { const t: Thing = Eng.make(); return Eng.add(1, 2) + (t === Eng.make() ? 1 : 0); }",
@@ -710,7 +710,7 @@ export function f(): number { return 1; }";
         // `make` is used twice but declared once.
         let mut symbols: Vec<&str> = ok.externs.iter().map(|d| d.symbol.as_str()).collect();
         symbols.sort();
-        assert_eq!(symbols, ["iron_Eng_add", "iron_Eng_make"]);
+        assert_eq!(symbols, ["platypus_Eng_add", "platypus_Eng_make"]);
         let missing = lower::lower_source_with(
             "export function f(): number { return Eng.nope(1); }",
             std::slice::from_ref(&manifest),
@@ -738,7 +738,7 @@ export function f(): number { return 1; }";
         let manifest = r#"{"namespace":"V","handles":[],"values":[
             {"name":"Pair","fields":[{"name":"a","type":"f32"},{"name":"b","type":"f32"}]}],
             "functions":[
-            {"name":"swap","symbol":"iron_V_swap","params":[{"name":"p","type":"value:Pair"}],"returns":"value:Pair"}]}"#
+            {"name":"swap","symbol":"platypus_V_swap","params":[{"name":"p","type":"value:Pair"}],"returns":"value:Pair"}]}"#
             .to_string();
         let ok = lower::lower_source_with(
             "export function f(): number { const q = V.swap(new Pair(1, 2)); return q.a * 10 + q.b; }",

@@ -10,15 +10,15 @@ let ops: unknown[][] = [];
 beforeEach(() => {
   _resetPhysicsForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const tick = (moved: number[], contacts: number[] = [], rays: number[] = [], characters: number[] = []) =>
-  globalThis.__iron_physics(moved, contacts, rays, characters);
+  globalThis.__platypus_physics(moved, contacts, rays, characters);
 
 describe("physics", () => {
   test("bodies and colliders become ops with IDs chosen in script", () => {

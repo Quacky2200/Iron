@@ -4,8 +4,8 @@
 //! each with a name, an enabled flag, a parent and children, and a local transform.
 //! World transforms are worked out lazily from the hierarchy.
 //!
-//! Components live elsewhere (script components in `iron_script`, physics in
-//! `iron_physics`, ...) and refer to objects by [`ObjectId`]. There's no ECS: scenes are
+//! Components live elsewhere (script components in `platypus_script`, physics in
+//! `platypus_physics`, ...) and refer to objects by [`ObjectId`]. There's no ECS: scenes are
 //! small enough that plain parent/child links and a dirty flag per object do.
 
 pub mod api;

@@ -2,8 +2,8 @@
 
 //! The engine API crate through its QuickJS bindings (the same functions compiled code calls
 //! through the shims) and the host functions. IDs are in TESTS.md (M9-API-*).
-use iron_engine_api::{camera, color, gizmos, input, screen, time};
-use iron_scene::{ObjectId, Scene};
+use platypus_engine_api::{camera, color, gizmos, input, screen, time};
+use platypus_scene::{ObjectId, Scene};
 
 fn with_js<R>(f: impl FnOnce(&rquickjs::Ctx<'_>) -> R) -> R {
     let rt = rquickjs::Runtime::new().unwrap();
@@ -112,11 +112,11 @@ fn screen_and_quality_settings_are_read_and_set() {
 // The levels start with vsync off, and a saved choice with vsync on (older saves) doesn't turn it on.
 #[test]
 fn vsync_is_off_by_default_and_a_saved_choice_cannot_turn_it_on() {
-    use iron_engine_api::prefs;
+    use platypus_engine_api::prefs;
     screen::reset();
     assert_eq!(screen::quality().v_sync_count, 0);
     prefs::set_json(
-        "iron.quality",
+        "platypus.quality",
         r#"{"level":"High","current":{"renderScale":0.5,"vSyncCount":1}}"#,
     );
     screen::apply_default_quality();
@@ -136,11 +136,11 @@ fn gizmos_collect_lines_and_present_them_to_a_camera() {
     camera::reset();
     let mut scene = Scene::new();
     let go = scene.create("cam");
-    let cam = camera::camera_api::iron_Camera_attach(iron_api::Handle::to_raw(go));
+    let cam = camera::camera_api::platypus_Camera_attach(platypus_api::Handle::to_raw(go));
     assert_ne!(cam, 0);
     with_js(|ctx| {
         // The camera is an opaque handle object in QuickJS; the host makes one from the id.
-        let handle = iron_api::qjs::handle_new(ctx, "Camera", cam).unwrap();
+        let handle = platypus_api::qjs::handle_new(ctx, "Camera", cam).unwrap();
         ctx.globals().set("cam", handle).unwrap();
         ctx.eval::<(), _>(
             r#"Gizmos.clear(); Gizmos.color = Color.red;
@@ -168,13 +168,13 @@ fn a_camera_has_the_engines_defaults_and_clamps_the_field_of_view() {
         index: 3,
         generation: 0,
     };
-    let c = camera::camera_api::iron_Camera_attach(iron_api::Handle::to_raw(go));
-    assert_eq!(camera::camera_api::iron_Camera_fieldOfView(c), 60.0);
-    assert!(!camera::camera_api::iron_Camera_orthographic(c));
-    camera::camera_api::iron_Camera_setFieldOfView(c, 500.0);
-    assert_eq!(camera::camera_api::iron_Camera_fieldOfView(c), 179.0);
-    camera::camera_api::iron_Camera_setOrthographicSize(c, 7.5);
-    camera::camera_api::iron_Camera_setOrthographic(c, true);
+    let c = camera::camera_api::platypus_Camera_attach(platypus_api::Handle::to_raw(go));
+    assert_eq!(camera::camera_api::platypus_Camera_fieldOfView(c), 60.0);
+    assert!(!camera::camera_api::platypus_Camera_orthographic(c));
+    camera::camera_api::platypus_Camera_setFieldOfView(c, 500.0);
+    assert_eq!(camera::camera_api::platypus_Camera_fieldOfView(c), 179.0);
+    camera::camera_api::platypus_Camera_setOrthographicSize(c, 7.5);
+    camera::camera_api::platypus_Camera_setOrthographic(c, true);
     let all = camera::cameras();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].1.orthographic_size, 7.5);
@@ -182,5 +182,5 @@ fn a_camera_has_the_engines_defaults_and_clamps_the_field_of_view() {
     camera::remove_on(go);
     assert!(camera::cameras().is_empty());
     // A gone camera answers with defaults.
-    assert_eq!(camera::camera_api::iron_Camera_fieldOfView(c), 60.0);
+    assert_eq!(camera::camera_api::platypus_Camera_fieldOfView(c), 60.0);
 }

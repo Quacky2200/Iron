@@ -19,7 +19,7 @@ import {
 } from "../src/opcodes.ts";
 
 /**
- * A tiny model of the Rust UiTree (crates/iron_ui/src/tree.rs) so tests can
+ * A tiny model of the Rust UiTree (crates/platypus_ui/src/tree.rs) so tests can
  * check the tree the ops produce, not the exact IDs React happens to allocate.
  */
 class ModelTree {
@@ -115,7 +115,7 @@ let tree: ModelTree;
 beforeEach(() => {
   commits = [];
   tree = new ModelTree();
-  (globalThis as { __iron_commit?: (ops: Op[]) => void }).__iron_commit = (ops) => {
+  (globalThis as { __platypus_commit?: (ops: Op[]) => void }).__platypus_commit = (ops) => {
     commits.push(ops);
     tree.apply(ops);
   };
@@ -123,7 +123,7 @@ beforeEach(() => {
   _resetRootForTests();
 });
 afterEach(() => {
-  delete (globalThis as { __iron_commit?: unknown }).__iron_commit;
+  delete (globalThis as { __platypus_commit?: unknown }).__platypus_commit;
 });
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -131,7 +131,7 @@ const count = (ops: Op[] | undefined, code: number) => (ops ?? []).filter((op) =
 /** Child widths under the first root box: a compact way to read a list's order. */
 const widths = () => tree.children.get(tree.children.get(ROOT_ID)![0]!)!.map((id) => tree.styles.get(id)!.width);
 
-describe("@iron/react reconciler", () => {
+describe("@platypus/react reconciler", () => {
   // M2-REC-01
   test("rendering a box creates it, styles it and appends it to the root", () => {
     createRoot().render(<box style={{ width: 10, backgroundColor: "red", height: undefined }} />);
@@ -336,7 +336,7 @@ describe("@iron/react reconciler", () => {
     try {
       const Unknown = "panel" as unknown as "box";
       createRoot().render(<Unknown />);
-      expect(String(errors.mock.calls.at(-1)?.[0])).toContain("<panel> is not an Iron element");
+      expect(String(errors.mock.calls.at(-1)?.[0])).toContain("<panel> is not a Platypus element");
     } finally {
       errors.mockRestore();
     }
@@ -352,7 +352,7 @@ describe("@iron/react reconciler", () => {
 describe("roots for world panels", () => {
   test("each root commits to its own engine tree; updates follow their nodes", () => {
     const sent: [number, Op[]][] = [];
-    (globalThis as { __iron_commit?: (ops: Op[], target?: number) => void }).__iron_commit = (ops, target) => {
+    (globalThis as { __platypus_commit?: (ops: Op[], target?: number) => void }).__platypus_commit = (ops, target) => {
       sent.push([target ?? 0, ops]);
     };
     const screen = createRoot();

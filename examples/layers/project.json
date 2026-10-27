@@ -1,6 +1,6 @@
 {
   "name": "layers",
-  "title": "Iron - Layers and culling",
+  "title": "Platypus - Layers and culling",
   "layers": {
     "8": "Detail",
     "9": "Player",

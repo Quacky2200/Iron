@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The engine's script API beyond the scene, declared with `#[iron_api]`: `Color`, `Time`, `input`,
+//! The engine's script API beyond the scene, declared with `#[platypus_api]`: `Color`, `Time`, `input`,
 //! `Gizmos`, `Camera`, `Screen`, `QualitySettings` and `Window`. Each module keeps its state per thread and
 //! has plain Rust functions for the host (the app) to feed or read; scripts, compiled or in
 //! QuickJS, only see the generated API. The names and behaviour follow `js/engine`.
 //!
-//! Wiring this into `iron_app` is the app's job: call [`time::advance`] and the `input` event
+//! Wiring this into `platypus_app` is the app's job: call [`time::advance`] and the `input` event
 //! functions each frame, run scripts, then read [`gizmos::take_frame`] and [`camera::cameras`].
-//! Design: `docs/research/iron-ts-engine-boundary.md` and `docs/iron-api.md`.
+//! Design: `docs/research/platypus-ts-engine-boundary.md` and `docs/platypus-api.md`.
 
-pub use iron_math;
+pub use platypus_math;
 
 pub mod animation;
 pub mod animator;
@@ -36,9 +36,9 @@ pub mod ui_resources;
 pub mod window;
 
 /// The manifests (JSON) of every namespace this crate declares, for the compiler to check calls
-/// against. The scene's (`iron_scene::api::scene_api`) is separate.
+/// against. The scene's (`platypus_scene::api::scene_api`) is separate.
 pub fn manifests() -> Vec<String> {
-    let mut all = iron_math::manifests();
+    let mut all = platypus_math::manifests();
     all.extend([
         animation::keyframe_api::MANIFEST.to_json(),
         animation::animation_curve_api::MANIFEST.to_json(),
@@ -91,10 +91,12 @@ pub fn manifests() -> Vec<String> {
 
 /// Installs every QuickJS-enabled namespace of the engine in a context: the math classes, the
 /// scene (`Scene`, `GameObject`, `Transform`), and this crate's. Handles (`GameObject`, `Camera`,
-/// `AnimationClip`...) are opaque objects there (see `iron_api::qjs`). Audio, `Rng` and `Cursor` are in it.
-pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
-    iron_math::register_quickjs(ctx)?;
-    iron_scene::api::scene_api::register_quickjs(ctx)?;
+/// `AnimationClip`...) are opaque objects there (see `platypus_api::qjs`). Audio, `Rng` and `Cursor` are in it.
+pub fn register_quickjs<'js>(
+    ctx: &platypus_api::rquickjs::Ctx<'js>,
+) -> platypus_api::rquickjs::Result<()> {
+    platypus_math::register_quickjs(ctx)?;
+    platypus_scene::api::scene_api::register_quickjs(ctx)?;
     animation::keyframe_api::register_quickjs(ctx)?;
     animation::animation_curve_api::register_quickjs(ctx)?;
     animation::animation_clip_api::register_quickjs(ctx)?;

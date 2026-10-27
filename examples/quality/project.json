@@ -1,6 +1,6 @@
 {
   "name": "quality",
-  "title": "Iron - Quality settings",
+  "title": "Platypus - Quality settings",
   "quality": {
     "default": "High"
   }

@@ -2,12 +2,12 @@
 
 //! Scenes (Unity's `SceneManager`): a scene is a set of root objects loaded, saved and unloaded
 //! together. The state is per thread. Objects remember the scene they were made in (a tag on the
-//! `iron_scene::Scene` object); an object with no tag belongs to the active scene.
+//! `platypus_scene::Scene` object); an object with no tag belongs to the active scene.
 
 use crate::data::{Saver, load_objects, sc, warn};
-use iron_api::Handle;
-use iron_api::callback::{HandleArg, Listeners, emit};
-use iron_scene::ObjectId;
+use platypus_api::Handle;
+use platypus_api::callback::{HandleArg, Listeners, emit};
+use platypus_scene::ObjectId;
 use serde_json::{Value, json};
 use std::cell::RefCell;
 
@@ -198,7 +198,7 @@ pub fn set_active(scene: u32) -> bool {
         sync();
         // The lighting the scene was saved with.
         if let Some(r) = info(scene).and_then(|i| i.render_settings) {
-            iron_render_api::apply_render_settings(&r);
+            platypus_render_api::apply_render_settings(&r);
         }
         dispatch();
     }
@@ -238,25 +238,27 @@ pub fn dispatch() {
 }
 
 /// Calls `f(scene, mode)` after a scene loads (`"single"` or `"additive"`); the token is for [`off`].
-pub fn on_loaded(f: iron_api::Callback<(HandleArg<SceneRef>, String)>) -> u32 {
+pub fn on_loaded(f: platypus_api::Callback<(HandleArg<SceneRef>, String)>) -> u32 {
     st(|s| s.on_loaded.add(f))
 }
 
-pub fn on_unloaded(f: iron_api::Callback<(HandleArg<SceneRef>,)>) -> u32 {
+pub fn on_unloaded(f: platypus_api::Callback<(HandleArg<SceneRef>,)>) -> u32 {
     st(|s| s.on_unloaded.add(f))
 }
 
-pub fn on_active_changed(f: iron_api::Callback<(HandleArg<SceneRef>, HandleArg<SceneRef>)>) -> u32 {
+pub fn on_active_changed(
+    f: platypus_api::Callback<(HandleArg<SceneRef>, HandleArg<SceneRef>)>,
+) -> u32 {
     st(|s| s.on_active.add(f))
 }
 
 /// Calls `f(path, error)` when a scene file asked for with [`request_load`] fails to load.
-pub fn on_load_failed(f: iron_api::Callback<(String, String)>) -> u32 {
+pub fn on_load_failed(f: platypus_api::Callback<(String, String)>) -> u32 {
     st(|s| s.on_load_failed.add(f))
 }
 
 /// Calls `f(path, prefab)` when a prefab file asked for with [`request_prefab`] was read.
-pub fn on_prefab_loaded(f: iron_api::Callback<(String, HandleArg<PrefabRef>)>) -> u32 {
+pub fn on_prefab_loaded(f: platypus_api::Callback<(String, HandleArg<PrefabRef>)>) -> u32 {
     st(|s| s.on_prefab_loaded.add(f))
 }
 
@@ -266,12 +268,12 @@ pub fn on_prefab_loaded(f: iron_api::Callback<(String, HandleArg<PrefabRef>)>) -
 pub fn load_scene_promise(
     path: &str,
     additive: bool,
-    resolve: iron_api::Callback<(HandleArg<SceneRef>,)>,
-    reject: iron_api::Callback<(String,)>,
+    resolve: platypus_api::Callback<(HandleArg<SceneRef>,)>,
+    reject: platypus_api::Callback<(String,)>,
 ) {
     let tokens = std::rc::Rc::new(std::cell::Cell::new((0u32, 0u32)));
     let (want, on_ok) = (path.to_owned(), tokens.clone());
-    let loaded = on_loaded(iron_api::Callback::from_fn(
+    let loaded = on_loaded(platypus_api::Callback::from_fn(
         move |(scene, _mode): (HandleArg<SceneRef>, String)| {
             if info(scene.0.0).and_then(|i| i.path).as_deref() == Some(want.as_str()) {
                 let (a, b) = on_ok.get();
@@ -282,7 +284,7 @@ pub fn load_scene_promise(
         },
     ));
     let (want, on_err) = (path.to_owned(), tokens.clone());
-    let failed = on_load_failed(iron_api::Callback::from_fn(
+    let failed = on_load_failed(platypus_api::Callback::from_fn(
         move |(failed_path, error): (String, String)| {
             if failed_path == want {
                 let (a, b) = on_err.get();
@@ -299,12 +301,12 @@ pub fn load_scene_promise(
 /// [`load_scene_promise`] for a prefab file.
 pub fn load_prefab_promise(
     path: &str,
-    resolve: iron_api::Callback<(HandleArg<PrefabRef>,)>,
-    reject: iron_api::Callback<(String,)>,
+    resolve: platypus_api::Callback<(HandleArg<PrefabRef>,)>,
+    reject: platypus_api::Callback<(String,)>,
 ) {
     let tokens = std::rc::Rc::new(std::cell::Cell::new((0u32, 0u32)));
     let (want, on_ok) = (path.to_owned(), tokens.clone());
-    let loaded = on_prefab_loaded(iron_api::Callback::from_fn(
+    let loaded = on_prefab_loaded(platypus_api::Callback::from_fn(
         move |(loaded_path, prefab): (String, HandleArg<PrefabRef>)| {
             if loaded_path == want {
                 let (a, b) = on_ok.get();
@@ -315,7 +317,7 @@ pub fn load_prefab_promise(
         },
     ));
     let (want, on_err) = (path.to_owned(), tokens.clone());
-    let failed = on_load_failed(iron_api::Callback::from_fn(
+    let failed = on_load_failed(platypus_api::Callback::from_fn(
         move |(failed_path, error): (String, String)| {
             if failed_path == want {
                 let (a, b) = on_err.get();
@@ -407,14 +409,15 @@ pub fn serialize(scene: u32) -> Option<String> {
         .filter_map(|r| saver.save_object(r))
         .collect();
     let mut data = json!({
-        "format": "iron.scene",
+        "format": "platypus.scene",
         "version": 1,
         "name": info.name,
         "objects": objects,
     });
-    if scene == active() && (info.render_settings.is_some() || iron_render_api::settings_changed())
+    if scene == active()
+        && (info.render_settings.is_some() || platypus_render_api::settings_changed())
     {
-        data["renderSettings"] = iron_render_api::save_render_settings();
+        data["renderSettings"] = platypus_render_api::save_render_settings();
     }
     let assets = saver.take_assets();
     if !assets.is_empty() {
@@ -425,7 +428,7 @@ pub fn serialize(scene: u32) -> Option<String> {
 
 fn unload(scene: u32) {
     for o in roots(scene) {
-        iron_scene::api::scene_api::destroy(o);
+        platypus_scene::api::scene_api::destroy(o);
     }
     st(|s| {
         s.scenes.retain(|i| i.handle != scene);
@@ -444,8 +447,12 @@ pub fn load_scene(text: &str, additive: bool) -> Result<u32, String> {
 fn load_scene_from(text: &str, additive: bool, path: Option<String>) -> Result<u32, String> {
     sync();
     let data: Value = serde_json::from_str(text).map_err(|e| format!("not a scene: {e}"))?;
-    if data.get("format").and_then(Value::as_str) != Some("iron.scene") {
-        return Err("not a scene (format isn't iron.scene)".into());
+    // `iron.scene`: files saved before the rename to Platypus.
+    if !matches!(
+        data.get("format").and_then(Value::as_str),
+        Some("platypus.scene" | "iron.scene")
+    ) {
+        return Err("not a scene (format isn't platypus.scene)".into());
     }
     if data.get("version").and_then(Value::as_u64) != Some(1) {
         return Err(format!("scene version {} isn't supported", data["version"]));
@@ -708,7 +715,8 @@ pub fn prefab_from_object(object: ObjectId) -> u32 {
 /// A prefab from saved data (`prefab_json`'s output).
 pub fn prefab_from_data(text: &str, src: Option<&str>) -> Result<u32, String> {
     let d: Value = serde_json::from_str(text).map_err(|e| format!("not prefab data: {e}"))?;
-    if d.get("format").and_then(Value::as_str) != Some("iron.prefab") || d.get("root").is_none() {
+    let format = d.get("format").and_then(Value::as_str);
+    if !matches!(format, Some("platypus.prefab" | "iron.prefab")) || d.get("root").is_none() {
         return Err("not prefab data".into());
     }
     let name = d
@@ -741,7 +749,7 @@ pub fn prefab_json(prefab: u32) -> String {
         s.prefabs
             .get((prefab as usize).wrapping_sub(1))
             .map(|p| {
-                json!({ "format": "iron.prefab", "version": 1, "name": p.name, "root": p.root })
+                json!({ "format": "platypus.prefab", "version": 1, "name": p.name, "root": p.root })
                     .to_string()
             })
             .unwrap_or_default()

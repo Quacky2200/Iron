@@ -4,7 +4,7 @@
 //! the previous tree.
 
 use crate::hooks::{Ctx, Dep};
-use iron_core::{NodeId, Value};
+use platypus_core::{NodeId, Value};
 use std::any::Any;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -57,7 +57,7 @@ impl NodeRef {
     }
 }
 
-/// The props of a host element. Style and attribute values are the raw values `iron_ui` parses.
+/// The props of a host element. Style and attribute values are the raw values `platypus_ui` parses.
 #[derive(Clone, Default)]
 pub struct HostProps {
     pub style: Vec<(String, Value)>,

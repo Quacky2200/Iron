@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A windowed program, like `iron`.
+// A windowed program, like `platypus`.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
-//! `iron_editor`: the Iron editor. The same program as `iron` (main.rs, included as a
+//! `platypus_editor`: the Platypus editor. The same program as `platypus` (main.rs, included as a
 //! module), which sees `editor::ENABLED` and loads the editor's UI (`editor/dist`) with
 //! the editor-only ops (`editor.*`) turned on.
 

@@ -17,7 +17,7 @@ import {
   register,
   type Playback,
   type Sound,
-} from "@iron/engine";
+} from "@platypus/engine";
 
 // Transitions, ported from MiniGameEngine's `Transition` classes: a value eases from one
 // target to the next over a duration. `loop` starts a new pass when one ends, `pingPong`

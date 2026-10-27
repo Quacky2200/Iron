@@ -7,8 +7,8 @@
 mod common;
 
 use common::{Dom, px};
-use iron_core::{NodeId, Value};
-use iron_ui::{ClipShape, DrawCmd, Rect, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_ui::{ClipShape, DrawCmd, Rect, UiTree};
 
 /// Clips and quads in order, e.g. `["clip 100x100", "quad 50", "unclip"]`.
 fn shape(tree: &mut UiTree) -> Vec<String> {
@@ -194,9 +194,9 @@ fn invalid_clip_values_are_rejected() {
         let mut d = Dom::new();
         d.add(0, "box", &[]);
         let mut tree = d.build("");
-        let errors = tree.apply_commit(&iron_core::Commit {
+        let errors = tree.apply_commit(&platypus_core::Commit {
             ops: vec![common::op(
-                iron_ui::opcodes::SET_STYLE,
+                platypus_ui::opcodes::SET_STYLE,
                 &[common::n(1), "clipPath".into(), value.into()],
             )],
         });

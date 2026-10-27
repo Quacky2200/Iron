@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The bridge between compiled TypeScript UI code and the native reconciler (`iron_ui_native`).
+//! The bridge between compiled TypeScript UI code and the native reconciler (`platypus_ui_native`).
 //!
 //! Compiled code builds element descriptions through the `Ui` namespace (`Ui.begin("box")`,
 //! `Ui.child(h, x)`, ...): the functions here keep them in a per-thread arena as plain handles.
-//! `element_from(handle)` turns a handle into an `iron_ui_native::Element`. Closures the script
+//! `element_from(handle)` turns a handle into a `platypus_ui_native::Element`. Closures the script
 //! hands over (render functions, event handlers, effects) are rooted with `ts_rt_root_add` until
 //! the description holding them is dropped, and called later with no arguments.
 //!
 //! Hooks (`Ui.stateNew`, `Ui.load`, `Ui.store`, `Ui.memoSlot`, `Ui.effect`) act on the component
 //! being rendered; the reconciler makes it current around each render. Hook state lives in
 //! `ScriptCell`s, one per slot, holding a number, a boolean or a rooted script pointer.
-//! Design: `docs/research/iron-ui-native.md`; the TypeScript side is `tools/iron_ts/src/lower/jsx.rs`
+//! Design: `docs/research/platypus-ui-native.md`; the TypeScript side is `tools/platypus_ts/src/lower/jsx.rs`
 //! and the prelude in `ui.ts`.
 
 mod mount;
 pub use mount::{root_manifest_json, take_mounts, take_window_mounts};
 
-use iron_api::{return_string, script_str};
-use iron_ts_rt::{
+use platypus_api::{return_string, script_str};
+use platypus_ts_rt::{
     Array, Closure, ts_rt_exc_pending, ts_rt_exc_take, ts_rt_root_add, ts_rt_root_remove,
 };
-use iron_ui_native::{
+use platypus_ui_native::{
     Cleanup, Ctx, Dep, Element, Event, Handler, HostProps, NodeRef, RenderFn, Scheduler,
 };
 use std::cell::{Cell, RefCell};
@@ -51,7 +51,7 @@ impl Rooted {
         check_exception();
     }
 
-    /// Calls a closure that takes a handle (`(el: IronElement | null) => void`; 0 is null).
+    /// Calls a closure that takes a handle (`(el: PlatypusElement | null) => void`; 0 is null).
     fn call_with_handle(&self, h: u64) {
         // SAFETY: as `call_void`, for a closure taking one 64-bit handle.
         unsafe {
@@ -421,7 +421,7 @@ pub extern "C" fn ts_ui_on(h: u64, kind: *const u8, f: *mut Closure) -> u64 {
     h
 }
 
-fn style_value(h: u64, k: *const u8, v: iron_core::Value) -> u64 {
+fn style_value(h: u64, k: *const u8, v: platypus_core::Value) -> u64 {
     let k = text(k);
     with_built(h, |b| {
         if let Built::Host { props, .. } = b {
@@ -432,7 +432,7 @@ fn style_value(h: u64, k: *const u8, v: iron_core::Value) -> u64 {
     h
 }
 
-fn attr_value(h: u64, k: *const u8, v: iron_core::Value) -> u64 {
+fn attr_value(h: u64, k: *const u8, v: platypus_core::Value) -> u64 {
     let k = text(k);
     with_built(h, |b| {
         if let Built::Host { props, .. } = b {
@@ -445,27 +445,27 @@ fn attr_value(h: u64, k: *const u8, v: iron_core::Value) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_style_num(h: u64, k: *const u8, v: f64) -> u64 {
-    style_value(h, k, iron_core::Value::Number(v))
+    style_value(h, k, platypus_core::Value::Number(v))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_style_str(h: u64, k: *const u8, v: *const u8) -> u64 {
-    style_value(h, k, iron_core::Value::String(text(v)))
+    style_value(h, k, platypus_core::Value::String(text(v)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_attr_num(h: u64, k: *const u8, v: f64) -> u64 {
-    attr_value(h, k, iron_core::Value::Number(v))
+    attr_value(h, k, platypus_core::Value::Number(v))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_attr_str(h: u64, k: *const u8, v: *const u8) -> u64 {
-    attr_value(h, k, iron_core::Value::String(text(v)))
+    attr_value(h, k, platypus_core::Value::String(text(v)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_attr_bool(h: u64, k: *const u8, v: bool) -> u64 {
-    attr_value(h, k, iron_core::Value::Bool(v))
+    attr_value(h, k, platypus_core::Value::Bool(v))
 }
 
 fn push_child(h: u64, child: u64) -> u64 {
@@ -600,15 +600,15 @@ pub enum NodeCommand {
     Focus(u32),
     Blur(u32),
     /// Scroll the node's content to this offset (NaN: that axis stays), as the behaviour says.
-    ScrollTo(u32, f64, f64, iron_ui::ScrollBehavior),
+    ScrollTo(u32, f64, f64, platypus_ui::ScrollBehavior),
     /// Scroll the node's content by this much.
-    ScrollBy(u32, f64, f64, iron_ui::ScrollBehavior),
+    ScrollBy(u32, f64, f64, platypus_ui::ScrollBehavior),
     /// `scrollIntoView({ block, inline, behavior })`.
     ScrollIntoView {
         id: u32,
-        block: iron_ui::ScrollAlign,
-        inline: iron_ui::ScrollAlign,
-        behavior: iron_ui::ScrollBehavior,
+        block: platypus_ui::ScrollAlign,
+        inline: platypus_ui::ScrollAlign,
+        behavior: platypus_ui::ScrollBehavior,
     },
     /// `dataTransfer.setDragImage(element, x, y)`: the element to show under the pointer (0 for
     /// none) and where it is held.
@@ -641,8 +641,8 @@ pub extern "C" fn ts_ui_node_blur(n: u64) {
 }
 
 /// A `behavior` argument: `"auto"`, `"instant"` or `"smooth"` (left out or unknown: auto).
-fn behavior(b: *const u8) -> iron_ui::ScrollBehavior {
-    iron_ui::ScrollBehavior::parse(&text(b)).unwrap_or_default()
+fn behavior(b: *const u8) -> platypus_ui::ScrollBehavior {
+    platypus_ui::ScrollBehavior::parse(&text(b)).unwrap_or_default()
 }
 
 /// `scrollTo(x, y)` or `scrollTo({ left, top, behavior })`: a left-out axis (NaN) stays.
@@ -669,10 +669,11 @@ pub extern "C" fn ts_ui_node_scroll_into_view(
     inline: *const u8,
     b: *const u8,
 ) {
-    let align = |s: *const u8, default| iron_ui::ScrollAlign::parse(&text(s)).unwrap_or(default);
+    let align =
+        |s: *const u8, default| platypus_ui::ScrollAlign::parse(&text(s)).unwrap_or(default);
     let (block, inline) = (
-        align(block, iron_ui::ScrollAlign::Start),
-        align(inline, iron_ui::ScrollAlign::Nearest),
+        align(block, platypus_ui::ScrollAlign::Start),
+        align(inline, platypus_ui::ScrollAlign::Nearest),
     );
     let behavior = behavior(b);
     node_command(n, |id| NodeCommand::ScrollIntoView {
@@ -1018,7 +1019,7 @@ pub fn link_anchor() -> usize {
     .fold(0, |a, p| a ^ p)
 }
 
-/// The `Ui` namespace as the compiler reads it (`iron_ts` manifest JSON).
+/// The `Ui` namespace as the compiler reads it (`platypus_ts` manifest JSON).
 pub fn manifest_json() -> String {
     use serde_json::{Value, json};
     fn f(name: &str, symbol: &str, params: &[(&str, &str)], returns: &str) -> Value {

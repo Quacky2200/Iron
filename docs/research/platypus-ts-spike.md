@@ -1,9 +1,9 @@
-# Spike: `iron_ts`, TypeScript gameplay code compiled ahead of time
+# Spike: `platypus_ts`, TypeScript gameplay code compiled ahead of time
 
 Status: spike done (2026-10-18), then a garbage collector (same day). It proves the pipeline on one real file,
-the zombie game's `sim.ts` (678 lines of pure game rules, kept as `tools/iron_ts_tests/fixtures/sim.ts`
-since the game moved to the zombie-horders repository's `iron` branch). It is not wired into
-`iron` or the build scripts, and it lives outside the engine workspace in `tools/`.
+the zombie game's `sim.ts` (678 lines of pure game rules, kept as `tools/platypus_ts_tests/fixtures/sim.ts`
+since the game moved to the zombie-horders repository's `platypus` branch). It is not wired into
+`platypus` or the build scripts, and it lives outside the engine workspace in `tools/`.
 
 Context: QuickJS is an interpreter (no JIT, which iOS requires). A sine demo that built meshes in
 script ran at ~30 ms a frame until the work moved to Rust. Shipped games should run their gameplay
@@ -12,20 +12,20 @@ with hot reload. See TODO.md M9.b.
 
 ## 1. Result in short
 
-- `tools/iron_ts` parses `sim.ts` with oxc, lowers it to a typed IR, compiles that with Cranelift
+- `tools/platypus_ts` parses `sim.ts` with oxc, lowers it to a typed IR, compiles that with Cranelift
   and writes an object file. **All 30 functions of `sim.ts` compile**, no fallback needed.
-- `tools/iron_ts_tests` links that object and runs ports of **all 13 cases of `sim.test.ts`**: 13/13
+- `tools/platypus_ts_tests` links that object and runs ports of **all 13 cases of `sim.test.ts`**: 13/13
   pass (`cargo test --workspace` in `tools/`, IDs `M9-TS-01`..`13`).
 - A busy-state benchmark gives the **same checksum in QuickJS, bun and native code**, so the native
   code is not just fast, it computes what the TypeScript does.
 
 | Engine | 10,000 steps | per step | vs QuickJS |
 |---|---|---|---|
-| QuickJS (`iron_script`, rquickjs 0.14) | 406 ms | 40.6 µs | 1x |
+| QuickJS (`platypus_script`, rquickjs 0.14) | 406 ms | 40.6 µs | 1x |
 | bun (JavaScriptCore JIT) | 43.8 ms | 4.38 µs | 9x |
-| `iron_ts` native (Cranelift `speed`, with the GC of section 6) | 8.8 ms | 0.88 µs | **46x** |
+| `platypus_ts` native (Cranelift `speed`, with the GC of section 6) | 8.8 ms | 0.88 µs | **46x** |
 
-Scenario (`tools/iron_ts_tests/bench/bench.ts`, mirrored in `busy_state()`): 1 player standing
+Scenario (`tools/platypus_ts_tests/bench/bench.ts`, mirrored in `busy_state()`): 1 player standing
 still, MP5 on auto-fire with unlimited ammo and health, zombies respawning to keep 10 alive, **50
 parked bullets** (never move, never expire) next to the MP5's own (2 or 3 in flight: they hit a
 zombie within a few frames), 1/60 s steps. Best of three runs on the dev machine (Windows 11,
@@ -62,9 +62,9 @@ types below are what that JSON would be mapped to.
 oxc_semantic is not used; scopes are tracked by the lowering itself (a stack of name to local maps),
 which is simpler for this subset.
 
-## 3. Iron IR
+## 3. Platypus IR
 
-`tools/iron_ts/src/ir.rs`. Small, typed and **structured** (blocks, loops, labelled
+`tools/platypus_ts/src/ir.rs`. Small, typed and **structured** (blocks, loops, labelled
 break/continue) instead of a CFG: lowering from TypeScript stays direct, and
 `cranelift-frontend` builds the CFG in one pass. Every expression carries its type.
 
@@ -140,7 +140,7 @@ parameters, spread of arrays, module-level `let`, the `Math` and array libraries
 
 Not supported (each is a compile error naming the source line, `M9-TS-15`):
 
-- Classes, `this`, methods, getters (design note: `iron-ts-classes.md`), generics, `try` / `throw`,
+- Classes, `this`, methods, getters (design note: `platypus-ts-classes.md`), generics, `try` / `throw`,
   template literals, general string code (`+`, `.length`, `===` on `string`), `Map`, `typeof`,
   `for...in`, rest elements in patterns, assignment patterns (`[a, b] = [b, a]`), `async`.
 - `JsValue` (anything dynamic: `any`, unions of unrelated types, property access by computed name).
@@ -205,19 +205,19 @@ Runtime functions are imports (`ts_rt_alloc`, `ts_rt_arr_push`, ...). Cranelift 
 x86_64 and aarch64 Linux, macOS and Android, and aarch64 iOS (pure AOT, no JIT), through
 `cranelift-object`'s ELF / Mach-O / COFF writers; only the host was exercised.
 
-`iron_ts` also writes **Rust bindings** (`layout.rs`): `#[repr(C)]` structs with the exact slot
+`platypus_ts` also writes **Rust bindings** (`layout.rs`): `#[repr(C)]` structs with the exact slot
 layout, `TAG_*` constants for string literals, `NULL_NUM_BITS`, and `extern "C"` declarations of
 the exported functions. The tests include that file, so the host reads and writes fields of
 script state directly (`(*player).score`). This is the shape of the future engine boundary
 (section 9).
 
-Linking: the test crate's `build.rs` calls `iron_ts::compile_source`, writes the `.obj` and passes it
+Linking: the test crate's `build.rs` calls `platypus_ts::compile_source`, writes the `.obj` and passes it
 with `cargo:rustc-link-arg`; the platform linker (MSVC `link.exe` here) does the rest, with
-`iron_ts_rt` as an ordinary Rust dependency. A game build would do the same for the `iron` binary.
+`platypus_ts_rt` as an ordinary Rust dependency. A game build would do the same for the `platypus` binary.
 
 ## 6. Memory model: a precise, non-moving mark-sweep GC
 
-`tools/iron_ts_rt` (`src/lib.rs` has the long version). Per-thread heap; objects are individually
+`tools/platypus_ts_rt` (`src/lib.rs` has the long version). Per-thread heap; objects are individually
 tracked, so a sweep can free them.
 
 - **Object**: `[header][8-byte slot per field]`. The header is the struct id + 1 (so
@@ -260,7 +260,7 @@ collection) has been handed out since the previous one; or when the host calls `
 The host-side constructors and `ts_rt_arr_push` never collect, so Rust can build a graph out of
 unrooted pieces and root it afterwards, and a pointer being pushed is never freed mid-push.
 
-**Stress mode** (`ts_rt_gc_stress`, or `IRON_TS_GC=stress` for the tests and benchmarks) collects at
+**Stress mode** (`ts_rt_gc_stress`, or `PLATYPUS_TS_GC=stress` for the tests and benchmarks) collects at
 every allocation of generated code and fills freed memory with 0xDD. A missing root then crashes
 loudly instead of corrupting memory rarely. All of the following pass in it with the same results
 as QuickJS and bun: the 13 ported tests, 1,500 steps of the busy scenario (37,000 collections), and
@@ -311,7 +311,7 @@ Known gaps:
 
 ## 7. Build times
 
-For `sim.ts` (release build of `iron_ts`, best of 30 on the dev machine):
+For `sim.ts` (release build of `platypus_ts`, best of 30 on the dev machine):
 
 | Phase | Time |
 |---|---|
@@ -327,18 +327,18 @@ and oxc), once.
 
 ## 8. Second benchmark: the sine circle
 
-`tools/iron_ts_tests/bench/sine.ts` is the sine-circle demo's curve maths
+`tools/platypus_ts_tests/bench/sine.ts` is the sine-circle demo's curve maths
 (`examples/sine-circle-demo`: `at()` per degree, Catmull-Rom spline, 3 samples per segment) as free
 functions, flattened to the 2,166-number list that `LineRenderer2D.send` hands to `render.stroke`.
-It compiles with `iron_ts` unchanged (0.2 ms lower, 1.8 ms Cranelift, 4.6 KB object). One frame
+It compiles with `platypus_ts` unchanged (0.2 ms lower, 1.8 ms Cranelift, 4.6 KB object). One frame
 = 361 points, 1,083 after the spline, with the formula, radius, frequency, depth, rotation and
-centre changing each frame (`cargo run --release -p iron_ts_tests --bin sine_bench`, 2,000 frames,
+centre changing each frame (`cargo run --release -p platypus_ts_tests --bin sine_bench`, 2,000 frames,
 best of three; all engines print the same checksum).
 
 | Engine | per frame | vs QuickJS |
 |---|---|---|
 | QuickJS, compute only | 1.13 ms | 1x |
-| QuickJS, compute + `__iron_op` + draining the op into Rust | 1.26 ms | (0.12 ms is the crossing) |
+| QuickJS, compute + `__platypus_op` + draining the op into Rust | 1.26 ms | (0.12 ms is the crossing) |
 | bun (JIT) | 0.048 ms | 24x |
 | native, compute (with the GC) | 0.045 ms | **25x** |
 | native, compute + Rust copying the points out of script memory into its own `Vec<f32>` | 0.043 ms | **26x** |
@@ -373,10 +373,10 @@ modules of a typical game as native code; React UI code stays on QuickJS (see ne
 |---|---|---|
 | 1. Language coverage | ~~Closures with capture cells~~ (done, section 4), classes + methods + `this`, template literals and strings, `Map`, generics by monomorphisation; ~~destructuring, defaults, `switch`, enums, loops, `Math`, arrays~~ (done, sections 12-15) | 6-8 weeks |
 | 2. Real types | Bun sidecar that dumps the TypeScript checker's per-expression types as JSON; map to IR types; drop the in-compiler inference | 3-4 weeks |
-| 3. Direct engine calls | Expose engine functions as `extern "C"` with shared layouts instead of `__iron_op` value conversion. `Vector3` = glam `Vec3` (a value type in the IR: 3 x f32 in registers or `f32x4`), `Quaternion`, `Color`; `Mathf` and vector arithmetic as intrinsics emitted inline; component lifecycle (`onUpdate`) entered through a function table; physics/scene/audio ops as direct calls | 4-5 weeks |
+| 3. Direct engine calls | Expose engine functions as `extern "C"` with shared layouts instead of `__platypus_op` value conversion. `Vector3` = glam `Vec3` (a value type in the IR: 3 x f32 in registers or `f32x4`), `Quaternion`, `Color`; `Mathf` and vector arithmetic as intrinsics emitted inline; component lifecycle (`onUpdate`) entered through a function table; physics/scene/audio ops as direct calls | 4-5 weeks |
 | 4. GC | **Spike done** (section 6: shadow stack, non-moving mark-sweep, stress mode). Left: generations or incrementality if heaps get big, escape analysis for frame temporaries, cheaper frames, GC-allocated closure cells | 1-2 weeks |
 | 5. `JsValue` fallback | NaN-boxed dynamic value, a small dynamic object model, calls between native and QuickJS for code that cannot be typed (`any`, React-style code) | 6+ weeks, the largest unknown |
-| 6. Packaging and targets | Cross-targets (Linux, macOS, Android, iOS), linking into the `iron` binary from the game build, Windows unwind info, source maps / debug info for crashes, CI | 3 weeks |
+| 6. Packaging and targets | Cross-targets (Linux, macOS, Android, iOS), linking into the `platypus` binary from the game build, Windows unwind info, source maps / debug info for crashes, CI | 3 weeks |
 | 7. Hot loop intrinsics and tuning | Integer loop counters (range analysis instead of f64 indexes), inline allocation fast path, bounds-check elision, scalar replacement of small objects | 2 weeks |
 
 Rough total for "useful": 2.5-3 months (steps 1-4 plus 6, with gameplay modules only). Everything
@@ -391,10 +391,10 @@ Recommended order and decisions:
 2. Do the type sidecar (step 2) before widening coverage; inferring types ourselves does not scale
    past annotated code.
 3. Direct engine calls (step 3) are where the large win is for real games: the benchmark above
-   removed the interpreter, but `__iron_op` argument conversion still costs more than a native call.
+   removed the interpreter, but `__platypus_op` argument conversion still costs more than a native call.
    Share layouts by generating the Rust side (as `layout.rs` does) from the IR and `#[repr(C)]` engine
    types, so a `Vector3` written by script is a `Vec3` to the engine.
-4. Keep dev builds on QuickJS and hot reload exactly as now; `iron_ts` is only a release-build step
+4. Keep dev builds on QuickJS and hot reload exactly as now; `platypus_ts` is only a release-build step
    and can fall back to QuickJS per module when a file uses unsupported features (the compiler
    already rejects with line numbers).
 
@@ -403,13 +403,13 @@ Recommended order and decisions:
 | Path | What |
 |---|---|
 | `tools/Cargo.toml` | Own workspace (not a member of the engine workspace; engine builds never see it) |
-| `tools/iron_ts/src/lower/` | oxc AST to IR: `types.rs` (annotations, structs, coercions), `expr.rs`, `stmt.rs`, `arrays.rs` (methods and inlined callbacks), `mod.rs` (declarations, init) |
-| `tools/iron_ts/src/ir.rs` | the IR and its dump (`iron_ts file.ts --dump-ir`) |
-| `tools/iron_ts/src/codegen.rs`, `frames.rs` | IR to Cranelift object; shadow-stack frame planning |
-| `tools/iron_ts/src/layout.rs` | generated Rust bindings |
-| `tools/iron_ts/src/bin/iron_ts.rs` | CLI: `iron_ts file.ts -o out.obj --bindings out.rs [--opt none\|speed] [--time N] [--dump-ir]` |
-| `tools/iron_ts_rt/` | runtime (GC heap, roots, arrays, strings, closures, libm calls) |
-| `tools/iron_ts_tests/` | build script (compile + link `sim.ts`), `tests/sim_port.rs` (13 ports), `tests/gc.rs` (collector under the sim), `bench/bench.ts` and `src/bin/bench.rs` (the benchmark) |
+| `tools/platypus_ts/src/lower/` | oxc AST to IR: `types.rs` (annotations, structs, coercions), `expr.rs`, `stmt.rs`, `arrays.rs` (methods and inlined callbacks), `mod.rs` (declarations, init) |
+| `tools/platypus_ts/src/ir.rs` | the IR and its dump (`platypus_ts file.ts --dump-ir`) |
+| `tools/platypus_ts/src/codegen.rs`, `frames.rs` | IR to Cranelift object; shadow-stack frame planning |
+| `tools/platypus_ts/src/layout.rs` | generated Rust bindings |
+| `tools/platypus_ts/src/bin/platypus_ts.rs` | CLI: `platypus_ts file.ts -o out.obj --bindings out.rs [--opt none\|speed] [--time N] [--dump-ir]` |
+| `tools/platypus_ts_rt/` | runtime (GC heap, roots, arrays, strings, closures, libm calls) |
+| `tools/platypus_ts_tests/` | build script (compile + link `sim.ts`), `tests/sim_port.rs` (13 ports), `tests/gc.rs` (collector under the sim), `bench/bench.ts` and `src/bin/bench.rs` (the benchmark) |
 
 Run (from `tools/`, with `PATH` including cargo and bun):
 
@@ -417,7 +417,7 @@ Run (from `tools/`, with `PATH` including cargo and bun):
 cargo test --workspace
 ```
 ```bash
-cargo run --release -p iron_ts_tests --bin bench
+cargo run --release -p platypus_ts_tests --bin bench
 ```
 
 ## 11. What real gameplay code needs (measured 2026-10-18)
@@ -602,7 +602,7 @@ Tests: `tests/params.rs` against bun's numbers from `bench/params.ts`, in all th
 ### 15.1 `Math` and numeric operators (done)
 
 Every `Math` function the compiler knows becomes either an inline machine operation or a call to a
-small runtime function (`ts_rt_*`, in `iron_ts_rt`), never a call into JavaScript.
+small runtime function (`ts_rt_*`, in `platypus_ts_rt`), never a call into JavaScript.
 
 | Function | Lowering | Notes |
 |---|---|---|

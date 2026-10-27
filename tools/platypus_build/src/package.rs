@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron-build package <game>`: one executable for a game. A copy of the engine host
-//! (`iron_app`) gets the game's icon and version info (Windows PE resources, `pe.rs`) and the
-//! game's code (bundle, CSS, metadata, icon) as a payload at its end (`iron_core::payload`). The
-//! assets are copied to a `data/` folder beside it, never embedded. See `docs/iron-build.md`.
+//! `platypus-build package <game>`: one executable for a game. A copy of the engine host
+//! (`platypus_app`) gets the game's icon and version info (Windows PE resources, `pe.rs`) and the
+//! game's code (bundle, CSS, metadata, icon) as a payload at its end (`platypus_core::payload`). The
+//! assets are copied to a `data/` folder beside it, never embedded. See `docs/platypus-build.md`.
 
 use crate::{Options, build, icon, include, packs, pe};
-use iron_core::payload::{self, Archive};
-use iron_core::project::{FixedUser, LoadOptions, Platform, Project, SystemUser, UserInfo};
+use platypus_core::payload::{self, Archive};
+use platypus_core::project::{FixedUser, LoadOptions, Platform, Project, SystemUser, UserInfo};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -87,7 +87,7 @@ pub fn payload_npm_json(project: &Project) -> Value {
         "name": project.name,
         "version": project.version,
         "description": project.description,
-        "license": iron_core::project::npm_license(&project.license, project.license_file.as_deref()),
+        "license": platypus_core::project::npm_license(&project.license, project.license_file.as_deref()),
     })
 }
 
@@ -127,8 +127,8 @@ pub fn find_license_file(game: &Path, project: &Project) -> Result<Option<PathBu
     Ok(found)
 }
 
-/// Resolves the project of `game` for `platform` (`iron_core::project`: `project.json` with its
-/// templates and platform section, else the `iron` section of `package.json`), with the command
+/// Resolves the project of `game` for `platform` (`platypus_core::project`: `project.json` with its
+/// templates and platform section, else the `platypus` section of `package.json`), with the command
 /// line on top, and the metadata of the executable.
 pub fn resolve(
     game: &Path,
@@ -185,8 +185,8 @@ fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// The name of the data folder and whether the game needs it to run (`iron.dataDir`,
-/// `iron.dataRequired` of the payload's `package.json`).
+/// The name of the data folder and whether the game needs it to run (`platypus.dataDir`,
+/// `platypus.dataRequired` of the payload's `package.json`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataInfo {
     pub dir: String,
@@ -261,13 +261,13 @@ pub fn copy_data(files: &[DataFile], dir: &Path) -> Result<u64, String> {
 
 /// The files of the game.
 ///
-/// The **payload** holds only `dist/game.irbundle`, `dist/game.css`, the rewritten `package.json`
-/// (`payload_package_json`), the icon as `iron-icon.<ext>` and the *essentials*: the assets the
-/// bundle itself names (`assets` in `game.irbundle`, no `.meta`), but only when together they are
+/// The **payload** holds only `dist/game.pbundle`, `dist/game.css`, the rewritten `package.json`
+/// (`payload_package_json`), the icon as `platypus-icon.<ext>` and the *essentials*: the assets the
+/// bundle itself names (`assets` in `game.pbundle`, no `.meta`), but only when together they are
 /// at most [`ESSENTIALS_LIMIT`] (256 KiB); past it none is embedded, a large file never is.
 ///
 /// The **data** files are everything the game may read: every asset the bundle names, the scene
-/// `iron.startScene`, everything `include` selects (paths, folders, globs; default `["assets/**"]`, minus `exclude`) and the matches of the dynamic path patterns the build found, each
+/// `platypus.startScene`, everything `include` selects (paths, folders, globs; default `["assets/**"]`, minus `exclude`) and the matches of the dynamic path patterns the build found, each
 /// with its `.meta`, and the other files of `dist/` (what the CSS references). Not `game.o`,
 /// `game_bindings.rs`, `*.exe`, `game.js`, source maps, dot files, copies of assets in `dist/` or
 /// anything under `exclude` (the output's own data folder).
@@ -281,7 +281,7 @@ pub fn collect_files(
     data_dir: &str,
     exclude: &[PathBuf],
 ) -> Result<Collected, String> {
-    let bundle_path = game.join("dist/game.irbundle");
+    let bundle_path = game.join("dist/game.pbundle");
     let bundle: Value = serde_json::from_str(
         &std::fs::read_to_string(&bundle_path).map_err(|e| io(&bundle_path, e))?,
     )
@@ -322,7 +322,7 @@ pub fn collect_files(
             .exclude
             .iter()
             .flatten()
-            .any(|x| iron_core::glob::include_match(x, f))
+            .any(|x| platypus_core::glob::include_match(x, f))
     };
     for p in bundle["patterns"].as_array().into_iter().flatten() {
         if let Some(glob) = p["glob"].as_str() {
@@ -359,7 +359,7 @@ pub fn collect_files(
         let inner = rel.strip_prefix("dist/").unwrap_or(&rel);
         let skip = matches!(
             inner,
-            "game.irbundle"
+            "game.pbundle"
                 | "game.css"
                 | "game.o"
                 | "game_bindings.rs"
@@ -390,11 +390,11 @@ pub fn collect_files(
     }
 
     let mut files = Vec::new();
-    for rel in ["dist/game.irbundle", "dist/game.css"] {
+    for rel in ["dist/game.pbundle", "dist/game.css"] {
         let p = game.join(rel);
         match std::fs::read(&p) {
             Ok(bytes) => files.push((rel.to_string(), bytes)),
-            Err(e) if rel == "dist/game.irbundle" => return Err(io(&p, e)),
+            Err(e) if rel == "dist/game.pbundle" => return Err(io(&p, e)),
             Err(_) => {}
         }
     }
@@ -463,10 +463,10 @@ pub struct PackageOptions {
     /// The person the templates of `project.json` see (default: the system's user).
     pub user: Option<FixedUser>,
     /// Write the data as packs (`data/assets.dat`, `data/scene-<slug>.dat`, `data/index.json`)
-    /// instead of loose files. Opt-in: `iron_app` does not read packs yet.
+    /// instead of loose files. Opt-in: `platypus_app` does not read packs yet.
     pub packs: bool,
     /// The codec of the packs (`--codec`, default LZ4).
-    pub codec: Option<iron_pack::Codec>,
+    pub codec: Option<platypus_pack::Codec>,
     /// List every file of every pack in the report.
     pub report: bool,
 }
@@ -501,8 +501,8 @@ fn exe_name(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-/// The engine host: `--host`, `$IRON_HOST`, `iron_app` next to this program, or the newest
-/// `target/{release,debug}/iron_app` found going up from the game folder and the current folder.
+/// The engine host: `--host`, `$PLATYPUS_HOST`, `platypus_app` next to this program, or the newest
+/// `target/{release,debug}/platypus` found going up from the game folder and the current folder.
 pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String> {
     if let Some(p) = explicit {
         return if p.is_file() {
@@ -511,11 +511,11 @@ pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String
             Err(format!("host {} not found", p.display()))
         };
     }
-    if let Some(p) = std::env::var_os("IRON_HOST").map(PathBuf::from) {
+    if let Some(p) = std::env::var_os("PLATYPUS_HOST").map(PathBuf::from) {
         return if p.is_file() {
             Ok(p)
         } else {
-            Err(format!("$IRON_HOST {} not found", p.display()))
+            Err(format!("$PLATYPUS_HOST {} not found", p.display()))
         };
     }
     let mut found: Vec<PathBuf> = Vec::new();
@@ -523,7 +523,7 @@ pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
     {
-        found.push(dir.join(exe_name("iron_app")));
+        found.push(dir.join(exe_name("platypus")));
     }
     let mut starts = vec![game.to_path_buf()];
     starts.extend(std::env::current_dir().ok());
@@ -531,12 +531,12 @@ pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String
         let s = s.canonicalize().unwrap_or(s);
         for a in s.ancestors() {
             for profile in ["release", "debug"] {
-                found.push(a.join("target").join(profile).join(exe_name("iron_app")));
+                found.push(a.join("target").join(profile).join(exe_name("platypus")));
             }
         }
     }
     newest_host(found)
-        .ok_or_else(|| "no iron_app host found (build it, or pass --host <path>)".to_string())
+        .ok_or_else(|| "no platypus_app host found (build it, or pass --host <path>)".to_string())
 }
 
 /// The most recently built of the candidate hosts. Not "release first": a stale release build
@@ -641,7 +641,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
             // Fail now, not on the player's machine, if it is not an image.
             icon::to_ico(&data).map_err(|e| format!("{}: {e}", p.display()))?;
             let ext = if icon::is_ico(&data) { "ico" } else { "png" };
-            Some((format!("iron-icon.{ext}"), data))
+            Some((format!("platypus-icon.{ext}"), data))
         }
         None => None,
     };
@@ -710,7 +710,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         let report = packs::write(
             &plan,
             &data_path,
-            opts.codec.unwrap_or(iron_pack::Codec::Lz4),
+            opts.codec.unwrap_or(platypus_pack::Codec::Lz4),
         )?;
         let bytes = report.bytes();
         pack_report = Some(report);
@@ -769,7 +769,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
     })
 }
 
-const USAGE: &str = "usage: iron-build package <game> [--host iron_app.exe] [--out file] [--no-build] [--no-tsc]
+const USAGE: &str = "usage: platypus-build package <game> [--host platypus.exe] [--out file] [--no-build] [--no-tsc]
        [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d] [--icon file.png|ico]
        [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--codec lz4|zstd] [--report]]";
 
@@ -855,7 +855,7 @@ pub fn run_cli(args: &[String]) -> i32 {
                     }
                 ),
                 None if p.info.required => println!(
-                    "assets not copied (--no-data): the exe needs a `{}` folder beside it, --data <dir> or $IRON_DATA",
+                    "assets not copied (--no-data): the exe needs a `{}` folder beside it, --data <dir> or $PLATYPUS_DATA",
                     p.info.dir
                 ),
                 None => {}
@@ -891,7 +891,7 @@ mod tests {
     fn pkg() -> Value {
         json!({
             "name": "my-game", "version": "1.2.3", "author": "Ann", "description": "Pkg description",
-            "iron": { "title": "My Game", "company": "Acme", "identifier": "com.acme.mygame", "icon": "assets/icon.png" }
+            "platypus": { "title": "My Game", "company": "Acme", "identifier": "com.acme.mygame", "icon": "assets/icon.png" }
         })
     }
 
@@ -915,16 +915,16 @@ mod tests {
         );
         assert_eq!(m.copyright, "");
         assert_eq!(m.description, "cool");
-        assert_eq!(m.identifier, "dev.iron.cool");
+        assert_eq!(m.identifier, "dev.platypus.cool");
     }
 
     // M9-TS-2401
     #[test]
-    fn iron_fields_and_flags_override_in_order() {
+    fn platypus_fields_and_flags_override_in_order() {
         let mut p = pkg();
-        p["iron"]["version"] = json!("2.0.0");
-        p["iron"]["exe"] = json!("mygame.exe");
-        p["iron"]["copyright"] = json!("(c) 2026 Acme Inc.");
+        p["platypus"]["version"] = json!("2.0.0");
+        p["platypus"]["exe"] = json!("mygame.exe");
+        p["platypus"]["copyright"] = json!("(c) 2026 Acme Inc.");
         let m = resolve_json(&p, "f", &Overrides::default());
         assert_eq!((m.version.as_str(), m.exe.as_str()), ("2.0.0", "mygame"));
         assert_eq!(m.copyright, "(c) 2026 Acme Inc.");
@@ -958,10 +958,10 @@ mod tests {
             dir: "data".into(),
             required: true,
         };
-        let j = payload_project_json(&project, Some("iron-icon.png"), &data);
+        let j = payload_project_json(&project, Some("platypus-icon.png"), &data);
         assert_eq!(j["resolved"], true);
         assert_eq!(j["version"], "9.9.9");
-        assert_eq!(j["icon"], "iron-icon.png");
+        assert_eq!(j["icon"], "platypus-icon.png");
         assert_eq!(j["title"], "My Game");
         assert_eq!(j["dataDir"], "data");
         assert_eq!(j["dataRequired"], true);
@@ -974,11 +974,11 @@ mod tests {
     }
 
     fn game_folder(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("iron_pkg_{tag}_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_pkg_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         for (p, c) in [
             (
-                "dist/game.irbundle",
+                "dist/game.pbundle",
                 r#"{"format":1,"assets":["assets/a.png","scenes/s.scene.json","../evil"]}"#,
             ),
             ("dist/game.css", "body{}"),
@@ -986,7 +986,7 @@ mod tests {
             ("dist/assets/a.png", "COPY"),
             ("dist/game.o", "OBJ"),
             ("dist/old.exe", "EXE"),
-            ("dist/.iron-reload", "{}"),
+            ("dist/.platypus-reload", "{}"),
             ("assets/a.png", "PNG"),
             ("assets/a.png.meta", "META"),
             ("assets/unused.png", "UNUSED"),
@@ -1013,15 +1013,15 @@ mod tests {
                 .contains("unsafe")
         );
         std::fs::write(
-            d.join("dist/game.irbundle"),
+            d.join("dist/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png","scenes/s.scene.json"]}"#,
         )
         .unwrap();
-        p["iron"]["include"] = json!(["extra"]);
+        p["platypus"]["include"] = json!(["extra"]);
         let c = collect_files(
             &d,
             &proj(&p, "f", &Overrides::default()),
-            Some(("iron-icon.png", vec![1])),
+            Some(("platypus-icon.png", vec![1])),
             "data",
             &[],
         )
@@ -1038,11 +1038,11 @@ mod tests {
             assert!(data.contains(&want), "{want} missing from {data:?}");
         }
         for not in [
-            "dist/game.irbundle",
+            "dist/game.pbundle",
             "dist/game.css",
             "dist/game.o",
             "dist/old.exe",
-            "dist/.iron-reload",
+            "dist/.platypus-reload",
             "dist/assets/a.png",
             "assets/unused.png",
         ] {
@@ -1051,8 +1051,8 @@ mod tests {
         // The game folder's copy of an asset is the one copied.
         let a = c.data.iter().find(|f| f.rel == "assets/a.png").unwrap();
         assert_eq!(std::fs::read(&a.src).unwrap(), b"PNG");
-        // Without `iron.include` the whole assets folder goes to data.
-        p["iron"].as_object_mut().unwrap().remove("include");
+        // Without `platypus.include` the whole assets folder goes to data.
+        p["platypus"].as_object_mut().unwrap().remove("include");
         let c =
             collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         assert!(c.data.iter().any(|f| f.rel == "assets/unused.png"));
@@ -1085,13 +1085,13 @@ mod tests {
             std::fs::write(d.join(f), f).unwrap();
         }
         std::fs::write(
-            d.join("dist/game.irbundle"),
+            d.join("dist/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png"],"patterns":[{"glob":"assets/sfx/*.*"}]}"#,
         )
         .unwrap();
         let mut p = pkg();
-        p["iron"]["include"] = json!(["extra/*.txt", "assets/nope/*.png"]);
-        p["iron"]["exclude"] = json!(["assets/sfx/b.wav"]);
+        p["platypus"]["include"] = json!(["extra/*.txt", "assets/nope/*.png"]);
+        p["platypus"]["exclude"] = json!(["assets/sfx/b.wav"]);
         let c =
             collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         let data: Vec<&str> = c.data.iter().map(|f| f.rel.as_str()).collect();
@@ -1119,8 +1119,8 @@ mod tests {
             c.warnings
         );
         // `exclude` also trims the default include.
-        p["iron"].as_object_mut().unwrap().remove("include");
-        p["iron"]["exclude"] = json!(["**/*.psd", "assets/wip"]);
+        p["platypus"].as_object_mut().unwrap().remove("include");
+        p["platypus"]["exclude"] = json!(["**/*.psd", "assets/wip"]);
         let c =
             collect_files(&d, &proj(&p, "f", &Overrides::default()), None, "data", &[]).unwrap();
         let data: Vec<&str> = c.data.iter().map(|f| f.rel.as_str()).collect();
@@ -1135,7 +1135,7 @@ mod tests {
     fn the_payload_holds_only_code_and_tiny_essentials() {
         let d = game_folder("payload");
         std::fs::write(
-            d.join("dist/game.irbundle"),
+            d.join("dist/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png","scenes/s.scene.json"]}"#,
         )
         .unwrap();
@@ -1143,7 +1143,7 @@ mod tests {
         let c = collect_files(
             &d,
             &proj(&p, "f", &Overrides::default()),
-            Some(("iron-icon.png", vec![1])),
+            Some(("platypus-icon.png", vec![1])),
             "data",
             &[],
         )
@@ -1151,10 +1151,10 @@ mod tests {
         let names: Vec<&str> = c.payload.iter().map(|(n, _)| n.as_str()).collect();
         // Small named assets are essentials: embedded, with the code.
         for want in [
-            "dist/game.irbundle",
+            "dist/game.pbundle",
             "dist/game.css",
             "project.json",
-            "iron-icon.png",
+            "platypus-icon.png",
             "assets/a.png",
             "scenes/s.scene.json",
         ] {
@@ -1203,10 +1203,10 @@ mod tests {
     // M9-TS-2601
     #[test]
     fn a_game_whose_assets_are_all_essentials_starts_without_a_data_folder() {
-        let d = std::env::temp_dir().join(format!("iron_pkg_small_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_pkg_small_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("dist")).unwrap();
-        std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         let p = json!({});
         // No assets at all (hello): nothing to need.
         let c =
@@ -1217,7 +1217,7 @@ mod tests {
         std::fs::write(d.join("assets/t.png"), b"T").unwrap();
         std::fs::write(d.join("assets/t.png.meta"), b"M").unwrap();
         std::fs::write(
-            d.join("dist/game.irbundle"),
+            d.join("dist/game.pbundle"),
             r#"{"format":1,"assets":["assets/t.png"]}"#,
         )
         .unwrap();
@@ -1266,7 +1266,7 @@ mod tests {
     fn package_writes_one_file_with_payload_resources_and_a_working_sign_hook() {
         let d = game_folder("package");
         std::fs::write(
-            d.join("dist/game.irbundle"),
+            d.join("dist/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png"]}"#,
         )
         .unwrap();
@@ -1296,8 +1296,8 @@ mod tests {
         let mut a = Archive::open(&out).unwrap().unwrap();
         let j: Value = serde_json::from_slice(&a.read("project.json").unwrap()).unwrap();
         assert_eq!(j["version"], "4.5.6");
-        assert_eq!(j["icon"], "iron-icon.png");
-        assert_eq!(a.read("iron-icon.png").unwrap(), png_bytes());
+        assert_eq!(j["icon"], "platypus-icon.png");
+        assert_eq!(a.read("platypus-icon.png").unwrap(), png_bytes());
         assert_eq!(a.read("assets/a.png").unwrap(), b"PNG");
         if cfg!(windows) {
             assert!(sign_marker.exists(), "the sign command did not run");
@@ -1330,7 +1330,7 @@ mod tests {
     #[test]
     fn templates_resolve_at_package_time_into_the_payload_and_the_version_info() {
         let d = game_folder("templates");
-        std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         std::fs::write(
             d.join("project.json"),
             r#"{ "name": "fox", "title": "${firstName}'s Game", "company": "${fullName}",
@@ -1413,7 +1413,7 @@ mod tests {
     #[test]
     fn a_license_ships_beside_the_exe_and_in_the_metadata() {
         let d = game_folder("license");
-        std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         std::fs::write(d.join("LICENSE"), "MIT text").unwrap();
         std::fs::write(d.join("EULA.txt"), "custom text").unwrap();
         let run = |project: &str, out: &str| {
@@ -1498,7 +1498,7 @@ mod tests {
     fn assets_are_copied_to_a_data_folder_beside_the_exe_and_not_embedded() {
         let d = game_folder("data");
         std::fs::write(
-            d.join("dist/game.irbundle"),
+            d.join("dist/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png"]}"#,
         )
         .unwrap();
@@ -1508,7 +1508,7 @@ mod tests {
         let big = vec![9u8; 300 * 1024];
         std::fs::write(d.join("assets/big.bin"), &big).unwrap();
         std::fs::write(
-            d.join("dist/game.irbundle"),
+            d.join("dist/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png","assets/big.bin"]}"#,
         )
         .unwrap();
@@ -1525,13 +1525,13 @@ mod tests {
         ] {
             assert!(data.join(rel).is_file(), "{rel} not in data/");
         }
-        assert!(!data.join("dist/game.irbundle").exists());
+        assert!(!data.join("dist/game.pbundle").exists());
         assert!(p.data_files >= 6);
         assert!(p.data_bytes >= big.len() as u64);
         // The exe's table of contents has the code and no asset beyond the tiny essentials.
         let a = Archive::open(&p.path).unwrap().unwrap();
         let names: Vec<&str> = a.entries.iter().map(|e| e.path.as_str()).collect();
-        assert!(names.contains(&"dist/game.irbundle") && names.contains(&"project.json"));
+        assert!(names.contains(&"dist/game.pbundle") && names.contains(&"project.json"));
         for not in [
             "assets/big.bin",
             "assets/unused.png",
@@ -1574,7 +1574,7 @@ mod tests {
     #[test]
     fn package_warns_about_empty_and_default_metadata_and_still_packages() {
         let d = game_folder("warns");
-        std::fs::write(d.join("dist/game.irbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         std::fs::write(
             d.join("project.json"),
             r#"{ "name": "g", "company": "", "description": "" }"#,
@@ -1609,12 +1609,12 @@ mod tests {
     }
 
     // M9-TS-2440: needs the engine host and a GPU, so it runs on request:
-    // `cargo test -p iron_build -- --ignored standalone` (IRON_HOST or a built target/debug/iron_app).
+    // `cargo test -p platypus_build -- --ignored standalone` (PLATYPUS_HOST or a built target/debug/platypus).
     #[test]
-    #[ignore = "needs iron_app built and a GPU"]
+    #[ignore = "needs platypus_app built and a GPU"]
     fn standalone_exe_runs_from_another_folder_without_the_game_folder() {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/hello");
-        let d = std::env::temp_dir().join(format!("iron_pkg_run_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_pkg_run_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         let game = d.join("game");
         for f in ["project.json", "tsconfig.json", "src/main.ts"] {
@@ -1643,14 +1643,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    // M9-TS-2610: `cargo test -p iron_build -- --ignored standalone_data`. A game with an
+    // M9-TS-2610: `cargo test -p platypus_build -- --ignored standalone_data`. A game with an
     // asset bigger than the essentials limit runs from `data/` beside the exe, with the game
     // folder gone, and says where it looked when `data/` is gone too.
     #[test]
-    #[ignore = "needs iron_app built and a GPU"]
+    #[ignore = "needs platypus_app built and a GPU"]
     fn standalone_data_folder_is_read_and_its_absence_is_a_clear_error() {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/boxes");
-        let d = std::env::temp_dir().join(format!("iron_pkg_data_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_pkg_data_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         let game = d.join("game");
         for f in [
@@ -1704,7 +1704,7 @@ mod tests {
     // M9-TS-2559
     #[test]
     fn the_newest_host_wins_not_the_release_one() {
-        let d = std::env::temp_dir().join(format!("iron_build_host_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_build_host_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         let (release, debug, gone) = (

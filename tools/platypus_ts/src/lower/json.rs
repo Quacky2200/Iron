@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `JSON.stringify` and `JSON.parse`. The program is typed, so the compiler describes the static
-//! type of the value in a byte string (a *descriptor*, documented in `iron_ts_rt/src/json.rs`) and
+//! type of the value in a byte string (a *descriptor*, documented in `platypus_ts_rt/src/json.rs`) and
 //! the runtime walks it. `JSON.parse` needs its type from the context (`const x: T = JSON.parse(s)`
 //! or `JSON.parse(s) as T`).
 

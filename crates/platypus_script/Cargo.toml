@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_script"
+name = "platypus_script"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [dependencies]
-iron_core = { version = "0.1.0", path = "../iron_core" }
+platypus_core = { version = "0.1.0", path = "../platypus_core" }
 rquickjs = "0.14.0"
 thiserror = "2.0.21"
 tracing = "0.1.44"
 
 [dev-dependencies]
-iron_api = { path = "../iron_api" }
+platypus_api = { path = "../platypus_api" }
 criterion = "0.8.2"
 
 [[bench]]

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enums shared between namespaces, optional enum parameters, explicit names, enum lists, nullable
-//! numbers / strings / values, `#[nullable(undefined)]` and aliases in `#[iron_api]`
-//! (docs/iron-api.md, "Enums and nullables"). IDs are in TESTS.md (M9-API-162x).
-use iron_api::{Handle, Ty, ValueType, iron_api};
+//! numbers / strings / values, `#[nullable(undefined)]` and aliases in `#[platypus_api]`
+//! (docs/platypus-api.md, "Enums and nullables"). IDs are in TESTS.md (M9-API-162x).
+use platypus_api::{Handle, Ty, ValueType, platypus_api};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -46,7 +46,7 @@ thread_local! {
 }
 
 /// The declaring namespace: `Mode` and its converters.
-#[iron_api(
+#[platypus_api(
     namespace = "Kinds", quickjs,
     enums(
         /// How hard.
@@ -63,7 +63,7 @@ pub mod kinds_api {
 }
 
 /// Uses `Hardness` without declaring it again.
-#[iron_api(
+#[platypus_api(
     namespace = "Things", quickjs,
     handles(Item = Item),
     values(Rgb = Rgb [r: f64, g: f64]),
@@ -259,46 +259,46 @@ fn an_extern_enum_adds_no_second_set_of_symbols_and_the_manifest_lists_it_once()
         .map(|e| e["name"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(names, ["Shout"]);
-    assert!(iron_api::symbol("iron_Hardness_name").is_some());
-    assert!(iron_api::symbol("iron_Shout_parse").is_some());
+    assert!(platypus_api::symbol("platypus_Hardness_name").is_some());
+    assert!(platypus_api::symbol("platypus_Shout_parse").is_some());
 }
 
 // M9-API-1623
 #[test]
 fn nullable_numbers_values_and_strings_use_nan_and_the_none_flag_on_the_abi() {
     // Option<f64>: NaN is none, both ways.
-    things_api::iron_Things_setLevel(f64::NAN);
+    things_api::platypus_Things_setLevel(f64::NAN);
     assert!(LEVEL.with(|c| c.get()).is_none());
-    things_api::iron_Things_setLevel(2.5);
+    things_api::platypus_Things_setLevel(2.5);
     assert_eq!(LEVEL.with(|c| c.get()), Some(2.5));
-    assert_eq!(things_api::iron_Things_level(), 2.5);
-    things_api::iron_Things_setLevel(f64::NAN);
-    assert!(things_api::iron_Things_level().is_nan());
+    assert_eq!(things_api::platypus_Things_level(), 2.5);
+    things_api::platypus_Things_setLevel(f64::NAN);
+    assert!(things_api::platypus_Things_level().is_nan());
     // Option<V>: NaN in the fields is none, both ways.
-    things_api::iron_Things_setTint(0.25, 0.5);
+    things_api::platypus_Things_setTint(0.25, 0.5);
     assert_eq!(TINT.with(|c| c.get()), Some(Rgb { r: 0.25, g: 0.5 }));
     let mut out = [0.0f64; 2];
-    unsafe { things_api::iron_Things_tint(out.as_mut_ptr()) };
+    unsafe { things_api::platypus_Things_tint(out.as_mut_ptr()) };
     assert_eq!(out, [0.25, 0.5]);
-    things_api::iron_Things_setTint(f64::NAN, f64::NAN);
+    things_api::platypus_Things_setTint(f64::NAN, f64::NAN);
     assert!(TINT.with(|c| c.get()).is_none());
-    unsafe { things_api::iron_Things_tint(out.as_mut_ptr()) };
+    unsafe { things_api::platypus_Things_tint(out.as_mut_ptr()) };
     assert!(out[0].is_nan() && out[1].is_nan());
     // Option<String>: an empty text and the flag.
     let mut len = 0i64;
-    let p = unsafe { things_api::iron_Things_note(1, &mut len) };
+    let p = unsafe { things_api::platypus_Things_note(1, &mut len) };
     assert_eq!(
         unsafe { std::slice::from_raw_parts(p, len as usize) },
         b"hard"
     );
-    assert!(!iron_api::iron_api_result_none());
-    let p = unsafe { things_api::iron_Things_note(0, &mut len) };
+    assert!(!platypus_api::platypus_api_result_none());
+    let p = unsafe { things_api::platypus_Things_note(0, &mut len) };
     assert_eq!(
         (unsafe { std::slice::from_raw_parts(p, len as usize) }, len),
         (&b""[..], 0)
     );
-    assert!(iron_api::iron_api_result_none());
-    assert!(iron_api::symbol("iron_api_result_none").is_some());
+    assert!(platypus_api::platypus_api_result_none());
+    assert!(platypus_api::symbol("platypus_api_result_none").is_some());
     // The manifest and the declarations.
     let json = things_api::MANIFEST.to_json();
     assert!(json.contains(r#""returns":"opt:f64""#), "{json}");
@@ -311,19 +311,22 @@ fn nullable_numbers_values_and_strings_use_nan_and_the_none_flag_on_the_abi() {
 fn an_optional_enum_parameter_is_none_for_a_left_out_or_unknown_name_and_a_list_of_enums_is_indexes()
  {
     // The shim reads -1 (an unknown or left-out name) as none: nothing changes.
-    things_api::iron_Things_setMode(0);
+    things_api::platypus_Things_setMode(0);
     assert_eq!(MODE.with(|c| c.get()), Mode::Soft);
-    things_api::iron_Things_setMode(1);
+    things_api::platypus_Things_setMode(1);
     assert_eq!(MODE.with(|c| c.get()), Mode::Hard);
-    things_api::iron_Things_setMode(-1);
+    things_api::platypus_Things_setMode(-1);
     assert_eq!(MODE.with(|c| c.get()), Mode::Hard, "-1 changes nothing");
-    things_api::iron_Things_setMode(99);
+    things_api::platypus_Things_setMode(99);
     assert_eq!(MODE.with(|c| c.get()), Mode::Hard);
     // A list of enums: the count, and the indexes in the result buffer.
-    let n = things_api::iron_Things_modes();
+    let n = things_api::platypus_Things_modes();
     assert_eq!(n, 2);
     assert_eq!(
-        (iron_api::iron_api_result(0), iron_api::iron_api_result(1)),
+        (
+            platypus_api::platypus_api_result(0),
+            platypus_api::platypus_api_result(1)
+        ),
         (1.0, 0.0)
     );
     // The converters of the declaring namespace and the explicit names.
@@ -331,13 +334,13 @@ fn an_optional_enum_parameter_is_none_for_a_left_out_or_unknown_name_and_a_list_
     assert_eq!(things_api::shout_name(Loud::Quiet), "QUIET");
     assert_eq!(things_api::shout_parse("Boomy"), Some(Loud::Boomy));
     assert_eq!(things_api::shout_parse("boomy"), None);
-    assert_eq!(things_api::iron_Things_loud(0), 1);
+    assert_eq!(things_api::platypus_Things_loud(0), 1);
 }
 
 // M9-API-1625
 #[test]
 fn quickjs_takes_names_for_enums_null_for_none_and_an_alias_is_the_same_global() {
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
@@ -399,21 +402,21 @@ fn nullable_undefined_is_in_the_manifest_json() {
 // M9-API-1630
 #[test]
 fn a_record_with_a_string_field_keeps_the_text_in_the_string_list_in_field_order() {
-    let r = |i: u32| iron_api::iron_api_result(i);
+    let r = |i: u32| platypus_api::platypus_api_result(i);
     let str_at = |i: u32| {
         let mut len = 0i64;
-        let p = unsafe { iron_api::iron_api_result_str(i, &mut len) };
+        let p = unsafe { platypus_api::platypus_api_result_str(i, &mut len) };
         String::from_utf8(unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()).unwrap()
     };
-    things_api::iron_Things_label(7.0);
+    things_api::platypus_Things_label(7.0);
     assert_eq!((r(0), str_at(0)), (7.0, "n7".to_string()));
     // A list: the numbers of every element in a row, the strings in a row.
-    assert_eq!(things_api::iron_Things_labels(), 2);
+    assert_eq!(things_api::platypus_Things_labels(), 2);
     assert_eq!((r(0), r(1)), (1.0, 2.0));
     assert_eq!((str_at(0), str_at(1)), ("a".to_string(), "bb".to_string()));
     let json = things_api::MANIFEST.to_json();
     assert!(json.contains(r#"{"name":"text","type":"string""#), "{json}");
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
@@ -446,7 +449,7 @@ fn a_named_options_object_has_a_type_with_the_parameter_docs_and_quickjs_reads_i
     assert_eq!(poke["params"][1]["doc"], "How hard to poke.");
     assert_eq!(poke["params"][2]["doc"], "Whether it makes a sound.");
     assert!(poke["params"][0].get("doc").is_none());
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
@@ -484,11 +487,11 @@ fn script_string(text: &str) -> Vec<u8> {
 fn an_optional_record_travels_as_json_text_both_ways_with_optional_keys_and_nulls() {
     let set = |text: &str| {
         let s = script_string(text);
-        unsafe { things_api::iron_Things_setLook(s.as_ptr()) }
+        unsafe { things_api::platypus_Things_setLook(s.as_ptr()) }
     };
     let get = || {
         let mut len = 0i64;
-        let p = unsafe { things_api::iron_Things_look(&mut len) };
+        let p = unsafe { things_api::platypus_Things_look(&mut len) };
         String::from_utf8(unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()).unwrap()
     };
     set(
@@ -565,7 +568,7 @@ fn an_optional_record_travels_as_json_text_both_ways_with_optional_keys_and_null
         "opt:record:Look"
     );
     // QuickJS: an object (or null) in, an object with value instances out.
-    use iron_api::rquickjs;
+    use platypus_api::rquickjs;
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {

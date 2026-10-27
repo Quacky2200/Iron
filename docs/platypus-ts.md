@@ -1,17 +1,17 @@
-# iron_ts: the ahead-of-time TypeScript compiler
+# platypus_ts: the ahead-of-time TypeScript compiler
 
-Code: [tools/iron_ts](../tools/iron_ts/src) (compiler), [tools/iron_ts_rt](../tools/iron_ts_rt/src/lib.rs)
-(runtime and GC), [tools/iron_ts_tests](../tools/iron_ts_tests) (fixtures, tests, benchmarks).
-Progress and next steps: [tools/iron_ts/TODO.md](../tools/iron_ts/TODO.md). Why it exists, the
-measurements and the design notes: [iron-ts-spike.md](research/iron-ts-spike.md),
-[iron-ts-classes.md](research/iron-ts-classes.md), [iron-ts-engine-boundary.md](research/iron-ts-engine-boundary.md).
-Design note for `Intl.DateTimeFormat` options (step I3a is built on it): [iron-ts-intl-datetime.md](research/iron-ts-intl-datetime.md).
+Code: [tools/platypus_ts](../tools/platypus_ts/src) (compiler), [tools/platypus_ts_rt](../tools/platypus_ts_rt/src/lib.rs)
+(runtime and GC), [tools/platypus_ts_tests](../tools/platypus_ts_tests) (fixtures, tests, benchmarks).
+Progress and next steps: [tools/platypus_ts/TODO.md](../tools/platypus_ts/TODO.md). Why it exists, the
+measurements and the design notes: [platypus-ts-spike.md](research/platypus-ts-spike.md),
+[platypus-ts-classes.md](research/platypus-ts-classes.md), [platypus-ts-engine-boundary.md](research/platypus-ts-engine-boundary.md).
+Design note for `Intl.DateTimeFormat` options (step I3a is built on it): [platypus-ts-intl-datetime.md](research/platypus-ts-intl-datetime.md).
 
 This compiler is the engine's script backend. It compiles a typed subset of TypeScript (games written
 as ordinary classes, functions, components and React UI) to native code, either in process with the
-Cranelift JIT (`iron_app` loads `dist/game.irbundle`, built by `iron-build`) or to an object file
+Cranelift JIT (`platypus_app` loads `dist/game.pbundle`, built by `platypus-build`) or to an object file
 (`--aot`). The QuickJS backend ([scripting.md](scripting.md)) is deprecated and runs only with
-`--force`. The move, its results and its limits are in [iron-ts-native.md](iron-ts-native.md); the
+`--force`. The move, its results and its limits are in [platypus-ts-native.md](platypus-ts-native.md); the
 benchmarks are in [benchmarks.md](benchmarks.md). The sections below were written during the spike and
 still describe the design.
 
@@ -23,20 +23,20 @@ Run cargo from `tools/` (shell setup as in [CLAUDE.md](../CLAUDE.md)).
 cd tools && cargo fmt --all
 cd tools && cargo clippy --workspace --all-targets -- -D warnings
 cd tools && cargo test --workspace
-cd tools && IRON_TS_GC=stress cargo test -p iron_ts_tests      # collect at every allocation
-cd tools && cargo test -p iron_ts_tests --test engine contacts # one area (lang, stdlib, engine, engine_api, ui), one filter
-cd tools && cargo run --release -p iron_ts_tests --bin bench   # QuickJS vs bun vs native, 10,000 steps
-cd tools && cargo run --release -p iron_ts_tests --bin sine_bench 2000
+cd tools && PLATYPUS_TS_GC=stress cargo test -p platypus_ts_tests      # collect at every allocation
+cd tools && cargo test -p platypus_ts_tests --test engine contacts # one area (lang, stdlib, engine, engine_api, ui), one filter
+cd tools && cargo run --release -p platypus_ts_tests --bin bench   # QuickJS vs bun vs native, 10,000 steps
+cd tools && cargo run --release -p platypus_ts_tests --bin sine_bench 2000
 ```
 
-`IRON_TS_GC` is read by `gc_mode_from_env` in [iron_ts_tests/src/lib.rs](../tools/iron_ts_tests/src/lib.rs):
+`PLATYPUS_TS_GC` is read by `gc_mode_from_env` in [platypus_ts_tests/src/lib.rs](../tools/platypus_ts_tests/src/lib.rs):
 `stress` collects at every allocation of generated code and poisons freed memory, `off` never
 collects on its own. Any change to lowering, codegen or the runtime should also pass in stress mode.
 
-The CLI (`cargo build --release -p iron_ts`, binary `tools/target/release/iron_ts`):
+The CLI (`cargo build --release -p platypus_ts`, binary `tools/target/release/platypus_ts`):
 
 ```
-iron_ts file.ts [--dump-ir] [--prefix p_] [--struct-base N] [-o out.obj] [--bindings out.rs]
+platypus_ts file.ts [--dump-ir] [--prefix p_] [--struct-base N] [-o out.obj] [--bindings out.rs]
                 [--opt none|speed|speed_and_size] [--time N] [--manifest api.json]...
 ```
 
@@ -49,17 +49,17 @@ iron_ts file.ts [--dump-ir] [--prefix p_] [--struct-base N] [-o out.obj] [--bind
 | `--bindings out.rs` | Write the generated Rust bindings |
 | `--opt` | Cranelift `opt_level`, default `speed` |
 | `--time N` | Compile `N` times and print the best time of each phase |
-| `--manifest api.json` | Repeatable. An `#[iron_api]` namespace the source may call (the JSON from `Namespace::to_json`, see [iron-api.md](iron-api.md)); the library entry point is `compile_with_manifests(src, opt, prefix, struct_base, &manifests)` |
+| `--manifest api.json` | Repeatable. An `#[platypus_api]` namespace the source may call (the JSON from `Namespace::to_json`, see [platypus-api.md](platypus-api.md)); the library entry point is `compile_with_manifests(src, opt, prefix, struct_base, &manifests)` |
 
 ## Pipeline
 
 ```
- .ts source --oxc parser--> AST --lower/--> Iron IR (ir.rs) --codegen.rs (Cranelift)--> object file
-                                                  |                                      + linked with iron_ts_rt
+ .ts source --oxc parser--> AST --lower/--> Platypus IR (ir.rs) --codegen.rs (Cranelift)--> object file
+                                                  |                                      + linked with platypus_ts_rt
                                                   +--layout.rs--> Rust bindings (repr(C) structs, extern "C")
 ```
 
-`compile_with(src, opt, prefix, struct_base)` in [lib.rs](../tools/iron_ts/src/lib.rs) runs it on a
+`compile_with(src, opt, prefix, struct_base)` in [lib.rs](../tools/platypus_ts/src/lib.rs) runs it on a
 thread with a 64 MiB stack (lowering recurses with source nesting) and returns an `Output`: object
 bytes, bindings text, IR dump and the time of each phase.
 
@@ -94,18 +94,18 @@ bytes, bindings text, IR dump and the time of each phase.
   optional out pointer `(scalar type, count)` that codegen appends as the last parameter.
 - **Value-class members.** The manifest parser adds a class named like a value class (`Vector3`) to
   `ClassFns` of that name without registering a handle type. `value_member` in
-  [lower/expr.rs](../tools/iron_ts/src/lower/expr.rs) finds the method or getter of the struct behind
+  [lower/expr.rs](../tools/platypus_ts/src/lower/expr.rs) finds the method or getter of the struct behind
   a value class; `lower_method` (lower/arrays.rs) and `member_of` call it as a direct extern call with
   the receiver first (`a.add(b)`, `v.magnitude`), before any user-defined target is tried. Fields
   still win over getters. Not supported: static functions on value classes, operators, compound
   assignment on value properties.
 - **String arguments and results.** A `string` in the manifest is `ExtTy::Str`. As an argument the
   call passes the script string pointer, and codegen adds a trailing stack slot for the length
-  when the extern has a string result. The callee borrows the bytes (`iron_api::script_str`), so
+  when the extern has a string result. The callee borrows the bytes (`platypus_api::script_str`), so
   the string stays rooted for the call; a lone surrogate reaches the engine as U+FFFD. A string result
   comes back as bytes plus length from a per-thread buffer and is copied at once into a new script
   string with `ts_rt_str_new_gc`. That call can collect, so the root analysis (`frames.rs`) counts
-  it as allocating. See [iron-api.md](iron-api.md#strings). Not supported: `string | null`
+  it as allocating. See [platypus-api.md](platypus-api.md#strings). Not supported: `string | null`
   parameters.
 - **Linking** is the host's job: the test crate's `build.rs` writes the `.obj`, passes it with
   `cargo:rustc-link-arg`, and includes the bindings.
@@ -114,52 +114,52 @@ bytes, bindings text, IR dump and the time of each phase.
 
 | File | What |
 |---|---|
-| [manifest.rs](../tools/iron_ts/src/manifest.rs) | Reads the `iron_api` JSON manifests into a table of callable functions (`Manifest`, `ExternFn`), the handle type names, the value classes (`values`) and the handle classes (`classes`: `ClassFns` with `statics`, `methods`, `getters`, `setters`) |
-| [lib.rs](../tools/iron_ts/src/lib.rs) | `compile_source` / `compile_with_prefix` / `compile_with` / `compile_with_manifests`, `Output`; unit tests for lowering errors (`M9-TS-14..16`, `55`, `56`, `70`, `84`, `110`, `119`) |
-| [ir.rs](../tools/iron_ts/src/ir.rs) | The IR: `Ty`, `Module` (with `vtables` and `itables`), `Func`, `Stmt`, `Expr`/`ExprKind` (including `CallVirtual` and `InstanceOf`), `RtFn` (runtime calls), `field_offset`, `dump` |
-| [frames.rs](../tools/iron_ts/src/frames.rs) | Shadow-stack frame plan and the spill rule (see GC roots below) |
-| [codegen.rs](../tools/iron_ts/src/codegen.rs) | IR to Cranelift object: frames and spills, `eval_args`, `ts_init`, runtime calls, the method tables and `instanceof` byte tables (local data), indirect calls |
-| [layout.rs](../tools/iron_ts/src/layout.rs) | Rust bindings: `HDR_*` header constants, `#[repr(C)]` structs, `TAG_*`, `NULL_NUM_BITS`, `extern "C"` declarations |
-| [bin/iron_ts.rs](../tools/iron_ts/src/bin/iron_ts.rs) | The CLI above |
-| [lower/mod.rs](../tools/iron_ts/src/lower/mod.rs) | `lower_source`: collecting declarations, `lower_fn` (lowered on demand), bindings (direct or boxed), module-level variables |
-| [lower/types.rs](../tools/iron_ts/src/lower/types.rs) | Annotation to IR type, struct layouts (a union of objects becomes one struct), `coerce`, `to_bool` |
-| [lower/expr.rs](../tools/iron_ts/src/lower/expr.rs) | Expressions, assignment targets (places), calls, `new`, optional chains, `Math`, constant folding |
-| [lower/stmt.rs](../tools/iron_ts/src/lower/stmt.rs) | Statements: variables, destructuring, loops, labels, `switch` |
-| [lower/arrays.rs](../tools/iron_ts/src/lower/arrays.rs) | Array methods; callbacks are inlined into loops, `Iter` for `for...of` and spread |
-| [lower/scan.rs](../tools/iron_ts/src/lower/scan.rs) | Which names do closures capture (by name, so it only over-approximates) |
-| [lower/closure.rs](../tools/iron_ts/src/lower/closure.rs) | Closures lifted to `lambda(env, params...)`, function values, cells |
-| [lower/strings.rs](../tools/iron_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
-| [lower/maps.rs](../tools/iron_ts/src/lower/maps.rs) | `Map`, `Set`, `WeakMap`, `WeakSet`: construction, methods, live `for...of`, snapshots for spread and `Array.from` |
-| [lower/json.rs](../tools/iron_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
-| [lower/clone.rs](../tools/iron_ts/src/lower/clone.rs) | `structuredClone`: one lifted clone function per type |
-| [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object, and the String methods that take a regex (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`) |
-| [lower/date.rs](../tools/iron_ts/src/lower/date.rs) | `Date`: constructors, `Date.now`/`UTC`/`parse`, getters and setters (local and UTC), the string conversions, and arithmetic and comparison on the time value |
-| [lower/intl.rs](../tools/iron_ts/src/lower/intl.rs) | `Intl`, steps I1 to I4: `localeCompare`, `normalize`, `toLocaleUpperCase`/`toLocaleLowerCase`, `new Intl.Collator`, `NumberFormat`, `DateTimeFormat`, `PluralRules`, `ListFormat` and `RelativeTimeFormat` (`lower_new_intl`); locale and options arguments are read at compile time (`options_spec`) |
-| [iron_ts_rt/src/intl_number.rs](../tools/iron_ts_rt/src/intl_number.rs) | The `NumberFormat` runtime: option parsing, rounding and padding on a `fixed_decimal` `Decimal`, ICU4X formatting, scientific/engineering by hand |
-| [iron_ts_rt/src/intl_date.rs](../tools/iron_ts_rt/src/intl_date.rs) | The `DateTimeFormat` runtime and `Date.prototype.toLocale*String`: ECMA-402 option defaults, mapping options to an ICU4X field set, pattern width rewriting (`adjust_pattern`), time zones through jiff |
-| [iron_ts_rt/src/intl_misc.rs](../tools/iron_ts_rt/src/intl_misc.rs) | The `PluralRules`, `ListFormat` and `RelativeTimeFormat` runtime (options parsing, tables of formatters by id, bun's `RangeError` texts) |
-| [iron_ts_rt/src/intl_segment.rs](../tools/iron_ts_rt/src/intl_segment.rs) | The `Intl.Segmenter` runtime: grapheme, word and sentence boundaries from ICU4X's segmenter, returned to the prelude as arrays of pieces |
-| [iron_ts_rt/src/intl_locale.rs](../tools/iron_ts_rt/src/intl_locale.rs) | The `Intl.Locale` runtime: canonical tags, subtags and unicode extension keys, `maximize` / `minimize` |
-| [iron_ts_rt/src/intl_names.rs](../tools/iron_ts_rt/src/intl_names.rs) | The `Intl.DisplayNames` runtime: region, script and language names from CLDR data |
-| [lower/temporal.rs](../tools/iron_ts/src/lower/temporal.rs) | `Temporal`: the `Temporal.X` to `Temporal_X` text rewrite, `Temporal.X.from(v)` routing, string arguments where a Temporal object is expected |
-| [lower/temporal.ts](../tools/iron_ts/src/lower/temporal.ts) | The `Temporal_*` classes, written in TypeScript and compiled in front of programs that mention `Temporal.` |
-| [iron_ts_rt/src/tz.rs](../tools/iron_ts_rt/src/tz.rs) | IANA time zones for `ZonedDateTime`: canonical zone name, offset at an instant, local time to instant (compatible disambiguation), fixed-offset zones |
-| [lower/bigint.rs](../tools/iron_ts/src/lower/bigint.rs) | `bigint`: literals, binary and unary operators, comparison with bigints and numbers, `BigInt(x)`, `BigInt.asIntN`/`asUintN`, `toString(radix)`, `Number(big)` |
-| [iron_ts_rt/src/bigint.rs](../tools/iron_ts_rt/src/bigint.rs) | The `BigInt` runtime: the object layout, operations on `num_bigint::BigInt`, parsing, conversions, JavaScriptCore's error texts |
-| [iron_ts_rt/src/uri.rs](../tools/iron_ts_rt/src/uri.rs) | `encodeURI` / `decodeURI` and their Component forms, `escape` / `unescape`; `URIError`s with JavaScriptCore's texts |
-| [iron_ts_rt/src/intl_pad.rs](../tools/iron_ts_rt/src/intl_pad.rs) | Generated by `bench/gen_intl_pad_table.ts` from the reference engine's ICU4C: which locales pad a numeric month, day and hour (`Padding`, 31 locales) |
-| [throws.rs](../tools/iron_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
-| [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray`, `Date`, `Intl_Collator`, `Intl_NumberFormat`, `Intl_DateTimeFormat`, `Intl_PluralRules`, `Intl_ListFormat` and `Intl_RelativeTimeFormat`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them), `Date`, `Intl` or bigints (each `Intl` class only when the program mentions it) |
-| [lower/enums.rs](../tools/iron_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
-| [lower/tagged.rs](../tools/iron_ts/src/lower/tagged.rs) | Unions of different types (`number \| [number, number]`): the tagged struct, wrapping, projecting, `typeof` / `Array.isArray` on a union and narrowing by path |
-| [lower/accessors.rs](../tools/iron_ts/src/lower/accessors.rs) | Getters in object literals (`get scene() { .. }`): the hidden closure field and the read through it |
-| [lower/classes.rs](../tools/iron_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
-| [lower/iter.rs](../tools/iron_ts/src/lower/iter.rs) | Well-known symbol member names (`symbol_key`, `well_known`) and the iterator protocol over classes with `@@iterator` |
-| [lower/generators.rs](../tools/iron_ts/src/lower/generators.rs) | `desugar` (generators by source rewriting, before parsing), the generated `Generator$K` classes, the `__co*` intrinsics; `Coroutine` is a prelude handle class |
-| [iron_ts_rt/src/coro.rs](../tools/iron_ts_rt/src/coro.rs) | Stackful coroutines (corosensei): resume/yield, shadow-stack relinking, GC scanning of suspended frames |
-| [lower/asyncs.rs](../tools/iron_ts/src/lower/asyncs.rs) | `desugar` for `async` functions, methods and arrows (before parsing, after generators), `await`, `new Promise<T>`; generates the `Promise$K` classes and their helper functions as TypeScript text |
-| [lower/promise.rs](../tools/iron_ts/src/lower/promise.rs) | Routes `__await`, `__asyncRet`, `.then` / `.catch` / `.finally` (by the callback's return type) and `Promise.resolve` / `reject` / `all` / `race` onto the generated helpers |
-| [iron_ts_rt/src/event.rs](../tools/iron_ts_rt/src/event.rs) | The microtask queue and the timers (`queueMicrotask`, `setTimeout`, `setInterval`), and the host entry points `ts_rt_microtasks_run`, `ts_rt_timers_advance`, `ts_rt_run_loop` |
+| [manifest.rs](../tools/platypus_ts/src/manifest.rs) | Reads the `platypus_api` JSON manifests into a table of callable functions (`Manifest`, `ExternFn`), the handle type names, the value classes (`values`) and the handle classes (`classes`: `ClassFns` with `statics`, `methods`, `getters`, `setters`) |
+| [lib.rs](../tools/platypus_ts/src/lib.rs) | `compile_source` / `compile_with_prefix` / `compile_with` / `compile_with_manifests`, `Output`; unit tests for lowering errors (`M9-TS-14..16`, `55`, `56`, `70`, `84`, `110`, `119`) |
+| [ir.rs](../tools/platypus_ts/src/ir.rs) | The IR: `Ty`, `Module` (with `vtables` and `itables`), `Func`, `Stmt`, `Expr`/`ExprKind` (including `CallVirtual` and `InstanceOf`), `RtFn` (runtime calls), `field_offset`, `dump` |
+| [frames.rs](../tools/platypus_ts/src/frames.rs) | Shadow-stack frame plan and the spill rule (see GC roots below) |
+| [codegen.rs](../tools/platypus_ts/src/codegen.rs) | IR to Cranelift object: frames and spills, `eval_args`, `ts_init`, runtime calls, the method tables and `instanceof` byte tables (local data), indirect calls |
+| [layout.rs](../tools/platypus_ts/src/layout.rs) | Rust bindings: `HDR_*` header constants, `#[repr(C)]` structs, `TAG_*`, `NULL_NUM_BITS`, `extern "C"` declarations |
+| [bin/platypus_ts.rs](../tools/platypus_ts/src/bin/platypus_ts.rs) | The CLI above |
+| [lower/mod.rs](../tools/platypus_ts/src/lower/mod.rs) | `lower_source`: collecting declarations, `lower_fn` (lowered on demand), bindings (direct or boxed), module-level variables |
+| [lower/types.rs](../tools/platypus_ts/src/lower/types.rs) | Annotation to IR type, struct layouts (a union of objects becomes one struct), `coerce`, `to_bool` |
+| [lower/expr.rs](../tools/platypus_ts/src/lower/expr.rs) | Expressions, assignment targets (places), calls, `new`, optional chains, `Math`, constant folding |
+| [lower/stmt.rs](../tools/platypus_ts/src/lower/stmt.rs) | Statements: variables, destructuring, loops, labels, `switch` |
+| [lower/arrays.rs](../tools/platypus_ts/src/lower/arrays.rs) | Array methods; callbacks are inlined into loops, `Iter` for `for...of` and spread |
+| [lower/scan.rs](../tools/platypus_ts/src/lower/scan.rs) | Which names do closures capture (by name, so it only over-approximates) |
+| [lower/closure.rs](../tools/platypus_ts/src/lower/closure.rs) | Closures lifted to `lambda(env, params...)`, function values, cells |
+| [lower/strings.rs](../tools/platypus_ts/src/lower/strings.rs) | Strings: `+`/`+=`, template literals, comparisons, `length`, string and number methods, `String`/`Number`/`parseInt`/`parseFloat`, `String.fromCharCode`/`fromCodePoint`, truthiness |
+| [lower/maps.rs](../tools/platypus_ts/src/lower/maps.rs) | `Map`, `Set`, `WeakMap`, `WeakSet`: construction, methods, live `for...of`, snapshots for spread and `Array.from` |
+| [lower/json.rs](../tools/platypus_ts/src/lower/json.rs) | `JSON.stringify` / `JSON.parse`: the type descriptor blobs (format documented at the top of the file) |
+| [lower/clone.rs](../tools/platypus_ts/src/lower/clone.rs) | `structuredClone`: one lifted clone function per type |
+| [lower/regexp.rs](../tools/platypus_ts/src/lower/regexp.rs) | `RegExp`: literals, `new RegExp`, `test`/`exec`, the match object, and the String methods that take a regex (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`) |
+| [lower/date.rs](../tools/platypus_ts/src/lower/date.rs) | `Date`: constructors, `Date.now`/`UTC`/`parse`, getters and setters (local and UTC), the string conversions, and arithmetic and comparison on the time value |
+| [lower/intl.rs](../tools/platypus_ts/src/lower/intl.rs) | `Intl`, steps I1 to I4: `localeCompare`, `normalize`, `toLocaleUpperCase`/`toLocaleLowerCase`, `new Intl.Collator`, `NumberFormat`, `DateTimeFormat`, `PluralRules`, `ListFormat` and `RelativeTimeFormat` (`lower_new_intl`); locale and options arguments are read at compile time (`options_spec`) |
+| [platypus_ts_rt/src/intl_number.rs](../tools/platypus_ts_rt/src/intl_number.rs) | The `NumberFormat` runtime: option parsing, rounding and padding on a `fixed_decimal` `Decimal`, ICU4X formatting, scientific/engineering by hand |
+| [platypus_ts_rt/src/intl_date.rs](../tools/platypus_ts_rt/src/intl_date.rs) | The `DateTimeFormat` runtime and `Date.prototype.toLocale*String`: ECMA-402 option defaults, mapping options to an ICU4X field set, pattern width rewriting (`adjust_pattern`), time zones through jiff |
+| [platypus_ts_rt/src/intl_misc.rs](../tools/platypus_ts_rt/src/intl_misc.rs) | The `PluralRules`, `ListFormat` and `RelativeTimeFormat` runtime (options parsing, tables of formatters by id, bun's `RangeError` texts) |
+| [platypus_ts_rt/src/intl_segment.rs](../tools/platypus_ts_rt/src/intl_segment.rs) | The `Intl.Segmenter` runtime: grapheme, word and sentence boundaries from ICU4X's segmenter, returned to the prelude as arrays of pieces |
+| [platypus_ts_rt/src/intl_locale.rs](../tools/platypus_ts_rt/src/intl_locale.rs) | The `Intl.Locale` runtime: canonical tags, subtags and unicode extension keys, `maximize` / `minimize` |
+| [platypus_ts_rt/src/intl_names.rs](../tools/platypus_ts_rt/src/intl_names.rs) | The `Intl.DisplayNames` runtime: region, script and language names from CLDR data |
+| [lower/temporal.rs](../tools/platypus_ts/src/lower/temporal.rs) | `Temporal`: the `Temporal.X` to `Temporal_X` text rewrite, `Temporal.X.from(v)` routing, string arguments where a Temporal object is expected |
+| [lower/temporal.ts](../tools/platypus_ts/src/lower/temporal.ts) | The `Temporal_*` classes, written in TypeScript and compiled in front of programs that mention `Temporal.` |
+| [platypus_ts_rt/src/tz.rs](../tools/platypus_ts_rt/src/tz.rs) | IANA time zones for `ZonedDateTime`: canonical zone name, offset at an instant, local time to instant (compatible disambiguation), fixed-offset zones |
+| [lower/bigint.rs](../tools/platypus_ts/src/lower/bigint.rs) | `bigint`: literals, binary and unary operators, comparison with bigints and numbers, `BigInt(x)`, `BigInt.asIntN`/`asUintN`, `toString(radix)`, `Number(big)` |
+| [platypus_ts_rt/src/bigint.rs](../tools/platypus_ts_rt/src/bigint.rs) | The `BigInt` runtime: the object layout, operations on `num_bigint::BigInt`, parsing, conversions, JavaScriptCore's error texts |
+| [platypus_ts_rt/src/uri.rs](../tools/platypus_ts_rt/src/uri.rs) | `encodeURI` / `decodeURI` and their Component forms, `escape` / `unescape`; `URIError`s with JavaScriptCore's texts |
+| [platypus_ts_rt/src/intl_pad.rs](../tools/platypus_ts_rt/src/intl_pad.rs) | Generated by `bench/gen_intl_pad_table.ts` from the reference engine's ICU4C: which locales pad a numeric month, day and hour (`Padding`, 31 locales) |
+| [throws.rs](../tools/platypus_ts/src/throws.rs) | `analyze`: which functions can throw (`Module.may_throw`, `any_throw`), by fixpoint over the call graph |
+| [lower/prelude.rs](../tools/platypus_ts/src/lower/prelude.rs) | The Error classes, `RegExp` / `RegExpMatchArray`, `Date`, `Intl_Collator`, `Intl_NumberFormat`, `Intl_DateTimeFormat`, `Intl_PluralRules`, `Intl_ListFormat` and `Intl_RelativeTimeFormat`, as TypeScript source, compiled in front of programs that mention errors, regexes (or the string methods that take them), `Date`, `Intl` or bigints (each `Intl` class only when the program mentions it) |
+| [lower/enums.rs](../tools/platypus_ts/src/lower/enums.rs) | Enums folded into constants (numeric) or string tags |
+| [lower/tagged.rs](../tools/platypus_ts/src/lower/tagged.rs) | Unions of different types (`number \| [number, number]`): the tagged struct, wrapping, projecting, `typeof` / `Array.isArray` on a union and narrowing by path |
+| [lower/accessors.rs](../tools/platypus_ts/src/lower/accessors.rs) | Getters in object literals (`get scene() { .. }`): the hidden closure field and the read through it |
+| [lower/classes.rs](../tools/platypus_ts/src/lower/classes.rs) | Classes: fields, constructors, methods, accessors, statics, `#private`, inheritance (prefix layout, virtual dispatch, `instanceof`) |
+| [lower/iter.rs](../tools/platypus_ts/src/lower/iter.rs) | Well-known symbol member names (`symbol_key`, `well_known`) and the iterator protocol over classes with `@@iterator` |
+| [lower/generators.rs](../tools/platypus_ts/src/lower/generators.rs) | `desugar` (generators by source rewriting, before parsing), the generated `Generator$K` classes, the `__co*` intrinsics; `Coroutine` is a prelude handle class |
+| [platypus_ts_rt/src/coro.rs](../tools/platypus_ts_rt/src/coro.rs) | Stackful coroutines (corosensei): resume/yield, shadow-stack relinking, GC scanning of suspended frames |
+| [lower/asyncs.rs](../tools/platypus_ts/src/lower/asyncs.rs) | `desugar` for `async` functions, methods and arrows (before parsing, after generators), `await`, `new Promise<T>`; generates the `Promise$K` classes and their helper functions as TypeScript text |
+| [lower/promise.rs](../tools/platypus_ts/src/lower/promise.rs) | Routes `__await`, `__asyncRet`, `.then` / `.catch` / `.finally` (by the callback's return type) and `Promise.resolve` / `reject` / `all` / `race` onto the generated helpers |
+| [platypus_ts_rt/src/event.rs](../tools/platypus_ts_rt/src/event.rs) | The microtask queue and the timers (`queueMicrotask`, `setTimeout`, `setInterval`), and the host entry points `ts_rt_microtasks_run`, `ts_rt_timers_advance`, `ts_rt_run_loop` |
 
 ## Supported language
 
@@ -180,9 +180,9 @@ bytes, bindings text, IR dump and the time of each phase.
 | `Math` and operators | Inline instructions or `ts_rt_*` (libm, JS `pow`, `random`); `**`, `~`, `??=`, `\|\|=`, `&&=`, bit operations with ToInt32 |
 | Classes | A struct plus functions: constructor `C$init(this, ...)` (`new C(x)` allocates, then calls it), methods with `this` as first parameter, getters/setters, statics as globals, `#private`, parameter properties, `this` in arrows; `extends`, `super(...)`, `super.m()`, overriding, `abstract`, virtual dispatch, `instanceof` (see below); methods as values (`obj.m` is a closure over the receiver, so unlike JS a detached method keeps its `this`); arrow-function fields (the constructor scan includes field initialisers); `@property` on instance fields as compile-time metadata |
 | Optional chaining, `!`, `??`, `?:` | Inline null tests |
-| Engine API calls | With a manifest, `Namespace.fn(args)` is `CallExtern`: a direct call of the manifest's symbol (`iron_<Namespace>_<fn>`) with the manifest's C signature, arguments checked by count and type. Numbers stay `f64` in scripts and convert at the call: `f32` demotes in and promotes out, `i32`/`u32` use a saturating truncation, `bool` is a byte. Handles are `Ty::Handle(name)`: a 64-bit id, not a GC pointer (not traced or rooted, `===` compares ids). In a `T \| null` slot 0 is null, so a live handle is never 0. An engine function must not call back into scripts or allocate in the script heap. Handle classes (the manifest's `classes`, see [iron-api.md](iron-api.md#handle-classes)) are called through the same path: `emit_extern` makes the call from already-lowered arguments and `call_ext_fn` adds the receiver in front of the call's own arguments (counts are checked without it). `obj.prop` on a handle is the getter's call (`member_of`); `obj.prop = v` is a `Place::Ext` whose write calls the setter (a property with no setter, or an unknown one, is a compile error; compound assignment on a value property is not supported); `obj.method(..)` (`lower_method`) calls the method; `Class.f(..)` on a class name that is not a local is the static. Value classes (`new Vector3(1, 2, 3)`) are ordinary structs with one `number` field per manifest field; as an argument one is passed as its flattened field reads (every argument goes through a temporary first, to keep evaluation order), and a result is a new object filled through a trailing out pointer by `CallExternInto` (a stack slot, then the scalars widened into the fields) |
+| Engine API calls | With a manifest, `Namespace.fn(args)` is `CallExtern`: a direct call of the manifest's symbol (`platypus_<Namespace>_<fn>`) with the manifest's C signature, arguments checked by count and type. Numbers stay `f64` in scripts and convert at the call: `f32` demotes in and promotes out, `i32`/`u32` use a saturating truncation, `bool` is a byte. Handles are `Ty::Handle(name)`: a 64-bit id, not a GC pointer (not traced or rooted, `===` compares ids). In a `T \| null` slot 0 is null, so a live handle is never 0. An engine function must not call back into scripts or allocate in the script heap. Handle classes (the manifest's `classes`, see [platypus-api.md](platypus-api.md#handle-classes)) are called through the same path: `emit_extern` makes the call from already-lowered arguments and `call_ext_fn` adds the receiver in front of the call's own arguments (counts are checked without it). `obj.prop` on a handle is the getter's call (`member_of`); `obj.prop = v` is a `Place::Ext` whose write calls the setter (a property with no setter, or an unknown one, is a compile error; compound assignment on a value property is not supported); `obj.method(..)` (`lower_method`) calls the method; `Class.f(..)` on a class name that is not a local is the static. Value classes (`new Vector3(1, 2, 3)`) are ordinary structs with one `number` field per manifest field; as an argument one is passed as its flattened field reads (every argument goes through a temporary first, to keep evaluation order), and a result is a new object filled through a trailing out pointer by `CallExternInto` (a stack slot, then the scalars widened into the fields) |
 
-**Strings in the compiler** ([lower/strings.rs](../tools/iron_ts/src/lower/strings.rs), slice 2).
+**Strings in the compiler** ([lower/strings.rs](../tools/platypus_ts/src/lower/strings.rs), slice 2).
 - `+` and `+=` convert numbers, booleans and null by JavaScript's rules (`ts_rt_num_to_str_gc` and
   static texts); two constants fold at compile time. Template literals are one `concat_n_gc` over an
   array of parts. A chain `a + b + c` still allocates once per `+`.
@@ -205,9 +205,9 @@ bytes, bindings text, IR dump and the time of each phase.
 - Tests: `bench/strings.ts` with `tests/strings.rs` (M9-TS-178..182, prefix `str_`, base 16000);
   expected values come from `bench/gen_strings_expected.ts` (bun) into `strings_expected.json`.
 
-**Exceptions** ([throws.rs](../tools/iron_ts/src/throws.rs), [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs),
-the `Try` handling in [lower/stmt.rs](../tools/iron_ts/src/lower/stmt.rs); design in
-[iron-ts-stdlib.md](research/iron-ts-stdlib.md) section 4.1). `throw`, `try`/`catch`/`finally` and the
+**Exceptions** ([throws.rs](../tools/platypus_ts/src/throws.rs), [lower/prelude.rs](../tools/platypus_ts/src/lower/prelude.rs),
+the `Try` handling in [lower/stmt.rs](../tools/platypus_ts/src/lower/stmt.rs); design in
+[platypus-ts-stdlib.md](research/platypus-ts-stdlib.md) section 4.1). `throw`, `try`/`catch`/`finally` and the
 Error classes. Exceptions are checked returns, not unwinding, and only in functions that can throw.
 - **Throw.** `Stmt::Throw(e)` stores the exception object in a per-thread slot of the runtime
   (`ts_rt_throw`; the slot is a GC root) and jumps to the innermost handler, or, with none, to the
@@ -243,8 +243,8 @@ Error classes. Exceptions are checked returns, not unwinding, and only in functi
 - Tests: `bench/errors.ts` with `tests/errors.rs` (M9-TS-187..197, prefix `err_`, base 17000);
   expected values come from `bench/gen_errors_expected.ts` (bun) into `errors_expected.json`.
 
-**Standard library tier 1, steps E-H** ([lower/object.rs](../tools/iron_ts/src/lower/object.rs), the expression and
-call lowering in `lower/expr.rs`, `arrays.rs`, `strings.rs`; design in [iron-ts-stdlib.md](research/iron-ts-stdlib.md)).
+**Standard library tier 1, steps E-H** ([lower/object.rs](../tools/platypus_ts/src/lower/object.rs), the expression and
+call lowering in `lower/expr.rs`, `arrays.rs`, `strings.rs`; design in [platypus-ts-stdlib.md](research/platypus-ts-stdlib.md)).
 JavaScript's answer exactly; anything not built is a compile error.
 - **`typeof`.** Static, from the type; the result is a string-literal tag, so comparisons fold to
   constants. `typeof undeclared` is `"undefined"`. The compiler does not tell null from undefined: a
@@ -271,9 +271,9 @@ JavaScript's answer exactly; anything not built is a compile error.
 - Tests: `bench/stdlib.ts` with `tests/stdlib.rs` (M9-TS-199..205); expected values come from
   `bench/gen_stdlib_expected.ts` (bun) into `stdlib_expected.json`.
 
-**Standard library tier 2: `Map`, `Set`, `WeakMap`, `WeakSet`** ([lower/maps.rs](../tools/iron_ts/src/lower/maps.rs),
-runtime in [iron_ts_rt/src/map.rs](../tools/iron_ts_rt/src/map.rs); design in
-[iron-ts-stdlib.md](research/iron-ts-stdlib.md)).
+**Standard library tier 2: `Map`, `Set`, `WeakMap`, `WeakSet`** ([lower/maps.rs](../tools/platypus_ts/src/lower/maps.rs),
+runtime in [platypus_ts_rt/src/map.rs](../tools/platypus_ts_rt/src/map.rs); design in
+[platypus-ts-stdlib.md](research/platypus-ts-stdlib.md)).
 - **Types.** `Ty::Map(K, V)` and `Ty::Set(K)`. Keys are numbers, strings, booleans, handles or objects
   (by identity); a string-literal union key is stored as a string. The old stub that treated `Set<T>` as
   an array is gone. A collection needs its types from a `new Map<K, V>()` argument, an annotation, or
@@ -293,8 +293,8 @@ runtime in [iron_ts_rt/src/map.rs](../tools/iron_ts_rt/src/map.rs); design in
   `bench/gen_collections_expected.ts` (bun) into `collections_expected.json`; runtime unit tests
   M9-TS-206..208 in `map.rs`; compile errors M9-TS-214.
 
-**Standard library tier 2: `JSON`** ([lower/json.rs](../tools/iron_ts/src/lower/json.rs), runtime in
-[iron_ts_rt/src/json.rs](../tools/iron_ts_rt/src/json.rs)). Driven by the program's static types.
+**Standard library tier 2: `JSON`** ([lower/json.rs](../tools/platypus_ts/src/lower/json.rs), runtime in
+[platypus_ts_rt/src/json.rs](../tools/platypus_ts_rt/src/json.rs)). Driven by the program's static types.
 - **Descriptors.** For each type the compiler writes a byte blob (`Module::blobs`, `ExprKind::Blob`):
   a kind byte per type (number, boolean, string, literal union, array, nullable, object) and, for an
   object, a header word and its fields. Struct header words are written as id + 1; the module's
@@ -319,9 +319,9 @@ runtime in [iron_ts_rt/src/map.rs](../tools/iron_ts_rt/src/map.rs); design in
 - Tests: `bench/json.ts` with `tests/json.rs` (M9-TS-215..221), expected values from
   `bench/gen_json_expected.ts` (bun) into `json_expected.json`.
 
-**Standard library tier 3: `RegExp`, step R1** ([lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), runtime in
-[iron_ts_rt/src/regexp.rs](../tools/iron_ts_rt/src/regexp.rs)). The engine is the `regress` crate (an
-ECMAScript regex engine; `iron_ts_rt` uses it with the `utf16` feature). `iron_ts` depends on `iron_ts_rt`
+**Standard library tier 3: `RegExp`, step R1** ([lower/regexp.rs](../tools/platypus_ts/src/lower/regexp.rs), runtime in
+[platypus_ts_rt/src/regexp.rs](../tools/platypus_ts_rt/src/regexp.rs)). The engine is the `regress` crate (an
+ECMAScript regex engine; `platypus_ts_rt` uses it with the `utf16` feature). `platypus_ts` depends on `platypus_ts_rt`
 only to validate regex literals at compile time (`regex_validate`).
 - **Runtime.** A per-thread registry of compiled regexes, each named by a number; equal (pattern, flags)
   share one entry. Positions are UTF-16 units: an ASCII string is matched as bytes, any other as UTF-16
@@ -346,9 +346,9 @@ only to validate regex literals at compile time (`regex_validate`).
   `bench/gen_regexp_expected.ts` (bun) into `regexp_expected.json`.
 
 **Step R2: the String methods that take a regular expression** (section "the String methods that take a regular
-expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked in from
-[lower/strings.rs](../tools/iron_ts/src/lower/strings.rs); runtime appended to
-[iron_ts_rt/src/regexp.rs](../tools/iron_ts_rt/src/regexp.rs)).
+expression" in [lower/regexp.rs](../tools/platypus_ts/src/lower/regexp.rs), hooked in from
+[lower/strings.rs](../tools/platypus_ts/src/lower/strings.rs); runtime appended to
+[platypus_ts_rt/src/regexp.rs](../tools/platypus_ts_rt/src/regexp.rs)).
 - **Methods.** `search`, `match`, `matchAll`, `replace`, `replaceAll` and `split` accept a `RegExp` or a string.
   A string becomes a regex: `match`, `search` and `matchAll` treat it as a pattern; `replace`, `replaceAll` and
   `split` match it literally (`ts_rt_regex_escape_gc`). Results are bun's, with UTF-16 indices.
@@ -369,8 +369,8 @@ expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked i
 - Tests: `bench/regexp2.ts` with `tests/regexp2.rs` (M9-TS-232..239), expected values from
   `bench/gen_regexp2_expected.ts` (bun) into `regexp2_expected.json`.
 
-**Standard library tier 3: `Date`** ([lower/date.rs](../tools/iron_ts/src/lower/date.rs), runtime in
-[iron_ts_rt/src/date.rs](../tools/iron_ts_rt/src/date.rs); small hooks in `lower/{expr,arrays,strings,prelude,mod}.rs`).
+**Standard library tier 3: `Date`** ([lower/date.rs](../tools/platypus_ts/src/lower/date.rs), runtime in
+[platypus_ts_rt/src/date.rs](../tools/platypus_ts_rt/src/date.rs); small hooks in `lower/{expr,arrays,strings,prelude,mod}.rs`).
 - **Object.** `Date` is a prelude class with one field, `t`: the time value in ms (NaN is an invalid date). It
   is added when the source mentions `Date`. `===` is identity; `-`, `+d`, `Number(d)`, `<` and `>` use `t`.
 - **Supported.** `new Date()`, `(ms)`, `(string)`, `(date)` and `(y, m, d?, h?, mi?, s?, ms?)` (plain
@@ -378,7 +378,7 @@ expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked i
   `getTime`, `valueOf`, `setTime`, `getTimezoneOffset`; `toISOString` (RangeError `Invalid Date` for an invalid
   date, as JavaScriptCore), `toJSON`, `toUTCString` / `toGMTString`, `toDateString`.
 - **Calendar.** MakeDay, MakeTime and TimeClip follow the spec. Local time uses jiff's tz database (jiff 0.2
-  in `iron_ts_rt`): the OS zone, or the IANA name given to `ts_rt_date_set_zone` (the tests use it; a host can
+  in `platypus_ts_rt`): the OS zone, or the IANA name given to `ts_rt_date_set_zone` (the tests use it; a host can
   too). A repeated local time (clock set back) reads as the earlier instant; a skipped one (clock set forward)
   is read with the offset from before the jump, as engines do. Times beyond jiff's range (years +-9999) are
   mapped by whole 400-year Gregorian cycles. `getTimezoneOffset` truncates to whole minutes toward zero (old
@@ -405,9 +405,9 @@ expression" in [lower/regexp.rs](../tools/iron_ts/src/lower/regexp.rs), hooked i
 - Tests: `bench/date.ts` with `tests/date.rs` (M9-TS-240..253, 276), expected values from
   `bench/gen_date_expected.ts` (bun) into `date_expected.json`.
 
-**Standard library tier 3: `Intl`, step I1** ([lower/intl.rs](../tools/iron_ts/src/lower/intl.rs), runtime in
-[iron_ts_rt/src/intl.rs](../tools/iron_ts_rt/src/intl.rs); hooks in `lower/{strings,expr,types,prelude,mod,arrays}.rs`).
-The runtime uses ICU4X (`icu` 2.x in `iron_ts_rt`) with its compiled CLDR data.
+**Standard library tier 3: `Intl`, step I1** ([lower/intl.rs](../tools/platypus_ts/src/lower/intl.rs), runtime in
+[platypus_ts_rt/src/intl.rs](../tools/platypus_ts_rt/src/intl.rs); hooks in `lower/{strings,expr,types,prelude,mod,arrays}.rs`).
+The runtime uses ICU4X (`icu` 2.x in `platypus_ts_rt`) with its compiled CLDR data.
 - **Supported.** `String.prototype.localeCompare(that, locales?, options?)`, `normalize(form?)` (NFC, NFD, NFKC,
   NFKD; lone surrogates are left alone), `toLocaleUpperCase` / `toLocaleLowerCase(locales?)` (language-sensitive:
   `tr`, `az`, `lt`, `el`, ...) and `new Intl.Collator(locales?, options?)` with `.compare(a, b)`.
@@ -417,7 +417,7 @@ The runtime uses ICU4X (`icu` 2.x in `iron_ts_rt`) with its compiled CLDR data.
 - **Locales.** A string, or an array literal or array of strings; the first tag wins. A bad tag raises
   `RangeError: invalid language tag: <tag>`. No argument means the default locale, which the host sets with
   `ts_rt_intl_set_locales("en-US,de,ja")` (the first is the default; `en-US` if never called). The per-game
-  list from `package.json` is not wired to it yet (that needs `iron_app`).
+  list from `package.json` is not wired to it yet (that needs `platypus_app`).
 - **Options** (collation): `usage`, `sensitivity` (base, accent, case, variant), `numeric`, `caseFirst`,
   `ignorePunctuation`. The argument must be an object literal with literal values: the compiler turns it into
   a `key=value;` string, so the runtime never sees an object. Anything else is a compile error. Bad values
@@ -432,9 +432,9 @@ The runtime uses ICU4X (`icu` 2.x in `iron_ts_rt`) with its compiled CLDR data.
 - Tests: `bench/intl.ts` with `tests/intl.rs` (M9-TS-254..263), expected values from
   `bench/gen_intl_expected.ts` (bun) into `intl_expected.json`.
 
-**Standard library tier 3: `Intl`, step I2: `NumberFormat`** ([lower/intl.rs](../tools/iron_ts/src/lower/intl.rs),
-runtime in [iron_ts_rt/src/intl_number.rs](../tools/iron_ts_rt/src/intl_number.rs); hooks in
-`lower/{strings,prelude,expr,mod}.rs`). `iron_ts_rt` enables ICU4X's `unstable` feature (the experimental
+**Standard library tier 3: `Intl`, step I2: `NumberFormat`** ([lower/intl.rs](../tools/platypus_ts/src/lower/intl.rs),
+runtime in [platypus_ts_rt/src/intl_number.rs](../tools/platypus_ts_rt/src/intl_number.rs); hooks in
+`lower/{strings,prelude,expr,mod}.rs`). `platypus_ts_rt` enables ICU4X's `unstable` feature (the experimental
 currency and percent formatters) and `fixed_decimal` with `ryu`.
 - **Supported.** `Number.prototype.toLocaleString(locales?, options?)` (in `strings.rs`) and
   `new Intl.NumberFormat(locales?, options?)` with `.format(n)`. `Intl.NumberFormat` is the prelude class
@@ -471,10 +471,10 @@ currency and percent formatters) and `fixed_decimal` with `ryu`.
 - Tests: `bench/numfmt.ts` with `tests/numfmt.rs` (M9-TS-264..275), expected values from
   `bench/gen_numfmt_expected.ts` (bun) into `numfmt_expected.json`.
 
-**Standard library tier 3: `Intl`, step I3a: date formatting** ([lower/intl.rs](../tools/iron_ts/src/lower/intl.rs),
-runtime in [iron_ts_rt/src/intl_date.rs](../tools/iron_ts_rt/src/intl_date.rs); hooks in
+**Standard library tier 3: `Intl`, step I3a: date formatting** ([lower/intl.rs](../tools/platypus_ts/src/lower/intl.rs),
+runtime in [platypus_ts_rt/src/intl_date.rs](../tools/platypus_ts_rt/src/intl_date.rs); hooks in
 `lower/{date,strings,prelude,expr,mod}.rs`, `Date::icu_parts` in `date.rs`). Design and the open choice between
-ICU4X lite and a full build: [iron-ts-intl-datetime.md](research/iron-ts-intl-datetime.md).
+ICU4X lite and a full build: [platypus-ts-intl-datetime.md](research/platypus-ts-intl-datetime.md).
 - **Supported.** `Date.prototype.toLocaleString` / `toLocaleDateString` / `toLocaleTimeString(locales?, options?)`
   and `new Intl.DateTimeFormat(locales?, options?)` with `.format(date)`. `format` is a closure field like the
   collator's and NumberFormat's; the prelude class is `Intl_DateTimeFormat`. The `Intl` prelude classes are now added
@@ -513,8 +513,8 @@ ICU4X lite and a full build: [iron-ts-intl-datetime.md](research/iron-ts-intl-da
   `datefmt_expected.json`. Columns ICU4X cannot match are dropped from the test and listed in `differences.md`.
 
 **Standard library tier 3: `Intl`, step I4: PluralRules, ListFormat, RelativeTimeFormat**
-([lower/intl.rs](../tools/iron_ts/src/lower/intl.rs), runtime in
-[iron_ts_rt/src/intl_misc.rs](../tools/iron_ts_rt/src/intl_misc.rs); hooks in `lower/{expr,mod,prelude}.rs`).
+([lower/intl.rs](../tools/platypus_ts/src/lower/intl.rs), runtime in
+[platypus_ts_rt/src/intl_misc.rs](../tools/platypus_ts_rt/src/intl_misc.rs); hooks in `lower/{expr,mod,prelude}.rs`).
 - **Supported.** `new Intl.PluralRules(locales?, { type, minimumFractionDigits, maximumFractionDigits }).select(n)`
   (cardinal or ordinal; NaN and infinity are `"other"`), `new Intl.ListFormat(locales?, { style, type }).format(items)`
   (`items` is a `string[]`: arrays only, not iterables) and
@@ -534,8 +534,8 @@ ICU4X lite and a full build: [iron-ts-intl-datetime.md](research/iron-ts-intl-da
   values from `bench/gen_intl4_expected.ts` (bun) into `intl4_expected.json`.
 
 **Standard library tier 3: `Intl.Segmenter`, `Intl.Locale`, `Intl.DisplayNames`**
-(runtime in [iron_ts_rt/src/intl_segment.rs](../tools/iron_ts_rt/src/intl_segment.rs),
-[intl_locale.rs](../tools/iron_ts_rt/src/intl_locale.rs) and [intl_names.rs](../tools/iron_ts_rt/src/intl_names.rs);
+(runtime in [platypus_ts_rt/src/intl_segment.rs](../tools/platypus_ts_rt/src/intl_segment.rs),
+[intl_locale.rs](../tools/platypus_ts_rt/src/intl_locale.rs) and [intl_names.rs](../tools/platypus_ts_rt/src/intl_names.rs);
 prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lower/prelude.rs`).
 - **Segmenter.** `new Intl.Segmenter(locales?, { granularity })` with `grapheme`, `word` or `sentence` boundaries from
   ICU4X's segmenter. `segment(text)` returns an iterable of `{ segment, index, input, isWordLike }`, plus
@@ -555,8 +555,8 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
   does), drops duplicates and throws a `RangeError` for an invalid tag (`INTL_CANON` in `lower/prelude.rs`).
 - Tests: M9-TS-456..479; `getCanonicalLocales` M9-TS-516..536; `formatToParts` M9-TS-537..549; `resolvedOptions` M9-TS-550..555.
 
-**Temporal, ISO calendar** ([lower/temporal.rs](../tools/iron_ts/src/lower/temporal.rs), classes in
-[lower/temporal.ts](../tools/iron_ts/src/lower/temporal.ts), zones in [iron_ts_rt/src/tz.rs](../tools/iron_ts_rt/src/tz.rs)).
+**Temporal, ISO calendar** ([lower/temporal.rs](../tools/platypus_ts/src/lower/temporal.rs), classes in
+[lower/temporal.ts](../tools/platypus_ts/src/lower/temporal.ts), zones in [platypus_ts_rt/src/tz.rs](../tools/platypus_ts_rt/src/tz.rs)).
 - **Rewrite.** `Temporal.X` becomes the prelude class `Temporal_X`, as a text rewrite of the program before parsing (a
   string literal containing `Temporal.Name` is rewritten too). The classes are plain TypeScript in `temporal.ts`,
   compiled in front of any program that mentions `Temporal.`.
@@ -581,7 +581,7 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
 - Checked against bun. Tests: `bench/temporal.ts` and `bench/zoned.ts` with `tests/temporal.rs` and `tests/zoned.rs`
   (M9-TS-480..515); `PlainYearMonth`, `PlainMonthDay` and `round` M9-TS-516..536.
 
-**URI functions and error causes** ([iron_ts_rt/src/uri.rs](../tools/iron_ts_rt/src/uri.rs), hooks in
+**URI functions and error causes** ([platypus_ts_rt/src/uri.rs](../tools/platypus_ts_rt/src/uri.rs), hooks in
 `lower/{strings,prelude}.rs`).
 - **URI functions.** `encodeURI`, `encodeURIComponent`, `decodeURI` and `decodeURIComponent` (the non-component
   forms keep the reserved characters `; / ? : @ & = + $ , #`; `decodeURI` leaves escapes of them in place), and the
@@ -600,8 +600,8 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
   values from `bench/gen_uri_expected.ts` and `bench/gen_errors2_expected.ts` (bun). `bench/add_module.py` scaffolds
   a new bun-compared test module.
 
-**Typed arrays** ([lower/typed.rs](../tools/iron_ts/src/lower/typed.rs), runtime in
-[iron_ts_rt/src/typed.rs](../tools/iron_ts_rt/src/typed.rs), element access in `typed_load` / `typed_store` in
+**Typed arrays** ([lower/typed.rs](../tools/platypus_ts/src/lower/typed.rs), runtime in
+[platypus_ts_rt/src/typed.rs](../tools/platypus_ts_rt/src/typed.rs), element access in `typed_load` / `typed_store` in
 `codegen.rs`).
 - **Types.** `Ty::Typed(TypedKind)` for `Int8Array`, `Uint8Array`, `Uint8ClampedArray`, `Int16Array`, `Uint16Array`,
   `Int32Array`, `Uint32Array`, `Float32Array` and `Float64Array`. The object is the array header with the `HDR_BYTES`
@@ -620,7 +620,7 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
 - Tests: `bench/typed.ts` with `tests/typed.rs` (M9-TS-313..359, 47 tests, bun-compared, run in normal, stress and
   GC-off modes), expected values from `bench/gen_typed_expected.ts` and `bench/gen_typed_program.py`.
 - **Buffers and views.** `ArrayBuffer` and `DataView` are prelude classes
-  ([lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs)) over a `Uint8Array` that owns the bytes.
+  ([lower/prelude.rs](../tools/platypus_ts/src/lower/prelude.rs)) over a `Uint8Array` that owns the bytes.
   `new Float32Array(buffer, byteOffset, length)`, `subarray`, `.buffer` and `.byteOffset` make views that share
   memory through the runtime header `HDR_VIEW`: a typed array whose `data` points into the owner's block and which
   keeps the owner alive. It has the same field layout as `Array`, so inline element access is unchanged.
@@ -634,7 +634,7 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
 - Tests: `bench/buffers.ts` with `tests/buffers.rs` (M9-TS-431..441).
 - **Not built:** see "Typed arrays" in [differences.md](differences.md).
 
-**`structuredClone`** ([lower/clone.rs](../tools/iron_ts/src/lower/clone.rs)). One lifted function per type, so a
+**`structuredClone`** ([lower/clone.rs](../tools/platypus_ts/src/lower/clone.rs)). One lifted function per type, so a
 recursive type gives a recursive function. Strings, numbers, booleans and bigints are shared; arrays, objects and
 typed arrays are copied. A class instance keeps its class (JavaScript gives a plain object), and fields that only a
 derived class declares stay shared. `Map`, `Set` and functions are compile errors; cyclic data does not end.
@@ -644,8 +644,8 @@ Tests: `bench/clone.ts` with `tests/clone.rs` (M9-TS-442..455, with `weak.rs`).
 so `deref()` always finds it. `WeakMap` and `WeakSet` are `Map` and `Set` (strong). There is no
 `FinalizationRegistry` and no `globalThis`. Tests: `bench/weak.ts` with `tests/weak.rs`.
 
-**BigInt** ([lower/bigint.rs](../tools/iron_ts/src/lower/bigint.rs), runtime in
-[iron_ts_rt/src/bigint.rs](../tools/iron_ts_rt/src/bigint.rs); the `num-bigint` crate; hooks in
+**BigInt** ([lower/bigint.rs](../tools/platypus_ts/src/lower/bigint.rs), runtime in
+[platypus_ts_rt/src/bigint.rs](../tools/platypus_ts_rt/src/bigint.rs); the `num-bigint` crate; hooks in
 `lower/{expr,arrays,types,prelude}.rs`).
 - **Type.** `Ty::BigInt`, a leaf GC object (nothing to trace): header `HDR_BIGINT`, sign (-1, 0 or 1), byte count,
   then the magnitude bytes, little endian. Zero has no bytes; truthiness is "sign is not 0".
@@ -681,15 +681,15 @@ reachable from the static class of `a` and its subclasses, it is a direct `Call`
 makes an indirect call. `super.m()` is always direct. `x instanceof C` is `InstanceOf(x, table)`:
 null is false, otherwise the struct id indexes `Module::itables[table]`, one byte per struct id (1 for
 `C` and its subclasses). A subclass must be declared after its base. Details and limits:
-[iron-ts-classes.md](research/iron-ts-classes.md) section 14.
+[platypus-ts-classes.md](research/platypus-ts-classes.md) section 14.
 
 Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes other than `Component`,
 throwing anything but an `Error` object, unsupported string methods (see above), object rest of unknown shapes, destructuring assignment to existing variables, `for await`, async generators, `any`/`JsValue` and anything
 dynamic. `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
-differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) sections 4 and 15.
+differences) are listed in [platypus-ts-spike.md](research/platypus-ts-spike.md) sections 4 and 15.
 
-## Utility types and structural typing ([lower/utility.rs](../tools/iron_ts/src/lower/utility.rs))
+## Utility types and structural typing ([lower/utility.rs](../tools/platypus_ts/src/lower/utility.rs))
 
 - **`Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Readonly<T>`** over interfaces, aliases, records, classes (data
   fields only) and engine classes (their settable properties, as `tsc` sees them: manifest setters, `setX` methods and the facade's
@@ -706,7 +706,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 
 ## Conveniences the examples rely on
 
-- **Functions as values** ([lower/fnvalue.rs](../tools/iron_ts/src/lower/fnvalue.rs)): `const hex = Color.hex`, `xs.map(Math.abs)`,
+- **Functions as values** ([lower/fnvalue.rs](../tools/platypus_ts/src/lower/fnvalue.rs)): `const hex = Color.hex`, `xs.map(Math.abs)`,
   `apply(Util.twice, 3)`. A static method of a class of the program is its function; a static of the engine API (`Color.hex`,
   `Mathf.lerp`; parameters a call may leave out need a default) and a `Math` function become a closure over a small wrapper function
   (`wrapper_value`, shared per function). `Math.min/max/hypot` as values take two numbers.
@@ -734,7 +734,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 - **JSX.** `<Fragment key>`; a component may return `ReactNode` (text, a list or `null` are coerced, `react_node_of` in `types.rs`);
   `memo(function Name(..) {..})`.
 
-## Interfaces implemented by classes ([lower/ifaces.rs](../tools/iron_ts/src/lower/ifaces.rs))
+## Interfaces implemented by classes ([lower/ifaces.rs](../tools/platypus_ts/src/lower/ifaces.rs))
 
 `interface Shape { area(): number }`, `class Circle implements Shape`, a `Shape[]` or a `Shape` parameter holding circles and squares,
 `shape.area()` (and `interface Animal extends Named`, which works for every interface now: the extended members come first).
@@ -775,7 +775,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   still a compile error (no promise class stands for a tuple); `Promise<Promise<T>>` too.
 - **Top-level `await`** (the entry module and the modules it imports) follows ECMAScript's module evaluation order. The module graph
   is still one program (`modules.rs` bundles it, dependencies first), but when some module awaits at its top level every file starts
-  with a marker `__iron_module(position, "path", own await, [late dependencies])` (written on the `// ---- path` line, so line numbers
+  with a marker `__platypus_module(position, "path", own await, [late dependencies])` (written on the `// ---- path` line, so line numbers
   hold) and the lowering splits the top-level code into one segment per module (`lower_async_module` in `lower/mod.rs`). A module that
   has a top-level `await`, or imports a module that finishes late, runs as an async closure of its own (`tla$module<n>`, run by
   `__async$number`, started where the module's text begins); its promise is a module variable. Such a closure first awaits the promises
@@ -784,7 +784,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
   file and a top-level `await` is a single module called `main`. Module variables are still globals, so functions declared anywhere
   see them as they are set. The code before a module's first `await` runs inside `ts_init`; the rest continues when the awaited
   promise settles, i.e. when the host drains microtasks and timers (`ts_rt_run_loop`).
-  **Startup state.** Each late module reports to the runtime (`__modWatch`, the prelude in `asyncs.rs`; `startup.rs` in `iron_ts_rt`):
+  **Startup state.** Each late module reports to the runtime (`__modWatch`, the prelude in `asyncs.rs`; `startup.rs` in `platypus_ts_rt`):
   `startup_state()` is `Done`, `Pending(modules still evaluating, in start order)` or `Failed { module, message }`. A rejected
   top-level `await` fails the module and every module that imports it; the first failure is the one kept and is logged once through the
   console as an unhandled promise rejection that names the module (the host adds its own message, see "Components for the host"). **Not the same as ECMAScript:** an import cycle through
@@ -793,7 +793,7 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 - **Declared types.** `gen/components.rs` marks the handle-valued properties of generated components (`Texture`, `Mesh`, `Material`,
   `Sprite`, `GameObject`) `#[nullable]` (`Texture | null`, as in the QuickJS declarations) and the name-valued ones (`Light.type`,
   `LineRenderer2D.fillRule`, `TextMesh.alignment`, ..) `#[ts_type]`; `QualitySettings.shadows`, `softShadowQuality` and
-  `anisotropicFiltering` too (`docs/iron-api.md`). Spreading into function values / `new C(...xs)` / `f(a, ...xs)` is built:
+  `anisotropicFiltering` too (`docs/platypus-api.md`). Spreading into function values / `new C(...xs)` / `f(a, ...xs)` is built:
   the elements of an array or tuple feed the parameters after the plain arguments (null past the end).
 - **`return f()` of a void call** (a generic function with `T = void`) evaluates the call and returns nothing.
 - **Defaulted closure parameters of type `boolean`** may be left out at a call, like numbers and strings.
@@ -811,11 +811,11 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 - **Types written from values.** `(typeof NAMES)[number]` with `NAMES = ["a", "b"] as const` is the union (and the keys of
   `Record<Sfx, V>`); `typeof TABLE` is the type of a top-level constant whose initialiser's type can be found from its syntax;
   `(typeof TINTS)[Tint]` is the type its named fields share; `Record<Tint, V>` takes `keyof typeof TINTS` (also through an alias) as
-  its keys. `object` is a style bag (`IronStyle`) when the program has the UI prelude. Optional tuple elements
+  its keys. `object` is a style bag (`PlatypusStyle`) when the program has the UI prelude. Optional tuple elements
   (`[number, number, "c"?]`) are nullable fields, left out in a literal that is shorter. `s[i]` on a string is the character or
   `undefined`. An array of nothing but `null` (`Array.from({ length }, () => null)`) goes where `(T | null)[]` is expected.
 - A `Pick`/`Partial` of an interface that is still being laid out (reached again through its own members) is filled in at the end.
-- **Entries of objects and dictionaries** ([lower/dicts.rs](../tools/iron_ts/src/lower/dicts.rs), `object.rs`): `Object.keys` /
+- **Entries of objects and dictionaries** ([lower/dicts.rs](../tools/platypus_ts/src/lower/dicts.rs), `object.rs`): `Object.keys` /
   `values` / `entries` (as values, arrays of `[key, value]` pairs) and `for (const k in o)` over a struct (its fields) or a
   `Record<string, V>`; `Object.fromEntries(pairs)` is a dictionary; `key in o` with a literal key (decided by the type) or a key
   known only at run time; `delete o.k` / `delete o[k]` (a dictionary loses the entry; a struct can lose an *optional* property,
@@ -853,13 +853,13 @@ differences) are listed in [iron-ts-spike.md](research/iron-ts-spike.md) section
 - **`register(Class)`** is an ordinary run-time call (`__registerClass`): it records the class when it runs, so it works inside `if`,
   loops and functions and after an `await`; the order of the registrations is the order of the calls. The argument must name a class
   (`register(Player)`, `register({ A, B })`): a class is not a value in a compiled program, so `register(cls)` of a variable is a compile
-  error. `{ spawn: false }` is read at run time. The host starts the registered classes (and loads `iron.startScene`) only after every
+  error. `{ spawn: false }` is read at run time. The host starts the registered classes (and loads `platypus.startScene`) only after every
   module has finished evaluating.
 
-## The original example sources ([lower/tagged.rs](../tools/iron_ts/src/lower/tagged.rs), [lower/accessors.rs](../tools/iron_ts/src/lower/accessors.rs))
+## The original example sources ([lower/tagged.rs](../tools/platypus_ts/src/lower/tagged.rs), [lower/accessors.rs](../tools/platypus_ts/src/lower/accessors.rs))
 
 What the QuickJS-era sources of the examples (`git show main:examples/<name>/src/..`) needed, tested by
-`tools/iron_ts_tests/tests/lang/originals.rs` (against bun, `M9-TS-3174..3183`) and `originals_engine.rs` (`M9-TS-3184..3189`):
+`tools/platypus_ts_tests/tests/lang/originals.rs` (against bun, `M9-TS-3174..3183`) and `originals_engine.rs` (`M9-TS-3184..3189`):
 
 - **Generic inference.** A closure that returns nothing fixes `T = void` (`under(root, () => this.build())`). A written return type
   on an inlined array callback is the callback's result type (`rows.map(([a, b]): Star => ({ .. }))` gives `Star[]`). A string
@@ -912,7 +912,7 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
 - **Well-known symbols.** `[Symbol.iterator]()` in a class is a method with the internal name `@@iterator`
   (`symbol_key` maps the computed key, `well_known` recognises `Symbol.<name>`). `obj[Symbol.iterator]()` is
   an ordinary call of it.
-- **Symbol values** (prelude class `Symbol_`, [lower/prelude.rs](../tools/iron_ts/src/lower/prelude.rs)). `Symbol(desc)`
+- **Symbol values** (prelude class `Symbol_`, [lower/prelude.rs](../tools/platypus_ts/src/lower/prelude.rs)). `Symbol(desc)`
   makes an object with identity; `description` (null, not `undefined`, when none), `toString()`,
   `Symbol.for(key)` / `Symbol.keyFor(sym)` (null for an unregistered symbol), `typeof sym === "symbol"` and
   the `symbol` type work. Symbols are not usable as property or Map keys, and the other well-known symbols
@@ -920,14 +920,14 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
 - **Iterator protocol for classes.** `for...of`, array spread and `Array.from` over a value whose class has
   `@@iterator` call it, then `next()` until `done` (an `IteratorResult` object of the program's own types).
   Arrays, strings, `Map`, `Set` and typed arrays keep their loops.
-- **Coroutines** ([iron_ts_rt/src/coro.rs](../tools/iron_ts_rt/src/coro.rs)). A coroutine runs a `() => void`
+- **Coroutines** ([platypus_ts_rt/src/coro.rs](../tools/platypus_ts_rt/src/coro.rs)). A coroutine runs a `() => void`
   closure on its own native stack (corosensei, 256 KB). The shadow stack (the linked list of frames living in
   each function's native frame) needs no change, because the GC roots are not on the native stack: the
   coroutine's first frame is relinked under the resumer's frame on every resume; when the coroutine object
   (header `HDR_CORO`) is marked, a suspended coroutine's frames are scanned by walking `saved_top` down to
   `bottom`; a coroutine swept while suspended gets `force_reset` (no unwinding: compiled frames have no
   destructors). Not available on WebAssembly (not a target in the next year).
-- **Generators** ([lower/generators.rs](../tools/iron_ts/src/lower/generators.rs)) are a source rewrite
+- **Generators** ([lower/generators.rs](../tools/platypus_ts/src/lower/generators.rs)) are a source rewrite
   (`generators::desugar`, before parsing). `function*` and generator methods become normal functions whose body
   is `return __genNew$K(() => { ... })`; every `yield x` becomes `__yield$K(x)`, and `yield* e;` (statement)
   a `for...of` loop of yields. For each yield type `K` the program mentions, the classes `Generator$K`,
@@ -954,7 +954,7 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
 
 - **`Promise<T>`** is a prelude class `Promise$K` per value type text (`K` is the mangled type), written as
   TypeScript text in front of the program together with helper functions (`__fulfill$K`, `__then$K$V`,
-  ...) by [lower/asyncs.rs](../tools/iron_ts/src/lower/asyncs.rs). `void` shares `number`'s class;
+  ...) by [lower/asyncs.rs](../tools/platypus_ts/src/lower/asyncs.rs). `void` shares `number`'s class;
   `number`, `string` and `boolean` always exist; `T[]` too when `Promise.all` appears. A `Promise<T>` needs
   `T` written somewhere in the program, and awaiting needs the value's `Promise<T>` class to exist.
 - **Generic promises.** `async function load<T>(x: T): Promise<T>`, `new Promise<T>(..)`, `Promise<T[]>` and
@@ -971,11 +971,11 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
   function, method or arrow becomes `__async$K((__p) => { ... })`, a coroutine closure; `return x` becomes
   `__asyncRet$K(__p, x)`, `await e` becomes `__await(e)` (the coroutine suspends and a reaction on the
   promise resumes it), and `new Promise<T>(f)` becomes `__newPromise$K(f)`.
-- **Routing** ([lower/promise.rs](../tools/iron_ts/src/lower/promise.rs)). `__await`, `__asyncRet`,
+- **Routing** ([lower/promise.rs](../tools/platypus_ts/src/lower/promise.rs)). `__await`, `__asyncRet`,
   `.then(f)`, `.catch(f)`, `.finally(f)`, `Promise.resolve`, `Promise.reject`, `Promise.all` and
   `Promise.race` are typed calls into the generated helpers. The callback's return type picks the helper:
   `__then$K$V` for a value of type `V`, `__thenP` when it returns a promise (flattened), `__thenV` for void.
-- **Microtasks and timers** ([iron_ts_rt/src/event.rs](../tools/iron_ts_rt/src/event.rs)). A FIFO microtask
+- **Microtasks and timers** ([platypus_ts_rt/src/event.rs](../tools/platypus_ts_rt/src/event.rs)). A FIFO microtask
   queue (`queueMicrotask`, promise reactions) and timers (`setTimeout`, `setInterval`, `clearTimeout`,
   `clearInterval`); no thread and no OS event loop. Timers run on virtual time and are at least 1 ms, like
   browsers. Queued closures and timers are GC roots. `ts_rt_after_microtasks(f)` runs `f` once the queue
@@ -984,7 +984,7 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
 - **Unhandled rejections.** A promise that rejects with no reaction is tracked (`__Rej` in the
   prelude); a reaction attached before the microtask queue drains marks it handled; the rest are reported
   once, after the drain, with `console.error("Unhandled promise rejection: <name>: <message> (..)")`
-  (level 4: `iron_app` logs it as an error). The program goes on. A `then` chain reports its last promise
+  (level 4: `platypus_app` logs it as an error). The program goes on. A `then` chain reports its last promise
   only. There is no stack (Error has none yet). An exception escaping a `setTimeout` / `setInterval` /
   `queueMicrotask` callback is reported the same way (`Uncaught exception in a timer or microtask: ..`) and
   the other jobs still run.
@@ -1007,12 +1007,12 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
 - **Host contract.** After every call into script the host calls `ts_rt_microtasks_run()`; once per frame it
   calls `ts_rt_timers_advance(now_ms)` with the game clock (a paused game pauses its timers);
   `ts_rt_run_loop()` runs both until nothing is left (tests and tools). `ts_rt_events_pending()` reports
-  what is queued. Wiring this into `iron_app` is not done.
+  what is queued. Wiring this into `platypus_app` is not done.
 - **Tick order equals bun's:** returning a promise from `then` costs 3 ticks, `await` 1, and `finally`
   settles 2 jobs later; the tests compare the order of logged events with bun.
 - **Also changed.** A function type `(x?: T) => void` makes the parameter nullable and a call may leave it
-  out; a closure may take fewer parameters than its expected type. `IRON_TS_DUMP_SRC=1` prints the program
-  after the rewrites; `IRON_TS_TRACE=1` prints function names during codegen; parse errors give the line
+  out; a closure may take fewer parameters than its expected type. `PLATYPUS_TS_DUMP_SRC=1` prints the program
+  after the rewrites; `PLATYPUS_TS_TRACE=1` prints function names during codegen; parse errors give the line
   (counting the prelude).
 - **Limits:** `then(f, g)` needs both callbacks to return the same kind of result; `Promise.allSettled` results are `PromiseSettledResult<T>` objects with all of `status`/`value`/`reason`;
   `for await` works over arrays and other sync iterables (each element is awaited; it is rewritten to a
@@ -1030,11 +1030,11 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
   generated from `bench/promises_src.ts` by `gen_promises_program.py`); `M9-TS-2897..2919`
   (`bench/promises2_cases.ts` with `tests/promises2.rs`: each case is compiled in the process by the JIT, run
   in the three GC modes and compared with `promises2_expected.json`, made by `bun
-  bench/gen_promises2_expected.ts`); engine promises `M9-API-1512..1517` (`crates/iron_app/src/native.rs`).
+  bench/gen_promises2_expected.ts`); engine promises `M9-API-1512..1517` (`crates/platypus_app/src/native.rs`).
 
 ## Runtime and GC
 
-[iron_ts_rt/src/lib.rs](../tools/iron_ts_rt/src/lib.rs) is an ordinary Rust crate the generated code
+[platypus_ts_rt/src/lib.rs](../tools/platypus_ts_rt/src/lib.rs) is an ordinary Rust crate the generated code
 calls into. Its header comment is the long version.
 
 - **Heap.** One heap per thread. Blocks up to 512 bytes come from 1 MiB chunks with size-class free
@@ -1046,7 +1046,7 @@ calls into. Its header comment is the long version.
   threads' objects reached through a shared global slot.
 - **Tracing.** Which slots of a struct are pointers is a mask the generated `ts_init` registers
   (`ts_rt_register_struct`). Pointer arrays, cells and script closure environments are traced.
-- **Maps** ([map.rs](../tools/iron_ts_rt/src/map.rs)). `Map` and `Set` are one object kind, `HDR_MAP`
+- **Maps** ([map.rs](../tools/platypus_ts_rt/src/map.rs)). `Map` and `Set` are one object kind, `HDR_MAP`
   (`MapObj`: key kind, whether values are pointers, counts, next sequence number), with two raw blocks
   outside the object: the entries in insertion order (`key`, `value`, `seq`, `hash`, `deleted`; deleted
   ones stay as tombstones) and an open-addressing index of entry numbers. A rebuild keeps the order and
@@ -1064,7 +1064,7 @@ calls into. Its header comment is the long version.
   roots, for Rust code that keeps script pointers across calls (`ts_rt_root_add` / `ts_rt_root_remove`).
   (4) Temp roots, for values a runtime routine holds while it collects (a new cell's value, a closure
   environment, the sort's merge buffer). Registers and Cranelift's own spill slots are never scanned.
-- **The spill rule** ([frames.rs](../tools/iron_ts/src/frames.rs)). A pointer evaluated early and held
+- **The spill rule** ([frames.rs](../tools/platypus_ts/src/frames.rs)). A pointer evaluated early and held
   while a later operand can allocate is copied to a frame slot, unless it is a local no later operand
   assigns, a global, or null (`spill_flags`, `is_stable`, `may_alloc`). Field reads are never trusted.
 `CallVirtual` and `InstanceOf` are counted like calls (`CallVirtual` also allocates, as a call). The
@@ -1083,8 +1083,8 @@ calls into. Its header comment is the long version.
   (see below), cells and closures, math (`sin`, `cos`, `pow`, `random` ...), collection
   control (`gc_collect`, `gc_stress`, `gc_enable`, `allocated`) and roots. Panics inside `extern "C"`
   abort the process, so fallible logic is tested through a Rust-level function.
-- **Strings** ([string.rs](../tools/iron_ts_rt/src/string.rs); design in
-  [iron-ts-strings.md](research/iron-ts-strings.md)). Stored as WTF-8 (UTF-8 plus the three-byte form
+- **Strings** ([string.rs](../tools/platypus_ts_rt/src/string.rs); design in
+  [platypus-ts-strings.md](research/platypus-ts-strings.md)). Stored as WTF-8 (UTF-8 plus the three-byte form
   of lone surrogates) in one GC object, `Str { header, byte_len, utf16_len, flags, cursor_unit,
   cursor_byte }` with the bytes inline (a leaf for the collector). Flags `ASCII` and `WELL_FORMED`: an
   ASCII string maps unit index to byte offset directly; for other text a one-entry cursor (last unit and
@@ -1098,7 +1098,7 @@ calls into. Its header comment is the long version.
   `last_index_of`, `includes`, `starts_with`, `ends_with`. Rust code reads a string through `Str`:
   `as_bytes`, `as_str` (borrowed when well formed), `to_string_lossy` (lone surrogates become U+FFFD),
   `to_utf16`.
-  Part two ([string_more.rs](../tools/iron_ts_rt/src/string_more.rs), slice 1b), generated code calls
+  Part two ([string_more.rs](../tools/platypus_ts_rt/src/string_more.rs), slice 1b), generated code calls
   the `_gc` ones: `trim_gc`/`trim_start_gc`/`trim_end_gc` (JavaScript's white space set), `repeat_gc`
   (a negative or infinite count is a fault, a RangeError), `pad_start_gc`/`pad_end_gc`,
   `to_upper_gc`/`to_lower_gc` (Rust's Unicode tables with special casing and final sigma; lone
@@ -1112,8 +1112,8 @@ calls into. Its header comment is the long version.
   of fractions, `toPrecision`/`toExponential`, `normalize`, `localeCompare`, RegExp and the engine boundary
   (slice 3). Slice 2 changed `ts_rt_str_eq` to be null-safe, `ts_rt_str_compare` to return `f64`, and
   added `ts_rt_str_from_char_code_gc`.
-  Tests: [tools/iron_ts_rt/tests/strings.rs](../tools/iron_ts_rt/tests/strings.rs) (M9-TS-162..172) and
-  [strings_more.rs](../tools/iron_ts_rt/tests/strings_more.rs) (M9-TS-173..177), both differential:
+  Tests: [tools/platypus_ts_rt/tests/strings.rs](../tools/platypus_ts_rt/tests/strings.rs) (M9-TS-162..172) and
+  [strings_more.rs](../tools/platypus_ts_rt/tests/strings_more.rs) (M9-TS-173..177), both differential:
   `tests/gen_strings.ts` (run with bun) writes `strings_expected.json` and
   `strings_more_expected.json` from a 24-string corpus (part two adds number and parse cases) and the
   Rust tests repeat the same operations on the runtime and compare against bun's output.
@@ -1123,16 +1123,16 @@ calls into. Its header comment is the long version.
 
 ## Tests
 
-[iron_ts_tests](../tools/iron_ts_tests) holds the TypeScript sources and the Rust that drives them.
+[platypus_ts_tests](../tools/platypus_ts_tests) holds the TypeScript sources and the Rust that drives them.
 
 | Path | What |
 |---|---|
 | `fixtures/sim.ts`, `sim.test.ts` | The zombie game's simulation (678 lines) and its original bun tests |
 | `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
-| `bench/engine.ts` | Calls the `Demo` engine API; `build.rs` compiles it with the manifest of [tools/iron_demo_api](../tools/iron_demo_api/src/lib.rs) (a small world of entities written with `#[iron_api]`), whose shims the test binaries link |
-| `bench/scene.ts` | Drives the real scene: `build.rs` compiles it (prefix `scn_`, base 15000) with `iron_scene`'s manifest (`iron_scene::api::scene_api::MANIFEST`) and the tests run it against a real `Scene` made current with `iron_scene::api::enter`; `iron_ts_tests::scene_anchor()` keeps the `Scene` shims linked |
-| `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker. Each program is cached there under a hash of its (bundled) source, prefix, base, manifests and the build script's own executable (relinked by cargo whenever `iron_ts` changes), so a bench edit recompiles one program and a compiler edit all of them, in parallel. Build scripts run unoptimised (no `build-override`): `iron_ts` built once more at `opt-level = 3` cost more than it saved |
-| `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state); `demo_api_anchor()` uses `iron_demo_api` so the linker keeps its shims |
+| `bench/engine.ts` | Calls the `Demo` engine API; `build.rs` compiles it with the manifest of [tools/platypus_demo_api](../tools/platypus_demo_api/src/lib.rs) (a small world of entities written with `#[platypus_api]`), whose shims the test binaries link |
+| `bench/scene.ts` | Drives the real scene: `build.rs` compiles it (prefix `scn_`, base 15000) with `platypus_scene`'s manifest (`platypus_scene::api::scene_api::MANIFEST`) and the tests run it against a real `Scene` made current with `platypus_scene::api::enter`; `platypus_ts_tests::scene_anchor()` keeps the `Scene` shims linked |
+| `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker. Each program is cached there under a hash of its (bundled) source, prefix, base, manifests and the build script's own executable (relinked by cargo whenever `platypus_ts` changes), so a bench edit recompiles one program and a compiler edit all of them, in parallel. Build scripts run unoptimised (no `build-override`): `platypus_ts` built once more at `opt-level = 3` cost more than it saved |
+| `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state); `demo_api_anchor()` uses `platypus_demo_api` so the linker keeps its shims |
 | `tests/<group>/*.rs` | Five test binaries by area, one file per module: `lang` (language, the bun-compared case files, the JIT), `stdlib` (Math, JSON, RegExp, typed arrays, Date, Intl, Temporal), `engine` (scenes, components, physics, animation, `sim_port` with 13 ported cases, `gc`), `engine_api` (engine services and maths, the facade) and `ui` (UI and windows); `tests/common/cases.rs` (the `//## name` case runner) is shared by `lang` and `engine_api` |
 | `src/bin/{bench,sine_bench}.rs` | The benchmarks: the same work in QuickJS, bun and native code, one checksum for all |
 
@@ -1140,7 +1140,7 @@ Each language-area test calls the generated functions through the bindings (`ts_
 `in_every_gc_mode`, which runs the body normally, with `ts_rt_gc_stress(true)` and with
 `ts_rt_gc_enable(false)`. **Expected numbers come from running the same TypeScript in bun**, so the
 tests check that native code computes what JavaScript does. Test IDs are `M9-TS-*` in
-[TESTS.md](../TESTS.md) (section "M9.b"); the next free number is in `tools/iron_ts/TODO.md`.
+[TESTS.md](../TESTS.md) (section "M9.b"); the next free number is in `tools/platypus_ts/TODO.md`.
 
 Tests that use program globals (module variables such as a log array) take turns through a mutex, because the
 globals are shared between test threads.
@@ -1158,27 +1158,27 @@ To add a test module:
 ## Components for the host
 
 `class Player extends Component { onUpdate(dt: number) { .. } }` plus `register(Player)` at the top level
-([components.rs](../tools/iron_ts/src/lower/components.rs)). `Component` is a prelude class with `id` and, when
+([components.rs](../tools/platypus_ts/src/lower/components.rs)). `Component` is a prelude class with `id` and, when
 the manifest has the `GameObject` handle, `gameObject: GameObject | null`. `register(X)` becomes a run-time call
 (`__registerClass("X", spawn)`, wherever it is written) and exported functions are appended for every component class of the
-program, registered or not: `iron_new_X(id, gameObject)` and one `iron_hook_X_<hook>(this, dt)`
+program, registered or not: `platypus_new_X(id, gameObject)` and one `platypus_hook_X_<hook>(this, dt)`
 for each hook the class or an ancestor defines (`onAwake`, `onStart`, `onUpdate`, `onLateUpdate`,
 `onFixedUpdate`, `onPreRender`, `onDestroy`; all take `dt` so the host calls them alike).
 
-The generated bindings add `classes() -> Vec<iron_ts_rt::NativeClass>` (name, create thunk, hooks as
-`Option<fn>`). `iron_ts_rt::NativeHost` ([host.rs](../tools/iron_ts_rt/src/host.rs)) is the engine side with no
+The generated bindings add `classes() -> Vec<platypus_ts_rt::NativeClass>` (name, create thunk, hooks as
+`Option<fn>`). `platypus_ts_rt::NativeHost` ([host.rs](../tools/platypus_ts_rt/src/host.rs)) is the engine side with no
 script engine: `spawn(class, object)` (roots the instance, runs `onAwake`), `update(dt, active)` (`onStart` once,
 all `onUpdate`, then all `onLateUpdate`), `fixed_update`, `pre_render`, `destroy`, `destroy_on_objects`. It runs
 `ts_rt_microtasks_run()` after every hook and disables a component whose hook left an exception pending
-(`Fault { id, class, hook }`). Same rules as `iron_script::ComponentHost`. Not built: `@property` save/load
+(`Fault { id, class, hook }`). Same rules as `platypus_script::ComponentHost`. Not built: `@property` save/load
 through `PROPS_<Class>` in the host, `getComponent`/`addComponent`, a message for the fault, `this.transform`.
 Tests `M9-TS-556..561`.
 
 **Startup (the host's side of `register` and top-level `await`).** Which classes are registered is not in the class table: it is
-what the `register(..)` calls did when they ran, in call order, with their `spawn` option (`iron_ts_rt::registered_classes()`,
+what the `register(..)` calls did when they ran, in call order, with their `spawn` option (`platypus_ts_rt::registered_classes()`,
 `NativeHost::registered_class_names()`; `Game::init` clears it before the top level runs, so a reload registers again). The
-host waits for `iron_ts_rt::startup_state()` to be `Done` before it spawns the registered classes, loads `iron.startScene` or
-runs a component hook (`Native::advance_startup` in `crates/iron_app/src/native.rs`); frames, timers, microtasks and the UI the
+host waits for `platypus_ts_rt::startup_state()` to be `Done` before it spawns the registered classes, loads `platypus.startScene` or
+runs a component hook (`Native::advance_startup` in `crates/platypus_app/src/native.rs`); frames, timers, microtasks and the UI the
 top level mounted run while it waits, so `createRoot().render(<Loading />)` before the first `await` shows and updates. A module
 still pending after ten seconds is named in the log (`warn`); a `Failed` state is logged once ("the game did not start: module `x`
 failed while evaluating: ..") and the game never starts. A hot reload into a program that is still starting puts the saved world
@@ -1187,11 +1187,11 @@ it (`go.addComponent(Class)` needs no registration). Tests `M9-TS-3211..3215`, `
 
 Contact hooks (`onCollisionEnter/Exit/Stay`, `onTriggerEnter/Exit/Stay`, and the `..2D` forms) take Unity's `Collision`
 (`Collision2D` for the `..2D` names), and the trigger hooks the other `Collider` (`Collider2D`); a parameter typed as the
-other kind gets that one. They are handle classes of the physics manifest (`iron_physics_api::contacts`, see
-`docs/iron-api.md`). The host passes each thunk `(this, collision, collider)`, two handles (`ContactHook`), and the thunk hands
+other kind gets that one. They are handle classes of the physics manifest (`platypus_physics_api::contacts`, see
+`docs/platypus-api.md`). The host passes each thunk `(this, collision, collider)`, two handles (`ContactHook`), and the thunk hands
 the hook the one it asks for; `NativeClass.contact_hooks` holds the thunks and `NativeHost::dispatch_physics` /
 `dispatch_contacts` call them, one `Collision` per event shared by the object's components (design:
-`docs/research/iron-native-physics.md` section 8). Tests `M9-TS-1000..1005`.
+`docs/research/platypus-native-physics.md` section 8). Tests `M9-TS-1000..1005`.
 
 The `GameObject` properties that are arrays or not in the engine API are done by the compiler: `go.children` and `GameObject.roots`
 (TypeScript helpers over `childAt` / `rootAt`, appended when the source names them), `go.components` (every component of the program on
@@ -1201,7 +1201,7 @@ handle tests the raw 0 (`go.parent`, `GameObject.find`). Tests `M9-TS-1010..1013
 ## Generics
 
 Generic functions, classes, interfaces and type aliases are supported by **monomorphisation**
-([generics.rs](../tools/iron_ts/src/lower/generics.rs)): nothing is generic at run time. Each distinct list of type
+([generics.rs](../tools/platypus_ts/src/lower/generics.rs)): nothing is generic at run time. Each distinct list of type
 arguments gets its own copy (`identity$$number`, `Box$$string`, `Box$$Item_5`), lowered with a type environment
 (`Lowerer::tenv`) that maps the type parameters to IR types, so `T` in any annotation of the copy means that type.
 
@@ -1225,15 +1225,15 @@ Tests `M9-TS-562..574` (all bun-compared except the error cases).
 
 ## UI: JSX and hooks (native reconciler)
 
-TSX components compile against the `Ui` namespace of [iron_ts_ui](../tools/iron_ts_ui/src/lib.rs) and are rendered by
-[iron_ui_native](ui-native.md); no JavaScript engine. Source rewrite: [jsx.rs](../tools/iron_ts/src/lower/jsx.rs) (runs
+TSX components compile against the `Ui` namespace of [platypus_ts_ui](../tools/platypus_ts_ui/src/lib.rs) and are rendered by
+[platypus_ui_native](ui-native.md); no JavaScript engine. Source rewrite: [jsx.rs](../tools/platypus_ts/src/lower/jsx.rs) (runs
 first, whenever the source uses JSX or hooks); the generic hooks and the event class are the prelude
-[ui.ts](../tools/iron_ts/src/lower/ui.ts).
+[ui.ts](../tools/platypus_ts/src/lower/ui.ts).
 
 JSX is part of the compiler: when the source uses JSX or hooks and the caller's manifests lack the `Ui` namespace,
-`iron_ts` adds its embedded copy (`ui_manifest.json`; the test `M9-TS-1511` in `iron_ts_ui` checks that it equals
-`iron_ts_ui::manifest_json()`, regenerate with `cargo run -p iron_ts_ui --example manifest`). The compiled code calls
-`ts_ui_*` symbols, so a host that compiles JSX must link `iron_ts_ui`; without it the link fails. A JSX syntax error
+`platypus_ts` adds its embedded copy (`ui_manifest.json`; the test `M9-TS-1511` in `platypus_ts_ui` checks that it equals
+`platypus_ts_ui::manifest_json()`, regenerate with `cargo run -p platypus_ts_ui --example manifest`). The compiled code calls
+`ts_ui_*` symbols, so a host that compiles JSX must link `platypus_ts_ui`; without it the link fails. A JSX syntax error
 is reported by the TSX parser with its line (`parse error (line 4): ...`). `{cond && <x/>}` renders an empty fragment
 when `cond` is false.
 
@@ -1243,7 +1243,7 @@ when `cond` is false.
   may be an element, a string, a number or an array of elements. Elements are `UiElement` handles. `style={{ width: 10 }}` is a literal; `style={obj}` (or a literal with spread) uses the typed object's fields (`Ui.styleObj`: numbers
   and strings, optional fields left out when null); `{...obj}` on a host element does the same for attributes
   (`Ui.attrObj`: numbers, strings, booleans; handlers are written as `onX`), and `{...props}` on a component spreads into its props
-  (not with `memo`). `Text`, `Span`, `Input`, `TextArea`, `Image`, `List`, `Dialog` (from `@iron/react`) are the intrinsic elements unless
+  (not with `memo`). `Text`, `Span`, `Input`, `TextArea`, `Image`, `List`, `Dialog` (from `@platypus/react`) are the intrinsic elements unless
   the program declares a component of that name. A key may be a number; `{flag}` renders nothing; a style value may be undefined.
 - **Components** `function Counter(props: P): UiElement`: `<Counter a={1} />` becomes `Ui.component(ID, () => Counter({ a: 1 }))`,
   `ID` a hash of the name (it says which state belongs to which component). With no attributes the call is `Counter()`.
@@ -1275,20 +1275,20 @@ when `cond` is false.
   the second argument. A component that is not a `forwardRef` gets `ref` as an ordinary prop.
 - **Lazy state, node methods.** `useState(() => init)` and `useState(read)` (an arrow, or a top-level function) compute the first
   value once (`useStateLazy`); state may be an array of numbers. `ref.current?.focus()`, `.blur()`, `.scrollTo(x, y)` queue a
-  `NodeCommand` that the host applies to its tree (`iron_ts_ui::take_node_commands`); `useRef<T>(null)` is `useRef<T | null>(null)`.
+  `NodeCommand` that the host applies to its tree (`platypus_ts_ui::take_node_commands`); `useRef<T>(null)` is `useRef<T | null>(null)`.
   `scrollTo` / `scrollBy` also take the DOM's `{ left, top, behavior }`, and `scrollIntoView({ block, inline, behavior })` uses the DOM
   defaults (`NodeCommand::ScrollTo` / `ScrollBy` / `ScrollIntoView`, applied by `App::apply_node_commands`); their option types
   (`ScrollToOptions`, `ScrollIntoViewOptions`, `ScrollBehavior`, `ScrollLogicalPosition`) are generated by `ui_dts.rs` from the Ui manifest.
   Callback refs `ref={(el) => ..}` work too (`ts_ui_ref_fn`, lowered by `lower_ui_ref`), and `Ref<T>` is `{ current: T }`.
-- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/iron.d.ts` (`iron-build types`, generated from the manifests, the UI tables (`iron_ui::tables`, written by `ui_dts.rs`) and the compiler built-ins (`builtins.rs`); see `docs/iron-build.md`). `import { .. } from "@iron/engine" | "@iron/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
-- **Ambient types** (the prelude and the `.d.ts` are both written by [ui_dts.rs](../tools/iron_ts/src/ui_dts.rs) from the tables of
-  `crates/iron_ui/src/tables`; the hook helpers stay in [ui.ts](../tools/iron_ts/src/lower/ui.ts)):
-  `ReactNode`, `React.ReactNode`, `IronElement`, `IronKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,
-  `Collision2D` (= `Collision`) and `IronStyle`. `number | string` is the class `StyleValue` (a number or a string converts where it
-  is expected). `IronStyle` is a list of entries: `const card: IronStyle = { width: 100, padding: "4px" }` builds it,
+- **No imports needed.** Engine and UI names are globals; `tsc` sees them through `types/platypus.d.ts` (`platypus-build types`, generated from the manifests, the UI tables (`platypus_ui::tables`, written by `ui_dts.rs`) and the compiler built-ins (`builtins.rs`); see `docs/platypus-build.md`). `import { .. } from "@platypus/engine" | "@platypus/react" | "react"` is still accepted and erased by the module graph (`modules.rs`); a program that has none resolves the same names.
+- **Ambient types** (the prelude and the `.d.ts` are both written by [ui_dts.rs](../tools/platypus_ts/src/ui_dts.rs) from the tables of
+  `crates/platypus_ui/src/tables`; the hook helpers stay in [ui.ts](../tools/platypus_ts/src/lower/ui.ts)):
+  `ReactNode`, `React.ReactNode`, `PlatypusElement`, `PlatypusKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,
+  `Collision2D` (= `Collision`) and `PlatypusStyle`. `number | string` is the class `StyleValue` (a number or a string converts where it
+  is expected). `PlatypusStyle` is a list of entries: `const card: PlatypusStyle = { width: 100, padding: "4px" }` builds it,
   `{ ...card, ...style, flexGrow: 1 }` concatenates (a later entry wins, `undefined` values apply nothing) and `style={card}` applies
-  it. The `.d.ts` (`iron_ts::ui_dts::declarations`) declares the same names, the `react` and `@iron/react` modules and `JSX` for `tsc`.
-- **Tuples and records.** A tuple whose elements share one type (`[number, number]`) is an array of it; `Record<Weather, V>` over a numeric enum is an array indexed by the enum value (`{ [Weather.Rain]: v }` builds it); `Record<string, unknown>` is an `IronStyle` when the ambient types are there. `createRoot(t).render(el)` is `UiRoot.mount(t, el)` (a `WorldPanel` target uses `ts_ui_mount_panel`); top-level expression statements run in `init` in source order. A `const` arrow with annotated parameters and no value return may call itself; a top-level `let f = () => ..` is a variable.
+  it. The `.d.ts` (`platypus_ts::ui_dts::declarations`) declares the same names, the `react` and `@platypus/react` modules and `JSX` for `tsc`.
+- **Tuples and records.** A tuple whose elements share one type (`[number, number]`) is an array of it; `Record<Weather, V>` over a numeric enum is an array indexed by the enum value (`{ [Weather.Rain]: v }` builds it); `Record<string, unknown>` is a `PlatypusStyle` when the ambient types are there. `createRoot(t).render(el)` is `UiRoot.mount(t, el)` (a `WorldPanel` target uses `ts_ui_mount_panel`); top-level expression statements run in `init` in source order. A `const` arrow with annotated parameters and no value return may call itself; a top-level `let f = () => ..` is a variable.
 - **Language.** Parameter types come from their defaults (`phase = 0`); a program class or interface shadows an engine name
   (`class Scene`); `static get x()` reads as `Class.x`; a function with fewer parameters passes for one with more.
 - **Limits.** The updater form `setN(n => n + 1)`; an inline object literal returned from a callback needs a type annotation
@@ -1297,7 +1297,7 @@ when `cond` is false.
 - **Hot reload data.** A program with components exports `__uiSignatures(): string` (`Name:ID:hook,hook;...`, ids are name hashes,
   hooks in call order). The host keeps the old table, and after loading new code calls `Runtime::refresh` with the ids whose
   list changed ([ui-native.md](ui-native.md)).
-- **Not built yet**: `iron_app` wiring, the dev loop itself.
+- **Not built yet**: `platypus_app` wiring, the dev loop itself.
 
 Tests `M9-TS-575..588`.
 
@@ -1311,7 +1311,7 @@ Compiled gameplay code reads like the engine's TypeScript:
 - A trailing `{ key: value }` argument of an engine function fills the parameters after the positional ones by name; a parameter
   left out is `false`, `0` or `""` (`audio.load(path, { stream: true })`; Rust parameter `r#loop` is the script's `loop`).
 - `Time.deltaTime`, `Gizmos.color = c`, `Color.white`, `Color.hex("#ff0000")`: namespace properties and statics of
-  [iron-api.md](iron-api.md).
+  [platypus-api.md](platypus-api.md).
 - `register(Player)` or `register({ Player, Enemy })`.
 - Class fields without an annotation get their type from the initialiser's syntax: literals, arithmetic, a top-level `const`,
   `C.x` of a constant object, object literals, `Color.white`, `new Vector3(..)`, `Color.hex(..)`, `new Tween<number>(..)`.
@@ -1321,7 +1321,7 @@ Tests `M9-TS-593..600`.
 
 ## Component properties and lookups
 
-The host edits components without a script running. `iron_ts_rt::NativeHost` has `properties(id)`, `get_property` / `set_property`
+The host edits components without a script running. `platypus_ts_rt::NativeHost` has `properties(id)`, `get_property` / `set_property`
 (`PropValue`: null, number, boolean, string, component id), `save_properties` and `load_properties`, all through the generated
 `PROPS_<Class>` table that each `NativeClass` carries (offsets are checked against the type name: `number`, `number?`, `boolean`,
 `string`, `object:Class?`; other kinds are not saved yet).
@@ -1336,7 +1336,7 @@ instances. Tests `M9-TS-601..604`.
 
 ## Stack values
 
-Value-class objects (`Vector3`, ...) are made by the lowering as heap objects. `iron_ts::sroa` runs on the module before code
+Value-class objects (`Vector3`, ...) are made by the lowering as heap objects. `platypus_ts::sroa` runs on the module before code
 generation and turns every local of such a type whose object never escapes its function into one number local per field: field
 reads and writes become variable reads and writes, `new Vector3(..)` becomes assignments, and an engine call with a value result
 (`CallExternInto`) becomes `CallExternOut`, which reads the result from the call's stack buffer straight into the locals. A local
@@ -1345,17 +1345,17 @@ exist and either is changed. `JSON.stringify` of an engine handle gives `{}`.
 
 ## Several files
 
-`iron_ts::modules::bundle(entry)` (`compile_program` bundles and compiles) turns a program of several files into one source text: relative
-imports and re-exports are resolved, `@iron/*` and `react` imports erased, colliding top-level names renamed, `import "./x.css"`
-listed for the build tool. `compile_with_manifests(src, ..)` still takes one source. See `docs/iron-build.md`. Tests `M9-TS-1800..1806`.
+`platypus_ts::modules::bundle(entry)` (`compile_program` bundles and compiles) turns a program of several files into one source text: relative
+imports and re-exports are resolved, `@platypus/*` and `react` imports erased, colliding top-level names renamed, `import "./x.css"`
+listed for the build tool. `compile_with_manifests(src, ..)` still takes one source. See `docs/platypus-build.md`. Tests `M9-TS-1800..1806`.
 ## Running a compiled game in the process (JIT)
 
-[jit.rs](../tools/iron_ts/src/jit.rs): `compile_and_load(source, &JitOptions { prefix, struct_base, manifests, symbols, .. })`
+[jit.rs](../tools/platypus_ts/src/jit.rs): `compile_and_load(source, &JitOptions { prefix, struct_base, manifests, symbols, .. })`
 lowers and generates code on a 64 MiB thread (the game's code then runs on the host's main thread, which
-`crates/iron_app/build.rs` asks to be 16 MB on Windows), running the same `codegen::generate` (generic over the Cranelift `Module`; the object writer is
+`crates/platypus_app/build.rs` asks to be 16 MB on Windows), running the same `codegen::generate` (generic over the Cranelift `Module`; the object writer is
 unchanged, byte for byte, `M9-TS-1900`) into a `cranelift-jit` module with the CPU's own features. Imports are resolved by name
-from `iron_ts_rt::symbols()` (generated by `iron_ts_rt/build.rs` from its exports; `tools/symbols_build.rs`, also used by
-`iron_ts_ui`), `iron_api::symbol` (filled when a manifest is read) and `JitOptions::symbols`; a missing one is an error before any
+from `platypus_ts_rt::symbols()` (generated by `platypus_ts_rt/build.rs` from its exports; `tools/symbols_build.rs`, also used by
+`platypus_ts_ui`), `platypus_api::symbol` (filled when a manifest is read) and `JitOptions::symbols`; a missing one is an error before any
 code runs. `Game::function("name")`, `Game::init()`, `Game::class_meta()` (the data form of the bindings' `classes()`,
 `classmeta.rs`) and `Game::classes()` (`NativeClass` values for `NativeHost`). Memory of a `Game` is never freed. Host use:
-[iron-api.md](iron-api.md#native-games-in-iron_app-compiled-in-process).
+[platypus-api.md](platypus-api.md#native-games-in-platypus_app-compiled-in-process).

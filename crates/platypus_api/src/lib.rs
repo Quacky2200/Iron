@@ -2,19 +2,19 @@
 
 //! The engine's script API, declared once in Rust.
 //!
-//! A module marked `#[iron_api(namespace = "Time", quickjs)]` holds ordinary `pub fn`s. The macro
+//! A module marked `#[platypus_api(namespace = "Time", quickjs)]` holds ordinary `pub fn`s. The macro
 //! keeps them as they are and adds, inside the module:
 //!
 //! - `MANIFEST`: a [`Namespace`] describing every function (name, parameters, result, docs);
-//! - one `extern "C"` shim per function (`iron_Time_deltaTime`), the symbol compiled scripts link to;
+//! - one `extern "C"` shim per function (`platypus_Time_deltaTime`), the symbol compiled scripts link to;
 //! - with `quickjs`, `register_quickjs(ctx)`: the same functions as typed QuickJS globals.
 //!
 //! From the manifest, [`Namespace::to_dts`] writes the declaration file TypeScript sees and
-//! [`Namespace::to_json`] the table the `iron_ts` compiler reads. One source, so they cannot drift.
-//! Design: `docs/research/iron-ts-engine-boundary.md`. This is the first slice: free functions over
+//! [`Namespace::to_json`] the table the `platypus_ts` compiler reads. One source, so they cannot drift.
+//! Design: `docs/research/platypus-ts-engine-boundary.md`. This is the first slice: free functions over
 //! numbers, booleans and engine handles; value classes (`Vector3`), strings and objects come next.
 
-pub use iron_api_macros::iron_api;
+pub use platypus_api_macros::platypus_api;
 pub use serde_json;
 pub mod callback;
 pub use callback::Callback;
@@ -73,7 +73,7 @@ pub enum Ty {
     /// A value that may be `null` (`Option<f64>`, `Option<String>`, `Option<Value>`): the manifest
     /// name of the inner type (`f64`, `string`, `value:Color`) and the TypeScript type with
     /// `| null`. Across the C ABI it is the inner type with a "none" mark: NaN for a number, NaN in
-    /// every field for a value, and for a string the flag read by `iron_api_result_none`.
+    /// every field for a value, and for a string the flag read by `platypus_api_result_none`.
     Opt(&'static str, &'static str),
     /// A value class in a declaration that takes a plain object too (`Vector3Like`): the manifest
     /// name of the class and the TypeScript name.
@@ -181,7 +181,7 @@ pub struct Function {
     pub name: &'static str,
     /// The Rust function it calls (`delta_time`).
     pub rust_name: &'static str,
-    /// The `extern "C"` symbol (`iron_Time_deltaTime`).
+    /// The `extern "C"` symbol (`platypus_Time_deltaTime`).
     pub symbol: &'static str,
     pub doc: &'static str,
     pub params: &'static [Param],
@@ -276,8 +276,8 @@ pub struct RecordDef {
     pub fields: &'static [RecordField],
 }
 
-/// The addresses of a namespace's `extern "C"` shims by symbol name (what `#[iron_api]` emits as
-/// `iron_symbols`). A JIT resolves a compiled program's imports through [`symbol`].
+/// The addresses of a namespace's `extern "C"` shims by symbol name (what `#[platypus_api]` emits as
+/// `platypus_symbols`). A JIT resolves a compiled program's imports through [`symbol`].
 #[derive(Clone, Copy)]
 pub struct SymbolTable(pub fn() -> Vec<(&'static str, usize)>);
 
@@ -309,17 +309,17 @@ pub fn register_symbols(symbols: impl IntoIterator<Item = (&'static str, usize)>
 /// The address of an engine shim or runtime function, if its namespace was registered. Reading a
 /// namespace's manifest (`Namespace::to_json`, so every crate's `manifests()`) registers it.
 pub fn symbol(name: &str) -> Option<usize> {
-    if name == "iron_api_result" {
-        return Some(iron_api_result as *const () as usize);
+    if name == "platypus_api_result" {
+        return Some(platypus_api_result as *const () as usize);
     }
-    if name == "iron_api_result_str" {
-        return Some(iron_api_result_str as *const () as usize);
+    if name == "platypus_api_result_str" {
+        return Some(platypus_api_result_str as *const () as usize);
     }
-    if name == "iron_api_result_id" {
-        return Some(iron_api_result_id as *const () as usize);
+    if name == "platypus_api_result_id" {
+        return Some(platypus_api_result_id as *const () as usize);
     }
-    if name == "iron_api_result_none" {
-        return Some(iron_api_result_none as *const () as usize);
+    if name == "platypus_api_result_none" {
+        return Some(platypus_api_result_none as *const () as usize);
     }
     let r = symbol_registry().lock().unwrap_or_else(|e| e.into_inner());
     r.get(name).copied()
@@ -404,8 +404,8 @@ pub trait ValueType<const N: usize>: Copy {
     fn to_parts(self) -> [f64; N];
 }
 
-/// The header of a script string object (`iron_ts_rt::Str`): the bytes follow it. The layout is
-/// part of the contract with the compiled code and is checked by a test in `iron_ts_tests`.
+/// The header of a script string object (`platypus_ts_rt::Str`): the bytes follow it. The layout is
+/// part of the contract with the compiled code and is checked by a test in `platypus_ts_tests`.
 #[repr(C)]
 pub struct ScriptStr {
     pub header: u64,
@@ -506,7 +506,7 @@ pub unsafe fn script_values<const N: usize, T: ValueType<N>>(p: *const u8) -> Ve
     }
 }
 
-/// The layout of a script array (`iron_ts_rt::Array`).
+/// The layout of a script array (`platypus_ts_rt::Array`).
 #[repr(C)]
 struct ScriptArray {
     header: u64,
@@ -612,7 +612,7 @@ pub fn json_record<T>(text: &str, from: fn(&serde_json::Value) -> Result<T, Stri
     {
         Ok(r) => Some(r),
         Err(e) => {
-            eprintln!("iron_api: an object argument was ignored: {e}");
+            eprintln!("platypus_api: an object argument was ignored: {e}");
             None
         }
     }
@@ -629,7 +629,7 @@ pub fn json_record_value<T>(
     match from(v) {
         Ok(r) => Some(r),
         Err(e) => {
-            eprintln!("iron_api: an object argument was ignored: {e}");
+            eprintln!("platypus_api: an object argument was ignored: {e}");
             None
         }
     }
@@ -648,7 +648,7 @@ pub fn json_records<T>(text: &str, from: fn(&serde_json::Value) -> Result<T, Str
     {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("iron_api: a list argument was ignored: {e}");
+            eprintln!("platypus_api: a list argument was ignored: {e}");
             Vec::new()
         }
     }
@@ -715,7 +715,7 @@ thread_local! {
 }
 
 /// [`return_string`] for an `Option<String>` result: `None` is an empty text and the flag
-/// [`iron_api_result_none`] reads, so the compiled call can tell it from `Some("")`.
+/// [`platypus_api_result_none`] reads, so the compiled call can tell it from `Some("")`.
 ///
 /// # Safety
 /// `out_len` must be valid for a write.
@@ -728,7 +728,7 @@ pub unsafe fn return_string_opt(s: Option<String>, out_len: *mut i64) -> *const 
 /// Whether the last [`return_string_opt`] was `None` (read straight after the call, like the
 /// text).
 #[unsafe(no_mangle)]
-pub extern "C" fn iron_api_result_none() -> bool {
+pub extern "C" fn platypus_api_result_none() -> bool {
     RETURNED_NONE.with(|n| n.get())
 }
 
@@ -738,7 +738,7 @@ thread_local! {
 
 /// Hands a list or record result to compiled code: the numbers (a value is its fields, a boolean
 /// 0 or 1, an enum its index, element after element) are kept here, per thread, and the compiled
-/// call reads them one by one with `iron_api_result(i)` straight after the call, before it makes
+/// call reads them one by one with `platypus_api_result(i)` straight after the call, before it makes
 /// another engine call.
 pub fn return_flat(flat: Vec<f64>) {
     FLAT.with(|f| *f.borrow_mut() = flat);
@@ -749,7 +749,7 @@ thread_local! {
 }
 
 /// Hands a `Vec<String>` result to compiled code: the strings are kept here (per thread) and the
-/// compiled call reads them one by one with `iron_api_result_str(i, ..)` straight after the call,
+/// compiled call reads them one by one with `platypus_api_result_str(i, ..)` straight after the call,
 /// before it makes another engine call.
 pub fn return_strings(strings: Vec<String>) {
     STRINGS.with(|s| *s.borrow_mut() = strings);
@@ -761,7 +761,7 @@ pub fn return_strings(strings: Vec<String>) {
 /// # Safety
 /// `out_len` must be valid for a write.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn iron_api_result_str(i: u32, out_len: *mut i64) -> *const u8 {
+pub unsafe extern "C" fn platypus_api_result_str(i: u32, out_len: *mut i64) -> *const u8 {
     STRINGS.with(|s| {
         let s = s.borrow();
         let text = s.get(i as usize).map_or("", String::as_str);
@@ -776,20 +776,20 @@ thread_local! {
 }
 
 /// Hands a `Vec` of handles to compiled code: the 64-bit ids are kept here, per thread, and the
-/// compiled call reads them with `iron_api_result_id(i)` straight after the call.
+/// compiled call reads them with `platypus_api_result_id(i)` straight after the call.
 pub fn return_ids(ids: Vec<u64>) {
     IDS.with(|f| *f.borrow_mut() = ids);
 }
 
 /// The `i`-th id of the last [`return_ids`] (0, the null handle, past the end).
 #[unsafe(no_mangle)]
-pub extern "C" fn iron_api_result_id(i: u32) -> u64 {
+pub extern "C" fn platypus_api_result_id(i: u32) -> u64 {
     IDS.with(|f| f.borrow().get(i as usize).copied().unwrap_or(0))
 }
 
 /// The `i`-th number of the last [`return_flat`] (0 past the end).
 #[unsafe(no_mangle)]
-pub extern "C" fn iron_api_result(i: u32) -> f64 {
+pub extern "C" fn platypus_api_result(i: u32) -> f64 {
     FLAT.with(|f| f.borrow().get(i as usize).copied().unwrap_or(0.0))
 }
 
@@ -1172,8 +1172,8 @@ impl Namespace {
                     json_str(e.name),
                     doc_json(e.doc),
                     values.join(","),
-                    json_str(&format!("iron_{}_name", e.name)),
-                    json_str(&format!("iron_{}_parse", e.name))
+                    json_str(&format!("platypus_{}_name", e.name)),
+                    json_str(&format!("platypus_{}_parse", e.name))
                 )
             })
             .collect();
@@ -1232,9 +1232,9 @@ impl Namespace {
 ///
 /// ```ignore
 /// thread_local! { static WORLD: Cell<*mut World> = const { Cell::new(std::ptr::null_mut()) }; }
-/// let _scope = iron_api::context::enter(&WORLD, &mut world); // while scripts run
+/// let _scope = platypus_api::context::enter(&WORLD, &mut world); // while scripts run
 /// // inside an API function:
-/// iron_api::context::with(&WORLD, |w| w.transform(id)).unwrap_or_default()
+/// platypus_api::context::with(&WORLD, |w| w.transform(id)).unwrap_or_default()
 /// ```
 pub mod context {
     use std::cell::Cell;

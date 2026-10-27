@@ -3,8 +3,8 @@
 //! Closure parameters from QuickJS: a JS function is kept (reference counted, so the collector
 //! sees it as a root) and called with the same arguments compiled code gives. IDs are in TESTS.md
 //! (M9-API-*).
-use iron_api::callback::{HandleArg, Listeners, emit, take_errors};
-use iron_api::{Callback, Handle, iron_api};
+use platypus_api::callback::{HandleArg, Listeners, emit, take_errors};
+use platypus_api::{Callback, Handle, platypus_api};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy)]
@@ -24,11 +24,11 @@ thread_local! {
     static PLAIN: RefCell<Listeners<()>> = RefCell::new(Listeners::default());
 }
 
-#[iron_api(namespace = "Events", quickjs, handles(Thing = Thing))]
+#[platypus_api(namespace = "Events", quickjs, handles(Thing = Thing))]
 pub mod events_api {
     use super::{EVENTS, PLAIN, THINGS, Thing};
-    use iron_api::Callback;
-    use iron_api::callback::HandleArg;
+    use platypus_api::Callback;
+    use platypus_api::callback::HandleArg;
 
     pub fn on_event(f: Callback<(f64, String)>) -> u32 {
         EVENTS.with(|l| l.borrow_mut().add(f))

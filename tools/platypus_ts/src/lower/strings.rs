@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Strings: literals, `+` and template literals, methods, `length`, and the conversions between
-//! strings and numbers. Everything calls the runtime (`iron_ts_rt/src/string*.rs`), whose strings
+//! strings and numbers. Everything calls the runtime (`platypus_ts_rt/src/string*.rs`), whose strings
 //! behave exactly as JavaScript's (UTF-16 `length` and indices, code unit ordering). See
-//! `docs/research/iron-ts-strings.md`.
+//! `docs/research/platypus-ts-strings.md`.
 //!
 //! A string literal is a `Ty::Lit` tag when the context is a string-literal union and a `Ty::Str`
 //! (a static string object) when the context is `string`. A tag used as a `string` is converted

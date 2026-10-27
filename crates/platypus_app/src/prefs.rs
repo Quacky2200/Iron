@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The player's saved settings (Unity's `PlayerPrefs`): one JSON file per game in the
-//! user's settings folder, read at startup (scripts get it in `__iron_info.prefs`) and
+//! user's settings folder, read at startup (scripts get it in `__platypus_info.prefs`) and
 //! written on `prefs.save` and when the game closes. The engine keeps its own entries
-//! under `iron.` keys (the window mode and size, `iron.display`).
+//! under `platypus.` keys (the window mode and size, `platypus.display`).
 //!
 //! Where it lives (per game, named from the manifest's company and title):
 //! - Windows: `%APPDATA%\<company>\<title>\prefs.json`
 //! - macOS: `~/Library/Application Support/<identifier or company.title>/prefs.json`
 //! - Linux and others: `$XDG_CONFIG_HOME/<company>/<title>/prefs.json` (or `~/.config`)
 //!
-//! `IRON_PREFS_DIR` puts it somewhere else (tests, portable installs).
+//! `PLATYPUS_PREFS_DIR` puts it somewhere else (tests, portable installs).
 
 use std::path::{Path, PathBuf};
 
@@ -37,7 +37,7 @@ impl Prefs {
 
     /// The game's prefs file, read if it exists.
     pub fn load(manifest: &Manifest) -> Self {
-        let dir = std::env::var_os("IRON_PREFS_DIR")
+        let dir = std::env::var_os("PLATYPUS_PREFS_DIR")
             .map(PathBuf::from)
             .or_else(|| settings_dir(manifest));
         let Some(dir) = dir else {
@@ -118,20 +118,20 @@ impl Prefs {
 }
 
 /// A script value as JSON (prefs hold numbers, strings and the odd list).
-pub fn json_of(v: &iron_core::Value) -> Value {
+pub fn json_of(v: &platypus_core::Value) -> Value {
     match v {
-        iron_core::Value::Null => Value::Null,
-        iron_core::Value::Bool(b) => Value::Bool(*b),
-        iron_core::Value::Number(n) => {
+        platypus_core::Value::Null => Value::Null,
+        platypus_core::Value::Bool(b) => Value::Bool(*b),
+        platypus_core::Value::Number(n) => {
             serde_json::Number::from_f64(*n).map_or(Value::Null, Value::Number)
         }
-        iron_core::Value::String(s) => Value::String(s.clone()),
-        iron_core::Value::Array(items) => Value::Array(items.iter().map(json_of).collect()),
+        platypus_core::Value::String(s) => Value::String(s.clone()),
+        platypus_core::Value::Array(items) => Value::Array(items.iter().map(json_of).collect()),
     }
 }
 
 /// A file-name-safe piece of a path (no separators, dots at the ends or control
-/// characters; "Iron" if nothing's left).
+/// characters; "Platypus" if nothing's left).
 fn safe(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -143,7 +143,7 @@ fn safe(name: &str) -> String {
         .collect();
     let cleaned = cleaned.trim().trim_matches('.').to_owned();
     if cleaned.is_empty() {
-        "Iron".into()
+        "Platypus".into()
     } else {
         cleaned
     }
@@ -151,16 +151,30 @@ fn safe(name: &str) -> String {
 
 /// The folder for this game's settings on this OS (see the module docs).
 pub fn settings_dir(manifest: &Manifest) -> Option<PathBuf> {
+    if !manifest.company.is_empty() {
+        return settings_dir_of(manifest, &manifest.company);
+    }
+    let dir = settings_dir_of(manifest, "Platypus")?;
+    // A game without a company kept its settings under "Iron" before the rename to Platypus.
+    match settings_dir_of(manifest, "Iron") {
+        Some(old) if !dir.exists() && old.is_dir() => {
+            tracing::info!(
+                "settings from before the rename to Platypus: {}",
+                old.display()
+            );
+            Some(old)
+        }
+        _ => Some(dir),
+    }
+}
+
+fn settings_dir_of(manifest: &Manifest, company: &str) -> Option<PathBuf> {
     let env = |k: &str| {
         std::env::var_os(k)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
     };
-    let company = safe(if manifest.company.is_empty() {
-        "Iron"
-    } else {
-        &manifest.company
-    });
+    let company = safe(company);
     let title = safe(&manifest.title);
     if cfg!(target_os = "windows") {
         Some(env("APPDATA")?.join(company).join(title))
@@ -184,7 +198,7 @@ mod tests {
     // M5-PRF-01
     #[test]
     fn prefs_save_and_load_back_and_skip_unchanged_writes() {
-        let dir = std::env::temp_dir().join(format!("iron-prefs-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-prefs-test-{}", std::process::id()));
         let path = dir.join("nested").join("prefs.json");
         let _ = std::fs::remove_dir_all(&dir);
         let mut p = Prefs::open(path.clone());
@@ -210,8 +224,8 @@ mod tests {
 
     #[test]
     fn folder_names_are_made_safe() {
-        assert_eq!(safe("Iron - Arcade"), "Iron - Arcade");
+        assert_eq!(safe("Platypus - Arcade"), "Platypus - Arcade");
         assert_eq!(safe("a/b\\\\c:d"), "a_b__c_d");
-        assert_eq!(safe(" .. "), "Iron");
+        assert_eq!(safe(" .. "), "Platypus");
     }
 }

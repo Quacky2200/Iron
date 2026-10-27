@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `#[iron_api]`: the manifest, the `.d.ts`, the `extern "C"` shims and the QuickJS bindings all
+//! `#[platypus_api]`: the manifest, the `.d.ts`, the `extern "C"` shims and the QuickJS bindings all
 //! come from one module of ordinary Rust. IDs are in TESTS.md (M9-API-*).
-use iron_api::{Handle, Ty, iron_api};
+use platypus_api::{Handle, Ty, platypus_api};
 use std::cell::Cell;
 
 /// A stand-in for the engine's generational object id.
@@ -23,7 +23,7 @@ thread_local! {
     static LOG: Cell<u32> = const { Cell::new(0) };
 }
 
-#[iron_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]
+#[platypus_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]
 pub mod demo {
     use super::{LOG, ObjectId, SCALE};
 
@@ -89,7 +89,7 @@ fn the_manifest_describes_every_public_function() {
     );
     let add = &m.functions[0];
     assert_eq!(add.rust_name, "add");
-    assert_eq!(add.symbol, "iron_Demo_add");
+    assert_eq!(add.symbol, "platypus_Demo_add");
     assert_eq!(add.ret, Ty::F64);
     assert_eq!(add.params.len(), 2);
     assert_eq!(add.params[1].name, "b");
@@ -133,7 +133,7 @@ fn the_json_manifest_names_the_symbols_and_types_the_compiler_needs() {
     let j = demo::MANIFEST.to_json();
     assert!(j.starts_with("{\"namespace\":\"Demo\""), "{j}");
     assert!(
-        j.contains("{\"name\":\"add\",\"symbol\":\"iron_Demo_add\",\"kind\":\"static\",\"params\":[{\"name\":\"a\",\"type\":\"f64\"},{\"name\":\"b\",\"type\":\"f64\"}],\"returns\":\"f64\",\"doc\":\"Adds two numbers.\\n\\nThe doc comment becomes the declaration's JSDoc.\"}"),
+        j.contains("{\"name\":\"add\",\"symbol\":\"platypus_Demo_add\",\"kind\":\"static\",\"params\":[{\"name\":\"a\",\"type\":\"f64\"},{\"name\":\"b\",\"type\":\"f64\"}],\"returns\":\"f64\",\"doc\":\"Adds two numbers.\\n\\nThe doc comment becomes the declaration's JSDoc.\"}"),
         "{j}"
     );
     assert!(j.contains("\"returns\":\"handle:GameObject\""), "{j}");
@@ -142,18 +142,18 @@ fn the_json_manifest_names_the_symbols_and_types_the_compiler_needs() {
 // M9-API-04
 #[test]
 fn the_extern_c_shims_call_the_functions_with_the_c_abi() {
-    assert_eq!(demo::iron_Demo_add(1.5, 2.0), 3.5);
-    demo::iron_Demo_setTimeScale(0.5);
-    assert_eq!(demo::iron_Demo_timeScale(), 0.5);
-    assert!(demo::iron_Demo_isBig(101));
-    assert!(!demo::iron_Demo_isBig(7));
-    assert_eq!(demo::iron_Demo_countUp(3), 3);
-    assert_eq!(demo::iron_Demo_countUp(4), 7);
+    assert_eq!(demo::platypus_Demo_add(1.5, 2.0), 3.5);
+    demo::platypus_Demo_setTimeScale(0.5);
+    assert_eq!(demo::platypus_Demo_timeScale(), 0.5);
+    assert!(demo::platypus_Demo_isBig(101));
+    assert!(!demo::platypus_Demo_isBig(7));
+    assert_eq!(demo::platypus_Demo_countUp(3), 3);
+    assert_eq!(demo::platypus_Demo_countUp(4), 7);
     // Handles cross as raw 64-bit ids.
-    assert_eq!(demo::iron_Demo_parentOf(41), 42);
-    assert!(demo::iron_Demo_sameObject(5, 5));
+    assert_eq!(demo::platypus_Demo_parentOf(41), 42);
+    assert!(demo::platypus_Demo_sameObject(5, 5));
     // The symbols have the C ABI and can be taken as plain function pointers.
-    let f: extern "C" fn(f64, f64) -> f64 = demo::iron_Demo_add;
+    let f: extern "C" fn(f64, f64) -> f64 = demo::platypus_Demo_add;
     assert_eq!(f(2.0, 2.0), 4.0);
 }
 
@@ -170,7 +170,7 @@ fn quickjs_gets_typed_functions_under_the_namespace() {
         assert!(big);
         // Handles are opaque objects (see handles_quickjs.rs); the host makes one from an id.
         for (name, raw) in [("o3", 3), ("o3b", 3), ("o4", 4), ("o7", 7)] {
-            let h = iron_api::qjs::handle_new(&ctx, "GameObject", raw).unwrap();
+            let h = platypus_api::qjs::handle_new(&ctx, "GameObject", raw).unwrap();
             ctx.globals().set(name, h).unwrap();
         }
         let parent: String = ctx
@@ -191,9 +191,9 @@ fn quickjs_gets_typed_functions_under_the_namespace() {
 
 // M9-API-06
 //
-// What the typed binding saves: the same call through the existing `__iron_op(name, ...args)` path
+// What the typed binding saves: the same call through the existing `__platypus_op(name, ...args)` path
 // (a name string, a rest array of values, a queue push) against a typed function. Printed, not
-// asserted, because timing varies; run with `cargo test -p iron_api --release -- --ignored --nocapture`.
+// asserted, because timing varies; run with `cargo test -p platypus_api --release -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn typed_calls_against_the_op_queue() {
@@ -208,7 +208,7 @@ fn typed_calls_against_the_op_queue() {
             q.borrow_mut().push((name, args.0));
         })
         .unwrap();
-        ctx.globals().set("__iron_op", op).unwrap();
+        ctx.globals().set("__platypus_op", op).unwrap();
         let n = 1_000_000;
         let run = |src: &str| {
             let t = std::time::Instant::now();
@@ -219,7 +219,7 @@ fn typed_calls_against_the_op_queue() {
             "let s = 0; for (let i = 0; i < {n}; i++) s += Demo.add(i, 1);"
         ));
         let ops = run(&format!(
-            "for (let i = 0; i < {n}; i++) __iron_op('demo.add', i, 1);"
+            "for (let i = 0; i < {n}; i++) __platypus_op('demo.add', i, 1);"
         ));
         queue.borrow_mut().clear();
         println!(

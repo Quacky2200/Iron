@@ -2,14 +2,14 @@
 
 //! What scripts learn about the game and the machine: the game's manifest (its
 //! `project.json`) for `Application`, and the OS, hardware, GPU and screen for
-//! `SystemInfo`. It reaches scripts as `globalThis.__iron_info` before the bundle runs.
+//! `SystemInfo`. It reaches scripts as `globalThis.__platypus_info` before the bundle runs.
 
 use std::path::Path;
 
-use iron_core::project::{LoadOptions, Platform, Project, SystemUser};
+use platypus_core::project::{LoadOptions, Platform, Project, SystemUser};
 use serde_json::{Map, Value, json};
 
-/// The game's details, from `project.json` in its folder (else the `iron` section of
+/// The game's details, from `project.json` in its folder (else the `platypus` section of
 /// `package.json`): `name`, `title`, `version`, `company`, `identifier` and `icon` (a PNG path).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Manifest {
@@ -22,29 +22,29 @@ pub struct Manifest {
     pub identifier: String,
     /// The window and taskbar icon, a path in the game folder.
     pub icon: Option<String>,
-    /// `iron.quality`: the default quality level and per-level overrides, passed to
+    /// `platypus.quality`: the default quality level and per-level overrides, passed to
     /// scripts' `QualitySettings` as is.
     pub quality: Value,
-    /// `iron.layers`: layer names by number, passed to scripts' `LayerMask` as is.
+    /// `platypus.layers`: layer names by number, passed to scripts' `LayerMask` as is.
     pub layers: Value,
-    /// `iron.startScene`: a scene file scripts load at startup.
+    /// `platypus.startScene`: a scene file scripts load at startup.
     pub start_scene: Option<String>,
-    /// `iron.display`: the window's default mode and size (`{ mode, width, height }`);
+    /// `platypus.display`: the window's default mode and size (`{ mode, width, height }`);
     /// `resizable: false` keeps the window at that size.
     pub display: Value,
-    /// `iron.runInBackground`: keep running while the window is in the background
+    /// `platypus.runInBackground`: keep running while the window is in the background
     /// (Unity's `Application.runInBackground`, off by default).
     pub run_in_background: bool,
-    /// `iron.fps`: `false` turns the FPS counter off.
+    /// `platypus.fps`: `false` turns the FPS counter off.
     pub fps: Option<bool>,
-    /// `iron.lightUnits`: `physical` for real-world units (the sun in lux, lamps in lumens,
-    /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Iron's own).
+    /// `platypus.lightUnits`: `physical` for real-world units (the sun in lux, lamps in lumens,
+    /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Platypus's own).
     pub physical_units: bool,
 }
 
 impl Manifest {
-    /// Reads the project of `root` (`project.json`, else the `iron` section of `package.json`,
-    /// see `iron_core::project`) for this platform and user. A broken file is logged and the
+    /// Reads the project of `root` (`project.json`, else the `platypus` section of `package.json`,
+    /// see `platypus_core::project`) for this platform and user. A broken file is logged and the
     /// defaults named after the folder are used.
     pub fn load(root: &Path) -> Self {
         let user = SystemUser;
@@ -64,7 +64,7 @@ impl Manifest {
         }
     }
 
-    /// From a `package.json` value (its `iron` section), without templates.
+    /// From a `package.json` value (its `platypus` section), without templates.
     pub fn from_json(json: &Value, folder: &str) -> Self {
         Self::from_project(Project::from_package_json(json, folder))
     }
@@ -89,21 +89,21 @@ impl Manifest {
     }
 }
 
-/// `iron.lightUnits`, warning about the old pipeline settings: Iron has one render pipeline,
+/// `platypus.lightUnits`, warning about the old pipeline settings: Platypus has one render pipeline,
 /// as Unity 7 (its URP), whose settings come with the quality levels.
-fn light_units(iron: &serde_json::Map<String, Value>) -> bool {
-    if iron.contains_key("renderPipeline") || iron.contains_key("renderPipelineSettings") {
+fn light_units(platypus: &serde_json::Map<String, Value>) -> bool {
+    if platypus.contains_key("renderPipeline") || platypus.contains_key("renderPipelineSettings") {
         tracing::warn!(
-            "iron.renderPipeline: Iron has one render pipeline (as Unity 7): set its features \
-             per quality level (iron.quality.levels: volumetricFog, hdr, additionalLights, \
-             additionalLightShadows), and real-world light units with iron.lightUnits"
+            "platypus.renderPipeline: Platypus has one render pipeline (as Unity 7): set its features \
+             per quality level (platypus.quality.levels: volumetricFog, hdr, additionalLights, \
+             additionalLightShadows), and real-world light units with platypus.lightUnits"
         );
     }
-    match iron.get("lightUnits").and_then(Value::as_str) {
+    match platypus.get("lightUnits").and_then(Value::as_str) {
         None | Some("legacy") => false,
         Some("physical") => true,
         Some(other) => {
-            tracing::warn!("iron.lightUnits `{other}`: not physical or legacy");
+            tracing::warn!("platypus.lightUnits `{other}`: not physical or legacy");
             false
         }
     }
@@ -111,7 +111,7 @@ fn light_units(iron: &serde_json::Map<String, Value>) -> bool {
 
 /// Reads a PNG icon from the game folder as RGBA (`None` if it can't).
 pub fn load_icon(root: &Path, path: &str) -> Option<(Vec<u8>, u32, u32)> {
-    let file = iron_core::resolve_asset(root, path)?;
+    let file = platypus_core::resolve_asset(root, path)?;
     match image::open(&file) {
         Ok(image) => {
             let image = image.to_rgba8();
@@ -178,10 +178,10 @@ impl Info {
         }
     }
 
-    /// A script that installs it as `globalThis.__iron_info`.
+    /// A script that installs it as `globalThis.__platypus_info`.
     pub fn script(&self) -> String {
         format!(
-            "globalThis.__iron_info = {};",
+            "globalThis.__platypus_info = {};",
             Value::Object(self.0.clone())
         )
     }
@@ -235,7 +235,7 @@ mod tests {
                 "name": "fox-run",
                 "version": "1.2.0",
                 "author": "Someone",
-                "iron": { "title": "Fox Run", "icon": "assets/icon.png" }
+                "platypus": { "title": "Fox Run", "icon": "assets/icon.png" }
             }),
             "platformer",
         );
@@ -253,7 +253,7 @@ mod tests {
         let mut info = Info::new(&m);
         info.set_system(json!({ "graphicsDeviceName": "Test GPU" }));
         let script = info.script();
-        assert!(script.starts_with("globalThis.__iron_info = {"));
+        assert!(script.starts_with("globalThis.__platypus_info = {"));
         assert!(script.contains("\"productName\":\"Fox Run\""));
         assert!(script.contains("\"graphicsDeviceName\":\"Test GPU\""));
         assert!(script.contains("\"processorCount\":"));
@@ -262,17 +262,17 @@ mod tests {
     // M9-API-1320
     #[test]
     fn a_folder_with_project_json_uses_it_for_title_identifier_and_start_scene() {
-        let d = std::env::temp_dir().join(format!("iron_app_manifest_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_app_manifest_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(
             d.join("package.json"),
-            r#"{ "name": "npm-name", "iron": { "title": "FROM PACKAGE" } }"#,
+            r#"{ "name": "npm-name", "platypus": { "title": "FROM PACKAGE" } }"#,
         )
         .unwrap();
         std::fs::write(
             d.join("project.json"),
-            r#"{ "name": "fox", "title": "Fox ${env:IRON_NO_SUCH_VAR_1320:-Run}", "identifier": "dev.iron.fox",
+            r#"{ "name": "fox", "title": "Fox ${env:PLATYPUS_NO_SUCH_VAR_1320:-Run}", "identifier": "dev.platypus.fox",
                  "startScene": "scenes/a.scene.json", "layers": { "8": "Detail" },
                  "windows": { "fps": false }, "macos": { "fps": false }, "linux": { "fps": false } }"#,
         )
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(m.title, "Fox Run");
         // package.json is not read when a project.json exists.
         assert_eq!(m.name, "fox");
-        assert_eq!(m.identifier, "dev.iron.fox");
+        assert_eq!(m.identifier, "dev.platypus.fox");
         assert_eq!(m.start_scene.as_deref(), Some("scenes/a.scene.json"));
         assert_eq!(m.layers["8"], "Detail");
         assert_eq!(m.fps, Some(false));
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn fps_comes_from_the_manifest() {
         assert_eq!(
-            Manifest::from_json(&json!({ "iron": { "fps": false } }), "g").fps,
+            Manifest::from_json(&json!({ "platypus": { "fps": false } }), "g").fps,
             Some(false)
         );
         assert_eq!(Manifest::from_json(&Value::Null, "g").fps, None);
@@ -311,7 +311,7 @@ mod tests {
     // M7-RP-01
     #[test]
     fn light_units_come_from_the_manifest_and_old_pipelines_are_gone() {
-        let units = |v: Value| Manifest::from_json(&json!({ "iron": v }), "g").physical_units;
+        let units = |v: Value| Manifest::from_json(&json!({ "platypus": v }), "g").physical_units;
         assert!(units(json!({ "lightUnits": "physical" })));
         assert!(!units(json!({ "lightUnits": "legacy" })));
         assert!(!units(json!({})));
@@ -319,7 +319,7 @@ mod tests {
         // The old pipeline choice no longer picks anything (it only warns).
         assert!(!units(json!({ "renderPipeline": "hd" })));
         let script = Info::new(&Manifest::from_json(
-            &json!({ "iron": { "lightUnits": "physical" } }),
+            &json!({ "platypus": { "lightUnits": "physical" } }),
             "g",
         ))
         .script();
@@ -330,7 +330,7 @@ mod tests {
     // M5-APP-09
     #[test]
     fn run_in_background_comes_from_the_manifest_and_follows_scripts() {
-        let m = Manifest::from_json(&json!({ "iron": { "runInBackground": true } }), "g");
+        let m = Manifest::from_json(&json!({ "platypus": { "runInBackground": true } }), "g");
         assert!(m.run_in_background);
         assert!(!Manifest::from_json(&Value::Null, "g").run_in_background);
         let mut info = Info::new(&m);

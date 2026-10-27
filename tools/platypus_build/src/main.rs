@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron-build build|types|assets|dev|check`: see `docs/iron-build.md`.
+//! `platypus-build build|types|assets|dev|check`: see `docs/platypus-build.md`.
 
-use iron_build::{Options, Tsc, assets, build, dev, package, types_dts};
+use platypus_build::{Options, Tsc, assets, build, dev, package, types_dts};
 use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage:
-  iron-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/dist
-  iron-build types [<game>] [--out file]                write types/iron.d.ts (default <game>/types/iron.d.ts)
-  iron-build assets <folder>... [--prune]               write .meta files
-  iron-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.iron-reload)
-  iron-build pack-info <file.dat>                       list a pack: header, codecs, entries
-  iron-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json (see: iron-build init --help)
-  iron-build package <game> [--host exe] [--out f] ...   one executable (see: iron-build package --help)
-  iron-build check <examples folder> [--tsc] [--full]   build every game in it and print a table
-  iron-build bench <examples folder> [--only a,b] ...   time every game, native vs QuickJS (see: iron-build bench --help)";
+  platypus-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/dist
+  platypus-build types [<game>] [--out file]                write types/platypus.d.ts (default <game>/types/platypus.d.ts)
+  platypus-build assets <folder>... [--prune]               write .meta files
+  platypus-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.platypus-reload)
+  platypus-build pack-info <file.dat>                       list a pack: header, codecs, entries
+  platypus-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json (see: platypus-build init --help)
+  platypus-build package <game> [--host exe] [--out f] ...   one executable (see: platypus-build package --help)
+  platypus-build check <examples folder> [--tsc] [--full]   build every game in it and print a table
+  platypus-build bench <examples folder> [--only a,b] ...   time every game, native vs QuickJS (see: platypus-build bench --help)";
 
 fn options(args: &[String]) -> Options {
     Options {
@@ -100,7 +100,7 @@ fn main() {
                 .and_then(|i| args.get(i + 1))
                 .map(PathBuf::from)
                 .unwrap_or_else(|| {
-                    Path::new(pos.first().map_or(".", |g| g.as_str())).join("types/iron.d.ts")
+                    Path::new(pos.first().map_or(".", |g| g.as_str())).join("types/platypus.d.ts")
                 });
             match types_dts() {
                 Ok(t) => {
@@ -111,7 +111,7 @@ fn main() {
                         Ok(()) => {
                             println!("wrote {}", out.display());
                             println!(
-                                "editors: add \"types\" to the \"include\" of tsconfig.json (and \"moduleDetection\": \"force\"); `iron-build build` needs neither"
+                                "editors: add \"types\" to the \"include\" of tsconfig.json (and \"moduleDetection\": \"force\"); `platypus-build build` needs neither"
                             );
                             0
                         }
@@ -160,9 +160,9 @@ fn main() {
             0
         }
         "package" => package::run_cli(&args[1..]),
-        "bench" => iron_build::bench::run_cli(&args[1..]),
+        "bench" => platypus_build::bench::run_cli(&args[1..]),
         "pack-info" => match pos.first() {
-            Some(f) => match iron_build::packs::info(Path::new(f.as_str())) {
+            Some(f) => match platypus_build::packs::info(Path::new(f.as_str())) {
                 Ok(t) => {
                     print!("{t}");
                     0
@@ -177,7 +177,7 @@ fn main() {
                 2
             }
         },
-        "init" => iron_build::init::run_cli(&args[1..]),
+        "init" => platypus_build::init::run_cli(&args[1..]),
         "dev" => {
             let game = pos.first().map_or(".", |g| g.as_str());
             match dev::run(Path::new(game), &options(&args)) {
@@ -202,7 +202,7 @@ fn main() {
 
 /// Builds every game folder in `dir` and prints one row each; exit code 1 when one failed.
 fn check(dir: &Path, opts: &Options) -> i32 {
-    let games: Vec<PathBuf> = iron_build::find_games(dir);
+    let games: Vec<PathBuf> = platypus_build::find_games(dir);
     if games.is_empty() {
         eprintln!("no games in {}", dir.display());
         return 2;

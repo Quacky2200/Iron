@@ -27,11 +27,11 @@ beforeEach(() => {
   _resetPhysicsComponentsForTests();
   _resetPhysics2DForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const colliderOps = () => ops.filter((o) => o[0] === "physics.collider");
@@ -80,7 +80,7 @@ describe("2D physics components", () => {
       ["physics.set", 1, "kind", "fixed"],
     ]);
     // The engine's report: spin about z in degrees.
-    globalThis.__iron_physics([1, 0, 0, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, -Math.PI / 2], [], [], []);
+    globalThis.__platypus_physics([1, 0, 0, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, -Math.PI / 2], [], [], []);
     expect(rb.velocity).toEqual(new Vector2(1, 2));
     expect(rb.angularVelocity).toBeCloseTo(-90, 5);
   });

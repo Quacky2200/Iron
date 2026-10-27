@@ -1,8 +1,8 @@
 # Input and events
 
-Crates: [iron_platform](../crates/iron_platform/src) (OS input),
-[iron_ui](../crates/iron_ui/src) (`events.rs`, `interaction.rs`, hit testing in `tree.rs`), glue in
-[iron_app/main.rs](../crates/iron_app/src/main.rs), JS side in [react.md](react.md). Test plan:
+Crates: [platypus_platform](../crates/platypus_platform/src) (OS input),
+[platypus_ui](../crates/platypus_ui/src) (`events.rs`, `interaction.rs`, hit testing in `tree.rs`), glue in
+[platypus_app/main.rs](../crates/platypus_app/src/main.rs), JS side in [react.md](react.md). Test plan:
 M3-EVT-* in [TESTS.md](../TESTS.md).
 
 ## End to end
@@ -10,12 +10,12 @@ M3-EVT-* in [TESTS.md](../TESTS.md).
 ```mermaid
 flowchart LR
   W[winit WindowEvent] -->|convert_window_event| IE[InputEvent]
-  IE -->|App::input: scale to logical px| IN[iron_ui::Input]
+  IE -->|App::input: scale to logical px| IN[platypus_ui::Input]
   IN --> H[Interaction::handle]
   H --> P[Pointer: hover/active/click]
   H --> F[focus, Tab, keys, scroll]
   P & F -->|UiEvent| D[dispatch callback]
-  D -->|call_global __iron_ui_event| JS[dispatchUiEvent: capture then bubble]
+  D -->|call_global __platypus_ui_event| JS[dispatchUiEvent: capture then bubble]
   JS -->|defaultPrevented| D
   D -->|prevented?| H
   H -->|default actions| T[UiTree state / focus / scroll]
@@ -23,7 +23,7 @@ flowchart LR
 
 ## Platform layer
 
-[input.rs](../crates/iron_platform/src/input.rs) converts winit's `WindowEvent` to Iron's own
+[input.rs](../crates/platypus_platform/src/input.rs) converts winit's `WindowEvent` to Platypus's own
 `InputEvent` so nothing above this crate depends on winit:
 
 - Keys use DOM naming: `code` is the physical key (`"KeyW"`, from winit's `KeyCode` debug name),
@@ -45,13 +45,13 @@ flowchart LR
   `CursorGrabMode` and `Icon` are re-exported for the app.
 - `Gamepad { id, event: GamepadEvent }` (see [Gamepads](#gamepads-and-game-input-m3c-step-6)).
 
-[platform.rs](../crates/iron_platform/src/platform.rs): `Platform::run` owns the winit event loop.
+[platform.rs](../crates/platypus_platform/src/platform.rs): `Platform::run` owns the winit event loop.
 `Runner` implements `ApplicationHandler`: creates the window in `resumed` (then
 `PlatformApp::window_ready`), calls `PlatformApp::frame` on `RedrawRequested`, forwards converted
 events to `PlatformApp::input`, and in `about_to_wait` checks `should_exit`, polls gamepads and
 requests the next redraw (continuous rendering). `Platform::poll_gamepads` drains `gilrs` and
 returns `InputEvent::Gamepad`s, which the runner feeds to `PlatformApp::input` like any other
-event. `iron_platform` re-exports `winit::dpi` so the app can build
+event. `platypus_platform` re-exports `winit::dpi` so the app can build
 IME area arguments.
 
 Custom cursors need the event loop, so the app asks for them instead of creating them:
@@ -61,9 +61,9 @@ Option<CursorRgba> }`. The runner calls it after each frame, each input event an
 RGBA pixels and hotspot (`CursorRgba`) and caches it in `cursors`; later requests with the same key
 need no `image`. A rejected image is logged and skipped.
 
-## App glue ([main.rs](../crates/iron_app/src/main.rs))
+## App glue ([main.rs](../crates/platypus_app/src/main.rs))
 
-`App::input` maps `InputEvent` to `iron_ui::Input` and calls `handle_ui`:
+`App::input` maps `InputEvent` to `platypus_ui::Input` and calls `handle_ui`:
 
 - Positions are divided by `App::scale()`, the window DPI factor times the [UI scale](#ui-scale-m3d-step-9b) (UI pixels). `Lines` wheel deltas are
   multiplied by `WHEEL_LINE` (40 px), touchpad pixels are divided by scale.
@@ -78,14 +78,14 @@ need no `image`. A rejected image is logged and skipped.
   (`cursors_loaded`; `cursors_failed` warns once and moves on to the next image). The first that
   works becomes `custom_cursor` for the platform (see [Platform layer](#platform-layer)). With none,
   it falls back to the keyword (`set_cursor_visible(false)` for `none`; otherwise winit's
-  `CursorIcon`). [cursor.rs](../crates/iron_app/src/cursor.rs) decodes PNG, JPEG and `.cur` (an
+  `CursorIcon`). [cursor.rs](../crates/platypus_app/src/cursor.rs) decodes PNG, JPEG and `.cur` (an
   `.ico` of type 2 whose hotspot sits where `.ico` keeps colour planes). The hotspot is the CSS one,
   else the file's own, else the top-left corner. Images are scaled for the window's DPI and ones
   over `MAX_CURSOR_SIZE` (128px) are rejected.
-- `dispatch(scripts, enabled, event)` calls `__iron_ui_event(...)` with `UiEvent::script_args()` via
+- `dispatch(scripts, enabled, event)` calls `__platypus_ui_event(...)` with `UiEvent::script_args()` via
   `call_global`; it returns `true` only if the JS result is `Bool(true)`, i.e. a handler called
   `preventDefault()`. JS errors are logged and treated as "not prevented". If the game has no
-  `__iron_ui_event`, nothing is dispatched but built-in behaviour (hover, focus, Tab) still works.
+  `__platypus_ui_event`, nothing is dispatched but built-in behaviour (hover, focus, Tab) still works.
 - `KeyDown` forwards `text` (what the key types). `InputEvent::Ime` becomes `Input::ImePreedit` or
   `Input::ImeCommit`; `Ime::Disabled` becomes an empty `ImePreedit` (ends composing).
 - After each `handle_ui`, `Interaction::take_clipboard()` is serviced and `update_ime` runs (see
@@ -94,7 +94,7 @@ need no `image`. A rejected image is logged and skipped.
 - Script ops `focus`, `blur` (and `scrollTo`, `scrollBy`, `scrollIntoView`, which take a behavior string as 4th arg and map to `Input::ScrollTo/ScrollBy/ScrollIntoView`) are
   turned into `Input` values in `App::tick`. At the end of each tick the app sends `Input::Refresh`.
 
-## Hit testing ([tree.rs](../crates/iron_ui/src/tree.rs) `hit_test`)
+## Hit testing ([tree.rs](../crates/platypus_ui/src/tree.rs) `hit_test`)
 
 `UiTree::hit_test(x, y)` first calls `layout_if_needed`, then `hit(ROOT, ...)` recursively:
 
@@ -126,7 +126,7 @@ need no `image`. A rejected image is logged and skipped.
 `event_path(target)` returns the target first, then each ancestor, excluding the root: the exact
 array sent to scripts.
 
-## `Pointer` ([events.rs](../crates/iron_ui/src/events.rs))
+## `Pointer` ([events.rs](../crates/platypus_ui/src/events.rs))
 
 Holds the position (`None` when outside the window), the hovered `path`, held button bitmask,
 per-button press targets, the `:active` path, the last press (for click counting) and modifiers.
@@ -164,7 +164,7 @@ click count, wheel deltas, modifiers, key/code/repeat, focus `related`, optional
 scrollWidth, scrollHeight, clientWidth, clientHeight]`, with `strings = [key, code]` for keyboard
 events and `[value]` for `input` events (`UiEvent.value`). [events.ts](../js/react/src/events.ts) decodes by index, so both must change together.
 
-## `Interaction` ([interaction.rs](../crates/iron_ui/src/interaction.rs))
+## `Interaction` ([interaction.rs](../crates/platypus_ui/src/interaction.rs))
 
 `Interaction::handle(tree, input, dispatch)` is the single entry point (also used by tests, which
 pass a closure that records events). It owns a `Pointer`, the focused node, modifiers, a
@@ -195,14 +195,14 @@ Focus details:
   new target) to the old element, then `focusin` (with `related` = the old one). Both bubble, so
   `onFocus`/`onBlur` on a parent see descendants gaining/losing focus; `:focus-within` is handled
   by the cascade scanning descendants (`Deps.focus_within`). Compiled games and the native
-  reconciler get the same events (`iron_ui_native::event_of`), also `relatedTarget` (`data[9]`);
+  reconciler get the same events (`platypus_ui_native::event_of`), also `relatedTarget` (`data[9]`);
   `onFocus`/`onBlur` listen to `focusin`/`focusout`, not `focus`/`blur`, which are never sent.
 - Key events with no focused element are not dispatched to UI handlers; gameplay code gets keys
   through the `input` API instead (see [Gamepads and game input](#gamepads-and-game-input-m3c-step-6)).
 
 ## Cursor
 
-`CURSORS` in [style.rs](../crates/iron_ui/src/style.rs) lists accepted keywords. `cursor` is
+`CURSORS` in [style.rs](../crates/platypus_ui/src/style.rs) lists accepted keywords. `cursor` is
 inherited by walking up from the hovered element (`UiTree::cursor`); `auto` means `text` over
 selectable `text`/`span` (not under `user-select: none`) and `default` elsewhere. Enabled text
 fields show the I-beam and disabled ones `not-allowed`.
@@ -310,7 +310,7 @@ is undisturbed). If the handler rejects the edit, React puts the old value back,
 [react.md](react.md#text-fields). *Uncontrolled* (`defaultValue` or neither): Rust keeps what was
 typed and scripts read it from `input` events.
 
-**Clipboard.** `iron_ui` has no clipboard dependency. A copy, cut or paste key stores a
+**Clipboard.** `platypus_ui` has no clipboard dependency. A copy, cut or paste key stores a
 `Clipboard::Copy(text)` or `Clipboard::Paste` request on `Interaction`; the app calls
 `take_clipboard()` right after `handle`. `Copy` is written with `arboard` (`App::clipboard()` opens
 it lazily and logs a warning if unavailable). `Paste` reads the text and feeds it back as
@@ -341,7 +341,7 @@ flowchart LR
 ## Gamepads and game input (M3c step 6)
 
 ### Gamepads
-[gamepad.rs](../crates/iron_platform/src/gamepad.rs) turns `gilrs` events into
+[gamepad.rs](../crates/platypus_platform/src/gamepad.rs) turns `gilrs` events into
 `InputEvent::Gamepad { id, event }`; `id` is stable while the pad is connected. `GamepadEvent` is
 `Connected { name }`, `Disconnected`, `ButtonDown(name)`, `ButtonUp(name)`, `ButtonValue(name, 0..1)`
 (analog triggers) and `Axis(name, -1..1)`. `Platform::poll_gamepads` announces pads already plugged in
@@ -358,11 +358,11 @@ at its first poll (some `gilrs` backends send no `Connected` for them); `announc
   (`convert_gamepad` returns `None`).
 
 ### To scripts
-`App::input` handles `Gamepad` events first and returns early. It calls `__iron_input` (only if the
+`App::input` handles `Gamepad` events first and returns early. It calls `__platypus_input` (only if the
 bundle defines it; `App.game_input`) with `game_input::script_args(id, event)`
-([game_input.rs](../crates/iron_app/src/game_input.rs)):
+([game_input.rs](../crates/platypus_app/src/game_input.rs)):
 
-| Event | `__iron_input` args |
+| Event | `__platypus_input` args |
 |---|---|
 | connected | `"gamepadconnected", id, name` |
 | disconnected | `"gamepaddisconnected", id` |
@@ -375,8 +375,8 @@ bundle defines it; `App.game_input`) with `game_input::script_args(id, event)`
 Key events are forwarded after the UI has handled them, **except while a text field has focus**
 (`UiTree::is_editor`): typed keys stay the field's. Focus loss always sends `blur`.
 
-### `input` in `@iron/engine`
-[input.ts](../js/engine/src/input.ts) installs `__iron_input` and keeps the state:
+### `input` in `@platypus/engine`
+[input.ts](../js/engine/src/input.ts) installs `__platypus_input` and keeps the state:
 
 - `input.isKeyDown(code)` by physical `code` (`"KeyW"`).
 - `input.gamepads()`, `input.gamepad(id)`: connected pads as `Gamepad { id, name, connected,
@@ -384,15 +384,15 @@ Key events are forwarded after the UI has handled them, **except while a text fi
 - `input.isButtonDown(name)`: any connected pad holds it (value above 0.5).
 - `input.on(type, fn)` returns an unsubscribe function. Types: `keydown`, `keyup`,
   `gamepadconnected`, `gamepaddisconnected`, `gamepadbuttondown`, `gamepadbuttonup` (fired when a
-  value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run. Compiled games take the same kinds and event fields (`InputEvent`; see `iron-api.md`).
+  value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run. Compiled games take the same kinds and event fields (`InputEvent`; see `platypus-api.md`).
 - `blur` clears held keys and zeroes pad buttons, since the releases may never arrive.
 
 ### The mouse for gameplay (M5.a2)
 
-`App::input` also sends the mouse to scripts through `__iron_input`, **before** and whatever the UI
+`App::input` also sends the mouse to scripts through `__platypus_input`, **before** and whatever the UI
 does with it (so game code sees clicks over UI too; check the UI state yourself if that matters):
 
-| Event | `__iron_input` args |
+| Event | `__platypus_input` args |
 |---|---|
 | move | `"mousemove", x, y` (UI pixels: window pixels divided by `App::scale()`) |
 | button down / up | `"keydown", "MouseLeft" \| "MouseRight" \| "MouseMiddle" \| "Mouse<n>", "", false` and `"keyup", code, ""` |
@@ -416,16 +416,16 @@ sensitivity), and `"Mouse ScrollWheel"` is the wheel's y times `0.1`. Lock the c
 with hysteresis (pushed at |v| >= 0.6, released below 0.3, so one push moves once; the y axis is
 up-positive; state is per pad and axis and dropped on disconnect). The app only sends these to
 `handle_ui` while `Interaction::focused()` is set, so the d-pad stays the game's until UI takes
-focus (e.g. a menu calling `ref.focus()`). The event is still sent to `__iron_input` either way.
+focus (e.g. a menu calling `ref.focus()`). The event is still sent to `__platypus_input` either way.
 
-`nearest_in_direction(tree, from, direction)` ([interaction.rs](../crates/iron_ui/src/interaction.rs))
+`nearest_in_direction(tree, from, direction)` ([interaction.rs](../crates/platypus_ui/src/interaction.rs))
 considers the elements in `tab_order`, keeps those whose centre lies that way (more than 0.5 px
 along the direction) and scores `along + 2 * |across|`, so elements in line beat closer ones off to
 the side. The lowest score wins; there is no wrap-around.
 
 ## Drag and drop (M5.e)
 
-[interaction/dnd.rs](../crates/iron_ui/src/interaction/dnd.rs) adds HTML-style drag and drop to
+[interaction/dnd.rs](../crates/platypus_ui/src/interaction/dnd.rs) adds HTML-style drag and drop to
 `Interaction`; `dnd_input` sees each input first and takes the ones a drag changes.
 
 - **Starting.** A primary press that scripts don't prevent, on an element with the `draggable`
@@ -454,33 +454,33 @@ the side. The lowest score wins; there is no wrap-around.
   `dragend`); the paths ride on every drag event as `UiEvent::files` (the `strings` argument for
   scripts).
 
-**App side.** `iron_platform` turns winit's `HoveredFile`, `DroppedFile` and
+**App side.** `platypus_platform` turns winit's `HoveredFile`, `DroppedFile` and
 `HoveredFileCancelled` into `InputEvent::FileHovered/FileDropped/FileHoverCancelled` (one per
-file). [file_drop.rs](../crates/iron_app/src/file_drop.rs) gathers them and, once a frame
+file). [file_drop.rs](../crates/platypus_app/src/file_drop.rs) gathers them and, once a frame
 (`pump_file_drag`, after `EditorHost::pump`), sends the screen's UI `FileDragEnter`, then
 `PointerMove`s while the cursor moves, then `FileDrop` or `FileDragCancel`. Windows sends the
 window no cursor moves during a drag from another program, so the position comes from
-`iron_platform::cursor_in_window` (`GetCursorPos`); elsewhere it is the last pointer position.
+`platypus_platform::cursor_in_window` (`GetCursorPos`); elsewhere it is the last pointer position.
 Dropped paths are also given to `EditorHost::allow_sources` (see [editor.md](editor.md)).
 
 **Scripts.** [events.ts](../js/react/src/events.ts) maps the seven events to `onDragStart`,
 `onDrag`, `onDragEnter`, `onDragOver`, `onDragLeave`, `onDrop` and `onDragEnd` (all bubble;
-`drag` and `dragover` have continuous priority). `IronDragEvent` (a pointer event) has
-`dataTransfer: IronDataTransfer` and, for `dragend`, `dropped`. The transfer of an element drag
+`drag` and `dragover` have continuous priority). `PlatypusDragEvent` (a pointer event) has
+`dataTransfer: PlatypusDataTransfer` and, for `dragend`, `dropped`. The transfer of an element drag
 is one JS object from `dragstart` to `dragend` (`setData`/`getData`/`clearData`/`types`,
 `dropEffect`, `effectAllowed`, `setDragImage`); for system files a transfer is made from the
 paths, with `files: { path, name }[]` and `"Files"` in `types`. The data never crosses to Rust.
 Compiled games read the same fields from the prelude class `UiDataTransfer` (see
-[ui-native.md](ui-native.md)); `IronDragEvent` is in the generated declarations with `IronDataTransfer`
-and `IronDroppedFile`.
+[ui-native.md](ui-native.md)); `PlatypusDragEvent` is in the generated declarations with `PlatypusDataTransfer`
+and `PlatypusDroppedFile`.
 
 ## UI scale (M3d step 9b)
 
 Screen UI can be laid out in "UI pixels" that the engine draws bigger or smaller, so a menu designed
 for 1080p fills a 4K window the same (s&box `ScreenPanel` scaling). Scripts set it with
-`setUiScale` in `@iron/engine`, which sends the `uiScale` op.
+`setUiScale` in `@platypus/engine`, which sends the `uiScale` op.
 
-- [ui_scale.rs](../crates/iron_app/src/ui_scale.rs): `UiScale` is `None`, `Fixed(f)`, `Height(h)`
+- [ui_scale.rs](../crates/platypus_app/src/ui_scale.rs): `UiScale` is `None`, `Fixed(f)`, `Height(h)`
   (the window is `h` UI pixels high) or `Fit(w, h)` (the design fits inside the window).
   `factor(width, height)` gives logical pixels per UI pixel, clamped to 0.25..8 so a tiny window
   stays readable and a huge factor does not blow up the glyph atlas; a non-finite or non-positive

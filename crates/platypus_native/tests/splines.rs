@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Spline` and `SplineAnimate` from QuickJS: the same native code compiled games call (the numbers
-//! are compared with the old TypeScript in `tools/iron_ts_tests/tests/engine_api/outlines.rs`). IDs are in
+//! are compared with the old TypeScript in `tools/platypus_ts_tests/tests/engine_api/outlines.rs`). IDs are in
 //! TESTS.md (M9-API-16xx).
 mod common;
 use common::{js, throws, with_world};
@@ -148,7 +148,7 @@ fn the_script_helpers_of_spline_animate_give_the_path_progress_and_facing() {
 #[test]
 fn a_spline_animate_and_its_spline_survive_a_scene_file() {
     with_world(|ctx| {
-        iron_scenes::register_engine_kinds();
+        platypus_scenes::register_engine_kinds();
         let out: String = js(
             ctx,
             r#"

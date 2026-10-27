@@ -187,7 +187,7 @@ pub fn escape(s: &str) -> String {
     out
 }
 
-/// Markup as a `data:` URL (only `%` needs escaping for Iron's decoder).
+/// Markup as a `data:` URL (only `%` needs escaping for Platypus's decoder).
 pub fn data_url(markup: &str) -> String {
     format!("data:image/svg+xml,{}", markup.replace('%', "%25"))
 }

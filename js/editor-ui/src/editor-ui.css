@@ -1,29 +1,29 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* @iron/editor-ui: a dark editor theme. Colours are custom properties, so an app can
+/* @platypus/editor-ui: a dark editor theme. Colours are custom properties, so an app can
    restyle the components by overriding them on :root. */
 
 :root {
-  --iron-bg: #1e1f22;
-  --iron-panel: #2b2d31;
-  --iron-panel-alt: #26282c;
-  --iron-raised: #35373c;
-  --iron-line: #191a1c;
-  --iron-text: #d6d8dc;
-  --iron-muted: #8a8f98;
-  --iron-accent: #3d8ef0;
-  --iron-accent-dim: #2c4f7c;
-  --iron-hover: rgba(255, 255, 255, 0.07);
-  --iron-info: #b8bcc4;
-  --iron-warn: #e8b84a;
-  --iron-error: #ef5f5f;
-  --iron-link: #6cb4ff;
-  --iron-font: "Segoe UI", "Inter", system-ui, sans-serif;
-  --iron-mono: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+  --platypus-bg: #1e1f22;
+  --platypus-panel: #2b2d31;
+  --platypus-panel-alt: #26282c;
+  --platypus-raised: #35373c;
+  --platypus-line: #191a1c;
+  --platypus-text: #d6d8dc;
+  --platypus-muted: #8a8f98;
+  --platypus-accent: #3d8ef0;
+  --platypus-accent-dim: #2c4f7c;
+  --platypus-hover: rgba(255, 255, 255, 0.07);
+  --platypus-info: #b8bcc4;
+  --platypus-warn: #e8b84a;
+  --platypus-error: #ef5f5f;
+  --platypus-link: #6cb4ff;
+  --platypus-font: "Segoe UI", "Inter", system-ui, sans-serif;
+  --platypus-mono: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
 }
 
 /* A small chevron pointing right (rotated down with .open): two borders of a turned square. */
-.iron-chevron {
+.platypus-chevron {
   width: 6px;
   height: 6px;
   flex-shrink: 0;
@@ -33,45 +33,45 @@
   opacity: 0.8;
 }
 
-.iron-chevron.open {
+.platypus-chevron.open {
   transform: rotate(45deg);
 }
 
 /* Menubar */
-.iron-menubar {
+.platypus-menubar {
   position: relative;
   z-index: 10;
   flex-shrink: 0;
   height: 26px;
-  background-color: var(--iron-bg);
-  border-bottom: 1px solid var(--iron-line);
-  font-family: var(--iron-font);
+  background-color: var(--platypus-bg);
+  border-bottom: 1px solid var(--platypus-line);
+  font-family: var(--platypus-font);
   font-size: 13px;
-  color: var(--iron-text);
+  color: var(--platypus-text);
   user-select: none;
 }
 
-.iron-menubar-items {
+.platypus-menubar-items {
   flex-direction: row;
   z-index: 1;
   height: 100%;
   padding: 0 4px;
 }
 
-.iron-menubar-item {
+.platypus-menubar-item {
   position: relative;
   align-items: center;
   padding: 0 9px;
   height: 100%;
 }
 
-.iron-menubar-item:hover,
-.iron-menubar-item.active {
-  background-color: var(--iron-hover);
+.platypus-menubar-item:hover,
+.platypus-menubar-item.active {
+  background-color: var(--platypus-hover);
 }
 
 /* A press anywhere outside the open menus closes them. */
-.iron-menu-backdrop {
+.platypus-menu-backdrop {
   position: absolute;
   left: -10000px;
   top: -10000px;
@@ -80,25 +80,25 @@
   z-index: 0;
 }
 
-.iron-menu {
+.platypus-menu {
   position: absolute;
   top: 100%;
   left: 0;
   min-width: 220px;
   flex-direction: column;
   padding: 4px 0;
-  background-color: var(--iron-raised);
-  border: 1px solid var(--iron-line);
+  background-color: var(--platypus-raised);
+  border: 1px solid var(--platypus-line);
   border-radius: 4px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
-.iron-submenu {
+.platypus-submenu {
   top: -5px;
   left: 100%;
 }
 
-.iron-menu-item {
+.platypus-menu-item {
   position: relative;
   flex-direction: row;
   align-items: center;
@@ -107,153 +107,153 @@
   white-space: nowrap;
 }
 
-.iron-menu-item.highlighted {
-  background-color: var(--iron-accent);
+.platypus-menu-item.highlighted {
+  background-color: var(--platypus-accent);
   color: #ffffff;
 }
 
-.iron-menu-item.disabled {
-  color: var(--iron-muted);
+.platypus-menu-item.disabled {
+  color: var(--platypus-muted);
 }
 
-.iron-menu-check {
+.platypus-menu-check {
   width: 20px;
   text-align: center;
 }
 
-.iron-menu-label {
+.platypus-menu-label {
   flex-grow: 1;
   padding-right: 24px;
 }
 
-.iron-menu-accel {
-  color: var(--iron-muted);
+.platypus-menu-accel {
+  color: var(--platypus-muted);
   font-size: 12px;
 }
 
-.iron-menu-item.highlighted .iron-menu-accel {
+.platypus-menu-item.highlighted .platypus-menu-accel {
   color: #e6efff;
 }
 
-.iron-menu-separator {
+.platypus-menu-separator {
   height: 1px;
   margin: 4px 8px;
-  background-color: var(--iron-line);
+  background-color: var(--platypus-line);
 }
 
 /* Docking */
-.iron-dock {
+.platypus-dock {
   flex-direction: row;
-  font-family: var(--iron-font);
+  font-family: var(--platypus-font);
   font-size: 13px;
-  color: var(--iron-text);
+  color: var(--platypus-text);
 }
 
-.iron-dock-cell {
+.platypus-dock-cell {
   display: flex;
 }
 
-.iron-dock-split {
+.platypus-dock-split {
   display: flex;
 }
 
-.iron-dock-group {
+.platypus-dock-group {
   flex-direction: column;
   flex-grow: 1;
   min-width: 0;
   min-height: 0;
-  background-color: var(--iron-panel);
+  background-color: var(--platypus-panel);
 }
 
-.iron-dock-group.see-through {
+.platypus-dock-group.see-through {
   background-color: transparent;
 }
 
-.iron-dock-tabs {
+.platypus-dock-tabs {
   flex-direction: row;
   flex-shrink: 0;
-  background-color: var(--iron-bg);
+  background-color: var(--platypus-bg);
   overflow: hidden;
   user-select: none;
 }
 
-.iron-dock-tab {
+.platypus-dock-tab {
   align-items: center;
   padding: 0 14px;
-  color: var(--iron-muted);
-  border-right: 1px solid var(--iron-line);
+  color: var(--platypus-muted);
+  border-right: 1px solid var(--platypus-line);
   white-space: nowrap;
 }
 
-.iron-dock-tab:hover {
-  color: var(--iron-text);
+.platypus-dock-tab:hover {
+  color: var(--platypus-text);
 }
 
-.iron-dock-tab.active {
-  background-color: var(--iron-panel);
-  color: var(--iron-text);
-  box-shadow: inset 0 2px 0 var(--iron-accent);
+.platypus-dock-tab.active {
+  background-color: var(--platypus-panel);
+  color: var(--platypus-text);
+  box-shadow: inset 0 2px 0 var(--platypus-accent);
 }
 
-.iron-dock-tab.dragging {
+.platypus-dock-tab.dragging {
   opacity: 0.5;
 }
 
-.iron-dock-content {
+.platypus-dock-content {
   flex-direction: column;
 }
 
-.iron-splitter {
+.platypus-splitter {
   flex-shrink: 0;
-  background-color: var(--iron-line);
+  background-color: var(--platypus-line);
 }
 
-.iron-splitter:hover,
-.iron-splitter:active {
-  background-color: var(--iron-accent-dim);
+.platypus-splitter:hover,
+.platypus-splitter:active {
+  background-color: var(--platypus-accent-dim);
 }
 
-.iron-dock-drop {
+.platypus-dock-drop {
   position: absolute;
   background-color: rgba(61, 142, 240, 0.25);
-  border: 2px solid var(--iron-accent);
+  border: 2px solid var(--platypus-accent);
   pointer-events: none;
 }
 
-.iron-dock-ghost {
+.platypus-dock-ghost {
   position: absolute;
   padding: 3px 10px;
-  background-color: var(--iron-raised);
-  border: 1px solid var(--iron-accent);
+  background-color: var(--platypus-raised);
+  border: 1px solid var(--platypus-accent);
   border-radius: 3px;
   pointer-events: none;
   opacity: 0.9;
 }
 
 /* Virtual list */
-.iron-vlist {
+.platypus-vlist {
   flex-direction: column;
   flex-shrink: 0;
   position: relative;
 }
 
-.iron-vrow {
+.platypus-vrow {
   flex-direction: row;
   align-items: center;
 }
 
-.iron-vrow.selected {
-  background-color: var(--iron-accent-dim);
+.platypus-vrow.selected {
+  background-color: var(--platypus-accent-dim);
 }
 
-.iron-vlist-empty {
+.platypus-vlist-empty {
   justify-content: center;
   padding: 12px;
-  color: var(--iron-muted);
+  color: var(--platypus-muted);
 }
 
 /* Tree view */
-.iron-tree-row {
+.platypus-tree-row {
   flex-direction: row;
   align-items: center;
   flex-grow: 1;
@@ -261,123 +261,123 @@
   user-select: none;
 }
 
-.iron-tree-row:hover {
-  background-color: var(--iron-hover);
+.platypus-tree-row:hover {
+  background-color: var(--platypus-hover);
 }
 
-.iron-tree-row.selected {
-  background-color: var(--iron-accent-dim);
+.platypus-tree-row.selected {
+  background-color: var(--platypus-accent-dim);
 }
 
-.iron-tree:focus-within .iron-tree-row.selected {
-  background-color: var(--iron-accent);
+.platypus-tree:focus-within .platypus-tree-row.selected {
+  background-color: var(--platypus-accent);
   color: #ffffff;
 }
 
-.iron-tree:focus-within .iron-tree-row.focused {
+.platypus-tree:focus-within .platypus-tree-row.focused {
   outline: 1px solid rgba(255, 255, 255, 0.35);
   outline-offset: -1px;
 }
 
-.iron-tree-twisty {
+.platypus-tree-twisty {
   width: 16px;
   justify-content: center;
-  color: var(--iron-muted);
+  color: var(--platypus-muted);
   flex-shrink: 0;
 }
 
-.iron-tree-icon {
+.platypus-tree-icon {
   width: 18px;
   margin-right: 4px;
   justify-content: center;
   flex-shrink: 0;
 }
 
-.iron-tree-rename {
+.platypus-tree-rename {
   flex-grow: 1;
   height: 20px;
   padding: 0 4px;
-  background-color: var(--iron-bg);
-  border: 1px solid var(--iron-accent);
-  color: var(--iron-text);
+  background-color: var(--platypus-bg);
+  border: 1px solid var(--platypus-accent);
+  color: var(--platypus-text);
 }
 
 /* Console */
-.iron-console {
+.platypus-console {
   flex-direction: column;
-  font-family: var(--iron-font);
+  font-family: var(--platypus-font);
   font-size: 12px;
-  color: var(--iron-info);
+  color: var(--platypus-info);
 }
 
-.iron-console-toolbar {
+.platypus-console-toolbar {
   flex-direction: row;
   align-items: center;
   flex-shrink: 0;
   gap: 4px;
   padding: 0 6px;
-  background-color: var(--iron-panel-alt);
-  border-bottom: 1px solid var(--iron-line);
+  background-color: var(--platypus-panel-alt);
+  border-bottom: 1px solid var(--platypus-line);
   user-select: none;
   overflow: hidden;
 }
 
-.iron-console-button,
-.iron-console-filter {
+.platypus-console-button,
+.platypus-console-filter {
   flex-direction: row;
   align-items: center;
   gap: 5px;
   height: 20px;
   padding: 0 8px;
   border-radius: 3px;
-  color: var(--iron-muted);
+  color: var(--platypus-muted);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
-.iron-console-button:hover,
-.iron-console-filter:hover {
-  background-color: var(--iron-hover);
+.platypus-console-button:hover,
+.platypus-console-filter:hover {
+  background-color: var(--platypus-hover);
 }
 
-.iron-console-filter.on {
-  background-color: var(--iron-raised);
-  color: var(--iron-text);
+.platypus-console-filter.on {
+  background-color: var(--platypus-raised);
+  color: var(--platypus-text);
 }
 
-.iron-console-search {
+.platypus-console-search {
   width: 180px;
   min-width: 60px;
   flex-shrink: 1;
   height: 20px;
   padding: 0 6px;
   border-radius: 3px;
-  background-color: var(--iron-bg);
-  border: 1px solid var(--iron-line);
-  color: var(--iron-text);
+  background-color: var(--platypus-bg);
+  border: 1px solid var(--platypus-line);
+  color: var(--platypus-text);
 }
 
-.iron-console-dot {
+.platypus-console-dot {
   width: 8px;
   height: 8px;
   border-radius: 4px;
   flex-shrink: 0;
-  background-color: var(--iron-info);
+  background-color: var(--platypus-info);
 }
 
-[data-level="warn"] > .iron-console-dot {
-  background-color: var(--iron-warn);
+[data-level="warn"] > .platypus-console-dot {
+  background-color: var(--platypus-warn);
 }
 
-[data-level="error"] > .iron-console-dot {
-  background-color: var(--iron-error);
+[data-level="error"] > .platypus-console-dot {
+  background-color: var(--platypus-error);
 }
 
-[data-level="debug"] > .iron-console-dot {
-  background-color: var(--iron-muted);
+[data-level="debug"] > .platypus-console-dot {
+  background-color: var(--platypus-muted);
 }
 
-.iron-console-row {
+.platypus-console-row {
   flex-direction: row;
   align-items: center;
   flex-grow: 1;
@@ -387,76 +387,76 @@
   overflow: hidden;
 }
 
-.iron-vrow:nth-child(even) > .iron-console-row {
+.platypus-vrow:nth-child(even) > .platypus-console-row {
   background-color: rgba(255, 255, 255, 0.02);
 }
 
-.iron-console-row[data-level="warn"] {
-  color: var(--iron-warn);
+.platypus-console-row[data-level="warn"] {
+  color: var(--platypus-warn);
 }
 
-.iron-console-row[data-level="error"] {
-  color: var(--iron-error);
+.platypus-console-row[data-level="error"] {
+  color: var(--platypus-error);
 }
 
-.iron-console-row[data-level="debug"] {
-  color: var(--iron-muted);
+.platypus-console-row[data-level="debug"] {
+  color: var(--platypus-muted);
 }
 
-.iron-console-time {
-  color: var(--iron-muted);
-  font-family: var(--iron-mono);
+.platypus-console-time {
+  color: var(--platypus-muted);
+  font-family: var(--platypus-mono);
   font-size: 11px;
   width: 52px;
   text-align: right;
   flex-shrink: 0;
 }
 
-.iron-console-message {
+.platypus-console-message {
   flex-direction: row;
   flex-grow: 1;
   min-width: 0;
   overflow: hidden;
 }
 
-.iron-console-link {
-  color: var(--iron-link);
+.platypus-console-link {
+  color: var(--platypus-link);
   text-decoration: underline;
   cursor: pointer;
 }
 
-.iron-console-count {
+.platypus-console-count {
   flex-shrink: 0;
   padding: 0 6px;
   border-radius: 8px;
-  background-color: var(--iron-raised);
-  color: var(--iron-text);
+  background-color: var(--platypus-raised);
+  color: var(--platypus-text);
   font-size: 11px;
 }
 
 /* Project browser */
-.iron-project {
+.platypus-project {
   flex-direction: column;
-  font-family: var(--iron-font);
+  font-family: var(--platypus-font);
   font-size: 12px;
-  color: var(--iron-text);
+  color: var(--platypus-text);
 }
 
-.iron-project-toolbar {
+.platypus-project-toolbar {
   flex-direction: row;
   align-items: center;
   flex-shrink: 0;
   gap: 2px;
   padding: 0 6px;
-  background-color: var(--iron-panel-alt);
-  border-bottom: 1px solid var(--iron-line);
+  background-color: var(--platypus-panel-alt);
+  border-bottom: 1px solid var(--platypus-line);
   overflow: hidden;
   user-select: none;
   white-space: nowrap;
 }
 
-.iron-project-crumb,
-.iron-project-button {
+.platypus-project-crumb,
+.platypus-project-button {
   align-items: center;
   height: 20px;
   padding: 0 6px;
@@ -464,18 +464,18 @@
   flex-shrink: 0;
 }
 
-.iron-project-crumb:hover,
-.iron-project-button:hover {
-  background-color: var(--iron-hover);
+.platypus-project-crumb:hover,
+.platypus-project-button:hover {
+  background-color: var(--platypus-hover);
 }
 
-.iron-project-crumb.over {
-  background-color: var(--iron-accent-dim);
-  outline: 1px solid var(--iron-accent);
+.platypus-project-crumb.over {
+  background-color: var(--platypus-accent-dim);
+  outline: 1px solid var(--platypus-accent);
 }
 
-.iron-project-status {
-  color: var(--iron-muted);
+.platypus-project-status {
+  color: var(--platypus-muted);
   margin-right: 6px;
   flex-shrink: 1;
   min-width: 0;
@@ -483,12 +483,12 @@
   text-overflow: ellipsis;
 }
 
-.iron-project-list.over {
-  outline: 2px solid var(--iron-accent);
+.platypus-project-list.over {
+  outline: 2px solid var(--platypus-accent);
   outline-offset: -2px;
 }
 
-.iron-project-row {
+.platypus-project-row {
   flex-direction: row;
   align-items: center;
   flex-grow: 1;
@@ -498,29 +498,29 @@
   user-select: none;
 }
 
-.iron-project-row:hover {
-  background-color: var(--iron-hover);
+.platypus-project-row:hover {
+  background-color: var(--platypus-hover);
 }
 
-.iron-project-row.over {
-  background-color: var(--iron-accent-dim);
-  outline: 1px solid var(--iron-accent);
+.platypus-project-row.over {
+  background-color: var(--platypus-accent-dim);
+  outline: 1px solid var(--platypus-accent);
   outline-offset: -1px;
 }
 
-.iron-project-icon {
+.platypus-project-icon {
   flex-shrink: 0;
   width: 14px;
   height: 11px;
   border-radius: 2px;
 }
 
-.iron-project-icon.folder {
+.platypus-project-icon.folder {
   background-color: #d7a84a;
   border-top: 2px solid #f0c66a;
 }
 
-.iron-project-icon.file {
+.platypus-project-icon.file {
   width: 10px;
   height: 13px;
   margin: 0 2px;
@@ -528,26 +528,26 @@
   border-top-right-radius: 4px;
 }
 
-.iron-project-name {
+.platypus-project-name {
   flex-grow: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.iron-project-size {
+.platypus-project-size {
   flex-shrink: 0;
-  color: var(--iron-muted);
+  color: var(--platypus-muted);
   font-size: 11px;
 }
 
 /* Scene view */
-.iron-scene-view {
+.platypus-scene-view {
   position: relative;
   overflow: hidden;
 }
 
-.iron-scene-icon {
+.platypus-scene-icon {
   position: absolute;
   align-items: center;
   justify-content: center;
@@ -557,15 +557,15 @@
   user-select: none;
 }
 
-.iron-scene-icon:hover {
+.platypus-scene-icon:hover {
   border-color: rgba(255, 255, 255, 0.6);
 }
 
-.iron-scene-icon.selected {
-  border: 2px solid var(--iron-accent);
+.platypus-scene-icon.selected {
+  border: 2px solid var(--platypus-accent);
 }
 
-.iron-scene-gizmo {
+.platypus-scene-gizmo {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -574,26 +574,26 @@
   user-select: none;
 }
 
-.iron-scene-gizmo-hit {
+.platypus-scene-gizmo-hit {
   position: absolute;
   border-radius: 50%;
   cursor: pointer;
 }
 
-.iron-scene-gizmo-label {
+.platypus-scene-gizmo-label {
   padding: 1px 6px;
   border-radius: 3px;
   background-color: rgba(30, 31, 34, 0.6);
   font-size: 11px;
-  color: var(--iron-text);
+  color: var(--platypus-text);
 }
 
-.iron-scene-handles {
+.platypus-scene-handles {
   position: absolute;
   pointer-events: none;
 }
 
-.iron-scene-tools {
+.platypus-scene-tools {
   position: absolute;
   top: 6px;
   left: 6px;
@@ -605,19 +605,19 @@
   user-select: none;
 }
 
-.iron-scene-tool {
+.platypus-scene-tool {
   padding: 3px 9px;
   font-size: 12px;
-  color: var(--iron-muted);
+  color: var(--platypus-muted);
   cursor: pointer;
 }
 
-.iron-scene-tool:hover {
-  color: var(--iron-text);
-  background-color: var(--iron-hover);
+.platypus-scene-tool:hover {
+  color: var(--platypus-text);
+  background-color: var(--platypus-hover);
 }
 
-.iron-scene-tool.active {
+.platypus-scene-tool.active {
   color: #ffffff;
-  background-color: var(--iron-accent-dim);
+  background-color: var(--platypus-accent-dim);
 }

@@ -6,8 +6,8 @@
 
 use crate::camera::CameraRef;
 use crate::color::Rgba;
-use iron_api::iron_api;
-use iron_math::{M4, V3};
+use platypus_api::platypus_api;
+use platypus_math::{M4, V3};
 use std::cell::RefCell;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -85,7 +85,7 @@ pub fn reset() {
     });
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Gizmos",
     quickjs,
     handles(Camera = CameraRef),
@@ -100,7 +100,7 @@ pub mod gizmos_api {
     use super::{GizmoFrame, STATE, push};
     use crate::camera::CameraRef;
     use crate::color::Rgba;
-    use iron_math::{M4, V3};
+    use platypus_math::{M4, V3};
 
     /// Places what is drawn next (`Matrix4x4.trs(..)` for a shape in an object's space).
     #[property]

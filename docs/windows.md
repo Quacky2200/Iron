@@ -2,10 +2,10 @@
 
 User guide to the `Window` API: opening tool windows, palettes and dialogs next to the game's own window, giving each its
 own UI, and talking between windows. The example is `examples/windows`. Design and decisions:
-`docs/research/iron-windows.md` (plan: `iron-windows-plan.md`). Code: `crates/iron_engine_api/src/window.rs` (the API and its
-state), `crates/iron_platform/src/windows.rs` and the runner (`docs/platform.md`, "Multi-window"),
-`crates/iron_app/src/windows.rs` (trees, surfaces, routing, drawing) and `native_render.rs` (`sync_window_roots`),
-`js/engine/src/window.ts` (types for QuickJS games), `tools/iron_ts/src/builtins.rs` (the typed members for compiled games) and `tools/iron_ts/src/lower/messages.rs` (their compiled form).
+`docs/research/platypus-windows.md` (plan: `platypus-windows-plan.md`). Code: `crates/platypus_engine_api/src/window.rs` (the API and its
+state), `crates/platypus_platform/src/windows.rs` and the runner (`docs/platform.md`, "Multi-window"),
+`crates/platypus_app/src/windows.rs` (trees, surfaces, routing, drawing) and `native_render.rs` (`sync_window_roots`),
+`js/engine/src/window.ts` (types for QuickJS games), `tools/platypus_ts/src/builtins.rs` (the typed members for compiled games) and `tools/platypus_ts/src/lower/messages.rs` (their compiled form).
 
 **Honest status.** The winit runner has not been run on a real display. Everything was checked with the fake platform
 (`FakePlatform`), unit tests of the pure parts (`plan`, `place`, `WindowTree`, the message queues) and `--screenshot` runs, where
@@ -203,7 +203,7 @@ The engine API enforces the separation:
 - Input, focus and timers are per domain (see "Input belongs to the window's event domain" above).
 - Module variables are still shared memory. Code can reach across families through them (and a slow handler in one domain delays
   the others); do not rely on it. Moving a domain to its own thread (phase B) or process (phase C) is designed
-  (`iron-windows.md` section 3a) and not built; sticking to messages is what keeps a game working when it is.
+  (`platypus-windows.md` section 3a) and not built; sticking to messages is what keeps a game working when it is.
 
 ### Input belongs to the window's event domain
 
@@ -220,8 +220,8 @@ The engine API enforces the separation:
 > - QuickJS promise jobs (`await` continuations) and other callbacks with no domain tag read the **main** domain's input, even if
 >   the `await` began in an isolated window. Read the keys before the first `await`.
 > - `input.on(..)` listeners belong to the domain they were registered in.
-> - Compiled games behave the same way (`crates/iron_engine_api/tests/input_domains.rs`); QuickJS games match since
->   `crates/iron_app/src/game_input.rs` sends each domain's events with that domain entered.
+> - Compiled games behave the same way (`crates/platypus_engine_api/tests/input_domains.rs`); QuickJS games match since
+>   `crates/platypus_app/src/game_input.rs` sends each domain's events with that domain entered.
 
 ```ts
 class Player extends Component {
@@ -243,7 +243,7 @@ changes through `on("select", ..)`, and emits its edits back to `Window.main`.
 
 ## Screenshots
 
-`iron <game> --screenshot out.png --frames N` writes the main window to `out.png` and every open secondary window to
+`platypus <game> --screenshot out.png --frames N` writes the main window to `out.png` and every open secondary window to
 `out-<slug>.png`, drawn offscreen at its own size. The slug is the title lowercased with each run of characters other than `a-z0-9`
 turned into `-` (an empty slug is `window<handle>`; a clash appends `-<handle>`). `examples/windows` produces `windows-palette.png`,
 `windows-counter-1.png` and `windows-inspector.png`.
@@ -261,11 +261,11 @@ turned into `-` (an empty slug is `window<handle>`; a clash appends `-<handle>`)
 secondary window ends only that window and its children.
 
 **Unity.** The player has one window. `Display` is about monitors and cameras, not windows; the Editor has `EditorWindow`, but a
-built game cannot open extra OS windows without native plugins. Iron's tool windows are closest to what Unity leaves to plugins.
+built game cannot open extra OS windows without native plugins. Platypus's tool windows are closest to what Unity leaves to plugins.
 
 **Godot 4.** The `Window` node is the closest relative: subwindows with a title, size and position, a `close_requested` signal, a
 `transient`/parent relation and its own viewport. Differences: Godot embeds subwindows inside the main window by default
-(`embed_subwindows`) and has modal `exclusive` windows, which Iron lacks; Iron windows are always real OS windows (except where
+(`embed_subwindows`) and has modal `exclusive` windows, which Platypus lacks; Platypus windows are always real OS windows (except where
 unsupported), each with its own UI tree, and isolated families add an event-domain model and messages that Godot does not have
 (its windows share one scene tree).
 
@@ -289,7 +289,7 @@ the window is closed, `win.openError` is `Cannot open Window due to platform res
 `win.onOpenFailed((error) => ..)` runs once, and an error is logged once. `Window.isSupported` is false on those platforms, so a game
 can check first and keep its UI on the main window (the example shows a notice). The main window is never affected.
 
-Not built, listed as optional later steps in `iron-windows-plan.md`: embedded `child` windows (D1), modal dialogs (D2),
+Not built, listed as optional later steps in `platypus-windows-plan.md`: embedded `child` windows (D1), modal dialogs (D2),
 `Camera.targetWindow` (D3), transparent windows (D4), a hidden main window in screenshot runs (D5), and `Application.wantsToQuit`.
 
 ## Limits

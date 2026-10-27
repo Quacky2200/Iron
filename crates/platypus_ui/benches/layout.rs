@@ -2,14 +2,14 @@
 
 //! M2-BEN-01..03: layout and commit costs on an editor-like UI of ~2,000 nodes.
 //!
-//! Run with `cargo bench -p iron_ui`.
+//! Run with `cargo bench -p platypus_ui`.
 
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use iron_core::{Commit, Value};
-use iron_ui::UiTree;
-use iron_ui::opcodes::*;
+use platypus_core::{Commit, Value};
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::*;
 
 struct Builder {
     ops: Vec<Value>,

@@ -3,7 +3,7 @@
 //! Keyframes and curves, as `AnimationCurve` in `js/engine/src/animation.ts`: keys joined by cubic
 //! Hermite segments shaped by their tangents, wrap modes before and after.
 
-use iron_api::ValueType;
+use platypus_api::ValueType;
 use serde_json::{Value, json};
 
 /// One key on a curve: tangents are slopes (value per second). An infinite tangent holds a value
@@ -83,7 +83,7 @@ pub fn wrap(t: f64, length: f64, mode: WrapMode) -> f64 {
             let p = ((t % (2.0 * length)) + 2.0 * length) % (2.0 * length);
             if p > length { 2.0 * length - p } else { p }
         }
-        _ => iron_math::jsnum::min(length, iron_math::jsnum::max(0.0, t)),
+        _ => platypus_math::jsnum::min(length, platypus_math::jsnum::max(0.0, t)),
     }
 }
 

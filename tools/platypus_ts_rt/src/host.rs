@@ -4,7 +4,7 @@
 //! `classes()`), one rooted instance per component and the lifecycle the QuickJS-based
 //! `ComponentHost` has, with no script engine in the loop.
 //!
-//! Order and rules match `iron_script::ComponentHost`: `onAwake` when spawned, `onStart` once
+//! Order and rules match `platypus_script::ComponentHost`: `onAwake` when spawned, `onStart` once
 //! before a component's first other hook, `onUpdate` for all and then `onLateUpdate` for all,
 //! disabled or inactive-object components skipped, a component that throws is reported and
 //! disabled. After every hook the microtask queue runs (the event-loop contract of `event.rs`).
@@ -204,7 +204,7 @@ pub extern "C" fn ts_rt_component_find_any(sid: f64) -> *mut u8 {
 /// `onDestroy` runs when the calling hook returns.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_rt_component_remove(ptr: *mut u8) {
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     REG.with(|r| {
         let mut r = r.borrow_mut();
         if let Some(i) = r.live.iter().position(|l| l.ptr == ptr) {
@@ -264,7 +264,7 @@ pub extern "C" fn ts_rt_component_add_gc(object: u64, sid: f64) -> *mut u8 {
     // SAFETY: the thunk was generated for this class; the registry is not borrowed while it runs.
     let ptr = unsafe { create(id as f64, object) };
     let root = ts_rt_root_add(ptr);
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     REG.with(|r| {
         let mut r = r.borrow_mut();
         r.live.push(Live {
@@ -342,7 +342,7 @@ impl Drop for NativeHost {
             r.live.clear();
         });
         for c in &self.classes {
-            iron_kinds::unregister(c.name);
+            platypus_kinds::unregister(c.name);
         }
     }
 }
@@ -434,7 +434,7 @@ impl NativeHost {
         // SAFETY: the thunk was generated for this class.
         let this = unsafe { (self.classes[ci].create)(id as f64, object.unwrap_or(0)) };
         let root = ts_rt_root_add(this);
-        iron_kinds::components_changed();
+        platypus_kinds::components_changed();
         REG.with(|r| {
             r.borrow_mut().live.push(Live {
                 id,
@@ -573,7 +573,7 @@ impl NativeHost {
     ) -> Vec<Fault> {
         let mut faults = Vec::new();
         // The `Collision` handles of the last dispatch are done with.
-        iron_physics_api::contacts::clear_collisions();
+        platypus_physics_api::contacts::clear_collisions();
         for ev in events {
             let same = |t: &ContactEvent| {
                 t.object == ev.object && t.collider == ev.collider && t.other == ev.other
@@ -606,14 +606,14 @@ impl NativeHost {
         faults
     }
 
-    /// Takes the contacts the physics step queued (`iron_physics_api::take_contacts`) and
+    /// Takes the contacts the physics step queued (`platypus_physics_api::take_contacts`) and
     /// dispatches them: each contact tells the components of both objects (a collider with no
     /// object attached tells nobody).
     pub fn dispatch_physics(&mut self, active: &dyn Fn(u64) -> bool) -> Vec<Fault> {
-        use iron_api::Handle;
-        let raw = |c: u32| iron_physics_api::object_of_collider(c).map(|o| o.to_raw());
+        use platypus_api::Handle;
+        let raw = |c: u32| platypus_physics_api::object_of_collider(c).map(|o| o.to_raw());
         let mut events = Vec::new();
-        for c in iron_physics_api::take_contacts() {
+        for c in platypus_physics_api::take_contacts() {
             let (oa, ob) = (raw(c.a), raw(c.b));
             // `velocity` is b's minus a's: a is told the other way round.
             let v = c.velocity.map(f64::from);
@@ -668,7 +668,7 @@ impl NativeHost {
                 continue;
             }
             let collision = *collision.get_or_insert_with(|| {
-                iron_physics_api::contacts::collision(
+                platypus_physics_api::contacts::collision(
                     ev.own as u32,
                     ev.collider as u32,
                     ev.other,
@@ -710,7 +710,7 @@ impl NativeHost {
         let e = &self.entries[i];
         let class = &self.classes[e.class];
         let f = class.contact_hooks[hook]?;
-        let collider = iron_physics_api::contacts::collider_component(ev.collider as u32);
+        let collider = platypus_physics_api::contacts::collider_component(ev.collider as u32);
         // SAFETY: `this` is rooted and has the class the thunk was generated for.
         unsafe { f(e.this, collision, collider) };
         ts_rt_microtasks_run();
@@ -793,7 +793,7 @@ impl NativeHost {
     fn drop_entry(&mut self, i: usize) {
         let e = self.entries.remove(i);
         REG.with(|r| r.borrow_mut().live.retain(|l| l.id != e.id));
-        iron_kinds::components_changed();
+        platypus_kinds::components_changed();
         ts_rt_root_remove(e.root);
     }
 
@@ -1010,13 +1010,13 @@ fn kind_value(v: PropValue) -> serde_json::Value {
         PropValue::Num(n) => serde_json::Number::from_f64(n).map_or(Value::Null, Value::Number),
         PropValue::Bool(b) => Value::Bool(b),
         PropValue::Str(s) => Value::String(s),
-        PropValue::Object(o) => iron_kinds::object_ref(o),
+        PropValue::Object(o) => platypus_kinds::object_ref(o),
         PropValue::Value(n, v) => serde_json::json!({ "$type": n, "value": v }),
         PropValue::Component(c) => {
             let name = locate(c)
                 .map(|(_, ci)| class_of(ci).name)
                 .unwrap_or_default();
-            iron_kinds::component_ref(name, u64::from(c))
+            platypus_kinds::component_ref(name, u64::from(c))
         }
     }
 }
@@ -1060,7 +1060,7 @@ fn register_kind(name: &'static str) {
                 .map(|c| c.sid)
         })
         .expect("the class is in the table");
-    iron_kinds::register(iron_kinds::Kind {
+    platypus_kinds::register(platypus_kinds::Kind {
         name: name.to_string(),
         create: Box::new(move |object| {
             // A scene or prefab names its classes; one that no `register(..)` call named cannot

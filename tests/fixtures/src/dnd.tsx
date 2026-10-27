@@ -4,7 +4,7 @@
 // its name in the dataTransfer; the folder accepts drops (prevents dragover) and shows
 // what it got, including files dragged in from the system. The status line says how
 // the drag ended.
-import { createRoot, type IronDragEvent, Text } from "@iron/react";
+import { createRoot, type PlatypusDragEvent, Text } from "@platypus/react";
 import { useState } from "react";
 
 const at = (left: number, top: number) => ({ position: "absolute" as const, left, top, width: 50, height: 50 });
@@ -17,16 +17,16 @@ function App() {
       <box
         draggable
         style={at(0, 0)}
-        onDragStart={(e: IronDragEvent) => {
+        onDragStart={(e: PlatypusDragEvent) => {
           e.dataTransfer.setData("text/plain", "item");
           setStatus("dragging");
         }}
-        onDragEnd={(e: IronDragEvent) => setStatus(e.dropped ? "dropped" : "cancelled")}
+        onDragEnd={(e: PlatypusDragEvent) => setStatus(e.dropped ? "dropped" : "cancelled")}
       />
       <box
         style={at(100, 0)}
-        onDragOver={(e: IronDragEvent) => e.preventDefault()}
-        onDrop={(e: IronDragEvent) =>
+        onDragOver={(e: PlatypusDragEvent) => e.preventDefault()}
+        onDrop={(e: PlatypusDragEvent) =>
           setGot(e.dataTransfer.files.length ? e.dataTransfer.files.map((f) => f.name).join(",") : e.dataTransfer.getData("text/plain"))
         }
       />

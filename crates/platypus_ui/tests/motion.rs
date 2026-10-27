@@ -6,9 +6,9 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::SET_STYLE;
-use iron_ui::{ElementState, Input, Interaction, Rgba, UiEvent, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::SET_STYLE;
+use platypus_ui::{ElementState, Input, Interaction, Rgba, UiEvent, UiTree};
 
 fn set_style(tree: &mut UiTree, id: u32, prop: &str, value: Value) {
     let errors = tree.apply_commit(&Commit {
@@ -368,7 +368,7 @@ fn existing_elements_ignore_starting_style() {
     at(&mut tree, 0.0);
     let errors = tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_ATTRS,
+            platypus_ui::opcodes::SET_ATTRS,
             &[n(1), "className".into(), "card".into()],
         )],
     });
@@ -390,7 +390,7 @@ fn opening_a_dialog_runs_its_starting_style() {
     at(&mut tree, 0.0);
     let errors = tree.apply_commit(&Commit {
         ops: vec![op(
-            iron_ui::opcodes::SET_ATTRS,
+            platypus_ui::opcodes::SET_ATTRS,
             &[n(dialog), "open".into(), true.into()],
         )],
     });
@@ -419,7 +419,7 @@ fn item_tree(css: &str) -> UiTree {
 
 fn remove_item(tree: &mut UiTree) {
     let errors = tree.apply_commit(&Commit {
-        ops: vec![op(iron_ui::opcodes::REMOVE_CHILD, &[n(0), n(1)])],
+        ops: vec![op(platypus_ui::opcodes::REMOVE_CHILD, &[n(0), n(1)])],
     });
     assert!(errors.is_empty(), "{errors:?}");
 }

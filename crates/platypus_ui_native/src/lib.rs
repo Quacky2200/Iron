@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A native reconciler with React's re-render semantics, replacing `react-reconciler` for UI that
-//! runs without a JavaScript engine. Design: `docs/research/iron-ui-native.md`.
+//! runs without a JavaScript engine. Design: `docs/research/platypus-ui-native.md`.
 //!
 //! A component is a function from hooks to an [`Element`] description. The [`Runtime`] keeps an
 //! instance tree parallel to the descriptions, diffs each new description against it and emits
-//! `iron_ui` ops ([`iron_ui::opcodes::Op`]) applied to the [`UiTree`] as one batch per update.
+//! `platypus_ui` ops ([`platypus_ui::opcodes::Op`]) applied to the [`UiTree`] as one batch per update.
 //! Keys, hooks (`state`, `ref`, `memo`, `callback`, `effect`, `context`), portals, refs and event
 //! dispatch with capture and bubble along the component tree are built; `memo`, `forwardRef`,
 //! `useReducer` and `useSyncExternalStore` come after the compiler side.
@@ -17,9 +17,9 @@ pub use element::{Cleanup, Element, Event, Handler, HostProps, NodeRef, RenderFn
 pub use hooks::{Context, Ctx, Dep, EffectFn, Scheduler, Setter};
 
 use hooks::{Shared, Slot};
-use iron_core::{NodeId, Value};
-use iron_ui::opcodes::Op;
-use iron_ui::{UiError, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_ui::opcodes::Op;
+use platypus_ui::{UiError, UiTree};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -28,12 +28,12 @@ use std::rc::Rc;
 const MAX_PASSES: usize = 100;
 
 /// A UI event of the interaction layer as the reconciler's event: the same numbers and strings
-/// `UiEvent::script_args` gives `__iron_ui_event` (so a compiled handler reads what a QuickJS one
+/// `UiEvent::script_args` gives `__platypus_ui_event` (so a compiled handler reads what a QuickJS one
 /// does), bubbling unless the event type does not (`tables::events::NON_BUBBLING`).
-pub fn event_of(e: &iron_ui::UiEvent) -> Option<Event> {
+pub fn event_of(e: &platypus_ui::UiEvent) -> Option<Event> {
     let &target = e.path.first()?;
     let mut ev = Event::new(e.kind.name(), target);
-    ev.bubbles = !iron_ui::tables::events::NON_BUBBLING.contains(&e.kind.name());
+    ev.bubbles = !platypus_ui::tables::events::NON_BUBBLING.contains(&e.kind.name());
     let args = e.script_args();
     if let Some(Value::Array(a)) = args.get(2) {
         ev.data = a.iter().filter_map(Value::as_f64).collect();

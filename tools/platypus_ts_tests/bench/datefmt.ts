@@ -1,7 +1,7 @@
 // Intl, step I3a: Date.prototype.toLocaleString/DateString/TimeString and Intl.DateTimeFormat.
 // Every exported function without parameters returns a string; `gen_datefmt_expected.ts` runs this
 // file in bun once per time zone and `tests/datefmt.rs` compares. The option sets are written out
-// because Iron reads options as literals.
+// because Platypus reads options as literals.
 
 const INSTANTS = [1792405800123, 0, 1772955000000, 1783000000000, 951782400000, 1798761599000];
 

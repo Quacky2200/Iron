@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Differential oracle for the native `Shapes` and `Spline`: the TypeScript the compiled facade used
-// (`tools/iron_ts/src/lower/facade.ts` before they became native Rust, renamed `Ref*`), run next to
+// (`tools/platypus_ts/src/lower/facade.ts` before they became native Rust, renamed `Ref*`), run next to
 // the native API on the same inputs. Every point must be the same double (bit for bit). Test
-// code only; the engine has one implementation (iron_math). tests/engine_api/outlines.rs reads the results.
+// code only; the engine has one implementation (platypus_math). tests/engine_api/outlines.rs reads the results.
 
 function __rshapes_at(cx: number, cy: number, rx: number, ry: number, degrees: number): Vector2 {
   return new Vector2(cx + Math.cos(degrees * 0.017453292519943295) * rx, cy + Math.sin(degrees * 0.017453292519943295) * ry);

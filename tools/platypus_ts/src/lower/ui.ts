@@ -64,7 +64,7 @@ function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): Reducer<S, A> {
 }
 
 // A plain object type, not a class: a `{ current: T }` the program writes (`ref: { current:
-// IronElement | null }` in its own interface) is then the same type, so the ref object itself goes
+// PlatypusElement | null }` in its own interface) is then the same type, so the ref object itself goes
 // there, not a copy that the element would never be written into.
 type Ref<T> = { current: T };
 

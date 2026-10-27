@@ -6,10 +6,10 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::UiTree;
-use iron_ui::opcodes::SET_ATTRS;
 use parley::PositionedLayoutItem;
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::SET_ATTRS;
 
 /// A 200px-wide text block holding `text`, with inline `style` and optional `dir`.
 fn block(text: &str, style: &[(&str, Value)], dir: Option<&str>, css: &str) -> (UiTree, NodeId) {

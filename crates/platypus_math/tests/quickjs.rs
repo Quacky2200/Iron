@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The math types as JavaScript classes in QuickJS (`iron_math::register_quickjs`): constructors
+//! The math types as JavaScript classes in QuickJS (`platypus_math::register_quickjs`): constructors
 //! through `create`, overloads by argument count, statics, getters and methods. IDs are in
 //! TESTS.md (M9-API-46..).
 
@@ -8,7 +8,7 @@ fn with_js<R>(f: impl FnOnce(&rquickjs::Ctx<'_>) -> R) -> R {
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
-        iron_math::register_quickjs(&ctx).unwrap();
+        platypus_math::register_quickjs(&ctx).unwrap();
         f(&ctx)
     })
 }

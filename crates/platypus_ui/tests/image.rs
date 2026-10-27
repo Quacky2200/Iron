@@ -5,9 +5,9 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::{SET_ATTRS, SET_STYLE};
-use iron_ui::{BackgroundSize, DrawCmd, Len, Rect, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::{SET_ATTRS, SET_STYLE};
+use platypus_ui::{BackgroundSize, DrawCmd, Len, Rect, UiTree};
 
 /// A start-aligned column holding one image per entry of `styles`, all showing `src`.
 fn images(src: &str, styles: &[&[(&str, Value)]]) -> (UiTree, Vec<u32>) {
@@ -68,7 +68,7 @@ fn images_take_their_natural_size_once_the_app_reports_it() {
 }
 
 /// The image fill drawn for the only image in the tree, with the clip around it.
-fn image_fill(tree: &mut UiTree) -> (Rect, BackgroundSize, iron_ui::BackgroundPosition) {
+fn image_fill(tree: &mut UiTree) -> (Rect, BackgroundSize, platypus_ui::BackgroundPosition) {
     let cmds = tree.draw_list();
     let i = cmds
         .iter()

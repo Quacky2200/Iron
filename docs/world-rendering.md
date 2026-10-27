@@ -1,9 +1,9 @@
 # World rendering
 
-Code: [iron_render/src/world](../crates/iron_render/src/world/mod.rs) (the GPU pass),
-[iron_app/world_view.rs](../crates/iron_app/src/world_view.rs) (cameras and planes from scripts),
-[iron_app/panels.rs](../crates/iron_app/src/panels.rs) (world panels), the drawing and input routing
-in [iron_app/main.rs](../crates/iron_app/src/main.rs), and
+Code: [platypus_render/src/world](../crates/platypus_render/src/world/mod.rs) (the GPU pass),
+[platypus_app/world_view.rs](../crates/platypus_app/src/world_view.rs) (cameras and planes from scripts),
+[platypus_app/panels.rs](../crates/platypus_app/src/panels.rs) (world panels), the drawing and input routing
+in [platypus_app/main.rs](../crates/platypus_app/src/main.rs), and
 [rendering.ts](../js/engine/src/rendering.ts) on the script side. Milestones M5.a and M5.a2. Objects and
 components are in [scene-and-objects.md](scene-and-objects.md); the 2D UI renderer is in
 [rendering.md](rendering.md). Textures, sprites and glTF models are in
@@ -15,7 +15,7 @@ the app builds a flat `WorldView` per camera.
 
 ## The world pass
 
-`WorldRenderer` ([world/mod.rs](../crates/iron_render/src/world/mod.rs), shader `world.wgsl`) draws
+`WorldRenderer` ([world/mod.rs](../crates/platypus_render/src/world/mod.rs), shader `world.wgsl`) draws
 `WorldView`s into a `RenderTarget`:
 
 - `WorldView { camera: WorldCamera, viewport: [x, y, w, h], quads: Vec<WorldQuad>, meshes:
@@ -79,7 +79,7 @@ see-through things (so sprites, text and panels show over them) and before the g
 overlap they look darker; the width is not scaled by the object.
 
 **Fills.** `WorldView.fills: Vec<FillVertex { position, color }>` holds triangles (three vertices each) in
-world space ([fill.rs](../crates/iron_render/src/world/fill.rs)). `tessellate_fill(points, FillRule)` turns a
+world space ([fill.rs](../crates/platypus_render/src/world/fill.rs)). `tessellate_fill(points, FillRule)` turns a
 closed outline into triangles with lyon. Points that are not finite are skipped, and fewer than three
 leave nothing. `FillRule` is `EvenOdd` (the default, GDI's `Alternate`: a crossing star's middle is a hole)
 or `NonZero` (GDI's `Winding`: the star is solid). `WorldViews` tessellates when the `render.stroke` op
@@ -131,7 +131,7 @@ A 0x0 target returns early.
 
 ## Meshes and lights
 
-**Meshes.** [mesh.rs](../crates/iron_render/src/world/mesh.rs): `MeshData { positions, normals, uvs,
+**Meshes.** [mesh.rs](../crates/platypus_render/src/world/mesh.rs): `MeshData { positions, normals, uvs,
 tangents, indices }`. Meshes are right-handed, y up, counter-clockwise front faces, with Unity's sizes (a 1 m
 cube, a sphere of radius 0.5, a 2 m capsule, a 10 m plane). `primitive(name)` builds `cube`, `sphere`,
 `capsule`, `cylinder`, `plane` and `quad`; every renderer registers them at `PRIMITIVE_BASE +
@@ -171,7 +171,7 @@ like Unity's Standard shader:
 buffer of `SkinVertex { joints: [u32; 4], weights: [f32; 4] }` (attributes 4 and 5). `MeshInstance::bones`
 is `Some((first, count))` for a skinned renderer, pointing into `WorldView::bones`: one matrix per bone,
 the bone's world matrix times its inverse bind pose, kept by `WorldViews`' bone cache
-(`iron_app/src/bone_cache.rs`) from the renderer's `Skin`
+(`platypus_app/src/bone_cache.rs`) from the renderer's `Skin`
 ([animation-3d.md](animation-3d.md#skinned-meshes) has the script side). The list is an `Arc<Vec<Mat4>>`
 shared by every view; a skeleton's run is worked out again only when one of its bones moved since it was
 built (`Scene::moved_since`: `update_world` moves `Scene::epoch` on, a move stamps the object and all below
@@ -235,7 +235,7 @@ shader (`m.params.y > 1.5`) fades it where the surface turns away from the eye a
 
 ## Sky and environment
 
-`WorldRenderer::set_sky(Option<Sky>)` and [environment.rs](../crates/iron_render/src/world/environment.rs)
+`WorldRenderer::set_sky(Option<Sky>)` and [environment.rs](../crates/platypus_render/src/world/environment.rs)
 with `env.wgsl`. `Sky { zenith, horizon, ground, sun_direction, sun_color, sun_size }` is a procedural
 sky in linear HDR colours (the sun is usually brighter than 1). Scripts set it with
 `RenderSettings.skybox` (`ProceduralSky`, all fields optional), which sends `render.sky`; `null` removes it.
@@ -321,7 +321,7 @@ when added and on `renderProbe()`.
 
 ## Shadows
 
-[shadows.rs](../crates/iron_render/src/world/shadows.rs). `WorldRenderer::draw_shadows` plans and draws
+[shadows.rs](../crates/platypus_render/src/world/shadows.rs). `WorldRenderer::draw_shadows` plans and draws
 all shadow maps **once a frame**, from the main screen view (the biggest viewport, not a render
 texture's). Every view drawn that frame reads the same maps: other cameras, mirrors, probe faces and
 render textures. Casters are the main view's opaque and cutout meshes with `cast_shadows` on (cutout
@@ -358,7 +358,7 @@ grouped by it too, and the shadow pass draws only the casting ones.
 
 ## Bloom and post-processing
 
-[bloom.rs](../crates/iron_render/src/world/bloom.rs) and `bloom.wgsl`, [fxaa.rs](../crates/iron_render/src/world/fxaa.rs).
+[bloom.rs](../crates/platypus_render/src/world/bloom.rs) and `bloom.wgsl`, [fxaa.rs](../crates/platypus_render/src/world/fxaa.rs).
 Post effects run only in the screen's **final pass**.
 
 **Bloom.** `RenderSettings.bloom` (`{ threshold, intensity, scatter }`, default off) sends `render.bloom`; the
@@ -414,7 +414,7 @@ The HDRP-style settings are in `AutoExposure`; the state is per camera.
 - **Read-back.** After submit, `after_submit` maps each eye's staging buffer (`device.poll(Poll)`); `collect`
   reads them next frame into `ExposureReading { ev, scene_ev }` (the EV100 in use, and how bright it metered;
   NaN before the first). `WorldRenderer::exposure(key)` and `reset_exposure(key)` expose them. When a camera's
-  values change, the app calls `__iron_exposure(id, ev, sceneEv|null)`, which sets `Camera.exposure` and
+  values change, the app calls `__platypus_exposure(id, ev, sceneEv|null)`, which sets `Camera.exposure` and
   `Camera.sceneBrightness`. `Camera.resetExposure()` sends `render.exposureReset id`; `WorldViews` queues it
   and the app applies it. Test `M7-EXP-05`.
 - **Script settings.** `RenderSettings.autoExposure` is `{ minEV, maxEV, compensation, speedDarkToLight,
@@ -559,7 +559,7 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   counted in `WorldStats::fog_culled`. Height fog and fog volumes never cull. With a background unlike the
   fog colour, culled things would have been fog-coloured silhouettes, so turn culling off there.
   Scripts read `RenderStats` (`meshes`, `culledMeshes`, `quads`, `culledQuads`, `fogCulled`, `lights`,
-  `culledLights`, `shadowMaps`, `shadowCasters`); `main.rs` calls `__iron_render_stats` with them each frame they change.
+  `culledLights`, `shadowMaps`, `shadowCasters`); `main.rs` calls `__platypus_render_stats` with them each frame they change.
 - **Left clear.** The editor grid and gizmo lines.
 
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
@@ -590,7 +590,7 @@ views, things showing it draw plain colour; other render textures show their lat
 
 ## Screen UI over the world
 
-`UiRenderer::render_overlay(gpu, target, cmds)` ([ui/mod.rs](../crates/iron_render/src/ui/mod.rs)) is
+`UiRenderer::render_overlay(gpu, target, cmds)` ([ui/mod.rs](../crates/platypus_render/src/ui/mod.rs)) is
 `render` with two changes: the canvas starts **transparent** instead of cleared, and its final blit
 **blends** (premultiplied alpha) onto what the target holds, with `LoadOp::Load`. The blit pipeline is
 cached by `(format, overlay)`.
@@ -614,10 +614,10 @@ Screenshot runs and window frames both go through `draw_frame`.
 ## Components from scripts
 
 `Camera`, `PlaneRenderer`, `MeshRenderer`, `Light`, `SpriteRenderer`, `ParticleSystem`, `Mirror`,
-`ReflectionProbe`, `LODGroup` and `WorldPanel` are components in `@iron/engine` ([rendering.ts](../js/engine/src/rendering.ts),
+`ReflectionProbe`, `LODGroup` and `WorldPanel` are components in `@platypus/engine` ([rendering.ts](../js/engine/src/rendering.ts),
 [textures.ts](../js/engine/src/textures.ts), [particles.ts](../js/engine/src/particles.ts)). They send
 `render.*` ops keyed by the component id, and `WorldViews`
-([world_view.rs](../crates/iron_app/src/world_view.rs)) stores them in one map per kind.
+([world_view.rs](../crates/platypus_app/src/world_view.rs)) stores them in one map per kind.
 
 | Op | Arguments |
 |---|---|
@@ -714,7 +714,7 @@ They have no Rust side.
 ## Coordinates
 
 - Right-handed, +y up. A camera looks down its **-z**. Projections have depth 0 to 1
-  (`glam::camera::rh::proj::directx`), and `Matrix4x4` in `@iron/engine` matches, so a camera's matrices
+  (`glam::camera::rh::proj::directx`), and `Matrix4x4` in `@platypus/engine` matches, so a camera's matrices
   in TypeScript equal what the renderer uses.
 - A quad faces +z. A panel's top-left corner is at (-w/2, +h/2) in its object's space.
 - **Screen points are top-left UI pixels**: the window's pixels divided by the DPI scale and the UI
@@ -736,7 +736,7 @@ createRoot(panel).render(<Menu />);
 ```
 
 **Commit targets.** `createRoot(target)` ([react.md](react.md#createroot)) gives the panel its own React
-root whose commits carry the component id: `__iron_commit(ops, target)`. QuickJS stores each commit
+root whose commits carry the component id: `__platypus_commit(ops, target)`. QuickJS stores each commit
 with its target, and `ScriptRuntime::drain_targeted_commits` returns `(target, Commit)` pairs. Target 0
 is the screen. `App::apply_script_output` routes each commit to the screen tree or to
 `Panels::get_or_create(target, ...)`, which makes the panel's tree on the first commit (commits can
@@ -823,7 +823,7 @@ which are made unsigned before they cross the op boundary. Missing or null masks
 - **Mirror** and **ReflectionProbe** `cullingMask`: the layers drawn into the reflection or cubemap.
   Set them before the component starts.
 
-**Frustum culling** ([cull.rs](../crates/iron_render/src/world/cull.rs)) runs in `render_views_with`,
+**Frustum culling** ([cull.rs](../crates/platypus_render/src/world/cull.rs)) runs in `render_views_with`,
 per view. `Frustum::from_view_proj` takes the six planes from the matrix (wgpu depth 0 to 1; works for
 perspective and orthographic) and tests spheres and boxes. Meshes use the box of their mesh data
 (`bounds`) moved by the instance matrix (`transform_aabb`); quads use `QUAD_BOUNDS`.
@@ -856,7 +856,7 @@ masks are covered by the `M5-RND-15` golden.
 
 `WorldRenderer` has the knobs; scripts set them through `QualitySettings`
 (`js/engine/src/quality.ts`), whose levels (Low / Medium / High / Ultra, overridable in the game's
-`package.json` under `iron.quality`) send `render.quality` (anti-aliasing, render scale, shadow mode,
+`package.json` under `platypus.quality`) send `render.quality` (anti-aliasing, render scale, shadow mode,
 soft filter, `lodBias`, `vSyncCount`, anisotropic filtering, texture mip limit) and `render.shadowSettings`
 (distance, map size, cascades). The default level is applied when the
 engine loads; the app copies the values onto the renderer before each frame.
@@ -872,7 +872,7 @@ engine loads; the app copies the values onto the renderer before each frame.
   with a bilinear blit. Screen UI is drawn afterwards at full resolution.
 - **Vsync** (`vSyncCount`, 0 or 1, off by default; `Quality.vsync`): the app calls `WindowSurface::set_vsync` before each frame,
   which switches between `AutoVsync` and `AutoNoVsync`. With it off, `Application.targetFrameRate` caps the
-  frame rate (see [platform.md](platform.md)). The quality choice is saved in `PlayerPrefs` as `iron.quality`
+  frame rate (see [platform.md](platform.md)). The quality choice is saved in `PlayerPrefs` as `platypus.quality`
   and restored at startup (except `vSyncCount`: a saved vsync is ignored).
 - **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 to 3: `QualitySettings.softShadowQuality` `low`, `medium` or `high`):
   the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
@@ -885,7 +885,7 @@ engine loads; the app copies the values onto the renderer before each frame.
 
 ### Render pipeline
 
-Iron has one render pipeline, as Unity 7 does (it keeps URP; HDRP and the Built-in pipeline go
+Platypus has one render pipeline, as Unity 7 does (it keeps URP; HDRP and the Built-in pipeline go
 away). `PipelineAsset` (`world/pipeline.rs`, Unity's URP asset) is plain settings, all on by
 default: `volumetric_fog`, `max_additional_lights`, `additional_light_shadows` and `hdr`. Each frame
 the app copies the quality level's asset onto `WorldRenderer.pipeline` (`world_view::Quality.pipeline`,
@@ -899,14 +899,14 @@ parsed from `render.quality` arguments 9 to 12; a light count of -1 means no cap
 The quality levels set them: Low (the phones' tier) has no shafts, 8 additional lights and no local
 shadows; Medium 32 lights and no local shadows; High and Ultra everything. `QualitySettings` has
 `volumetricFog`, `hdr`, `additionalLights` and `additionalLightShadows` (and `autoExposure`).
-`iron.quality.default` in `package.json` is a level name, or a map by `operatingSystemFamily` with a
-`default` key (`{ "Android": "Low", "default": "High" }`). `iron.renderPipeline` and
+`platypus.quality.default` in `package.json` is a level name, or a map by `operatingSystemFamily` with a
+`default` key (`{ "Android": "Low", "default": "High" }`). `platypus.renderPipeline` and
 `renderPipelineSettings` no longer pick anything: they log a warning. (History: a Built-in /
 Universal / HD choice existed briefly before this.) Tests `M7-RP-01` to `M7-RP-03`.
 
 ### Real-world light units
 
-`iron.lightUnits` in `package.json` is `"physical"` or `"legacy"` (the default: Iron's own units);
+`platypus.lightUnits` in `package.json` is `"physical"` or `"legacy"` (the default: Platypus's own units);
 scripts read it as `GraphicsSettings.lightUnits`. It is a project switch, not a pipeline
 (`Manifest.physical_units` in `info.rs`, passed to `WorldViews::with_physical_units` and
 `WorldRenderer.physical_units`). With `physical`:
@@ -958,7 +958,7 @@ then decodes the cooked texture and uses `set_texture`. How cooking makes them:
 
 ## Tests
 
-Goldens in [iron_render/tests/world.rs](../crates/iron_render/tests/world.rs): `M5-RND-05` (a floor
+Goldens in [platypus_render/tests/world.rs](../crates/platypus_render/tests/world.rs): `M5-RND-05` (a floor
 in perspective, a plane seen through a half-transparent one, a textured plane, and screen UI blended
 over the view) and `M5-RND-06` (a perspective view, an orthographic top-down view and an inset
 drawn in depth order). `M5-RND-07` (lit primitives), `-08` (textured meshes and sprites), `-09` (bloom, additive glows and a

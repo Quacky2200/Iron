@@ -6,7 +6,7 @@
 //! crowd off screen) are never converted nor sent.
 
 use crate::Gpu;
-use iron_core::glam::Mat4;
+use platypus_core::glam::Mat4;
 use std::collections::HashMap;
 
 #[derive(Default)]

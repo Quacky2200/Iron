@@ -3,20 +3,20 @@
 //! Native audio from compiled programs (`bench/audio_native.ts`): the commands the host would run
 //! on the mixer, in the normal, stress GC and collection-off modes. IDs are in TESTS.md
 //! (M9-TS-1210..).
-use iron_engine_api::audio::{self, AudioCommand, PlaybackRef};
-use iron_engine_api::audio_components;
-use iron_scene::Scene;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::audio_native_t::*;
+use platypus_engine_api::audio::{self, AudioCommand, PlaybackRef};
+use platypus_engine_api::audio_components;
+use platypus_scene::Scene;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::audio_native_t::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     let run = || {
         audio::reset();
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         unsafe { ts_aud_init() };
         f();
     };
@@ -150,10 +150,10 @@ fn a_3d_audio_source_plays_from_an_emitter_that_follows_its_object() {
         assert_eq!(o[4], "set 1 \"volume\" 0.0 0.0");
         assert!(o[5].starts_with("play 2 1 1 [0.0,2.0,"), "{}", o[5]);
         // Moving the object sends the emitter's new position, once.
-        let go = iron_scene::api::with_scene(|s| s.find("Speaker"))
+        let go = platypus_scene::api::with_scene(|s| s.find("Speaker"))
             .unwrap()
             .unwrap();
-        iron_scene::api::with_scene(|s| {
+        platypus_scene::api::with_scene(|s| {
             s.set_world(go, glam::Vec3::new(5.0, 0.0, 0.0), glam::Quat::IDENTITY);
             s.update_world();
         });
@@ -209,10 +209,10 @@ fn destroying_an_object_stops_its_sources() {
     in_every_gc_mode(|| unsafe {
         assert_eq!(ts_aud_source(), 1.0);
         ops();
-        let go = iron_scene::api::with_scene(|s| s.find("Speaker"))
+        let go = platypus_scene::api::with_scene(|s| s.find("Speaker"))
             .unwrap()
             .unwrap();
-        iron_scene::api::with_scene(|s| s.destroy(go));
+        platypus_scene::api::with_scene(|s| s.destroy(go));
         audio_components::remove_on(go);
         let o = ops();
         assert!(o.iter().any(|c| c.starts_with("stop ")), "{o:?}");
@@ -223,25 +223,25 @@ fn destroying_an_object_stops_its_sources() {
 // M9-TS-1219
 #[test]
 fn scene_files_load_and_save_audio_components_and_play_on_awake() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     audio::reset();
-    iron_scenes::reset();
+    platypus_scenes::reset();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
-    let data = r#"{"format":"iron.scene","version":1,"name":"Hall","objects":[
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let data = r#"{"format":"platypus.scene","version":1,"name":"Hall","objects":[
      {"id":1,"name":"Speaker","position":[3,0,0],"components":[
        {"id":2,"type":"AudioSource","properties":{"clip":{"$type":"Sound","src":"sfx/hit.wav"},
          "spatialBlend":1,"volume":0.4,"loop":true,"minDistance":2}},
        {"id":3,"type":"AudioListener","properties":{}}]}]}"#;
-    let hall = iron_scenes::load_scene(data, false).expect("loads");
-    assert!(iron_scenes::take_warnings().is_empty());
+    let hall = platypus_scenes::load_scene(data, false).expect("loads");
+    assert!(platypus_scenes::take_warnings().is_empty());
     let o = ops();
     assert_eq!(o[0], "load sfx/hit.wav false");
     assert_eq!(o[1], "emitter 1 [3.0,0.0,0.0] [2.0,50.0] null");
     assert_eq!(o[2], "play 1 1 1 [0.4,1.0,0.0,true,0.0,0.0]");
     assert_eq!(o[3], "listener [3.0,0.0,0.0] [0.0,0.0,0.0,1.0]");
     let saved: serde_json::Value =
-        serde_json::from_str(&iron_scenes::serialize(hall).unwrap()).unwrap();
+        serde_json::from_str(&platypus_scenes::serialize(hall).unwrap()).unwrap();
     let comps = &saved["objects"][0]["components"];
     let src = comps
         .as_array()
@@ -262,6 +262,6 @@ fn scene_files_load_and_save_audio_components_and_play_on_awake() {
             .iter()
             .any(|c| c["type"] == "AudioListener")
     );
-    iron_scenes::reset();
+    platypus_scenes::reset();
     audio::reset();
 }

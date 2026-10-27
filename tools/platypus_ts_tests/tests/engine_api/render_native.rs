@@ -3,27 +3,27 @@
 //! The native rendering data API from compiled programs (`bench/render_native.ts`) and its
 //! scene-file kinds, in the normal, stress GC and collection-off modes. IDs are in TESTS.md
 //! (M9-TS-1220..).
-use iron_render_api as render;
-use iron_scene::Scene;
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::render_native_t::*;
+use platypus_render_api as render;
+use platypus_scene::Scene;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::render_native_t::*;
 
 fn reset() {
     render::reset();
-    iron_engine_api::camera::reset();
-    iron_engine_api::assets::reset();
-    iron_scenes::reset();
-    iron_scenes::take_warnings();
+    platypus_engine_api::camera::reset();
+    platypus_engine_api::assets::reset();
+    platypus_scenes::reset();
+    platypus_scenes::take_warnings();
 }
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
-    assert_ne!(iron_ts_tests::engine_api_anchor(), 0);
+    assert_ne!(platypus_ts_tests::engine_api_anchor(), 0);
     let run = || {
         reset();
         let mut scene = Scene::new();
-        let _scope = iron_scene::api::enter(&mut scene);
+        let _scope = platypus_scene::api::enter(&mut scene);
         unsafe { ts_rdn_init() };
         f();
     };
@@ -88,7 +88,7 @@ fn textures_come_from_files_pixels_and_render_targets_and_cameras_use_them() {
         // Pixels: sRGB bytes, the top row first; 0.5 alpha is 128.
         let b = render::texture_info(render::TextureRef(2)).unwrap();
         assert_eq!(b.pixels.unwrap(), [255, 0, 0, 255, 0, 0, 255, 128]);
-        let cams = iron_engine_api::camera::cameras();
+        let cams = platypus_engine_api::camera::cameras();
         assert_eq!(cams[0].1.target_texture.0, 3);
         assert_eq!(cams[0].1.rect, [0.5, 0.0, 0.5, 1.0]);
         assert_eq!(cams[0].1.layer_cull_distances[4], 30.0);
@@ -126,7 +126,7 @@ fn mirrors_probes_planes_panels_and_strokes_hold_their_data() {
 #[test]
 fn render_settings_and_the_cursor_hold_their_state_and_ignore_unknown_names() {
     in_every_gc_mode(|| unsafe {
-        iron_engine_api::cursor::reset();
+        platypus_engine_api::cursor::reset();
         assert_eq!(
             text(ts_rdn_settings()),
             "0.5|true|3|2|true|aces|true|skybox"
@@ -136,7 +136,7 @@ fn render_settings_and_the_cursor_hold_their_state_and_ignore_unknown_names() {
         assert_eq!(s.bloom.unwrap().intensity, 2.0);
         assert!(render::version() > 0);
         assert_eq!(text(ts_rdn_cursor()), "false|locked");
-        let c = iron_engine_api::cursor::state();
+        let c = platypus_engine_api::cursor::state();
         assert_eq!(c.image, Some(("ui/hand.png".to_string(), Some([4.0, 5.0]))));
     });
 }
@@ -149,7 +149,7 @@ fn camera_follow_and_orbit_move_their_objects_when_the_host_runs_them() {
         render::late_update_camera_follows(0.016);
         render::late_update_camera_orbits(1.0);
         let pos = |name: &str| {
-            iron_scene::api::with_scene(|sc| {
+            platypus_scene::api::with_scene(|sc| {
                 let o = sc.find(name).unwrap();
                 sc.world(o).position
             })
@@ -173,16 +173,16 @@ fn camera_follow_and_orbit_move_their_objects_when_the_host_runs_them() {
 // saves the current settings.
 #[test]
 fn scene_files_apply_and_save_render_settings() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     reset();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
-    let text = r#"{"format":"iron.scene","version":1,"name":"Sky","objects":[],
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let text = r#"{"format":"platypus.scene","version":1,"name":"Sky","objects":[],
       "renderSettings":{"ambientLight":{"$type":"Color","value":[0.1,0.2,0.3,1]},"ambientMode":"color",
         "reflectionIntensity":0.5,
         "skybox":{"zenith":{"$type":"Color","value":[0,0,1,1]},"sunDirection":null},
         "bloom":{"threshold":0.8,"intensity":1.5,"scatter":0.3}}}"#;
-    let handle = iron_scenes::load_scene(text, false).expect("loads");
+    let handle = platypus_scenes::load_scene(text, false).expect("loads");
     let s = render::settings();
     assert_eq!(s.ambient_mode, "color");
     assert_eq!(s.ambient_light.b, 0.3);
@@ -191,7 +191,7 @@ fn scene_files_apply_and_save_render_settings() {
     assert_eq!((sky.zenith.b, sky.sun_direction), (1.0, None));
     assert_eq!(s.bloom.unwrap().threshold, 0.8);
     let saved: serde_json::Value =
-        serde_json::from_str(&iron_scenes::serialize(handle).unwrap()).unwrap();
+        serde_json::from_str(&platypus_scenes::serialize(handle).unwrap()).unwrap();
     assert_eq!(saved["renderSettings"]["ambientMode"], "color");
     assert_eq!(saved["renderSettings"]["bloom"]["intensity"], 1.5);
     assert!(saved["renderSettings"]["skybox"]["sunDirection"].is_null());
@@ -225,7 +225,7 @@ fn particle_systems_hold_their_settings_and_report_back_to_scripts() {
         assert_eq!(ts_rdn_stoppedCount(), 0.0);
         render::report_particles(r, 0, false);
         assert_eq!(ts_rdn_stoppedCount(), 1.0);
-        assert!(iron_scene::api::take_destroyed().contains(&d.object));
+        assert!(platypus_scene::api::take_destroyed().contains(&d.object));
     });
 }
 
@@ -292,11 +292,11 @@ fn primitives_have_a_mesh_a_name_and_a_collider_hook() {
 // again (ranges as `[min, max]`, shapes, bursts, curves, pins).
 #[test]
 fn effect_components_round_trip_through_scene_files() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     reset();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
-    let text = r#"{"format":"iron.scene","version":1,"name":"Fx","objects":[
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let text = r#"{"format":"platypus.scene","version":1,"name":"Fx","objects":[
      {"id":1,"name":"P","components":[
        {"id":2,"type":"ParticleSystem","properties":{"duration":2,"loop":false,"startLifetime":[1,2],"startSpeed":3,
          "startColor":[{"$type":"Color","value":[1,0,0,1]},{"$type":"Color","value":[1,1,0,1]}],
@@ -313,14 +313,14 @@ fn effect_components_round_trip_through_scene_files() {
        {"id":7,"type":"Cloth","properties":{"bendingStiffness":0.7,"pins":[{"$type":"Vector3","value":[1,2,3]}],
          "pinBox":{"min":{"$type":"Vector3","value":[0,0,0]},"max":{"$type":"Vector3","value":[1,1,1]}},
          "sphereColliders":[{"$ref":"GameObject","id":1}]}}]}]}"#;
-    let handle = iron_scenes::load_scene(text, false).expect("loads");
-    assert!(iron_scenes::take_warnings().is_empty());
+    let handle = platypus_scenes::load_scene(text, false).expect("loads");
+    assert!(platypus_scenes::take_warnings().is_empty());
     let (_, p) = render::particle_systems().remove(0);
     assert_eq!((p.start_lifetime, p.start_speed), ([1.0, 2.0], [3.0, 3.0]));
     assert_eq!(p.shape_type, "box");
     assert_eq!(p.bursts, [[0.5, 20.0, 2.0, 0.1]]);
     assert!(!p.r#loop);
-    let first = iron_scenes::serialize(handle).unwrap();
+    let first = platypus_scenes::serialize(handle).unwrap();
     let saved: serde_json::Value = serde_json::from_str(&first).unwrap();
     let props = |object: usize, ty: &str| {
         saved["objects"][object]["components"]
@@ -342,10 +342,11 @@ fn effect_components_round_trip_through_scene_files() {
         serde_json::json!([1.0, 1.0, 1.0])
     );
     // What was saved loads and saves the same.
-    let again = iron_scenes::load_scene(&first, false).expect("loads again");
-    assert!(iron_scenes::take_warnings().is_empty());
+    let again = platypus_scenes::load_scene(&first, false).expect("loads again");
+    assert!(platypus_scenes::take_warnings().is_empty());
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&iron_scenes::serialize(again).unwrap()).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&platypus_scenes::serialize(again).unwrap())
+            .unwrap(),
         saved
     );
     reset();
@@ -357,7 +358,7 @@ fn gizmo_shapes_go_through_the_matrix_and_count_their_lines() {
     in_every_gc_mode(|| unsafe {
         // 12 box edges + 1 ray + 3 circles of 48 + 12 frustum edges.
         assert_eq!(ts_rdn_gizmos(), 169.0);
-        let before = iron_engine_api::gizmos::take_frame();
+        let before = platypus_engine_api::gizmos::take_frame();
         assert!(before.is_none(), "nothing was presented");
     });
 }
@@ -366,7 +367,7 @@ fn gizmo_shapes_go_through_the_matrix_and_count_their_lines() {
 #[test]
 fn screen_requests_go_to_the_host_and_change_listeners_run() {
     in_every_gc_mode(|| unsafe {
-        use iron_engine_api::screen;
+        use platypus_engine_api::screen;
         screen::reset();
         assert_eq!(
             text(ts_rdn_screenApi()),
@@ -409,7 +410,7 @@ fn screen_requests_go_to_the_host_and_change_listeners_run() {
 #[test]
 fn quality_levels_validate_remember_and_tell_listeners() {
     in_every_gc_mode(|| unsafe {
-        use iron_engine_api::{prefs, screen};
+        use platypus_engine_api::{prefs, screen};
         screen::reset();
         prefs::reset();
         screen::configure_quality(&serde_json::json!({
@@ -425,7 +426,7 @@ fn quality_levels_validate_remember_and_tell_listeners() {
             (q.name.as_str(), q.anti_aliasing, q.shadow_resolution),
             ("Ultra", 8, 4096)
         );
-        assert!(prefs::json("iron.quality").unwrap().contains("Ultra"));
+        assert!(prefs::json("platypus.quality").unwrap().contains("Ultra"));
         // The saved choice comes back; the default applies without a save.
         screen::configure_quality(&serde_json::json!({ "default": "Low" }));
         assert_eq!(screen::quality().name, "Low");
@@ -480,10 +481,10 @@ fn a_model_builds_its_nodes_when_loaded_and_scene_files_keep_only_the_root() {
             1,
             "one file, read once"
         );
-        let find_root = |i: usize| iron_scene::api::with_scene(|sc| sc.roots()[i]).unwrap();
+        let find_root = |i: usize| platypus_scene::api::with_scene(|sc| sc.roots()[i]).unwrap();
         let first_root = find_root(0);
         assert_eq!(
-            iron_scene::api::with_scene(|sc| sc.children(first_root).len()),
+            platypus_scene::api::with_scene(|sc| sc.children(first_root).len()),
             Some(0)
         );
         let (m1, m2, m3) = (
@@ -508,9 +509,9 @@ fn a_model_builds_its_nodes_when_loaded_and_scene_files_keep_only_the_root() {
         render::model_loaded(model, Some(&description));
         // Each of the two copies: root > Body > Wheel > two child objects with a renderer each.
         let root = find_root(0);
-        let body = iron_scene::api::with_scene(|sc| sc.children(root)[0]).unwrap();
-        let wheel = iron_scene::api::with_scene(|sc| sc.children(body)[0]).unwrap();
-        let names = iron_scene::api::with_scene(|sc| {
+        let body = platypus_scene::api::with_scene(|sc| sc.children(root)[0]).unwrap();
+        let wheel = platypus_scene::api::with_scene(|sc| sc.children(body)[0]).unwrap();
+        let names = platypus_scene::api::with_scene(|sc| {
             (
                 sc.name(body).unwrap().to_owned(),
                 sc.children(wheel)
@@ -540,8 +541,8 @@ fn a_model_builds_its_nodes_when_loaded_and_scene_files_keep_only_the_root() {
         // Colliders were asked for the first copy only, one per primitive: 3 (convex).
         assert_eq!(*seen.borrow(), [true, true, true]);
         // The scene saves each copy as its root with the model, not the nodes.
-        let handle = iron_scenes::active();
-        let first = iron_scenes::serialize(handle).unwrap();
+        let handle = platypus_scenes::active();
+        let first = platypus_scenes::serialize(handle).unwrap();
         let saved: serde_json::Value = serde_json::from_str(&first).unwrap();
         let objects = saved["objects"].as_array().unwrap();
         assert_eq!(objects.len(), 2);
@@ -549,12 +550,12 @@ fn a_model_builds_its_nodes_when_loaded_and_scene_files_keep_only_the_root() {
         assert_eq!(objects[0]["model"]["colliders"], "convex");
         assert!(objects[0].get("children").is_none(), "nodes are not saved");
         // Loading what was saved builds the nodes again (the model is loaded already).
-        iron_scenes::load_scene(&first, true).expect("loads");
-        let roots = iron_scene::api::with_scene(|sc| sc.roots().len()).unwrap();
+        platypus_scenes::load_scene(&first, true).expect("loads");
+        let roots = platypus_scene::api::with_scene(|sc| sc.roots().len()).unwrap();
         assert_eq!(roots, 4);
         let last = find_root(roots - 2);
         assert_eq!(
-            iron_scene::api::with_scene(|sc| sc.children(last).len()),
+            platypus_scene::api::with_scene(|sc| sc.children(last).len()),
             Some(1)
         );
         render::set_model_collider_hook(None);
@@ -567,18 +568,18 @@ fn a_model_builds_its_nodes_when_loaded_and_scene_files_keep_only_the_root() {
 // and Camera extras, and saves them back.
 #[test]
 fn a_real_scene_file_loads_lights_renderers_materials_and_camera_settings() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     reset();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let text = include_str!("../../../../examples/scenes/scenes/level1.scene.json");
-    let handle = iron_scenes::load_scene(text, false).expect("loads");
-    let warnings = iron_scenes::take_warnings();
+    let handle = platypus_scenes::load_scene(text, false).expect("loads");
+    let warnings = platypus_scenes::take_warnings();
     assert!(
         warnings.iter().all(|w| w.contains("Spinner")),
         "only the game's own component is unknown: {warnings:?}"
     );
-    let cams = iron_engine_api::camera::cameras();
+    let cams = platypus_engine_api::camera::cameras();
     assert_eq!(cams[0].1.clear_flags, "skybox");
     let lights = render::lights();
     assert_eq!(lights.len(), 1);
@@ -599,7 +600,7 @@ fn a_real_scene_file_loads_lights_renderers_materials_and_camera_settings() {
     assert_eq!((smooth, g), (0.2, 0.36));
     // Saving writes the primitive as its name and the material inline, without default extras.
     let saved: serde_json::Value =
-        serde_json::from_str(&iron_scenes::serialize(handle).unwrap()).unwrap();
+        serde_json::from_str(&platypus_scenes::serialize(handle).unwrap()).unwrap();
     let ground_json = &saved["objects"][2]["components"][0]["properties"];
     assert_eq!(ground_json["mesh"], "plane");
     assert_eq!(ground_json["material"]["$type"], "Material");
@@ -619,11 +620,11 @@ fn a_real_scene_file_loads_lights_renderers_materials_and_camera_settings() {
 // and saving again gives the same data.
 #[test]
 fn the_assets_table_loads_shared_textures_and_meshes_and_saves_them_again() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     reset();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
-    let text = r#"{"format":"iron.scene","version":1,"name":"Assets",
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let text = r#"{"format":"platypus.scene","version":1,"name":"Assets",
      "assets":{
        "texture1":{"type":"Texture","src":"img/a.png","filterMode":"point","wrapMode":"clamp","mipmaps":false},
        "mesh1":{"type":"Mesh","vertices":[0,0,0,1,0,0,0,1,0],"triangles":[0,1,2],"normals":[],"uv":[]},
@@ -636,8 +637,8 @@ fn the_assets_table_loads_shared_textures_and_meshes_and_saves_them_again() {
         {"id":4,"type":"MeshRenderer","properties":{"mesh":{"$asset":"mesh1"}}},
         {"id":5,"type":"SpriteRenderer","properties":{"sprite":{"$type":"Sprite","texture":{"$asset":"texture1"},"rect":{"$type":"Rect","value":[0,0,2,2]}}}},
         {"id":6,"type":"Camera","properties":{"targetTexture":{"$asset":"texture2"}}}]}]}"#;
-    let handle = iron_scenes::load_scene(text, false).expect("loads");
-    assert!(iron_scenes::take_warnings().is_empty());
+    let handle = platypus_scenes::load_scene(text, false).expect("loads");
+    assert!(platypus_scenes::take_warnings().is_empty());
     let renderers = render::mesh_renderers();
     assert_eq!(renderers[0].1.mesh, renderers[1].1.mesh, "one mesh, shared");
     let tex = render::with_material(render::MaterialRef(renderers[0].1.material), |m| {
@@ -655,7 +656,7 @@ fn the_assets_table_loads_shared_textures_and_meshes_and_saves_them_again() {
         ),
         ("point", "clamp", false)
     );
-    let cams = iron_engine_api::camera::cameras();
+    let cams = platypus_engine_api::camera::cameras();
     let rt = render::texture_info(render::TextureRef(cams[0].1.target_texture.0)).unwrap();
     assert!(rt.render_texture && rt.width == 32);
     let sprite = render::sprite_renderers()[0].1.sprite;
@@ -666,7 +667,7 @@ fn the_assets_table_loads_shared_textures_and_meshes_and_saves_them_again() {
     assert_eq!(s.0, tex.0);
     assert_eq!((s.1, s.2), (true, [0.0, 0.0, 2.0, 2.0]));
 
-    let first = iron_scenes::serialize(handle).unwrap();
+    let first = platypus_scenes::serialize(handle).unwrap();
     let saved: serde_json::Value = serde_json::from_str(&first).unwrap();
     let assets = saved["assets"].as_object().unwrap();
     assert_eq!(assets.len(), 3, "{assets:?}");
@@ -690,9 +691,9 @@ fn the_assets_table_loads_shared_textures_and_meshes_and_saves_them_again() {
     assert_eq!(assets[tex_id]["filterMode"], "point");
     assert_eq!(a["material"]["normalMap"]["$asset"], tex_id);
     // Loading what was saved and saving again changes nothing.
-    let again = iron_scenes::load_scene(&first, false).expect("loads again");
-    assert!(iron_scenes::take_warnings().is_empty());
-    let second = iron_scenes::serialize(again).unwrap();
+    let again = platypus_scenes::load_scene(&first, false).expect("loads again");
+    assert!(platypus_scenes::take_warnings().is_empty());
+    let second = platypus_scenes::serialize(again).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&second).unwrap(),
         saved
@@ -705,16 +706,16 @@ fn the_assets_table_loads_shared_textures_and_meshes_and_saves_them_again() {
 // Fog in the `renderSettings` of a scene file: the keys the TypeScript `scenes.ts` saves.
 #[test]
 fn scene_files_apply_and_save_fog() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     reset();
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
-    let text = r#"{"format":"iron.scene","version":1,"name":"Mist","objects":[],
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let text = r#"{"format":"platypus.scene","version":1,"name":"Mist","objects":[],
       "renderSettings":{"fog":true,"fogMode":"linear","fogColor":{"$type":"Color","value":[0.2,0.3,0.4,1]},
         "fogDensity":0.02,"fogStartDistance":5,"fogEndDistance":80,"fogCulling":false,
         "heightFog":{"density":0.3,"baseHeight":1.5},
         "volumetricFog":{"intensity":2,"resolution":"ultra","denoising":"none","samples":4}}}"#;
-    let handle = iron_scenes::load_scene(text, false).expect("loads");
+    let handle = platypus_scenes::load_scene(text, false).expect("loads");
     let f = render::settings().fog;
     assert!(f.enabled && !f.culling);
     assert_eq!(
@@ -739,7 +740,7 @@ fn scene_files_apply_and_save_fog() {
     );
     assert_eq!(v.steps, 4.0, "a missing key keeps its default");
     let saved: serde_json::Value =
-        serde_json::from_str(&iron_scenes::serialize(handle).unwrap()).unwrap();
+        serde_json::from_str(&platypus_scenes::serialize(handle).unwrap()).unwrap();
     let r = &saved["renderSettings"];
     assert_eq!(r["fog"], true);
     assert_eq!(r["fogMode"], "linear");
@@ -749,13 +750,13 @@ fn scene_files_apply_and_save_fog() {
     assert_eq!(r["volumetricFog"]["resolution"], "ultra");
     assert_eq!(r["volumetricFog"]["albedo"]["$type"], "Color");
     // Turning fog off and a null shaft setting round-trip as null.
-    let off = r#"{"format":"iron.scene","version":1,"name":"Clear","objects":[],
+    let off = r#"{"format":"platypus.scene","version":1,"name":"Clear","objects":[],
       "renderSettings":{"fog":false,"heightFog":null,"volumetricFog":null}}"#;
-    let handle = iron_scenes::load_scene(off, false).expect("loads");
+    let handle = platypus_scenes::load_scene(off, false).expect("loads");
     let f = render::settings().fog;
     assert!(!f.enabled && f.height.is_none() && f.volumetric.is_none());
     let saved: serde_json::Value =
-        serde_json::from_str(&iron_scenes::serialize(handle).unwrap()).unwrap();
+        serde_json::from_str(&platypus_scenes::serialize(handle).unwrap()).unwrap();
     assert!(saved["renderSettings"]["heightFog"].is_null());
     reset();
 }

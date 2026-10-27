@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The `iron-build` program itself: which commands print the empty-field warnings.
+//! The `platypus-build` program itself: which commands print the empty-field warnings.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 fn game(tag: &str, project: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("iron_build_cli_{tag}_{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("platypus_build_cli_{tag}_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(d.join("src")).unwrap();
     std::fs::write(d.join("src/main.ts"), "export const a = 1;").unwrap();
@@ -15,7 +15,7 @@ fn game(tag: &str, project: &str) -> PathBuf {
 }
 
 fn run(args: &[&str], cwd: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_iron-build"))
+    Command::new(env!("CARGO_BIN_EXE_platypus-build"))
         .args(args)
         .current_dir(cwd)
         .output()
@@ -29,7 +29,7 @@ const EMPTY_COMPANY: &str = "\"company\" is empty (the exe's version info will h
 fn build_and_package_warn_about_empty_fields_but_check_does_not() {
     let g = game("warn", r#"{ "name": "g", "company": "" }"#);
     let parent = g.parent().unwrap().to_path_buf();
-    let games = parent.join(format!("iron_build_cli_games_{}", std::process::id()));
+    let games = parent.join(format!("platypus_build_cli_games_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&games);
     std::fs::create_dir_all(&games).unwrap();
 
@@ -41,7 +41,7 @@ fn build_and_package_warn_about_empty_fields_but_check_does_not() {
         "{err}"
     );
 
-    let host = env!("CARGO_BIN_EXE_iron-build");
+    let host = env!("CARGO_BIN_EXE_platypus-build");
     let out = g.join("out/g.exe");
     let p = run(
         &[

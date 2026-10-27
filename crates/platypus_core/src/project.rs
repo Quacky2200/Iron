@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `project.json`: a game's project and product metadata (name, title, company, identifier, icon,
-//! start scene, layers, quality, ...), shared by `iron-build` and `iron_app`.
+//! start scene, layers, quality, ...), shared by `platypus-build` and `platypus_app`.
 //!
 //! Strings may hold **template variables** so a fresh project takes its defaults from the person
 //! building it (`"title": "${firstName}'s Game"`): `${username}`, `${firstName}`, `${lastName}`,
@@ -12,7 +12,7 @@
 //! override fields for that platform. `name` is the only required field; an omitted field takes a
 //! default (`"title": "${firstName}'s Game"`, `"company": "${firstName}'s Company"`, license
 //! `private`, ...) and an explicitly empty string stays empty ([`Project::empty_fields`] lists
-//! them so the builder can warn). **Deprecated:** without a `project.json` the `iron` section of
+//! them so the builder can warn). **Deprecated:** without a `project.json` the `platypus` section of
 //! `package.json` (and its `name`, `version`, `author`, `description`) is used, without templates.
 //!
 //! A *resolved* project (`"resolved": true`, what [`Project::to_json`] writes and the packaged exe
@@ -127,7 +127,7 @@ impl UserInfo for SystemUser {
     }
 }
 
-/// A user given by hand (tests, `iron-build` flags).
+/// A user given by hand (tests, `platypus-build` flags).
 #[derive(Clone, Debug, Default)]
 pub struct FixedUser {
     pub username: String,
@@ -254,7 +254,7 @@ impl std::error::Error for ProjectError {}
 pub enum Source {
     /// `project.json`.
     ProjectJson,
-    /// The `iron` section of `package.json`.
+    /// The `platypus` section of `package.json`.
     PackageJson,
     /// Neither file exists: only defaults.
     Defaults,
@@ -282,7 +282,7 @@ pub struct Project {
     pub main: Option<String>,
     /// The data folder beside a packaged exe (`dataDir`).
     pub data_dir: Option<String>,
-    /// A command `iron-build` runs in the game folder before it compiles (`prebuild`, as written:
+    /// A command `platypus-build` runs in the game folder before it compiles (`prebuild`, as written:
     /// no `${..}` expansion, so a shell's own variables pass through), for sources a game generates
     /// (the md-reader's bundled docs).
     pub prebuild: Option<String>,
@@ -493,6 +493,14 @@ struct PackageDefaults {
     description: Option<String>,
 }
 
+/// The engine's section of a `package.json` (the deprecated fallback): `platypus`, else `iron`,
+/// its name from before the rename to Platypus.
+pub fn package_section(pkg: &Value) -> Option<&Map<String, Value>> {
+    pkg.get("platypus")
+        .or_else(|| pkg.get("iron"))
+        .and_then(Value::as_object)
+}
+
 fn text(v: &Value) -> Option<String> {
     match v {
         Value::String(s) if !s.is_empty() => Some(s.clone()),
@@ -579,7 +587,7 @@ impl Resolver<'_> {
             "version" => self.pkg.version.clone().unwrap_or_else(|| "0.0.0".into()),
             "identifier" => {
                 let n = self.value("name")?;
-                format!("dev.iron.{}", sanitize_identifier(&n))
+                format!("dev.platypus.{}", sanitize_identifier(&n))
             }
             "description" => match self.pkg.description.clone() {
                 Some(d) => d,
@@ -750,7 +758,7 @@ impl Project {
         Self::from_package_json(&Value::Null, folder)
     }
 
-    /// A project from a `package.json` value (its `iron` section and top-level fields), no templates.
+    /// A project from a `package.json` value (its `platypus` section and top-level fields), no templates.
     pub fn from_package_json(pkg: &Value, folder: &str) -> Project {
         let user = FixedUser::default();
         Self::from_package_json_with(pkg, folder, &LoadOptions::new(Platform::current(), &user))
@@ -758,7 +766,7 @@ impl Project {
 
     /// [`from_package_json`](Self::from_package_json) with the overrides of `opts`.
     pub fn from_package_json_with(pkg: &Value, folder: &str, opts: &LoadOptions<'_>) -> Project {
-        let doc = pkg["iron"].as_object().cloned().unwrap_or_default();
+        let doc = package_section(pkg).cloned().unwrap_or_default();
         let source = if pkg.is_object() {
             Source::PackageJson
         } else {
@@ -778,7 +786,7 @@ impl Project {
         let path = dir.join(PROJECT_FILE);
         let file = path.display().to_string();
         let Ok(text) = std::fs::read_to_string(&path) else {
-            // Deprecated fallback: the `iron` section of `package.json`.
+            // Deprecated fallback: the `platypus` section of `package.json`.
             let pkg_path = dir.join("package.json");
             let pkg_text = std::fs::read_to_string(&pkg_path).ok();
             let pkg: Value = match &pkg_text {
@@ -792,7 +800,7 @@ impl Project {
             };
             let (doc, source, f) = match &pkg_text {
                 Some(_) => (
-                    pkg["iron"].as_object().cloned().unwrap_or_default(),
+                    package_section(&pkg).cloned().unwrap_or_default(),
                     Source::PackageJson,
                     Some(pkg_path),
                 ),
@@ -1156,8 +1164,10 @@ mod tests {
     }
 
     fn temp(tag: &str) -> PathBuf {
-        let d =
-            std::env::temp_dir().join(format!("iron_core_project_{tag}_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!(
+            "platypus_core_project_{tag}_{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -1338,7 +1348,7 @@ mod tests {
         assert_eq!(sanitize_identifier("..a..b."), "a.b");
         assert_eq!(
             load_ok("ident2", r#"{ "name": "g" }"#).identifier,
-            "dev.iron.g"
+            "dev.platypus.g"
         );
     }
 
@@ -1375,7 +1385,7 @@ mod tests {
         std::fs::write(
             d.join("package.json"),
             r#"{ "name": "old", "version": "0.4.0", "author": "Acme", "description": "d",
-                 "iron": { "title": "Old ${firstName}", "startScene": "s.json", "layers": {"8": "A"},
+                 "platypus": { "title": "Old ${firstName}", "startScene": "s.json", "layers": {"8": "A"},
                            "quality": {"default": "High"}, "fps": false, "runInBackground": true } }"#,
         )
         .unwrap();
@@ -1401,7 +1411,26 @@ mod tests {
         let e = temp("empty");
         let p = Project::load(&e, &LoadOptions::new(Platform::Windows, &u)).unwrap();
         assert_eq!(p.source, Source::Defaults);
-        assert!(p.name.starts_with("iron_core_project_empty_") && p.title == p.name);
+        assert!(p.name.starts_with("platypus_core_project_empty_") && p.title == p.name);
+    }
+
+    // M9-REN-02
+    #[test]
+    fn a_package_json_iron_section_from_before_the_rename_is_read() {
+        let d = temp("iron_section");
+        std::fs::write(
+            d.join("package.json"),
+            r#"{ "name": "old", "iron": { "title": "Old game" } }"#,
+        )
+        .unwrap();
+        let u = user();
+        let p = Project::load(&d, &LoadOptions::new(Platform::Windows, &u)).unwrap();
+        assert_eq!(
+            (p.source, p.title.as_str()),
+            (Source::PackageJson, "Old game")
+        );
+        let both = serde_json::json!({ "iron": { "title": "a" }, "platypus": { "title": "b" } });
+        assert_eq!(package_section(&both).unwrap()["title"], "b");
     }
 
     // M9-API-1311
@@ -1410,7 +1439,7 @@ mod tests {
         let d = temp("both");
         std::fs::write(
             d.join("package.json"),
-            r#"{ "name": "npmname", "version": "3.0.0", "author": "Npm", "iron": { "title": "FROM PACKAGE" } }"#,
+            r#"{ "name": "npmname", "version": "3.0.0", "author": "Npm", "platypus": { "title": "FROM PACKAGE" } }"#,
         )
         .unwrap();
         std::fs::write(
@@ -1494,7 +1523,7 @@ mod tests {
             ("0.1.0", "Matthew's Company", "private")
         );
         assert_eq!(p.copyright, "Copyright (c) Matthew's Company");
-        assert_eq!(p.identifier, "dev.iron.mygame");
+        assert_eq!(p.identifier, "dev.platypus.mygame");
         assert_eq!(p.description, "Matthew's Game");
         assert!(p.empty_fields.is_empty() && p.empty_field_warnings().is_empty());
         assert!(p.defaulted.contains(&"company".to_owned()));

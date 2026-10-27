@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Text in the world without a UI panel of your own (Unity's `TextMesh`, GDI's `DrawString`):
-// a label on its object's XY plane, centred on the object. Iron's UI lays the text out and
+// a label on its object's XY plane, centred on the object. Platypus's UI lays the text out and
 // draws it (any font loaded with `loadFont`, line breaks, wrapping), sized to fit, then tints
 // it with `color` like a sprite. `pixelsPerUnit` UI pixels make one world unit; `resolution`
 // texture pixels per UI pixel keep it sharp up close.
@@ -51,7 +51,7 @@ export class TextMesh extends Component {
     this._color = c;
     this.dirty = true;
   }
-  /** A family loaded with `loadFont` (null: Iron's default, Inter). */
+  /** A family loaded with `loadFont` (null: Platypus's default, Inter). */
   @property
   get font(): string | null {
     return this._font;
@@ -117,14 +117,14 @@ export class TextMesh extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 
   private send(): void {
     if (!this.started) return;
     this.dirty = false;
     const c = this._color;
-    __iron_op(
+    __platypus_op(
       "render.text",
       this.id,
       this.gameObject.id,

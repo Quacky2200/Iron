@@ -2,7 +2,7 @@
 
 //! `audio`: sounds, playbacks, buses, emitters and the listener, as `js/engine/src/audio.ts` has
 //! them. Scripts hold handles; every change is recorded as an [`AudioCommand`] that the host takes
-//! with [`take_commands`] and runs on the mixer (`iron_audio`): [`AudioCommand::to_op`] gives the
+//! with [`take_commands`] and runs on the mixer (`platypus_audio`): [`AudioCommand::to_op`] gives the
 //! `audio.*` op name and arguments `Mixer::apply` takes (a `Load` needs the file's bytes, so the
 //! host reads the file itself). When playbacks finish the host calls [`ended`].
 //!
@@ -15,8 +15,8 @@
 //! [`crate::audio_components`].
 
 use crate::assets;
-use iron_api::{Callback, Handle, iron_api};
-use iron_math::{Q, V3};
+use platypus_api::{Callback, Handle, platypus_api};
+use platypus_math::{Q, V3};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -491,7 +491,7 @@ fn arr3(v: V3) -> [f64; 3] {
     [v.x, v.y, v.z]
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "audio", quickjs,
     handles(Sound = SoundRef, Playback = PlaybackRef, Bus = BusRef, Emitter = EmitterRef),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])

@@ -32,7 +32,7 @@ export const Cursor = {
   },
   set visible(v: boolean) {
     visible = v;
-    __iron_op("cursor.visible", v);
+    __platypus_op("cursor.visible", v);
   },
 
   get lockState(): CursorLockMode {
@@ -40,7 +40,7 @@ export const Cursor = {
   },
   set lockState(mode: CursorLockMode) {
     lockState = mode;
-    __iron_op("cursor.lock", mode);
+    __platypus_op("cursor.lock", mode);
   },
 
   /**
@@ -50,7 +50,7 @@ export const Cursor = {
    */
   setCursor(image: Texture | string | null, hotspot?: Vector2Like): void {
     if (image === null) {
-      __iron_op("cursor.image", null);
+      __platypus_op("cursor.image", null);
       return;
     }
     const src = typeof image === "string" ? image : image.src;
@@ -58,7 +58,7 @@ export const Cursor = {
       console.warn("Cursor.setCursor: the texture must come from a file (Texture.load)");
       return;
     }
-    __iron_op("cursor.image", src, hotspot ? [hotspot.x, hotspot.y] : null);
+    __platypus_op("cursor.image", src, hotspot ? [hotspot.x, hotspot.y] : null);
   },
 };
 

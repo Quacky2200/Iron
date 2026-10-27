@@ -1,8 +1,8 @@
-# iron_ts: classes (design note, for review)
+# platypus_ts: classes (design note, for review)
 
 Status: **proposal, no code written.** `TODO.md` M9.b2 "Classes" is a STOP item: this note is what
 the user reviews before the compiler grows classes. Decisions that need a yes or no are in
-section 11. Background: `iron-ts-spike.md` (IR, GC, closures), section 11 there has the counts.
+section 11. Background: `platypus-ts-spike.md` (IR, GC, closures), section 11 there has the counts.
 
 ## 1. Why classes, and what "done" means
 
@@ -124,9 +124,9 @@ classes as classes.
 ## 8. Components, the engine and `@property`
 
 How a Component works today: `Component` is a TypeScript class in `js/engine`; Rust's
-`ComponentHost` creates instances by class name (`__iron_create`), lists the hooks a class has
-(`__iron_hooks`) and calls `__iron_dispatch(id, "onUpdate", dt)`, which looks the method up by name.
-`gameObject` and `transform` are JS objects that send ops (`__iron_op`) to Rust.
+`ComponentHost` creates instances by class name (`__platypus_create`), lists the hooks a class has
+(`__platypus_hooks`) and calls `__platypus_dispatch(id, "onUpdate", dt)`, which looks the method up by name.
+`gameObject` and `transform` are JS objects that send ops (`__platypus_op`) to Rust.
 
 Native plan:
 
@@ -137,13 +137,13 @@ Native plan:
 - **Component base fields** (`id`, `gameObject`) are a native struct prefix that Rust fills in.
 - **The engine API** (`this.transform.position = ...`, `getComponent`, `Input`, physics) is where this
   becomes real work: those are TypeScript classes (`GameObject`, `Transform`) that call
-  `__iron_op`. Compiled code needs either (a) these classes compiled natively too, with `__iron_op`
+  `__platypus_op`. Compiled code needs either (a) these classes compiled natively too, with `__platypus_op`
   replaced by `extern "C"` calls, or (b) a thin native binding layer written by hand over ids. That
   is the "Direct engine calls" item, which is its own STOP, and the Component level waits for it.
 - **Mixed worlds** (UI in React stays on QuickJS): a native component may call JS only through the
   hybrid bridge (also a STOP item); until then a game is all native for gameplay classes or all JS.
 - **`@property`**: the decorator is read at compile time (only `property` imported from
-  `@iron/engine` is accepted; others are errors). It adds the field to the class's *reflection
+  `@platypus/engine` is accepted; others are errors). It adds the field to the class's *reflection
   table*: name, type, byte offset. The scene loader in Rust then reads and writes the fields by
   offset, with no JS. This replaces the decorator metadata object. The table needs the field types
   the scene format uses today (numbers, strings, booleans, vectors, nested object refs); anything
@@ -344,7 +344,7 @@ Sub-task 6 is done (`M9-TS-137`, `138`).
 Sub-task 7 is done (`M9-TS-139`, `140`; the rejection of other decorators is in `M9-TS-119`).
 
 - `@property` (or `@property()`) on an instance field marks it. The decorator is **compile-time
-  metadata**: nothing is called, the `import { property } from "@iron/engine"` is not read (the
+  metadata**: nothing is called, the `import { property } from "@platypus/engine"` is not read (the
   compiler recognises the name). Any other decorator, on a field, method or class, is an error.
 - Each class with marked fields gets a table in the generated Rust bindings:
   `pub const PROPS_Player: &[(&str, usize, &str)]` = (name, byte offset in the object, type). A

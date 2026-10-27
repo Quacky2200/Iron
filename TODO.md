@@ -1,4 +1,4 @@
-# Iron — TODO
+# Platypus — TODO
 
 Work plan by milestone. Each task lists the tests from [TESTS.md](TESTS.md) that prove it's done. Architecture lives in [DESIGN.md](DESIGN.md).
 
@@ -20,20 +20,20 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
 ## Proposed repository layout
 
 ```
-Iron/
+Platypus/
 ├─ Cargo.toml              # workspace
 ├─ package.json            # Bun workspace root
 ├─ DESIGN.md  TESTS.md  TODO.md
 ├─ crates/
-│  ├─ iron_core/           # IDs, math re-exports, op buffer types, logging
-│  ├─ iron_platform/       # Platform layer: winit + gilrs
-│  ├─ iron_render/         # wgpu device, surfaces, offscreen targets
-│  ├─ iron_script/         # ScriptRuntime trait + QuickJS backend + shared test suite
-│  ├─ iron_ui/             # (M2) UI tree, LayoutEngine trait, Taffy backend, UI renderer
-│  └─ iron_app/            # the `iron` binary: main loop wiring everything together
+│  ├─ platypus_core/           # IDs, math re-exports, op buffer types, logging
+│  ├─ platypus_platform/       # Platform layer: winit + gilrs
+│  ├─ platypus_render/         # wgpu device, surfaces, offscreen targets
+│  ├─ platypus_script/         # ScriptRuntime trait + QuickJS backend + shared test suite
+│  ├─ platypus_ui/             # (M2) UI tree, LayoutEngine trait, Taffy backend, UI renderer
+│  └─ platypus_app/            # the `platypus` binary: main loop wiring everything together
 ├─ js/
-│  ├─ engine/              # @iron/engine: Component base class, engine API, .d.ts
-│  └─ react/               # (M2) @iron/react: custom reconciler
+│  ├─ engine/              # @platypus/engine: Component base class, engine API, .d.ts
+│  └─ react/               # (M2) @platypus/react: custom reconciler
 ├─ examples/
 │  └─ hello/               # TS game: a Hello component
 └─ tests/
@@ -43,9 +43,9 @@ Iron/
 
 ---
 
-## M1 — Hello Iron (scaffold)
+## M1 — Hello Platypus (scaffold)
 
-**Goal:** `cargo run -p iron_app -- examples/hello` opens a window with a clear colour, loads a Bun-built TS bundle, and a `Hello` component logs `hello` once and `tick` every frame.
+**Goal:** `cargo run -p platypus_app -- examples/hello` opens a window with a clear colour, loads a Bun-built TS bundle, and a `Hello` component logs `hello` once and `tick` every frame.
 
 ### 1. Repository and tooling
 - [x] `git init`, `.gitignore` (target/, node_modules/, dist/), `.gitattributes` (LF line endings, PNGs as binary)
@@ -54,50 +54,50 @@ Iron/
 - [x] Bun workspace: root `package.json`, `js/engine`, `examples/hello`, `tests/fixtures`, shared `tsconfig.base.json` (strict) — `M1-BLD-03`, `M1-BLD-04` (Bun 1.4.3)
 - [x] Logging via `tracing` + `tracing-subscriber` (`RUST_LOG` to override)
 
-### 2. `iron_core`
+### 2. `platypus_core`
 - [x] Typed IDs (`EntityId`, `ComponentId`, `NodeId`) as `u32` newtypes
 - [x] `Op` and `OpBuffer` (name + `Value` args; binary encoding comes later)
 - [x] `Value` enum for values crossing the script boundary
 - [x] Re-export `glam` for math
 
-### 3. `iron_platform`
+### 3. `platypus_platform`
 - [x] `Platform` wrapping the winit event loop (`ApplicationHandler`)
 - [x] Headless mode for tests — `M1-PLT-01`
-- [x] Convert winit events to Iron `InputEvent`s — `M1-PLT-02`
+- [x] Convert winit events to Platypus `InputEvent`s — `M1-PLT-02`
 - [x] Clean exit on window close — `M1-PLT-03` (manual, passed 2026-10-16 on Windows)
 - [x] `gilrs` polling stub (wired up properly in M3)
 
-### 4. `iron_render`
+### 4. `platypus_render`
 - [x] wgpu instance/adapter/device; software fallback when no hardware adapter — `M1-RND-01`
 - [x] Window surface (sRGB, handles outdated/lost/minimized) + offscreen target
 - [x] Clear to colour, read back pixels (with row padding) — `M1-RND-02`
 - [x] Resize and 0×0 (minimized) are safe — `M1-RND-03`
-- [x] Golden image helper (`testing::assert_golden`, `IRON_UPDATE_GOLDEN=1`)
+- [x] Golden image helper (`testing::assert_golden`, `PLATYPUS_UPDATE_GOLDEN=1`)
 
-### 5. `iron_script`
+### 5. `platypus_script`
 - [x] `ScriptRuntime` trait: `load_bundle`, `eval`, `call_global`, `drain_ops`, `reset`, `set_log_sink`
 - [x] `ScriptError` with message, file, line, stack
 - [x] QuickJS backend (`rquickjs`) — `M1-SCR-01`..`M1-SCR-03`
 - [x] `console.*` → log sink (default: `tracing`, target `script`) — `M1-SCR-04`
 - [x] `reset()` creates a fresh context, keeps natives and log sink — `M1-SCR-05`
-- [x] Native `__iron_op(name, ...args)` queues ops — `M1-SCR-06`
+- [x] Native `__platypus_op(name, ...args)` queues ops — `M1-SCR-06`
 - [x] UTF-8 ↔ UTF-16 round-trip test — `M1-SCR-07`
-- [x] Backend-generic suite (`runtime_conformance_tests!` in `iron_script::conformance`) — `M1-SCR-08`
+- [x] Backend-generic suite (`runtime_conformance_tests!` in `platypus_script::conformance`) — `M1-SCR-08`
 
-### 6. `@iron/engine` (TS) and components
+### 6. `@platypus/engine` (TS) and components
 - [x] `Component` base class with `onStart()` / `onUpdate(dt)`
 - [x] `register({ Hello })` registry (object form keeps names stable under minification) — `M1-CMP-01`
-- [x] `ComponentHost` calls methods by `(component id, method name)` via `__iron_dispatch` — `M1-CMP-02`, `M1-CMP-03`
+- [x] `ComponentHost` calls methods by `(component id, method name)` via `__platypus_dispatch` — `M1-CMP-02`, `M1-CMP-03`
 - [x] Exceptions disable only the failing component — `M1-CMP-04`
 - [x] Hand-written globals `.d.ts` (`js/engine/src/globals.ts`; generate from Rust later)
 - [x] `bun test` unit tests for the JS host (`js/engine/test/`, 4 tests)
 
-### 7. `iron_app` and the example
-- [x] `iron` binary: game folder (`dist/game.js`) or `.js` path; opens window; runs loop
+### 7. `platypus_app` and the example
+- [x] `platypus` binary: game folder (`dist/game.js`) or `.js` path; opens window; runs loop
 - [x] Fixed 60 Hz tick with catch-up limit; clear colour each frame
 - [x] `examples/hello`: `Hello` logs `hello` on start and `tick` on update
 - [x] `tests/fixtures/{hello,throws}.js` built by Bun from `tests/fixtures/src/*.ts` (`bun run build:fixtures`; CI checks they're up to date)
-- [x] `iron examples/hello` runs the Bun-built game end to end
+- [x] `platypus examples/hello` runs the Bun-built game end to end
 
 ### 8. CI
 - [x] GitHub Actions workflow (`.github/workflows/ci.yml`): Windows + Linux Rust jobs, JS job with Bun
@@ -106,35 +106,35 @@ Iron/
 
 **M1 done when:** all `M1-*` tests pass in CI and `M1-PLT-03` passes manually.
 
-**Status:** all 24 Rust tests and 4 JS tests pass locally (Windows, RTX 5080); build and typecheck are clean. `iron examples/hello` runs on Vulkan: `hello` once, ~60 ticks/s. The manual close test passed. Remaining: a CI run.
+**Status:** all 24 Rust tests and 4 JS tests pass locally (Windows, RTX 5080); build and typecheck are clean. `platypus examples/hello` runs on Vulkan: `hello` once, ~60 ticks/s. The manual close test passed. Remaining: a CI run.
 
 ---
 
 ## M2 — Boxes (React → Taffy → screen)
 
-**Goal:** `iron examples/boxes` shows a React-rendered layout of coloured, rounded, bordered boxes that relayouts when the window resizes and when React state changes (a timer-driven counter that adds/removes boxes).
+**Goal:** `platypus examples/boxes` shows a React-rendered layout of coloured, rounded, bordered boxes that relayouts when the window resizes and when React state changes (a timer-driven counter that adds/removes boxes).
 
 **Versions checked 2026-10-16:** React 19.3.1, react-reconciler 0.34.0, Taffy 0.15.0, criterion 0.8.2.
 
 ### M2 decisions (proposed, confirm before starting)
-- **D1 — Op transport:** the reconciler collects ops in a JS array during a commit and calls a native `__iron_commit(ops)` **once** in `resetAfterCommit`. Ops are flat arrays: `[opcode, ...args]`. Start with the existing `Value` conversion; switch to a binary `ArrayBuffer` encoding only if `M2-BEN-04` says so.
+- **D1 — Op transport:** the reconciler collects ops in a JS array during a commit and calls a native `__platypus_commit(ops)` **once** in `resetAfterCommit`. Ops are flat arrays: `[opcode, ...args]`. Start with the existing `Value` conversion; switch to a binary `ArrayBuffer` encoding only if `M2-BEN-04` says so.
 - **D2 — Style values:** numbers mean logical pixels; strings are CSS values parsed in Rust (Taffy's `parse` feature for layout properties, a small parser for colours). Styles travel as flat `[prop, value, prop, value, ...]` lists, so `Value` needs no object type. M3's CSS files reuse the same parsers.
 - **D3 — Elements in M2:** `<box>` only. Text arrives in M3; `createTextInstance` throws a clear "text isn't supported until M3" error.
 - **D4 — Scheduling:** React 19 + react-reconciler 0.34. The script runtime gains `setTimeout`/`clearTimeout`/`queueMicrotask` and runs the QuickJS job queue every frame. Root renders use `updateContainerSync` + `flushSyncWork` so a frame's state changes commit in the same frame.
-- **D5 — Crate split:** a new `iron_ui` crate owns the node tree, op decoding, style parsing, the `LayoutEngine` trait with the Taffy backend, and produces a GPU-free **draw list** of quads. `iron_render` gains a `QuadRenderer` that draws any draw list. UI stays testable without a GPU, and the quad renderer is reusable for world panels later.
+- **D5 — Crate split:** a new `platypus_ui` crate owns the node tree, op decoding, style parsing, the `LayoutEngine` trait with the Taffy backend, and produces a GPU-free **draw list** of quads. `platypus_render` gains a `QuadRenderer` that draws any draw list. UI stays testable without a GPU, and the quad renderer is reusable for world panels later.
 - **D6 — Units:** layout in logical pixels; the window's scale factor is applied only in the renderer.
 
-### 1. Script runtime additions (`iron_script`)
-- [x] `setTimeout` / `clearTimeout` in a shared JS prelude (`iron_script/src/prelude.js`; Rust holds no JS function refs); `queueMicrotask` is built into QuickJS-ng. Timers fire from `ScriptRuntime::tick(now)`, zero-delay chains in the same tick, capped at `MAX_TIMERS_PER_TICK` — `M2-SCR-01`
+### 1. Script runtime additions (`platypus_script`)
+- [x] `setTimeout` / `clearTimeout` in a shared JS prelude (`platypus_script/src/prelude.js`; Rust holds no JS function refs); `queueMicrotask` is built into QuickJS-ng. Timers fire from `ScriptRuntime::tick(now)`, zero-delay chains in the same tick, capped at `MAX_TIMERS_PER_TICK` — `M2-SCR-01`
 - [x] Pending QuickJS jobs (promises, microtasks) run after every call into JS, including between timers — `M2-SCR-02`
-- [x] `__iron_commit(ops)` native → `Commit` (in `iron_core`), collected with `drain_commits()` — `M2-SCR-03`
-- [x] Uncaught timer/job errors collected via `__iron_report_error` and returned by `tick()`
+- [x] `__platypus_commit(ops)` native → `Commit` (in `platypus_core`), collected with `drain_commits()` — `M2-SCR-03`
+- [x] Uncaught timer/job errors collected via `__platypus_report_error` and returned by `tick()`
 - [x] Bundle defines: `process.env.NODE_ENV` via `bun build --define` (development for `examples/hello`, production for test fixtures)
 - [x] New tests are in the backend conformance suite (7 added; 15 total)
-- [x] `iron_app` calls `tick` every frame (timers work in games now); commits drained until step 6 consumes them
+- [x] `platypus_app` calls `tick` every frame (timers work in games now); commits drained until step 6 consumes them
 
-### 2. `iron_ui` crate: tree, styles, layout (no GPU)
-- [x] Opcodes (`iron_ui::opcodes`): `CREATE`, `SET_STYLE`, `APPEND_CHILD`, `INSERT_BEFORE`, `REMOVE_CHILD`. Simplified from the plan: the root container is node `0` (no separate root ops), and `REMOVE_CHILD` destroys the subtree (no `DESTROY`), because React never reinserts removed instances
+### 2. `platypus_ui` crate: tree, styles, layout (no GPU)
+- [x] Opcodes (`platypus_ui::opcodes`): `CREATE`, `SET_STYLE`, `APPEND_CHILD`, `INSERT_BEFORE`, `REMOVE_CHILD`. Simplified from the plan: the root container is node `0` (no separate root ops), and `REMOVE_CHILD` destroys the subtree (no `DESTROY`), because React never reinserts removed instances
 - [x] `UiTree`: applies a commit, syncs with layout once per commit; bad ops (unknown IDs, duplicates, cycles, bad args) are reported and skipped — `M2-UI-01`, `M2-UI-02`
 - [x] Style parsing: Taffy `parse` for layout props; colours as `#rgb(a)`, `#rrggbb(aa)`, `rgb()`/`rgba()` (comma, space, `/ alpha`), `transparent`, a few names. `null` resets a prop — `M2-STY-01`, `M2-STY-02`
 - [x] M2 style subset: `display` (flex/grid/block/none), flex props + `flex` shorthand, `width/height/min/max`, `aspectRatio`, `padding`/`margin`/`borderWidth`/`inset` (1–4 value shorthands and per side), `gap`/`rowGap`/`columnGap`, `position` + insets, alignment, `gridTemplateColumns/Rows`, `gridAutoFlow`, `gridColumn/Row`, `backgroundColor`, `borderColor`, `borderRadius`, `opacity`
@@ -143,14 +143,14 @@ Iron/
 - [x] Root resize relayouts the tree — `M2-UI-03`
 - [x] Draw list: one `Quad` per visible box (absolute rect, colours with inherited opacity, resolved border widths, radius) in paint order — `M2-UI-04`
 
-### 3. `@iron/react` package (`js/react`)
-- [x] Host config for react-reconciler 0.34 (mutation mode) in `js/react/src/host.ts`; React 19's required host functions (priorities, transitions, suspend-commit hooks, `bindToConsole`) stubbed in one place. Ops flushed with one `__iron_commit` in `resetAfterCommit`
+### 3. `@platypus/react` package (`js/react`)
+- [x] Host config for react-reconciler 0.34 (mutation mode) in `js/react/src/host.ts`; React 19's required host functions (priorities, transitions, suspend-commit hooks, `bindToConsole`) stubbed in one place. Ops flushed with one `__platypus_commit` in `resetAfterCommit`
 - [x] Node IDs: numbers from a counter, never reused in a session — `M2-REC-05`
 - [x] `commitUpdate` diffs `style` and emits only changed properties (`null` for removed ones); unchanged styles emit nothing — `M2-REC-02`
 - [x] Suspense support via `hideInstance`/`unhideInstance` (toggles `display`)
-- [x] `createRoot().render(<App/>)` (one root per game, sync commits via `updateContainerSync` + `flushSyncWork`); `<box>` typed through `JSX.IntrinsicElements` with a typed `IronStyle`
+- [x] `createRoot().render(<App/>)` (one root per game, sync commits via `updateContainerSync` + `flushSyncWork`); `<box>` typed through `JSX.IntrinsicElements` with a typed `PlatypusStyle`
 - [x] Clear errors for text children (until M3) and unknown elements, reported through React's error callbacks
-- [x] `bun test` suite (9 tests) with a fake `__iron_commit` feeding a model of the Rust tree, so tests check the resulting tree rather than React's ID order — `M2-REC-01`..`M2-REC-05`
+- [x] `bun test` suite (9 tests) with a fake `__platypus_commit` feeding a model of the Rust tree, so tests check the resulting tree rather than React's ID order — `M2-REC-01`..`M2-REC-05`
 - [ ] Note: renders abandoned by concurrent React could leave created-but-never-attached nodes in the Rust tree. Not an issue with sync rendering; revisit if we enable transitions
 
 ### 4. Integration in QuickJS
@@ -158,7 +158,7 @@ Iron/
 - [x] A `setTimeout`-driven state change commits once within `tick`, creating only the two new nodes and keeping existing IDs; the grid relayouts to two rows — `M2-INT-02`
 - [x] Built fixtures marked as generated in `.gitattributes` (no noisy diffs; CI still checks they match their sources)
 
-### 2b. Box visuals in `iron_ui` (styles + draw commands, no GPU) — see DESIGN §5.2
+### 2b. Box visuals in `platypus_ui` (styles + draw commands, no GPU) — see DESIGN §5.2
 - [x] Colours: `hsl()/hsla()` (deg/turn/rad/grad hues) and all 148 CSS named colours — `M2-VIS-01`
 - [x] `border` shorthand (`"2px solid #fff"`, any order, `thin/medium/thick`; only `solid`/`none`/`hidden` styles; like CSS, no style means no border) — `M2-VIS-02`
 - [x] `borderRadius` with 1–4 values, per-corner props, percentages; resolved at draw time and scaled down like CSS when corners would overlap. Circular corners only (no `a / b` elliptical radii yet) — `M2-VIS-03`
@@ -169,8 +169,8 @@ Iron/
 - [x] Group opacity through layers; simple single-quad leaves just scale alpha — `M2-VIS-08`
 - [ ] Later: per-side border colours, elliptical radii, `radial-gradient` position/size keywords, more filter functions (`brightness`, `grayscale`, `drop-shadow`, ...), multiple backgrounds
 
-### 5. Quad renderer (`iron_render`)
-- [x] `UiRenderer` (`iron_render::ui`): instanced quads with an SDF shader for per-corner radii and borders (background extends under the border, like CSS), premultiplied alpha, one physical pixel of anti-aliasing
+### 5. Quad renderer (`platypus_render`)
+- [x] `UiRenderer` (`platypus_render::ui`): instanced quads with an SDF shader for per-corner radii and borders (background extends under the border, like CSS), premultiplied alpha, one physical pixel of anti-aliasing
 - [x] Linear and radial gradient fills (up to 8 stops, CSS stop fix-up, magic-corner directions, premultiplied-sRGB interpolation)
 - [x] Image fills: `url(...)` loaded from the game folder (relative paths only; `..`, absolute paths and URL schemes rejected), cached textures, `backgroundSize`/`Position`/`Repeat`, clipped to the rounded box, border drawn on top
 - [x] Analytic box shadows (outer clipped outside the box, inset clipped to the padding box), one quad each
@@ -182,17 +182,17 @@ Iron/
 - [ ] Later: blending happens in linear light (browsers blend in sRGB, so semi-transparent edges differ slightly); large blurs should downsample (dual Kawase) instead of up to 257 taps; per-op uniform buffers and bind groups could be pooled; gradients ignore `backgroundSize`/`Position` for now
 
 ### 6. App wiring and example
-- [x] `iron_app`: each frame calls `tick(now)`, applies commits to `UiTree` (bad ops logged), relayouts if dirty, and draws with `UiRenderer` via `WindowSurface::present_with`
+- [x] `platypus_app`: each frame calls `tick(now)`, applies commits to `UiTree` (bad ops logged), relayouts if dirty, and draws with `UiRenderer` via `WindowSurface::present_with`
 - [x] Window size and scale factor → root size in logical pixels → relayout
 - [x] Bundles can register components, render UI, or both; `url()` images load from the game folder
-- [x] `iron <game> --screenshot out.png [--frames N]` saves the UI after N frames and exits (used to verify the examples)
+- [x] `platypus <game> --screenshot out.png [--frames N]` saves the UI after N frames and exits (used to verify the examples)
 - [x] `examples/boxes`: showcase of every M2 feature (glass header over blobs, gradients, images, shadows, radii, blur, group opacity) plus a timer-driven counter that adds and removes boxes; checked by screenshot
 - [x] Found and fixed while doing this: unitless numbers inside CSS strings (`padding: "0 20px"`) were rejected by Taffy's parser
 - [x] Test GPU shared and serialised (`testing::shared_gpu`): creating devices on parallel test threads deadlocked on this machine's Vulkan setup
-- [ ] Manual check: resize the window and watch it relayout — `M2-MAN-01` (**needs you**: `cargo run -p iron_app -- examples/boxes`)
+- [ ] Manual check: resize the window and watch it relayout — `M2-MAN-01` (**needs you**: `cargo run -p platypus_app -- examples/boxes`)
 
 ### 7. Benchmarks and the Taffy/Yoga decision
-- [x] `criterion` benches in `iron_ui` on a 2,246-node editor-like tree — `M2-BEN-01`..`M2-BEN-03`
+- [x] `criterion` benches in `platypus_ui` on a 2,246-node editor-like tree — `M2-BEN-01`..`M2-BEN-03`
 - [x] JS→Rust commit transfer bench (QuickJS) — `M2-BEN-04` (0.40 ms per 1,000 ops; binary encoding not needed yet)
 - [x] Profiled and fixed our overhead: boxed UI nodes and FxHash maps (commit apply 5.1 → 3.1 ms)
 - [x] Results, analysis and revised targets recorded in TESTS.md
@@ -228,7 +228,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
   our tree, and the existing `apply_style` for declarations (kebab-case → camelCase). Stylesheets come
   from Bun-bundled CSS imports (Bun writes `dist/game.css` next to `game.js`) and from an
   `addStyleSheet(cssText)` API for CSS-in-JS.
-- **D6 — Events:** Rust hit-tests and sends the target's ancestor path to JS; `@iron/react` runs capture
+- **D6 — Events:** Rust hit-tests and sends the target's ancestor path to JS; `@platypus/react` runs capture
   and bubble phases over React props (`onClick`, `onPointerDown`, ...) with `stopPropagation` and
   `preventDefault`, like React DOM.
 - **D7 — Text inputs are Rust-owned editors** (Parley `PlainEditor`: caret, selection, IME, clipboard),
@@ -254,7 +254,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
    - [x] Bundled Inter (variable, upright + italic, SIL OFL) for `sans-serif`/`system-ui`; fontique
      system fallback in the app (`UiTree::with_system_fonts`), bundled-only in tests — `M3-FNT-02`
    - [x] `loadFont({ family, src, weight, style })` → op → loaded from the game folder (shared
-     `iron_core::resolve_asset` path rules) → registered; text relayouts — `M3-FNT-01`
+     `platypus_core::resolve_asset` path rules) → registered; text relayouts — `M3-FNT-01`
    - [x] A family with only an italic face uses it for normal text (CSS font matching), instead of
      falling back to another family: works with Parley 0.12 / fontique; guarded by a test (2026-10-17)
      — `M3-FNT-02`
@@ -329,14 +329,14 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
 1. **Hit testing and pointer events**
    - [x] Hit test in reverse paint order: rounded corners, `display: none`, `pointerEvents: none`
      (inherited, children can opt back in); text hits its text element, `::before`/`::after` their
-     owner — `M3-EVT-01` (`crates/iron_ui/tests/hit.rs`)
+     owner — `M3-EVT-01` (`crates/platypus_ui/tests/hit.rs`)
    - [x] Clipping in hit tests: `overflow` and `clipPath` cut away what isn't drawn — `M3-EVT-05`
-     (`crates/iron_ui/tests/clip.rs`)
+     (`crates/platypus_ui/tests/clip.rs`)
    - [ ] Spans inside text as targets (needs node ids in the text brush); `visibility`
    - [x] Pointer events to JS with the target's ancestor path; capture + bubble phases,
      `stopPropagation`, `preventDefault`; `onClick`, `onPointerDown/Up/Move/Enter/Leave`, `onWheel`,
      double click, `onContextMenu`, `onMouse*` aliases — `M3-EVT-02`, `M3-EVT-03`
-     (`iron_ui::Pointer` in `events.rs`, `js/react/src/events.ts`, `crates/iron_ui/tests/pointer.rs`,
+     (`platypus_ui::Pointer` in `events.rs`, `js/react/src/events.ts`, `crates/platypus_ui/tests/pointer.rs`,
      `events_quickjs.rs`)
    - [x] `:hover` / `:active` states (hover re-tested each frame when the tree moves under the
      pointer); `cursor` CSS property (inherited) → OS cursor
@@ -345,7 +345,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      `relatedTarget`), `:focus`, `:focus-visible` (keyboard only), `:focus-within`; `onKeyDown` /
      `onKeyUp` to the focused element with DOM `key`/`code`/`repeat`; pressing focuses the nearest
      focusable ancestor or blurs (unless `pointerdown` is prevented) — `M3-EVT-04`
-     (`iron_ui::Interaction` in `interaction.rs`, `crates/iron_ui/tests/focus.rs`, `events_quickjs.rs`)
+     (`platypus_ui::Interaction` in `interaction.rs`, `crates/platypus_ui/tests/focus.rs`, `events_quickjs.rs`)
    - [x] Imperative `ref.current.focus()` / `blur()` via ops
 3. **Text input**
    - [x] `<input>` and `<textarea>` (`Input` / `TextArea` components) backed by Parley
@@ -355,7 +355,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      caret kept in view; `value` (controlled, restored when `onChange` rejects an edit like React
      DOM), `defaultValue`, `readOnly`, `disabled`, `rows`; focusable by default; `onChange` /
      `onInput` with `e.target.value`; Ctrl+C/X/V produce clipboard requests — `M3-INP-01`
-     (`crates/iron_ui/tests/editor.rs`, golden `M3-INP-01-fields`)
+     (`crates/platypus_ui/tests/editor.rs`, golden `M3-INP-01-fields`)
    - [x] Ctrl/Cmd shortcuts fall back to the physical key `code` on non-Latin layouts (Ctrl+ф is
      Ctrl+A on a Russian layout); AltGr still types — `M3-INP-02`. Hand-checked 2026-10-16:
      Ctrl+A/C/X/V work on English, French, Russian, Arabic, Hebrew, the Chinese Pinyin layout and
@@ -364,7 +364,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      (`M3-INP-01`)
    - [x] Placeholders re-wrap when the field resizes (they kept the wrap width of their first
      layout) — `M3-INP-01`
-   - [x] System clipboard (arboard, opened on first use) for the requests above, in `iron_app`
+   - [x] System clipboard (arboard, opened on first use) for the requests above, in `platypus_app`
    - [ ] Later: undo/redo, `type="password"`, `maxLength`, wheel scrolling inside a textarea,
      `::placeholder` / `::selection` / `caret-color` styling
    - [x] Selecting static text and `user-select`: done in M3d step 5h
@@ -401,17 +401,17 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      chains outward (Shift for horizontal); arrow keys, Page Up/Down, Space, Home/End; Tab and
      `focus()` scroll the element into view; overlay scrollbars (`scroll` always, `auto` when
      needed) with thumb dragging and track paging; `scrollbarWidth`, `scrollbarColor`; `onScroll`
-     and `ref.scrollTo/scrollBy/scrollIntoView()` — `M3-EVT-05` (`crates/iron_ui/tests/scroll.rs`,
+     and `ref.scrollTo/scrollBy/scrollIntoView()` — `M3-EVT-05` (`crates/platypus_ui/tests/scroll.rs`,
      golden `M3-EVT-05-scroll`)
    - [ ] Later: smooth scrolling, scroll snapping, culling off-screen children in the draw list
      (the renderer already culls their GPU work), touchpad momentum
 5. **Gamepads**
    - [x] `gilrs` events with stable button/axis names (`South`, `DPadUp`, `LeftStickX`, ...) to
-     scripts through `@iron/engine`'s `input` (`isKeyDown`, `gamepads()`, `isButtonDown`,
+     scripts through `@platypus/engine`'s `input` (`isKeyDown`, `gamepads()`, `isButtonDown`,
      `on("gamepadbuttondown" | "keydown" | ...)`; keys typed into a text field stay the
      field's); spatial focus navigation with the d-pad / left stick and South to click, only
-     while UI has focus — `M3-PAD-01` (`crates/iron_platform/src/gamepad.rs`,
-     `crates/iron_app/src/game_input.rs`, `crates/iron_ui/tests/navigation.rs`,
+     while UI has focus — `M3-PAD-01` (`crates/platypus_platform/src/gamepad.rs`,
+     `crates/platypus_app/src/game_input.rs`, `crates/platypus_ui/tests/navigation.rs`,
      `js/engine/test/input.test.ts`)
    - [ ] Later: rumble, button repeat while held, mouse state in `input`
 6. **Example + checks**
@@ -448,34 +448,34 @@ and `@font-face`.
 1. **Units and values**
    - [x] `em`, `rem`, `vw`, `vh`, `vmin`, `vmax` (and the `d`/`s`/`l` viewport variants) in every
      property, inline or from stylesheets: resolved to px at restyle like `var()`
-     (`crates/iron_ui/src/units.rs`); `em` is the element's own font size (the parent's for
+     (`crates/platypus_ui/src/units.rs`); `em` is the element's own font size (the parent's for
      `fontSize`); nodes using them restyle when the window, their font size or the root font
-     size changes (`crates/iron_ui/tests/units.rs`)
+     size changes (`crates/platypus_ui/tests/units.rs`)
    - [x] `calc()`, `min()`, `max()`, `clamp()` with pixels, relative units and numbers, nested;
      invalid math is ignored (stylesheets warn, inline values are rejected and keep the old value)
    - [x] `calc()` / `min()` / `max()` / `clamp()` with percentages (`calc(100% - 20px)`) in layout
      lengths (sizes, insets, margins, padding, borders, gaps, `flex-basis`): parsed once and
-     interned (`crates/iron_ui/src/calc.rs`), evaluated by Taffy through our own Taffy tree
+     interned (`crates/platypus_ui/src/calc.rs`), evaluated by Taffy through our own Taffy tree
      (`TaffyLayout` now implements Taffy's tree traits instead of using `TaffyTree`, whose
      `resolve_calc_value` returns 0). Paint lengths (`border-radius`, shadows) don't take them yet
-   - [x] `boxSizing: border-box | content-box`; Iron keeps Taffy's (and s&box's) `border-box`
+   - [x] `boxSizing: border-box | content-box`; Platypus keeps Taffy's (and s&box's) `border-box`
      default, where CSS defaults to `content-box`
    - [x] CSS-wide keywords `inherit`, `initial`, `unset`, `revert` (and `revert-layer`, both like
      `unset`: no user-agent stylesheet) on every property, inline, in stylesheets and on
      `::before`/`::after`; `inherit` copies the parent's value for non-inherited properties
-     (`apply_wide_keyword`, `crates/iron_ui/tests/wide_keywords.rs`)
+     (`apply_wide_keyword`, `crates/platypus_ui/tests/wide_keywords.rs`)
    - [x] Colours: `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color(srgb | srgb-linear |
      display-p3 ...)`, `none` channels, and `color-mix(in srgb | srgb-linear | lab | oklab | lch |
      oklch, ...)` (premultiplied, shorter hue), the standard form of s&box's `mix()` /
      `darken()` / `lighten()`, which are supported too (SCSS semantics: HSL lightness ± amount;
-     `mix(a, b, weight of a)` in sRGB) (`crates/iron_ui/src/color_fn.rs`); out-of-gamut colours clip
+     `mix(a, b, weight of a)` in sRGB) (`crates/platypus_ui/src/color_fn.rs`); out-of-gamut colours clip
    - [x] Angles in `deg`, `rad`, `grad`, `turn` (hues and gradients); times (`s`/`ms`) come with
      transitions (group 7), the first properties that take them
 2. **Layout**
    - [x] `order` (layout children are stably sorted by it; Tab order stays in document order),
      `z-index` (paint order and hit testing among siblings, then `order`, then document order;
      each z-indexed element stacks on its own, so it never lifts above an ancestor's siblings),
-     `isolation` (accepted, no effect in that model) (`crates/iron_ui/tests/layout_props.rs`)
+     `isolation` (accepted, no effect in that model) (`crates/platypus_ui/tests/layout_props.rs`)
    - [x] `display: contents` (children join the layout parent, flattened before Taffy sees them;
      the element paints nothing and isn't hit, but stays in event paths and passes on inherited
      styles); `position: fixed` (Taffy lays it out as an absolute child of the root; it ignores
@@ -488,8 +488,8 @@ and `@font-face`.
      or four lines), `grid-row-start`/`-end`, `grid-column-start`/`-end`
    - [x] Logical properties: `margin-block`/`-inline`, `padding-block`/`-inline`,
      `inset-block`/`-inline` (with `-start`/`-end`), `block-size`/`inline-size` (+ `min-`/`max-`),
-     mapped left-to-right (`crates/iron_ui/tests/layout_props.rs`); RTL-aware mapping later
-   - [x] An `image` element (`Image` in `@iron/react`) with `src` (a path inside the game folder
+     mapped left-to-right (`crates/platypus_ui/tests/layout_props.rs`); RTL-aware mapping later
+   - [x] An `image` element (`Image` in `@platypus/react`) with `src` (a path inside the game folder
      or a `data:` URL) and `object-fit` (`fill`, `contain`, `cover`, `none`, `scale-down`) and
      `object-position`: the tree asks the app for natural sizes (`take_image_requests` /
      `set_image_size`, loaded by the renderer's image cache) and measures images like replaced
@@ -511,7 +511,7 @@ and `@font-face`.
      colours and styles (`borderColor`/`borderStyle` with 1-4 values, `borderTopColor`,
      `borderTopStyle`, ... and the `borderTop`/... shorthands). Uniform solid borders stay on the
      quad; others are a `DrawCmd::Border` styled per side in the shader (dashes and dots fit a
-     whole number per side). Iron's default style stays `solid` — `M3-BRD-01`
+     whole number per side). Platypus's default style stays `solid` — `M3-BRD-01`
    - [x] Elliptical corner radii (`border-radius: 10px / 20px`, `borderTopLeftRadius: "10px 20px"`);
      percentages now resolve like CSS (horizontal of the width, vertical of the height, so `50%`
      on a wide box is an ellipse). `Radii { x, y }` runs through the draw list, hit testing and
@@ -528,7 +528,7 @@ and `@font-face`.
      now `polygon()` and `path()` (SVG path data, curves and arcs flattened; `nonzero`/`evenodd`).
      Polygon points ride in the clip table; both shaders compute a signed distance, and hit
      testing uses the same fill rule — `M3-CLIP-01`. `url()` needs SVG `<clipPath>` elements,
-     which Iron doesn't have
+     which Platypus doesn't have
 4. **Text**
    - [x] `text-transform` (inherited; applied to run text before shaping, `capitalize` across
      inline runs), `text-overflow: ellipsis` (not inherited; lines wider than the content box of
@@ -541,7 +541,7 @@ and `@font-face`.
      `font-variant-numeric` and `font-feature-settings` as Parley font features — `M3-TXT-12`
    - [x] Decoration: `overline`, `text-decoration-style` (`double`, `dotted`, `dashed`, `wavy`),
      `-color`, `-thickness`, `text-underline-offset`, and the full `text-decoration` shorthand.
-     Runs carry their decoration in Parley's brush; Iron draws the lines from font metrics (dots
+     Runs carry their decoration in Parley's brush; Platypus draws the lines from font metrics (dots
      and dashes through the styled-border shader, waves through their own kind) — `M3-TXT-13`.
      `text-decoration-skip-ink` is parsed but underlines don't skip descenders yet
    - [x] Outlined text: `-webkit-text-stroke` / `text-stroke` and their width/colour longhands
@@ -557,7 +557,7 @@ and `@font-face`.
      `saturate()`, `grayscale()`, `sepia()`, `hue-rotate()`, `invert()`, `opacity()`, and
      `drop-shadow()` (follows the shape); chains. Colour functions fold into one 4×5 matrix
      applied in sRGB when the layer (or backdrop copy) is composited; drop shadows are blurred,
-     tinted, shifted copies of the layer drawn beneath it. Iron applies blur, then colour, then
+     tinted, shifted copies of the layer drawn beneath it. Platypus applies blur, then colour, then
      shadows, whatever the written order — `M3-FX-02`
    - [x] `image-rendering` (`pixelated`, `crisp-edges`, `auto`/`smooth`/`high-quality`), inherited,
      for background images, `Image` elements and border images: each image has a second bind
@@ -670,18 +670,18 @@ and `@font-face`.
 8. **Scrolling** (extends M3c overflow)
    - [x] `scrollbar-width`, `scrollbar-color` and `overflow: clip` (already done in M3c);
      `scrollbar-gutter: stable` (Taffy keeps the bar's width and margins at the end of a box that
-     clips or scrolls vertically; Iron's bars otherwise overlay), `overscroll-behavior` (+ `-x`/`-y`/
+     clips or scrolls vertically; Platypus's bars otherwise overlay), `overscroll-behavior` (+ `-x`/`-y`/
      `-inline`/`-block`; `contain` and `none` stop wheel and key scrolling from chaining outward;
      there's no bounce to turn off) — `M3-SCR-01`
 9. **Game-specific extensions** (s&box custom properties worth copying)
    - [~] **Skipped:** s&box's `sound-in` / `sound-out` (play a named sound when a rule starts or
      stops applying). CSS is for UI display, not sound, so this stays an s&box-specific feature;
-     Iron games play UI sounds from scripts (`onPointerEnter`, `onClick`) with M4 audio
+     Platypus games play UI sounds from scripts (`onPointerEnter`, `onClick`) with M4 audio
    - [x] **9a** Tint for images: s&box's `background-image-tint` (background images and an `image`
      element's picture) and `border-image-tint`, a colour (alpha too) multiplied into the image's
      pixels in the image shader; gradients aren't tinted — `M3-GAME-01`
    - [x] **9b** UI scale: `setUiScale({ height: 1080 })` (s&box's ScreenPanel), `{ width, height }`
-     (fit a design), a fixed number, or `null`, from `@iron/engine` (`uiScale` op). The app lays
+     (fit a design), a fixed number, or `null`, from `@platypus/engine` (`uiScale` op). The app lays
      the tree out in UI pixels and multiplies the factor (clamped to 0.25–8) into rendering, pointer
      and wheel input and the IME area, so text stays sharp — `M3-GAME-02`
 10. **Stylesheet authoring**
@@ -709,7 +709,7 @@ and `@font-face`.
 12. **Web fonts: WOFF and WOFF2**
     - [x] `.woff` and `.woff2` fonts from `@font-face` and `loadFont`: `register_font` recognizes
       their signatures and decompresses them to TTF/OTF with the pure-Rust `wuff` crate before
-      Parley sees them; `@font-face` `src` lists take the first entry Iron can load (by
+      Parley sees them; `@font-face` `src` lists take the first entry Platypus can load (by
       `format()`, else extension), skipping `local()`, EOT and SVG fonts — `M3-FNT-03`
 13. **`@media` queries**
     - [x] `media.rs`: `width`/`height` (with `min-`/`max-` and range syntax like
@@ -740,51 +740,51 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
 - [ ] Edit a TS file while the game runs; the change appears without restarting (manual, needs
   the window) — `M4-HOT-08`
 - [ ] `rapier` integration + TS components — `M4-PHY-*`
-  - [x] `iron_physics` crate: rapier world driven by `physics.*` ops with script-chosen IDs;
+  - [x] `platypus_physics` crate: rapier world driven by `physics.*` ops with script-chosen IDs;
     bodies (dynamic, fixed, kinematic), colliders (box, ball, capsule, cylinder, convex, mesh;
     sensors), forces, character controller, raycasts; one flat batch back per tick —
     `M4-PHY-01`..`M4-PHY-03`, `M4-PHY-05`, `M4-PHY-06`
-  - [x] TS API in `@iron/engine` (`physics`: `RigidBody`, `Collider`, collision handlers,
+  - [x] TS API in `@platypus/engine` (`physics`: `RigidBody`, `Collider`, collision handlers,
     `raycast` promises, `makeCharacter`/`move`), stepped in the app's fixed tick with results
-    sent back through `__iron_physics`; `examples/physics` — `M4-PHY-02`
+    sent back through `__platypus_physics`; `examples/physics` — `M4-PHY-02`
   - [ ] Bodies survive script hot reload (moved to hot reload part 2, M5) — `M4-PHY-04`
   - [x] `Rigidbody` / `Collider` components on GameObjects (M5.a2)
 - [ ] `kira` integration (sounds, music, buses) + TS API — `M4-AUD-*`
-  - [x] `iron_audio` crate: kira mixer driven by `audio.*` ops with script-chosen IDs; decoded
+  - [x] `platypus_audio` crate: kira mixer driven by `audio.*` ops with script-chosen IDs; decoded
     and streamed sounds, instances (volume, rate, pan, loop, fades, seek, pause/stop), buses,
     spatial emitters around one listener, ended instances polled; an offline backend for tests
     and deviceless runs — `M4-AUD-01`..`M4-AUD-04`
-  - [x] TS API in `@iron/engine` (`audio`: `Sound`, `Playback` with `onEnded`, `Bus`, `Emitter`,
+  - [x] TS API in `@platypus/engine` (`audio`: `Sound`, `Playback` with `onEnded`, `Bus`, `Emitter`,
     `setListener`, `audio.play(src)`); the app opens the mixer on the first `audio.*` op (offline
     for `--screenshot` runs or without a device), loads files from the game folder and reports
-    finished sounds through `__iron_audio`; `examples/physics` knocks on impacts
+    finished sounds through `__platypus_audio`; `examples/physics` knocks on impacts
     (`CollisionEvent.speed`)
 
 ## M5 — Scene, assets, rendering, editor
 
 - [ ] **M5.a** GameObject + Component core (the s&box way), from TS components, for 2D and 3D
   objects. The first plane use is UI in 3D space (a menu drawn on a plane in the world).
-  **Decided (2026-10-17):** our own wgpu renderer (DESIGN §7.4); an `iron_scene` crate with
+  **Decided (2026-10-17):** our own wgpu renderer (DESIGN §7.4); a `platypus_scene` crate with
   GameObjects in a generational arena, no ECS underneath (§7.5).
   API style (2026-10-17): Unity / s&box naming and units: `Vector2` (2D), `Vector3`
   (`forward`, `up`, `right`, ...), `Quaternion` with Euler angles in degrees,
   `transform.forward` / `eulerAngles` / `lookAt`, components on GameObjects.
-  - [x] `iron_scene`: GameObjects (generational ids, names, enabled, parent/children), local and
+  - [x] `platypus_scene`: GameObjects (generational ids, names, enabled, parent/children), local and
     world transforms (glam `Vec3`/`Quat`/scale), moved-object tracking — `M5-OBJ-01`..`M5-OBJ-03`
   - [x] TS API: `Vector2`, `Vector3`, `Quaternion`, `Transform`, `GameObject`; script components
     attached to GameObjects (`addComponent`, `getComponent`, `this.gameObject`,
     `this.transform`); engine-side transform changes synced back in one batch per tick
-    (`scene.*` ops, `ScriptScene`, `__iron_scene`); the starting components each get a
+    (`scene.*` ops, `ScriptScene`, `__platypus_scene`); the starting components each get a
     GameObject; inactive objects' components don't update — `M5-OBJ-04`..`M5-OBJ-07`
   - [x] Unity / C# value types: `Vector2Int`, `Vector3Int`, `Vector4`, `Rect`, `RectInt`,
     `Bounds`, `Ray`, `Plane`, `Color`, `Mathf` — `M5-MTH-01`..`M5-MTH-03`
   - [x] C# `DateTime` / `TimeSpan` on JS `Date` (millisecond resolution, C# formats) —
     `M5-TIM-01`, `M5-TIM-02`
-  - [x] Everyday helpers: `Debug` / `Log` / `Console` logging, `Time` (fed by `__iron_tick`,
+  - [x] Everyday helpers: `Debug` / `Log` / `Console` logging, `Time` (fed by `__platypus_tick`,
     with `timeScale`), `TimeSince` / `TimeUntil`, `Task.delay` / `frame`, `Random` and a seedable
     `Rng`, Unity-style input (`getKey`, `getKeyDown`, `getAxis`, `getButton`) —
     `M5-HLP-01`..`M5-HLP-04`
-  - [x] 3D view basics: `Camera` component, a perspective pass with depth in `iron_render`
+  - [x] 3D view basics: `Camera` component, a perspective pass with depth in `platypus_render`
     (`WorldRenderer`: instanced quads, back-to-front, textured or coloured), `PlaneRenderer`
     (a plane in the object's XZ plane), screen UI blended over the world
     (`UiRenderer::render_overlay`); `examples/world` — `M5-RND-05`
@@ -797,7 +797,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     frame, `onFixedUpdate` on the 60 Hz tick, `onPreRender`, `onDestroy`; the engine only
     calls the hooks a component has — `M5-OBJ-08`
   - [x] Planes: a `WorldPanel` component (s&box's name) draws React UI on a plane in the world:
-    `createRoot(panel)` commits to the panel's own UI tree (`__iron_commit(ops, target)`), drawn
+    `createRoot(panel)` commits to the panel's own UI tree (`__platypus_commit(ops, target)`), drawn
     into a texture each frame; the pointer is raycast from the camera under it into the
     nearest panel (screen UI wins where it has elements), drags stay with the panel, keys go
     to the surface clicked last; stylesheets and fonts reach every tree — `M5-PNL-01`..`M5-PNL-03`
@@ -819,7 +819,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     are added (refreshing queries mid-step tripped rapier's islands) — `M5-RB-03`
   - [x] Joints as components: `FixedJoint`, `HingeJoint` (axis, limits, motor),
     `SpringJoint`, `CharacterJoint` (ball), `RopeJoint` (max distance), with `connectedBody`
-    (or the world), anchors and auto-configured connected anchors; `iron_physics` `joint` /
+    (or the world), anchors and auto-configured connected anchors; `platypus_physics` `joint` /
     `removeJoint` ops; a `Rope` component builds a visible, colliding chain of capsule
     segments on ball joints, holding an optional end body — `M5-JNT-01`, `M5-JNT-02`
   - [x] Rope rendering as one smooth tube: `LineRenderer` (a round tube through world-space
@@ -853,7 +853,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] `examples/clock`: twelve faces built on these (analog rings and spline hands, turning
       dials, a glowing rolling meter, a 3D sundial whose shadow tells the time under a sun
       placed for the date, a sand timer, a reactive lava lamp, an underwater porthole clock, a
-      chandelier, a rainbow, Material-style morphing digits, a flip clock in Iron's UI, a
+      chandelier, a rainbow, Material-style morphing digits, a flip clock in Platypus's UI, a
       seven-segment alarm clock with bloom), switched with side arrows and dots
     - [x] `examples/fishtank`: an aquarium-channel view into deep water: a slowly drifting
       perspective camera, a hazy back wall, rocks and kelp at several depths, a sand floor
@@ -872,7 +872,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `on` / `off`, per-mesh in the shadow pass)
   - [x] Meshes, lights, textures on meshes, glTF models, the missing-texture checker,
     classic test models and shadows:
-    - [x] Renderer: `iron_render::world::mesh` builds Unity's primitives (cube, sphere, capsule,
+    - [x] Renderer: `platypus_render::world::mesh` builds Unity's primitives (cube, sphere, capsule,
       cylinder, plane, quad; Unity sizes) and fills in missing normals; `WorldRenderer` has a
       lit mesh pass (instanced by mesh, `set_mesh` / `remove_mesh` for script meshes,
       primitives at `primitive_id`), `MeshInstance` (colour, emission, smoothness, unlit,
@@ -880,7 +880,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       per-view `ambient`; opaque meshes first, then see-through meshes and quads back to
       front — `M5-MSH-01`, `M5-RND-07`
     - [x] Script side: `render.mesh` / `render.meshRenderer` / `render.light` /
-      `render.ambient` ops (`crates/iron_app/src/world_view.rs`; script meshes uploaded before
+      `render.ambient` ops (`crates/platypus_app/src/world_view.rs`; script meshes uploaded before
       drawing); TS `MeshRenderer` (primitive name or `Mesh`), `Material` (color, emission,
       smoothness, unlit), `Mesh.create`, `Light` (directional / point / spot, color,
       intensity, range, spot angles), `RenderSettings.ambientLight`,
@@ -892,7 +892,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] Textures on meshes: `Material.mainTexture` / `mainTextureScale` /
       `mainTextureOffset` (`withTexture`), texture alpha on see-through meshes; `Mesh.create`
       takes Unity's bottom-up UVs — `M5-TEX-01`, `M5-RND-08`
-    - [x] glTF models (`.glb` / `.gltf`, `iron_app/src/models.rs`): meshes (one engine mesh per
+    - [x] glTF models (`.glb` / `.gltf`, `platypus_app/src/models.rs`): meshes (one engine mesh per
       primitive, ids from 2^30), base colour textures with their samplers, materials (colour,
       emission and strength, roughness → smoothness, unlit, blend), node trees; buffers and
       images only from inside the game folder; TS `Model.load` / `whenLoaded` /
@@ -916,13 +916,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `playOneShot`, `playClipAtPoint`) and `AudioListener` (its object's pose, static
     `volume`) components, in TS over the existing `audio.*` ops; `examples/world`'s
     primitives thud in 3D — `M5-AUD-01`, `M5-AUD-02`
-  - [x] Particles: a `ParticleSystem` component simulated in Rust (`iron_app/src/particles.rs`):
+  - [x] Particles: a `ParticleSystem` component simulated in Rust (`platypus_app/src/particles.rs`):
     duration / loop / delay, ranges for lifetime, speed, size, rotation and spin, two-colour
     start, gravity, drag, local or world space, max particles, rate and bursts, point /
     sphere / hemisphere / cone / box shapes (along the object's up), size and colour over
     lifetime, texture sheets, alpha or additive blending, `play` / `stop` / `pause` /
     `clear` / `emit`, `particleCount` / `isPlaying` / `onStopped` / `stopAction` through
-    `__iron_particles`; drawn as camera-facing quads (a built-in soft spot texture,
+    `__platypus_particles`; drawn as camera-facing quads (a built-in soft spot texture,
     additive quads without depth writes, straight-alpha textures premultiplied) —
     `M5-PRT-01`, `M5-PRT-02`
   - [x] Glows and spotlights (2026-10-17, asked for with particles):
@@ -934,10 +934,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] Visible spotlight beams: `Light.beamIntensity` draws an open cone (`BEAM_MESH`)
       as an additive `MeshGlow::Beam` mesh, soft at its edges and fading along the range;
       additive meshes (`MeshGlow::Additive`) render without depth writes from both sides
-  - [x] Textures and sprites: `iron_render` keeps textures (`set_texture`: sRGB, point /
+  - [x] Textures and sprites: `platypus_render` keeps textures (`set_texture`: sRGB, point /
     bilinear / trilinear, repeat / clamp / mirror, CPU mipmaps averaged in linear light);
     `WorldTexture::Frame` (panels) or `Asset`; `render.texture` / `textureRemove` ops
-    (PNG/JPEG from the game folder or pixels; sizes back through `__iron_textures`); TS
+    (PNG/JPEG from the game folder or pixels; sizes back through `__platypus_textures`); TS
     `Texture.load` / `Texture.create` / `whenLoaded`, `Sprite.create` / `Sprite.grid`
     (Unity's bottom-left rects and pivots, pixels per unit) and `SpriteRenderer` (colour,
     flips; unlit quads); `examples/world` has animated coin sprites — `M5-TEX-01`,
@@ -965,9 +965,9 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     the monitor's size, refresh rate and DPI once the window opens (`sysinfo`, `sys-locale`,
     wgpu's adapter info, winit's monitor); gamepads are `input.gamepads()` — `M5-APP-02`
   - [x] `Application`: name, `productName`, version, company, identifier and engine
-    version from the game's `package.json` (`iron` section; the window title and icon use
+    version from the game's `package.json` (`platypus` section; the window title and icon use
     them), `platform`, `systemLanguage`, `isMobilePlatform`, `quit()`; installed as
-    `globalThis.__iron_info` before the bundle runs (and on reload) — `M5-APP-01`, `M5-APP-02`
+    `globalThis.__platypus_info` before the bundle runs (and on reload) — `M5-APP-01`, `M5-APP-02`
 - [ ] **M5.a2 follow-ups** (after M5.a2 or with the milestone that needs them):
   - [ ] More classic test scenes, with downloads the user approves first: Suzanne, Sponza,
     the Damaged Helmet (PBR), the Stanford Dragon / Armadillo / Lucy
@@ -997,21 +997,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] App follow-ups:
     - [x] `Application.targetFrameRate` (2026-10-17): the `app.targetFrameRate` op caps
       frames with `ControlFlow::WaitUntil` while vsync is off (`lifecycle::frame_cap`);
-      the value survives a full reload through `__iron_info` — `M5-APP-08`, `M5-DSP-03`
-    - [x] `Application.runInBackground` (2026-10-17, off by default, `iron.runInBackground`
+      the value survives a full reload through `__platypus_info` — `M5-APP-08`, `M5-DSP-03`
+    - [x] `Application.runInBackground` (2026-10-17, off by default, `platypus.runInBackground`
       in `package.json`): unfocused or minimised, the game pauses — no fixed ticks,
       updates or timers, the mixer fades out, the event loop sleeps (`PlatformApp::paused`
       / `idle`, which still polls hot reload) — and resumes without catch-up ticks
       (`FixedClock::restart`, script time skips the pause). Screenshot runs never pause —
       `M5-APP-06`, `M5-APP-07`, `M5-APP-09`
     - [x] Focus events (2026-10-17): `InputEvent::Focused` / `Occluded` (and Windows'
-      0 × 0 minimise) → `__iron_focus(focused, paused)`; `Application.isFocused`,
+      0 × 0 minimise) → `__platypus_focus(focused, paused)`; `Application.isFocused`,
       `isPaused`, `onFocusChanged(fn)`; component hooks `onApplicationFocus(hasFocus)` and
       `onApplicationPause(paused)` on active objects — `M5-APP-05`, `M5-APP-07`, `M5-APP-10`
     - [ ] `persistentDataPath` (with M6 file IO), live monitor changes, battery / power state
 - [x] **M5.b** Scene representation and serialization (objects, components, hierarchy,
   transforms) with skybox support (2026-10-17, `examples/scenes`)
-  - [x] Scene files (`SceneData`, JSON `iron.scene` v1): objects (name, enabled, layer,
+  - [x] Scene files (`SceneData`, JSON `platypus.scene` v1): objects (name, enabled, layer,
     local transform, children), components by registered or engine name with their
     `@property` values (standard decorators; every engine component's settings are
     marked), references to objects and components inside the file, shared meshes
@@ -1026,7 +1026,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `Scene.getRootGameObjects` / `serialize`; `GameObject.scene` / `root`;
     `GameObject.dontDestroyOnLoad`; `GameObject.instantiate` (copies with references
     inside remapped) — `M5-SCN-03`, `M5-SCN-04`
-  - [x] Start scene: `iron.startScene` in `package.json`; `register(..., { spawn: false })`
+  - [x] Start scene: `platypus.startScene` in `package.json`; `register(..., { spawn: false })`
     for components that only live in scenes
   - [ ] Later: writing scene files from the game (M6 file IO, then the editor, M5.e);
     stable asset GUIDs (`M5-SCN-02` in the old plan, now `M5-SCN-05`); prefabs with
@@ -1034,21 +1034,21 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
 - [ ] **Hot reload, part 2** (moved from M4, after M5.a/b): keep state across a reload by reusing
   scene serialization
   - [x] Wipe and rebuild through scene serialization (2026-10-17): the old code saves every
-    scene (`__iron_save_state`: objects, transforms, components, `@property` values and
+    scene (`__platypus_save_state`: objects, transforms, components, `@property` values and
     script components' plain fields, references remapped, plus quality level and clock);
-    the new code rebuilds them (`__iron_restore_state`) instead of starting components.
+    the new code rebuilds them (`__platypus_restore_state`) instead of starting components.
     Restored script components get `onReload` instead of `onAwake` / `onStart`; engine
     components are rebuilt like a scene load. Gone properties are dropped with a warning,
     new ones get their defaults; if a saved class isn't registered any more, the game
     starts over (with the start scene) and says what to register.
-    `IRON_RELOAD_AT_FRAME` reloads during a screenshot run — `M4-HOT-02`, `M4-HOT-03`,
+    `PLATYPUS_RELOAD_AT_FRAME` reloads during a screenshot run — `M4-HOT-02`, `M4-HOT-03`,
     `M4-HOT-05`
   - [ ] Still lost on reload: physics velocities and joints' live state, playing sounds
     (sources with `playOnAwake` start again), particles in flight, module-level variables,
     React state (Fast Refresh below); `M4-PHY-04`
   - [x] React Fast Refresh (2026-10-17): dev builds (`bun run dev` → `scripts/dev.ts`) make
-    `vendor.js` (React, the reconciler, `react-refresh`, `@iron/engine`, `@iron/react`)
-    and a CommonJS `game.js` marked `// @iron-dev`; when only game.js changes the app
+    `vendor.js` (React, the reconciler, `react-refresh`, `@platypus/engine`, `@platypus/react`)
+    and a CommonJS `game.js` marked `// @platypus-dev`; when only game.js changes the app
     reloads it in place: React keeps state (Fast Refresh), live components move onto
     their new classes (fields kept, new fields' defaults added), the top level's style
     sheets are swapped, and the world, physics and sounds stay. A changed vendor or a
@@ -1056,7 +1056,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] In-place reload follow-ups: undo more of the top level (fonts, input and scene
     listeners, timers); statics on component classes start fresh; objects a top level
     creates are made again
-  - [ ] Reload benchmark — `M4-HOT-07`: the bench exists (`cargo bench -p iron_scene
+  - [ ] Reload benchmark — `M4-HOT-07`: the bench exists (`cargo bench -p platypus_scene
     --bench reload`) and measures ~146 ms against the 100 ms target (1 MB bundle parse
     ~54 ms, save ~27 ms, restore ~58 ms). To get under it: parse the new bundle on a
     background thread while the old code keeps running (hides the parse), make
@@ -1092,8 +1092,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [x] Script overhead with many objects (found 2026-10-18 with `examples/fishtank`: 123
     fish ran at ~40 ms a frame in release, ~32 ms of it QuickJS; now ~16 ms):
     - [x] Transforms go to the engine in one `scene.locals` op per script turn
-      (`flushTransforms`, `__iron_flush` after every call into JS), not one op per setter
-    - [x] Lifecycle hooks run in one `__iron_run(method, ids)` call per hook, not one call
+      (`flushTransforms`, `__platypus_flush` after every call into JS), not one op per setter
+    - [x] Lifecycle hooks run in one `__platypus_run(method, ids)` call per hook, not one call
       per component (every `LineRenderer2D` has `onPreRender`)
     - [x] World setters and getters under an identity parent skip the parent maths, and
       the parent's world transform is one walk up, not three per level
@@ -1111,8 +1111,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     cached: 24.6 → 5.7 ms a frame for the room (~3.3 ms of it the figure)
   - [x] Skeletal animation natively: sample glTF clips and blend poses in Rust (the
     `Animator`'s state machine stays in script), so a crowd of animated characters costs
-    little script time. Compiled games (iron_ts) do this (2026-10-23: `Model.animations`
-    built by `iron_animation::gltf`, the `Animator` in `iron_animation`). Clips' curves are now
+    little script time. Compiled games (platypus_ts) do this (2026-10-23: `Model.animations`
+    built by `platypus_animation::gltf`, the `Animator` in `platypus_animation`). Clips' curves are now
     bound once per (clip, root) to bone slots and channels (`bind.rs`, Unity's `Rebind`), the
     pose is a dense per-bone array reused between frames, a bone's curves share their key
     search, and `mark_moved` stops at listed objects: fog-white-room's animation 0.375 → 0.027 ms
@@ -1144,7 +1144,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [x] `examples/crowd` (2026-10-23): two city blocks of walking mannequins (50 to 1000 a
     block, each its own Animator), four views, the culling modes on a key, a HUD counting what
     is seen, animated and culled per block; `tools/bench/inputs/crowd.json`
-  - [x] Native render sync (found 2026-10-22 by `iron-build bench`: `sync_native_render` cost
+  - [x] Native render sync (found 2026-10-22 by `platypus-build bench`: `sync_native_render` cost
     0.6-2 ms a frame, making fog-world and six clock faces slower native than QuickJS): it
     rebuilt every component every frame and copied every script mesh's vertices per renderer
     (`mesh_info`). Now incremental (registry versions, compare with what was sent, typed
@@ -1156,7 +1156,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     commits), engine (scene, physics step, audio), render (CPU encode, GPU passes via
     timestamp queries: shadows, world, light volume, post, UI), present / vsync wait
   - [ ] Scripts: time per component class and per hot function (QuickJS sampling or
-    instrumented `__iron_run`), allocations and GC pauses
+    instrumented `__platypus_run`), allocations and GC pauses
   - [ ] Animation: animators, bones and curves sampled per frame, time per character
   - [ ] Rendering counters beside `RenderStats`: draw calls, triangles, pipeline switches,
     texture and buffer memory, shadow maps drawn
@@ -1169,8 +1169,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   with z movement and x/y turns locked, the usual way to keep bodies in a plane) slid as if
   on ice. rapier 0.36.1's 3D friction solve (`contact_constraint_element.rs`) inverts the
   2×2 tangent mass matrix; the locked direction has zero mass, the determinant is 0,
-  `simd_inv(0)` gives 0, and every friction impulse becomes 0. Worked around in Iron
-  (2026-10-19): that combination isn't given to rapier as a lock; `iron_physics` pins the axis
+  `simd_inv(0)` gives 0, and every friction impulse becomes 0. Worked around in Platypus
+  (2026-10-19): that combination isn't given to rapier as a lock; `platypus_physics` pins the axis
   itself each step (`set_constraints`, `hold_pins`) — `M4-PHY-07`
   - [ ] Upstream: reported as dimforge/rapier#1047, fixed by dimforge/rapier#1048 (branch
     `fix/plane-locked-friction` on Quacky2200/rapier; the material is in
@@ -1250,22 +1250,22 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       `QualitySettings.setQualityLevel` / `getQualityLevel` / `names` / `levels` /
       `onLevelChanged`; the default level applied when the engine loads
     - [x] Project / game settings: the default level and per-level overrides in the game's
-      manifest (`package.json` `iron.quality`); a settings UI menu in games (React, in the
+      manifest (`package.json` `platypus.quality`); a settings UI menu in games (React, in the
       example); the editor's (M5.e) later
-    - [x] Players' quality choices saved per user (`iron.quality` in `PlayerPrefs`)
+    - [x] Players' quality choices saved per user (`platypus.quality` in `PlayerPrefs`)
   - [x] Display settings (asked for 2026-10-17): `Screen.fullScreenMode` (exclusive,
     borderless, maximized, windowed; platforms without a mode fall back: no exclusive on
     Wayland, fullscreen only on phones), `Screen.setResolution` / `resolutions` /
     `currentResolution` / `supportedFullScreenModes`, `QualitySettings.vSyncCount`,
-    `Application.targetFrameRate` (with vsync off); defaults in `iron.display`, the
+    `Application.targetFrameRate` (with vsync off); defaults in `platypus.display`, the
     player's choice saved and applied before the window shows; the arcade's settings
     menu — `M5-DSP-01`..`03`
   - [x] `PlayerPrefs` (part of M6 brought forward): a JSON file per game in the OS's
     settings folder (`%APPDATA%`, `~/Library/Application Support`, `$XDG_CONFIG_HOME`),
-    `IRON_PREFS_DIR` to override — `M5-PRF-01`, `M5-PRF-02`
+    `PLATYPUS_PREFS_DIR` to override — `M5-PRF-01`, `M5-PRF-02`
   - [x] Fixes (asked for 2026-10-17): exclusive fullscreen at the monitor's current
     resolution unless one is chosen, the window size kept through fullscreen
-    (`M5-DSP-04`); `iron` is a windowed (GUI-subsystem) program logging to `Player.log`
+    (`M5-DSP-04`); `platypus` is a windowed (GUI-subsystem) program logging to `Player.log`
     (with colours) in the game's settings folder, and to the terminal it was started
     from (`M5-APP-04`)
   - [ ] Display follow-ups: picking the monitor (`Display.displays`), HDR output, a
@@ -1280,7 +1280,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] `GameObject.layer` (0–31, default 0) sent as `scene.layer object layer` (kept on
       the scene's objects, so physics can use it later); named layers (Unity's built-ins: 0
       Default, 1 TransparentFX, 2 Ignore Raycast, 4 Water, 5 UI, plus the game's from
-      `package.json` `iron.layers`); `LayerMask.nameToLayer` / `layerToName` /
+      `package.json` `platypus.layers`); `LayerMask.nameToLayer` / `layerToName` /
       `getMask(...names)` / `contains` / `everything`
     - [x] `Camera.cullingMask` (bit per layer, default all) turning render groups on and off
       per camera (a minimap that hides the HUD layer, a first-person camera that hides the
@@ -1329,7 +1329,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       events, `sampleAnimation`, JSON), the legacy `Animation` component (play,
       crossFade), `Animator` + `AnimatorController` (parameters, states, 1D blend trees,
       conditional / exit-time / Any State transitions with cross-fades); evaluated each
-      frame between `onUpdate` and `onLateUpdate` (`__iron_animate`); saved in scenes —
+      frame between `onUpdate` and `onLateUpdate` (`__platypus_animate`); saved in scenes —
       `M5-ANI-01`..`05`
     - [x] glTF animations as clips (linear, step, cubic spline; copies get an `Animation`
       playing the first), skins and GPU skinning: `SkinnedMeshRenderer` (`bones`,
@@ -1347,7 +1347,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Prefab follow-ups: linked instances with overrides (save only what differs, update
     copies when the prefab changes), nested prefabs and variants (with the editor, M5.e)
   - [x] Cloth (Unity's `Cloth`; rapier has no soft bodies): position-based dynamics in
-    `iron_physics::cloth` (welded vertices, stretch and bend constraints, damping,
+    `platypus_physics::cloth` (welded vertices, stretch and bend constraints, damping,
     gravity, wind and gusts, friction), pins (points or a box) held where the object is,
     sphere and capsule colliders; a copy of the renderer's mesh updated each fixed tick;
     `examples/cloth` — `M5-CLO-01`..`03`
@@ -1357,17 +1357,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [x] Scene serialization (M5.b) and GUID `.meta` files: `scripts/assets.ts` (run by
     `bun run dev`) gives every asset a `.meta` (GUID, importer settings), keeps GUIDs
     through moves, reports orphans (`--prune` deletes them); the engine reads them into
-    `__iron_info.assets`; `Assets.guidToPath` / `pathToGuid` / `importer`, `"guid:..."`
+    `__platypus_info.assets`; `Assets.guidToPath` / `pathToGuid` / `importer`, `"guid:..."`
     sources for textures, models and sounds, importer defaults for `Texture.load` and
     streaming; scenes save GUIDs and find renamed files by them — `M5-AST-03`..`05`
   - [x] Asset hot reload: the game folder is watched (not `dist/`, `node_modules/`,
     hidden folders); textures, models (same mesh and texture ids) and sounds from a
     changed file load again in place, then `Assets.onChanged` listeners hear the paths —
     `M5-AST-01`, `M5-AST-02`. Placed model copies keep their materials and nodes.
-  - [x] Cooking: `iron --cook [game]` prepares textures (every mip, BC1 for opaque or
+  - [x] Cooking: `platypus --cook [game]` prepares textures (every mip, BC1 for opaque or
     cut-out images, BC3 for smooth alpha, RGBA8 when not whole blocks; `.meta` import
     settings) and glTF models (meshes ready to upload, textures cooked) into
-    `.iron/cooked/`; loads use a cooked file newer than its source (decoded on GPUs
+    `.platypus/cooked/`; loads use a cooked file newer than its source (decoded on GPUs
     without BC); the device asks for BC when the GPU has it — `M5-AST-06`
   - [ ] Cooking follow-ups: mobile formats (ASTC / ETC2), BC7 and BC5 (normal maps),
     better BC endpoint fitting, compression of cooked files, cooking scenes and sounds,
@@ -1383,11 +1383,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [x] `Interaction` (`interaction/dnd.rs`): threshold, events, accepting by preventing
       `dragover`, Escape / blur cancel, a live drag image (`UiTree::set_drag_image`,
       `setDragImage`), system files (`FileDragEnter` / `FileDrop` / `FileDragCancel`)
-    - [x] `@iron/react`: `onDrag*` props, `IronDragEvent`, `IronDataTransfer` (`setData`,
+    - [x] `@platypus/react`: `onDrag*` props, `PlatypusDragEvent`, `PlatypusDataTransfer` (`setData`,
       `getData`, `types`, `files`, `dropEffect`, `setDragImage`)
     - [x] App: winit's hovered / dropped files gathered per frame (`file_drop.rs`), the cursor
       position from the system during a drag on Windows
-    - [x] Editor example: a project browser (`iron_editor [project]`) listing the project
+    - [x] Editor example: a project browser (`platypus_editor [project]`) listing the project
       folder; files dropped from the system are copied into the folder they land on, items
       dragged inside move into folders; editor-only ops `editor.listDir` / `copyIn` / `move`,
       confined to the project — `M5-DND-07`, `-08`, `-10`
@@ -1397,11 +1397,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       deleting, renaming and creating files in the project browser; the manual check in the
       window (`M5-DND-11`)
   - [ ] Then the shell: docking, tree view, virtualized list, inspector, undo/redo — `M5-EDT-*`
-    - [x] `iron_editor` (`iron_editor.exe` on Windows): a second binary of `iron_app`
-      (`src/bin/iron_editor.rs` includes main.rs as a module; `editor::ENABLED` from
-      `CARGO_BIN_NAME`) that loads `editor/dist` (or `IRON_EDITOR_UI`); the editor UI is a
+    - [x] `platypus_editor` (`platypus_editor.exe` on Windows): a second binary of `platypus_app`
+      (`src/bin/platypus_editor.rs` includes main.rs as a module; `editor::ENABLED` from
+      `CARGO_BIN_NAME`) that loads `editor/dist` (or `PLATYPUS_EDITOR_UI`); the editor UI is a
       Bun workspace (`editor/`) in the root `bun run build`; `Application.isEditor` — `M5-EDT-17`
-    - [x] `@iron/editor-ui` (`js/editor-ui`): reusable components drawn by Iron's UI, with
+    - [x] `@platypus/editor-ui` (`js/editor-ui`): reusable components drawn by Platypus's UI, with
       the logic in plain modules — `M5-EDT-06..14`, `-18..20`
       - [x] Menubar (non-native): submenus, accelerators shown and working from anywhere,
         Alt+letter / F10, arrows / Home / End / Enter / Escape, hover switches open menus,
@@ -1413,7 +1413,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         view on it (expand/collapse, Ctrl/Shift selection, keyboard, icon and rename slots)
       - [x] Console: level colours, filter buttons with counts, collapse, search, auto-scroll
         that pauses when scrolled up, code links opened with `editor.openFile` (`code -g`
-        or `IRON_EDITOR_OPEN`); fed from the log through a capture layer and `__iron_log`
+        or `PLATYPUS_EDITOR_OPEN`); fed from the log through a capture layer and `__platypus_log`
         — `M5-EDT-15`, `M5-EDT-16`
       - [x] Demo layout: Hierarchy (a ~20,000-node tree), Project, Scene, Game and Inspector
         placeholders, Console, status bar — `M5-EDT-21`
@@ -1477,8 +1477,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
 
 Research and design: [docs/research/networking-and-files.md](docs/research/networking-and-files.md).
 
-- [ ] Bridge: `Value::Bytes`, JS-side promise table (`asyncOp`), one `__iron_io(events)` batch per
-  frame with a budget, new `iron_io` crate (`IoHost`, generations for hot reload) — `IO-BRG-*`
+- [ ] Bridge: `Value::Bytes`, JS-side promise table (`asyncOp`), one `__platypus_io(events)` batch per
+  frame with a budget, new `platypus_io` crate (`IoHost`, generations for hot reload) — `IO-BRG-*`
 - [ ] Files: game manifest; read-only `game` root and per-game writable `data` root (cap-std,
   stricter names, quotas, atomic writes); `Bun.file`-shaped async API — `IO-FS-*`
 - [ ] `fetch`: lazy tokio runtime, reqwest over rustls; policy (manifest hosts, HTTPS-only when
@@ -1612,17 +1612,17 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     then folded into one (2026-10-21): each quality level carries a `PipelineAsset` (light
     shafts, HDR, additional lights and their shadows; auto exposure via
     `QualitySettings.autoExposure`); Low is the phones' tier; the manifest's default level can
-    go by platform; `iron.renderPipeline` only warns now (`M7-RP-01`..`03`)
+    go by platform; `platypus.renderPipeline` only warns now (`M7-RP-01`..`03`)
   - [ ] More per-level switches as features land: shadow cascades and resolution caps per
     platform, MSAA and texture defaults, the light volume's detail, post effects
   - [ ] Mobile GPU limits: fewer storage buffers, no compute where it's missing (auto exposure
     and the light volume fall back or switch off), checked on an iOS / Android device
-- [x] Real-world light units (2026-10-21, required): `iron.lightUnits: "physical"` (a
+- [x] Real-world light units (2026-10-21, required): `platypus.lightUnits: "physical"` (a
   project-wide switch, as Unity 7 brings them into URP): the sun in lux, spot and point lights
   in lumens, emissive surfaces and the sky in nits; pre-exposure by each camera's last exposure;
   a physical camera (`Camera.aperture` / `shutterSpeed` / `iso` → `physicalExposure`); a light
   meter (`Light.illuminanceAt`, `measureIlluminance`); `examples/light-units` (`M7-HD-01`, `02`).
-  Old projects keep Iron's own units (`legacy`, the default)
+  Old projects keep Platypus's own units (`legacy`, the default)
 - [ ] Post-processing (asked for 2026-10-21; today: bloom, exposure and tonemapping, FXAA,
   render scale, fog and light shafts, and CSS filter / backdrop-filter / blend modes for
   screen UI only)
@@ -1663,22 +1663,22 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - QuickJS bytecode (the cheapest step: skips parsing at startup)
   - TypeScript → Rust native via Perry or Vercel's scriptc
   - AssemblyScript → wasm → wasm IR → Rust via `wasm2rs`
-  - Questions: keeping the `__iron_op` / `__iron_commit` boundary unchanged, React's dynamic
+  - Questions: keeping the `__platypus_op` / `__platypus_commit` boundary unchanged, React's dynamic
     code under each option, and keeping dev builds on QuickJS for hot reload (M4)
 - [x] **Windows API** (2026-10-21): `Window` (tool / dialog / popup windows, families and event domains, messages, hot reload by key,
-  platform support table), `examples/windows`, guide `docs/windows.md`; steps in `tools/iron_ts/TODO.md` "Windows API". Open
+  platform support table), `examples/windows`, guide `docs/windows.md`; steps in `tools/platypus_ts/TODO.md` "Windows API". Open
   optional leftovers: embedded `child` style, modal dialogs, `Camera.targetWindow`, transparent windows, `Application.wantsToQuit`,
   domains on their own thread / process, and a manual check of the winit runner on a real display (never run there yet).
-- [ ] **M9.b2** `iron_ts`: ahead-of-time TypeScript compiler (oxc → typed Iron IR → Cranelift → object
-  linked into the game exe). Spike done (`tools/`, `docs/research/iron-ts-spike.md`): the zombie
+- [ ] **M9.b2** `platypus_ts`: ahead-of-time TypeScript compiler (oxc → typed Platypus IR → Cranelift → object
+  linked into the game exe). Spike done (`tools/`, `docs/research/platypus-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.
-  **Progress and the next task are tracked in `tools/iron_ts/TODO.md`** (update it every step).
+  **Progress and the next task are tracked in `tools/platypus_ts/TODO.md`** (update it every step).
   Rule for this list: a box is ticked only when the whole item is done. Finished parts of an open item
   are ticked sub-items. **STOP** marks an item big or risky enough that we write down the design and
   review it with the user before starting, not after.
 
   What real gameplay code needs, counted in `js/engine/src` (11,500 lines), the examples and the zombie
-  game (`docs/research/iron-ts-spike.md` section 11): classes extending `Component` with `@property`
+  game (`docs/research/platypus-ts-spike.md` section 11): classes extending `Component` with `@property`
   decorators, `this` (1,400 uses), getters/setters (210), `??` and `?.`, spread (96), `Map`/`Set` (64),
   template literals (84 in the engine, 6 to 17 per example), string methods (51), `try`/`throw` (22 / 25),
   `instanceof`/`typeof` (94), `switch` (7), a few `async`. React/JSX appears only in each game's UI file.
@@ -1724,7 +1724,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Functions in generic positions (after Generics)
   - [ ] **Classes**: **STOP, design first.** Gameplay code is classes: `extends Component`, `@property`,
         `this`, `override`, getters/setters, statics, `instanceof`
-    - [x] Design note written: `docs/research/iron-ts-classes.md` (layout, calls, constructors, members,
+    - [x] Design note written: `docs/research/platypus-ts-classes.md` (layout, calls, constructors, members,
           engine boundary, `@property`, sub-tasks)
     - [x] Answers recorded (section 12 of the note): closed world, per-method tables, structural-typing
           note first, scope cut as recommended; the engine becomes native with `.d.ts` declarations,
@@ -1751,7 +1751,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Unions of different interfaces/classes (discriminated by a field), not only inline object types
     - [ ] Optional properties and index signatures (`Record<string, V>`)
   - [ ] **Strings**: **STOP, UTF-16 vs UTF-8 decision first** (JS `length`/indexing are UTF-16)
-    - [x] Design note: representation, `length`/indexing/`charCodeAt` semantics, interop with Rust `String` (`docs/research/iron-ts-strings.md`: WTF-8 storage, exact JavaScript behaviour)
+    - [x] Design note: representation, `length`/indexing/`charCodeAt` semantics, interop with Rust `String` (`docs/research/platypus-ts-strings.md`: WTF-8 storage, exact JavaScript behaviour)
     - [x] `string` values: literals, `+`, `===`/`<`, `.length`, template literals (`M9-TS-162..186`, including strings across the engine boundary)
     - [ ] Number to string exactly as JS (shortest round-trip, `toFixed`, `toString(radix)`), `parseFloat`,
           `Number()` (done except `toString(radix)` of fractions, `toPrecision`, `toExponential`; `M9-TS-173..177`)
@@ -1772,16 +1772,16 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Operators
       - [x] `??=`, `||=`, `&&=`, `**`, `**=`, unary `~` (`M9-TS-85..91`)
       - [ ] Optional call `f?.()`, `in` (done, `M9-TS-199..205`), `void`, `delete` (limited)
-    - [x] `try`/`catch`/`finally`/`throw`: design in `docs/research/iron-ts-stdlib.md` (approved: checked returns in
+    - [x] `try`/`catch`/`finally`/`throw`: design in `docs/research/platypus-ts-stdlib.md` (approved: checked returns in
           may-throw functions only), built with the `Error` classes from a prelude (`M9-TS-187..198`); not done:
           `error.stack`/`cause`, throwing non-Error values, `AggregateError`
-    - [x] `async`/`await`/Promises and timers (design in `docs/research/iron-ts-generators-and-proxy.md`, approved): built on stackful
+    - [x] `async`/`await`/Promises and timers (design in `docs/research/platypus-ts-generators-and-proxy.md`, approved): built on stackful
           coroutines with a microtask queue and timers in the runtime (`M9-TS-408..430`). The host must call `ts_rt_microtasks_run()` after
-          every call into script and `ts_rt_timers_advance(now_ms)` once per frame (needs `iron_app`, not done); also done: `Symbol`
+          every call into script and `ts_rt_timers_advance(now_ms)` once per frame (needs `platypus_app`, not done); also done: `Symbol`
           values, iterators and generators (`M9-TS-376..407`), `ArrayBuffer`/`DataView`/views, `structuredClone`, `WeakRef`,
-          `Intl.Segmenter/Locale/DisplayNames`, `Temporal` (ISO calendar) (`M9-TS-431..515`); detail in `tools/iron_ts/TODO.md`
-  - [ ] **Standard library, native** (`docs/research/iron-ts-stdlib.md`; rule: JavaScript's exact results, compared with
-        bun; what is not built is a compile error). Detail and open gaps are in `tools/iron_ts/TODO.md`
+          `Intl.Segmenter/Locale/DisplayNames`, `Temporal` (ISO calendar) (`M9-TS-431..515`); detail in `tools/platypus_ts/TODO.md`
+  - [ ] **Standard library, native** (`docs/research/platypus-ts-stdlib.md`; rule: JavaScript's exact results, compared with
+        bun; what is not built is a compile error). Detail and open gaps are in `tools/platypus_ts/TODO.md`
     - [x] Tier 1: errors and `try`/`catch`/`finally`, `typeof`, `Object.*`, spread/rest, `Array` gaps, `Number`, `Math`, `console` (`M9-TS-187..205`)
     - [x] Tier 2: `Map`/`Set`/`WeakMap`/`WeakSet`, typed `JSON` (`M9-TS-206..221`)
     - [ ] Tier 3
@@ -1790,13 +1790,13 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
       - [ ] `Intl` (ICU4X, compiled data for every locale)
         - [x] I1 `normalize`, `localeCompare`, `Intl.Collator`, `toLocaleUpperCase/LowerCase` (`M9-TS-254..263`)
         - [x] I2 `Intl.NumberFormat`, `Number.toLocaleString` (`M9-TS-264..275`; not: `style: unit`, compact currency, `formatToParts`)
-        - [ ] I3 `Intl.DateTimeFormat`, `toLocale*String`, component options: decided 2026-10-19 (`docs/research/iron-ts-intl-datetime.md`): ICU4X now with lightweight main-market data, `rust_icu` as an optional `icu-full` build (spike first)
+        - [ ] I3 `Intl.DateTimeFormat`, `toLocale*String`, component options: decided 2026-10-19 (`docs/research/platypus-ts-intl-datetime.md`): ICU4X now with lightweight main-market data, `rust_icu` as an optional `icu-full` build (spike first)
           - [~] I3a on ICU4X field sets: `dateStyle`/`timeStyle`, `toLocale*String`, `Intl.DateTimeFormat.format`, component options (`M9-TS-277..286`); open: `formatToParts`, `formatRange`, `resolvedOptions`, `era`, `dayPeriod`, other calendars
           - [ ] Lightweight baked data (`icu4x-datagen`) for the main-market locale list
           - [ ] (optional, later) `icu-full` feature (`rust_icu`/ICU4C): spike on Windows, then the backend
         - [~] I4 `PluralRules`, `ListFormat`, `RelativeTimeFormat` done (`M9-TS-296..312`); open: `Locale`, `DisplayNames`, `Segmenter`
-        - [ ] The game's locale list from `package.json` into `ts_rt_intl_set_locales` (needs `iron_app`)
-    - [ ] Tier 4 (asked for): `encodeURI`/`decodeURI` family and `AggregateError`/`cause` are done (`M9-TS-287..295`); iterators and generators (done, `M9-TS-376..393`; design in `docs/research/iron-ts-generators-and-proxy.md`), `Symbol` values, typed arrays / `ArrayBuffer` / `DataView`,
+        - [ ] The game's locale list from `package.json` into `ts_rt_intl_set_locales` (needs `platypus_app`)
+    - [ ] Tier 4 (asked for): `encodeURI`/`decodeURI` family and `AggregateError`/`cause` are done (`M9-TS-287..295`); iterators and generators (done, `M9-TS-376..393`; design in `docs/research/platypus-ts-generators-and-proxy.md`), `Symbol` values, typed arrays / `ArrayBuffer` / `DataView`,
           `Error.stack`/`captureStackTrace`; `BigInt` is done (`M9-TS-360..369`), `Temporal`, real `WeakRef`/`FinalizationRegistry`,
           `Promise`/`async`/timers (**STOP**), `Proxy`/`Reflect` (**STOP**), `structuredClone`, `globalThis`, bytes across the engine boundary
           (`btoa`/`atob`, `TextEncoder`/`TextDecoder`)
@@ -1822,44 +1822,44 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] **Direct engine calls**: **STOP, design first.** Biggest payoff, biggest surface. Direction set by
         the user: the engine is native and TypeScript sees it only as declaration files (`.d.ts`); scripts
         call native functions directly (maths, `Date`, scene, physics, audio); QuickJS stays as an option
-    - [x] Design note written: `docs/research/iron-ts-engine-boundary.md` (declared handle / value / singleton /
+    - [x] Design note written: `docs/research/platypus-ts-engine-boundary.md` (declared handle / value / singleton /
           extern-base classes, manifest generated from Rust, class table and hooks, f32, what `js/engine`
           becomes module by module, QuickJS bindings from the same manifest). Answers recorded in its
           section 13 (all as recommended; the whole engine is ported to Rust; generics-as-intrinsics
           still open)
-    - [ ] `#[iron_api]` + manifest: generate the `.d.ts`, `extern "C"` shims and QuickJS bindings from
-          annotated Rust (replaces `__iron_op`; speeds up QuickJS too)
-      - [x] First slice: `crates/iron_api` + `iron_api_macros`: scalars, bools and handles, manifest, `.d.ts`,
+    - [ ] `#[platypus_api]` + manifest: generate the `.d.ts`, `extern "C"` shims and QuickJS bindings from
+          annotated Rust (replaces `__platypus_op`; speeds up QuickJS too)
+      - [x] First slice: `crates/platypus_api` + `platypus_api_macros`: scalars, bools and handles, manifest, `.d.ts`,
             JSON, `extern "C"` shims, typed QuickJS bindings (`M9-API-01..06`); additive
       - [x] Value classes (`Vector3`) scalarised across the boundary (`M9-API-10..11`, `M9-TS-147..150`) and the engine context: a thread-local current world (`M9-API-07..09`)
       - [ ] Strings (done, `M9-API-21..22`), methods on handles (done, `M9-API-16..19`), value-class methods as intrinsics (done, `M9-API-20`), QuickJS bindings for values and strings (done, `M9-API-23..26`; handle classes in QuickJS open)
-      - [x] `iron_scene` annotated: the `Scene` namespace (handles, `Vector3`/`Quaternion`, hierarchy, flags), driven by compiled TypeScript (`M9-API-12..15`, `M9-TS-151..155`); `GameObject`/`Transform` handle classes (`go.transform.position = v`, `M9-API-16..19`, `M9-TS-156..158`); not yet wired into `iron_app`
-      - [ ] Annotate `iron_physics`, `iron_audio`, `iron_script`; wire `enter` into the app; retire the ops they replace
+      - [x] `platypus_scene` annotated: the `Scene` namespace (handles, `Vector3`/`Quaternion`, hierarchy, flags), driven by compiled TypeScript (`M9-API-12..15`, `M9-TS-151..155`); `GameObject`/`Transform` handle classes (`go.transform.position = v`, `M9-API-16..19`, `M9-TS-156..158`); not yet wired into `platypus_app`
+      - [ ] Annotate `platypus_physics`, `platypus_audio`, `platypus_script`; wire `enter` into the app; retire the ops they replace
     - [x] Compiler: extern table from the JSON manifest, `Handle` type, namespace calls with scalar arguments and f32/i32/u32/bool conversions (`M9-TS-142..146`)
-    - [~] Compiled `Component` with hooks driven by a Rust host (`NativeHost`, `register(X)`, class table; `M9-TS-556..561`); `Input` axes and `iron_app` wiring open
+    - [~] Compiled `Component` with hooks driven by a Rust host (`NativeHost`, `register(X)`, class table; `M9-TS-556..561`); `Input` axes and `platypus_app` wiring open
     - [ ] First slice: `Time`, `Mathf`, `Vector3`, `Transform`, `Input` axes and a compiled `Component`
           with `onUpdate`, driven by `ComponentHost` with no JS engine in the loop
-    - [ ] Inventory the `__iron_op` names and shapes (`js/engine/src`) and what each passes
+    - [ ] Inventory the `__platypus_op` names and shapes (`js/engine/src`) and what each passes
     - [ ] Value types with shared layouts: `Vector2/3/4`, `Quaternion`, `Color`, `Matrix` are TS classes in
           `math.ts` today; decide: compile `math.ts` natively, or intrinsics over glam types (f32 fields:
           the IR has only f64 numbers, so a layout/annotation for f32 is needed)
     - [ ] Generate `extern "C"` bindings from one op table, used by the engine and the compiler
     - [ ] Handles and ids (`GameObject`, `Transform`, ...), strings and arrays across the boundary
-    - [ ] Callbacks from Rust into native script (`__iron_*` hooks) through a function table
+    - [ ] Callbacks from Rust into native script (`__platypus_*` hooks) through a function table
     - [ ] `Mathf`/vector arithmetic as inline intrinsics
     - [ ] Component lifecycle without QuickJS (joins Classes)
   - [ ] **UI without React**: **STOP, design first.** A small component/effect library (Preact or our own
         remake) over a native UI tree, written in the compiled TypeScript subset; no React reconciler, no
         OneJS-style embedded engine for the common case
-    - [x] Generics in `iron_ts` (functions, classes, methods, interfaces, aliases; `M9-TS-562..574`)
-    - [x] Step 3 of the migration: compiler side for TSX counters, lists, effects, memo and refs (`jsx.rs`, `ui.ts`, `iron_ts_ui` bridge; `M9-TS-575..579`); also `ref=`, context, `useReducer`, `useImperativeHandle`, `useSyncExternalStore`, `memo`, `forwardRef` (`M9-TS-580..586`); controlled text fields (`M2-NAT-13`), hot-reload data and `Runtime::refresh` (`M9-TS-587..588`); updater setters, dynamic style objects and spread (`M9-TS-589..591`); next: `iron_app` wiring (another session), the dev loop
-    - [x] Step 2 of the migration: `iron_ui_native` reconciler core with Rust closures (hooks, keyed diff, effects in React's order, portals, events; `M2-NAT-01..12`); next: compiler side (JSX, hook intrinsics), then events/refs wiring, then `memo`/`forwardRef`/`useReducer`
+    - [x] Generics in `platypus_ts` (functions, classes, methods, interfaces, aliases; `M9-TS-562..574`)
+    - [x] Step 3 of the migration: compiler side for TSX counters, lists, effects, memo and refs (`jsx.rs`, `ui.ts`, `platypus_ts_ui` bridge; `M9-TS-575..579`); also `ref=`, context, `useReducer`, `useImperativeHandle`, `useSyncExternalStore`, `memo`, `forwardRef` (`M9-TS-580..586`); controlled text fields (`M2-NAT-13`), hot-reload data and `Runtime::refresh` (`M9-TS-587..588`); updater setters, dynamic style objects and spread (`M9-TS-589..591`); next: `platypus_app` wiring (another session), the dev loop
+    - [x] Step 2 of the migration: `platypus_ui_native` reconciler core with Rust closures (hooks, keyed diff, effects in React's order, portals, events; `M2-NAT-01..12`); next: compiler side (JSX, hook intrinsics), then events/refs wiring, then `memo`/`forwardRef`/`useReducer`
     - [x] Step 1 of the migration: typed `Op` enum and one applier (`M2-UI-OP-01`)
-    - [x] Design note written and approved (answers: portal events follow React, non-boolean `&&` is a compile error, `memo`/`forwardRef`/`useReducer` last, generics added to `iron_ts`): `docs/research/iron-ui-native.md` (user decision: hooks kept, native reconciler with re-render semantics and element descriptions, portals, one `Op` applier; React stays until it exists)
+    - [x] Design note written and approved (answers: portal events follow React, non-boolean `&&` is a compile error, `memo`/`forwardRef`/`useReducer` last, generics added to `platypus_ts`): `docs/research/platypus-ui-native.md` (user decision: hooks kept, native reconciler with re-render semantics and element descriptions, portals, one `Op` applier; React stays until it exists)
     - [ ] Design note: what of React is used (components, state, effects, events, refs), signals-style
-          effects versus a vdom diff, how the library compiles under `iron_ts` (it must stay inside the
-          typed subset), the native UI tree API (`iron_ui` opcodes today), styles and CSS
-  - [ ] **Nothing left in TypeScript but generated types** (user request 2026-10-19): animation, scenes, math, physics and audio components, app/time/input ported to Rust behind `#[iron_api]`; games without `node_modules`; plan awaiting review in `docs/research/iron-native-engine.md` (**STOP**: order and the type-checking question)
+          effects versus a vdom diff, how the library compiles under `platypus_ts` (it must stay inside the
+          typed subset), the native UI tree API (`platypus_ui` opcodes today), styles and CSS
+  - [ ] **Nothing left in TypeScript but generated types** (user request 2026-10-19): animation, scenes, math, physics and audio components, app/time/input ported to Rust behind `#[platypus_api]`; games without `node_modules`; plan awaiting review in `docs/research/platypus-native-engine.md` (**STOP**: order and the type-checking question)
   - [ ] **Dev loop without Bun**: **STOP, design first.** Hot reload with the compiler as the watcher
     - [ ] Design note: Cranelift JIT in-process for development and AOT for release from the same IR,
           function-level swap, state kept through the `@property` reflection table, type checking via
@@ -1869,7 +1869,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
           per module when the compiler rejects a file, with the reason printed
     - [ ] Calls both ways between native modules and QuickJS (components in either)
     - [ ] Scene save/restore, hot reload and `@property` reflection in release builds (or declared absent)
-    - [ ] `iron build --aot` (or similar) driving oxc + Cranelift + linking into the game exe; React/UI
+    - [ ] `platypus build --aot` (or similar) driving oxc + Cranelift + linking into the game exe; React/UI
           stays on QuickJS
   - [ ] **Performance** (after correctness)
     - [ ] Integer loop counters / range analysis instead of f64 indexes; bounds-check elision
@@ -1899,7 +1899,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
 Planned, not started. Order may change.
 
 - [ ] **App shell:** a window, menus, dialogs and the UI tree without a game world; React app
-  entry point and the `@iron/api` TypeScript surface (no IPC bridge)
+  entry point and the `@platypus/api` TypeScript surface (no IPC bridge)
 - [ ] **Measure:** disk and RAM of a small app shell against a comparable Electron app, before
   making any public claim about size or speed
 - [ ] **Files and fetch** (M6 Script IO), **WebSocket** (M6, also for M8)
@@ -1916,7 +1916,7 @@ Planned, not started. Order may change.
 ## Watch list: pitfalls from mature engines
 
 Not tasks yet. Known areas where mature Rust/wgpu engines (Bevy in particular) have had trouble,
-so we can check Iron for them early. Each item says what to verify. Confirm each against Iron's
+so we can check Platypus for them early. Each item says what to verify. Confirm each against Platypus's
 code and the upstream issue before acting on it. See [docs/difference-to-bevy.md](docs/difference-to-bevy.md).
 
 - [ ] **Renderer:** shadow acne, peter-panning and cascade seams in sun shadows (M5-RND-*); check
@@ -1929,7 +1929,7 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   window is resized.
 - [ ] **Renderer:** shader compile stutter on first use of a material; measure the first frame of a
   new material and consider a warm-up step.
-- [ ] **GPU / drivers:** resize and frame-pacing jitter on DX12 and Vulkan (`IRON_FRAME_LATENCY`),
+- [ ] **GPU / drivers:** resize and frame-pacing jitter on DX12 and Vulkan (`PLATYPUS_FRAME_LATENCY`),
   and crashes that depend on the adapter. Keep the NVIDIA hard-reset note in `CLAUDE.md` in mind.
 - [ ] **Assets:** async load races and stale handles after asset hot reload; check that a reload
   replaces every user of an asset.
@@ -1963,7 +1963,7 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
 ## Later
 
 - [x] `examples/launcher`: a game launcher mock-up, to see whether a store / launcher front end
-  works in Iron's UI. A cover-flow carousel of the examples' screenshots (`gen-games.ts` copies
+  works in Platypus's UI. A cover-flow carousel of the examples' screenshots (`gen-games.ts` copies
   `bun run screenshots`' renders at build time) with CSS 3D transforms and transitions, browsed
   with the mouse (arrows, clicks, wheel), keys or a gamepad (d-pad, bumpers, left stick); a
   details panel (title, folder, `package.json` description) with Play, a loading spinner, then
@@ -1976,7 +1976,7 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   - [x] Engine fix found on the way: minified function lists (`translateY(0)scale(1)`) didn't
     parse; stylesheet values now get a space after a `)` that runs into a word (`M3-CSS-13`)
   - [x] Pads count as the input device as soon as they're plugged in (and the keyboard again
-    when the last one goes); pads plugged in before Iron started are announced on the first
+    when the last one goes); pads plugged in before Platypus started are announced on the first
     poll (`M3-PAD-02`)
   - [x] A sidebar menu (Menu / Esc / the ☰ button: library, view, settings, Exit) and a
     context menu on a game (Y / C / right-click: Play, Details, favourites, Show in folder);
@@ -1997,18 +1997,18 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   - [x] Engine: text that is only scaled and moved is rasterized at its on-screen size, so
     pop-ins and lifted tiles stay sharp, with no pop at the end (`M3-XF-03`)
   - [ ] Engine: gradients draw only 8 stops and warn every frame about the rest; warn once
-  - [ ] Actually launch a game (start `iron <folder>` as a child process, or switch games in
+  - [ ] Actually launch a game (start `platypus <folder>` as a child process, or switch games in
     place) and return to the launcher when it quits
-- [~] `examples/md-reader`: a Markdown reader for Iron's own docs, drawn by Iron's UI. Its own
+- [~] `examples/md-reader`: a Markdown reader for Platypus's own docs, drawn by Platypus's UI. Its own
   plan and progress: [examples/md-reader/TODO.md](examples/md-reader/TODO.md). Engine work it
   needs:
   - [x] Spans hit-tested inside text (`M3-EVT-07`); an exact layout size cache (`M2-LAY-07`);
     drawing culled to scroll clips (`M2-DRW-09`); unchanged line breaking skipped
-  - [x] A jump made in the first frame landed off: `iron_app` applied scripts' output (layout,
+  - [x] A jump made in the first frame landed off: `platypus_app` applied scripts' output (layout,
     `scrollIntoView`) before sizing the UI to the window, so the first frame laid out at 1x1.
     It now sizes the UI at the start of each frame too
   - [ ] Scrolling lays out again on every wheel tick: move the scrolled subtree's rects instead
-  - [x] Extra command-line arguments passed to scripts: `iron <game> -- ...` is `Application.args`
+  - [x] Extra command-line arguments passed to scripts: `platypus <game> -- ...` is `Application.args`
     (`M5-APP-11`)
   - [ ] Reading a folder outside the game while running (the reader's `--root`, which exits with
     an error for now): M6 plans only the `game` and `data` roots, so this needs a decision (a
@@ -2016,7 +2016,7 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   - [x] `scrollIntoView` takes the DOM's `{ block, inline }` (`start` / `center` / `end` /
     `nearest`, default `start` / `nearest`; `M3-EVT-08`); the reader no longer scrolls to the
     bottom first to put a heading at the top
-  - [x] `Application.quit(exitCode)`: `iron` exits with it (`M5-APP-12`)
+  - [x] `Application.quit(exitCode)`: `platypus` exits with it (`M5-APP-12`)
   - [ ] Review: a `setTimeout(fn, 0)` set while timers run fires in the same frame (the
     prelude's loop takes any timer due by `now`, and new ones are due at once), so "wait a
     frame" needs a 1 ms delay. Browsers run it in a later task. Decide whether timers created
@@ -2025,13 +2025,13 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
   - [ ] Review: symbols missing from Inter (☰ ▸ ▾ ☑ ☐) drew as empty boxes instead of falling
     back to a system symbol font (Segoe UI Symbol on Windows); the reader draws its icons with
     CSS and SVG instead. Check fontique's fallback for symbol characters in `TextEngine`
-- [ ] GIF images in `iron_ui`: `image` elements and `background-image` only decode PNG, JPEG and
+- [ ] GIF images in `platypus_ui`: `image` elements and `background-image` only decode PNG, JPEG and
   SVG today (`The image format Gif is not supported`). Decode GIFs (the `image` crate's `gif`
-  feature in `iron_render`), then play animated ones with their frame timings (frames in the
+  feature in `platypus_render`), then play animated ones with their frame timings (frames in the
   image atlas, a redraw only when the frame changes, paused when off screen); WebP likewise.
 - [ ] A canvas UI element that embeds the 3D engine (a `<canvas>` / 3D view element for React UI):
   a box that shows a camera's view of a world (or its own world) and passes the pointer and keys
-  through, so window apps written mostly in React can put live 3D anywhere in the layout — Iron as
+  through, so window apps written mostly in React can put live 3D anywhere in the layout — Platypus as
   an Electron replacement for desktop apps (one native binary, no browser, the same React UI).
   - [ ] The element: a camera (by id) rendered into a texture sized to the box at the device
     scale, drawn by the UI renderer in place, resized with layout, hidden views not rendered
@@ -2053,7 +2053,7 @@ code and the upstream issue before acting on it. See [docs/difference-to-bevy.md
 
 - [x] Registries to the renderer: sprites, 2D lines, planes, mirrors, probes, LOD groups, skins, line renderers, particles, models, render textures, gizmos, `RenderSettings`, `QualitySettings`.
 - [x] World panels (`createRoot(panel)`), `UiResources`, cursor, `Screen` requests, cloth, camera follow/orbit, animation update.
-- [ ] glTF animation clips (`Model.animations`) as `iron_animation` clips; animation events to components.
+- [ ] glTF animation clips (`Model.animations`) as `platypus_animation` clips; animation events to components.
 - [ ] Model colliders (`colliders: "mesh"`) need the physics hook; cloth over a model mesh needs the mesh data under the host's id.
 - [ ] Panel events are untested without a window (a unit test of the routing would need an `App`).
 - Differences seen in the screenshots: the timer of the world example is ahead of the QuickJS one (real time, not a render difference); the rope of `world` waits for the physics wiring.
@@ -2067,20 +2067,20 @@ Left over after the UI events and attributes work (`b116ac6`, `docs/ui-native.md
 
 ## QuickJS deprecated; removal plan (2026-10-22)
 
-`iron_app` refuses a QuickJS bundle (`dist/game.js` without `game.irbundle`) unless `--force` (`M9-APP-01..05`); `iron_editor` forces
+`platypus_app` refuses a QuickJS bundle (`dist/game.js` without `game.pbundle`) unless `--force` (`M9-APP-01..05`); `platypus_editor` forces
 implicitly (its UI is QuickJS) and logs the note once. Nothing is deleted yet. What would go later, in this order:
-- [ ] Port `editor/` and `js/editor-ui` to iron_ts (the editor is the last QuickJS app), then drop the implicit force.
-- [ ] Delete `crates/iron_script`'s QuickJS backend (`QuickJsRuntime`, `ComponentHost`) and the QuickJS paths of `iron_app` (`load_bundles`, `dev_vendor`, bundle reload, `__iron_*` pumps).
-- [ ] Delete `iron_native::register_quickjs` (keep the native `#[iron_api]` registries compiled code uses).
+- [ ] Port `editor/` and `js/editor-ui` to platypus_ts (the editor is the last QuickJS app), then drop the implicit force.
+- [ ] Delete `crates/platypus_script`'s QuickJS backend (`QuickJsRuntime`, `ComponentHost`) and the QuickJS paths of `platypus_app` (`load_bundles`, `dev_vendor`, bundle reload, `__platypus_*` pumps).
+- [ ] Delete `platypus_native::register_quickjs` (keep the native `#[platypus_api]` registries compiled code uses).
 - [ ] Delete `js/engine`, `js/react`, `js/editor-ui`, `tests/fixtures` (the QuickJS fixtures) and the `bun run build*` / `scripts/dev.ts` / `scripts/screenshots.ts` bun paths.
 - [ ] Rust integration tests that use ScriptRuntime/QuickJS as a library: port to compiled games or delete with their crates.
 
-## Code review (after the iron_ts branch is merged into `main`)
+## Code review (after the platypus_ts branch is merged into `main`)
 
 Most of this branch (about 300 commits) was written by agents and checked by tests, ratchets and snapshots, which catch regressions but not design drift. Once `claude/recursing-wright-856ffa` is merged into `main` (the user decides squash or merge as-is), do a human-readable review pass:
 - [ ] **Run `/code-review`** on the merged range (start at `high` effort, then `xhigh` on the compiler and engine crates) and triage the findings into TODO items.
-- [ ] **Read-only review agents per area**, one report each (no edits): `tools/iron_ts` (the compiler: `lower/expr.rs` is about 5,800 lines, split candidates), `tools/iron_ts_rt` (GC, maps, JSON: unsafe code and rooting), `crates/iron_api_macros` (3,900 lines), `crates/iron_app` (`main.rs` 3,300 lines, `native.rs`, `render_sync.rs`, `windows.rs`), `crates/iron_ui` / `iron_ui_native`, `crates/iron_render_api` (generated registries), packs and the virtual file system, `iron-build`.
+- [ ] **Read-only review agents per area**, one report each (no edits): `tools/platypus_ts` (the compiler: `lower/expr.rs` is about 5,800 lines, split candidates), `tools/platypus_ts_rt` (GC, maps, JSON: unsafe code and rooting), `crates/platypus_api_macros` (3,900 lines), `crates/platypus_app` (`main.rs` 3,300 lines, `native.rs`, `render_sync.rs`, `windows.rs`), `crates/platypus_ui` / `platypus_ui_native`, `crates/platypus_render_api` (generated registries), packs and the virtual file system, `platypus-build`.
 - [ ] **Look for design drift and duplication:** the same logic in the QuickJS and native paths, copies of the same table, helpers that grew into modules, `#[allow]` without a reason, `unsafe` blocks without a safety comment, `TODO`/`FIXME` left in code, dead code behind deprecated QuickJS paths.
-- [ ] **Security-minded pass** (`/security-review`): asset path handling (`resolve_asset`, the unsafe-paths design), pack reading (`.irpk`), JSON parsing, the `prebuild` command of `project.json`, anything that runs external commands.
+- [ ] **Security-minded pass** (`/security-review`): asset path handling (`resolve_asset`, the unsafe-paths design), pack reading (`.ppk`), JSON parsing, the `prebuild` command of `project.json`, anything that runs external commands.
 - [ ] **Split the largest files** the review flags (new modules rather than growing them), and keep the notes in `CLAUDE.md` ("Notes for agents") current.
-- [ ] **Prune the notes:** `TESTS.md` (split by milestone), `TODO.md` (done items to history), the `CLAUDE.md` Status section (stale), the `tools/iron_ts/TODO.md` log.
+- [ ] **Prune the notes:** `TESTS.md` (split by milestone), `TODO.md` (done items to history), the `CLAUDE.md` Status section (stale), the `tools/platypus_ts/TODO.md` log.

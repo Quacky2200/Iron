@@ -2,9 +2,9 @@
 
 //! Text layout through the UI tree (M3-TXT-02, M3-TXT-03, M3-FNT-01, M3-FNT-02).
 
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::*;
-use iron_ui::{ROOT, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::*;
+use platypus_ui::{ROOT, UiTree};
 
 const INTER: &[u8] = include_bytes!("../fonts/InterVariable.ttf");
 const INTER_ITALIC: &[u8] = include_bytes!("../fonts/InterVariable-Italic.ttf");
@@ -317,13 +317,13 @@ fn woff_and_woff2_fonts_register_and_shape() {
         ("inter-subset.woff2", "WebTwo"),
     ] {
         let data = std::fs::read(dir.join(file)).unwrap();
-        let mut tree = iron_ui::UiTree::new(400.0, 100.0);
+        let mut tree = platypus_ui::UiTree::new(400.0, 100.0);
         let names = tree
             .register_font(data.clone(), Some(family), None, None)
             .unwrap_or_else(|e| panic!("{file}: {e}"));
         assert_eq!(names, [family]);
         // The decoded data is a plain font: it starts with a TrueType/OpenType tag.
-        let plain = iron_ui::text::decode_web_font(data.clone()).unwrap();
+        let plain = platypus_ui::text::decode_web_font(data.clone()).unwrap();
         assert!(
             plain.starts_with(&[0, 1, 0, 0])
                 || plain.starts_with(b"OTTO")

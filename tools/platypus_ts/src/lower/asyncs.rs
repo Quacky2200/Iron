@@ -15,7 +15,7 @@
 //! * `.then`, `.catch`, `.finally`, `Promise.resolve/reject/all/race` are routed by the lowerer
 //!   (`promise.rs`), which knows the types.
 //!
-//! The microtask queue and the timers live in the runtime (`iron_ts_rt/src/event.rs`).
+//! The microtask queue and the timers live in the runtime (`platypus_ts_rt/src/event.rs`).
 
 use super::generators::{key_of, mangle};
 use oxc_allocator::Allocator;

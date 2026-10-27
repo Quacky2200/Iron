@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_scene"
+name = "platypus_scene"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -9,14 +9,14 @@ license.workspace = true
 
 [dependencies]
 glam = "0.34.1"
-iron_api = { path = "../iron_api", default-features = false, features = ["glam", "quickjs"] }
-iron_core = { path = "../iron_core" }
-iron_math = { path = "../iron_math" }
+platypus_api = { path = "../platypus_api", default-features = false, features = ["glam", "quickjs"] }
+platypus_core = { path = "../platypus_core" }
+platypus_math = { path = "../platypus_math" }
 
 [dev-dependencies]
 criterion = "0.8.2"
 rquickjs = "0.14.0"
-iron_script = { path = "../iron_script" }
+platypus_script = { path = "../platypus_script" }
 
 [[bench]]
 name = "reload"

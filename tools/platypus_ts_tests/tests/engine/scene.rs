@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compiled scripts driving the real engine scene (`bench/scene.ts`): `iron_scene`'s `Scene`
-//! API, written with `#[iron_api]`, is called directly by native code the compiler made from
-//! TypeScript. The scene is made current with `iron_scene::api::enter`, as the host will around
+//! Compiled scripts driving the real engine scene (`bench/scene.ts`): `platypus_scene`'s `Scene`
+//! API, written with `#[platypus_api]`, is called directly by native code the compiler made from
+//! TypeScript. The scene is made current with `platypus_scene::api::enter`, as the host will around
 //! running scripts. Every test runs normally, in stress GC mode and with collection off.
 //! IDs are in TESTS.md (M9-TS-151..).
-use iron_scene::Scene;
-use iron_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::scn::*;
+use platypus_scene::Scene;
+use platypus_ts_rt::{link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::scn::*;
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     assert_ne!(link_anchor(), 0);
     unsafe { ts_scn_init() };
     f();
@@ -30,7 +30,7 @@ fn in_every_gc_mode(f: impl Fn()) {
 #[test]
 fn compiled_code_builds_and_moves_a_hierarchy_in_the_real_scene() {
     let mut scene = Scene::new();
-    let scope = iron_scene::api::enter(&mut scene);
+    let scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         assert_eq!(ts_scn_moveAround(), 110_203_100.0);
     });
@@ -42,7 +42,7 @@ fn compiled_code_builds_and_moves_a_hierarchy_in_the_real_scene() {
 #[test]
 fn a_per_frame_update_loop_moves_an_object_round_a_circle() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         let want: f64 = (0..50)
             .map(|i| {
@@ -59,7 +59,7 @@ fn a_per_frame_update_loop_moves_an_object_round_a_circle() {
 #[test]
 fn stale_object_handles_miss_even_when_the_slot_is_reused() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         assert_eq!(ts_scn_staleHandles(), 10.0);
     });
@@ -69,7 +69,7 @@ fn stale_object_handles_miss_even_when_the_slot_is_reused() {
 #[test]
 fn a_quaternion_value_goes_in_and_comes_back_normalised() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         let q = glam::Quat::from_xyzw(0.0, 0.5, 0.0, 0.5).normalize();
         assert_eq!(ts_scn_rotation(), q.y as f64 * 1000.0 + q.w as f64);
@@ -82,10 +82,10 @@ fn a_quaternion_value_goes_in_and_comes_back_normalised() {
 #[test]
 fn many_objects_and_their_handles_survive_collections() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         assert_eq!(ts_scn_crowd(30.0), 870_030.0);
-        assert_eq!(iron_ts_tests::scene_anchor(), 0);
+        assert_eq!(platypus_ts_tests::scene_anchor(), 0);
     });
 }
 
@@ -96,7 +96,7 @@ fn many_objects_and_their_handles_survive_collections() {
 #[test]
 fn handle_classes_build_and_move_a_hierarchy() {
     let mut scene = Scene::new();
-    let scope = iron_scene::api::enter(&mut scene);
+    let scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         assert_eq!(ts_scn_classHierarchy(), 110_203_100.0);
     });
@@ -111,7 +111,7 @@ fn handle_classes_build_and_move_a_hierarchy() {
 #[test]
 fn handle_class_properties_methods_and_round_trips() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         // layer 5, off while disabled, was disabled, on again, same object, alive, then gone.
         assert_eq!(ts_scn_classFlags(), 150_011.0 + 0.0);
@@ -122,7 +122,7 @@ fn handle_class_properties_methods_and_round_trips() {
 #[test]
 fn an_update_loop_moves_an_object_through_transform_position() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         let want: f64 = (0..50)
             .map(|i| {
@@ -142,7 +142,7 @@ fn an_update_loop_moves_an_object_through_transform_position() {
 #[test]
 fn vector3_methods_and_getters_are_direct_calls() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         assert_eq!(ts_scn_vectorMath(), 14_110_532_042.0);
     });
@@ -152,7 +152,7 @@ fn vector3_methods_and_getters_are_direct_calls() {
 #[test]
 fn quaternion_methods_rotate_combine_and_invert() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         let got = ts_scn_quatMath();
         assert!((got - 99_000.0).abs() < 0.5, "{got}");
@@ -166,7 +166,7 @@ fn quaternion_methods_rotate_combine_and_invert() {
 #[test]
 fn a_vector_survives_allocations_between_method_calls() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         let mut acc = glam::Vec3::ZERO;
         for i in 0..200 {
@@ -184,11 +184,11 @@ fn a_vector_survives_allocations_between_method_calls() {
 #[test]
 fn names_cross_the_boundary_as_strings() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
-        let r = ts_scn_names() as *const iron_ts_rt::Str;
+        let r = ts_scn_names() as *const platypus_ts_rt::Str;
         assert_eq!(
-            iron_ts_rt::Str::from_raw(r).to_string_lossy(),
+            platypus_ts_rt::Str::from_raw(r).to_string_lossy(),
             "player-1/same/no/5"
         );
     });
@@ -200,7 +200,7 @@ fn names_cross_the_boundary_as_strings() {
 #[test]
 fn unicode_names_round_trip_and_lone_surrogates_become_replacement_characters() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         assert_eq!(ts_scn_unicodeName(), 1008.0);
         assert_eq!(ts_scn_lossyName(), 300_000.0 + 0xFFFD as f64);
@@ -213,7 +213,7 @@ fn unicode_names_round_trip_and_lone_surrogates_become_replacement_characters() 
 #[test]
 fn many_names_survive_collections() {
     let mut scene = Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     in_every_gc_mode(|| unsafe {
         // "n0".."n9" are 2 bytes, "n10".."n29" 3: 10 * 2 + 20 * 3 = 80; the found name "n2" is 2.
         assert_eq!(ts_scn_manyNames(30.0), 80_002.0);
@@ -222,14 +222,14 @@ fn many_names_survive_collections() {
 
 // M9-TS-186
 //
-// The engine side reads script strings through `iron_api::ScriptStr`, so its layout must be the
+// The engine side reads script strings through `platypus_api::ScriptStr`, so its layout must be the
 // runtime's `Str`.
 #[test]
 fn the_engines_view_of_a_script_string_is_the_runtimes_layout() {
     assert_eq!(
-        std::mem::size_of::<iron_api::ScriptStr>(),
-        std::mem::size_of::<iron_ts_rt::Str>()
+        std::mem::size_of::<platypus_api::ScriptStr>(),
+        std::mem::size_of::<platypus_ts_rt::Str>()
     );
-    let s = unsafe { iron_ts_rt::ts_rt_str_new("añ😀".as_ptr(), "añ😀".len() as i64) };
-    assert_eq!(unsafe { iron_api::script_str(s as *const u8) }, "añ😀");
+    let s = unsafe { platypus_ts_rt::ts_rt_str_new("añ😀".as_ptr(), "añ😀".len() as i64) };
+    assert_eq!(unsafe { platypus_api::script_str(s as *const u8) }, "añ😀");
 }

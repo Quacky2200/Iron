@@ -2,15 +2,15 @@
 
 //! `bench/symbols.ts` against bun (`bench/gen_symbols_expected.ts`), in the normal, stress GC and
 //! collection-off modes. IDs are in TESTS.md (M9-TS-394..).
-use iron_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
-use iron_ts_tests::symbols_t::*;
+use platypus_ts_rt::{Str, link_anchor, ts_rt_gc_enable, ts_rt_gc_stress};
+use platypus_ts_tests::symbols_t::*;
 use serde_json::Value;
 
 // The program's globals (the `Symbol.for` registry) are shared, so the tests take turns.
 static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn in_every_gc_mode(f: impl Fn()) {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     assert_ne!(link_anchor(), 0);
     unsafe { ts_sym_init() };

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use iron_script::conformance::capture_logs;
-use iron_script::{ComponentHost, QuickJsRuntime, ScriptRuntime, Value};
+use platypus_script::conformance::capture_logs;
+use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime, Value};
 
 const HELLO: &str = include_str!("../../../tests/fixtures/hello.js");
 const THROWS: &str = include_str!("../../../tests/fixtures/throws.js");
 
-fn messages(logs: &std::cell::RefCell<Vec<(iron_script::LogLevel, String)>>) -> Vec<String> {
+fn messages(logs: &std::cell::RefCell<Vec<(platypus_script::LogLevel, String)>>) -> Vec<String> {
     logs.borrow().iter().map(|(_, m)| m.clone()).collect()
 }
 
@@ -97,12 +97,12 @@ fn a_reload_runs_the_new_code_on_the_next_tick() {
     assert_ne!(edited, HELLO);
     let mut fresh = QuickJsRuntime::new();
     let new_logs = capture_logs(&mut fresh);
-    let classes = iron_script::reload(
+    let classes = platypus_script::reload(
         &mut rt,
         fresh,
         &mut host,
         |rt| rt.load_bundle("hello.js", &edited),
-        |rt, host, classes| iron_script::spawn_each(rt, host, classes),
+        |rt, host, classes| platypus_script::spawn_each(rt, host, classes),
     )
     .unwrap();
     assert_eq!(classes, ["Hello"]);
@@ -125,12 +125,12 @@ fn a_broken_reload_keeps_the_old_code_running() {
         ("this is not javascript (", "SyntaxError"),
         ("throw new Error('top level')", "top level"),
     ] {
-        let err = iron_script::reload(
+        let err = platypus_script::reload(
             &mut rt,
             QuickJsRuntime::new(),
             &mut host,
             |rt| rt.load_bundle("game.js", broken),
-            |rt, host, classes| iron_script::spawn_each(rt, host, classes),
+            |rt, host, classes| platypus_script::spawn_each(rt, host, classes),
         )
         .unwrap_err();
         assert!(err.message.contains(expected), "{err}");
@@ -149,7 +149,7 @@ fn reloads_in_place_keep_react_state_and_swap_component_classes() {
     let mut rt = QuickJsRuntime::new();
     let logs = capture_logs(&mut rt);
     rt.load_bundle("vendor.js", REFRESH_VENDOR).unwrap();
-    iron_script::load_game(&mut rt, "game.js", REFRESH_V1).unwrap();
+    platypus_script::load_game(&mut rt, "game.js", REFRESH_V1).unwrap();
     // React's updates run on the runtime's timers: let them through first.
     let mut now = 0.0;
     let mut seen = |rt: &mut QuickJsRuntime| {
@@ -175,7 +175,7 @@ fn reloads_in_place_keep_react_state_and_swap_component_classes() {
     // The new code runs in the same runtime: the counter keeps 3 but renders with the
     // new code, the live component answers with its new class, and the top level's
     // style sheet is swapped rather than added twice.
-    iron_script::load_game(&mut rt, "game.js", REFRESH_V2).unwrap();
+    platypus_script::load_game(&mut rt, "game.js", REFRESH_V2).unwrap();
     assert_eq!(seen(&mut rt), Value::String("count 3 (v2)".into()));
     assert_eq!(
         rt.eval("__refresh_ticker()").unwrap(),
@@ -187,7 +187,7 @@ fn reloads_in_place_keep_react_state_and_swap_component_classes() {
     let logs = logs.borrow();
     assert!(
         logs.iter()
-            .all(|(level, _)| *level != iron_script::LogLevel::Error),
+            .all(|(level, _)| *level != platypus_script::LogLevel::Error),
         "{logs:?}"
     );
 }
@@ -198,7 +198,7 @@ fn animation_runs_after_every_update_each_frame() {
     let mut rt = QuickJsRuntime::new();
     let logs = capture_logs(&mut rt);
     rt.load_bundle("hello.js", HELLO).unwrap();
-    rt.eval("globalThis.__iron_animate = (dt) => console.log(`animate ${dt}`)")
+    rt.eval("globalThis.__platypus_animate = (dt) => console.log(`animate ${dt}`)")
         .unwrap();
     let mut host = ComponentHost::new();
     host.spawn(&mut rt, "Hello").unwrap();

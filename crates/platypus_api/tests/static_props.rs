@@ -2,7 +2,7 @@
 
 //! Static properties of handle classes: `Demo.current` is a getter on the class in the manifest and in
 //! QuickJS (`Window.main` reads the same in both backends). IDs are in TESTS.md (M9-API-*).
-use iron_api::{FnKind, Handle, Ty, iron_api};
+use platypus_api::{FnKind, Handle, Ty, platypus_api};
 use std::cell::Cell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,7 +22,7 @@ thread_local! {
     static READS: Cell<u32> = const { Cell::new(0) };
 }
 
-#[iron_api(namespace = "Demo", quickjs, handles(Demo = DemoId))]
+#[platypus_api(namespace = "Demo", quickjs, handles(Demo = DemoId))]
 pub mod demo {
     use super::{CURRENT, DemoId, LEVEL, READS};
 
@@ -99,11 +99,11 @@ fn a_static_property_of_a_handle_class_is_an_accessor_in_quickjs() {
     assert!(d.contains("get level(): number;"), "{d}");
     let j = demo::MANIFEST.to_json();
     assert!(
-        j.contains("{\"name\":\"current\",\"symbol\":\"iron_Demo_current\",\"kind\":\"get\",\"params\":[],\"returns\":\"handle:Demo\",\"doc\":\"The current one, read through the getter each time.\"}"),
+        j.contains("{\"name\":\"current\",\"symbol\":\"platypus_Demo_current\",\"kind\":\"get\",\"params\":[],\"returns\":\"handle:Demo\",\"doc\":\"The current one, read through the getter each time.\"}"),
         "{j}"
     );
     // The shim has no receiver either.
-    assert_eq!(demo::iron_Demo_current(), 1);
+    assert_eq!(demo::platypus_Demo_current(), 1);
 
     with_js(|ctx| {
         let t: String = ctx.eval("typeof Demo.current").unwrap();

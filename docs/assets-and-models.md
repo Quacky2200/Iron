@@ -2,17 +2,17 @@
 
 Code: [textures.ts](../js/engine/src/textures.ts), [models.ts](../js/engine/src/models.ts) and
 [rendering.ts](../js/engine/src/rendering.ts) (`Mesh`, `Material`) on the script side;
-[world_view.rs](../crates/iron_app/src/world_view.rs) (`texture_op`, `model_op`),
-[models.rs](../crates/iron_app/src/models.rs) (glTF) and the `__iron_textures`/`__iron_models` calls in
-[main.rs](../crates/iron_app/src/main.rs) in the app;
-[world/texture.rs](../crates/iron_render/src/world/texture.rs) and
-[world/mod.rs](../crates/iron_render/src/world/mod.rs) (`set_texture`, `set_mesh`) in the renderer.
+[world_view.rs](../crates/platypus_app/src/world_view.rs) (`texture_op`, `model_op`),
+[models.rs](../crates/platypus_app/src/models.rs) (glTF) and the `__platypus_textures`/`__platypus_models` calls in
+[main.rs](../crates/platypus_app/src/main.rs) in the app;
+[world/texture.rs](../crates/platypus_render/src/world/texture.rs) and
+[world/mod.rs](../crates/platypus_render/src/world/mod.rs) (`set_texture`, `set_mesh`) in the renderer.
 How these are drawn is in [world-rendering.md](world-rendering.md).
 
 ## Textures
 
 A `Texture` is an image the world draws with (not the UI's `image` element, which has its own path in
-`iron_ui`). Scripts make one two ways:
+`platypus_ui`). Scripts make one two ways:
 
 - `Texture.load(src, { filterMode, wrapMode, mipmaps, anisoLevel, linear })` reads a PNG or JPEG from the game folder.
 - `Texture.create(width, height, colors, options)` takes linear `Color`s, bottom row first like Unity's
@@ -32,9 +32,9 @@ A `RenderTexture` is a texture cameras draw into (see [world-rendering.md](world
 (`ENGINE_IDS`), so they never meet.
 
 **Loading is synchronous in the app.** `WorldViews::texture_op` reads the file (a relative path, no
-`..`, through `iron_core::read_asset`, i.e. the packs or folder the app mounted, see `docs/iron-build.md`; `data:` URLs work too), decodes it with the `image` crate to RGBA8 and
+`..`, through `platypus_core::read_asset`, i.e. the packs or folder the app mounted, see `docs/platypus-build.md`; `data:` URLs work too), decodes it with the `image` crate to RGBA8 and
 queues a `TextureData` in `texture_uploads`. `apply_script_output` collects `(id, width, height)` and
-calls `__iron_textures([[id, w, h], ...])` after the batch of ops, which sets `width`, `height` and
+calls `__platypus_textures([[id, w, h], ...])` after the batch of ops, which sets `width`, `height` and
 `isLoaded` and resolves `whenLoaded`. A failure logs a warning and reports 0 x 0 (`failed`). The size
 is also kept in `texture_sizes`, which sprites need before they can be laid out. `Texture.destroy()`
 sends `render.textureRemove`, and things still using it draw the checker.
@@ -129,7 +129,7 @@ orthographic 2D game `sortingOrder` decides what is on top.
 `isLoaded`, `failed`, `whenLoaded()`, `materials` and `meshes` (after loading), and
 `instantiate({ position, rotation, scale, parent, colliders })`.
 
-**In the app.** `model_op` calls `models::load` ([models.rs](../crates/iron_app/src/models.rs)) with
+**In the app.** `model_op` calls `models::load` ([models.rs](../crates/platypus_app/src/models.rs)) with
 the game folder:
 
 - The `.glb`/`.gltf` file and anything it names (buffers, images) must be inside the game folder
@@ -155,9 +155,9 @@ the game folder:
   `interpolation` (`linear`/`step`/`cubic`) and the `times` and `values` (cubic splines keep in-tangent,
   value, out-tangent per key). Morph target channels are skipped.
 - Meshes go to `mesh_uploads` and `mesh_data`, textures to `texture_uploads`, and the description is
-  sent to `__iron_models([id, json | null, ...])` (null: it failed) after the ops batch.
+  sent to `__platypus_models([id, json | null, ...])` (null: it failed) after the ops batch.
 
-**In scripts.** `__iron_models` calls `Model._loaded`. `instantiate` makes a GameObject named after the
+**In scripts.** `__platypus_models` calls `Model._loaded`. `instantiate` makes a GameObject named after the
 file with the model's nodes as children (each a `GameObject` with the node's transform), and a
 `MeshRenderer` per primitive with the right `Material`. In scripts, `mask` becomes `cutout`, `blend` becomes `fade`, and the metallic-roughness map is
 read with `gltfPacking` (occlusion red, roughness green, metallic blue). A node with several primitives gets one child
@@ -184,11 +184,11 @@ Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` a
   `none`; audio `stream: false`. Existing metas are never rewritten.
 - A file moved without its `.meta` keeps its GUID when it is unambiguous (one orphaned meta and one new
   file with that name). Orphaned metas are only reported, and deleted with `--prune`.
-- The app reads the metas at start-up with `asset_db::scan` ([asset_db.rs](../crates/iron_app/src/asset_db.rs))
-  and puts `[{ path, guid, importer }]` in `__iron_info.assets`. Unreadable metas are skipped with a warning.
+- The app reads the metas at start-up with `asset_db::scan` ([asset_db.rs](../crates/platypus_app/src/asset_db.rs))
+  and puts `[{ path, guid, importer }]` in `__platypus_info.assets`. Unreadable metas are skipped with a warning.
 - Compiled and native-API programs also have `Assets.exists(path)`, `list(glob)` (a `string[]`) and `packOf(path)` over every
-  loadable asset, not only the ones with a `.meta` (`docs/iron-api.md`). Bundled QuickJS games get the same three from
-  `@iron/engine`'s `Assets` (it hands them to the engine's namespace).
+  loadable asset, not only the ones with a `.meta` (`docs/platypus-api.md`). Bundled QuickJS games get the same three from
+  `@platypus/engine`'s `Assets` (it hands them to the engine's namespace).
 - In scripts: `Assets.all`, `guidToPath(guid)`, `pathToGuid(path)`, `importer(path)` and `resolve(src)`
   ([assets.ts](../js/engine/src/assets.ts)). `Texture.load`, `Model.load` and `new Sound` accept
   `"guid:<guid>"` sources. `Texture.load` takes unset options from the importer, and a `Sound` streams when
@@ -198,38 +198,38 @@ Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` a
 ## Hot reload of assets
 
 While a game runs from a folder (not in screenshot runs), an `AssetWatcher`
-([reload.rs](../crates/iron_app/src/reload.rs)) watches it recursively with `notify`, ignoring `dist/`,
+([reload.rs](../crates/platypus_app/src/reload.rs)) watches it recursively with `notify`, ignoring `dist/`,
 `node_modules/`, `target/` and hidden folders. `poll` reports files created or modified once they have been
 quiet for `SETTLE`, as game paths (`asset_key`: forward slashes, no leading `./`). `App::tick` polls it
 and calls `reload_assets`:
 
 - **Textures.** `WorldViews` remembers each file texture's op arguments (`texture_files`). A changed file
   runs the same op again under the same id, so every material using it updates, and scripts hear the new
-  size through `__iron_textures`.
+  size through `__platypus_textures`.
 - **Models.** `model_files` keeps the path and engine ids a model got. `EngineIds::record(replay)` hands out
   the old ids first, so meshes and textures keep their ids; extra parts get new ones. Placed copies keep
   their old materials and nodes (place the model again to see new ones).
 - **Sounds.** `App::sound_files` keeps the `audio.load` arguments by file; the sound loads again under its
   id. Playbacks already running keep the old audio.
-- Then `__iron_assets_changed(paths)` calls the `Assets.onChanged(fn)` listeners (it returns a function
+- Then `__platypus_assets_changed(paths)` calls the `Assets.onChanged(fn)` listeners (it returns a function
   that stops listening), for anything else scripts read from files. A throwing listener does not stop the
   others.
 
 ## Cooking
 
-`iron --cook <game folder>` ([cook.rs](../crates/iron_app/src/cook.rs)) prepares textures and models so the
+`platypus --cook <game folder>` ([cook.rs](../crates/platypus_app/src/cook.rs)) prepares textures and models so the
 game loads them without decoding images, making mip levels or parsing glTF. It needs only the folder, not
 a build. It logs how many files it cooked, lists the ones that failed, then exits.
 
 - **Textures** (png, jpg, jpeg) are read with their `.meta` importer settings (filter, wrap, mipmaps,
-  aniso, linear). Every mip level is made (`iron_render::mip_chain`), then block-compressed when the
+  aniso, linear). Every mip level is made (`platypus_render::mip_chain`), then block-compressed when the
   size is a multiple of 4 both ways: BC1 (8 bytes per 4 x 4 block) when every texel's alpha is 0 or 255,
   BC3 (16 bytes) for smooth alpha. Other sizes stay RGBA8. `encode` and `decode` do the blocks: endpoints
   come from the best diagonal of the block's colour bounding box, texels take the nearest palette entry,
   and BC1 uses its 3-colour mode for cut-outs.
 - **Models** (glb, gltf) are loaded as usual with recorded engine ids, then saved with their meshes,
   cooked textures and description (ids are renumbered on load).
-- Files go to `.iron/cooked/<game path>.tex` and `.model` (`cooked_path`). It is a hidden folder, so the
+- Files go to `.platypus/cooked/<game path>.tex` and `.model` (`cooked_path`). It is a hidden folder, so the
   asset watcher and the next cook skip it.
 - At run time `WorldViews::texture_op` and `model_op` ask `cooked_texture` / `cooked_model` first. A
   cooked file is used only when it is newer than its source, and a texture only when its colour space and

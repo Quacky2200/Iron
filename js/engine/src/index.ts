@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * @iron/engine — the TypeScript side of Iron.
+ * @platypus/engine — the TypeScript side of Platypus.
  *
  * Game code extends `Component`, attaches components to `GameObject`s and calls
  * `register({ ... })`. The engine (Rust) owns the objects and the list of components
- * and calls into them through `__iron_*` host functions (scene.ts), always by
+ * and calls into them through `__platypus_*` host functions (scene.ts), always by
  * (component id, method name).
  */
 
@@ -206,7 +206,7 @@ export {
 
 /** Queues an op for the engine. Low level: prefer the typed APIs built on it. */
 export function op(name: string, ...args: unknown[]): void {
-  __iron_op(name, ...args);
+  __platypus_op(name, ...args);
 }
 
 export interface FontFace {

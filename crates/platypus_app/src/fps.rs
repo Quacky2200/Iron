@@ -4,9 +4,9 @@
 //! app over everything (the world, the game's UI) for every game, whatever its backend.
 //! The counting and text are plain functions; `FpsOverlay` is a tiny UI tree for the text.
 
-use iron_core::{NodeId, Value};
-use iron_ui::opcodes::Op;
-use iron_ui::{DrawCmd, ROOT, UiTree};
+use platypus_core::{NodeId, Value};
+use platypus_ui::opcodes::Op;
+use platypus_ui::{DrawCmd, ROOT, UiTree};
 
 /// Frames are counted over windows of about this long (seconds), then shown.
 pub const WINDOW: f64 = 0.25;
@@ -56,7 +56,7 @@ impl FpsCounter {
 }
 
 /// Whether the overlay is on. Precedence: the command-line flag (`--fps` / `--no-fps`),
-/// then off by `IRON_FPS=0` or `"iron": { "fps": false }`, then the default: on, except
+/// then off by `PLATYPUS_FPS=0` or `"platypus": { "fps": false }`, then the default: on, except
 /// in screenshot runs (so goldens and screenshots stay the same).
 pub fn enabled(
     flag: Option<bool>,

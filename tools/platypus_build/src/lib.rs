@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron-build`: builds a game written in TypeScript into `dist/` for `iron_app`, with no bun and no
-//! `node_modules` (see `docs/iron-build.md`).
+//! `platypus-build`: builds a game written in TypeScript into `dist/` for `platypus_app`, with no bun and no
+//! `node_modules` (see `docs/platypus-build.md`).
 //!
-//! A build reads `project.json` (deprecated fallback: the `iron` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
-//! entry file (`iron_ts::modules`), runs `tsc --noEmit -p .` when `tsc` can be found, compiles the
+//! A build reads `project.json` (deprecated fallback: the `platypus` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
+//! entry file (`platypus_ts::modules`), runs `tsc --noEmit -p .` when `tsc` can be found, compiles the
 //! bundle with all engine manifests (so errors are found now, not when the game starts), and writes
-//! `dist/game.irbundle` (the resolved source, the CSS and asset lists), `dist/game.css`, and the assets
+//! `dist/game.pbundle` (the resolved source, the CSS and asset lists), `dist/game.css`, and the assets
 //! the program names.
 
 pub mod assets;
@@ -80,13 +80,13 @@ pub fn run_prebuild(root: &Path, cmd: &str) -> Result<(), String> {
 }
 
 /// A folder is a game when it has a `project.json`. The deprecated fallback: a `package.json`
-/// with an `iron` section.
+/// with a `platypus` section.
 pub fn is_game(dir: &Path) -> bool {
-    dir.join(iron_core::project::PROJECT_FILE).is_file()
+    dir.join(platypus_core::project::PROJECT_FILE).is_file()
         || std::fs::read_to_string(dir.join("package.json"))
             .ok()
             .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-            .is_some_and(|v| v.get("iron").is_some())
+            .is_some_and(|v| platypus_core::project::package_section(&v).is_some())
 }
 
 /// The games directly inside `dir` (see [`is_game`]), sorted by path.
@@ -105,10 +105,13 @@ pub fn find_games(dir: &Path) -> Vec<PathBuf> {
 
 impl GameConfig {
     pub fn load(root: &Path) -> Result<GameConfig, String> {
-        let user = iron_core::project::SystemUser;
-        let project = iron_core::project::Project::load(
+        let user = platypus_core::project::SystemUser;
+        let project = platypus_core::project::Project::load(
             root,
-            &iron_core::project::LoadOptions::new(iron_core::project::Platform::current(), &user),
+            &platypus_core::project::LoadOptions::new(
+                platypus_core::project::Platform::current(),
+                &user,
+            ),
         )
         .map_err(|e| e.to_string())?;
         let name = project.name.clone();
@@ -221,24 +224,24 @@ pub fn strip_json_comments(s: &str) -> String {
 }
 
 /// Every engine manifest the compiler checks calls against, plus the `Ui` namespace: the same lists
-/// as `iron_native::manifests()` (that crate links QuickJS, which a build tool does not need).
+/// as `platypus_native::manifests()` (that crate links QuickJS, which a build tool does not need).
 pub fn manifests() -> Vec<String> {
-    let mut all = iron_engine_api::manifests();
-    all.push(iron_scene::api::scene_api::MANIFEST.to_json());
-    all.extend(iron_scenes::manifests());
-    all.extend(iron_physics_api::manifests());
-    all.extend(iron_render_api::manifests());
-    all.push(iron_ts_ui::manifest_json());
+    let mut all = platypus_engine_api::manifests();
+    all.push(platypus_scene::api::scene_api::MANIFEST.to_json());
+    all.extend(platypus_scenes::manifests());
+    all.extend(platypus_physics_api::manifests());
+    all.extend(platypus_render_api::manifests());
+    all.push(platypus_ts_ui::manifest_json());
     all
 }
 
-/// The text of `types/iron.d.ts` (the shipped ambient and TypeScript-side declarations included).
+/// The text of `types/platypus.d.ts` (the shipped ambient and TypeScript-side declarations included).
 pub fn types_dts() -> Result<String, String> {
     let ms: Vec<String> = manifests()
         .into_iter()
         .filter(|m| !m.contains("\"namespace\":\"Ui\""))
         .collect();
-    iron_ts::types_dts::generate(&ms)
+    platypus_ts::types_dts::generate(&ms)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -247,7 +250,7 @@ pub struct Options {
     pub no_tsc: bool,
     /// Also write the AOT object `dist/game.o` (release builds).
     pub aot: bool,
-    /// Run `iron <game> --cook` afterwards (needs the `iron` binary; see `find_iron`).
+    /// Run `platypus <game> --cook` afterwards (needs the `platypus` binary; see `find_platypus`).
     pub cook: bool,
     /// Skip compiling the bundle (module graph, CSS and assets only).
     pub no_compile: bool,
@@ -313,7 +316,7 @@ fn find_tsc(root: &Path) -> Option<PathBuf> {
 }
 
 /// The `tsconfig.json` text `tsc` is run with: the game's own file extended, its `include` kept (as
-/// paths from `dist/.tsc/`), plus the generated declarations (`iron.d.ts` next to it). Every file is a
+/// paths from `dist/.tsc/`), plus the generated declarations (`platypus.d.ts` next to it). Every file is a
 /// module (`moduleDetection: force`, so top-level names of a game never merge with the engine's
 /// globals), and JSX is only checked (the game needs no `react/jsx-runtime`).
 pub fn tsc_config(config: &GameConfig) -> String {
@@ -323,7 +326,7 @@ pub fn tsc_config(config: &GameConfig) -> String {
         .map(|i| format!("../../{}", i.trim_start_matches("./")))
         .collect();
 
-    // Bare imports are files of `modules/` next to the entry (the compiler's rule, `iron_ts::modules`).
+    // Bare imports are files of `modules/` next to the entry (the compiler's rule, `platypus_ts::modules`).
     let entry_dir = Path::new(&config.entry)
         .parent()
         .map(|d| d.to_string_lossy().replace("\\", "/"))
@@ -343,17 +346,17 @@ pub fn tsc_config(config: &GameConfig) -> String {
             "moduleDetection": "force",
         },
         "include": include,
-        "files": ["iron.d.ts"],
+        "files": ["platypus.d.ts"],
         "exclude": ["../../node_modules"],
     }))
     .unwrap_or_default()
 }
 
-/// Writes `dist/.tsc/{tsconfig.json,iron.d.ts}` and returns the config path.
+/// Writes `dist/.tsc/{tsconfig.json,platypus.d.ts}` and returns the config path.
 fn write_tsc_files(root: &Path, config: &GameConfig) -> Result<PathBuf, String> {
     let dir = root.join("dist/.tsc");
     let dts = types_dts()?;
-    write_atomic(&dir.join("iron.d.ts"), dts.as_bytes()).map_err(|e| e.to_string())?;
+    write_atomic(&dir.join("platypus.d.ts"), dts.as_bytes()).map_err(|e| e.to_string())?;
     let cfg = dir.join("tsconfig.json");
     write_atomic(&cfg, tsc_config(config).as_bytes()).map_err(|e| e.to_string())?;
     Ok(cfg)
@@ -407,7 +410,7 @@ fn referenced_assets(source: &str, root: &Path) -> Vec<String> {
                 });
                 if ext_ok
                     && !lit.contains(['{', '$'])
-                    && let Some(p) = iron_core::resolve_asset(root, lit)
+                    && let Some(p) = platypus_core::resolve_asset(root, lit)
                     && p.is_file()
                 {
                     let rel = lit.trim_start_matches("./").to_string();
@@ -445,8 +448,8 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let dist = root.join("dist");
     let entry = root.join(&config.entry);
     // The engine's global names stay the engine's: a module's own `class Random` is renamed.
-    let reserved = iron_ts::modules::global_names(&types_dts()?);
-    let bundle = iron_ts::modules::bundle_reserving(&entry, &reserved)?;
+    let reserved = platypus_ts::modules::global_names(&types_dts()?);
+    let bundle = platypus_ts::modules::bundle_reserving(&entry, &reserved)?;
     let mut warnings = config.empty_field_warnings.clone();
 
     let tsc = if opts.no_tsc || !config.has_tsconfig {
@@ -461,7 +464,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let mut object_bytes = 0;
     if !opts.no_compile {
         let out =
-            iron_ts::compile_with_manifests(&bundle.source, "speed", "game_", 0, &manifests())
+            platypus_ts::compile_with_manifests(&bundle.source, "speed", "game_", 0, &manifests())
                 .map_err(|e| format!("{}: {}", config.name, bundle.locate_in(&e)))?;
         object_bytes = out.object.len();
         if opts.aot {
@@ -503,7 +506,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
 
     // Paths built at run time (`assets/sfx/${n}.wav` is `assets/sfx/*.*`): which files they reach.
     let all_files = include::game_files(root);
-    let found = iron_ts::assetpaths::asset_paths(&bundle.source);
+    let found = platypus_ts::assetpaths::asset_paths(&bundle.source);
     let at = |line: usize| {
         bundle
             .locate(line)
@@ -529,7 +532,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     }
     for (lit, line) in &found.literals {
         if include::asset_looking_literal(lit)
-            && iron_core::resolve_asset(root, lit).is_some_and(|p| !p.is_file())
+            && platypus_core::resolve_asset(root, lit).is_some_and(|p| !p.is_file())
         {
             warnings.push(format!("{}: {lit:?} names no file", at(*line)));
         }
@@ -548,7 +551,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
             .pack_exclude
             .iter()
             .flatten()
-            .any(|x| iron_core::glob::include_match(x, f))
+            .any(|x| platypus_core::glob::include_match(x, f))
     };
     let mut plan: Vec<String> = selected.files;
     plan.extend(names.iter().cloned());
@@ -569,7 +572,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     )
     .map_err(|e| e.to_string())?;
 
-    let irbundle = serde_json::json!({
+    let pbundle = serde_json::json!({
         "format": 1,
         "title": config.title,
         "company": config.company,
@@ -583,22 +586,23 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
             "glob": p.glob, "at": p.at, "matches": p.matches,
         })).collect::<Vec<_>>(),
     });
-    let text = serde_json::to_string_pretty(&irbundle).map_err(|e| e.to_string())?;
-    write_atomic(&dist.join("game.irbundle"), text.as_bytes()).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(&pbundle).map_err(|e| e.to_string())?;
+    write_atomic(&dist.join("game.pbundle"), text.as_bytes()).map_err(|e| e.to_string())?;
 
     if opts.cook {
-        match find_iron(root) {
-            Some(iron) => {
-                let st = std::process::Command::new(&iron)
+        match find_platypus(root) {
+            Some(platypus) => {
+                let st = std::process::Command::new(&platypus)
                     .arg(root)
                     .arg("--cook")
                     .status();
                 if !matches!(st, Ok(s) if s.success()) {
-                    warnings.push(format!("{} --cook failed", iron.display()));
+                    warnings.push(format!("{} --cook failed", platypus.display()));
                 }
             }
-            None => warnings
-                .push("--cook: the `iron` binary was not found (cargo build -p iron_app)".into()),
+            None => warnings.push(
+                "--cook: the `platypus` binary was not found (cargo build -p platypus_app)".into(),
+            ),
         }
     }
     Ok(Report {
@@ -615,14 +619,14 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
 }
 
 /// The engine binary, for `--cook`: next to the repo's `target/`, or on the PATH.
-pub fn find_iron(root: &Path) -> Option<PathBuf> {
+pub fn find_platypus(root: &Path) -> Option<PathBuf> {
     let mut p = root.canonicalize().ok()?;
     while p.pop() {
         for rel in [
-            "target/release/iron_app.exe",
-            "target/debug/iron_app.exe",
-            "target/release/iron_app",
-            "target/debug/iron_app",
+            "target/release/platypus.exe",
+            "target/debug/platypus.exe",
+            "target/release/platypus",
+            "target/debug/platypus",
         ] {
             let c = p.join(rel);
             if c.exists() {
@@ -638,7 +642,7 @@ mod tests {
     use super::*;
 
     fn temp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("iron_build_{name}_{}", assets::new_guid()));
+        let d = std::env::temp_dir().join(format!("platypus_build_{name}_{}", assets::new_guid()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }
@@ -654,13 +658,13 @@ mod tests {
 
     // M9-TS-1851
     #[test]
-    fn config_reads_the_iron_section_and_tsconfig() {
+    fn config_reads_the_platypus_section_and_tsconfig() {
         let d = temp("cfg");
         std::fs::create_dir_all(d.join("src")).unwrap();
         std::fs::write(d.join("src/main.ts"), "export const a = 1;").unwrap();
         std::fs::write(
             d.join("package.json"),
-            r#"{"name":"g","iron":{"title":"T","company":"C","identifier":"dev.x.g"}}"#,
+            r#"{"name":"g","platypus":{"title":"T","company":"C","identifier":"dev.x.g"}}"#,
         )
         .unwrap();
         std::fs::write(d.join("tsconfig.json"), "{\n // x\n \"compilerOptions\": {\"jsx\": \"react-jsx\"}, \"include\": [\"src\", \"types\"] }").unwrap();
@@ -676,18 +680,18 @@ mod tests {
 
     // M9-TS-2720
     #[test]
-    fn config_reads_project_json_before_the_iron_section() {
+    fn config_reads_project_json_before_the_platypus_section() {
         let d = temp("projectjson");
         std::fs::create_dir_all(d.join("src")).unwrap();
         std::fs::write(d.join("src/app.ts"), "").unwrap();
         std::fs::write(
             d.join("package.json"),
-            r#"{"name":"g","iron":{"title":"FROM PACKAGE","main":"src/other.ts"}}"#,
+            r#"{"name":"g","platypus":{"title":"FROM PACKAGE","main":"src/other.ts"}}"#,
         )
         .unwrap();
         std::fs::write(
             d.join("project.json"),
-            r#"{"name":"g","title":"T ${env:IRON_NO_SUCH_VAR_2720:-ok}","identifier":"dev.x.g","main":"src/app.ts"}"#,
+            r#"{"name":"g","title":"T ${env:PLATYPUS_NO_SUCH_VAR_2720:-ok}","identifier":"dev.x.g","main":"src/app.ts"}"#,
         )
         .unwrap();
         let c = GameConfig::load(&d).unwrap();
@@ -749,7 +753,7 @@ mod tests {
             ".a { color: red }"
         );
         let b: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(d.join("dist/game.irbundle")).unwrap())
+            serde_json::from_str(&std::fs::read_to_string(d.join("dist/game.pbundle")).unwrap())
                 .unwrap();
         assert_eq!(b["format"], 1);
         assert_eq!(b["css"], "game.css");
@@ -774,7 +778,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    // ---- types/iron.d.ts as globals (M9-TS-2300..) ----------------------------------------------
+    // ---- types/platypus.d.ts as globals (M9-TS-2300..) ----------------------------------------------
 
     fn globals_game(name: &str, main: &str) -> PathBuf {
         let d = temp(name);
@@ -790,7 +794,7 @@ mod tests {
     }
 
     const NO_IMPORTS: &str = "class Hello extends Component {\n  override onStart() {\n    const v = new Vector3(1, 2, 3);\n    console.log(v.x + Time.deltaTime);\n  }\n}\nregister({ Hello });\n";
-    const WITH_IMPORTS: &str = "import { Component, register, Vector3, Time } from \"@iron/engine\";\n\nclass Hello extends Component {\n  override onStart() {\n    const v = new Vector3(1, 2, 3);\n    console.log(v.x + Time.deltaTime);\n  }\n}\nregister({ Hello });\n";
+    const WITH_IMPORTS: &str = "import { Component, register, Vector3, Time } from \"@platypus/engine\";\n\nclass Hello extends Component {\n  override onStart() {\n    const v = new Vector3(1, 2, 3);\n    console.log(v.x + Time.deltaTime);\n  }\n}\nregister({ Hello });\n";
 
     fn no_tsc() -> Options {
         Options {
@@ -828,17 +832,17 @@ mod tests {
             "\ndeclare function Text(",
             "\ndeclare function Dialog(",
             "\ntype ReactNode =",
-            "\ninterface IronStyle {",
-            "\ninterface IronKeyboardEvent ",
+            "\ninterface PlatypusStyle {",
+            "\ninterface PlatypusKeyboardEvent ",
             "\ndeclare type FullScreenMode =",
             "\ndeclare interface Gamepad {",
             "\ndeclare class Collision {",
             "\ndeclare class Collision2D {",
             "\ndeclare class Collider {",
             "\ndeclare class ContactPoint {",
-            "\ndeclare module \"@iron/engine\" {",
+            "\ndeclare module \"@platypus/engine\" {",
             "  export import Vector3 = globalThis.Vector3;",
-            "\ndeclare module \"@iron/react\" {",
+            "\ndeclare module \"@platypus/react\" {",
             "  export import createRoot = globalThis.createRoot;",
             "\ndeclare module \"react\" {",
             "  export import useState = globalThis.useState;",
@@ -864,7 +868,7 @@ mod tests {
 
     // M9-TS-2806
     #[test]
-    fn iron_build_types_declare_window_and_window_options() {
+    fn platypus_build_types_declare_window_and_window_options() {
         let a = types_dts().unwrap();
         for want in [
             "\ndeclare class Window {",
@@ -931,8 +935,8 @@ mod tests {
         let d = globals_game("oldimp", WITH_IMPORTS);
         let r = build(&d, &no_tsc()).unwrap();
         assert!(r.object_bytes > 0);
-        let src = std::fs::read_to_string(d.join("dist/game.irbundle")).unwrap();
-        assert!(!src.contains("@iron/engine\\\""), "the import was kept");
+        let src = std::fs::read_to_string(d.join("dist/game.pbundle")).unwrap();
+        assert!(!src.contains("@platypus/engine\\\""), "the import was kept");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -962,7 +966,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
         .unwrap();
         let r = build(&d, &no_tsc()).unwrap();
         assert!(r.object_bytes > 0);
-        let src = std::fs::read_to_string(d.join("dist/game.irbundle")).unwrap();
+        let src = std::fs::read_to_string(d.join("dist/game.pbundle")).unwrap();
         assert!(src.contains("class Random_2"), "{src}");
         assert!(src.contains("Random.value"), "{src}");
         let _ = std::fs::remove_dir_all(&d);
@@ -976,7 +980,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
         let v: serde_json::Value = serde_json::from_str(&tsc_config(&c)).unwrap();
         assert_eq!(v["extends"], "../../tsconfig.json");
         assert_eq!(v["include"][0], "../../src");
-        assert_eq!(v["files"][0], "iron.d.ts");
+        assert_eq!(v["files"][0], "platypus.d.ts");
         assert_eq!(v["compilerOptions"]["moduleDetection"], "force");
         assert_eq!(v["compilerOptions"]["jsx"], "preserve");
         // M9-TS-2875: tsc resolves bare imports the way the compiler does.
@@ -1018,7 +1022,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
         assert_eq!(ok(&d).unwrap().tsc, Tsc::Ok);
         std::fs::write(
             d.join("src/main.tsx"),
-            "import { useState } from \"react\";\nimport { createRoot, Text, type IronStyle } from \"@iron/react\";\nimport { type Gamepad, Color } from \"@iron/engine\";\nconst style: IronStyle = { color: \"red\" };\nfunction App() {\n  const [n, setN] = useState(0);\n  const g: Gamepad | null = null;\n  return <box style={style} onClick={() => setN(n + 1)}><Text>{n}{String(g)}{Color.white.r}</Text></box>;\n}\ncreateRoot().render(<App />);\n",
+            "import { useState } from \"react\";\nimport { createRoot, Text, type PlatypusStyle } from \"@platypus/react\";\nimport { type Gamepad, Color } from \"@platypus/engine\";\nconst style: PlatypusStyle = { color: \"red\" };\nfunction App() {\n  const [n, setN] = useState(0);\n  const g: Gamepad | null = null;\n  return <box style={style} onClick={() => setN(n + 1)}><Text>{n}{String(g)}{Color.white.r}</Text></box>;\n}\ncreateRoot().render(<App />);\n",
         )
         .unwrap();
         assert_eq!(ok(&d).unwrap().tsc, Tsc::Ok);
@@ -1034,7 +1038,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
             let _ = std::fs::remove_dir_all(&d);
             return;
         };
-        std::fs::write(d.join("iron.d.ts"), types_dts().unwrap()).unwrap();
+        std::fs::write(d.join("platypus.d.ts"), types_dts().unwrap()).unwrap();
         // skipLibCheck off: declaration errors are reported too.
         let o = std::process::Command::new(tsc)
             .args([
@@ -1046,7 +1050,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
                 "ES2022",
                 "--target",
                 "ES2022",
-                "iron.d.ts",
+                "platypus.d.ts",
             ])
             .current_dir(&d)
             .output()
@@ -1060,7 +1064,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
     #[test]
     fn every_example_is_found_by_its_project_json_and_has_no_package_json() {
         let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
-        let user = iron_core::project::FixedUser {
+        let user = platypus_core::project::FixedUser {
             username: "tester".into(),
             full_name: "Test Person".into(),
             ..Default::default()
@@ -1074,17 +1078,20 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
                 !p.join("package.json").exists(),
                 "{name}: games need no package.json"
             );
-            let proj = iron_core::project::Project::load(
+            let proj = platypus_core::project::Project::load(
                 &p,
-                &iron_core::project::LoadOptions::new(iron_core::project::Platform::Windows, &user),
+                &platypus_core::project::LoadOptions::new(
+                    platypus_core::project::Platform::Windows,
+                    &user,
+                ),
             )
             .unwrap();
             assert_eq!(
                 proj.source,
-                iron_core::project::Source::ProjectJson,
+                platypus_core::project::Source::ProjectJson,
                 "{name}"
             );
-            assert_eq!(proj.identifier, format!("dev.iron.{name}"));
+            assert_eq!(proj.identifier, format!("dev.platypus.{name}"));
             assert_eq!(proj.company, "Test's Company");
             assert_eq!(proj.license, "private");
             assert!(!proj.title.is_empty());
@@ -1133,7 +1140,11 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
                 let Ok(t) = std::fs::read_to_string(f.path()) else {
                     continue;
                 };
-                for bad in ["\"@iron/engine\"", "\"@iron/react\"", "from \"react\""] {
+                for bad in [
+                    "\"@platypus/engine\"",
+                    "\"@platypus/react\"",
+                    "from \"react\"",
+                ] {
                     assert!(!t.contains(bad), "{}: {bad}", f.path().display());
                 }
             }
@@ -1187,7 +1198,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
         let d = temp("discover");
         for (dir, file, text) in [
             ("a", "project.json", r#"{ "name": "a" }"#),
-            ("b", "package.json", r#"{ "name": "b", "iron": {} }"#),
+            ("b", "package.json", r#"{ "name": "b", "platypus": {} }"#),
             ("c", "package.json", r#"{ "name": "c" }"#),
             ("d", "tsconfig.json", "{}"),
         ] {

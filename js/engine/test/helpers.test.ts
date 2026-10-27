@@ -7,7 +7,7 @@ import { _resetTimeForTests } from "../src/clock.ts";
 import { _resetInputForTests } from "../src/input.ts";
 import { Console, formatValue } from "../src/log.ts";
 
-const tick = (dt = 1 / 60) => globalThis.__iron_tick(dt);
+const tick = (dt = 1 / 60) => globalThis.__platypus_tick(dt);
 
 beforeEach(() => {
   _resetTimeForTests();
@@ -107,26 +107,26 @@ describe("random", () => {
 // M5-HLP-04
 describe("Unity-style input", () => {
   test("getKeyDown lasts one tick; axes combine keys and sticks", () => {
-    globalThis.__iron_input("keydown", "KeyD", "d", false);
+    globalThis.__platypus_input("keydown", "KeyD", "d", false);
     expect(input.getKeyDown("KeyD")).toBe(false); // not until the tick starts
     tick();
     expect(input.getKeyDown("KeyD")).toBe(true);
     expect(input.getKey("KeyD")).toBe(true);
     expect(input.getAxis("Horizontal")).toBe(1);
-    globalThis.__iron_input("keydown", "KeyD", "d", true); // repeat: not a new press
+    globalThis.__platypus_input("keydown", "KeyD", "d", true); // repeat: not a new press
     tick();
     expect(input.getKeyDown("KeyD")).toBe(false);
-    globalThis.__iron_input("keyup", "KeyD", "d");
+    globalThis.__platypus_input("keyup", "KeyD", "d");
     tick();
     expect(input.getKeyUp("KeyD")).toBe(true);
     expect(input.getAxis("Horizontal")).toBe(0);
 
-    globalThis.__iron_input("gamepadconnected", 0, "Pad");
-    globalThis.__iron_input("gamepadaxis", 0, "LeftStickY", -0.6);
+    globalThis.__platypus_input("gamepadconnected", 0, "Pad");
+    globalThis.__platypus_input("gamepadaxis", 0, "LeftStickY", -0.6);
     expect(input.getAxis("Vertical")).toBe(-0.6);
-    globalThis.__iron_input("gamepadbutton", 0, "South", 1);
+    globalThis.__platypus_input("gamepadbutton", 0, "South", 1);
     expect(input.getButton("Jump")).toBe(true);
-    globalThis.__iron_input("keydown", "Space", " ", false);
+    globalThis.__platypus_input("keydown", "Space", " ", false);
     tick();
     expect(input.getButtonDown("Jump")).toBe(true);
   });

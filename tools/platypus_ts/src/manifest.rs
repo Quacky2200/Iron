@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The engine API as the compiler sees it: the JSON manifest `iron_api` generates
+//! The engine API as the compiler sees it: the JSON manifest `platypus_api` generates
 //! (`Namespace::to_json`), read into a table of functions the TypeScript can call directly.
 //!
 //! ```json
-//! {"namespace":"Demo","functions":[{"name":"add","symbol":"iron_Demo_add",
+//! {"namespace":"Demo","functions":[{"name":"add","symbol":"platypus_Demo_add",
 //!   "params":[{"name":"a","type":"f64"}],"returns":"f64"}]}
 //! ```
 //!
@@ -90,7 +90,7 @@ pub struct Manifest {
 pub struct EnumInfo {
     /// The names, in index order.
     pub values: Vec<String>,
-    /// `iron_<Enum>_name(i, out_len)` and `iron_<Enum>_parse(s)`.
+    /// `platypus_<Enum>_name(i, out_len)` and `platypus_<Enum>_parse(s)`.
     pub name_symbol: String,
     pub parse_symbol: String,
 }
@@ -104,7 +104,7 @@ pub enum RecField {
     Value(String),
     /// An enum: the index.
     Enum(String),
-    /// A string: it comes through `iron_api_result_str`, not the number buffer.
+    /// A string: it comes through `platypus_api_result_str`, not the number buffer.
     Str,
     /// An optional key (`Option<T>`): a nullable field. Only records that travel as JSON have it.
     Opt(Box<RecField>),

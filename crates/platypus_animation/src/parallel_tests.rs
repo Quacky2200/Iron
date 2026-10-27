@@ -12,7 +12,7 @@ use crate::culling::{CullingMode, Visibility};
 use crate::curve::{Curve, WrapMode};
 use crate::player::{AnimationPlayer, FiredEvent, update_on};
 use crate::pose::NoComponents;
-use iron_scene::{ObjectId, Scene, Transform};
+use platypus_scene::{ObjectId, Scene, Transform};
 
 /// A looping clip over a figure's bones: each bone turns and slides at its own pace.
 fn clip(w: &mut World, name: &str, length: f64, bones: &[&str], event: bool) -> ClipId {

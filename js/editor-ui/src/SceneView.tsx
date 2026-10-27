@@ -25,8 +25,8 @@ import {
   Screen,
   Time,
   Vector3,
-} from "@iron/engine";
-import { type IronKeyboardEvent, type IronPointerEvent, type IronWheelEvent, Text } from "@iron/react";
+} from "@platypus/engine";
+import { type PlatypusKeyboardEvent, type PlatypusPointerEvent, type PlatypusWheelEvent, Text } from "@platypus/react";
 import { useEffect, useRef, useState } from "react";
 
 import type { Rect as DockRect } from "./dock.ts";
@@ -255,7 +255,7 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
     return { shapes: handleShapes(tool, v, frameOf(a)), object: a };
   };
 
-  const onPointerDown = (e: IronPointerEvent) => {
+  const onPointerDown = (e: PlatypusPointerEvent) => {
     e.currentTarget?.focus();
     const r = rectRef.current;
     if (e.button === 0 && !e.altKey && tool !== "view") {
@@ -275,7 +275,7 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
     drag.current = { mode, x: e.clientX, y: e.clientY, moved: false };
     e.currentTarget?.setPointerCapture();
   };
-  const onPointerMove = (e: IronPointerEvent) => {
+  const onPointerMove = (e: PlatypusPointerEvent) => {
     const d = drag.current;
     if (!d) {
       // Hovering lights up the part that a press would grab.
@@ -300,7 +300,7 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
     else if (d.mode === "orbit") set(orbit(state.current, dx, dy));
     else if (d.mode === "pan") set(pan(state.current, dx, dy, rectRef.current.height));
   };
-  const onPointerUp = (e: IronPointerEvent) => {
+  const onPointerUp = (e: PlatypusPointerEvent) => {
     const d = drag.current;
     drag.current = null;
     e.currentTarget?.releasePointerCapture();
@@ -311,11 +311,11 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
     // A click on nothing clears the selection.
     if (d?.mode === "click" && !d.moved) onSelect?.(null, e.ctrlKey || e.shiftKey);
   };
-  const onWheel = (e: IronWheelEvent) => {
+  const onWheel = (e: PlatypusWheelEvent) => {
     e.preventDefault();
     set(zoom(state.current, e.deltaY));
   };
-  const onKeyDown = (e: IronKeyboardEvent) => {
+  const onKeyDown = (e: PlatypusKeyboardEvent) => {
     const tools: Record<string, SceneTool> = { KeyQ: "view", KeyW: "move", KeyE: "rotate", KeyR: "scale" };
     // Not while flying: then W and E move the camera.
     if (tools[e.code] && !drag.current && !e.ctrlKey && !e.altKey) {
@@ -332,7 +332,7 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
 
   return (
     <box
-      className="iron-scene-view"
+      className="platypus-scene-view"
       style={{ width: rect.width, height: rect.height }}
       tabIndex={-1}
       onPointerDown={onPointerDown}
@@ -345,7 +345,7 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
       {view.icons.map((icon) => (
         <box
           key={icon.object.id}
-          className={`iron-scene-icon ${icon.kind}${selected.includes(icon.object) ? " selected" : ""}`}
+          className={`platypus-scene-icon ${icon.kind}${selected.includes(icon.object) ? " selected" : ""}`}
           style={{ left: icon.x - ICON / 2, top: icon.y - ICON / 2, width: ICON, height: ICON }}
           onPointerDown={(e) => {
             if (e.button !== 0 || e.altKey) return;
@@ -357,9 +357,9 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
         </box>
       ))}
       <Handles handles={handlesNow()} tool={tool} rect={rect} hot={drag.current?.mode === "handle" ? drag.current.handle.part : hover} />
-      <box className="iron-scene-tools" onPointerDown={(e) => e.stopPropagation()}>
+      <box className="platypus-scene-tools" onPointerDown={(e) => e.stopPropagation()}>
         {TOOLS.map(([t, label, key]) => (
-          <box key={t} className={t === tool ? "iron-scene-tool active" : "iron-scene-tool"} onClick={() => setTool(t)}>
+          <box key={t} className={t === tool ? "platypus-scene-tool active" : "platypus-scene-tool"} onClick={() => setTool(t)}>
             <Text>{`${label} (${key})`}</Text>
           </box>
         ))}
@@ -429,7 +429,7 @@ function Handles({ handles, tool, rect, hot }: { handles: { shapes: HandleShape[
   const h = Math.ceil(y1 - y0);
   const pts = (line: { x: number; y: number }[]) => line.map((p) => `${(p.x - x0).toFixed(1)},${(p.y - y0).toFixed(1)}`).join(" ");
   return (
-    <box className="iron-scene-handles" style={{ left: x0, top: y0, width: w, height: h }}>
+    <box className="platypus-scene-handles" style={{ left: x0, top: y0, width: w, height: h }}>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
         {shapes.map((s) => {
           const color = s.part === hot ? HOT : HANDLE_COLORS[s.part];
@@ -595,7 +595,7 @@ function OrientationGizmo({ state, onLook, onToggle }: { state: SceneCameraState
   const reach = GIZMO * 0.32;
   const axes = gizmoAxes(state);
   return (
-    <box className="iron-scene-gizmo" style={{ width: GIZMO, height: GIZMO + 16 }} onPointerDown={(e) => e.stopPropagation()}>
+    <box className="platypus-scene-gizmo" style={{ width: GIZMO, height: GIZMO + 16 }} onPointerDown={(e) => e.stopPropagation()}>
       <svg width={GIZMO} height={GIZMO} viewBox={`0 0 ${GIZMO} ${GIZMO}`}>
         {axes.map((a) => {
           const color = AXIS_COLORS[a.name.replace("-", "")]!;
@@ -619,13 +619,13 @@ function OrientationGizmo({ state, onLook, onToggle }: { state: SceneCameraState
       {axes.map((a) => (
         <box
           key={a.name}
-          className="iron-scene-gizmo-hit"
+          className="platypus-scene-gizmo-hit"
           style={{ left: c + a.x * reach - 9, top: c + a.y * reach - 9, width: 18, height: 18 }}
           onClick={() => onLook(a.axis.negate())}
         />
       ))}
-      <box className="iron-scene-gizmo-hit" style={{ left: c - 7, top: c - 7, width: 14, height: 14 }} onClick={onToggle} />
-      <box className="iron-scene-gizmo-label">
+      <box className="platypus-scene-gizmo-hit" style={{ left: c - 7, top: c - 7, width: 14, height: 14 }} onClick={onToggle} />
+      <box className="platypus-scene-gizmo-label">
         <Text>{state.orthographic ? "Iso" : "Persp"}</Text>
       </box>
     </box>

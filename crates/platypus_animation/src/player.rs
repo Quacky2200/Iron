@@ -8,7 +8,7 @@ use crate::clip::{ClipId, Parameter, World};
 use crate::culling::{AllVisible, CullingMode, CullingType, Visibility};
 use crate::curve::{WrapMode, wrap};
 use crate::pose::PropertySink;
-use iron_scene::{ObjectId, Scene};
+use platypus_scene::{ObjectId, Scene};
 
 /// A clip event that came due: call `function_name` on the object's components.
 #[derive(Clone, Debug, PartialEq)]
@@ -148,7 +148,7 @@ impl AnimationPlayer {
             self.states[i].enabled = true;
             self.states[i].time = 0.0;
         }
-        let rate = 1.0 / iron_math::jsnum::max(1e-4, fade_length);
+        let rate = 1.0 / platypus_math::jsnum::max(1e-4, fade_length);
         self.states[i].target = 1.0;
         self.states[i].fade = rate;
         for (j, other) in self.states.iter_mut().enumerate() {
@@ -207,9 +207,9 @@ impl AnimationPlayer {
             if s.fade != 0.0 {
                 let step = s.fade * dt;
                 s.weight = if s.weight < s.target {
-                    iron_math::jsnum::min(s.target, s.weight + step)
+                    platypus_math::jsnum::min(s.target, s.weight + step)
                 } else {
-                    iron_math::jsnum::max(s.target, s.weight - step)
+                    platypus_math::jsnum::max(s.target, s.weight - step)
                 };
                 if s.weight == s.target {
                     s.fade = 0.0;

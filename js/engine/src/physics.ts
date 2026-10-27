@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Physics for gameplay code: rigid bodies, colliders, a character controller and
-// raycasts, simulated by rapier in Rust (crates/iron_physics). Scripts hold handles
+// raycasts, simulated by rapier in Rust (crates/platypus_physics). Scripts hold handles
 // with numeric IDs; changes go to the engine as `physics.*` ops and apply before the
-// next fixed tick. After each tick Rust calls `__iron_physics(...)` with what moved,
+// next fixed tick. After each tick Rust calls `__platypus_physics(...)` with what moved,
 // what collided and query answers, so `position` and friends are always last tick's
 // values. Units are metres, seconds and kilograms; y is up.
 
@@ -120,7 +120,7 @@ export class PhysicsCollider {
     }
     colliders.set(this.id, this);
     // Collision events are on for every collider; bodies' handlers pick what they need.
-    __iron_op("physics.collider", this.id, body?.id ?? null, shape, dims, vec(options.position), quat(options.rotation), [
+    __platypus_op("physics.collider", this.id, body?.id ?? null, shape, dims, vec(options.position), quat(options.rotation), [
       options.friction ?? 0.5,
       options.restitution ?? 0,
       options.density ?? 1,
@@ -131,27 +131,27 @@ export class PhysicsCollider {
   }
 
   setFriction(friction: number): void {
-    __iron_op("physics.colliderSet", this.id, "friction", friction);
+    __platypus_op("physics.colliderSet", this.id, "friction", friction);
   }
 
   setRestitution(restitution: number): void {
-    __iron_op("physics.colliderSet", this.id, "restitution", restitution);
+    __platypus_op("physics.colliderSet", this.id, "restitution", restitution);
   }
 
   setSensor(sensor: boolean): void {
     (this as { sensor: boolean }).sensor = sensor;
-    __iron_op("physics.colliderSet", this.id, "sensor", sensor);
+    __platypus_op("physics.colliderSet", this.id, "sensor", sensor);
   }
 
   /** Where it sits on its body. */
   setOffset(position: Vec3, rotation?: Quat): void {
-    __iron_op("physics.colliderSet", this.id, "offset", vec(position), quat(rotation));
+    __platypus_op("physics.colliderSet", this.id, "offset", vec(position), quat(rotation));
   }
 
   /** Removes the collider from its body (or the world). */
   remove(): void {
     if (!colliders.delete(this.id)) return;
-    __iron_op("physics.removeCollider", this.id);
+    __platypus_op("physics.removeCollider", this.id);
   }
 }
 
@@ -179,7 +179,7 @@ export class PhysicsBody {
     this.rotation = Quaternion.from(options.rotation ?? Quaternion.identity);
     this.velocity = Vector3.from(options.velocity ?? Vector3.zero);
     bodies.set(this.id, this);
-    __iron_op("physics.body", this.id, this.kind, vec(this.position), quat(this.rotation), vec(this.velocity), [
+    __platypus_op("physics.body", this.id, this.kind, vec(this.position), quat(this.rotation), vec(this.velocity), [
       options.gravityScale ?? 1,
       options.linearDamping ?? 0,
       options.angularDamping ?? 0,
@@ -195,78 +195,78 @@ export class PhysicsBody {
   /** Teleports the body. */
   setPosition(p: Vec3): void {
     this.position = Vector3.from(p);
-    __iron_op("physics.set", this.id, "position", vec(p));
+    __platypus_op("physics.set", this.id, "position", vec(p));
   }
 
   setRotation(q: Quat): void {
     this.rotation = Quaternion.from(q);
-    __iron_op("physics.set", this.id, "rotation", quat(q));
+    __platypus_op("physics.set", this.id, "rotation", quat(q));
   }
 
   setVelocity(v: Vec3): void {
     this.velocity = Vector3.from(v);
-    __iron_op("physics.set", this.id, "velocity", vec(v));
+    __platypus_op("physics.set", this.id, "velocity", vec(v));
   }
 
   /** Radians per second around each axis. */
   setAngularVelocity(v: Vec3): void {
-    __iron_op("physics.set", this.id, "angularVelocity", vec(v));
+    __platypus_op("physics.set", this.id, "angularVelocity", vec(v));
   }
 
   /** A kinematic body's position at the end of the next tick (it pushes things on the way). */
   moveTo(p: Vec3): void {
-    __iron_op("physics.set", this.id, "target", vec(p));
+    __platypus_op("physics.set", this.id, "target", vec(p));
   }
 
   /** An instant change in momentum (N·s): jumps, hits, explosions. */
   applyImpulse(impulse: Vec3): void {
-    __iron_op("physics.force", this.id, "impulse", vec(impulse));
+    __platypus_op("physics.force", this.id, "impulse", vec(impulse));
   }
 
   applyTorqueImpulse(impulse: Vec3): void {
-    __iron_op("physics.force", this.id, "torqueImpulse", vec(impulse));
+    __platypus_op("physics.force", this.id, "torqueImpulse", vec(impulse));
   }
 
   /** A force (N) applied every tick until `clearForces()`. */
   addForce(force: Vec3): void {
-    __iron_op("physics.force", this.id, "force", vec(force));
+    __platypus_op("physics.force", this.id, "force", vec(force));
   }
 
   addTorque(torque: Vec3): void {
-    __iron_op("physics.force", this.id, "torque", vec(torque));
+    __platypus_op("physics.force", this.id, "torque", vec(torque));
   }
 
   clearForces(): void {
-    __iron_op("physics.clearForces", this.id);
+    __platypus_op("physics.clearForces", this.id);
   }
 
   /** An instant impulse at a world point (it also spins the body). */
   applyImpulseAtPoint(impulse: Vec3, point: Vec3): void {
-    __iron_op("physics.force", this.id, "impulseAt", vec(impulse), vec(point));
+    __platypus_op("physics.force", this.id, "impulseAt", vec(impulse), vec(point));
   }
 
   /** Switches between simulated (`dynamic`), immovable (`fixed`) and script-moved (`kinematic`). */
   setKind(kind: BodyKind): void {
     (this as { kind: BodyKind }).kind = kind;
-    __iron_op("physics.set", this.id, "kind", kind);
+    __platypus_op("physics.set", this.id, "kind", kind);
   }
 
   /** Total mass in kg (shared by its colliders). */
   setMass(kg: number): void {
-    __iron_op("physics.set", this.id, "mass", kg);
+    __platypus_op("physics.set", this.id, "mass", kg);
   }
 
   setGravityScale(scale: number): void {
-    __iron_op("physics.set", this.id, "gravityScale", scale);
+    __platypus_op("physics.set", this.id, "gravityScale", scale);
   }
 
   setDamping(linear: number, angular: number): void {
-    __iron_op("physics.set", this.id, "linearDamping", linear);
-    __iron_op("physics.set", this.id, "angularDamping", angular);
+    __platypus_op("physics.set", this.id, "linearDamping", linear);
+    __platypus_op("physics.set", this.id, "angularDamping", angular);
   }
 
   setCcd(on: boolean): void {
-    __iron_op("physics.set", this.id, "ccd", on);
+    __platypus_op("physics.set", this.id, "ccd", on);
   }
 
   /**
@@ -275,25 +275,25 @@ export class PhysicsBody {
    * from the side), with friction as usual.
    */
   setAllowedAxes(translation: [boolean, boolean, boolean], rotation: [boolean, boolean, boolean]): void {
-    __iron_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
+    __platypus_op("physics.set", this.id, "constraints", [...translation, ...rotation]);
   }
 
   sleep(): void {
-    __iron_op("physics.set", this.id, "sleep");
+    __platypus_op("physics.set", this.id, "sleep");
   }
 
   wakeUp(): void {
-    __iron_op("physics.set", this.id, "wake");
+    __platypus_op("physics.set", this.id, "wake");
   }
 
   /** Makes the body move a GameObject (and follow it when scripts move the object). */
   attachTo(objectId: number): void {
-    __iron_op("physics.attach", this.id, objectId);
+    __platypus_op("physics.attach", this.id, objectId);
   }
 
   /** Disabled bodies are left out of the simulation (and keep their state). */
   setEnabled(enabled: boolean): void {
-    __iron_op("physics.set", this.id, "enabled", enabled);
+    __platypus_op("physics.set", this.id, "enabled", enabled);
   }
 
   /**
@@ -302,7 +302,7 @@ export class PhysicsBody {
    * collider (its first collider is the character's shape).
    */
   makeCharacter(options: CharacterOptions = {}): void {
-    __iron_op("physics.character", this.id, options.maxSlope ?? 45, options.snapToGround ?? null, options.stepHeight ?? null);
+    __platypus_op("physics.character", this.id, options.maxSlope ?? 45, options.snapToGround ?? null, options.stepHeight ?? null);
   }
 
   /**
@@ -310,14 +310,14 @@ export class PhysicsBody {
    * a small downward pull to keep it on the ground; `grounded` updates after the tick.
    */
   move(delta: Vec3): void {
-    __iron_op("physics.move", this.id, vec(delta));
+    __platypus_op("physics.move", this.id, vec(delta));
   }
 
   /** Removes the body and its colliders. */
   remove(): void {
     if (!bodies.delete(this.id)) return;
     for (const [id, c] of colliders) if (c.body === this) colliders.delete(id);
-    __iron_op("physics.removeBody", this.id);
+    __platypus_op("physics.removeBody", this.id);
   }
 }
 
@@ -338,11 +338,11 @@ export class PhysicsJoint {
     params: number[] = [],
   ) {
     this.id = nextJoint++;
-    __iron_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec(anchorA), vec(anchorB), params);
+    __platypus_op("physics.joint", this.id, kind, a.id, b?.id ?? null, vec(anchorA), vec(anchorB), params);
   }
 
   remove(): void {
-    __iron_op("physics.removeJoint", this.id);
+    __platypus_op("physics.removeJoint", this.id);
   }
 }
 
@@ -367,7 +367,7 @@ export const physics = {
   },
 
   setGravity(g: Vec3): void {
-    __iron_op("physics.gravity", vec(g));
+    __platypus_op("physics.gravity", vec(g));
   },
 
   /**
@@ -380,7 +380,7 @@ export const physics = {
     const dir = { x: direction.x / len, y: direction.y / len, z: direction.z / len };
     return new Promise((resolve) => {
       queries.set(id, { origin: { ...origin }, dir, resolve });
-      __iron_op("physics.raycast", id, vec(origin), vec(dir), maxDistance);
+      __platypus_op("physics.raycast", id, vec(origin), vec(dir), maxDistance);
     });
   },
 
@@ -411,8 +411,8 @@ export function _resetPhysicsForTests() {
   nextBody = nextCollider = nextQuery = nextJoint = 1;
 }
 
-// Flat arrays, as documented on `Batch::to_args` (crates/iron_physics).
-globalThis.__iron_physics = (moved: number[], contacts: number[], rays: number[], characters: number[]) => {
+// Flat arrays, as documented on `Batch::to_args` (crates/platypus_physics).
+globalThis.__platypus_physics = (moved: number[], contacts: number[], rays: number[], characters: number[]) => {
   for (let i = 0; i + 13 < moved.length; i += 14) {
     const b = bodies.get(moved[i]!);
     if (!b) continue;

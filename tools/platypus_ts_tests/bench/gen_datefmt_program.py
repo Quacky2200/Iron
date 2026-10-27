@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Writes bench/datefmt.ts and bench/gen_datefmt_expected.ts (the option sets are written out here
-# because Iron reads Intl options as literals). Run from tools/iron_ts_tests:
+# because Platypus reads Intl options as literals). Run from tools/platypus_ts_tests:
 #   python3 bench/gen_datefmt_program.py
 # then `bun bench/gen_datefmt_expected.ts`. DROP lists the columns ICU4X cannot match.
 import os, re
@@ -39,7 +39,7 @@ def fn(name, lines):
 src = '''// Intl, step I3a: Date.prototype.toLocaleString/DateString/TimeString and Intl.DateTimeFormat.
 // Every exported function without parameters returns a string; `gen_datefmt_expected.ts` runs this
 // file in bun once per time zone and `tests/datefmt.rs` compares. The option sets are written out
-// because Iron reads options as literals.
+// because Platypus reads options as literals.
 
 const INSTANTS = [1792405800123, 0, 1772955000000, 1783000000000, 951782400000, 1798761599000];
 

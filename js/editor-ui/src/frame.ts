@@ -4,7 +4,7 @@
 // live hierarchy): one hidden object with a component whose `onLateUpdate` (after
 // scripts and animation have moved things) calls the listeners.
 
-import { Component, GameObject, HideFlags } from "@iron/engine";
+import { Component, GameObject, HideFlags } from "@platypus/engine";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();

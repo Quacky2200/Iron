@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The native reconciler against a real `UiTree`. IDs are in TESTS.md (M2-NAT-*).
-use iron_core::{NodeId, Value};
-use iron_ui::{ROOT, UiTree};
-use iron_ui_native::{Context, Dep, Element, Event, HostProps, NodeRef, Runtime};
+use platypus_core::{NodeId, Value};
+use platypus_ui::{ROOT, UiTree};
+use platypus_ui_native::{Context, Dep, Element, Event, HostProps, NodeRef, Runtime};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -38,7 +38,7 @@ fn dump(tree: &UiTree, id: NodeId) -> String {
     format!("{kind}({})", kids.join(","))
 }
 
-fn ok(errors: Vec<iron_ui::UiError>) {
+fn ok(errors: Vec<platypus_ui::UiError>) {
     assert!(errors.is_empty(), "{errors:?}");
 }
 
@@ -343,9 +343,9 @@ fn portals_mount_elsewhere_and_events_bubble_to_the_logical_parent() {
     let target = tree.children(ROOT)[0];
     let log: Rc<RefCell<Vec<String>>> = Rc::default();
     let (l1, l2) = (log.clone(), log.clone());
-    let click_outer: iron_ui_native::Handler =
+    let click_outer: platypus_ui_native::Handler =
         Rc::new(move |_| l1.borrow_mut().push("outer".into()));
-    let click_inner: iron_ui_native::Handler =
+    let click_inner: platypus_ui_native::Handler =
         Rc::new(move |_| l2.borrow_mut().push("inner".into()));
     let inner = Element::host(
         "box",
@@ -396,17 +396,17 @@ fn events_capture_then_bubble_and_commit_state_synchronously() {
             let (n, set) = cx.use_state(|| 0i32);
             *s2.borrow_mut() = Some(set.clone());
             let mk =
-                |name: &'static str, l: &Rc<RefCell<Vec<String>>>| -> iron_ui_native::Handler {
+                |name: &'static str, l: &Rc<RefCell<Vec<String>>>| -> platypus_ui_native::Handler {
                     let l = l.clone();
                     Rc::new(move |_| l.borrow_mut().push(name.into()))
                 };
             let l_stop = l.clone();
-            let stop: iron_ui_native::Handler = Rc::new(move |e: &mut Event| {
+            let stop: platypus_ui_native::Handler = Rc::new(move |e: &mut Event| {
                 l_stop.borrow_mut().push("mid".into());
                 e.prevent_default();
                 e.stop_propagation();
             });
-            let inc: iron_ui_native::Handler = {
+            let inc: platypus_ui_native::Handler = {
                 let set = set.clone();
                 Rc::new(move |_| set.update(|v| v + 1))
             };
@@ -534,7 +534,7 @@ fn a_render_loop_is_reported() {
     );
 }
 
-fn field(value: &str, on_input: iron_ui_native::Handler) -> Element {
+fn field(value: &str, on_input: platypus_ui_native::Handler) -> Element {
     Element::host(
         "input",
         HostProps {
@@ -568,7 +568,7 @@ fn a_controlled_field_keeps_its_value_prop() {
         Element::component(1, move |cx| {
             let (text, set) = cx.use_state(|| "init".to_string());
             let a3 = a2.clone();
-            let on_input: iron_ui_native::Handler = Rc::new(move |e: &mut Event| {
+            let on_input: platypus_ui_native::Handler = Rc::new(move |e: &mut Event| {
                 if *a3.borrow() {
                     set.set(e.strings[0].to_uppercase());
                 }
@@ -602,12 +602,12 @@ fn a_controlled_field_keeps_its_value_prop() {
 // while its own handler still runs.
 #[test]
 fn focus_events_from_the_interaction_layer_reach_handlers_and_scroll_does_not_bubble() {
-    use iron_ui::{Input, Interaction};
+    use platypus_ui::{Input, Interaction};
     let mut tree = tree();
     let mut rt = Runtime::new(FIRST);
     let root = rt.create_root(ROOT);
     let log: Rc<RefCell<Vec<String>>> = Rc::default();
-    let note = |name: &'static str| -> iron_ui_native::Handler {
+    let note = |name: &'static str| -> platypus_ui_native::Handler {
         let log = log.clone();
         Rc::new(move |e: &mut Event| {
             let related = e.data.get(9).copied().unwrap_or(0.0);
@@ -651,10 +651,14 @@ fn focus_events_from_the_interaction_layer_reach_handlers_and_scroll_does_not_bu
     let (a, b) = (tree.children(form_id)[0], tree.children(form_id)[1]);
     let mut ui = Interaction::new();
     let mut send = |ui: &mut Interaction, tree: &mut UiTree, input: Input| {
-        ui.handle(tree, input, &mut |e| match iron_ui_native::event_of(e) {
-            Some(mut ev) => rt.dispatch_handlers(&mut ev),
-            None => false,
-        });
+        ui.handle(
+            tree,
+            input,
+            &mut |e| match platypus_ui_native::event_of(e) {
+                Some(mut ev) => rt.dispatch_handlers(&mut ev),
+                None => false,
+            },
+        );
     };
     send(&mut ui, &mut tree, Input::Focus(a));
     assert_eq!(*log.borrow(), ["cap-in:0", "a-in:0", "form-in:0"]);
@@ -672,12 +676,12 @@ fn focus_events_from_the_interaction_layer_reach_handlers_and_scroll_does_not_bu
     );
     // A scroll event of the field does not reach the form's `onScroll`.
     log.borrow_mut().clear();
-    let scroll = iron_ui::UiEvent::new(
-        iron_ui::EventKind::Scroll,
+    let scroll = platypus_ui::UiEvent::new(
+        platypus_ui::EventKind::Scroll,
         tree.event_path(b),
-        iron_ui::events::Modifiers::default(),
+        platypus_ui::events::Modifiers::default(),
     );
-    let mut ev = iron_ui_native::event_of(&scroll).unwrap();
+    let mut ev = platypus_ui_native::event_of(&scroll).unwrap();
     assert!(!ev.bubbles);
     rt.dispatch_handlers(&mut ev);
     assert!(log.borrow().is_empty(), "{:?}", log.borrow());

@@ -5,7 +5,7 @@
 //! manifest lists ([`PackSource`]), patches and DLC after them, mods last. Loaders ask the
 //! [`Vfs`] and never see which one answered.
 //!
-//! Paths are game paths (`assets/x.png`, checked like [`iron_core::resolve_asset`]); `data:`
+//! Paths are game paths (`assets/x.png`, checked like [`platypus_core::resolve_asset`]); `data:`
 //! URLs decode in place, `guid:<32 hex>` finds the asset by GUID.
 
 use std::io::{Read, Seek, SeekFrom};
@@ -101,7 +101,7 @@ impl DirSource {
         s
     }
 
-    /// Reads the `.meta` GUIDs again (after `iron-build assets` or a file move).
+    /// Reads the `.meta` GUIDs again (after `platypus-build assets` or a file move).
     pub fn rescan(&self) {
         let mut map = std::collections::HashMap::new();
         let mut stack = vec![self.root.clone()];
@@ -132,12 +132,12 @@ impl DirSource {
 
     /// The file to read (warns in the dev loop when a packaged build would not hold it).
     fn file(&self, path: &str) -> Option<PathBuf> {
-        iron_core::resolve_asset(&self.root, path)
+        platypus_core::resolve_asset(&self.root, path)
     }
 
     /// The file for a lookup, which warns about nothing: only loads do.
     fn file_quiet(&self, path: &str) -> Option<PathBuf> {
-        iron_core::resolve_asset_quiet(&self.root, path)
+        platypus_core::resolve_asset_quiet(&self.root, path)
     }
 
     /// Dev loop: the OS may find `assets/SFX/Boom.wav` where only `assets/sfx/boom.wav` exists
@@ -221,7 +221,7 @@ impl AssetSource for DirSource {
     }
 
     fn find(&self, path: &str, cooked: bool) -> Option<Found> {
-        // Cooked files of the dev loop (`.iron/cooked`) are the app's business: it checks they
+        // Cooked files of the dev loop (`.platypus/cooked`) are the app's business: it checks they
         // are fresh and made with the settings asked for.
         if cooked {
             return None;
@@ -392,7 +392,7 @@ struct RangeSource {
     window: std::sync::Mutex<(u64, Bytes)>,
 }
 
-impl iron_core::RangeRead for RangeSource {
+impl platypus_core::RangeRead for RangeSource {
     fn len(&self) -> u64 {
         self.size
     }
@@ -414,12 +414,12 @@ impl iron_core::RangeRead for RangeSource {
     }
 }
 
-impl iron_core::AssetFs for Vfs {
+impl platypus_core::AssetFs for Vfs {
     fn read(&self, path: &str) -> std::io::Result<Vec<u8>> {
         Ok(Vfs::read(self, path)?.into_vec())
     }
 
-    fn open_range(&self, path: &str) -> std::io::Result<Arc<dyn iron_core::RangeRead>> {
+    fn open_range(&self, path: &str) -> std::io::Result<Arc<dyn platypus_core::RangeRead>> {
         Vfs::open_range(self, path)
     }
 
@@ -524,7 +524,7 @@ impl Vfs {
     /// An asset's source bytes: a `data:` URL decoded, a `guid:` or a game path found.
     pub fn read(&self, path: &str) -> std::io::Result<Bytes> {
         if path.trim_start().starts_with("data:") {
-            return iron_core::decode_data_url(path)
+            return platypus_core::decode_data_url(path)
                 .map(Bytes::from)
                 .ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::InvalidData, "bad data URL")
@@ -540,7 +540,7 @@ impl Vfs {
     }
 
     /// The cooked form of a game path when a source has one (packs do; loose folders leave it to
-    /// the app's `.iron/cooked` check).
+    /// the app's `.platypus/cooked` check).
     pub fn read_cooked(&self, path: &str) -> Option<std::io::Result<(AssetInfo, Bytes)>> {
         let (layer, info) = self.find(path, true)?;
         Some(layer.read(&info).map(|b| (info, b)))
@@ -592,7 +592,7 @@ impl Vfs {
 
     /// A handle that reads an asset in pieces (streamed sounds): a window of it is read at a
     /// time, so a big compressed sound is never inflated whole.
-    pub fn open_range(&self, path: &str) -> std::io::Result<Arc<dyn iron_core::RangeRead>> {
+    pub fn open_range(&self, path: &str) -> std::io::Result<Arc<dyn platypus_core::RangeRead>> {
         let (layer, info) = self.find(path, false).ok_or_else(|| self.missing(path))?;
         Ok(Arc::new(RangeSource {
             size: info.size,
@@ -632,7 +632,7 @@ mod tests {
     }
 
     fn temp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("iron_vfs_{name}_{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("platypus_vfs_{name}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -680,7 +680,7 @@ mod tests {
             "{\n  \"guid\": \"0123456789abcdef0123456789abcdef\",\n  \"importer\": {}\n}\n",
         )
         .unwrap();
-        std::fs::write(d.join("dist/game.irbundle"), b"{}").unwrap();
+        std::fs::write(d.join("dist/game.pbundle"), b"{}").unwrap();
         let dir = Vfs::dir(&d);
         let mut spec = EntrySpec::new("assets/hit.wav", b"RIFF....");
         spec.guid = Guid::parse("0123456789abcdef0123456789abcdef").unwrap();

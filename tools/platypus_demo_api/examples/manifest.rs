@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Prints what `#[iron_api]` generated for the demo namespace: the JSON manifest the compiler reads
+//! Prints what `#[platypus_api]` generated for the demo namespace: the JSON manifest the compiler reads
 //! and the TypeScript declarations.
 //!
-//! `cd tools && cargo run -p iron_demo_api --example manifest`
+//! `cd tools && cargo run -p platypus_demo_api --example manifest`
 fn main() {
     println!(
         "=== manifest (JSON) ===\n{}\n",
-        iron_demo_api::manifest_json()
+        platypus_demo_api::manifest_json()
     );
     println!(
         "=== declarations (.d.ts) ===\n{}",
-        iron_demo_api::declarations()
+        platypus_demo_api::declarations()
     );
 }

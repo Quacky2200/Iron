@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use iron_platform::{
+use platypus_platform::{
     FakePlatform, InputEvent, Os, PlatformApp, Window, WindowCommand, WindowHost, WindowKey,
     WindowKind, WindowSpec,
 };
@@ -342,7 +342,7 @@ fn desktop_platforms_open_windows_without_errors() {
         assert!(p.app().failed.is_empty(), "{os:?}");
         assert!(p.window(k(2)).is_some());
         assert!(
-            iron_platform::plan(&spec(WindowKind::Normal, None), os)
+            platypus_platform::plan(&spec(WindowKind::Normal, None), os)
                 .error
                 .is_none()
         );

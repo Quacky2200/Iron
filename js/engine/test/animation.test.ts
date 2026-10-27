@@ -23,11 +23,11 @@ let ops: unknown[][] = [];
 beforeEach(() => {
   _resetSceneForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const near = (a: number, b: number, e = 1e-4) => Math.abs(a - b) < e;
@@ -94,7 +94,7 @@ describe("AnimationClip", () => {
     expect(light.color.g).toBeCloseTo(0.5);
     expect(light.color).toBeInstanceOf(Color);
     // One op per animated transform.
-    globalThis.__iron_flush();
+    globalThis.__platypus_flush();
     const sent = ops.filter((o) => o[0] === "scene.locals").flatMap((o) => o[1] as number[]);
     expect(sent.filter((v, i) => i % 11 === 0 && v === hand.id).length).toBe(1);
     // Replacing a curve, and saving and loading.
@@ -113,12 +113,12 @@ describe("AnimationClip", () => {
     clip.wrapMode = "loop";
     const anim = go.addComponent(Animation, { clip });
     anim.play();
-    globalThis.__iron_animate(0.4);
+    globalThis.__platypus_animate(0.4);
     expect(f.hits).toEqual([]);
-    globalThis.__iron_animate(0.2);
+    globalThis.__platypus_animate(0.2);
     expect(f.hits).toEqual(["half"]);
     // Looping: once more each pass.
-    globalThis.__iron_animate(1.0);
+    globalThis.__platypus_animate(1.0);
     expect(f.hits).toEqual(["half", "half"]);
   });
 });
@@ -136,13 +136,13 @@ describe("Animation", () => {
     const anim = go.addComponent(Animation, { clips: [left, right] });
     expect(anim.play("nope")).toBe(false);
     anim.play("left");
-    globalThis.__iron_animate(0.1);
+    globalThis.__platypus_animate(0.1);
     expect(go.transform.localPosition.x).toBeCloseTo(-1);
     anim.crossFade("right", 1);
-    globalThis.__iron_animate(0.5);
+    globalThis.__platypus_animate(0.5);
     // Halfway: equal weights.
     expect(go.transform.localPosition.x).toBeCloseTo(0);
-    globalThis.__iron_animate(0.6);
+    globalThis.__platypus_animate(0.6);
     expect(go.transform.localPosition.x).toBeCloseTo(1);
     expect(anim.isPlaying("left")).toBe(false);
     // A clip that plays once holds its last frame and stops.
@@ -150,13 +150,13 @@ describe("Animation", () => {
     once.setCurve("", "Transform", "localPosition.y", AnimationCurve.linear(0, 0, 1, 4));
     anim.addClip(once);
     anim.play("rise");
-    globalThis.__iron_animate(2);
+    globalThis.__platypus_animate(2);
     expect(go.transform.localPosition.y).toBeCloseTo(4);
     expect(anim.isPlaying()).toBe(false);
     // Inactive objects don't animate.
     go.enabled = false;
     anim.play("left");
-    globalThis.__iron_animate(0.1);
+    globalThis.__platypus_animate(0.1);
     expect(go.transform.localPosition.x).toBeCloseTo(1);
   });
 });
@@ -191,33 +191,33 @@ describe("Animator", () => {
     const animator = go.addComponent(Animator, { controller });
     // The blend tree mixes the two clips around the parameter.
     animator.setFloat("speed", 1);
-    globalThis.__iron_animate(0.1);
+    globalThis.__platypus_animate(0.1);
     expect(animator.getCurrentAnimatorStateInfo().isName("Move")).toBe(true);
     expect(go.transform.localPosition.x).toBeCloseTo(2.5);
     animator.setFloat("speed", 9);
-    globalThis.__iron_animate(0.1);
+    globalThis.__platypus_animate(0.1);
     expect(go.transform.localPosition.x).toBeCloseTo(10);
     // A trigger starts a transition and is used up.
     animator.setTrigger("jump");
-    globalThis.__iron_animate(0.1);
+    globalThis.__platypus_animate(0.1);
     expect(animator.getCurrentAnimatorStateInfo().name).toBe("Jump");
     expect(go.transform.localPosition.x).toBeCloseTo(100);
     // Exit time: after the jump's one second.
-    globalThis.__iron_animate(0.5);
+    globalThis.__platypus_animate(0.5);
     expect(animator.getCurrentAnimatorStateInfo().name).toBe("Jump");
-    globalThis.__iron_animate(0.6);
-    globalThis.__iron_animate(0.01);
+    globalThis.__platypus_animate(0.6);
+    globalThis.__platypus_animate(0.01);
     expect(animator.getCurrentAnimatorStateInfo().name).toBe("Land");
     // From any state, cross-fading over half a second.
     animator.setBool("dead", true);
-    globalThis.__iron_animate(0.25);
+    globalThis.__platypus_animate(0.25);
     expect(animator.isInTransition).toBe(true);
     expect(near(go.transform.localPosition.x, (50 - 5) / 2, 0.5)).toBe(true);
-    globalThis.__iron_animate(0.3);
+    globalThis.__platypus_animate(0.3);
     expect(animator.getCurrentAnimatorStateInfo().name).toBe("Dead");
     expect(go.transform.localPosition.x).toBeCloseTo(-5);
     // Any State doesn't re-enter the state it's in.
-    globalThis.__iron_animate(0.1);
+    globalThis.__platypus_animate(0.1);
     expect(animator.isInTransition).toBe(false);
   });
 
@@ -235,15 +235,15 @@ describe("Animator", () => {
       .addParameter("speed", "float", 0)
       .addState("Move", { blendParameter: "speed", children: [{ motion: cycle("walk", 1), threshold: 0 }, { motion: cycle("run", 2), threshold: 4 }] });
     const animator = go.addComponent(Animator, { controller });
-    globalThis.__iron_animate(0.25);
+    globalThis.__platypus_animate(0.25);
     expect(go.transform.localPosition.x).toBeCloseTo(0.25);
     // Breaking into a run: the stride carries on from the same point in the cycle (it jumped
     // back to 0.125 when the state kept seconds: 0.25 s of the run's 2).
     animator.setFloat("speed", 4);
-    globalThis.__iron_animate(0.001);
+    globalThis.__platypus_animate(0.001);
     expect(go.transform.localPosition.x).toBeCloseTo(0.25, 2);
     // Then at the run's pace: half a second is a quarter of its cycle.
-    globalThis.__iron_animate(0.5);
+    globalThis.__platypus_animate(0.5);
     expect(go.transform.localPosition.x).toBeCloseTo(0.5, 2);
   });
 
@@ -252,13 +252,13 @@ describe("Animator", () => {
     // 170 and -170 degrees are 20 apart through 180, not 340 through 0.
     const controller = new AnimatorController().addState("A", pose("a", 0, 170)).addState("B", pose("b", 0, -170));
     const animator = go.addComponent(Animator, { controller });
-    globalThis.__iron_animate(0.01);
+    globalThis.__platypus_animate(0.01);
     animator.crossFade("B", 1);
-    globalThis.__iron_animate(0.5);
+    globalThis.__platypus_animate(0.5);
     // Halfway is 180 degrees about y (through 0 would be the identity).
     expect(Math.abs(go.transform.localRotation.y)).toBeCloseTo(1);
     animator.play("A");
-    globalThis.__iron_animate(0.01);
+    globalThis.__platypus_animate(0.01);
     expect(go.transform.localEulerAngles.y).toBeCloseTo(170, 0);
     // Controllers save as data, clips inline, and in scenes.
     const back = AnimatorController.fromJSON(JSON.parse(JSON.stringify(controller.toJSON())));

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The `.irpk` layout, version 1. Everything is little-endian; offsets are `u64` from the start of
+//! The `.ppk` layout, version 1. Everything is little-endian; offsets are `u64` from the start of
 //! the pack (a pack may sit inside a larger file, as in an Android APK).
 //!
 //! ```text
@@ -30,6 +30,7 @@
 
 use crate::{Error, Result};
 
+/// Kept from before the rename to Platypus (`.irpk` became `.ppk`), so older packs still open.
 pub const MAGIC: [u8; 4] = *b"IRPK";
 pub const VERSION: u16 = 1;
 pub const HEADER_SIZE: usize = 64;
@@ -151,7 +152,7 @@ impl Guid {
     /// The id of a file without a `.meta`: a hash of its normalized path, so it is stable across
     /// builds.
     pub fn from_path(path: &str) -> Guid {
-        let mut key = b"iron.path:".to_vec();
+        let mut key = b"platypus.path:".to_vec();
         key.extend_from_slice(path.as_bytes());
         Guid(crate::hash::content_hash(&key))
     }

@@ -194,10 +194,10 @@ impl World {
                 .curve(b.curve)
                 .and_then(|cv| cv.keys.last())
                 .map_or(0.0, |k| k.time);
-            end = iron_math::jsnum::max(end, last);
+            end = platypus_math::jsnum::max(end, last);
         }
         for e in &c.events {
-            end = iron_math::jsnum::max(end, e.time);
+            end = platypus_math::jsnum::max(end, e.time);
         }
         end
     }

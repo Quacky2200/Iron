@@ -14,21 +14,21 @@ const EXTENSIONS: &[&str] = &[
 /// Paths (or prefixes) without the header, and why.
 const EXCLUDED: &[&str] = &[
     // Generated: rewritten by their generators, which would drop the line.
-    "crates/iron_render_api/src/generated.rs",
-    "tools/iron_ts_rt/src/intl_pad.rs",
-    "tools/iron_ts_tests/bench/datefmt.ts",
-    "tools/iron_ts_tests/bench/gen_datefmt_expected.ts",
-    "tools/iron_ts_tests/bench/intl4.ts",
-    "tools/iron_ts_tests/bench/promises.ts",
-    "tools/iron_ts_tests/bench/typed.ts",
+    "crates/platypus_render_api/src/generated.rs",
+    "tools/platypus_ts_rt/src/intl_pad.rs",
+    "tools/platypus_ts_tests/bench/datefmt.ts",
+    "tools/platypus_ts_tests/bench/gen_datefmt_expected.ts",
+    "tools/platypus_ts_tests/bench/intl4.ts",
+    "tools/platypus_ts_tests/bench/promises.ts",
+    "tools/platypus_ts_tests/bench/typed.ts",
     // Third-party ports (MiniGameEngine, the zombie game) and copies of them.
     "examples/sine-circle-demo/",
     "examples/raindrop-demo/",
-    "tools/iron_ts_tests/bench/sine.ts",
-    "tools/iron_ts_tests/bench/sine_demo.ts",
-    "tools/iron_ts_tests/bench/sine_demo_full.ts",
-    "tools/iron_ts_tests/fixtures/sim.ts",
-    "tools/iron_ts_tests/fixtures/sim.test.ts",
+    "tools/platypus_ts_tests/bench/sine.ts",
+    "tools/platypus_ts_tests/bench/sine_demo.ts",
+    "tools/platypus_ts_tests/bench/sine_demo_full.ts",
+    "tools/platypus_ts_tests/fixtures/sim.ts",
+    "tools/platypus_ts_tests/fixtures/sim.test.ts",
 ];
 
 fn excluded(path: &str) -> bool {

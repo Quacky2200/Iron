@@ -13,7 +13,7 @@
 // - Chandelier: a classic clock before turning rosettes, candles and crystals (`chandelier.ts`).
 // - Rainbow: lots of colour: chasing bands, hue-wheel ticks, confetti (`rainbow.ts`).
 // - Morphing: Material-style digits that morph into each other (`morph.ts`).
-// - Flip: cards that flip over like an old alarm clock, in Iron's UI (`flip.tsx`).
+// - Flip: cards that flip over like an old alarm clock, in Platypus's UI (`flip.tsx`).
 // - Alarm clock: red seven-segment digits glowing through bloom (`segments.ts`).
 //
 // The 2D faces are GameObjects under one root each; switching turns roots on and off.
@@ -33,7 +33,7 @@ import { RainbowFace } from "./rainbow.ts";
 import { SundialFace } from "./sundial.ts";
 import { UnderwaterFace } from "./underwater.ts";
 
-/** The flip face has no objects: Iron's UI draws it (see `Hud`). */
+/** The flip face has no objects: Platypus's UI draws it (see `Hud`). */
 class FlipFace extends Face {
   readonly name = "Flip";
   readonly root: GameObject = new GameObject("Flip face");

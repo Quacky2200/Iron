@@ -9,7 +9,7 @@
 //   trees), and transitions on conditions or exit time, cross-fading.
 //
 // Every frame, after all components' `onUpdate` and before `onLateUpdate`, the engine
-// calls `__iron_animate(dt)`: each player advances, blends its clips by weight and writes
+// calls `__platypus_animate(dt)`: each player advances, blends its clips by weight and writes
 // the result (each transform once). Clip events call a method on the animated object's
 // components.
 
@@ -955,7 +955,7 @@ export class Animator extends Component {
 }
 
 /** Every frame, after `onUpdate`: players advance and pose their objects. */
-globalThis.__iron_animate = (dt: number) => {
+globalThis.__platypus_animate = (dt: number) => {
   const visit = (go: GameObject) => {
     if (!go.activeInHierarchy) return;
     for (const c of go.components) {

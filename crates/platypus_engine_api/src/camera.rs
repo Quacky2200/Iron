@@ -5,8 +5,8 @@
 //! with [`cameras`] when it draws.
 
 use crate::color::Rgba;
-use iron_api::{Handle, iron_api};
-use iron_scene::ObjectId;
+use platypus_api::{Handle, platypus_api};
+use platypus_scene::ObjectId;
 use std::cell::RefCell;
 
 /// A camera by number (1-based: 0 is "no camera" in a script's `Camera | null`).
@@ -24,7 +24,7 @@ impl Handle for CameraRef {
 }
 
 /// A texture by number (1-based: 0 is "no texture") as the camera API sees it (`targetTexture`);
-/// `iron_render_api` owns the textures and has its own type for the same numbers.
+/// `platypus_render_api` owns the textures and has its own type for the same numbers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TextureRef(pub u32);
 
@@ -193,7 +193,7 @@ fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
     })
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Cameras",
     quickjs,
     handles(GameObject = ObjectId, Camera = CameraRef, Texture = TextureRef),
@@ -206,8 +206,8 @@ fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
 pub mod camera_api {
     use super::{CAMERAS, CameraData, CameraRef, TextureRef, pixel_aspect, with};
     use crate::color::Rgba;
-    use iron_math::{Rect, V3};
-    use iron_scene::ObjectId;
+    use platypus_math::{Rect, V3};
+    use platypus_scene::ObjectId;
 
     /// How many cameras exist.
     pub fn count() -> u32 {
@@ -263,7 +263,7 @@ pub mod camera_api {
                 .into_iter()
                 .find(|(_, d)| {
                     d.target_texture.0 == 0
-                        && iron_scene::api::with_scene(|s| s.active(d.object)).unwrap_or(true)
+                        && platypus_scene::api::with_scene(|s| s.active(d.object)).unwrap_or(true)
                 })
                 .map_or(CameraRef(0), |(c, _)| c)
         }
@@ -415,7 +415,7 @@ pub mod camera_api {
         /// the camera.
         #[like]
         pub fn screen_to_world_point(self, p: V3) -> V3 {
-            use iron_scene::api::scene_api as scene;
+            use platypus_scene::api::scene_api as scene;
             let Some((object, rect, orthographic, size, fov)) = with(self, |d| {
                 (
                     d.object,

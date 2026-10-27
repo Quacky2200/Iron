@@ -15,7 +15,7 @@ thread_local! {
 /// Turns the timers on (a bench run).
 pub(crate) fn enable() {
     ON.with(|o| o.set(true));
-    iron_animation::profile::enable();
+    platypus_animation::profile::enable();
 }
 
 /// The parts' times since the last call (with the animation update's own), and starts over.
@@ -28,7 +28,7 @@ pub(crate) fn take() -> Vec<(&'static str, f64)> {
         }
         out
     });
-    out.extend(iron_animation::profile::take());
+    out.extend(platypus_animation::profile::take());
     out
 }
 

@@ -2,12 +2,12 @@
 
 //! M2-BEN-04: cost of sending UI commits from JS to Rust through QuickJS.
 //!
-//! Run with `cargo bench -p iron_script`.
+//! Run with `cargo bench -p platypus_script`.
 
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use iron_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
 
 fn benches(c: &mut Criterion) {
     let mut rt = QuickJsRuntime::new();
@@ -28,9 +28,9 @@ fn benches(c: &mut Criterion) {
         }
         const prebuilt = makeOps(1000);
         // Only the transfer: JS array -> Rust Commit.
-        function sendPrebuilt() { __iron_commit(prebuilt); }
+        function sendPrebuilt() { __platypus_commit(prebuilt); }
         // What the reconciler really does: build the ops, then send them.
-        function buildAndSend() { __iron_commit(makeOps(1000)); }
+        function buildAndSend() { __platypus_commit(makeOps(1000)); }
         "##,
     )
     .unwrap();

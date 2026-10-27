@@ -666,7 +666,7 @@ impl Transition {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MotionEvent {
     pub kind: crate::events::EventKind,
-    pub target: iron_core::NodeId,
+    pub target: platypus_core::NodeId,
     /// The property (`transition*`, kebab-case like the DOM's `propertyName`) or the
     /// animation name.
     pub name: String,

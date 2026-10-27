@@ -2,14 +2,14 @@
 
 //! Properties on a namespace: `Time.deltaTime`, `Gizmos.color = c`. A `#[property]` function without
 //! a receiver is the getter, `set_x(v)` next to it the setter. IDs are in TESTS.md (M9-API-*).
-use iron_api::{FnKind, Ty, iron_api};
+use platypus_api::{FnKind, Ty, platypus_api};
 use std::cell::Cell;
 
 thread_local! {
     static LEVEL: Cell<u32> = const { Cell::new(1) };
 }
 
-#[iron_api(namespace = "Cfg", quickjs)]
+#[platypus_api(namespace = "Cfg", quickjs)]
 pub mod cfg {
     use super::LEVEL;
 
@@ -26,7 +26,7 @@ pub mod cfg {
     /// Read only.
     #[property]
     pub fn title() -> String {
-        "Iron".to_string()
+        "Platypus".to_string()
     }
 
     pub fn reset() {
@@ -64,16 +64,16 @@ fn namespace_properties_are_getters_and_setters_without_a_receiver() {
 // M9-API-28
 #[test]
 fn the_shims_of_namespace_properties_take_no_receiver() {
-    cfg::iron_Cfg_reset();
-    assert_eq!(cfg::iron_Cfg_level(), 1);
-    cfg::iron_Cfg_setLevel(7);
-    assert_eq!(cfg::iron_Cfg_level(), 7);
+    cfg::platypus_Cfg_reset();
+    assert_eq!(cfg::platypus_Cfg_level(), 1);
+    cfg::platypus_Cfg_setLevel(7);
+    assert_eq!(cfg::platypus_Cfg_level(), 7);
 }
 
 // M9-API-29
 #[test]
 fn quickjs_gets_accessors_for_namespace_properties() {
-    cfg::iron_Cfg_reset();
+    cfg::platypus_Cfg_reset();
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
@@ -81,7 +81,7 @@ fn quickjs_gets_accessors_for_namespace_properties() {
         let v: u32 = ctx.eval("Cfg.level = 9; Cfg.level + 1").unwrap();
         assert_eq!(v, 10);
         let t: String = ctx.eval("Cfg.title").unwrap();
-        assert_eq!(t, "Iron");
+        assert_eq!(t, "Platypus");
         ctx.eval::<(), _>("Cfg.reset()").unwrap();
         let v: u32 = ctx.eval("Cfg.level").unwrap();
         assert_eq!(v, 1);

@@ -13,7 +13,7 @@ beforeEach(() => {
   _resetSceneForTests();
   _resetCamerasForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
@@ -27,7 +27,7 @@ afterEach(() => {
   RenderSettings.heightFog = null;
   RenderSettings.volumetricFog = null;
   RenderSettings.fogCulling = true;
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 const fogOps = () => ops.filter((o) => o[0] === "render.fog");
@@ -67,7 +67,7 @@ describe("fog", () => {
 
   // M7-FOG-07
   test("RenderStats follow what the engine reports", () => {
-    globalThis.__iron_render_stats(10, 4, 2, 1, 3, 5, 0, 2);
+    globalThis.__platypus_render_stats(10, 4, 2, 1, 3, 5, 0, 2);
     expect(RenderStats.meshes).toBe(10);
     expect(RenderStats.culledMeshes).toBe(4);
     expect(RenderStats.fogCulled).toBe(3);

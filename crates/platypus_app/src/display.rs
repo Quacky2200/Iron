@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The window's mode and size as scripts and saved settings see them: `screen.set`
-//! ops, the manifest's `iron.display` defaults, the player's saved choice
-//! (`iron.display` in prefs) and the state scripts read (`__iron_info.display`).
+//! ops, the manifest's `platypus.display` defaults, the player's saved choice
+//! (`platypus.display` in prefs) and the state scripts read (`__platypus_info.display`).
 
-use iron_platform::Window;
-use iron_platform::display::{self, DisplaySettings, FullScreenMode};
+use platypus_platform::Window;
+use platypus_platform::display::{self, DisplaySettings, FullScreenMode};
 use serde_json::{Value, json};
 
 /// `base` with whatever `v` (`{ mode, width, height, refreshRate, windowWidth,

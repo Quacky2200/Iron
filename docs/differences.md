@@ -1,12 +1,12 @@
 # Differences from browsers
 
-Where Iron's CSS and rendering knowingly behave differently from a browser (or from the spec),
+Where Platypus's CSS and rendering knowingly behave differently from a browser (or from the spec),
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
 ## QuickJS backend (deprecated)
 
-QuickJS games run only with `iron_app --force` (see `docs/iron-build.md`). Parity with the native backend is no longer pursued: the QuickJS
+QuickJS games run only with `platypus --force` (see `docs/platypus-build.md`). Parity with the native backend is no longer pursued: the QuickJS
 rows below describe how it behaved when it was maintained, and are not updated.
 
 ## Script API vs Unity, s&box and C# (M5.a)
@@ -14,7 +14,7 @@ rows below describe how it behaved when it was maintained, and are not updated.
 The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler degrees,
 `Debug.log`, `DateTime`, ...). Where it can't match:
 
-| Area | Iron | Unity / s&box / C# | Why |
+| Area | Platypus | Unity / s&box / C# | Why |
 |---|---|---|---|
 | Handedness | Right-handed, y up, forward is -z; positive pitch (about +x) tips forward **up** | Unity: left-handed, forward +z, positive pitch looks down. s&box: z up, forward +x | glam, rapier and wgpu are right-handed; Euler order matches Unity's (z, then x, then y) |
 | Value types | Immutable classes: `v.add(w)`, `v.scale(s)`; no operator overloading | `v + w`, `v * s`; mutable structs | JS has no operators or structs; immutability stops `transform.position.x = 1` silently doing nothing |
@@ -24,31 +24,31 @@ The TS API follows Unity / s&box names and units (`Vector3`, `Quaternion`, Euler
 | `Time.timeScale` | Scales `Time.deltaTime`, `Time.time` and the `dt` components get; physics isn't scaled yet | Scales physics too | Physics time scaling comes with the Rigidbody component (M5.a2) |
 | Hook names | `onUpdate` (per frame), `onFixedUpdate` (60 Hz), `onLateUpdate`, `onPreRender`, `onStart`, `onDestroy` | Unity: `Update`, `FixedUpdate`, ...; s&box: `OnUpdate`, `OnFixedUpdate`, ... | JS naming; same order and meaning |
 | Screen coordinates | Screen points are UI pixels from the **top-left** (like pointer events); viewport points and `Camera.rect` are 0 to 1 from the top-left too | Unity: pixels and viewport from the bottom-left | Matches the UI and pointer events, so `screenPointToRay(event.clientX, ...)` just works |
-| World panel input | Screen UI takes the pointer wherever it has an element; full-screen layout boxes need `pointerEvents: none` to let the pointer through to world panels | Unity: only graphics marked as raycast targets block; s&box: similar to Iron | The CSS way, no extra flags |
+| World panel input | Screen UI takes the pointer wherever it has an element; full-screen layout boxes need `pointerEvents: none` to let the pointer through to world panels | Unity: only graphics marked as raycast targets block; s&box: similar to Platypus | The CSS way, no extra flags |
 | Transform setters | Each set sends an op; world values are worked out in JS from the parent chain (shear from non-uniform scale under rotation is dropped) | Native | Rust owns the world; scripts mirror locals |
 
 ## Collisions (compiled games, 2026-10-22)
 
-`Collision`, `Collision2D`, `ContactPoint`, `ContactPoint2D`, `Collider` and `Collider2D` follow Unity (`docs/iron-api.md`,
+`Collision`, `Collision2D`, `ContactPoint`, `ContactPoint2D`, `Collider` and `Collider2D` follow Unity (`docs/platypus-api.md`,
 physics). What is left out or differs:
 
-| Area | Iron | Unity | Why |
+| Area | Platypus | Unity | Why |
 |---|---|---|---|
 | `GetContacts(array)` / `GetContacts(List)` | Not there: `contacts` (a new array) or `contactCount` with `getContact(i)` (no array) | Fills the caller's array | An engine call cannot fill a script's array; `getContact(i)` is the allocation-free path |
 | Keeping a `Collision` | Valid until the next contact dispatch (the next fixed tick); after that it reads as empty | A new object, unless `reuseCollisionCallbacks` (the default) reuses it the same way | Handles into one per-dispatch buffer, no allocation per contact |
 | `Collision.articulationBody`, `body`, `ContactPoint2D.friction` / `bounciness`, `Collision2D.shapeCount`, `ContactPoint.thisCollider` for colliders made without a component | Not there (a `PhysicsBody.addBox` collider's `Collider` is the null handle: `gameObject` still works on the `Collision`) | Present | No articulations, no per-contact materials kept, no custom 2D shapes, every Unity collider is a component |
 | `Collider.enabled`, `contactOffset`, `material`, `sharedMaterial`, `Raycast`; `Collider2D.density`, `Distance`, `IsTouching`, `OverlapPoint`, `Raycast` | Not there; friction and bounciness are `dynamicFriction` / `bounciness` on each collider class | Present | Collider components have no enable switch or material assets yet |
-| `Collision2D.enabled`, `ContactPoint2D.enabled` | Always `true` | False when an effector or contact modification turns the response off | Iron has neither |
+| `Collision2D.enabled`, `ContactPoint2D.enabled` | Always `true` | False when an effector or contact modification turns the response off | Platypus has neither |
 | Impulses | `Collision.impulse` and `ContactPoint.impulse` are along the contact normals (the push this object got in the last step); `ContactPoint2D.tangentImpulse` is the friction impulse rapier keeps for warm starting, projected on the normal turned a quarter clockwise | PhysX / Box2D solver impulses | rapier's numbers; friction is solved per manifold, so every point of one carries the manifold's share |
 | `relativeVelocity` | The other side's velocity minus this one's: going into the contact for Enter, as the bodies move for Stay and Exit | The velocity at the contact | Read from the bodies when the hook runs |
 | Contact points | Halfway between the two surfaces; points within rapier's prediction distance count (`separation` may be a little above 0); none in Exit or trigger hooks | PhysX: on the surface, within `contactOffset` | rapier's manifolds |
-| Trigger hooks | Get the other `Collider` / `Collider2D`; one whose parameter is typed `Collision` gets a `Collision` (no contact points) | Always the `Collider` | Older Iron games typed it that way |
+| Trigger hooks | Get the other `Collider` / `Collider2D`; one whose parameter is typed `Collision` gets a `Collision` (no contact points) | Always the `Collider` | Older Platypus games typed it that way |
 
 ## Native Shapes, Spline and SplineAnimate (2026-10-22)
 
 They were TypeScript (`js/engine`, and a compiled copy in `facade.ts`); they are native Rust now, called by compiled code and QuickJS alike.
 
-| Area | Iron | Before | Why |
+| Area | Platypus | Before | Why |
 |---|---|---|---|
 | `Spline.knots` | A read-only snapshot: a fresh array of fresh `{ position, tangentIn, tangentOut, mode }` each time (edit through `setPosition`, `setTangents`, `setMode`, `insertKnot`, `removeKnot`) | The live array of the spline's own knot objects | A native spline is data in Rust |
 | `Spline.version`, `destroy()` | `version` is read-only; a `Spline` is a handle number nothing frees by itself, `destroy()` frees it | A plain field; garbage collected | Handles are numbers |
@@ -64,7 +64,7 @@ They were TypeScript (`js/engine`, and a compiled copy in `facade.ts`); they are
 
 List properties (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` / `capsuleColliders`, `Camera.layerCullDistances`, `LineRenderer.positions`, `LineRenderer2D.points`, `EdgeCollider2D.points`) are native getters and setters.
 
-| Area | Iron | Before | Why |
+| Area | Platypus | Before | Why |
 |---|---|---|---|
 | Assigning a list | Replaces the list; reading gives a copy, so `cam.layerCullDistances[3] = 5` changes the copy only (assign the array back) | The same for the numbers; `Cloth.sphereColliders = [..]` and `capsuleColliders = [..]` appended to the old ones | A property set is a replace, as in TypeScript |
 | `Cloth.pinBox` | `ClothBox | null` (`{ min, max }` or `null` to clear), plain objects work | `ClothBox` with `Vector3` fields, `clearPinBox()` | One record property |
@@ -74,19 +74,19 @@ List properties (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` /
 
 ## Models, animation and renderers (compiled games, 2026-10-23)
 
-| Area | Iron (native) | `js/engine` (QuickJS) | Why |
+| Area | Platypus (native) | `js/engine` (QuickJS) | Why |
 |---|---|---|---|
 | `getComponent(MeshRenderer)` on a skinned part | Finds nothing: a `SkinnedMeshRenderer` is a renderer of its own, as in Unity | `SkinnedMeshRenderer extends MeshRenderer`, so it is found | Engine handles have no subclassing yet; Unity's shape. Ask for `SkinnedMeshRenderer` (`fog-white-room` does both) |
 | Options objects (`Material.create({ mainTextureScale })`, `new X({ .. })`) | A value-class key takes a plain object (`{ x: 4, y: 4 }`, `Vector2Like`), as the TypeScript's `MaterialOptions` did | - | Was declared as the class, so `tsc` refused plain objects |
 | `Animation.destroy()` | Empties the component's slot (players are numbered by place); `getComponent(Animation)` is then `undefined` | Removes the component | |
-| `Animator.cullingMode` / `Animation.cullingType` (2026-10-23) | Unity's modes; "seen" is the last frame's drawing (one frame late): any renderer on or below the object in a camera's frustum, or casting into a shadow map with its shadow able to reach a view; skinned meshes judged by a box holding every bone's image of their bind-pose box (larger than Unity's bounds); every camera counts, render-texture ones (how a secondary window shows the world) included. While culled no bone transform is written, so anything on the bones stops following; Iron's safeguard never culls an object with a physics component, `AudioSource`, `ParticleSystem`, `Light` or script component strictly below it (one warning each; rule in `animation-native.md`) | Not there (always animates) | Unity culls on the current frame's renderer bounds and has no safeguard (attached colliders go stale); one frame late keeps the renderer's results the only source |
+| `Animator.cullingMode` / `Animation.cullingType` (2026-10-23) | Unity's modes; "seen" is the last frame's drawing (one frame late): any renderer on or below the object in a camera's frustum, or casting into a shadow map with its shadow able to reach a view; skinned meshes judged by a box holding every bone's image of their bind-pose box (larger than Unity's bounds); every camera counts, render-texture ones (how a secondary window shows the world) included. While culled no bone transform is written, so anything on the bones stops following; Platypus's safeguard never culls an object with a physics component, `AudioSource`, `ParticleSystem`, `Light` or script component strictly below it (one warning each; rule in `animation-native.md`) | Not there (always animates) | Unity culls on the current frame's renderer bounds and has no safeguard (attached colliders go stale); one frame late keeps the renderer's results the only source |
 | Culled animation and bones | While culled, bone transforms are not written, so colliders and objects attached to bones stay where they were (Unity the same for `cullUpdateTransforms`); `basedOnRenderers` pauses the legacy `Animation` (its times stand still) | - | |
 
 ## Intl backends (compiled TypeScript)
 
-| Area | Browser / bun | Iron today | Notes |
+| Area | Browser / bun | Platypus today | Notes |
 |---|---|---|---|
-| ICU | ICU4C: every locale, `availableFormats`, all calendars | ICU4X `compiled_data`: every locale's data is linked (no trimming yet) | Planned: baked data for a main-market locale list (`icu-lite`, default) and an optional `icu-full` cargo feature using `rust_icu`/ICU4C for exact results; see `docs/research/iron-ts-intl-datetime.md` and `tools/iron_ts/TODO.md` |
+| ICU | ICU4C: every locale, `availableFormats`, all calendars | ICU4X `compiled_data`: every locale's data is linked (no trimming yet) | Planned: baked data for a main-market locale list (`icu-lite`, default) and an optional `icu-full` cargo feature using `rust_icu`/ICU4C for exact results; see `docs/research/platypus-ts-intl-datetime.md` and `tools/platypus_ts/TODO.md` |
 | Date component options (`{ year, month, day, weekday, hour... }`) | Matched against CLDR `availableFormats` by ICU's pattern generator | Mapped to the nearest ICU4X field set with the requested widths applied (`toLocale*String`, `Intl.DateTimeFormat`); rare combinations differ or are rejected, see "Intl date formatting" below | Exact only with `icu-full` or a generated `availableFormats` table |
 | Locale choice | Best fit among the locales the engine has | The first tag in the list, root collation/formatting when the locale has no data | The per-game locale list is not wired from `package.json` yet |
 
@@ -96,7 +96,7 @@ What differs from the reference engine today (measured by `bench/datefmt.ts`, 15
 the columns below are left out of that test). The cause is either the structural one (ICU4X formats
 from fixed field sets, ICU4C picks a pattern from `availableFormats`) or a CLDR version difference.
 
-| Case | Browser / bun | Iron | Cause |
+| Case | Browser / bun | Platypus | Cause |
 |---|---|---|---|
 | `{ month: "short", day: "numeric" }`, `{ weekday: "short", month: "short", day: "numeric" }` in de and ja | `19. Okt.`, `10月19日` | `19.10.`, `10/19`: the month name width is not applied to a numeric field set | structural |
 | `{ hour: "numeric", hour12: true }` in de; midnight in ja | `6 AM`, `午前0時` | `6 Uhr morgens`, `午前12時` | structural / CLDR |
@@ -113,14 +113,14 @@ from fixed field sets, ICU4C picks a pattern from `availableFormats`) or a CLDR 
 | Default calendar other than Gregorian (th, fa, ar, he, ps) | that calendar's years and names | ICU4X's calendar output, the width adjustment is skipped | open |
 
 Exact results for every option and locale need `availableFormats`: the optional `icu-full` build
-(ICU4C through `rust_icu`) or a generated table; see `docs/research/iron-ts-intl-datetime.md`.
+(ICU4C through `rust_icu`) or a generated table; see `docs/research/platypus-ts-intl-datetime.md`.
 
-## Compiled TypeScript (iron_ts)
+## Compiled TypeScript (platypus_ts)
 
 The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
-[iron-ts.md](iron-ts.md)):
+[platypus-ts.md](platypus-ts.md)):
 
-| Area | Iron | JavaScript | Why |
+| Area | Platypus | JavaScript | Why |
 |---|---|---|---|
 | `Object.freeze` | Returns the object; later writes are not rejected | Writes fail silently (or throw in strict mode) | Structs have no frozen flag |
 | `typeof` of a nullable | A null value reports `"undefined"`; only the literal `typeof null` is `"object"` | `"object"` for null | The compiler does not tell null from undefined |
@@ -159,7 +159,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `Intl.Collator` options and locales | The options argument must be an object literal with literal values, and locales a string or an array of strings, both read at compile time; anything else is a compile error | Any expression | The options become a `key=value;` string for the runtime |
 | `Intl.Collator` members | Only `new Intl.Collator(...)` and `.compare`; no `resolvedOptions` or `supportedLocalesOf` | The full API | Step I1 of the `Intl` work |
 | Locale data | ICU4X (CLDR) data for every locale is linked in; an unsupported locale id falls back to root collation, not the default locale; the CLDR version can differ from the engine's, so rare orderings may differ | The engine's own ICU, which falls back to the default locale | No data trimming yet; checked against bun for en, de, sv, tr, ja, zh |
-| Default locale | `en-US` until the host calls `ts_rt_intl_set_locales`; the game's `package.json` list is not wired to it yet | The environment's locale | Needs `iron_app` |
+| Default locale | `en-US` until the host calls `ts_rt_intl_set_locales`; the game's `package.json` list is not wired to it yet | The environment's locale | Needs `platypus_app` |
 | `Intl.Segmenter` | `grapheme`, `word` and `sentence` on ICU4X; `isWordLike` is `false`, not `undefined`, for non-word granularities | `undefined` there | Typed field |
 | `Intl.Locale` | Getters of absent parts (`script`, `region`, `calendar`, `hourCycle`, ...) give `null`; `"und"` maximizes to `en-Latn-US` by a special case | `undefined` | Typed fields; null stands for undefined |
 | `Intl.DisplayNames` | Only `region`, `script` and `language`; CLDR names can differ from bun's (for example `zh-Hans`); no `currency`, `calendar`, `dateTimeField` or `fallback: "none"` | The full API | Later steps of the `Intl` work |
@@ -180,7 +180,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `NumberFormat` currency code after the number with NaN or infinity | A space is put before NaN or infinity (`KWD NaN`) | `KWDNaN` | The placeholder swap does not copy the engine's automatic spacing rule |
 | Typed arrays | `Int8Array` .. `Float64Array` and `Uint8ClampedArray`, with `ArrayBuffer`, `DataView`, `subarray`, `buffer`, `byteOffset` and `new X(buffer, offset, length)`. No `SharedArrayBuffer`, resizable buffers, transfer, `Atomics`, `DataView` bigint accessors or `BigInt64Array` / `BigUint64Array`; a read past the end gives 0, not `undefined`; no `constructor` property; `X.of` and `Array.from(typed)` are missing | Views share an `ArrayBuffer`; out-of-range reads give `undefined` | Views are headers pointing into the owner's block; missing values are 0 as for `number[]` |
 | `.buffer` | An owning typed array returns a new `ArrayBuffer` object each call over the same memory, so `a.buffer === a.buffer` is false | The same object | The buffer is a prelude object made on demand |
-| `DataView` errors | Out-of-range access is a `RangeError` with Iron's own message | bun's message | Messages not matched |
+| `DataView` errors | Out-of-range access is a `RangeError` with Platypus's own message | bun's message | Messages not matched |
 | `structuredClone` | Arrays, objects and typed arrays are copied; a class instance keeps its class and a derived class's own fields stay shared; `Map`, `Set` and functions are compile errors; cyclic data does not end | A plain object for a class instance; handles Map, Set and cycles | One generated clone function per static type |
 | `WeakRef`, `WeakMap`, `WeakSet` | `WeakRef<T>` exists for classes of the program and holds its target strongly (`deref()` always finds it); `WeakMap` and `WeakSet` are `Map` and `Set`; no `FinalizationRegistry` | Weak references | A collector may keep weak targets as long as it likes; keeps the types simple |
 | `globalThis` | Not available | Available | Globals are program variables, not properties of an object |
@@ -191,18 +191,18 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## SVG (M3d step 5.1)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Rendering | Rasterized on the CPU with resvg at the drawn size (cached; re-rasterized when content, style or size changes) | Native vector rendering | Full SVG support quickly; GPU paths are a TODO ("Later") |
 | Animation | CSS transitions/animations on SVG content work (each frame re-rasterizes); SMIL (`<animate>` ...) is ignored; `d` only morphs between paths with the same commands | SMIL and path morphing | resvg has no SMIL; see TODO "Later" |
-| Hit testing | The whole `svg` box; shapes inside aren't targets and `pointer-events` on shapes is ignored | Per shape | Content isn't laid out by Iron |
-| `<style>` inside SVG, `class` in markup | Ignored; Iron stylesheets style SVG content instead | Supported | Styles are resolved by Iron's cascade |
+| Hit testing | The whole `svg` box; shapes inside aren't targets and `pointer-events` on shapes is ignored | Per shape | Content isn't laid out by Platypus |
+| `<style>` inside SVG, `class` in markup | Ignored; Platypus stylesheets style SVG content instead | Supported | Styles are resolved by Platypus's cascade |
 | Text | The bundled Inter only | System and web fonts | resvg gets one font database |
 | Images in SVG (`<image>`), filters | `<image>` isn't loaded from the game folder; SVG filters render via resvg | Supported | Not wired yet |
 
 ## Stylesheet authoring (M3d group 10)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Nested at-rules | `@media` inside a rule works; other at-rules there (`@starting-style`, `@supports`, ...) are skipped with a warning | Allowed | Top-level `@starting-style` works |
 | `@import` conditions | Media queries work; imports with `supports()` or `layer()` are skipped; `@import` anywhere in a sheet still loads (browsers ignore late ones) | Conditional and layered imports | No `@supports` or cascade layers |
@@ -211,7 +211,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Game extensions (M3d group 9)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `sound-in` / `sound-out` | Not supported | s&box only (not CSS) | CSS stays about display; play UI sounds from event handlers |
 | UI scale | `setUiScale` zooms all screen UI (layout in UI pixels) | CSS `zoom` per element | One switch for the whole HUD, like s&box's ScreenPanel |
@@ -219,16 +219,16 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Scrolling extras (M3d group 8)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `scrollbar-gutter: stable both-edges` | Reserves the end edge only | Both edges | Taffy reserves one side |
 | `scrollbar-gutter` on the x axis | Only vertical scrollbars get a gutter | Same (gutters follow the block axis' bar) | — |
-| `overscroll-behavior: none` | Same as `contain` | Also disables bounce / pull-to-refresh | Iron has no overscroll effects |
+| `overscroll-behavior: none` | Same as `contain` | Also disables bounce / pull-to-refresh | Platypus has no overscroll effects |
 | `scroll-padding` | px lengths only (no percentages); `auto` is 0 | Percentages of the scrollport; `auto` is UA-chosen | No UA padding; percentages unneeded so far |
 
 ## Transitions (M3d step 7a)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | What interpolates | Computed values as text, token by token: same-shaped values only (same functions, same number of shadows/layers); mixed units via `calc()` | Typed interpolation per property (e.g. transforms with different functions go through matrices) | One generic interpolator covers most real uses |
 | `auto`, `currentColor`, keywords | Change at once | Some interpolate (`currentColor` in colours, `interpolate-size`) | Not representable as plain tokens |
@@ -243,16 +243,16 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Dialogs (M3d step 5j)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Opening | `open` and `modal` attributes (React state) | `show()` / `showModal()` methods; `modal` isn't an attribute | Declarative fits React; scripts own the state |
 | Closing | Escape / backdrop clicks send `cancel` then `close`; the script clears `open` | The browser closes the dialog, then fires `close` | The engine never changes React-owned attributes |
-| UA style | Centred with `left/top: 50%` + `translate: -50% -50%`; no border, padding or background | `margin: auto`, `fit-content`, a border, padding and a canvas background | Iron's elements are unstyled; authors setting `translate` or insets take over the centring |
+| UA style | Centred with `left/top: 50%` + `translate: -50% -50%`; no border, padding or background | `margin: auto`, `fit-content`, a border, padding and a canvas background | Platypus's elements are unstyled; authors setting `translate` or insets take over the centring |
 | `:modal`, `popover`, `returnValue`, `inert` | No `:modal` (use `dialog[modal]`), no popovers, no return value; outside the modal only focus and pointer input are blocked | All supported | Not needed yet |
 
 ## Cursors (M3d step 5i)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Disabled fields | `not-allowed` | The arrow (`default`) | Clearer in game UI; override with `cursor` |
 | Image formats | PNG, JPEG, `.cur` | Also SVG, `.ani`, `image-set()` | SVG comes with step 5.1; animated cursors aren't planned |
@@ -260,7 +260,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Selection (M3d step 5h)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Extent | A selection stays inside one text block (one `text` element and its spans) | Selections run across elements | Each block has its own Parley layout; cross-block ranges need a document-wide position model |
 | `::selection` | Only `color` and `background(-color)`; each comes from the nearest element (the block or an ancestor) with a `::selection` rule that sets it; spans inside the block can't restyle their part | Highlight inheritance per element, including spans | Enough for theming; per-span styles need per-run highlight drawing |
@@ -270,29 +270,29 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Lists (M3d step 5g)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Outside markers on `text` items | Drawn inline, like `inside` | Hang outside the line box | A text element's children are inline content; the marker can't be positioned outside it. Wrap the text in a box item for hanging markers |
-| Elements | `list` + any element children; no `ul`/`ol`/`li`/`p`/`h1` | HTML elements | Iron's element set stays small; use `list` and `text` with classes |
+| Elements | `list` + any element children; no `ul`/`ol`/`li`/`p`/`h1` | HTML elements | Platypus's element set stays small; use `list` and `text` with classes |
 | `list-style: none` | The list's default 24px indent goes too (flush left), unless the author sets its start padding | The UA's `padding-left: 40px` stays; sites reset it by hand | What most pages want; set `paddingLeft` to keep an indent |
 | Counters | Markers number items by position; no `counter-reset` / `counter-increment` / `counter()`, `start` or `reversed` | Full CSS counters | Not implemented yet |
 | `::marker` | All properties apply | Only a few (colour, font, content, ...) | More permissive |
 
 ## Transforms (M3d step 5e)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `transform-style: preserve-3d` | Children's 3D transforms combine before flattening (each plane lands exactly), but they still paint in tree order | Planes in a 3D context are depth-sorted and intersect | No depth buffer or plane splitting; order elements by hand (or with `z-index`) |
 | Text under rotation, skew or perspective | Glyph masks are sampled nearest-neighbour in the element's plane | Re-rasterized glyphs | Turned text looks slightly jagged; fine for motion, softer than a browser at rest |
 | Text under a scale and move only | Re-rasterized at the on-screen size every frame and placed in window space, as at rest | Re-rasterized at the end; during a transition the cached text is composited (scaled bitmap) | Scaled and sliding text stays sharp throughout, and there is no pop when a transition ends; costs a few extra glyph rasters (cached per 0.25 px size) |
 | Anti-aliasing under scale/perspective | One window pixel of feathering is computed in the element's plane | Exact | Strongly scaled-down or steep planes get softer or harsher edges |
-| `visibility: collapse` | Same as `hidden` | Removes table rows/columns | Iron has no tables |
+| `visibility: collapse` | Same as `hidden` | Removes table rows/columns | Platypus has no tables |
 | `position: fixed` inside a transformed element | Still fixed to the window | The transformed ancestor contains it | Fixed nodes paint at the top level |
 | Points behind the viewer | A plane crossing behind the eye (w ≤ 0) can draw wrongly | Clipped at the eye plane | Rare with sensible `perspective` values |
 
 ## Effects (M3d group 5)
 
-| Area | Iron | Browsers / spec | Why, and what fixing it would take |
+| Area | Platypus | Browsers / spec | Why, and what fixing it would take |
 |---|---|---|---|
 | `filter` order | Always blur, then all colour functions (folded into one matrix), then `drop-shadow()`s, whatever order is written | Each function applies in written order | One layer pass, one matrix. A strict chain needs a pass (or an intermediate layer) per function. `brightness(0.5) invert(1)` and `invert(1) brightness(0.5)` *are* ordered correctly: it's only blur and shadows that move |
 | Several `drop-shadow()`s | All drawn beneath the content, the first listed on top | Each shadows the result so far (a later shadow also shadows earlier shadows) | Rarely visible; would need one layer per shadow |
@@ -304,7 +304,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Backgrounds and borders (M3d group 3)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `background-origin` | Images and gradients position against the **border box** | Default `padding-box` | Not implemented; `background-clip` is |
 | `radial-gradient()` shape and position | Only `circle` or `ellipse`, always centred (`circle at 30% 20%` and sizes like `closest-side` don't parse) | Any size keyword, length and `at` position | The parser reads just the shape (`paint.rs`) |
@@ -312,13 +312,13 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `background-repeat: space` for gradients | The gaps aren't kept (tiles repeat edge to edge) | Gaps as for images | Gradient tiles repeat in the shader without the gap logic images have |
 | `border-style` default | `solid`: a width alone draws a border (as in s&box) | `none`: no border without a style | Matches s&box authoring; the `border` shorthand still follows CSS (no style, no border) |
 | Gradients in `border-image` | Pieces stretch; `repeat`/`round`/`space` don't tile them | Tile like images | Image pieces tile; gradient pieces don't yet |
-| `clip-path: url()` | Unsupported | References an SVG `<clipPath>` | Iron has no SVG documents |
+| `clip-path: url()` | Unsupported | References an SVG `<clipPath>` | Platypus has no SVG documents |
 | Blurred shadows on elliptical corners | Drawn with circular corners (the mean radius) | Elliptical | The analytic blurred-box shader is circular-only |
 | Background colour with `background-clip: text` | Dropped | Clipped to the text | Only the topmost gradient layer fills text |
 
 ## Drag and drop (M5.e)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Drag image | The element drawn live at 0.6 opacity, so it must stay rendered | A snapshot taken at `dragstart` | No offscreen snapshot of a subtree yet |
 | `getData` | Works in every drag event | Only in `drop` (protected mode elsewhere) | The data stays in the scripts, so there's nothing to protect |
@@ -329,7 +329,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Events and attributes of elements
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `pseudoElement` of transition and animation events | Always `""`; the event goes to the element | The pseudo-element's name (`::before`) | Generated boxes are not event targets |
 | `animationiteration` / `animationend` `elapsedTime` | `n * duration` and the active duration, as in the spec | Same | — |
@@ -342,7 +342,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Layout (M3d group 2)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `box-sizing` default | `border-box` (as in Taffy and s&box) | `content-box` | Matches s&box |
 | `z-index` | Orders siblings only; every z-indexed element is its own stacking context | Stacking contexts nest; z-index can lift an element above its parent's siblings | Simpler model; `isolation` is accepted and has no effect |
@@ -350,7 +350,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Text (M3d group 4)
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `text-decoration-skip-ink` | Parsed, no effect | Underlines skip descenders | Needs glyph outlines in the decoration pass |
 | `text-overflow: ellipsis` | Cuts whole glyphs; uses the block's style for the `…` | Same, but uses the style at the cut | Close enough for UI text |

@@ -16,7 +16,7 @@ use crate::animator::AnimatorPlayer;
 use crate::clip::World;
 use crate::player::{AnimationPlayer, FiredEvent};
 use crate::pose::{NoComponents, Pose, PropertySink};
-use iron_scene::{ObjectId, Scene, Transform};
+use platypus_scene::{ObjectId, Scene, Transform};
 use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};

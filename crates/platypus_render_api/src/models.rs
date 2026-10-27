@@ -6,15 +6,15 @@
 //! JSON of the TypeScript: nodes, roots, materials, skins). `instantiate` builds the node tree as
 //! GameObjects with mesh renderers; asked before loading finishes, the nodes appear once it has.
 //!
-//! The file's animations become clips (`Model.animations`, built by `iron_animation::gltf`), and a
+//! The file's animations become clips (`Model.animations`, built by `platypus_animation::gltf`), and a
 //! copy gets an `Animation` playing the first. The colliders option needs the physics side to
 //! call [`set_model_collider_hook`].
 
 use super::*;
-use iron_engine_api::animation::{AnimationRef, ClipRef};
-use iron_engine_api::assets;
-use iron_math::Q;
-use iron_scene::api::scene_api;
+use platypus_engine_api::animation::{AnimationRef, ClipRef};
+use platypus_engine_api::assets;
+use platypus_math::Q;
+use platypus_scene::api::scene_api;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -50,7 +50,7 @@ struct State {
 
 type ModelWaiter = (
     u32,
-    Callback<(iron_api::callback::HandleArg<ModelRef>,)>,
+    Callback<(platypus_api::callback::HandleArg<ModelRef>,)>,
     Callback<(String,)>,
 );
 
@@ -225,11 +225,11 @@ fn clips_of(d: &Value) -> Vec<ClipRef> {
                 .iter()
                 .map(|(ch, _)| [numbers(&ch["times"]), numbers(&ch["values"])])
                 .collect();
-            let channels: Vec<iron_animation::gltf::Channel> = found
+            let channels: Vec<platypus_animation::gltf::Channel> = found
                 .iter()
                 .zip(&keys)
                 .map(
-                    |((ch, path), [times, values])| iron_animation::gltf::Channel {
+                    |((ch, path), [times, values])| platypus_animation::gltf::Channel {
                         path,
                         target: ch["path"].as_str().unwrap_or(""),
                         interpolation: ch["interpolation"].as_str().unwrap_or("linear"),
@@ -238,8 +238,8 @@ fn clips_of(d: &Value) -> Vec<ClipRef> {
                     },
                 )
                 .collect();
-            let id = iron_animation::with_world(|w| {
-                iron_animation::gltf::clip_from_channels(w, &name, &channels)
+            let id = platypus_animation::with_world(|w| {
+                platypus_animation::gltf::clip_from_channels(w, &name, &channels)
             });
             ClipRef(u64::from(id.0))
         })
@@ -276,7 +276,7 @@ pub fn model_loaded(m: ModelRef, description: Option<&str>) {
     .unwrap_or_default();
     if parsed.is_some() {
         for (root, colliders) in pending {
-            if iron_scene::api::with_scene(|s| s.contains(root)).unwrap_or(false) {
+            if platypus_scene::api::with_scene(|s| s.contains(root)).unwrap_or(false) {
                 build(m, root, &colliders);
             }
         }
@@ -291,7 +291,7 @@ pub fn model_loaded(m: ModelRef, description: Option<&str>) {
     });
     for (_, resolve, reject) in waiting {
         if parsed.is_some() {
-            resolve.call((iron_api::callback::HandleArg(m),));
+            resolve.call((platypus_api::callback::HandleArg(m),));
         } else {
             reject.call(("model failed to load".to_string(),));
         }
@@ -493,7 +493,7 @@ fn build(m: ModelRef, root: ObjectId, colliders: &str) {
     }
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Model", quickjs,
     handles(Model = ModelRef, GameObject = ObjectId, Mesh = MeshRef, Material = MaterialRef,
         AnimationClip = ClipRef),
@@ -508,12 +508,12 @@ pub mod model_api {
         #[promise]
         pub fn when_loaded(
             self,
-            resolve: Callback<(iron_api::callback::HandleArg<ModelRef>,)>,
+            resolve: Callback<(platypus_api::callback::HandleArg<ModelRef>,)>,
             reject: Callback<(String,)>,
         ) {
             match with_model(self, |d| (d.loaded, d.failed)) {
                 Some((_, true)) => reject.call(("model failed to load".to_string(),)),
-                Some((true, _)) => resolve.call((iron_api::callback::HandleArg(self),)),
+                Some((true, _)) => resolve.call((platypus_api::callback::HandleArg(self),)),
                 Some(_) => st(|s| s.waiters.push((self.0, resolve, reject))),
                 None => reject.call(("the model was freed".to_string(),)),
             }
@@ -660,7 +660,7 @@ pub(crate) fn model_manifests() -> Vec<String> {
 
 /// Registers how scene files carry a model copy: `"model": { "src", "colliders"?, "guid"? }`.
 pub(crate) fn register_model_extra() {
-    iron_kinds::register_object_extra(iron_kinds::ObjectExtra {
+    platypus_kinds::register_object_extra(platypus_kinds::ObjectExtra {
         key: "model".into(),
         save: Box::new(|o| {
             let (src, colliders) = st(|s| s.roots.get(&o).cloned())?;

@@ -3,8 +3,8 @@
 // M4-HOT-06: Fast Refresh in QuickJS. Built twice as a dev game bundle (`LABEL` "v1" and
 // "v2") against refresh-vendor.js; the Rust test loads v1, changes state, then loads v2
 // in the same runtime the way a reload in place does.
-import { addStyleSheet, Component, GameObject, register } from "@iron/engine";
-import { createRoot } from "@iron/react";
+import { addStyleSheet, Component, GameObject, register } from "@platypus/engine";
+import { createRoot } from "@platypus/react";
 import { useState } from "react";
 
 declare const LABEL: string;

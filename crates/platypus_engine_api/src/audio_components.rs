@@ -12,10 +12,10 @@ use crate::audio::{
     self, BusRef, EmitterRef, PlayOptions, PlaybackRef, SoundRef, create_emitter, move_emitter,
     play_sound, remove_track, set_playback,
 };
-use iron_api::{Handle, iron_api};
-use iron_math::V3;
-use iron_scene::ObjectId;
-use iron_scene::api::with_scene;
+use platypus_api::{Handle, platypus_api};
+use platypus_math::V3;
+use platypus_scene::ObjectId;
+use platypus_scene::api::with_scene;
 use std::cell::RefCell;
 
 macro_rules! numbered_handle {
@@ -206,7 +206,7 @@ impl SourceData {
 
     fn play(&mut self) {
         if !audio::sound_exists(self.clip) {
-            iron_log("AudioSource has no clip");
+            platypus_log("AudioSource has no clip");
             return;
         }
         if let Some(m) = self.main {
@@ -235,7 +235,7 @@ impl SourceData {
     }
 }
 
-fn iron_log(message: &str) {
+fn platypus_log(message: &str) {
     crate::log::debug_api::log_warning(message);
 }
 
@@ -302,7 +302,7 @@ pub fn playbacks_ended(ids: &[PlaybackRef]) {
 
 /// Removes the components of a destroyed object (stopping what its sources play).
 pub fn remove_on(object: ObjectId) {
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     st(|s| {
         for slot in s.sources.iter_mut() {
             if slot.as_ref().is_some_and(|d| d.object == object) {
@@ -350,7 +350,7 @@ pub fn listeners_on(object: ObjectId) -> Vec<AudioListenerRef> {
 }
 
 pub fn remove_source(s: AudioSourceRef) {
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     st(|st| {
         if let Some(slot) = st.sources.get_mut((s.0 as usize).wrapping_sub(1)) {
             if let Some(d) = slot.as_mut() {
@@ -382,7 +382,7 @@ pub fn object_of_listener(l: AudioListenerRef) -> Option<ObjectId> {
 }
 
 pub fn attach_source(object: ObjectId) -> AudioSourceRef {
-    iron_kinds::components_changed();
+    platypus_kinds::components_changed();
     st(|s| {
         s.sources.push(Some(SourceData::new(object)));
         AudioSourceRef(s.sources.len() as u32)
@@ -419,7 +419,7 @@ fn none_object() -> ObjectId {
     }
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "AudioSource", quickjs,
     handles(
         AudioSource = AudioSourceRef,
@@ -699,7 +699,7 @@ pub(crate) fn finished_temp(ids: &[PlaybackRef]) {
     });
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "AudioListener", quickjs,
     handles(AudioListener = AudioListenerRef, GameObject = ObjectId)
 )]
@@ -740,7 +740,7 @@ pub mod audio_listener_api {
 
 // ---- scene-file kinds ----
 
-use iron_kinds::Kind;
+use platypus_kinds::Kind;
 use serde_json::{Map, Value, json};
 
 fn number(v: &Value) -> Option<f64> {
@@ -869,6 +869,6 @@ fn listener_kind() -> Kind {
 
 /// Registers the `AudioSource` and `AudioListener` scene-file kinds on this thread.
 pub fn register_kinds() {
-    iron_kinds::register(source_kind());
-    iron_kinds::register(listener_kind());
+    platypus_kinds::register(source_kind());
+    platypus_kinds::register(listener_kind());
 }

@@ -2,7 +2,7 @@
 
 //! `bigint`: literals (`10n`), the operators, comparison (also against numbers), `BigInt(x)`,
 //! `BigInt.asIntN/asUintN`, `toString(radix)` and `Number(big)`. A BigInt is a leaf GC object (see
-//! `iron_ts_rt/src/bigint.rs`); mixing it with a number in arithmetic is a compile error, where
+//! `platypus_ts_rt/src/bigint.rs`); mixing it with a number in arithmetic is a compile error, where
 //! JavaScript throws a `TypeError` at run time.
 
 use super::expr::{mk, num};

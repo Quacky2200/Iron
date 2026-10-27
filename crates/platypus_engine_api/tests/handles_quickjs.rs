@@ -2,9 +2,9 @@
 
 //! The engine's handle classes from QuickJS: `GameObject`, `Transform`, `Camera`, `AnimationCurve`.
 //! The same state is read through the compiled-code shims. IDs are in TESTS.md (M9-API-*).
-use iron_api::qjs::HandleBox;
-use iron_engine_api::{animation, camera};
-use iron_scene::{Scene, api::enter};
+use platypus_api::qjs::HandleBox;
+use platypus_engine_api::{animation, camera};
+use platypus_scene::{Scene, api::enter};
 use rquickjs::{Class, Ctx, Value};
 
 fn run<R>(f: impl FnOnce(&Ctx<'_>) -> R) -> R {
@@ -12,7 +12,7 @@ fn run<R>(f: impl FnOnce(&Ctx<'_>) -> R) -> R {
     let rt = rquickjs::Runtime::new().unwrap();
     let ctx = rquickjs::Context::full(&rt).unwrap();
     ctx.with(|ctx| {
-        iron_engine_api::register_quickjs(&ctx).unwrap();
+        platypus_engine_api::register_quickjs(&ctx).unwrap();
         f(&ctx)
     })
 }
@@ -78,19 +78,22 @@ fn handles_made_by_script_are_the_same_state_compiled_code_sees() {
             .unwrap();
         // Compiled code reads through the shims with the raw ids.
         assert_eq!(
-            camera::camera_api::iron_Camera_fieldOfView(raw_of(&cam)),
+            camera::camera_api::platypus_Camera_fieldOfView(raw_of(&cam)),
             75.0
         );
-        camera::camera_api::iron_Camera_setFieldOfView(raw_of(&cam), 40.0);
+        camera::camera_api::platypus_Camera_setFieldOfView(raw_of(&cam), 40.0);
         let fov: f64 = js(ctx, "c.fieldOfView");
         assert_eq!(fov, 40.0);
         let count: f64 = js(ctx, "Cameras.count()");
-        assert_eq!(count, f64::from(camera::camera_api::iron_Cameras_count()));
+        assert_eq!(
+            count,
+            f64::from(camera::camera_api::platypus_Cameras_count())
+        );
         // A handle the host made is usable from the script.
         ctx.globals()
             .set(
                 "fromHost",
-                iron_api::qjs::handle_new(ctx, "GameObject", raw_of(&go)).unwrap(),
+                platypus_api::qjs::handle_new(ctx, "GameObject", raw_of(&go)).unwrap(),
             )
             .unwrap();
         let same: bool = js(

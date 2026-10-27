@@ -2,7 +2,7 @@
 
 //! The game's asset database: every `<file>.meta` in the game folder (written by
 //! `scripts/assets.ts`), giving assets GUIDs and importer settings. Scripts get it as
-//! `__iron_info.assets` (`[{ path, guid, importer }]`) for `Assets.guidToPath` and
+//! `__platypus_info.assets` (`[{ path, guid, importer }]`) for `Assets.guidToPath` and
 //! importer defaults.
 
 use std::path::Path;
@@ -20,7 +20,7 @@ pub fn scan(root: &Path) -> Value {
 
 /// [`scan`] for a game folder plus the packs mounted: every pack entry whose GUID came from a
 /// `.meta` file (the others have a GUID made from the path, which scripts have no use for).
-pub fn scan_vfs(vfs: &iron_pack::Vfs, root: &Path) -> Value {
+pub fn scan_vfs(vfs: &platypus_pack::Vfs, root: &Path) -> Value {
     let mut out: Vec<Value> = match vfs.root() {
         Some(_) => scan(root).as_array().cloned().unwrap_or_default(),
         None => Vec::new(),
@@ -31,7 +31,7 @@ pub fn scan_vfs(vfs: &iron_pack::Vfs, root: &Path) -> Value {
         };
         let Some(guid) = info.guid else { continue };
         if info.source.starts_with("dir:")
-            || guid == iron_pack::Guid::from_path(&path)
+            || guid == platypus_pack::Guid::from_path(&path)
             || out
                 .iter()
                 .any(|a| a["path"].as_str() == Some(path.as_str()))
@@ -51,7 +51,7 @@ pub fn scan_vfs(vfs: &iron_pack::Vfs, root: &Path) -> Value {
 
 /// Every asset the game can load, as `[[path, pack]]` (`""` for a loose file): what `Assets.exists`,
 /// `list` and `packOf` answer from.
-pub fn index(vfs: &iron_pack::Vfs) -> Value {
+pub fn index(vfs: &platypus_pack::Vfs) -> Value {
     Value::Array(
         vfs.paths()
             .into_iter()
@@ -112,7 +112,7 @@ mod tests {
     // M5-AST-04
     #[test]
     fn metas_give_paths_guids_and_importers() {
-        let dir = std::env::temp_dir().join(format!("iron-assetdb-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-assetdb-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("assets/tex")).unwrap();
         std::fs::create_dir_all(dir.join("node_modules/x")).unwrap();

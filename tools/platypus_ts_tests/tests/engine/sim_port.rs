@@ -2,12 +2,12 @@
 
 //! The 13 cases of `fixtures/sim.test.ts` (the zombie game's, kept here since the game moved
 //! to its own repository), run against native code that
-//! `iron_ts` compiled from `sim.ts`. Test IDs are in TESTS.md (M9-TS-*).
+//! `platypus_ts` compiled from `sim.ts`. Test IDs are in TESTS.md (M9-TS-*).
 #![allow(non_snake_case)]
 
-use iron_ts_rt::{Closure, link_anchor, ts_rt_arr_new};
-use iron_ts_tests::sim::*;
-use iron_ts_tests::*;
+use platypus_ts_rt::{Closure, link_anchor, ts_rt_arr_new};
+use platypus_ts_tests::sim::*;
+use platypus_ts_tests::*;
 
 const W: usize = 1022;
 const H: usize = 750;
@@ -52,7 +52,7 @@ fn step_once(state: *mut SimState, input: *mut PlayerInput, walls: *mut Closure)
 // M9-TS-01
 #[test]
 fn a_baked_mask_keeps_the_runs_of_walls_and_open_floor() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let _ = world();
     let walls = build_walls(4, 2, &[vec![1.0, 1.0, 2.0], vec![0.0, 4.0]]);
     let cells = unsafe { (*(*walls).cells).bytes().to_vec() };
@@ -62,7 +62,7 @@ fn a_baked_mask_keeps_the_runs_of_walls_and_open_floor() {
 // M9-TS-02
 #[test]
 fn zombies_spawn_in_single_player() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, _) = solo_state(&w);
     run(state, 0.5, inputs(&[w.idle]), w.open);
@@ -72,7 +72,7 @@ fn zombies_spawn_in_single_player() {
 // M9-TS-03
 #[test]
 fn a_levels_zombie_budget_grows_by_3_to_5_each_level() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, _) = solo_state(&w);
     let max = unsafe { (*state).zombiesMax };
@@ -82,7 +82,7 @@ fn a_levels_zombie_budget_grows_by_3_to_5_each_level() {
 // M9-TS-04
 #[test]
 fn a_player_moves_400_px_a_second_with_one_key_held() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     let x0 = unsafe { (*p).x };
@@ -95,7 +95,7 @@ fn a_player_moves_400_px_a_second_with_one_key_held() {
 // M9-TS-05
 #[test]
 fn a_wall_stops_the_player() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     let x0 = unsafe { (*p).x };
@@ -107,7 +107,7 @@ fn a_wall_stops_the_player() {
 // M9-TS-06
 #[test]
 fn a_press_fires_one_pistol_round_and_turns_the_aim_toward_the_mouse() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     let (before, fire) = (
@@ -125,7 +125,7 @@ fn a_press_fires_one_pistol_round_and_turns_the_aim_toward_the_mouse() {
 // M9-TS-07
 #[test]
 fn holding_fire_with_the_pistol_does_not_repeat() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     let before = unsafe { (*(*p).gun).rounds };
@@ -141,7 +141,7 @@ fn holding_fire_with_the_pistol_does_not_repeat() {
 // M9-TS-08
 #[test]
 fn an_empty_clip_starts_a_reload_that_blocks_shooting() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     unsafe {
@@ -163,7 +163,7 @@ fn an_empty_clip_starts_a_reload_that_blocks_shooting() {
 // M9-TS-09
 #[test]
 fn a_hit_takes_health_and_scores_10_a_kill_scores_80_once_the_fade_ends() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     let z = new_zombie(999.0, 600.0, 300.0, 10.0, None, unsafe { (*p).id });
@@ -185,7 +185,7 @@ fn a_hit_takes_health_and_scores_10_a_kill_scores_80_once_the_fade_ends() {
 // M9-TS-10
 #[test]
 fn four_zombie_hits_kill_a_player_with_100_health_and_the_score_is_floored_at_0() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     unsafe {
@@ -205,7 +205,7 @@ fn four_zombie_hits_kill_a_player_with_100_health_and_the_score_is_floored_at_0(
 // M9-TS-11
 #[test]
 fn the_next_level_starts_when_the_last_zombie_of_this_one_dies() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     let z = new_zombie(999.0, 600.0, 300.0, 10.0, None, unsafe { (*p).id });
@@ -223,7 +223,7 @@ fn the_next_level_starts_when_the_last_zombie_of_this_one_dies() {
 // M9-TS-12
 #[test]
 fn touching_an_ammo_powerup_adds_320_rounds() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let w = world();
     let (state, p) = solo_state(&w);
     let before = unsafe { (*(*p).gun).rounds };
@@ -246,7 +246,7 @@ fn touching_an_ammo_powerup_adds_320_rounds() {
 // M9-TS-13
 #[test]
 fn zombies_speed_up_a_little_each_level_until_level_3_then_hold() {
-    let _serial = iron_ts_tests::serial();
+    let _serial = platypus_ts_tests::serial();
     let _ = world();
     let close = |a: f64, b: f64| (a - b).abs() < 0.005;
     unsafe {

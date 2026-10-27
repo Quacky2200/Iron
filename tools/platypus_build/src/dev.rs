@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron-build dev`: rebuild when a source, stylesheet or asset changes and tell the running app.
+//! `platypus-build dev`: rebuild when a source, stylesheet or asset changes and tell the running app.
 //!
-//! The protocol (agreed with the app side, `docs/iron-build.md`): after every build `dist/.iron-reload`
-//! is written, *after* `dist/game.irbundle`, holding `{"seq":N,"ok":true}` or, when the build failed (the
-//! old `game.irbundle` stays), `{"seq":N,"ok":false,"error":"..."}`. The app watches that one file and
+//! The protocol (agreed with the app side, `docs/platypus-build.md`): after every build `dist/.platypus-reload`
+//! is written, *after* `dist/game.pbundle`, holding `{"seq":N,"ok":true}` or, when the build failed (the
+//! old `game.pbundle` stays), `{"seq":N,"ok":false,"error":"..."}`. The app watches that one file and
 //! reloads the bundle when `seq` changes. The watcher polls modification times (every 200 ms), which
 //! needs no dependency and works on every file system.
 
@@ -13,7 +13,14 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 /// Folders the watcher never looks into.
-const SKIP: &[&str] = &["dist", "node_modules", "target", "types", ".git", ".iron"];
+const SKIP: &[&str] = &[
+    "dist",
+    "node_modules",
+    "target",
+    "types",
+    ".git",
+    ".platypus",
+];
 
 /// A number that changes when a watched file is added, removed or modified.
 pub fn fingerprint(root: &Path) -> u128 {
@@ -45,13 +52,13 @@ pub fn fingerprint(root: &Path) -> u128 {
     acc.wrapping_mul(1_000_003).wrapping_add(count)
 }
 
-/// Writes `dist/.iron-reload` for build number `seq`.
+/// Writes `dist/.platypus-reload` for build number `seq`.
 pub fn write_status(dist: &Path, seq: u64, result: &Result<(), String>) -> std::io::Result<()> {
     let v = match result {
         Ok(()) => serde_json::json!({ "seq": seq, "ok": true }),
         Err(e) => serde_json::json!({ "seq": seq, "ok": false, "error": e }),
     };
-    write_atomic(&dist.join(".iron-reload"), v.to_string().as_bytes())
+    write_atomic(&dist.join(".platypus-reload"), v.to_string().as_bytes())
 }
 
 /// Builds once, then rebuilds on every change until the process is stopped.
@@ -92,11 +99,12 @@ mod tests {
     // M9-TS-1860
     #[test]
     fn a_status_file_says_ok_or_carries_the_error() {
-        let d = std::env::temp_dir().join(format!("iron_build_dev_{}", crate::assets::new_guid()));
+        let d =
+            std::env::temp_dir().join(format!("platypus_build_dev_{}", crate::assets::new_guid()));
         std::fs::create_dir_all(&d).unwrap();
         write_status(&d, 3, &Ok(())).unwrap();
         let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(d.join(".iron-reload")).unwrap())
+            serde_json::from_str(&std::fs::read_to_string(d.join(".platypus-reload")).unwrap())
                 .unwrap();
         assert_eq!(
             (v["seq"].as_u64(), v["ok"].as_bool()),
@@ -104,7 +112,7 @@ mod tests {
         );
         write_status(&d, 4, &Err("boom".into())).unwrap();
         let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(d.join(".iron-reload")).unwrap())
+            serde_json::from_str(&std::fs::read_to_string(d.join(".platypus-reload")).unwrap())
                 .unwrap();
         assert_eq!(
             (v["seq"].as_u64(), v["error"].as_str()),
@@ -116,7 +124,8 @@ mod tests {
     // M9-TS-1861
     #[test]
     fn the_fingerprint_changes_with_sources_but_not_with_dist() {
-        let d = std::env::temp_dir().join(format!("iron_build_fp_{}", crate::assets::new_guid()));
+        let d =
+            std::env::temp_dir().join(format!("platypus_build_fp_{}", crate::assets::new_guid()));
         std::fs::create_dir_all(d.join("src")).unwrap();
         std::fs::create_dir_all(d.join("dist")).unwrap();
         std::fs::write(d.join("src/a.ts"), "1").unwrap();

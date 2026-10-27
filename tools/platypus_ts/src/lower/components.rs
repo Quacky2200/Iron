@@ -5,11 +5,11 @@
 //! `Component` is a prelude class (an `id` and the object it is on). `register(Player)` is erased
 //! from the program and replaced by exported functions the engine calls without any script engine:
 //!
-//! - `iron_new_Player(id, gameObject)` makes the instance and fills the base fields;
-//! - `iron_hook_Player_onUpdate(this, dt)` for every hook the class has, its own or inherited.
+//! - `platypus_new_Player(id, gameObject)` makes the instance and fills the base fields;
+//! - `platypus_hook_Player_onUpdate(this, dt)` for every hook the class has, its own or inherited.
 //!
 //! Every hook thunk takes `(this, dt)` so the host calls them all alike; `layout.rs` turns these
-//! exports into a class table. Design: `docs/research/iron-ts-engine-boundary.md` section 5.
+//! exports into a class table. Design: `docs/research/platypus-ts-engine-boundary.md` section 5.
 
 use super::R;
 use oxc_allocator::Allocator;
@@ -45,7 +45,7 @@ pub fn hook_param(hook: &str) -> Option<(&'static str, &'static str)> {
 }
 
 /// The contact hooks, called by name when the physics step reports a contact. Each takes a
-/// `Collision` (the other side; a record of `iron_physics_api`). Their thunks take the pieces, the
+/// `Collision` (the other side; a record of `platypus_physics_api`). Their thunks take the pieces, the
 /// host passes plain numbers.
 pub const CONTACT_HOOKS: [&str; 6] = [
     "onCollisionEnter",
@@ -344,7 +344,7 @@ pub fn desugar(src: &str, has_game_object: bool, has_contacts: bool) -> R<Option
             ""
         };
         tail += &format!(
-            "export function iron_new_{name}(id: number{go}): {name} {{ const c = new {name}(); c.id = id;{set_go} return c; }}\n"
+            "export function platypus_new_{name}(id: number{go}): {name} {{ const c = new {name}(); c.id = id;{set_go} return c; }}\n"
         );
         // The hooks the class or an ancestor defines.
         let mut chain = Some(name.clone());
@@ -394,7 +394,7 @@ pub fn desugar(src: &str, has_game_object: bool, has_contacts: bool) -> R<Option
             if have.contains(&h) {
                 let call = hook_param(h).map_or("", |(arg, _)| arg);
                 tail += &format!(
-                    "export function iron_hook_{name}_{h}(c: {name}, dt: number): void {{ c.{h}({call}); }}\n"
+                    "export function platypus_hook_{name}_{h}(c: {name}, dt: number): void {{ c.{h}({call}); }}\n"
                 );
             }
         }
@@ -404,7 +404,7 @@ pub fn desugar(src: &str, has_game_object: bool, has_contacts: bool) -> R<Option
 }
 
 /// The thunk of a contact hook: the host passes the `Collision` handle and the other side's
-/// `Collider` handle (`iron_physics_api::contacts`), and the thunk hands the hook the one it asks
+/// `Collider` handle (`platypus_physics_api::contacts`), and the thunk hands the hook the one it asks
 /// for. As in Unity, a trigger hook gets the other `Collider` (or `Collider2D`) and a collision hook
 /// a `Collision` (or `Collision2D`) unless its parameter names the other kind.
 fn contact_thunk(name: &str, h: &str, method: &str, param: Option<&str>) -> String {
@@ -437,6 +437,6 @@ fn contact_thunk(name: &str, h: &str, method: &str, param: Option<&str>) -> Stri
         "collider"
     };
     format!(
-        "export function iron_hook_{name}_{h}(c: {name}, collision: {collision_ty}, collider: {collider_ty}): void {{ c.{method}({arg}); }}\n"
+        "export function platypus_hook_{name}_{h}(c: {name}, collision: {collision_ty}, collider: {collider_ty}): void {{ c.{method}({arg}); }}\n"
     )
 }

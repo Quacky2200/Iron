@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use etagere::{BucketedAtlasAllocator, size2};
-use iron_ui::GlyphRun;
+use platypus_ui::GlyphRun;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Angle, Format, Stroke, Transform, Vector};

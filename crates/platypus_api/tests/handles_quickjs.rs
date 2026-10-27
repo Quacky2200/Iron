@@ -3,7 +3,7 @@
 //! Handle classes in QuickJS: opaque objects with the numeric id in an internal slot, members on the
 //! prototype, `null` for the id 0, arrays in, value classes as JSON arrays. IDs are in TESTS.md
 //! (M9-API-100..).
-use iron_api::{Handle, ValueType, iron_api};
+use platypus_api::{Handle, ValueType, platypus_api};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,7 +74,7 @@ thread_local! {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[iron_api(
+#[platypus_api(
     namespace = "Things",
     quickjs,
     handles(Thing = ThingId, Part = PartId),
@@ -206,7 +206,7 @@ pub mod things {
 }
 
 /// Another namespace that shares the `Thing` class.
-#[iron_api(namespace = "Other", quickjs, handles(Thing = ThingId))]
+#[platypus_api(namespace = "Other", quickjs, handles(Thing = ThingId))]
 pub mod other {
     use super::ThingId;
 
@@ -227,7 +227,7 @@ impl Handle for CounterId {
     }
 }
 
-#[iron_api(namespace = "Counter", quickjs, handles(Counter = CounterId))]
+#[platypus_api(namespace = "Counter", quickjs, handles(Counter = CounterId))]
 pub mod counter {
     use super::CounterId;
 
@@ -249,7 +249,7 @@ pub mod counter {
 }
 
 /// A namespace with the same name as the `Part` class.
-#[iron_api(namespace = "Part", quickjs)]
+#[platypus_api(namespace = "Part", quickjs)]
 pub mod part_ns {
     pub fn kind() -> f64 {
         7.0
@@ -422,11 +422,11 @@ fn many_parameters_value_results_and_arrays() {
 fn the_same_calls_from_compiled_code_agree() {
     run(|ctx| {
         // Compiled code calls the shims with the raw id; QuickJS goes through the objects.
-        let t = things::iron_Thing_create(10.0);
-        assert!(things::iron_Thing_damage(t, 4.0));
-        things::iron_Thing_setHealth(t, 100.0);
-        let part = things::iron_Thing_part(t);
-        let compiled_weight = things::iron_Part_weight(part);
+        let t = things::platypus_Thing_create(10.0);
+        assert!(things::platypus_Thing_damage(t, 4.0));
+        things::platypus_Thing_setHealth(t, 100.0);
+        let part = things::platypus_Thing_part(t);
+        let compiled_weight = things::platypus_Part_weight(part);
         let js_weight: f64 = js(
             ctx,
             "const t = Thing.create(10); t.damage(4); t.health = 100; t.part.weight",

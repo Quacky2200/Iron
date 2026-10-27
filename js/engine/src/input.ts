@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Game input: keyboard and gamepad state plus events, for gameplay code. (UI
-// elements get their own events through @iron/react; keys typed into a focused text
-// field don't reach here.) Rust calls `__iron_input(type, ...args)`.
+// elements get their own events through @platypus/react; keys typed into a focused text
+// field don't reach here.) Rust calls `__platypus_input(type, ...args)`.
 
 import { onTick } from "./clock.ts";
 import { Vector2 } from "./math.ts";
@@ -44,7 +44,7 @@ type Listener<K extends keyof InputEvents> = (event: InputEvents[K]) => void;
 
 /**
  * Input state of one event domain (one per window family; 1 is the main game's). Reads resolve against
- * the domain whose code is running (`__iron_domain()`, the host's current domain: inside a window's
+ * the domain whose code is running (`__platypus_domain()`, the host's current domain: inside a window's
  * `run`, its timers, messages and UI events it is that window's). Code with no domain tag, such as
  * promise jobs after the host left the domain, reads the main domain's.
  */
@@ -92,11 +92,11 @@ function domainState(d: number): DomainInput {
 
 /** The current domain's input (the main one when the host has no domains). */
 function cur(): DomainInput {
-  const f = (globalThis as { __iron_domain?: () => number }).__iron_domain;
+  const f = (globalThis as { __platypus_domain?: () => number }).__platypus_domain;
   return domainState(typeof f === "function" ? f() : MAIN_DOMAIN);
 }
 
-// The main game's input frame ends with `Time`'s tick; isolated domains' end in `__iron_input("tick")`.
+// The main game's input frame ends with `Time`'s tick; isolated domains' end in `__platypus_input("tick")`.
 onTick(() => domainState(MAIN_DOMAIN).tick());
 
 /** Mouse buttons by Unity's numbers: 0 left, 1 right, 2 middle. */
@@ -268,7 +268,7 @@ export function _resetInputForTests() {
   domains.clear();
 }
 
-globalThis.__iron_input = (type: string, ...args: unknown[]) => {
+globalThis.__platypus_input = (type: string, ...args: unknown[]) => {
   switch (type) {
     // An isolated domain ends its input frame (the main one's ends with `Time`'s tick).
     case "tick":

@@ -1,27 +1,27 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_build"
+name = "platypus_build"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "iron-build"
+name = "platypus-build"
 path = "src/main.rs"
 
 [dependencies]
-iron_ts = { path = "../iron_ts" }
-iron_ts_ui = { path = "../iron_ts_ui" }
-iron_engine_api = { path = "../../crates/iron_engine_api" }
-iron_scene = { path = "../../crates/iron_scene" }
-iron_scenes = { path = "../../crates/iron_scenes" }
-iron_physics_api = { path = "../../crates/iron_physics_api" }
-iron_render_api = { path = "../../crates/iron_render_api" }
+platypus_ts = { path = "../platypus_ts" }
+platypus_ts_ui = { path = "../platypus_ts_ui" }
+platypus_engine_api = { path = "../../crates/platypus_engine_api" }
+platypus_scene = { path = "../../crates/platypus_scene" }
+platypus_scenes = { path = "../../crates/platypus_scenes" }
+platypus_physics_api = { path = "../../crates/platypus_physics_api" }
+platypus_render_api = { path = "../../crates/platypus_render_api" }
 serde_json = "1"
-iron_core = { path = "../../crates/iron_core" }
-iron_pack = { path = "../../crates/iron_pack" }
+platypus_core = { path = "../../crates/platypus_core" }
+platypus_pack = { path = "../../crates/platypus_pack" }
 base64 = "0.23.1"
 editpe = "0.2.4"
 image = { version = "0.25.10", default-features = false, features = ["png", "ico"] }

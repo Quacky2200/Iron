@@ -1,8 +1,8 @@
 # CSS: stylesheets, selectors, cascade and invalidation
 
-Files: [css.rs](../crates/iron_ui/src/css.rs) (parsing), [cascade.rs](../crates/iron_ui/src/cascade.rs)
+Files: [css.rs](../crates/platypus_ui/src/css.rs) (parsing), [cascade.rs](../crates/platypus_ui/src/cascade.rs)
 (matching, cascade, rule index, dependencies), and the restyle code in
-[tree.rs](../crates/iron_ui/src/tree.rs). Plan and backlog: TODO.md "M3b" and "M3d". Prefer
+[tree.rs](../crates/platypus_ui/src/tree.rs). Plan and backlog: TODO.md "M3b" and "M3d". Prefer
 standard CSS over s&box extensions (CLAUDE.md).
 
 ## Overview
@@ -24,9 +24,9 @@ Node.style (Taffy) + Node.visual
 Inline `style` props and stylesheet rules end up in the same `apply_style` call
 ([ui-tree.md](ui-tree.md)), so every property works in both.
 
-## Parsing ([css.rs](../crates/iron_ui/src/css.rs))
+## Parsing ([css.rs](../crates/platypus_ui/src/css.rs))
 
-- Uses `cssparser` for syntax and Servo's `selectors` crate for selector parsing. `IronSelectors`
+- Uses `cssparser` for syntax and Servo's `selectors` crate for selector parsing. `PlatypusSelectors`
   is the `SelectorImpl`; `CssString` is the string newtype for names and values (with a stable
   `precomputed_hash`, which the ancestor bloom filter needs).
 - `parse_stylesheet(css) -> Stylesheet`. Rules keep declarations as **CSS text**
@@ -38,7 +38,7 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   `--*` ones, since the property parsers split on spaces and transitions compare the text. Test: M3-CSS-13.
 - Failures never abort the sheet: an invalid selector, unsupported at-rule, or unknown pseudo-class yields a message in `Stylesheet.warnings` and the next rule
   still applies. `@font-face` becomes a `FontFace`; its `src` is the first `url(...)` entry
-  Iron can load (`first_url`): TrueType, OpenType, WOFF or WOFF2, judged by `format()` or else the
+  Platypus can load (`first_url`): TrueType, OpenType, WOFF or WOFF2, judged by `format()` or else the
   file extension. `local()`, EOT and SVG entries are skipped, so a typical
   `url(a.eot), url(a.woff2) format("woff2"), url(a.ttf)` list picks the WOFF2. Tests: M3-FNT-03.
 - **Nesting** (M3d step 10a, `&` as in CSS Nesting). A rule body is read by `parse_rule_body` with a
@@ -56,12 +56,12 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
 - Supported selector features (all parsed by `selectors`): type, class, id, attribute selectors,
   combinators (descendant, `>`, `+`, `~`), `:first-child`/`:last-child`/`:only-child`,
   `:nth-child(.. of S)`, `:nth-last-child`, `*-of-type`, `:root`, `:empty`, `:not`, `:is`, `:where`,
-  `:has` (relative selectors). Iron-specific pseudo-classes (`PseudoClass`): `:hover`, `:active`,
+  `:has` (relative selectors). Platypus-specific pseudo-classes (`PseudoClass`): `:hover`, `:active`,
   `:focus`, `:focus-visible`, `:focus-within`, `:enabled`, `:disabled`, `:checked`, `:blank`.
   Pseudo-elements: `::before`, `::after` only.
-- Element type selectors use the Iron element names: `box`, `text`, `span`, `root`.
+- Element type selectors use the Platypus element names: `box`, `text`, `span`, `root`.
 
-## `@media` ([media.rs](../crates/iron_ui/src/media.rs))
+## `@media` ([media.rs](../crates/platypus_ui/src/media.rs))
 
 - **Where it works.** Top-level blocks (`parse_stylesheet` handles `Item::Media` by parsing the
   block as its own sheet), inside a style rule (`BodyParser`; the block's declarations and nested
@@ -91,11 +91,11 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
 - Tests: M3-MQ-01 (`media.rs` unit: parsing and matching), M3-MQ-02 (`tests/css.rs`: `@media`
   rules applying and un-applying).
 
-## Matching ([cascade.rs](../crates/iron_ui/src/cascade.rs))
+## Matching ([cascade.rs](../crates/platypus_ui/src/cascade.rs))
 
 `NodeRef<'a, L>` implements `selectors::Element` over `UiTree`: parent/sibling navigation skips
 `#text` nodes and generated nodes (`is_element`), `has_class`/`has_id`/`attr_matches` read
-[Attrs](../crates/iron_ui/src/attrs.rs), and `match_non_ts_pseudo_class` reads `ElementState`
+[Attrs](../crates/platypus_ui/src/attrs.rs), and `match_non_ts_pseudo_class` reads `ElementState`
 and attrs. `:focus-within` scans the subtree for a focused node.
 
 ### Cascade order
@@ -166,7 +166,7 @@ every node. New nodes are inserted into `style_dirty` at `CREATE`.
 
 ## CSS-wide keywords
 
-`WideKeyword` ([style.rs](../crates/iron_ui/src/style.rs)) is `Initial`, `Inherit` or `Unset`;
+`WideKeyword` ([style.rs](../crates/platypus_ui/src/style.rs)) is `Initial`, `Inherit` or `Unset`;
 `WideKeyword::parse(&Value)` also maps `revert` and `revert-layer` to `Unset`, since there is no
 user-agent stylesheet to revert to. They work on every property: inline, in stylesheets and in
 `::before`/`::after` rules.
@@ -187,7 +187,7 @@ are set back to inheriting.
 Keywords need the parent's computed style, so they resolve in `restyle`, in cascade order like any
 declaration. The `::before`/`::after` path does the same, with the owning element as the parent.
 An inline `SET_STYLE` keyword is deferred to restyle (like `var(`), and `add_stylesheet` keeps
-keyword declarations without warnings. Tests: [wide_keywords.rs](../crates/iron_ui/tests/wide_keywords.rs).
+keyword declarations without warnings. Tests: [wide_keywords.rs](../crates/platypus_ui/tests/wide_keywords.rs).
 
 ## Custom properties and `var()`
 
@@ -203,7 +203,7 @@ keyword declarations without warnings. Tests: [wide_keywords.rs](../crates/iron_
   throwaway `apply_style` and drops bad declarations with a warning, so they are not re-reported on
   every restyle.
 
-## Relative units and math ([units.rs](../crates/iron_ui/src/units.rs))
+## Relative units and math ([units.rs](../crates/platypus_ui/src/units.rs))
 
 `em`, `rem`, `vw`/`vh`/`vmin`/`vmax` (and the `d`/`s`/`l` variants), the absolute units `in`, `cm`, `mm`, `Q`, `pt`, `pc` (96 px per inch, so `1in` is `96px` and `1pt` is `96/72` px; they need no context) and `calc()`, `min()`,
 `max()`, `clamp()` are resolved to plain pixel text during restyle, like `var()`, so every property
@@ -217,7 +217,7 @@ parser stays unchanged (`2em` becomes `32px`).
   plain `fontSize: 2em`, which the font-size parser handles itself (relative to the parent).
 - `Uses { em, rem, viewport }` records which kinds a declaration used.
 - Math that mixes in `%` (`calc(100% - 20px)`) needs layout, so it is kept as written with its units
-  resolved and parsed by [calc.rs](../crates/iron_ui/src/calc.rs), then evaluated by layout once the
+  resolved and parsed by [calc.rs](../crates/platypus_ui/src/calc.rs), then evaluated by layout once the
   percentage basis is known (see [ui-tree.md](ui-tree.md#layout)). Properties that accept it: sizes
   (and min/max), insets, margins, padding, borders, gaps and `flexBasis`. Paint lengths (radii,
   shadows, etc.) do not take percentage math yet. Shorthands (`margin`, `padding`, ...) split at the
@@ -242,11 +242,11 @@ go into `UiTree::unit_uses` (cleared on removal). Dependencies:
 Validation: stylesheet declarations with relative units are checked at `add_stylesheet` time with
 typical units (16px, 1000x1000 viewport); invalid math is dropped with a warning. Inline values go
 through the same check: an invalid one is reported and the previous value stays. Tests:
-[units.rs](../crates/iron_ui/tests/units.rs).
+[units.rs](../crates/platypus_ui/tests/units.rs).
 
 ## Colours
 
-Code: [color.rs](../crates/iron_ui/src/color.rs), [color_fn.rs](../crates/iron_ui/src/color_fn.rs).
+Code: [color.rs](../crates/platypus_ui/src/color.rs), [color_fn.rs](../crates/platypus_ui/src/color_fn.rs).
 
 `Rgba::parse` accepts hex (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`), `rgb()`/`hsl()` (and the `a`
 variants), named colours and `transparent`. Anything else ending in `)` goes to `color_fn::parse`:
@@ -270,8 +270,8 @@ variants), named colours and `transparent`. Anything else ending in `)` goes to 
   `oklch(0.7 0.1 200)` or `rgb(1 2 3)` is a colour, not an angle.
 
 Invalid functions (wrong channel count, unknown space) are rejected like any invalid value. Tests are
-unit tests in [color_fn.rs](../crates/iron_ui/src/color_fn.rs) and
-[paint.rs](../crates/iron_ui/src/paint.rs) (`M3d` step 1).
+unit tests in [color_fn.rs](../crates/platypus_ui/src/color_fn.rs) and
+[paint.rs](../crates/platypus_ui/src/paint.rs) (`M3d` step 1).
 
 ## `::before` / `::after`
 
@@ -313,7 +313,7 @@ Besides `::before`/`::after`, stylesheets can target these pseudo-elements:
 The tree does not know the game folder, so font loading is the app's job:
 
 - `AddedStylesheet { id, warnings, font_faces }` is returned from `add_stylesheet*`. In
-  [main.rs](../crates/iron_app/src/main.rs), `add_stylesheet()` logs the warnings (target `css`) and
+  [main.rs](../crates/platypus_app/src/main.rs), `add_stylesheet()` logs the warnings (target `css`) and
   calls `load_font` for each `FontFace`, which reads the file via `resolve_asset` (or a `data:` URL)
   and calls `UiTree::register_font(data, family, weight, italic)`. Text re-lays out when fonts load.
 - **`game.css`**: Bun writes it next to `game.js`. The app loads `bundle.with_extension("css")` and

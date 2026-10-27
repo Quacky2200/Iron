@@ -5,7 +5,7 @@
 //! `cooldown = TimeUntil.in(2); ... if (cooldown.done) ...`.
 
 use crate::time;
-use iron_api::{ValueType, iron_api};
+use platypus_api::{ValueType, platypus_api};
 
 /// Seconds since something happened: remembers when.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -47,7 +47,7 @@ fn game_time() -> f64 {
     time::state().time
 }
 
-#[iron_api(namespace = "TimeSince", quickjs, values(TimeSince = Since [at: f64]))]
+#[platypus_api(namespace = "TimeSince", quickjs, values(TimeSince = Since [at: f64]))]
 pub mod time_since_api {
     use super::{Since, game_time};
 
@@ -76,7 +76,7 @@ pub mod time_since_api {
     }
 }
 
-#[iron_api(namespace = "TimeUntil", quickjs, values(TimeUntil = Until [at: f64, length: f64]))]
+#[platypus_api(namespace = "TimeUntil", quickjs, values(TimeUntil = Until [at: f64, length: f64]))]
 pub mod time_until_api {
     use super::{Until, game_time};
 

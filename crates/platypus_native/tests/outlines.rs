@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Shapes` from QuickJS: the same native functions compiled code calls (their numbers are compared
-//! with the old TypeScript in `tools/iron_ts_tests/tests/engine_api/outlines.rs`). IDs are in
+//! with the old TypeScript in `tools/platypus_ts_tests/tests/engine_api/outlines.rs`). IDs are in
 //! TESTS.md (M9-API-16xx).
 mod common;
 use common::{js, throws, with_world};

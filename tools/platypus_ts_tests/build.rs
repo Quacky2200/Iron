@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compiles the zombie game's sim.ts and the programs in `bench/` with `iron_ts` and links the
+//! Compiles the zombie game's sim.ts and the programs in `bench/` with `platypus_ts` and links the
 //! objects into this crate's targets.
 //!
 //! Each program's object is cached in OUT_DIR under a key: a hash of its source, symbol prefix,
 //! header base, manifests and this build script's own executable. The executable stands for the
-//! compiler: cargo relinks it whenever `iron_ts` (or a crate making the manifests) changes, so a
+//! compiler: cargo relinks it whenever `platypus_ts` (or a crate making the manifests) changes, so a
 //! compiler edit recompiles every program and a bench edit only its own. Programs compile in
 //! parallel.
 use std::collections::hash_map::DefaultHasher;
@@ -16,9 +16,9 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy)]
 enum Api {
     None,
-    /// `iron_demo_api` (`#[iron_api]` test namespaces).
+    /// `platypus_demo_api` (`#[platypus_api]` test namespaces).
     Demo,
-    /// The UI half (`iron_ts_ui`).
+    /// The UI half (`platypus_ts_ui`).
     Ui,
     /// The scene API and the math types.
     Scene,
@@ -150,11 +150,11 @@ struct Manifests {
 
 impl Manifests {
     fn new() -> Self {
-        let mut scene = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
-        scene.extend(iron_engine_api::iron_math::manifests());
+        let mut scene = vec![platypus_scene::api::scene_api::MANIFEST.to_json()];
+        scene.extend(platypus_engine_api::platypus_math::manifests());
         Manifests {
-            demo: vec![iron_demo_api::manifest_json()],
-            ui: vec![iron_ts_ui::manifest_json()],
+            demo: vec![platypus_demo_api::manifest_json()],
+            ui: vec![platypus_ts_ui::manifest_json()],
             scene,
             engine: engine_manifests(),
         }
@@ -173,11 +173,11 @@ impl Manifests {
 
 /// Every engine API namespace a compiled program may call.
 fn engine_manifests() -> Vec<String> {
-    let mut all = vec![iron_scene::api::scene_api::MANIFEST.to_json()];
-    all.extend(iron_engine_api::manifests());
-    all.extend(iron_scenes::manifests());
-    all.extend(iron_physics_api::manifests());
-    all.extend(iron_render_api::manifests());
+    let mut all = vec![platypus_scene::api::scene_api::MANIFEST.to_json()];
+    all.extend(platypus_engine_api::manifests());
+    all.extend(platypus_scenes::manifests());
+    all.extend(platypus_physics_api::manifests());
+    all.extend(platypus_render_api::manifests());
     all
 }
 
@@ -205,9 +205,10 @@ fn main() {
     let sim_key = key(compiler, "sim", "", 0, &sim, &[]);
     if !fresh(&dir, "sim", sim_key) {
         let t = std::time::Instant::now();
-        let out = iron_ts::compile_source(&sim, "speed").unwrap_or_else(|e| panic!("iron_ts: {e}"));
+        let out = platypus_ts::compile_source(&sim, "speed")
+            .unwrap_or_else(|e| panic!("platypus_ts: {e}"));
         println!(
-            "cargo:warning=iron_ts compiled sim.ts in {:?} (lower {:?}, cranelift {:?})",
+            "cargo:warning=platypus_ts compiled sim.ts in {:?} (lower {:?}, cranelift {:?})",
             t.elapsed(),
             out.lower_time,
             out.codegen_time
@@ -221,12 +222,12 @@ fn main() {
     for &(name, prefix, base) in PROGRAMS {
         let path = manifest.join(format!("bench/{name}.ts"));
         println!("cargo:rerun-if-changed={}", path.display());
-        // `toplevel` imports a second file: bundle it like `iron-build` does.
+        // `toplevel` imports a second file: bundle it like `platypus-build` does.
         let source = if name == "toplevel" {
             let dep = manifest.join("bench/toplevel_dep.ts");
             println!("cargo:rerun-if-changed={}", dep.display());
-            iron_ts::modules::bundle(&path)
-                .unwrap_or_else(|e| panic!("iron_ts {name}: {e}"))
+            platypus_ts::modules::bundle(&path)
+                .unwrap_or_else(|e| panic!("platypus_ts {name}: {e}"))
                 .source
         } else {
             std::fs::read_to_string(&path).unwrap()
@@ -262,11 +263,11 @@ fn main() {
                         let Some(j) = stale.get(i) else {
                             break;
                         };
-                        match iron_ts::compile_with_manifests(
+                        match platypus_ts::compile_with_manifests(
                             &j.source, "speed", j.prefix, j.base, j.api,
                         ) {
                             Ok(out) => store(&dir, j.name, j.key, &out),
-                            Err(e) => errors.push(format!("iron_ts {}: {e}", j.name)),
+                            Err(e) => errors.push(format!("platypus_ts {}: {e}", j.name)),
                         }
                     }
                     errors
@@ -304,7 +305,7 @@ fn fresh(dir: &Path, name: &str, k: u64) -> bool {
 }
 
 /// Writes a program's object and bindings, then its key (last, so a half-written entry is stale).
-fn store(dir: &Path, name: &str, k: u64, out: &iron_ts::Output) {
+fn store(dir: &Path, name: &str, k: u64, out: &platypus_ts::Output) {
     std::fs::write(dir.join(format!("{name}.obj")), &out.object).unwrap();
     std::fs::write(dir.join(format!("{name}_bindings.rs")), &out.bindings).unwrap();
     std::fs::write(dir.join(format!("{name}.key")), format!("{k:016x}")).unwrap();

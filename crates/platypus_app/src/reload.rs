@@ -148,7 +148,7 @@ mod tests {
     // M4-HOT-10
     #[test]
     fn reports_a_settled_change_to_a_watched_file_once() {
-        let dir = std::env::temp_dir().join(format!("iron-watch-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-watch-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let js = dir.join("game.js");
         std::fs::write(&js, "1").unwrap();
@@ -184,7 +184,7 @@ mod tests {
     // M5-AST-01
     #[test]
     fn asset_changes_are_reported_by_game_path_once_settled() {
-        let dir = std::env::temp_dir().join(format!("iron-assets-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("platypus-assets-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("assets/sub")).unwrap();
         std::fs::create_dir_all(dir.join("dist")).unwrap();

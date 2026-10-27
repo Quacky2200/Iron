@@ -1,12 +1,12 @@
 # Physics and audio (M4)
 
-Crates and packages: [iron_physics](../crates/iron_physics/src/lib.rs) (rapier3d 0.36),
-[iron_audio](../crates/iron_audio/src/lib.rs) (kira 0.12), their TypeScript sides
+Crates and packages: [platypus_physics](../crates/platypus_physics/src/lib.rs) (rapier3d 0.36),
+[platypus_audio](../crates/platypus_audio/src/lib.rs) (kira 0.12), their TypeScript sides
 [physics.ts](../js/engine/src/physics.ts) and [audio.ts](../js/engine/src/audio.ts) in
-`@iron/engine`, and the wiring in [iron_app/main.rs](../crates/iron_app/src/main.rs). On top of the
+`@platypus/engine`, and the wiring in [platypus_app/main.rs](../crates/platypus_app/src/main.rs). On top of the
 handles there are Unity-style components ([physics-components.ts](../js/engine/src/physics-components.ts),
 [physics2d.ts](../js/engine/src/physics2d.ts), [audio-components.ts](../js/engine/src/audio-components.ts)),
-and [physics_sync.rs](../crates/iron_app/src/physics_sync.rs) ties bodies to GameObjects. Demos:
+and [physics_sync.rs](../crates/platypus_app/src/physics_sync.rs) ties bodies to GameObjects. Demos:
 [examples/physics](../examples/physics/src/main.tsx) (handles), [examples/world](../examples/world/src/main.tsx)
 and [examples/platformer](../examples/platformer/src/main.tsx) (components).
 
@@ -15,7 +15,7 @@ and [examples/platformer](../examples/platformer/src/main.tsx) (components).
 Both follow the core rule: Rust owns the world, JS owns behaviour. Scripts never hold rapier or
 kira handles. They **choose numeric IDs** themselves (module counters in `physics.ts`/`audio.ts`,
 like UI node ids), so creating a body or sound needs no round trip, and queue ops with
-`__iron_op("physics.<name>", ...)` or `__iron_op("audio.<name>", ...)`.
+`__platypus_op("physics.<name>", ...)` or `__platypus_op("audio.<name>", ...)`.
 
 `App::apply_script_output` routes by prefix: `physics.*` goes to `Physics::apply(name, args)`,
 `audio.*` to `App::audio_op`. A bad op (unknown name, wrong arguments, unknown ID) returns an
@@ -53,23 +53,23 @@ Audio ops: `load`, `play`, `set` (`volume`, `rate`, `pan`), `pause`, `resume`, `
 2. apply_script_output()         commits -> UiTree, then ops (physics.*, audio.*, ...) in order
 3. step_physics()                Attachments::step: bodies follow objects scripts moved, Physics::step,
                                  take_batch, objects follow the bodies that moved;
-                                 then __iron_physics(...) if the game has it
+                                 then __platypus_physics(...) if the game has it
 ```
 
 So what a component asks for in a tick is applied before that tick's step. Collision handlers
 run inside step 3 and may queue more ops; those apply on the **next** tick. After the tick loop
 the frame runs timers, `apply_script_output()` again, then `update_audio`, which calls
-`Mixer::advance(elapsed)` and `poll()` and sends ended playbacks to `__iron_audio(ended)`.
+`Mixer::advance(elapsed)` and `poll()` and sends ended playbacks to `__platypus_audio(ended)`.
 
 `physics_events` and `audio_events` are probed once at startup
-(`typeof __iron_physics === 'function'`, same for `__iron_audio`). A game that never imports the
+(`typeof __platypus_physics === 'function'`, same for `__platypus_audio`). A game that never imports the
 APIs gets no calls. An empty batch is not sent.
 
 ## Batch format
 
 `Physics::take_batch` returns a `Batch` (moved bodies, contacts, ray answers, characters).
 `Batch::to_args` turns it into four **flat number arrays**, so one tick crosses the boundary as
-four arrays rather than many objects: `__iron_physics(moved, contacts, rays, characters)`.
+four arrays rather than many objects: `__platypus_physics(moved, contacts, rays, characters)`.
 
 | Array | Stride | Fields per entry |
 |---|---|---|
@@ -82,14 +82,14 @@ four arrays rather than many objects: `__iron_physics(moved, contacts, rays, cha
   fire before the solver). It is 0 when the contact ends. Sensor overlaps also produce contacts.
 - Raycasts queued with `physics.raycast` are answered in the batch after the step, so the
   promise resolves one tick later.
-- `__iron_audio(ended)` receives an array of playback IDs.
+- `__platypus_audio(ended)` receives an array of playback IDs.
 
 ## TypeScript API
 
-All of it is exported from `@iron/engine`. IDs and ops are hidden behind small handle classes.
+All of it is exported from `@platypus/engine`. IDs and ops are hidden behind small handle classes.
 
 ```ts
-import { physics, audio, Component, register } from "@iron/engine";
+import { physics, audio, Component, register } from "@platypus/engine";
 
 physics.addCollider({ shape: { box: { x: 10, y: 0.5, z: 2 } }, position: { x: 0, y: -0.5, z: 0 } });
 const body = physics.createBody({ position: { x: 0, y: 5, z: 0 } }); // dynamic by default
@@ -147,7 +147,7 @@ music.setVolume(0.2, 1.5);
 - `audio.setListener(position, rotation)`, `audio.setMasterVolume(volume, fade)`.
 
 `audio.load` sends `audio.load id src stream`. `load_sound` in `main.rs` reads the file through the
-asset file system (`iron_core::read_asset`: packs or the game folder, relative paths, no `..`) or decodes a `data:` URL, then
+asset file system (`platypus_core::read_asset`: packs or the game folder, relative paths, no `..`) or decodes a `data:` URL, then
 hands the bytes to `Mixer::load`. Static sounds are decoded up front; `stream: true` decodes
 while playing and is read in windows (`Vfs::open_range` -> `Mixer::load_stream`), never whole.
 
@@ -163,7 +163,7 @@ physics component needs it and sends `physics.attach body object`. `Rigidbody` s
 when added (changing the scale later does not resize them). An object with colliders and no Rigidbody
 is static. `releasePhysics` removes the body when nothing on the object needs it.
 
-**Sync both ways** ([physics_sync.rs](../crates/iron_app/src/physics_sync.rs)). `Attachments` keeps
+**Sync both ways** ([physics_sync.rs](../crates/platypus_app/src/physics_sync.rs)). `Attachments` keeps
 `body <-> object` maps. In `Attachments::step`:
 
 1. `ScriptScene::take_script_moved` lists the objects scripts moved or re-parented since the last step
@@ -174,7 +174,7 @@ is static. `releasePhysics` removes the body when nothing on the object needs it
 3. For each moved body in the batch, `ScriptScene::set_world_from_engine` moves its object, which feeds
    the scene move batch to scripts (see [scene-and-objects.md](scene-and-objects.md#the-move-batch)).
 
-The result is returned so `step_physics` can still call `__iron_physics`.
+The result is returned so `step_physics` can still call `__platypus_physics`.
 
 **Components.**
 
@@ -243,11 +243,11 @@ normal, distance). Callbacks are `onCollisionEnter2D`/`Exit2D` (`Collision2D`) a
 
 ## Cloth
 
-`Cloth` (Unity's) simulates a copy of its object's mesh. Code: [cloth.rs](../crates/iron_physics/src/cloth.rs)
-(the solver), [cloth_sync.rs](../crates/iron_app/src/cloth_sync.rs) (`ClothSystem`, the `cloth.*` ops) and
+`Cloth` (Unity's) simulates a copy of its object's mesh. Code: [cloth.rs](../crates/platypus_physics/src/cloth.rs)
+(the solver), [cloth_sync.rs](../crates/platypus_app/src/cloth_sync.rs) (`ClothSystem`, the `cloth.*` ops) and
 [cloth.ts](../js/engine/src/cloth.ts). Demo: [examples/cloth](../examples/cloth/src/main.tsx).
 
-- **Solver.** `iron_physics::cloth::Cloth` uses position-based dynamics: Verlet integration, then
+- **Solver.** `platypus_physics::cloth::Cloth` uses position-based dynamics: Verlet integration, then
   `iterations` constraint passes. Each mesh edge keeps its length (`stretching_stiffness`), vertex pairs
   across shared edges keep theirs (`bending_stiffness`), pinned vertices stay where the object holds them,
   and `ClothCollider`s (`Sphere`, `Capsule`) push vertices out. Vertices at the same spot (seams) weld into
@@ -276,7 +276,7 @@ normal, distance). Callbacks are `onCollisionEnter2D`/`Exit2D` (`Collision2D`) a
 
 ## The mixer and offline mode
 
-`iron_audio::Mixer` is the trait the app holds (`load`, `apply`, `poll`, `advance`).
+`platypus_audio::Mixer` is the trait the app holds (`load`, `apply`, `poll`, `advance`).
 `open_mixer(offline)` returns a kira device mixer, or an offline one when `offline` is true or no
 output device could be opened (a warning is logged).
 
@@ -287,10 +287,10 @@ background ([platform.md](platform.md#focus-and-pausing)). `Audio` keeps the mas
 The app opens the mixer **lazily**, on the first `audio.*` op, so games without sound never touch
 a device. `--screenshot` runs mix offline (`self.screenshot.is_some()`), silently.
 
-[offline.rs](../crates/iron_audio/src/offline.rs) `OfflineBackend` has no device. `render(frames)`
+[offline.rs](../crates/platypus_audio/src/offline.rs) `OfflineBackend` has no device. `render(frames)`
 mixes stereo frames on demand, which is how the audio tests measure output. `advance(seconds)` on
 an offline mixer renders and drops that much audio, so sounds still progress and end (and
-`__iron_audio` still fires) with no device.
+`__platypus_audio` still fires) with no device.
 
 ## Known limits
 

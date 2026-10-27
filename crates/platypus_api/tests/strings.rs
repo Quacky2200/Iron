@@ -2,7 +2,7 @@
 
 //! Strings across the boundary: `&str` parameters read from a script string object, `String`
 //! results handed back through a per-thread buffer. IDs are in TESTS.md (M9-API-*).
-use iron_api::{Ty, iron_api};
+use platypus_api::{Ty, platypus_api};
 
 /// A script string object laid out as the compiled code makes them: a 48 byte header, then bytes.
 fn script_string(bytes: &[u8], well_formed: bool) -> Vec<u8> {
@@ -16,7 +16,7 @@ fn script_string(bytes: &[u8], well_formed: bool) -> Vec<u8> {
     v
 }
 
-#[iron_api(namespace = "Text")]
+#[platypus_api(namespace = "Text")]
 pub mod text_api {
     /// The bytes of a string.
     pub fn byte_len(s: &str) -> u32 {
@@ -40,7 +40,7 @@ fn strings_cross_as_script_string_objects_and_a_returned_buffer() {
     let shout = m.functions.iter().find(|f| f.name == "shout").unwrap();
     assert_eq!(shout.params[0].ty, Ty::Str);
     assert_eq!(shout.ret, Ty::Str);
-    assert_eq!(shout.symbol, "iron_Text_shout");
+    assert_eq!(shout.symbol, "platypus_Text_shout");
     let d = m.to_dts();
     assert!(
         d.contains("function shout(s: string, times: number): string;"),
@@ -49,10 +49,13 @@ fn strings_cross_as_script_string_objects_and_a_returned_buffer() {
     assert!(m.to_json().contains("\"type\":\"string\""));
 
     let hello = script_string("héllo".as_bytes(), true);
-    assert_eq!(unsafe { text_api::iron_Text_byteLen(hello.as_ptr()) }, 6);
-    assert_eq!(unsafe { text_api::iron_Text_owned(hello.as_ptr()) }, 5);
+    assert_eq!(
+        unsafe { text_api::platypus_Text_byteLen(hello.as_ptr()) },
+        6
+    );
+    assert_eq!(unsafe { text_api::platypus_Text_owned(hello.as_ptr()) }, 5);
     let mut len = 0i64;
-    let p = unsafe { text_api::iron_Text_shout(hello.as_ptr(), 3.0, &mut len) };
+    let p = unsafe { text_api::platypus_Text_shout(hello.as_ptr(), 3.0, &mut len) };
     let out = unsafe { std::slice::from_raw_parts(p, len as usize) };
     assert_eq!(std::str::from_utf8(out).unwrap(), "HÉLLO!!!");
 }
@@ -62,14 +65,14 @@ fn strings_cross_as_script_string_objects_and_a_returned_buffer() {
 fn a_lone_surrogate_becomes_one_replacement_character() {
     // "a", a lone high surrogate (ED A0 80), "b".
     let s = script_string(&[b'a', 0xED, 0xA0, 0x80, b'b'], false);
-    let got = unsafe { iron_api::script_str(s.as_ptr()) };
+    let got = unsafe { platypus_api::script_str(s.as_ptr()) };
     assert_eq!(got, "a\u{FFFD}b");
     assert!(matches!(got, std::borrow::Cow::Owned(_)));
     // A well formed string is borrowed, not copied; null is empty.
     let ok = script_string(b"plain", true);
     assert!(matches!(
-        unsafe { iron_api::script_str(ok.as_ptr()) },
+        unsafe { platypus_api::script_str(ok.as_ptr()) },
         std::borrow::Cow::Borrowed("plain")
     ));
-    assert_eq!(unsafe { iron_api::script_str(std::ptr::null()) }, "");
+    assert_eq!(unsafe { platypus_api::script_str(std::ptr::null()) }, "");
 }

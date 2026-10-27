@@ -3,13 +3,13 @@
 //! Profiles typing into `examples/form` headlessly: the real bundle and stylesheet,
 //! keystrokes through `Interaction` and QuickJS like the app, then commits and the
 //! draw list. Ignored by default (needs `bun run build` and is slow in debug):
-//! `cargo test --release -p iron_ui --test typing_profile -- --ignored --nocapture`.
+//! `cargo test --release -p platypus_ui --test typing_profile -- --ignored --nocapture`.
 
 use std::time::{Duration, Instant};
 
-use iron_core::Value;
-use iron_script::{QuickJsRuntime, ScriptRuntime};
-use iron_ui::{Input, Interaction, UiTree};
+use platypus_core::Value;
+use platypus_script::{QuickJsRuntime, ScriptRuntime};
+use platypus_ui::{Input, Interaction, UiTree};
 
 #[test]
 #[ignore]
@@ -28,7 +28,7 @@ fn typing_into_the_form() {
     }
     for op in rt.drain_ops() {
         if op.name == "focus" {
-            let id = iron_core::NodeId(op.args[0].as_f64().unwrap() as u32);
+            let id = platypus_core::NodeId(op.args[0].as_f64().unwrap() as u32);
             Interaction::new().handle(&mut tree, Input::Focus(id), &mut |_| false);
         }
     }
@@ -38,7 +38,7 @@ fn typing_into_the_form() {
     let mut ui = Interaction::new();
     // Focus the name field (the first text field).
     let name = (1..2000)
-        .map(iron_core::NodeId)
+        .map(platypus_core::NodeId)
         .find(|id| tree.is_editor(*id))
         .unwrap();
     ui.handle(&mut tree, Input::Focus(name), &mut |_| false);
@@ -60,7 +60,7 @@ fn typing_into_the_form() {
             },
             &mut |e| {
                 rt_ref
-                    .call_global("__iron_ui_event", &e.script_args())
+                    .call_global("__platypus_ui_event", &e.script_args())
                     .unwrap()
                     == Value::Bool(true)
             },

@@ -2,12 +2,12 @@
 
 //! The editor's file operations on the project folder: list a folder, copy files in
 //! from outside (what was dropped on the window), move within. Paths from scripts are
-//! relative to the project and checked like asset paths (`iron_core::resolve_asset`:
+//! relative to the project and checked like asset paths (`platypus_core::resolve_asset`:
 //! no absolute paths, drives or `..`), and symlinks can't lead out of it either.
 
 use std::path::{Path, PathBuf};
 
-use iron_core::resolve_asset;
+use platypus_core::resolve_asset;
 
 /// The most files one copy may create (a dropped folder is copied whole).
 const COPY_LIMIT: usize = 10_000;
@@ -172,7 +172,8 @@ mod tests {
     use super::*;
 
     fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("iron-project-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("platypus-project-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

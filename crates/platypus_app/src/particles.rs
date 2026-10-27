@@ -8,12 +8,12 @@
 //! [count]`. Shapes emit along the object's up (+y), unlike Unity's +z cones, so a
 //! fountain needs no rotation.
 
-use iron_core::Value;
-use iron_core::glam::{Affine3A, Mat4, Quat, Vec3};
-use iron_render::{WorldQuad, WorldTexture};
+use platypus_core::Value;
+use platypus_core::glam::{Affine3A, Mat4, Quat, Vec3};
+use platypus_render::{WorldQuad, WorldTexture};
 
 /// The soft round texture particles use when they're given none.
-pub const DEFAULT_TEXTURE: u32 = iron_render::DEFAULT_PARTICLE_TEXTURE;
+pub const DEFAULT_TEXTURE: u32 = platypus_render::DEFAULT_PARTICLE_TEXTURE;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Shape {

@@ -81,7 +81,7 @@ export class Cloth extends Component {
       if (c) colliders.push(["capsule", go.id, c.radius, c.height, v(c.center)]);
     }
     const box = this.pinBox;
-    __iron_op(
+    __platypus_op(
       "cloth.cloth",
       this.id,
       this.gameObject.id,
@@ -101,7 +101,7 @@ export class Cloth extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("cloth.remove", this.id);
+    __platypus_op("cloth.remove", this.id);
     if (this.renderer && this.original !== undefined && !this.renderer.gameObject.destroyed) this.renderer.mesh = this.original;
     this.simulated?.destroy();
   }

@@ -1,41 +1,41 @@
 # The editor
 
-The editor is `iron_editor` (`iron_editor.exe` on Windows): the same program as `iron`, running
-an editor UI written with Iron's own React UI, like a game. Its components live in a shared
-library, `@iron/editor-ui`, so games and tools can use them too.
+The editor is `platypus_editor` (`platypus_editor.exe` on Windows): the same program as `platypus`, running
+an editor UI written with Platypus's own React UI, like a game. Its components live in a shared
+library, `@platypus/editor-ui`, so games and tools can use them too.
 
-The editor's UI (`editor/`) is a QuickJS bundle, a deprecated backend: `iron_editor` passes `--force` implicitly (it logs the deprecation
-note once and runs). Porting the editor to iron_ts is part of the removal plan in TODO.md.
+The editor's UI (`editor/`) is a QuickJS bundle, a deprecated backend: `platypus_editor` passes `--force` implicitly (it logs the deprecation
+note once and runs). Porting the editor to platypus_ts is part of the removal plan in TODO.md.
 
 | Path | Role |
 |---|---|
-| [bin/iron_editor.rs](../crates/iron_app/src/bin/iron_editor.rs) | The second binary: includes main.rs as a module and calls its `main` |
-| [editor.rs](../crates/iron_app/src/editor.rs) | `ENABLED`, where the UI lives, the project folder, `EditorHost` (log feed, `editor.*` ops), opening files in a code editor |
-| [project.rs](../crates/iron_app/src/project.rs) | File operations on the project folder (list, copy in, move), confined to it |
-| [logging.rs](../crates/iron_app/src/logging.rs) | The capture layer and ring buffer the console reads |
+| [bin/platypus_editor.rs](../crates/platypus_app/src/bin/platypus_editor.rs) | The second binary: includes main.rs as a module and calls its `main` |
+| [editor.rs](../crates/platypus_app/src/editor.rs) | `ENABLED`, where the UI lives, the project folder, `EditorHost` (log feed, `editor.*` ops), opening files in a code editor |
+| [project.rs](../crates/platypus_app/src/project.rs) | File operations on the project folder (list, copy in, move), confined to it |
+| [logging.rs](../crates/platypus_app/src/logging.rs) | The capture layer and ring buffer the console reads |
 | [editor/](../editor/src/main.tsx) | The editor's UI (a Bun workspace built to `editor/dist`) |
-| [js/editor-ui](../js/editor-ui/src/index.ts) | `@iron/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`, `ProjectBrowser`, `SceneView`, `onEditorFrame` and their models |
+| [js/editor-ui](../js/editor-ui/src/index.ts) | `@platypus/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`, `ProjectBrowser`, `SceneView`, `onEditorFrame` and their models |
 
 ## One program, two binaries
 
-`crates/iron_app` has two binary targets. `iron_app` is `src/main.rs`. `iron_editor` is
-`src/bin/iron_editor.rs`, which includes main.rs with `#[path = "../main.rs"] mod app;` and
+`crates/platypus_app` has two binary targets. `platypus_app` is `src/main.rs`. `platypus_editor` is
+`src/bin/platypus_editor.rs`, which includes main.rs with `#[path = "../main.rs"] mod app;` and
 re-exports the modules that reach each other through `crate::` (`info`, `models`, `particles`,
 which main.rs declares `pub(crate)`). The `[[bin]]` entry sets `test = false`, so the tests don't
 run twice.
 
-`editor::ENABLED` compares `env!("CARGO_BIN_NAME")` with `iron_editor` at compile time. Where it
+`editor::ENABLED` compares `env!("CARGO_BIN_NAME")` with `platypus_editor` at compile time. Where it
 is true:
 
-- `iron_editor [project]`: `parse_args` keeps the folder argument (default: the current folder)
-  as the project (`editor::set_project`, made absolute; `__iron_info.app.project`) and runs
-  `editor::ui_folder()` instead: `IRON_EDITOR_UI`, else an `editor` folder next to the executable
+- `platypus_editor [project]`: `parse_args` keeps the folder argument (default: the current folder)
+  as the project (`editor::set_project`, made absolute; `__platypus_info.app.project`) and runs
+  `editor::ui_folder()` instead: `PLATYPUS_EDITOR_UI`, else an `editor` folder next to the executable
   (a packaged editor), else the workspace's `editor/`.
   The folder is a game folder like any other (`dist/game.js`, `dist/game.css`, `package.json` for
   the title and window size), so `--screenshot`, hot reload and `bun run dev` work as for games.
 - `main` turns on log capture before anything logs.
-- `__iron_info.app.isEditor` is true (`Application.isEditor`).
-- `editor.*` ops run. In `iron` they log a warning and do nothing, so games can't use them.
+- `__platypus_info.app.isEditor` is true (`Application.isEditor`).
+- `editor.*` ops run. In `platypus` they log a warning and do nothing, so games can't use them.
 
 ## The log feed
 
@@ -46,10 +46,10 @@ fields as ` name=value`. Scripts' `console.*` logs with target `script`, so the 
 and script lines in order.
 
 `EditorHost::pump` runs once per frame, right after `tick`. Once the scripts have sent
-`editor.logHistory`, it calls `__iron_log(flat)` with the records it hasn't sent, flat as
+`editor.logHistory`, it calls `__platypus_log(flat)` with the records it hasn't sent, flat as
 `[seq, level, target, message, timeMs, ...]` (level 0 trace to 4 error). `editor.logHistory`
 resets its position to 0, so a reloaded UI gets the whole history again; `log.ts` keeps the
-newest `seq` it has seen and skips older ones. Errors from `__iron_log` go to stderr, not the log,
+newest `seq` it has seen and skips older ones. Errors from `__platypus_log` go to stderr, not the log,
 which would feed them back.
 
 ## Ops
@@ -62,9 +62,9 @@ which would feed them back.
 | `editor.copyIn` | `id, [sources], dir` | Copies files or whole folders from outside into a project folder, renaming (`a (2).png`) instead of overwriting; answers `{ created }` |
 | `editor.move` | `id, path, dir` | Moves a project file or folder into a project folder; refuses overwriting and moving a folder into itself; answers `{ path }` |
 
-The file ops answer a frame later through `__iron_editor_fs([id, ok, json or error, ...])`,
+The file ops answer a frame later through `__platypus_editor_fs([id, ok, json or error, ...])`,
 sent by `EditorHost::pump`; `project.ts` turns them into promises. Their paths are relative to the
-project and go through `project::resolve`: `iron_core::resolve_asset`'s rules (no absolute paths,
+project and go through `project::resolve`: `platypus_core::resolve_asset`'s rules (no absolute paths,
 drives, schemes or `..`), and through symlinks the real path must still be inside. `copyIn`'s
 sources are the exception, being outside: only paths dropped on the window this session
 (`EditorHost::allow_sources`, fed by the file drag code) are allowed. A copy creates at most
@@ -72,16 +72,16 @@ sources are the exception, being outside: only paths dropped on the window this 
 
 `editor.openFile` resolves a relative path against the current folder, the UI's folder, then the
 source tree the program was built from, taking the first where it exists. The command comes from
-`IRON_EDITOR_OPEN` if set: split on spaces (double quotes group), with `{file}`, `{line}` and
+`PLATYPUS_EDITOR_OPEN` if set: split on spaces (double quotes group), with `{file}`, `{line}` and
 `{col}` filled in, e.g. `subl "{file}:{line}:{col}"`. Otherwise it is `code -g file:line:col` when
 `code` is on PATH (`which` tries PATHEXT's extensions on Windows, where it is `code.cmd`, and the
 process gets `CREATE_NO_WINDOW`). With neither, it logs how to set one up.
 
-## `@iron/editor-ui`
+## `@platypus/editor-ui`
 
 Each component has a model module of plain functions (tested with `bun test` without React) and a
 React component that draws it. Styles are in `editor-ui.css` (bundled into the app's `game.css`),
-coloured through `--iron-*` custom properties.
+coloured through `--platypus-*` custom properties.
 
 ### MenuBar ([menu.ts](../js/editor-ui/src/menu.ts), [MenuBar.tsx](../js/editor-ui/src/MenuBar.tsx))
 
@@ -115,13 +115,13 @@ JSON; `parseLayout` drops unknown tabs and returns null for malformed input.
 
 `Dock` draws splits as flex rows or columns whose children have `flexGrow` = their fraction and
 `flexBasis: 0`, with `SPLITTER`-pixel splitters between them, and groups as a `TAB_BAR`-high tab
-strip over the active panel. Iron has no layout read-back for scripts, so `computeRects` works out
+strip over the active panel. Platypus has no layout read-back for scripts, so `computeRects` works out
 the same rects in JS from the `rect` prop (the dock's place on screen); panels get their content
 box from it (`render({ x, y, width, height })`: the size below the tab strip, and where it is on screen in UI
 pixels, for a camera drawing into it), and drags use it:
 
 - **Seeing through.** A panel with `seeThrough: true` gets a transparent group background (the
-  `see-through` class), and `.iron-dock` has no background of its own, so what is drawn under the UI (a
+  `see-through` class), and `.platypus-dock` has no background of its own, so what is drawn under the UI (a
   camera's view of the world) shows in the panel's box. Other groups keep the panel colour.
 - **Splitters** take pointer capture on press and resize from the layout as it was when the drag
   started (pixels moved divided by the split's free space).
@@ -156,7 +156,7 @@ rotated square with two borders), since system fonts may lack the triangle glyph
 
 ### Console ([console.ts](../js/editor-ui/src/console.ts), [log.ts](../js/editor-ui/src/log.ts), [Console.tsx](../js/editor-ui/src/Console.tsx))
 
-`log.ts` installs `__iron_log`, keeps up to 10,000 `LogEntry`s and is read through
+`log.ts` installs `__platypus_log`, keeps up to 10,000 `LogEntry`s and is read through
 `useSyncExternalStore` (subscribing sends `editor.logHistory` once). The panel has Clear,
 Collapse (identical level and message shown once with a count, `collapse`), a search box over
 message and target, and Info / Warn / Error toggles with counts (`countLevels`, debug counts as
@@ -184,7 +184,7 @@ inside a folder. Double-click or Enter opens a folder, Backspace goes up. It use
   the result and lists the folder again.
 
 `useScreenSize()` gives the window size in UI pixels, re-rendering on `Screen.onChange` (added to
-`@iron/engine` for this).
+`@platypus/engine` for this).
 
 ## The Scene view ([SceneView.tsx](../js/editor-ui/src/SceneView.tsx), [scene-camera.ts](../js/editor-ui/src/scene-camera.ts), [frame.ts](../js/editor-ui/src/frame.ts))
 
@@ -290,7 +290,7 @@ see-through panels show the world.
   The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes have goldens (`M5-RND-22`, `-23`).
 - Rust units in `editor.rs` (`M5-EDT-16`, `-17`) and `logging.rs` (`M5-EDT-15`); `project.rs`
   (`M5-DND-07`); `project.test.ts` and `project-browser.test.tsx` (`M5-DND-08`, `-10`).
-- `bun run screenshots editor` renders `tests/output/editor.png` with `iron_editor` (`M5-EDT-21`,
+- `bun run screenshots editor` renders `tests/output/editor.png` with `platypus_editor` (`M5-EDT-21`,
   checked by eye). There is no golden: the editor uses system fonts.
 
 ## Limits

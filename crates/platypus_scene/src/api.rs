@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The scene's script API, declared once with `#[iron_api]` (see `docs/iron-api.md`): the
+//! The scene's script API, declared once with `#[platypus_api]` (see `docs/platypus-api.md`): the
 //! `Scene` namespace of `GameObject` handles and `Vector3` / `Quaternion` values. It sits next to
 //! the op-based `ScriptScene`, which keeps working; this is what compiled scripts call directly.
 //!
@@ -9,8 +9,8 @@
 
 use crate::{ObjectId, Scene, Transform};
 use glam::{Quat, Vec3};
-use iron_api::{Handle, context, iron_api};
-use iron_math::{Q, V3};
+use platypus_api::{Handle, context, platypus_api};
+use platypus_math::{Q, V3};
 use std::cell::Cell;
 
 thread_local! {
@@ -154,7 +154,7 @@ fn none() -> ObjectId {
     ObjectId::from_raw(0)
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "Scene",
     quickjs,
     handles(GameObject = ObjectId, Transform = TransformRef),
@@ -169,7 +169,7 @@ pub mod scene_api {
         world_pose,
     };
     use glam::{Quat, Vec3};
-    use iron_api::Handle;
+    use platypus_api::Handle;
 
     // `GameObject`: creating, destroying, flags and the transform.
     impl ObjectId {

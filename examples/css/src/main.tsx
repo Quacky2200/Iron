@@ -105,7 +105,7 @@ function App() {
     <box className="app">
       <Accent tick={tick} />
       <Text className="title" onDoubleClick={() => setTitleClicks(titleClicks + 1)}>
-        CSS in <Span className="brand">Iron</Span>
+        CSS in <Span className="brand">Platypus</Span>
         {titleClicks > 0 ? ` (double-clicked ${titleClicks}x)` : ""}
       </Text>
 

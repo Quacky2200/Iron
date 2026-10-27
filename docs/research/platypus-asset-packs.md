@@ -1,25 +1,25 @@
 # Asset packs: scene data packs for release builds (design)
 
-Status: **design, 2026-10-21.** The container crate `crates/iron_pack` (format, LZ4 codec, writer, reader, the layered asset file
-system) is built and tested (`M9-API-1100..1112`); nothing in `iron_app` or `iron-build` uses it yet. The executable step list is
-`docs/research/iron-asset-packs-plan.md`. Decisions for the user are in section 10.
+Status: **design, 2026-10-21.** The container crate `crates/platypus_pack` (format, LZ4 codec, writer, reader, the layered asset file
+system) is built and tested (`M9-API-1100..1112`); nothing in `platypus_app` or `platypus-build` uses it yet. The executable step list is
+`docs/research/platypus-asset-packs-plan.md`. Decisions for the user are in section 10.
 
-The user's request: games will have gigabytes of assets, so the packaged executable holds only the game code (`game.irbundle` or the
+The user's request: games will have gigabytes of assets, so the packaged executable holds only the game code (`game.pbundle` or the
 AOT object), `game.css`, the icon and the metadata. Every asset goes into **packs**: one per scene with what only that scene uses, a
 shared pack for what several scenes use, a global pack for what code and UI can load at any time. No loose `png`/`glb`/`wav` files ship.
 
-## 1. What others do, and what Iron takes
+## 1. What others do, and what Platypus takes
 
-| Engine | Container | Split | Lookup | Iron takes |
+| Engine | Container | Split | Lookup | Platypus takes |
 |---|---|---|---|---|
 | Unity (built-in) | `level<N>` + `sharedassets<N>.assets` serialized files, `resources.assets`, `.resS` streamed blobs | per scene; shared by first scene that needs it; `Resources/` folders always in | file id + path id | per-scene packs, a global pack, `resources/` folder semantics, streamed blobs as uncompressed aligned entries |
 | Unity Addressables / AssetBundles | LZ4 or LZMA bundles, a catalog | by group, dependencies between bundles | address (string) or GUID | catalog = `data/index.json`, GUID and path addressing, LZ4 chunk compression |
 | Unreal | `.pak` (or IoStore `.utoc`/`.ucas`), chunked, per-chunk compression, mount order and patch paks | chunk ids from asset manager rules | path hash index | per-chunk compression, a path-hash index, mount order with patch packs overriding |
 | Godot | `.pck` (one file, can be appended to the exe), patches as later `.pck` | none by default | path | packs can sit inside a larger file (APK, exe) |
 
-## 2. The pack container (`.irpk`, version 1)
+## 2. The pack container (`.ppk`, version 1)
 
-Implemented in `crates/iron_pack/src/format.rs`. Little-endian everywhere (read with `from_le_bytes`, so big-endian hosts read the same
+Implemented in `crates/platypus_pack/src/format.rs`. Little-endian everywhere (read with `from_le_bytes`, so big-endian hosts read the same
 files). All offsets are `u64` from the **start of the pack** (a pack may live inside an APK or another file), so packs over 4 GiB work.
 
 ```text
@@ -80,7 +80,7 @@ zstd. A chunk is stored compressed only when that saves at least 1/16 of it (mp3
   straight from the map). `OpenMode::Read` uses positional reads instead (`seek_read` / `read_exact_at`), for 32-bit targets and
   platforms where mapping is unwelcome. `Pack::from_bytes` takes a `Vec<u8>` (tests, downloaded packs).
 - *Integrity*: CRC-32 per chunk (checked on every compressed chunk; on stored chunks while `set_verify(true)`, the default), CRC-32
-  of the TOC and header, 128-bit content hash per entry (`Pack::verify()` and `iron-build pack --verify` check them all).
+  of the TOC and header, 128-bit content hash per entry (`Pack::verify()` and `platypus-build pack --verify` check them all).
 - *Dedupe*: entries with the same bytes (content hash + size + compress flag) share chunks inside a pack.
 - *Deterministic*: the bytes depend only on the entries added and their order (no time, user, machine). The TOC is sorted, strings are
   interned in TOC order, chunk boundaries are fixed. `M9-API-1105` builds twice and compares.
@@ -98,7 +98,7 @@ zstd. A chunk is stored compressed only when that saves at least 1/16 of it (mp3
 | model | `IRMD` v1 from `cook.rs` (description JSON, f32 vertex streams, u32 indices, skins, its textures as `IRTX`) | cooked | yes |
 | audio | the source file (wav, ogg, mp3, flac) | source | wav yes, others no |
 | font | the source file (ttf, otf, woff2) | source | yes |
-| scene, prefab | cooked `iron.scene` v1 JSON (section 5) | cooked | yes |
+| scene, prefab | cooked `platypus.scene` v1 JSON (section 5) | cooked | yes |
 | css url() assets over 32 KiB | the file `css.rs` copied to `dist/` (`name-<hash>.ext`) | source | per kind |
 | data (json, txt, bin) | the file | source | yes |
 
@@ -110,14 +110,14 @@ release build's `Assets.importer(path)` and `Assets.pathToGuid` answer from the 
 
 ```text
 <release>/
-  MyGame.exe                code (irbundle or AOT), game.css, icon, package.json metadata
+  MyGame.exe                code (pbundle or AOT), game.css, icon, package.json metadata
   data/
     index.json              the manifest: packs in mount order, their ids, scene -> pack
-    global.irpk             assets named by code literals, CSS, fonts, resources/ (always mounted)
-    shared.irpk             assets used by two or more scenes
-    scene-level1.irpk       scenes/level1.scene.json + what only it uses
-    scene-level2.irpk
-    patch-0001.irpk         (later) changed entries and tombstones
+    global.ppk             assets named by code literals, CSS, fonts, resources/ (always mounted)
+    shared.ppk             assets used by two or more scenes
+    scene-level1.ppk       scenes/level1.scene.json + what only it uses
+    scene-level2.ppk
+    patch-0001.ppk         (later) changed entries and tombstones
   dlc/<id>/index.json       (later) more packs, mounted after the base
   mods/<name>/...           (later, if the game allows mods) loose files or packs, mounted last
 ```
@@ -131,15 +131,15 @@ asset delivery, DLC), and a natural unit for prefetch and unload.
 
 ```json
 {
-  "format": "iron.packs",
+  "format": "platypus.packs",
   "version": 1,
-  "identifier": "dev.iron.scenes",
+  "identifier": "dev.platypus.scenes",
   "build": "6f1c...32 hex: content hash of the pack ids in order",
   "codec": "lz4",
   "packs": [
-    { "name": "global", "file": "global.irpk", "id": "32 hex", "size": 81234, "entries": 12, "role": "global", "plan": "32 hex" },
-    { "name": "shared", "file": "shared.irpk", "id": "32 hex", "size": 4096, "entries": 2, "role": "shared", "plan": "32 hex" },
-    { "name": "scene-level1", "file": "scene-level1.irpk", "id": "32 hex", "size": 30123, "entries": 5, "role": "scene",
+    { "name": "global", "file": "global.ppk", "id": "32 hex", "size": 81234, "entries": 12, "role": "global", "plan": "32 hex" },
+    { "name": "shared", "file": "shared.ppk", "id": "32 hex", "size": 4096, "entries": 2, "role": "shared", "plan": "32 hex" },
+    { "name": "scene-level1", "file": "scene-level1.ppk", "id": "32 hex", "size": 30123, "entries": 5, "role": "scene",
       "scene": "scenes/level1.scene.json", "needs": ["global", "shared"], "plan": "32 hex" }
   ],
   "scenes": { "scenes/level1.scene.json": "scene-level1" }
@@ -153,7 +153,7 @@ folder is an error naming the pack, not wrong assets). `plan` is the hash of the
 
 ### 3.2 The layered file system
 
-`iron_pack::Vfs` (built): a stack of `AssetSource`s; lookups go from the last mounted down and stop at the first answer, a tombstone
+`platypus_pack::Vfs` (built): a stack of `AssetSource`s; lookups go from the last mounted down and stop at the first answer, a tombstone
 answers "deleted". Sources: `DirSource` (a game folder; `.meta` GUIDs scanned at creation, `rescan()` after changes), `PackSource` (a
 mounted pack). The same calls serve both:
 
@@ -181,34 +181,34 @@ impl Vfs {
 }
 ```
 
-Path rules are `iron_core::resolve_asset`'s (relative, no `..`, no schemes or drives), normalized (`./a\b` -> `a/b`), case-sensitive.
-Dev loop: `Vfs::dir(game)`; the app keeps its `.iron/cooked` freshness check for loose files (`DirSource` never claims a cooked form).
-Release: packs from `data/index.json`, patches, DLC, mods on top. Testing a release layout in the dev loop: `iron <game> --packs`
+Path rules are `platypus_core::resolve_asset`'s (relative, no `..`, no schemes or drives), normalized (`./a\b` -> `a/b`), case-sensitive.
+Dev loop: `Vfs::dir(game)`; the app keeps its `.platypus/cooked` freshness check for loose files (`DirSource` never claims a cooked form).
+Release: packs from `data/index.json`, patches, DLC, mods on top. Testing a release layout in the dev loop: `platypus <game> --packs`
 mounts `<game>/dist/data` instead of the folder.
 
 ## 4. Runtime seam
 
-### 4.1 Where assets are read today (all through `iron_core::resolve_asset` + `std::fs`)
+### 4.1 Where assets are read today (all through `platypus_core::resolve_asset` + `std::fs`)
 
 | # | Site | What | Change |
 |---|---|---|---|
-| 1 | `crates/iron_app/src/world_view.rs:656-682` (`texture_op`) | textures: cooked check (`cook::cooked_texture`), else `resolve_asset` + `fs::read` + `image` | `vfs.read_cooked(src)` first (packs), then the dev cooked check, then `vfs.read(src)` |
+| 1 | `crates/platypus_app/src/world_view.rs:656-682` (`texture_op`) | textures: cooked check (`cook::cooked_texture`), else `resolve_asset` + `fs::read` + `image` | `vfs.read_cooked(src)` first (packs), then the dev cooked check, then `vfs.read(src)` |
 | 2 | `world_view.rs:482` (`load_model`) -> `cook::cooked_model`, `models::load` (`models.rs:111-115`), `models::read_uri` (`models.rs:73-87`, glTF external buffers/images) | models | `vfs.read_cooked`, then `models::load(&Vfs, src, ids)` with `read_uri` over the Vfs |
-| 3 | `crates/iron_app/src/main.rs:2405-2427` (`load_sound`) | `audio.load` | `vfs.read(src)`; streams pass `Bytes` (no copy, 4.4) |
+| 3 | `crates/platypus_app/src/main.rs:2405-2427` (`load_sound`) | `audio.load` | `vfs.read(src)`; streams pass `Bytes` (no copy, 4.4) |
 | 4 | `main.rs:2379-2403` (`load_font`), `main.rs:2526-2536` (`add_stylesheet` `@import` and `@font-face`) | fonts, runtime stylesheets | `vfs.read` / `vfs.read_to_string` |
 | 5 | `main.rs:1157-1172` (`asset.readText` op) | text files for QuickJS games | `vfs.read_to_string` |
-| 6 | `crates/iron_app/src/native.rs:252-275` (`load_requested_scenes`) | scene files (`SceneManager.loadSceneAsync`) | `vfs.read_to_string` |
-| 7 | `crates/iron_app/src/cursor.rs:12-18` | cursor images | `vfs.read` |
-| 8 | `crates/iron_render/src/ui/images.rs:166-173` (SVG), `:220-240` (UI images), root set by `ui/mod.rs:643 set_asset_root` | CSS `url()` / `<image>` | `set_assets(Vfs)`; `vfs.read(url)` |
-| 9 | `crates/iron_app/src/asset_db.rs:12` (`scan`, `.meta` files) -> `__iron_info.assets` / `iron_engine_api::assets::set_assets` | GUIDs, importer settings | from `vfs` entries (`Vfs::entries()`, step 1) |
-| 10 | `crates/iron_app/src/cook.rs:586-606` (`fresh`, `cooked_texture`, `cooked_model`) | dev cooked files | unchanged, given `vfs.root()` (dev only) |
-| 11 | `crates/iron_app/src/reload.rs` (`AssetWatcher`) | dev hot reload | unchanged; off when no loose source is mounted |
-| 12 | `crates/iron_app/src/info.rs:46,81` (`package.json`, icon), `main.rs:180,552,2442,2513` (bundle, `game.css`) | exe metadata | not assets: embedded by `iron-build package`; unchanged |
-| 13 | `crates/iron_app/src/project.rs`, `editor.rs`, `file_drop.rs` | the editor's project files | not assets at run time: unchanged (the editor works on loose folders) |
+| 6 | `crates/platypus_app/src/native.rs:252-275` (`load_requested_scenes`) | scene files (`SceneManager.loadSceneAsync`) | `vfs.read_to_string` |
+| 7 | `crates/platypus_app/src/cursor.rs:12-18` | cursor images | `vfs.read` |
+| 8 | `crates/platypus_render/src/ui/images.rs:166-173` (SVG), `:220-240` (UI images), root set by `ui/mod.rs:643 set_asset_root` | CSS `url()` / `<image>` | `set_assets(Vfs)`; `vfs.read(url)` |
+| 9 | `crates/platypus_app/src/asset_db.rs:12` (`scan`, `.meta` files) -> `__platypus_info.assets` / `platypus_engine_api::assets::set_assets` | GUIDs, importer settings | from `vfs` entries (`Vfs::entries()`, step 1) |
+| 10 | `crates/platypus_app/src/cook.rs:586-606` (`fresh`, `cooked_texture`, `cooked_model`) | dev cooked files | unchanged, given `vfs.root()` (dev only) |
+| 11 | `crates/platypus_app/src/reload.rs` (`AssetWatcher`) | dev hot reload | unchanged; off when no loose source is mounted |
+| 12 | `crates/platypus_app/src/info.rs:46,81` (`package.json`, icon), `main.rs:180,552,2442,2513` (bundle, `game.css`) | exe metadata | not assets: embedded by `platypus-build package`; unchanged |
+| 13 | `crates/platypus_app/src/project.rs`, `editor.rs`, `file_drop.rs` | the editor's project files | not assets at run time: unchanged (the editor works on loose folders) |
 
-`crates/iron_render_api` and `crates/iron_audio` read no files (they queue load requests: `RenderCommand::Texture`/`Model` with a
-`src`, `AudioCommand::Load` with a path; the host reads); `crates/iron_scenes` reads none (`request_load` / `finish_load(text)`).
-So the seam is the app plus one function in `iron_render`: about 15 call sites, each `resolve_asset(root, src)` + `fs::read(path)`
+`crates/platypus_render_api` and `crates/platypus_audio` read no files (they queue load requests: `RenderCommand::Texture`/`Model` with a
+`src`, `AudioCommand::Load` with a path; the host reads); `crates/platypus_scenes` reads none (`request_load` / `finish_load(text)`).
+So the seam is the app plus one function in `platypus_render`: about 15 call sites, each `resolve_asset(root, src)` + `fs::read(path)`
 becoming `vfs.read(src)` (the `data:` branch disappears into `Vfs::read`).
 
 ### 4.2 Cooked forms from packs
@@ -227,7 +227,7 @@ Models: `IRMD` is used as is (`model_from_bytes`). UI images: the source form; w
 ### 4.3 Streaming
 
 - **Audio.** `audio.load(path, stream = true)`: today the whole file is read into a `Vec` and `StreamingSoundData::from_cursor(Cursor<Vec>)`
-  decodes from it. With packs, `Cursor<iron_pack::Bytes>` over the mapped, stored (uncompressed) entry: no copy, the OS pages it in
+  decodes from it. With packs, `Cursor<platypus_pack::Bytes>` over the mapped, stored (uncompressed) entry: no copy, the OS pages it in
   as the decoder reads (kira's `from_cursor` takes `T: AsRef<[u8]> + Send + Sync + 'static`). Positional-read mode: a `MediaSource`
   over `read_range` (symphonia is in the tree through kira).
 - **Textures** (later, `IRTX` v2): mips stored smallest first with a table of `(offset u64, size u64)` per mip; the loader reads the
@@ -237,7 +237,7 @@ Models: `IRMD` is used as is (`model_from_bytes`). UI images: the source form; w
 
 ### 4.4 Loading API (Rust side, later steps)
 
-`iron_app::asset_jobs` (new): a small worker pool (2 threads by default, `IRON_ASSET_THREADS`) taking requests `(key, priority)` from a
+`platypus_app::asset_jobs` (new): a small worker pool (2 threads by default, `PLATYPUS_ASSET_THREADS`) taking requests `(key, priority)` from a
 priority queue (`High` = scene loading, `Normal` = script loads, `Low` = prefetch), doing `vfs.read` + decode (image decode, `IRTX`/`IRMD`
 parse, static audio decode) off the main thread; finished results come back through a channel and the main thread uploads them with
 a per-frame budget (default 8 ms of uploads or 64 MiB). A request returns a handle id; the existing per-asset `isLoaded` / `failed`
@@ -251,7 +251,7 @@ of least-recently-drawn streamed textures once v2 exists.
 Existing calls keep working unchanged: they already name assets by path or `guid:<hex>` (`Assets.resolve`), and the host reads through
 the Vfs: `Texture.load(path)`, `Model.load(path)`, `audio.load(path, stream)`, `loadFont`, `SceneManager.loadScene` /
 `loadSceneAsync(path)`, `Cursor.setCursor(path)`, CSS `url()`, `Assets.guidToPath` / `pathToGuid` / `importer` / `count` / `pathAt`.
-New (namespace `Assets`, `iron_engine_api::assets`, step 10):
+New (namespace `Assets`, `platypus_engine_api::assets`, step 10):
 
 ```ts
 Assets.exists(path: string): boolean
@@ -269,19 +269,19 @@ generic over the boundary; the compiler may lower `Assets.load<Texture>(g)` to i
 
 ## 5. Scenes and prefabs
 
-`iron.scene` v1 JSON stays the authoring and the runtime format (`crates/iron_scenes/src/data.rs` reads it with `serde_json`; a 12 KiB
+`platypus.scene` v1 JSON stays the authoring and the runtime format (`crates/platypus_scenes/src/data.rs` reads it with `serde_json`; a 12 KiB
 scene parses in tens of microseconds, so a binary form buys nothing yet). The **cooked scene** in a pack is the same JSON:
 
 1. minified (no indentation: the three example scenes shrink 2.7 to 3.1 times; LZ4 gives 5x on the pretty-printed files);
 2. every asset reference carries its GUID: `assets` table entries (`{"type":"Texture","src":...}`) get `"guid"` when the file has a
-   `.meta`; `{"$type":"Sound","src":...}` and the `"model"` extra (`iron_kinds::ObjectExtra`) likewise. The loader already prefers the
+   `.meta`; `{"$type":"Sound","src":...}` and the `"model"` extra (`platypus_kinds::ObjectExtra`) likewise. The loader already prefers the
    GUID (`resources.rs:619-631`: `guid_to_path` then `src`), so renamed files keep loading;
 3. nothing else changes (component kinds, `$ref`s, render settings).
 
 A scene file is an entry of kind `scene` (cooked) in its own scene pack; `SceneManager.loadSceneAsync(path)` reads it through the Vfs
 (site 6). Prefab files (`*.prefab.json`) are kind `prefab`, placed like assets (a prefab used by one scene lives in that scene's pack).
 
-## 6. The build: `iron-build pack <game>`
+## 6. The build: `platypus-build pack <game>`
 
 ### 6.1 Reference graph
 
@@ -289,11 +289,11 @@ Roots and edges, all deterministic (sorted sets):
 
 | Source | Found how | Goes to |
 |---|---|---|
-| code string literals naming an existing asset (`referenced_assets` in `tools/iron_build/src/lib.rs:261`) | existing scan of the bundled source | global; `*.scene.json` / `*.prefab.json` literals are scene / prefab roots instead |
-| `package.json` `iron.startScene`, `iron.scenes` (new optional list) | config | scene roots |
+| code string literals naming an existing asset (`referenced_assets` in `tools/platypus_build/src/lib.rs:261`) | existing scan of the bundled source | global; `*.scene.json` / `*.prefab.json` literals are scene / prefab roots instead |
+| `package.json` `platypus.startScene`, `platypus.scenes` (new optional list) | config | scene roots |
 | scene / prefab JSON | walk every value: `assets` table entries (`src`, `guid`), `$type` objects with `src`/`clip`, `"model"` extras, and **any string** that names an existing asset file (the same test as code literals) | that scene; a string naming another `*.scene.json` is a scene root, not an asset |
 | `game.css` `url()` copies (files over 32 KiB; smaller ones are inlined `data:` URLs already) and `@font-face` sources | `css.rs` output (`copied`) | global, source form |
-| `resources/**` under the game folder (Unity's `Resources`) and `iron.pack.include` globs | config | global |
+| `resources/**` under the game folder (Unity's `Resources`) and `platypus.pack.include` globs | config | global |
 | glTF external files (`.bin`, images) | inputs of the cooked model | inside the model's payload, not separate entries |
 
 Assets nothing references are left out, listed by `--report` (`unreferenced: N files, M bytes`).
@@ -312,7 +312,7 @@ Assets nothing references are left out, listed by `--report` (`unreferenced: N f
 
 ### 6.3 Incremental and deterministic
 
-- Cooked payloads are cached in `<game>/.iron/cache/packs/<key>.bin` with `key = content_hash(source bytes, external glTF files' bytes,
+- Cooked payloads are cached in `<game>/.platypus/cache/packs/<key>.bin` with `key = content_hash(source bytes, external glTF files' bytes,
   importer JSON, cooker version, form)`; a changed `.meta` or a cooker version bump recooks.
 - Each pack's planned entry list (GUID, path, kind, flags, meta, payload key) hashes to `plan`; when `data/index.json` already lists the
   same `plan` and the pack file's header id matches, the pack is not rewritten (its mtime stays: the platform uploader sees no change).
@@ -323,20 +323,20 @@ Assets nothing references are left out, listed by `--report` (`unreferenced: N f
 ### 6.4 Commands
 
 ```text
-iron-build pack <game> [--codec lz4|deflate|none] [--out <dir>] [--verify] [--report] [--no-cook]
-iron-build build <game> --release      # build + pack (dist/data/), no loose assets copied into dist/
-iron-build package <game> --release    # (package agent's command) exe + data/ next to it
+platypus-build pack <game> [--codec lz4|deflate|none] [--out <dir>] [--verify] [--report] [--no-cook]
+platypus-build build <game> --release      # build + pack (dist/data/), no loose assets copied into dist/
+platypus-build package <game> --release    # (package agent's command) exe + data/ next to it
 ```
 
-- `pack` needs cooked files: phase A runs `iron <game> --cook` (the engine's cooker, `find_iron`) and reads `.iron/cooked/`; phase B
-  moves the cooker into `crates/iron_cook` so `iron-build` links it (plan step 15).
+- `pack` needs cooked files: phase A runs `platypus <game> --cook` (the engine's cooker, `find_platypus`) and reads `.platypus/cooked/`; phase B
+  moves the cooker into `crates/platypus_cook` so `platypus-build` links it (plan step 15).
 - `build` without `--release` keeps today's loose `dist/` copy (dev loop, hot reload).
 - `package --release`: the executable holds the code, `game.css`, the icon and the metadata; `data/` holds every asset. The app looks for
   `data/index.json` next to the executable when it carries an embedded bundle.
 
 ### 6.5 Mobile
 
-- **Android**: packs go into the APK/AAB under `assets/data/` **stored uncompressed** (`androidResources { noCompress += ["irpk", "json"] }`),
+- **Android**: packs go into the APK/AAB under `assets/data/` **stored uncompressed** (`androidResources { noCompress += ["ppk", "json"] }`),
   opened with `AAssetManager_open` + `AAsset_openFileDescriptor64` (fd, offset, length) -> `Pack::open_at(file, offset, len, Map, ..)`
   (built and tested, `M9-API-1108`). Over 200 MB: Play Asset Delivery install-time packs (same API); scene packs as fast-follow or
   on-demand packs later (the manifest's `role`/`needs` say which). OBB is not needed.
@@ -344,9 +344,9 @@ iron-build package <game> --release    # (package agent's command) exe + data/ n
   App Store rules about downloaded code do not apply; the code is AOT-compiled (no JIT on iOS) and lives in the executable.
 - 32-bit targets: map only packs under 1 GiB, otherwise `OpenMode::Read`.
 
-## 7. Measurements (2026-10-21, this machine: Windows 11, 24 logical cores; release build of `crates/iron_pack` through a probe)
+## 7. Measurements (2026-10-21, this machine: Windows 11, 24 logical cores; release build of `crates/platypus_pack` through a probe)
 
-Corpus: the examples' assets (`examples/*/assets`, scenes, the local Charm fonts), their cooked forms (`iron_app --cook` on copies), and
+Corpus: the examples' assets (`examples/*/assets`, scenes, the local Charm fonts), their cooked forms (`platypus --cook` on copies), and
 as a stand-in for real game textures (the examples' textures are tiny pixel art) the 252 renders in `tests/output` + `tests/golden`,
 cooked the same way. Identical files across examples were counted once (20.9 MB of duplicates skipped). Ratios are raw bytes over
 stored chunk bytes; read speeds include the CRC check and a copy into a `Vec`, warm OS cache.
@@ -406,7 +406,7 @@ deflate's ratio at near-LZ4 read speed, but no zstd crate is in the dependency t
 codec later without changing packs), deflate selectable (`--codec deflate`) for download-size-bound targets (mobile), zstd codec id 3
 reserved for a user decision.
 
-**Codec decision (2026-10-21).** The DirectStorage and codec research is `docs/research/iron-directstorage-and-codecs.md`. Outcome:
+**Codec decision (2026-10-21).** The DirectStorage and codec research is `docs/research/platypus-directstorage-and-codecs.md`. Outcome:
 LZ4 stays the default on every platform; zstd (codec 3) is the recommended second codec once its crate is OKed; xz/LZMA and Brotli are
 ruled out for load-time data; a Windows GPU codec (GDeflate, reserved as codec 4, or DirectStorage 1.4 zstd) is **pending** the
 `CODEC-1` prototype in that note. The design stays codec-pluggable: the codec is a byte per chunk, the manifest names it, a build can
@@ -419,10 +419,10 @@ are four GDeflate tiles and the zstd shader's preferred size; entries are alread
   read-only release files; the dev loop uses loose files. Positional-read mode avoids it where it matters.
 - **The 1/16 rule and contiguity**: a large entry with a few compressible chunks becomes non-contiguous (copied on read). Audio is
   marked `compress: false` by kind so streams stay zero-copy.
-- **Code literals**: dynamic paths (`"assets/level" + n + ".png"`) are invisible to the scan; `resources/` and `iron.pack.include` cover
+- **Code literals**: dynamic paths (`"assets/level" + n + ".png"`) are invisible to the scan; `resources/` and `platypus.pack.include` cover
   them, and a release run logs `asset not in any pack: <path>` once per path.
 - **Two forms per code-literal texture** cost size; the `.meta` `pack` key is the escape hatch.
-- **Cooker in the engine binary** (phase A): `iron-build pack` needs a built `iron_app`; phase B (`crates/iron_cook`) removes that.
+- **Cooker in the engine binary** (phase A): `platypus-build pack` needs a built `platypus_app`; phase B (`crates/platypus_cook`) removes that.
 - **RGBA8 fallback in the cooker** for sizes that are not multiples of 4 inflates packs (measured above); padding to the next multiple
   of 4 with a UV scale, or BC on the padded image, is a cooker follow-up.
 
@@ -437,13 +437,13 @@ deterministic packs keep those diffs small).
 
 1. **Codec**: LZ4 default with deflate as an option (recommended), or add zstd (needs a new crate: `zstd` (C, `cc`) or `ruzstd`
    (pure Rust, decoder only; the build would still need an encoder)). Windows GPU decompression (GDeflate or DirectStorage zstd):
-   pending `CODEC-1` in `iron-directstorage-and-codecs.md`.
+   pending `CODEC-1` in `platypus-directstorage-and-codecs.md`.
 2. **Encryption/obfuscation**: out of scope (recommended).
 3. **DLC policy**: DLC as extra `index.json` + packs under `dlc/<id>/`, mounted after base and patches, installed-ness decided by the
    platform (Steam's DLC folders, store APIs); can DLC override base assets (recommended yes, as patches do) or only add?
-4. **Mods**: allow loose-file and pack mods from `mods/` mounted last, per game (`iron.mods: true` in `package.json`), or never.
-5. **Unreferenced assets**: leave them out with a report (recommended), with `resources/` and `iron.pack.include` to force them in.
+4. **Mods**: allow loose-file and pack mods from `mods/` mounted last, per game (`platypus.mods: true` in `package.json`), or never.
+5. **Unreferenced assets**: leave them out with a report (recommended), with `resources/` and `platypus.pack.include` to force them in.
 6. **Code-literal textures**: store both forms (recommended, safe) or cooked only.
-7. **Shared packs**: one `shared.irpk` (recommended to start) or one per set of scenes sharing assets (Unity's per-bundle dependencies;
+7. **Shared packs**: one `shared.ppk` (recommended to start) or one per set of scenes sharing assets (Unity's per-bundle dependencies;
    finer downloads, more files).
 8. **Cooker RGBA8 fallback**: pad odd-sized textures to BC (smaller packs, a UV change) or keep RGBA8.

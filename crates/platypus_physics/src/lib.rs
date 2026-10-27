@@ -12,7 +12,7 @@ pub mod cloth;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use iron_core::Value;
+use platypus_core::Value;
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
 
@@ -93,7 +93,7 @@ impl Batch {
             && self.characters.is_empty()
     }
 
-    /// The batch as `__iron_physics(bodies, contacts, rays, characters)` arguments: flat
+    /// The batch as `__platypus_physics(bodies, contacts, rays, characters)` arguments: flat
     /// number arrays, so a tick crosses the boundary as four arrays rather than objects.
     /// - bodies: `id, px, py, pz, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz` each
     /// - contacts: `started (1/0), a, b, sensor (1/0), speed` each
@@ -197,7 +197,7 @@ pub struct Physics {
     characters: HashMap<ScriptId, (KinematicCharacterController, Option<Vector>)>,
     /// Joints by script id.
     joints: HashMap<ScriptId, ImpulseJointHandle>,
-    /// Movement axes Iron holds in place itself (the value each is held at), instead of
+    /// Movement axes Platypus holds in place itself (the value each is held at), instead of
     /// rapier's lock: see [`Self::set_constraints`].
     pins: HashMap<ScriptId, [Option<f32>; 3]>,
     /// A fixed body for joints to the world (`null` for the second body), made when
@@ -832,13 +832,13 @@ impl Physics {
     /// A movement axis locked together with both turns across it (the usual way to keep a
     /// body in a plane) isn't given to rapier as a lock: friction along that axis would have
     /// no mass, and rapier 0.36's 3D friction solve then drops friction along the other
-    /// direction too, so the body slides as if on ice. Iron holds that axis in place itself
+    /// direction too, so the body slides as if on ice. Platypus holds that axis in place itself
     /// instead, after every step ([`Self::hold_pins`]).
     fn set_constraints(&mut self, id: ScriptId, c: &[Value]) -> Result<(), String> {
         let allow = |i: usize| !matches!(c.get(i), Some(Value::Bool(false)));
         let moves = [allow(0), allow(1), allow(2)];
         let turns = [allow(3), allow(4), allow(5)];
-        // Locked movement with both turns across it locked: pinned by Iron.
+        // Locked movement with both turns across it locked: pinned by Platypus.
         let pinned: [bool; 3] =
             std::array::from_fn(|i| !moves[i] && !turns[(i + 1) % 3] && !turns[(i + 2) % 3]);
         let body = self.body_mut(id)?;

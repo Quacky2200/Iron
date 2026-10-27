@@ -5,7 +5,7 @@
 // and focuses the field through a ref. Clicks elsewhere count on the panel. The
 // field (tabIndex 0) shows the keys typed into it; Escape blurs it. The name input
 // is controlled: it upper-cases what's typed and refuses digits.
-import { createRoot, Input, type IronElement, Text } from "@iron/react";
+import { createRoot, Input, type PlatypusElement, Text } from "@platypus/react";
 import { useRef, useState } from "react";
 
 function App() {
@@ -14,7 +14,7 @@ function App() {
   const [typed, setTyped] = useState("");
   const [focused, setFocused] = useState(false);
   const [name, setName] = useState("");
-  const field = useRef<IronElement>(null);
+  const field = useRef<PlatypusElement>(null);
   return (
     <box
       className="panel"

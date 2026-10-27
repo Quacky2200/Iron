@@ -9,12 +9,12 @@ let ops: unknown[][] = [];
 
 beforeEach(() => {
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
-  delete globalThis.__iron_info;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
+  delete globalThis.__platypus_info;
   _resetQualityForTests();
 });
 
@@ -51,7 +51,7 @@ describe("QualitySettings", () => {
   });
 
   test("the game's manifest picks the default level and overrides levels", () => {
-    globalThis.__iron_info = {
+    globalThis.__platypus_info = {
       app: {
         name: "g",
         productName: "g",
@@ -82,7 +82,7 @@ describe("QualitySettings", () => {
     QualitySettings.hdr = false;
     expect(ops.filter((o) => o[0] === "render.quality").at(-1)!.slice(10)).toEqual([false, false, 256, false]);
     const on = (platform: string) => {
-      globalThis.__iron_info = {
+      globalThis.__platypus_info = {
         app: { quality: { default: { Android: "Low", iOS: "Medium", default: "Ultra" } } } as never,
         system: { operatingSystemFamily: platform } as never,
       };

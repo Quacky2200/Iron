@@ -1,7 +1,7 @@
 # Transitions and animations (M3d group 7)
 
-How CSS motion works today. The code is [motion.rs](../crates/iron_ui/src/motion.rs) (timing,
-interpolation, parsing, running state) and the restyle hooks in [tree.rs](../crates/iron_ui/src/tree.rs).
+How CSS motion works today. The code is [motion.rs](../crates/platypus_ui/src/motion.rs) (timing,
+interpolation, parsing, running state) and the restyle hooks in [tree.rs](../crates/platypus_ui/src/tree.rs).
 Browser differences are in [differences.md](differences.md). Animation of GameObjects (curves, clips,
 `Animator`, skinning) is a separate system: see [animation-3d.md](animation-3d.md).
 
@@ -92,7 +92,7 @@ All bubble. React side: [react.md](react.md#events-eventsts).
 | ID | Where |
 |---|---|
 | M3-ANI-01 | unit tests in `motion.rs` (timing, interpolation, shorthand parsing) |
-| M3-ANI-02 | `crates/iron_ui/tests/motion.rs` (transitions, events); `js/react/test/events.test.tsx` |
+| M3-ANI-02 | `crates/platypus_ui/tests/motion.rs` (transitions, events); `js/react/test/events.test.tsx` |
 | M3-ANI-03 | unit tests in `motion.rs` and `css.rs` (`@keyframes` parsing); `tests/motion.rs` (running animations); `events.test.tsx` |
 | M3-ANI-04 | `tests/motion.rs` (`@starting-style`, dialog open) |
 | M3-ANI-05 | `tests/motion.rs` (`:outro` removal) |

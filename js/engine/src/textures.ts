@@ -2,7 +2,7 @@
 
 // Textures and sprites (Unity's `Texture2D`, `Sprite` and `SpriteRenderer`). Textures
 // load in the engine (`render.texture`), which reports their sizes back through
-// `__iron_textures` once loaded; sprites are drawn as quads facing the object's +z,
+// `__platypus_textures` once loaded; sprites are drawn as quads facing the object's +z,
 // unlit, sorted with the other see-through things by distance.
 
 import { Assets } from "./assets.ts";
@@ -182,11 +182,11 @@ export class Texture {
   /** Frees it; things still using it draw the magenta missing checker. */
   destroy(): void {
     textures.delete(this.id);
-    __iron_op("render.textureRemove", this.id);
+    __platypus_op("render.textureRemove", this.id);
   }
 
   protected send(): void {
-    __iron_op(
+    __platypus_op(
       "render.texture",
       this.id,
       this.src,
@@ -238,11 +238,11 @@ export class RenderTexture extends Texture {
   protected override send(): void {
     // Called by the base constructor before the size is set.
     if (!this.isLoaded) return;
-    __iron_op("render.renderTexture", this.id, this.width, this.height);
+    __platypus_op("render.renderTexture", this.id, this.width, this.height);
   }
 }
 
-globalThis.__iron_textures = (loaded: [number, number, number][]) => {
+globalThis.__platypus_textures = (loaded: [number, number, number][]) => {
   for (const [id, w, h] of loaded) textures.get(id)?._loaded(w, h);
 };
 
@@ -344,13 +344,13 @@ export class SpriteRenderer extends Component {
     if (!this.started) return;
     const s = this._sprite;
     if (!s) {
-      if (this.shown) __iron_op("render.remove", this.id);
+      if (this.shown) __platypus_op("render.remove", this.id);
       this.shown = false;
       return;
     }
     const c = this._color;
     const r = s.rect;
-    __iron_op(
+    __platypus_op(
       "render.sprite",
       this.id,
       this.gameObject.id,
@@ -372,7 +372,7 @@ export class SpriteRenderer extends Component {
   }
 
   override onDestroy(): void {
-    __iron_op("render.remove", this.id);
+    __platypus_op("render.remove", this.id);
   }
 }
 

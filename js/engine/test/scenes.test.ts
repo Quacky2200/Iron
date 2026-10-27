@@ -30,12 +30,12 @@ let ops: unknown[][] = [];
 beforeEach(() => {
   _resetSceneForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
   register({ Health, Turret });
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 class Health extends Component {
@@ -163,7 +163,7 @@ describe("SceneManager", () => {
     SceneManager.onSceneUnloaded((s) => heard.push(`unloaded ${s.name}`));
     SceneManager.onActiveSceneChanged((p, n) => heard.push(`active ${p.name} -> ${n.name}`));
 
-    const level: SceneData = { format: "iron.scene", version: 1, name: "Level", objects: [{ id: 1, name: "Door" }] };
+    const level: SceneData = { format: "platypus.scene", version: 1, name: "Level", objects: [{ id: 1, name: "Door" }] };
     const added = SceneManager.loadScene(level, "additive");
     expect(SceneManager.sceneCount).toBe(2);
     expect(SceneManager.getActiveScene()).toBe(main);
@@ -186,7 +186,7 @@ describe("SceneManager", () => {
     const music = new GameObject("Music");
     GameObject.dontDestroyOnLoad(music);
     new GameObject("Level 1 stuff");
-    SceneManager.loadScene({ format: "iron.scene", version: 1, name: "Level 2", objects: [] });
+    SceneManager.loadScene({ format: "platypus.scene", version: 1, name: "Level 2", objects: [] });
     expect(GameObject.roots.map((g) => g.name)).toEqual(["Music"]);
     expect(music.scene.name).toBe("DontDestroyOnLoad");
     expect(SceneManager.sceneCount).toBe(1);
@@ -196,23 +196,23 @@ describe("SceneManager", () => {
 
   test("scene-only components are registered without being started", () => {
     register({ Turret }, { spawn: false });
-    expect(globalThis.__iron_registered!()).toEqual(["Health"]);
+    expect(globalThis.__platypus_registered!()).toEqual(["Health"]);
   });
 
   test("loadSceneAsync reads scene files from the game folder", async () => {
     const loading = SceneManager.loadSceneAsync("scenes/level.scene.json", "additive");
     const read = ops.find((o) => o[0] === "asset.readText")!;
     expect(read[2]).toBe("scenes/level.scene.json");
-    globalThis.__iron_asset_text!([read[1] as number, JSON.stringify({ format: "iron.scene", version: 1, name: "Level", objects: [{ id: 1, name: "Rock" }] })]);
+    globalThis.__platypus_asset_text!([read[1] as number, JSON.stringify({ format: "platypus.scene", version: 1, name: "Level", objects: [{ id: 1, name: "Rock" }] })]);
     const scene = await loading;
     expect(scene.path).toBe("scenes/level.scene.json");
     expect(scene.getRootGameObjects()[0]!.name).toBe("Rock");
 
     const missing = SceneManager.loadSceneAsync("nope.json");
     const id = ops.filter((o) => o[0] === "asset.readText").at(-1)![1] as number;
-    globalThis.__iron_asset_text!([id, null]);
+    globalThis.__platypus_asset_text!([id, null]);
     await expect(missing).rejects.toThrow("nope.json");
-    expect(() => SceneManager.loadScene({ name: "x" } as never)).toThrow("iron.scene");
+    expect(() => SceneManager.loadScene({ name: "x" } as never)).toThrow("platypus.scene");
   });
 });
 
@@ -269,7 +269,7 @@ describe("Prefab", () => {
     const saved = SceneManager.getActiveScene().serialize();
     const out = saved.objects.find((o) => o.name === "Outsider")!.children![0]!;
     expect(out.prefab).toBe("prefabs/enemy.prefab.json");
-    expect(() => Prefab.fromData({ format: "iron.scene" })).toThrow("not prefab data");
+    expect(() => Prefab.fromData({ format: "platypus.scene" })).toThrow("not prefab data");
   });
 });
 
@@ -301,13 +301,13 @@ describe("hot reload of made textures", () => {
     const go = new GameObject("Block");
     go.addComponent(MeshRenderer, { mesh: "cube", material: Material.create({ color: new Color(1, 0.5, 0.2, 1), mainTexture: stone }) });
     const sent = ops.find((o) => o[0] === "render.texture")!;
-    const json = globalThis.__iron_save_state!();
+    const json = globalThis.__platypus_save_state!();
 
     // The new code: a fresh scene and texture ids from 1, then the saved state.
     _resetSceneForTests();
     _resetTexturesForTests();
     ops = [];
-    expect(globalThis.__iron_restore_state!(json)).toBe(true);
+    expect(globalThis.__platypus_restore_state!(json)).toBe(true);
 
     const material = GameObject.find("Block")!.getComponent(MeshRenderer)!.material;
     const t = material.mainTexture!;

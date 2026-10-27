@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "iron_core"
+name = "platypus_core"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

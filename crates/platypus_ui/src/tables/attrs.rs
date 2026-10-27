@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The attributes (`IronProps`) of an element. `iron_ui::Attrs::set` implements the [`Scope::Html`]
+//! The attributes (`PlatypusProps`) of an element. `platypus_ui::Attrs::set` implements the [`Scope::Html`]
 //! ones, SVG elements take any name (`Attrs::set_svg`); the JSX lowering handles [`Scope::Core`].
 
 /// Who handles an attribute.
@@ -64,7 +64,7 @@ pub const ATTRS: &[Attr] = &[
     a("id", "string", Html, &[], ""),
     a(
         "style",
-        "IronStyle",
+        "PlatypusStyle",
         Core,
         &[],
         "Inline style; wins over stylesheets (except `!important`).",
@@ -72,7 +72,7 @@ pub const ATTRS: &[Attr] = &[
     a("children", "ReactNode", Core, &[], ""),
     a(
         "ref",
-        "Ref<IronElement | null> | ((el: IronElement | null) => void)",
+        "Ref<PlatypusElement | null> | ((el: PlatypusElement | null) => void)",
         Core,
         &[],
         "Receives the element (`focus()`, `blur()`, `scrollTo()`, `scrollIntoView()`): a ref object, or a function called with the element and with null when it goes.",

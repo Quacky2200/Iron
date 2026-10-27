@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! A single-file game: when this executable carries a payload (`iron-build package`, format in
-//! `iron_core::payload`), the game's *code* (bundle, CSS, `project.json`, icon, and a few tiny
+//! A single-file game: when this executable carries a payload (`platypus-build package`, format in
+//! `platypus_core::payload`), the game's *code* (bundle, CSS, `project.json`, icon, and a few tiny
 //! essentials) is extracted once to a per-user cache folder and the game runs from there.
 //! The assets are not in the payload: they are the `data/` folder beside the exe
 //! (`asset_root.rs` finds it).
@@ -14,10 +14,10 @@
 
 use std::path::{Path, PathBuf};
 
-use iron_core::payload::Archive;
+use platypus_core::payload::Archive;
 
 /// A file in the cache folder that says the extraction finished.
-const DONE: &str = ".iron-extracted";
+const DONE: &str = ".platypus-extracted";
 
 /// The folder of the embedded game, extracting it first if needed; `None` when this
 /// executable has no payload (it is the plain engine host).
@@ -27,7 +27,7 @@ pub fn embedded_game() -> Option<PathBuf> {
         Ok(dir) => dir,
         Err(e) => {
             // No window yet and no log: stderr is all there is.
-            eprintln!("iron: the embedded game could not be unpacked: {e}");
+            eprintln!("platypus: the embedded game could not be unpacked: {e}");
             None
         }
     }
@@ -87,7 +87,7 @@ fn folder_safe(s: &str) -> String {
         .collect()
 }
 
-/// `<per-user cache>/Iron/games`.
+/// `<per-user cache>/Platypus/games`.
 fn cache_root() -> Option<PathBuf> {
     let env = |k: &str| {
         std::env::var_os(k)
@@ -101,7 +101,7 @@ fn cache_root() -> Option<PathBuf> {
     } else {
         env("XDG_CACHE_HOME").or_else(|| Some(env("HOME")?.join(".cache")))?
     };
-    let dir = base.join("Iron").join("games");
+    let dir = base.join("Platypus").join("games");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -109,7 +109,7 @@ fn cache_root() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iron_core::payload::write_payload;
+    use platypus_core::payload::write_payload;
 
     fn exe_with(dir: &Path, name: &str, files: &[(String, Vec<u8>)]) -> PathBuf {
         let path = dir.join(name);
@@ -120,7 +120,8 @@ mod tests {
     }
 
     fn temp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("iron_app_payload_{tag}_{}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("platypus_app_payload_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -130,7 +131,7 @@ mod tests {
     #[test]
     fn an_exe_without_a_payload_is_the_plain_host() {
         let d = temp("plain");
-        let exe = d.join("iron_app.exe");
+        let exe = d.join("platypus.exe");
         std::fs::write(&exe, vec![0u8; 4096]).unwrap();
         assert_eq!(prepare(&exe, &d).unwrap(), None);
     }
@@ -142,13 +143,13 @@ mod tests {
         let cache = d.join("cache");
         std::fs::create_dir_all(&cache).unwrap();
         let v1 = [
-            ("dist/game.irbundle".to_string(), b"one".to_vec()),
+            ("dist/game.pbundle".to_string(), b"one".to_vec()),
             ("assets/a.png".to_string(), vec![1; 100]),
         ];
         let exe = exe_with(&d, "game.exe", &v1);
         let dir = prepare(&exe, &cache).unwrap().unwrap();
         assert_eq!(
-            std::fs::read(dir.join("dist/game.irbundle")).unwrap(),
+            std::fs::read(dir.join("dist/game.pbundle")).unwrap(),
             b"one"
         );
         assert_eq!(
@@ -162,7 +163,7 @@ mod tests {
         // A new build: a new folder, and the old one is gone. Another game's folder stays.
         let other = cache.join("game-extra-0123456789abcdef");
         std::fs::create_dir_all(&other).unwrap();
-        let v2 = [("dist/game.irbundle".to_string(), b"two".to_vec())];
+        let v2 = [("dist/game.pbundle".to_string(), b"two".to_vec())];
         let exe2 = exe_with(&d, "game.exe", &v2);
         let dir2 = prepare(&exe2, &cache).unwrap().unwrap();
         assert_ne!(dir, dir2);

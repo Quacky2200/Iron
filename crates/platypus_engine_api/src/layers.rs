@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `LayerMask`: the 32 render layers. Unity's built-in names come first; the game names the rest in
-//! its `package.json` (`"iron": { "layers": { "8": "Player" } }`), which the host passes to
+//! its `package.json` (`"platypus": { "layers": { "8": "Player" } }`), which the host passes to
 //! [`set_game_layers`]. Masks are numbers (a bit per layer), like `js/engine/src/layers.ts`.
 
-use iron_api::iron_api;
+use platypus_api::platypus_api;
 use std::cell::RefCell;
 
 const BUILT_IN: [(u32, &str); 5] = [
@@ -19,7 +19,7 @@ thread_local! {
     static GAME: RefCell<Vec<(u32, String)>> = const { RefCell::new(Vec::new()) };
 }
 
-/// The game's layer names (the manifest's `iron.layers`). Entries outside 0..32 or with an empty
+/// The game's layer names (the manifest's `platypus.layers`). Entries outside 0..32 or with an empty
 /// name are skipped.
 pub fn set_game_layers(names: impl IntoIterator<Item = (u32, String)>) {
     GAME.with(|g| {
@@ -53,7 +53,7 @@ fn to_u32(x: f64) -> u32 {
     (x.trunc().rem_euclid(4_294_967_296.0)) as u32
 }
 
-#[iron_api(namespace = "LayerMask", quickjs)]
+#[platypus_api(namespace = "LayerMask", quickjs)]
 pub mod layer_mask_api {
     use super::{names, to_u32};
 

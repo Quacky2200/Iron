@@ -8,11 +8,11 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::events::Modifiers;
-use iron_ui::interaction::tab_order;
-use iron_ui::opcodes::{REMOVE_CHILD, SET_ATTRS, SET_STYLE};
-use iron_ui::{Input, Interaction, Rgba, UiEvent, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::events::Modifiers;
+use platypus_ui::interaction::tab_order;
+use platypus_ui::opcodes::{REMOVE_CHILD, SET_ATTRS, SET_STYLE};
+use platypus_ui::{Input, Interaction, Rgba, UiEvent, UiTree};
 
 fn attrs(d: &mut Dom, id: u32, attrs: &[(&str, Value)]) {
     let mut a = vec![n(id)];

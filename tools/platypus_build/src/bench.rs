@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `iron-build bench <examples>`: every example timed by `iron --bench` (windowless) on the native
+//! `platypus-build bench <examples>`: every example timed by `platypus --bench` (windowless) on the native
 //! backend and, for the examples the base branch has, on the QuickJS original built from it; the
-//! results go to `docs/benchmarks.md` and `docs/benchmarks/results.json` (`docs/iron-build.md`,
+//! results go to `docs/benchmarks.md` and `docs/benchmarks/results.json` (`docs/platypus-build.md`,
 //! "Benchmarks").
 
 use std::path::{Path, PathBuf};
@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-const USAGE: &str = "usage: iron-build bench <examples folder> [--only a,b,..] [--base main] [--host iron_app.exe]
+const USAGE: &str = "usage: platypus-build bench <examples folder> [--only a,b,..] [--base main] [--host platypus.exe]
   [--no-host-build] [--no-quickjs] [--frames N] [--out docs-folder] [--timeout seconds]
-Builds the release host (cargo build --release -p iron_app), every example natively, and the base
+Builds the release host (cargo build --release -p platypus_app), every example natively, and the base
 branch's QuickJS originals in a temporary folder (deleted afterwards), then runs each with
-`iron <game> --bench` (no window). Scripted input and frame counts: tools/bench/inputs/<name>.json.";
+`platypus <game> --bench` (no window). Scripted input and frame counts: tools/bench/inputs/<name>.json.";
 
 /// One frame step for every run: games see the same time whatever their speed.
 const FIXED_DT: &str = "0.016666666666666666";
@@ -151,19 +151,19 @@ fn run(o: &Options) -> Result<(), String> {
 
     // The host, release only.
     if o.build_host {
-        eprintln!("bench: cargo build --release -p iron_app");
+        eprintln!("bench: cargo build --release -p platypus_app");
         run_tool(
             Command::new("cargo")
-                .args(["build", "--release", "-p", "iron_app"])
+                .args(["build", "--release", "-p", "platypus_app"])
                 .env("CARGO_INCREMENTAL", "0")
                 .current_dir(&repo),
-            "cargo build --release -p iron_app",
+            "cargo build --release -p platypus_app",
         )?;
     }
     let host = o
         .host
         .clone()
-        .unwrap_or_else(|| repo.join("target/release").join(exe("iron_app")));
+        .unwrap_or_else(|| repo.join("target/release").join(exe("platypus")));
     if !host.is_file() {
         return Err(format!(
             "{} not found (build it, or pass --host)",
@@ -312,7 +312,7 @@ fn exe(name: &str) -> String {
 
 /// The base branch's files in a fresh folder of the OS temp dir, with its JS packages installed.
 fn extract_base(repo: &Path, base: &str) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join(format!("iron-bench-{base}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("platypus-bench-{base}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let tar = dir.join("base.tar");
@@ -407,7 +407,7 @@ fn copy_missing(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
             && (!is_dir
                 || matches!(
                     name.as_str(),
-                    "src" | "dist" | "node_modules" | "types" | ".iron"
+                    "src" | "dist" | "node_modules" | "types" | ".platypus"
                 ))
         {
             continue;
@@ -423,7 +423,7 @@ fn copy_missing(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
     Ok(())
 }
 
-/// One `iron --bench` run, bounded in time.
+/// One `platypus --bench` run, bounded in time.
 fn bench_one(
     host: &Path,
     game: &Path,
@@ -432,7 +432,7 @@ fn bench_one(
     o: &Options,
 ) -> Outcome {
     let out = std::env::temp_dir().join(format!(
-        "iron-bench-{}-{}.json",
+        "platypus-bench-{}-{}.json",
         std::process::id(),
         if quickjs { "qjs" } else { "native" }
     ));
@@ -460,7 +460,7 @@ fn bench_one(
         }
         (None, None) => {}
     }
-    let stderr = std::env::temp_dir().join(format!("iron-bench-{}.log", std::process::id()));
+    let stderr = std::env::temp_dir().join(format!("platypus-bench-{}.log", std::process::id()));
     let log = std::fs::File::create(&stderr).ok();
     cmd.stdout(Stdio::null())
         .stdin(Stdio::null())
@@ -722,7 +722,7 @@ fn short_error(e: &Value) -> String {
     }
 }
 
-const BEGIN: &str = "<!-- bench:begin (written by `iron-build bench`) -->";
+const BEGIN: &str = "<!-- bench:begin (written by `platypus-build bench`) -->";
 const END: &str = "<!-- bench:end -->";
 
 /// Replaces the generated part of the page, keeping what is written around it.

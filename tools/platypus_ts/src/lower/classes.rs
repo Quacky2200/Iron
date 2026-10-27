@@ -11,7 +11,7 @@
 //! The compiler sees the whole program, so `a.m()` is a direct call whenever one implementation
 //! of `m` is reachable from the static type of `a` (that class and its subclasses). When several
 //! are, the call goes through a table indexed by the object's struct id (`CallVirtual`).
-//! See `docs/research/iron-ts-classes.md`.
+//! See `docs/research/platypus-ts-classes.md`.
 
 use super::expr::mk;
 use super::*;

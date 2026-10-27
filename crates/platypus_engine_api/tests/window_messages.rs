@@ -2,10 +2,10 @@
 
 //! Messages between windows (design section 3b): the queue per domain, delivery order, requests and
 //! replies, broadcast. IDs are in TESTS.md (M9-API-14xx).
-use iron_api::Callback;
-use iron_api::callback::HandleArg;
-use iron_engine_api::log::{self, Level};
-use iron_engine_api::window::{self, DomainId, MAIN, MAX_MESSAGE_BYTES, Style, WindowRef};
+use platypus_api::Callback;
+use platypus_api::callback::HandleArg;
+use platypus_engine_api::log::{self, Level};
+use platypus_engine_api::window::{self, DomainId, MAIN, MAX_MESSAGE_BYTES, Style, WindowRef};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -333,7 +333,7 @@ fn named_events_are_their_own_layer_and_unanswered_names_fail_at_once() {
 // M9-TS-2867
 #[test]
 fn parse_event_reads_the_envelope_and_nothing_else() {
-    use iron_engine_api::window::parse_event;
+    use platypus_engine_api::window::parse_event;
     assert_eq!(parse_event("{\"$e\":\"x\"}"), Some(("x".into(), "")));
     assert_eq!(
         parse_event("{\"$e\":\"a\\\"b\",\"d\":{\"k\":[1,2]}}"),
@@ -368,7 +368,7 @@ fn settle_log(log: &Log) -> (Callback<(String,)>, Callback<(String,)>) {
 // M9-API-1646
 #[test]
 fn the_engine_writes_event_envelopes_and_settles_request_promises_itself() {
-    use iron_engine_api::window::event_text;
+    use platypus_engine_api::window::event_text;
     assert_eq!(event_text("a\"b", ""), "{\"$e\":\"a\\\"b\"}");
     assert_eq!(event_text("x", "[1]"), "{\"$e\":\"x\",\"d\":[1]}");
     fresh();

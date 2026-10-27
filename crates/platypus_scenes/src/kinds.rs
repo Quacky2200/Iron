@@ -3,14 +3,14 @@
 //! The component kinds of the engine components that are native: `Camera`, `Animation` and
 //! `Animator`. Other engine components register their own as they are ported.
 
-use iron_animation::{ClipId, ControllerId};
-use iron_api::Handle;
-use iron_engine_api::animation::{AnimationRef, ClipRef, animation_component_api};
-use iron_engine_api::animator::{AnimatorRef, ControllerRef, animator_api};
-use iron_engine_api::camera::{self, CameraRef};
-use iron_engine_api::color::Rgba;
-use iron_kinds::{AssetKind, Kind};
-use iron_scene::ObjectId;
+use platypus_animation::{ClipId, ControllerId};
+use platypus_api::Handle;
+use platypus_engine_api::animation::{AnimationRef, ClipRef, animation_component_api};
+use platypus_engine_api::animator::{AnimatorRef, ControllerRef, animator_api};
+use platypus_engine_api::camera::{self, CameraRef};
+use platypus_engine_api::color::Rgba;
+use platypus_kinds::{AssetKind, Kind};
+use platypus_scene::ObjectId;
 use serde_json::{Map, Value, json};
 
 fn number(v: &Value) -> Option<f32> {
@@ -71,7 +71,7 @@ fn camera_kind() -> Kind {
                 m.insert("antialiasing".into(), json!(d.antialiasing));
                 m.insert(
                     "targetTexture".into(),
-                    iron_kinds::asset_ref("Texture", u64::from(d.target_texture.0)),
+                    platypus_kinds::asset_ref("Texture", u64::from(d.target_texture.0)),
                 );
             });
             m
@@ -104,7 +104,7 @@ fn camera_kind() -> Kind {
                             .as_str()
                             .filter(|s| ["none", "fxaa"].contains(s))
                             .map(|s| d.antialiasing = s.to_string()),
-                        "targetTexture" => iron_kinds::asset_handle(v, "Texture")
+                        "targetTexture" => platypus_kinds::asset_handle(v, "Texture")
                             .map(|h| d.target_texture = camera::TextureRef(h as u32)),
                         other => {
                             warnings.push(format!("no property `{other}` yet; dropped"));
@@ -168,17 +168,17 @@ fn one(
 /// keep using one; its definition is the JSON `toJson` writes.
 fn animation_asset(
     name: &str,
-    describe: fn(&iron_animation::World, u64) -> Value,
-    create: fn(&mut iron_animation::World, &Value) -> u64,
+    describe: fn(&platypus_animation::World, u64) -> Value,
+    create: fn(&mut platypus_animation::World, &Value) -> u64,
 ) -> AssetKind {
     let type_name = name.to_owned();
     AssetKind {
         name: name.into(),
         also: Vec::new(),
         shared: true,
-        create: Box::new(move |def| Ok(iron_animation::with_world(|w| create(w, def)))),
+        create: Box::new(move |def| Ok(platypus_animation::with_world(|w| create(w, def)))),
         describe: Box::new(move |h| {
-            let mut def = iron_animation::with_world(|w| describe(w, h));
+            let mut def = platypus_animation::with_world(|w| describe(w, h));
             // The table entry names its kind.
             def.as_object_mut()?.insert("type".into(), json!(type_name));
             Some(def)
@@ -191,7 +191,7 @@ fn animator_save(h: u64) -> Map<String, Value> {
     let mut m = Map::new();
     m.insert(
         "controller".into(),
-        iron_kinds::asset_ref("AnimationController", a.controller().0),
+        platypus_kinds::asset_ref("AnimationController", a.controller().0),
     );
     m.insert("speed".into(), json!(a.speed()));
     m.insert(
@@ -206,7 +206,7 @@ fn animator_load(h: u64, k: &str, v: &Value) -> Option<bool> {
     let a = AnimatorRef(h);
     match k {
         "controller" => {
-            let c = iron_kinds::asset_handle(v, "AnimationController")?;
+            let c = platypus_kinds::asset_handle(v, "AnimationController")?;
             a.set_controller(ControllerRef(c));
         }
         "speed" => a.set_speed(v.as_f64()?),
@@ -224,10 +224,10 @@ fn animation_save(h: u64) -> Map<String, Value> {
     let mut m = Map::new();
     m.insert(
         "clip".into(),
-        iron_kinds::asset_ref("AnimationClip", a.clip().0),
+        platypus_kinds::asset_ref("AnimationClip", a.clip().0),
     );
     let clips: Vec<Value> = (0..a.clip_count() as usize)
-        .map(|i| iron_kinds::asset_ref("AnimationClip", a.clip_at(i as f64).0))
+        .map(|i| platypus_kinds::asset_ref("AnimationClip", a.clip_at(i as f64).0))
         .collect();
     m.insert("clips".into(), Value::Array(clips));
     m.insert("playAutomatically".into(), json!(a.play_automatically()));
@@ -243,12 +243,12 @@ fn animation_save(h: u64) -> Map<String, Value> {
 fn animation_load(h: u64, k: &str, v: &Value) -> Option<bool> {
     let a = AnimationRef(h);
     match k {
-        "clip" => a.set_clip(ClipRef(iron_kinds::asset_handle(v, "AnimationClip")?)),
+        "clip" => a.set_clip(ClipRef(platypus_kinds::asset_handle(v, "AnimationClip")?)),
         "clips" => {
             let clips = v
                 .as_array()?
                 .iter()
-                .map(|c| iron_kinds::asset_handle(c, "AnimationClip"))
+                .map(|c| platypus_kinds::asset_handle(c, "AnimationClip"))
                 .collect::<Option<Vec<u64>>>()?;
             for c in clips.into_iter().filter(|&c| c != 0) {
                 a.add_clip(ClipRef(c), "");
@@ -265,21 +265,21 @@ fn animation_load(h: u64, k: &str, v: &Value) -> Option<bool> {
 
 /// Registers the engine's kinds on this thread (a later registration replaces an earlier one).
 pub fn register_engine_kinds() {
-    iron_kinds::register(camera_kind());
-    iron_engine_api::audio_components::register_kinds();
-    iron_engine_api::spline::register_kinds();
-    iron_render_api::register_kinds();
-    iron_kinds::register_asset(animation_asset(
+    platypus_kinds::register(camera_kind());
+    platypus_engine_api::audio_components::register_kinds();
+    platypus_engine_api::spline::register_kinds();
+    platypus_render_api::register_kinds();
+    platypus_kinds::register_asset(animation_asset(
         "AnimationController",
         |w, h| w.controller_to_json(ControllerId(h as u32)),
         |w, def| u64::from(w.controller_from_json(def).0),
     ));
-    iron_kinds::register_asset(animation_asset(
+    platypus_kinds::register_asset(animation_asset(
         "AnimationClip",
         |w, h| w.clip_to_json(ClipId(h as u32)),
         |w, def| u64::from(w.clip_from_json(def).0),
     ));
-    iron_kinds::register(one(
+    platypus_kinds::register(one(
         "Animation",
         One {
             create: |o| AnimationRef::attach(o).0,
@@ -292,7 +292,7 @@ pub fn register_engine_kinds() {
         animation_save,
         animation_load,
     ));
-    iron_kinds::register(one(
+    platypus_kinds::register(one(
         "Animator",
         One {
             create: |o| AnimatorRef::attach(o).0,

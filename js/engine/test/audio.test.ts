@@ -10,11 +10,11 @@ let ops: unknown[][] = [];
 beforeEach(() => {
   _resetAudioForTests();
   ops = [];
-  (globalThis as { __iron_op?: unknown }).__iron_op = (...args: unknown[]) => ops.push(args);
+  (globalThis as { __platypus_op?: unknown }).__platypus_op = (...args: unknown[]) => ops.push(args);
 });
 
 afterEach(() => {
-  delete (globalThis as { __iron_op?: unknown }).__iron_op;
+  delete (globalThis as { __platypus_op?: unknown }).__platypus_op;
 });
 
 describe("audio", () => {
@@ -56,8 +56,8 @@ describe("audio", () => {
       throw new Error("boom");
     };
     const error = spyOn(console, "error").mockImplementation(() => {});
-    globalThis.__iron_audio([a.id, b.id]);
-    globalThis.__iron_audio([a.id, 99]);
+    globalThis.__platypus_audio([a.id, b.id]);
+    globalThis.__platypus_audio([a.id, 99]);
     expect(ended).toEqual(["a"]);
     expect(a.playing).toBe(false);
     expect(error).toHaveBeenCalledTimes(1);

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Asset packs: how a release build ships its assets (design: `docs/research/iron-asset-packs.md`).
+//! Asset packs: how a release build ships its assets (design: `docs/research/platypus-asset-packs.md`).
 //!
-//! - [`format`]: the `.irpk` byte layout (header, table of contents, chunks), little-endian.
+//! - [`format`]: the `.ppk` byte layout (header, table of contents, chunks), little-endian.
 //! - [`PackWriter`]: streams entries into a pack (chunked, optionally compressed, deduplicated by
 //!   content), then writes the table of contents. The output depends only on what was added.
 //! - [`Pack`]: opens a pack (memory-mapped, read through a file handle, or from bytes) and reads

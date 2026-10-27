@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The math types of the script API: `Mathf`, `Vector2/3/4` (and the grid, quaternion, matrix and
-//! shape types as they arrive), declared with `#[iron_api]` as `js/engine/src/math.ts` has them.
+//! shape types as they arrive), declared with `#[platypus_api]` as `js/engine/src/math.ts` has them.
 //! The values are doubles computed in the order the TypeScript did, so results are bit for bit the
 //! same. Both the scene and the rest of the engine API use these types, so they live below them.
 
@@ -42,7 +42,9 @@ pub fn manifests() -> Vec<String> {
 }
 
 /// Installs every namespace of this crate in a QuickJS context.
-pub fn register_quickjs<'js>(ctx: &iron_api::rquickjs::Ctx<'js>) -> iron_api::rquickjs::Result<()> {
+pub fn register_quickjs<'js>(
+    ctx: &platypus_api::rquickjs::Ctx<'js>,
+) -> platypus_api::rquickjs::Result<()> {
     math::mathf_api::register_quickjs(ctx)?;
     math::vector2_api::register_quickjs(ctx)?;
     math::vector3_api::register_quickjs(ctx)?;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Map`, `Set`, `WeakMap` and `WeakSet` (runtime: `iron_ts_rt/src/map.rs`). Keys are numbers,
+//! `Map`, `Set`, `WeakMap` and `WeakSet` (runtime: `platypus_ts_rt/src/map.rs`). Keys are numbers,
 //! strings (or string-literal unions, stored as strings), booleans, handles or objects (by
 //! identity); a weak collection is a strong one (nothing can tell the difference except memory).
 //!

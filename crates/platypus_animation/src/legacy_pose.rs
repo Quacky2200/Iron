@@ -7,8 +7,8 @@
 use crate::clip::{Binding, ClipId, World};
 use crate::pose::{PropertySink, resolve};
 use glam::{Quat, Vec3};
-use iron_math::{Q, V3};
-use iron_scene::{ObjectId, Scene, Transform};
+use platypus_math::{Q, V3};
+use platypus_scene::{ObjectId, Scene, Transform};
 
 #[derive(Default)]
 struct TransformPose {

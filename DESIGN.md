@@ -1,10 +1,10 @@
-# Iron — Design Document
+# Platypus — Design Document
 
 > Status: **Draft / pre-code**. Captures the decisions made so far. Anything marked *(open)* is still undecided.
 >
 > Related: [TODO.md](TODO.md) (work plan) · [TESTS.md](TESTS.md) (test plan)
 
-Iron is an s&box-inspired game engine and editor: a **Rust** engine core, **TypeScript** gameplay, and **React**-based UI panels (the equivalent of s&box's Razor panels), all with fast hot reload. The editor is built using the same UI stack as games.
+Platypus is an s&box-inspired game engine and editor: a **Rust** engine core, **TypeScript** gameplay, and **React**-based UI panels (the equivalent of s&box's Razor panels), all with fast hot reload. The editor is built using the same UI stack as games.
 
 ---
 
@@ -87,10 +87,10 @@ trait ScriptRuntime {
 }
 ```
 
-Component calls go through JS host functions installed by `@iron/engine`
-(`__iron_create`, `__iron_dispatch(id, method, ...args)`, ...), driven from Rust by
+Component calls go through JS host functions installed by `@platypus/engine`
+(`__platypus_create`, `__platypus_dispatch(id, method, ...args)`, ...), driven from Rust by
 `ComponentHost`, so the trait itself stays engine-agnostic. The current definition
-lives in `crates/iron_script/src/lib.rs`.
+lives in `crates/platypus_script/src/lib.rs`.
 
 Planned backends:
 - **QuickJS (`rquickjs`)**: small, instant startup, interpreter only. Required on **iOS** (no JIT allowed in apps).
@@ -237,7 +237,7 @@ One ray-traceable representation of scene geometry (meshes, materials, per-mater
 - generated physics colliders
 
 ### 7.4 Renderer strategy *(decided 2026-10-17: own renderer)*
-- **Own renderer (chosen):** extend `iron_render` on wgpu. Full control; UI on planes in 3D is the
+- **Own renderer (chosen):** extend `platypus_render` on wgpu. Full control; UI on planes in 3D is the
   existing UI pass rendered to a texture and drawn on a quad. PBR, shadows and the rest are ours
   to build (M5.c/d).
 - **Reuse Bevy's rendering and asset crates (not chosen):** faster to good-looking PBR, but brings
@@ -247,7 +247,7 @@ The UI and scripting layers must not depend on renderer internals, so the render
 underneath them.
 
 ### 7.5 Scene storage *(decided 2026-10-17: no ECS)*
-An `iron_scene` crate holds GameObjects in a generational arena with a parent/child transform
+A `platypus_scene` crate holds GameObjects in a generational arena with a parent/child transform
 hierarchy (glam vectors and quaternions). Components are typed Rust data plus TS script components,
 the s&box way. An ECS can go underneath later if profiling asks for it.
 
@@ -306,13 +306,13 @@ Window, input, gamepad, file paths and app lifecycle go behind a `Platform` laye
 
 ## 11. Milestones
 
-1. **Hello Iron:** Cargo workspace; winit + wgpu window with a clear colour; `ScriptRuntime` with one backend; Bun builds a TS bundle that logs "hello" from a component.
+1. **Hello Platypus:** Cargo workspace; winit + wgpu window with a clear colour; `ScriptRuntime` with one backend; Bun builds a TS bundle that logs "hello" from a component.
 2. **Boxes:** custom React reconciler → op buffer → Taffy → coloured boxes on screen. **Layout benchmark.**
 3. **Real UI:** text, CSS subset, mouse/keyboard/IME events with bubbling, `gilrs` input.
 4. **Hot reload:** script wipe-and-rebuild with state restore; React Fast Refresh for panels.
 5. **Scene:** entity/component system, serialization, glTF import + cook, PBR + shadows + IBL.
 6. **Physics and audio:** `rapier` and `kira` integration with TS components.
-7. **Editor shell:** hierarchy, inspector, viewport, asset browser — built in Iron UI.
+7. **Editor shell:** hierarchy, inspector, viewport, asset browser — built in Platypus UI.
 8. **Later:** baked lighting, Steam multiplayer, Android/Quest, PC VR, Steam Audio, ray tracing, iOS, packaging and distribution.
 
 Milestones 1–4 together are a useful standalone result: React-driven native game UI in Rust with hot reload.

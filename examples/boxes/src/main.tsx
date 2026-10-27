@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// M2 showcase: React UI rendered by Iron. Flexbox and grid layout, gradients,
+// M2 showcase: React UI rendered by Platypus. Flexbox and grid layout, gradients,
 // images, borders, per-corner radii, box shadows, blur filters, frosted glass and
 // group opacity, plus a timer-driven counter that adds and removes boxes.
 
-const card: IronStyle = {
+const card: PlatypusStyle = {
   backgroundColor: "#1e2633",
   borderRadius: 14,
   border: "1px solid rgba(255,255,255,0.08)",
@@ -14,12 +14,12 @@ const card: IronStyle = {
   gap: 10,
 };
 
-function Card({ style, children }: { style?: IronStyle; children?: ReactNode }) {
+function Card({ style, children }: { style?: PlatypusStyle; children?: ReactNode }) {
   return <box style={{ ...card, ...style }}>{children}</box>;
 }
 
 /** A demo tile filling its card. */
-function Swatch({ style }: { style: IronStyle }) {
+function Swatch({ style }: { style: PlatypusStyle }) {
   return <box style={{ flexGrow: 1, borderRadius: 10, ...style }} />;
 }
 
@@ -62,7 +62,7 @@ function Counter() {
 
 function Blobs() {
   // Colourful shapes behind the glass header, so the backdrop blur is visible.
-  const blob = (left: number, top: number, size: number, color: string): IronStyle => ({
+  const blob = (left: number, top: number, size: number, color: string): PlatypusStyle => ({
     position: "absolute",
     left,
     top,

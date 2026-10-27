@@ -1,6 +1,6 @@
 # Windows: the step list
 
-Design: [iron-windows.md](iron-windows.md) (section numbers below refer to it). Written 2026-10-21 against base `c3ffc1b`;
+Design: [platypus-windows.md](platypus-windows.md) (section numbers below refer to it). Written 2026-10-21 against base `c3ffc1b`;
 revised the same day with the user's answers: static accessors in QuickJS (step 1b), families and event domains (steps
 F1 to F4), messages (steps M1 to M3), the isolated Inspector in `examples/windows`.
 Each step is one commit. Test IDs: `M9-API-1400..1499` (Rust and QuickJS), `M9-TS-2800..2899` (compiled programs and bun).
@@ -9,23 +9,23 @@ test as usual (`// M9-API-1401`).
 
 ## Ground rules for the implementer
 
-- **Never launch an interactive window.** The user's PC has hard-reset with the Iron window open. Verification is unit tests,
+- **Never launch an interactive window.** The user's PC has hard-reset with the Platypus window open. Verification is unit tests,
   fake-platform tests and `--screenshot` runs only. Screenshot runs still show the main window for a moment, as they do today;
   run at most one at a time and only in the steps that say so.
 - Shell: `export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"`. Edit files with the Edit/Write tools or a Python script in the
   scratchpad (heredocs mangle quotes here).
 - Checks before each commit (CLAUDE.md): `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, `bun test`, `bun run typecheck`, `bun run build`, `bun run build:fixtures` (when `js/` changed). For
-  `tools/` changes also `cd tools && cargo test -p iron_ts_tests --test ui windows` and `cargo clippy --workspace --all-targets
+  `tools/` changes also `cd tools && cargo test -p platypus_ts_tests --test ui windows` and `cargo clippy --workspace --all-targets
   -- -D warnings` there. The disk is tight: use `CARGO_INCREMENTAL=0` for one-off checks, and delete corrupt `.pdb` files after an
   interrupted build.
-- Commit trailer: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Update `TODO.md` and `tools/iron_ts/TODO.md`
+- Commit trailer: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Update `TODO.md` and `tools/platypus_ts/TODO.md`
   ("Windows API") as items finish. Docs refresh after step 11 (CLAUDE.md: a Sonnet subagent given only the diff).
 - Match the surrounding style: short doc comments that say why, tests named after behaviour.
 
 Which steps touch which crates:
 
-| Step | iron_platform | iron_engine_api | iron_api(_macros) | tools/ (iron_ts, iron_ts_ui, iron_ts_tests) | iron_render | iron_app | js/ | examples |
+| Step | platypus_platform | platypus_engine_api | platypus_api(_macros) | tools/ (platypus_ts, platypus_ts_ui, platypus_ts_tests) | platypus_render | platypus_app | js/ | examples |
 |---|---|---|---|---|---|---|---|---|
 | 1 | x | | | | | | | |
 | 1b | | | x | | | | | |
@@ -37,7 +37,7 @@ Which steps touch which crates:
 | 7 | | | | | | x | | |
 | 8 | | | | | | x | | |
 | F1, F2 | | x | | | | | | |
-| F3 | | | | x (iron_ts_rt) | | | | |
+| F3 | | | | x (platypus_ts_rt) | | | | |
 | F4 | | | | | | x | | |
 | M1 | | x | | | | | | |
 | M2 | | | | x | | | | |
@@ -48,7 +48,7 @@ Which steps touch which crates:
 | 12 | docs only | | | | | | | |
 
 Steps 1 to 4 (with 1b) are new code only (no existing behaviour changes). Steps 5 to 10 (with F and M) change
-`iron_platform`, `iron_render`, `iron_ts_rt`, `iron_script` and `iron_app` (allowed now). D1 to D5 are optional later steps
+`platypus_platform`, `platypus_render`, `platypus_ts_rt`, `platypus_script` and `platypus_app` (allowed now). D1 to D5 are optional later steps
 (not blocking).
 
 **Test ID map.** `M9-API-1400..1489` as listed per step; `M9-API-1490..1491` static accessors (1b); `M9-API-1492..1494` spare;
@@ -58,9 +58,9 @@ range when they are scheduled.
 
 ---
 
-## Step 1: platform window types, the plan and the tree (pure, `iron_platform`)
+## Step 1: platform window types, the plan and the tree (pure, `platypus_platform`)
 
-**Files.** New `crates/iron_platform/src/windows.rs`; `lib.rs` exports `windows::{WindowKey, WindowKind, WindowSpec,
+**Files.** New `crates/platypus_platform/src/windows.rs`; `lib.rs` exports `windows::{WindowKey, WindowKind, WindowSpec,
 NativePlan, Os, WindowTree, WindowCommand, WindowHost, plan, place}`.
 
 **Code** (design 7.1):
@@ -101,29 +101,29 @@ NativePlan, Os, WindowTree, WindowCommand, WindowHost, plan, place}`.
 | M9-API-1406 | `closing_a_window_closes_its_children_deepest_first` | tree MAIN -> 2 -> 3, MAIN -> 4: `close_order(2) == [3, 2]`, `close_order(MAIN) == [3, 2, 4, MAIN]` |
 | M9-API-1407 | `a_parent_that_would_make_a_cycle_is_dropped` | insert 2 under 3 after 3 under 2 |
 
-**Acceptance.** `CARGO_INCREMENTAL=0 cargo test -p iron_platform` passes; nothing else uses the new module yet.
+**Acceptance.** `CARGO_INCREMENTAL=0 cargo test -p platypus_platform` passes; nothing else uses the new module yet.
 
 ---
 
-## Step 1b: static accessor properties on handle classes (`iron_api_macros`, `iron_api::qjs`)
+## Step 1b: static accessor properties on handle classes (`platypus_api_macros`, `platypus_api::qjs`)
 
 **Why.** `Window.main` is a property in compiled TypeScript and must be one in QuickJS too (the user's requirement): not
 `Window.main()`. QuickJS accessor properties work on any object, including a class constructor.
 
-**Files.** `crates/iron_api_macros/src/lib.rs` (handle-class branch), `crates/iron_api/src/qjs.rs` (helper),
-`crates/iron_api/src/lib.rs` manifest types if needed, `crates/iron_api/tests/classes.rs` (or a new `static_props.rs`),
-`docs/iron-api.md` (one paragraph in "Handle classes").
+**Files.** `crates/platypus_api_macros/src/lib.rs` (handle-class branch), `crates/platypus_api/src/qjs.rs` (helper),
+`crates/platypus_api/src/lib.rs` manifest types if needed, `crates/platypus_api/tests/classes.rs` (or a new `static_props.rs`),
+`docs/platypus-api.md` (one paragraph in "Handle classes").
 
 **Rule.** Inside a handle class's `impl`, `#[property] pub fn main() -> T` (no `self`, no parameters) is a **static getter**,
 and `pub fn set_main(v: T)` next to it (same type) the static setter.
 - Manifest: a class function of kind `Get` / `Set` with no `this` parameter (the compiler's `ext_static_prop` already reads a
   no-argument static as a property; check that a `Get` kind there is accepted, else accept it in `manifest.rs`).
 - `.d.ts`: `static get main(): T;` (and `static set main(value: T);`), or `static readonly main: T` when read-only.
-- Shims: as today (`iron_Window_main`).
+- Shims: as today (`platypus_Window_main`).
 - QuickJS: after the class constructor is made (`install_namespace` / the class object the macro builds), define the property on
   the constructor with rquickjs 0.14's `Object::prop(name, Accessor::new_get(f))` (or `Accessor::new(get, set)`;
   `rquickjs-core/src/value/object/property.rs`), configurable, not enumerable. A helper
-  `iron_api::qjs::define_static_accessor(ctx, class_obj, name, getter, setter: Option<..>)` keeps the macro output small.
+  `platypus_api::qjs::define_static_accessor(ctx, class_obj, name, getter, setter: Option<..>)` keeps the macro output small.
 - A namespace function with the same name as a static property is a compile error (avoids silent shadowing).
 
 **Tests.**
@@ -133,18 +133,18 @@ and `pub fn set_main(v: T)` next to it (same type) the static setter.
 | M9-API-1490 | `a_static_property_of_a_handle_class_is_an_accessor_in_quickjs` (a demo class: `Demo.current` reads through the getter each time, `typeof Demo.current === "object"`, `Object.getOwnPropertyDescriptor(Demo, "current").get` is a function, the manifest has kind `get` with no `this`, the d.ts says `static readonly current: Demo`) |
 | M9-API-1491 | `a_static_setter_writes_through_and_a_read_only_one_ignores_writes` (strict-mode assignment to a read-only static throws `TypeError`) |
 
-**Acceptance.** `cargo test -p iron_api -p iron_api_macros`; `M9-API-120` still passes (`cargo test -p iron_native`).
+**Acceptance.** `cargo test -p platypus_api -p platypus_api_macros`; `M9-API-120` still passes (`cargo test -p platypus_native`).
 
 ---
 
-## Step 2: the `Window` script API (`iron_engine_api::window`)
+## Step 2: the `Window` script API (`platypus_engine_api::window`)
 
-**Files.** New `crates/iron_engine_api/src/window.rs`; `lib.rs`: `pub mod window;`, add `window::window_api::MANIFEST.to_json()`
+**Files.** New `crates/platypus_engine_api/src/window.rs`; `lib.rs`: `pub mod window;`, add `window::window_api::MANIFEST.to_json()`
 to `manifests()` and `window::window_api::register_quickjs(ctx)?` to `register_quickjs`. New test file
-`crates/iron_engine_api/tests/window.rs`.
+`crates/platypus_engine_api/tests/window.rs`.
 
-**Code.** Exactly design section 5: `WindowRef`, `MAIN`, `Style` (its own enum, no `iron_platform` dependency), `Flags`,
-`WindowState`, `WindowRequest`, `Opened`, the host functions and `#[iron_api(namespace = "Window", quickjs, handles(Window =
+**Code.** Exactly design section 5: `WindowRef`, `MAIN`, `Style` (its own enum, no `platypus_platform` dependency), `Flags`,
+`WindowState`, `WindowRequest`, `Opened`, the host functions and `#[platypus_api(namespace = "Window", quickjs, handles(Window =
 WindowRef))] pub mod window_api`. Without step 3, leave `#[options]` out (add it in step 3). The statics `main`, `focused`,
 `current`, `count` are `#[property]` statics (step 1b). The family, domain and message members come in steps F1 and M1.
 
@@ -154,9 +154,9 @@ Behaviour details the tests pin down:
   at 2), `requests: Vec<WindowRequest>`, `listeners: HashMap<WindowRef, WindowListeners>` (`Listeners<()>` x2,
   `Listeners<(f64, f64)>` x2, `Listeners<(bool,)>`, `Listeners<(f64,)>`), `current: Option<WindowRef>`, `cancel: bool`,
   `in_close_request: Option<WindowRef>`, `claim: BTreeMap<String, WindowRef>` (reload). `reset()` leaves only MAIN (title
-  "Iron", 1280 x 720, scale 1, open, created).
+  "Platypus", 1280 x 720, scale 1, open, created).
 - `create`: NaN width/height -> 400 x 300; NaN x/y -> `position: None`; empty style -> Normal; unknown style -> Normal plus
-  `iron_engine_api::log` warning; `focus` is stored as given and popups ignore it (they never take focus when shown, step 1).
+  `platypus_engine_api::log` warning; `focus` is stored as given and popups ignore it (they never take focus when shown, step 1).
   A `parent` of 0 for Tool / Dialog / Popup / Child -> MAIN; for Normal / Borderless -> None. With a key that
   an open window already has (outside reload): returns the new window anyway and logs a warning that the key is taken (find
   returns the first).
@@ -167,7 +167,7 @@ Behaviour details the tests pin down:
 - `closed(w)`: idempotent; marks `open = false`, emits `on_closed`, removes the listeners.
 - `enter_current(w) -> CurrentGuard` restores the previous `current` on drop.
 
-**Tests** (`crates/iron_engine_api/tests/window.rs`, Rust only, no GPU, no display):
+**Tests** (`crates/platypus_engine_api/tests/window.rs`, Rust only, no GPU, no display):
 
 | ID | Test |
 |---|---|
@@ -189,8 +189,8 @@ Behaviour details the tests pin down:
 | M9-API-1425 | `off_removes_any_listener_by_token` |
 | M9-API-1426 | `closing_the_main_window_from_script_asks_to_quit` |
 
-**Acceptance.** `cargo test -p iron_engine_api` passes. `M9-API-120` (every manifest function exists in QuickJS,
-`crates/iron_native/tests`) passes with the new module: run `cargo test -p iron_native`.
+**Acceptance.** `cargo test -p platypus_engine_api` passes. `M9-API-120` (every manifest function exists in QuickJS,
+`crates/platypus_native/tests`) passes with the new module: run `cargo test -p platypus_native`.
 
 ---
 
@@ -199,9 +199,9 @@ Behaviour details the tests pin down:
 **Why.** `Window.create({ title, style })` maps by name in compiled code already (`call_ext_args`), but the QuickJS bindings
 take positional arguments only (`audio.createBus(0.5)`).
 
-**Files.** `crates/iron_api_macros/src/lib.rs` (the QuickJS argument reading of a function), `crates/iron_api/src/qjs.rs` (a helper
+**Files.** `crates/platypus_api_macros/src/lib.rs` (the QuickJS argument reading of a function), `crates/platypus_api/src/qjs.rs` (a helper
 `options_object(ctx, value) -> Option<Object>`: a plain object whose prototype is `Object.prototype`, not an array, not a handle
-or value class instance), test `crates/iron_api/tests/options.rs`, `docs/iron-api.md` (one paragraph under "Optional
+or value class instance), test `crates/platypus_api/tests/options.rs`, `docs/platypus-api.md` (one paragraph under "Optional
 parameters").
 
 **Rule.** On a function marked `#[options]` (it must also have `#[optional(..)]`, else a compile error): when the call has
@@ -213,15 +213,15 @@ today). Positional calls keep working. The manifest does not change (the compile
 
 | ID | Test |
 |---|---|
-| M9-API-1430 | `an_options_object_fills_optional_parameters_by_name` (a demo `#[iron_api]` module in the test: `make(a: f64, #[optional(b = 2, c, s)] ...)`) |
+| M9-API-1430 | `an_options_object_fills_optional_parameters_by_name` (a demo `#[platypus_api]` module in the test: `make(a: f64, #[optional(b = 2, c, s)] ...)`) |
 | M9-API-1431 | `left_out_keys_take_the_declared_defaults` |
 | M9-API-1432 | `positional_calls_still_work_and_a_value_class_argument_is_not_an_options_object` |
-| M9-API-1433 | `window_create_takes_an_options_object_in_quickjs` (`crates/iron_native/tests/window.rs`: `Window.create({ title: "T", style: "tool", width: 200 })`, then `Window.main.title` (a property, step 1b), `w.isChild`, `w.parent.handle === 1`) |
+| M9-API-1433 | `window_create_takes_an_options_object_in_quickjs` (`crates/platypus_native/tests/window.rs`: `Window.create({ title: "T", style: "tool", width: 200 })`, then `Window.main.title` (a property, step 1b), `w.isChild`, `w.parent.handle === 1`) |
 | M9-API-1434 | `window_listeners_run_from_quickjs_and_can_cancel_a_close` (same file: `w.onCloseRequested(() => w.cancelClose())`, `window::close_requested(w) == false`) |
 
 Then put `#[options]` on `WindowRef::create`.
 
-**Acceptance.** `cargo test -p iron_api -p iron_native -p iron_engine_api` passes.
+**Acceptance.** `cargo test -p platypus_api -p platypus_native -p platypus_engine_api` passes.
 
 ---
 
@@ -229,7 +229,7 @@ Then put `#[options]` on `WindowRef::create`.
 
 **Files.**
 
-- `tools/iron_ts/src/lower/engine_ts.d.ts`: add (format as the file's header describes)
+- `tools/platypus_ts/src/lower/engine_ts.d.ts`: add (format as the file's header describes)
   ```ts
   type WindowStyle = "normal" | "tool" | "dialog" | "popup" | "borderless" | "child";
   interface WindowOptions { title?: string; width?: number; height?: number; x?: number; y?: number; minWidth?: number;
@@ -246,14 +246,14 @@ Then put `#[options]` on `WindowRef::create`.
     function find(key: string): Window | undefined;
   }
   ```
-- `tools/iron_ts/src/lower/ambient.d.ts`: `declare function createRoot(target?: WorldPanel | Window | number): ...`.
-- `tools/iron_ts_ui/src/mount.rs`: `WINDOW_MOUNTS`, `#[unsafe(no_mangle)] pub extern "C" fn ts_ui_mount_window(window: u64,
+- `tools/platypus_ts/src/lower/ambient.d.ts`: `declare function createRoot(target?: WorldPanel | Window | number): ...`.
+- `tools/platypus_ts_ui/src/mount.rs`: `WINDOW_MOUNTS`, `#[unsafe(no_mangle)] pub extern "C" fn ts_ui_mount_window(window: u64,
   element: u64)`, `pub fn take_window_mounts() -> Vec<(u64, u64)>`; a third `mount` overload in `root_manifest_json()` with
-  `{"name": "window", "type": "handle:Window"}`; the same in `tools/iron_ts/src/lower/ui_root_manifest.json`; export
-  `take_window_mounts` from `lib.rs`. Make sure the symbol is listed by `iron_ts_ui::symbols()`.
-- `tools/iron_ts_tests/bench/windows.ts` (new program, prefix `win_`, struct base 7400, engine manifests; add it to the table
-  in `tools/iron_ts_tests/build.rs` and to the `engine_manifests()` match arm list, plus `pub mod windows_t` in
-  `tools/iron_ts_tests/src/lib.rs` as the others) exporting functions the test calls:
+  `{"name": "window", "type": "handle:Window"}`; the same in `tools/platypus_ts/src/lower/ui_root_manifest.json`; export
+  `take_window_mounts` from `lib.rs`. Make sure the symbol is listed by `platypus_ts_ui::symbols()`.
+- `tools/platypus_ts_tests/bench/windows.ts` (new program, prefix `win_`, struct base 7400, engine manifests; add it to the table
+  in `tools/platypus_ts_tests/build.rs` and to the `engine_manifests()` match arm list, plus `pub mod windows_t` in
+  `tools/platypus_ts_tests/src/lib.rs` as the others) exporting functions the test calls:
   - `win_createTool()`: `Window.create({ title: "Palette", style: "tool", width: 220, height: 320, key: "palette" })`, returns
     the handle;
   - `win_describe(h)`: finds the window by handle through `Window.at` and returns
@@ -264,30 +264,30 @@ Then put `#[options]` on `WindowRef::create`.
   - `win_mount(h)`: `createRoot(w).render(<box><text>{w.title}</text></box>)` (JSX in a `.ts` bench needs the `.tsx` path:
     name the file `windows.tsx` if the build script supports it, else build the element with the `Ui` helpers the other UI
     benches use; check `bench/ui.ts`).
-- New `tools/iron_ts_tests/tests/ui/windows.rs` (`mod windows;` in `main.rs`), using the `in_every_gc_mode` pattern of
-  `render_native.rs` with `iron_engine_api::window::reset()`.
+- New `tools/platypus_ts_tests/tests/ui/windows.rs` (`mod windows;` in `main.rs`), using the `in_every_gc_mode` pattern of
+  `render_native.rs` with `platypus_engine_api::window::reset()`.
 
 **Tests.**
 
 | ID | Test |
 |---|---|
-| M9-TS-2800 | `create_with_an_options_object_maps_keys_by_name` (`win_describe` = `Palette\|tool\|true\|Iron\|220x320`) |
+| M9-TS-2800 | `create_with_an_options_object_maps_keys_by_name` (`win_describe` = `Palette\|tool\|true\|Platypus\|220x320`) |
 | M9-TS-2801 | `window_main_reads_as_a_property_and_its_title_goes_to_the_host` (`WindowRequest::Title(MAIN, ..)`) |
 | M9-TS-2802 | `static_and_instance_focused_both_resolve` (`Window.focused` undefined, `w.focused` false; after `focus_changed(w, true)` both say so) |
 | M9-TS-2803 | `window_listeners_from_compiled_closures_run_and_cancel` |
 | M9-TS-2804 | `count_and_at_list_the_windows_in_order` |
-| M9-TS-2805 | `create_root_of_a_window_queues_a_window_mount` (`iron_ts_ui::take_window_mounts()` has `(handle, element)`; `take_mounts()` is empty) |
-| M9-TS-2806 | `iron_build_types_declare_window_and_window_options` (in `tools/iron_build` tests: `types` output contains `declare class Window`, `interface WindowOptions`, `const main: Window`) |
+| M9-TS-2805 | `create_root_of_a_window_queues_a_window_mount` (`platypus_ts_ui::take_window_mounts()` has `(handle, element)`; `take_mounts()` is empty) |
+| M9-TS-2806 | `platypus_build_types_declare_window_and_window_options` (in `tools/platypus_build` tests: `types` output contains `declare class Window`, `interface WindowOptions`, `const main: Window`) |
 
-**Acceptance.** `cd tools && cargo test -p iron_ts_tests --test ui windows` and `cargo test -p iron_build` pass, also with
-`IRON_TS_GC=stress` (the `in_every_gc_mode` helper covers it).
+**Acceptance.** `cd tools && cargo test -p platypus_ts_tests --test ui windows` and `cargo test -p platypus_build` pass, also with
+`PLATYPUS_TS_GC=stress` (the `in_every_gc_mode` helper covers it).
 
 ---
 
-## Step 5: multi-window platform (`iron_platform`)
+## Step 5: multi-window platform (`platypus_platform`)
 
-**Files.** `crates/iron_platform/src/platform.rs` (Runner), `windows.rs` (backend trait, `run_commands`, `attributes`, win32
-helper), new `crates/iron_platform/src/fake.rs`, `input.rs` (two variants), `Cargo.toml` (`windows-sys` 0.52 features add
+**Files.** `crates/platypus_platform/src/platform.rs` (Runner), `windows.rs` (backend trait, `run_commands`, `attributes`, win32
+helper), new `crates/platypus_platform/src/fake.rs`, `input.rs` (two variants), `Cargo.toml` (`windows-sys` 0.52 features add
 `"Win32_UI_Shell"`), `lib.rs` exports (`fake::{FakePlatform, FakeWindow}`).
 
 **Code** (design 7.2 to 7.4):
@@ -318,7 +318,7 @@ helper), new `crates/iron_platform/src/fake.rs`, `input.rs` (two variants), `Car
    `show` sets a `shown` flag; `user_close` runs `close_requested` then `Close`; `focus` sends `Focused` events; `step` runs
    commands, `frame()`, commands, `take_windows_to_show`, `events_done()`).
 
-**Tests** (`crates/iron_platform/tests/windows.rs` with a small recording `PlatformApp`; the pure `attributes` test in
+**Tests** (`crates/platypus_platform/tests/windows.rs` with a small recording `PlatformApp`; the pure `attributes` test in
 `windows.rs`):
 
 | ID | Test |
@@ -333,17 +333,17 @@ helper), new `crates/iron_platform/src/fake.rs`, `input.rs` (two variants), `Car
 | M9-API-1447 | `winit_attributes_follow_the_plan` (`attributes(..)`: public fields `title`, `inner_size`, `decorations`, `window_level`, `resizable`, `enabled_buttons`, `visible == false`, `active`) |
 | M9-API-1448 | `focus_moves_between_windows_and_events_done_runs_once_per_step` |
 
-The winit runner itself is not run in tests (it needs a display). `cargo check -p iron_platform` plus the fake tests cover the
+The winit runner itself is not run in tests (it needs a display). `cargo check -p platypus_platform` plus the fake tests cover the
 command path it shares.
 
-**Acceptance.** `cargo test -p iron_platform`; `cargo test --workspace` unchanged elsewhere (iron_app compiles with the default
+**Acceptance.** `cargo test -p platypus_platform`; `cargo test --workspace` unchanged elsewhere (platypus_app compiles with the default
 methods); **no screenshot run in this step.**
 
 ---
 
-## Step 6: more surfaces on one GPU (`iron_render`)
+## Step 6: more surfaces on one GPU (`platypus_render`)
 
-**Files.** `crates/iron_render/src/gpu.rs`.
+**Files.** `crates/platypus_render/src/gpu.rs`.
 
 ```rust
 /// A surface for another window on this GPU (same instance, adapter and device).
@@ -360,16 +360,16 @@ It calls `self.instance.create_surface(target)?`, checks `self.adapter.is_surfac
 `AutoNoVsync`, the same frame latency).
 
 **Tests.** None can create a surface without a window; the function is covered by step 8's manual path only. Add a doc comment
-saying so. (`cargo test -p iron_render` must still pass; no new goldens.)
+saying so. (`cargo test -p platypus_render` must still pass; no new goldens.)
 
 ---
 
-## Step 7: secondary windows in the app: state, routing, closing (`iron_app`)
+## Step 7: secondary windows in the app: state, routing, closing (`platypus_app`)
 
-**Files.** New `crates/iron_app/src/windows.rs`; `main.rs` (fields, `PlatformApp` methods, `Surface::Window(u32)`,
+**Files.** New `crates/platypus_app/src/windows.rs`; `main.rs` (fields, `PlatformApp` methods, `Surface::Window(u32)`,
 `handle_on`, `update_cursor`, `update_ime`); `native_render.rs` (window runtimes beside panel runtimes); `native.rs` (collect
-`iron_ts_ui::take_window_mounts()` into `window_mounts`, like `panel_mounts`); `iron_core` gets `pub const WINDOW_TARGET: u32 =
-0x4000_0000;` (`crates/iron_core/src/lib.rs`).
+`platypus_ts_ui::take_window_mounts()` into `window_mounts`, like `panel_mounts`); `platypus_core` gets `pub const WINDOW_TARGET: u32 =
+0x4000_0000;` (`crates/platypus_core/src/lib.rs`).
 
 **Code** (design 8.1 to 8.4):
 
@@ -381,7 +381,7 @@ saying so. (`cargo test -p iron_render` must still pass; no new goldens.)
   - `fn slug(title: &str, handle: u32, used: &mut HashSet<String>) -> String` (design 8.5).
   - `fn app_focused(focused: &BTreeSet<WindowKey>) -> bool`.
 - `App` fields: `windows: windows::AppWindows`, `window_commands: Vec<WindowCommand>`, `windows_to_show: Vec<WindowKey>`.
-  `App::new`: `iron_engine_api::window::set_main(&manifest.title, (w, h), 1.0)`; `window_ready` calls it again with the real
+  `App::new`: `platypus_engine_api::window::set_main(&manifest.title, (w, h), 1.0)`; `window_ready` calls it again with the real
   scale. `run()` passes `virtual_windows: args.screenshot.is_some()`.
 - After every pump point that runs scripts (`tick`, `native_after`, `apply_script_output`), call `self.pump_windows()`: take the
   requests, convert, apply the main title (`gfx.window.set_title`), queue commands.
@@ -396,7 +396,7 @@ saying so. (`cargo test -p iron_render` must still pass; no new goldens.)
   steps F1 to F4 split isolated families off), `Resized` -> surface/offscreen resize + `window::resized`,
   `Moved` -> `window::moved` (logical), `ScaleChanged` -> `window::scale_changed`, `Focused` -> the focused set +
   `window::focus_changed`, `CloseRequested` never arrives here (the platform calls `close_requested`).
-- `close_requested(key)`: `window::close_requested(WindowRef(key.0))` inside `iron_scene::api::enter` (and the QuickJS
+- `close_requested(key)`: `window::close_requested(WindowRef(key.0))` inside `platypus_scene::api::enter` (and the QuickJS
   equivalent: the callback runs inside the runtime already); MAIN: if true, set `done` as today.
 - `window_closed(key)`: drop the native runtime of that window (`native_render` state), then the `AppWindow`, then
   `window::closed`.
@@ -413,15 +413,15 @@ saying so. (`cargo test -p iron_render` must still pass; no new goldens.)
 | M9-API-1463 | `the_game_is_focused_while_any_of_its_windows_is` |
 | M9-API-1464 | `window_targets_do_not_collide_with_panels` (`WINDOW_TARGET \| 2` vs a panel id) |
 
-**Acceptance.** `cargo test -p iron_app` (unit tests), `cargo clippy`. Existing screenshots unchanged: run **one**
-`cargo run -p iron_app -- examples/css --screenshot tests/output/css.png --frames 30` and compare with the previous render by eye
+**Acceptance.** `cargo test -p platypus_app` (unit tests), `cargo clippy`. Existing screenshots unchanged: run **one**
+`cargo run -p platypus_app -- examples/css --screenshot tests/output/css.png --frames 30` and compare with the previous render by eye
 (single-window path untouched).
 
 ---
 
-## Step 8: drawing secondary windows and screenshots (`iron_app`)
+## Step 8: drawing secondary windows and screenshots (`platypus_app`)
 
-**Files.** `crates/iron_app/src/main.rs` (`frame`, `save_screenshot`), `windows.rs` (`draw_window`).
+**Files.** `crates/platypus_app/src/main.rs` (`frame`, `save_screenshot`), `windows.rs` (`draw_window`).
 
 - `fn draw_window(gpu, renderer, w: &mut AppWindow, now_ms)`: `w.tree.set_size(ui)`, `set_media_env` with that window's scale
   and theme, `load_images`, `draw_list`, then into the surface (`present_with`) or the offscreen target:
@@ -432,21 +432,21 @@ saying so. (`cargo test -p iron_render` must still pass; no new goldens.)
 - `save_screenshot(path)`: after writing the main PNG, for each open `AppWindow` draw it offscreen (Virtual windows already are)
   and `write_png(path.with_file_name(format!("{stem}-{slug}.png")))`, with `slug` from step 7.
 
-**Tests.** A GPU test with `iron_render::testing::shared_gpu()` in `crates/iron_app/src/windows.rs`:
+**Tests.** A GPU test with `platypus_render::testing::shared_gpu()` in `crates/platypus_app/src/windows.rs`:
 
 | ID | Test |
 |---|---|
 | M9-API-1470 | `a_virtual_window_draws_its_ui_offscreen` (an `AppWindow` with a Virtual host, a tree with one 40 x 40 red box; `draw_window`; read back: the pixel at (10, 10) is red) |
 
 **Acceptance (screenshot).** Write a throwaway game in the scratchpad (not committed), `window_probe/src/main.tsx`, built with
-`cd tools && cargo run -p iron_build -- build <scratchpad>/window_probe`:
+`cd tools && cargo run -p platypus_build -- build <scratchpad>/window_probe`:
 ```tsx
 Window.main.title = "Probe main";
 const w = Window.create({ title: "Probe tool", style: "tool", width: 200, height: 120 });
 createRoot(w).render(<box style={{ width: "100%", height: "100%", backgroundColor: "#c03030" }} />);
 createRoot().render(<box style={{ width: "100%", height: "100%", backgroundColor: "#3030c0" }} />);
 ```
-Then **one** run: `cargo build -p iron_app && cargo run -p iron_app -- <scratchpad>/window_probe --screenshot
+Then **one** run: `cargo build -p platypus_app && cargo run -p platypus_app -- <scratchpad>/window_probe --screenshot
 tests/output/probe.png --frames 10`. Expect `probe.png` (blue) and `probe-probe-tool.png` (200 x 120 at the main scale, red),
 and the log line `saved screenshot`. No second window appears on screen (Virtual).
 
@@ -454,7 +454,7 @@ and the log line `saved screenshot`. No second window appears on screen (Virtual
 
 ## Steps F1 to F4: families and event domains (design section 3a)
 
-### Step F1: families in the API (`iron_engine_api::window`)
+### Step F1: families in the API (`platypus_engine_api::window`)
 
 - `DomainId(u32)` (`MAIN = DomainId(1)`), `domain_of`, `domains`, `enter_domain` / `DomainGuard`, `current_domain`
   (default MAIN), `domain_focus_changed`, the members `root`, `isIsolated`, `domain`, `run(f)`, `Window.domainFocused`,
@@ -471,7 +471,7 @@ and the log line `saved screenshot`. No second window appears on screen (Virtual
 | M9-API-1495 | `windows_without_a_parent_are_isolated_roots_and_parented_windows_join_the_family` (tool -> domain 1; normal without parent -> its own domain, `isIsolated`, `root` itself, `isChild` false; normal with parent MAIN -> domain 1, `isChild` true; a tool of the isolated root -> that domain) |
 | M9-API-1496 | `another_familys_windows_can_be_read_but_not_changed_except_during_setup` (setter from domain 1 on an isolated root after `end_frame` is refused with a warning; during setup `run` and `onMessage` are accepted; `run` callbacks see `current_domain()` = the root's) |
 
-### Step F2: input per domain (`iron_engine_api::input`)
+### Step F2: input per domain (`platypus_engine_api::input`)
 
 - The module's `State` becomes `BTreeMap<u32, InputState>` (entry MAIN created at start); every host function gains a
   domain-taking twin (`key_down_event_in(domain, ..)`, `mouse_move_in`, `tick_domain`, `blur_domain`), and the old names
@@ -483,31 +483,31 @@ and the log line `saved screenshot`. No second window appears on screen (Virtual
 |---|---|
 | M9-API-1497 | `keys_of_an_isolated_domain_do_not_reach_the_main_game` (key down in domain 5; `getKey` with MAIN current is false, with 5 current true; `tick_domain(5)` turns it into "this frame" for 5 only; gamepad routed to the focused domain) |
 
-### Step F3: timers per domain (`tools/iron_ts_rt`, `crates/iron_script`)
+### Step F3: timers per domain (`tools/platypus_ts_rt`, `crates/platypus_script`)
 
-- `iron_ts_rt/src/event.rs`: each timer and microtask records the domain current at registration through a host hook
+- `platypus_ts_rt/src/event.rs`: each timer and microtask records the domain current at registration through a host hook
   `ts_rt_set_domain_hooks(current: extern "C" fn() -> u32, enter: extern "C" fn(u32), leave: extern "C" fn())` (default:
   domain 1, no-op enter/leave, so tests and single-window games are unchanged). New `ts_rt_timers_advance_domain(now_ms, domain)`
   fires only that domain's due timers (with `enter(domain)` around each); `ts_rt_timers_advance(now_ms)` stays "domain 1".
   Microtasks keep their global order but run with their domain entered.
-- `crates/iron_script` QuickJS timers prelude: the same tag (a `__iron_domain()` native read at `setTimeout` time) and a
-  `__iron_timers_advance(now, domain)` entry.
+- `crates/platypus_script` QuickJS timers prelude: the same tag (a `__platypus_domain()` native read at `setTimeout` time) and a
+  `__platypus_timers_advance(now, domain)` entry.
 - The app (step F4) installs the hooks to `window::current_domain` / `enter_domain`.
 
 | ID | Test |
 |---|---|
 | M9-TS-2831 | `a_timer_fires_in_the_domain_that_set_it` (compiled bench `windows.ts`: `setTimeout` inside `run` of an isolated root; `advance_domain(1)` does not fire it, `advance_domain(5)` does, and inside it `Window.current.domain === 5`) |
 | M9-TS-2832 | `a_paused_domains_timers_wait` (not advanced while paused, fire on the first advance after resume; intervals do not catch up more than once, as the main loop's timers) |
-| M9-TS-2833 | `quickjs_timers_keep_their_domain` (`crates/iron_script` test, same as 2831 in QuickJS) |
+| M9-TS-2833 | `quickjs_timers_keep_their_domain` (`crates/platypus_script` test, same as 2831 in QuickJS) |
 
-### Step F4: domains in the app (`iron_app`)
+### Step F4: domains in the app (`platypus_app`)
 
 - `windows.rs`: `Domain`, `Domains` (design 8.1); `window_input` queues non-main-window events per domain; `pump_domains`
   (design 8.2 point 4) after `tick`; `events_done()` recomputes per-domain focus (`domain_focused(windows, tree)`, pure) and
   calls `Lifecycle::set_focused` for MAIN and `window::domain_focus_changed` for every changed domain; isolated domains get their
   own `Lifecycle` (`run_in_background` from the root; screenshot runs never pause); `paused()` = every domain paused; the
   1/30 s frame cap when MAIN is paused and another domain is not (`lifecycle::frame_cap` gains the case);
-  `window::end_frame()` once per frame; the `iron_ts_rt` domain hooks installed for native games.
+  `window::end_frame()` once per frame; the `platypus_ts_rt` domain hooks installed for native games.
 - Game input (`send_game_input` / `game_input::apply_native`) takes the domain (MAIN for the main window as today).
 
 | ID | Test |
@@ -519,14 +519,14 @@ and the log line `saved screenshot`. No second window appears on screen (Virtual
 
 (These are app-side Rust unit tests; they use IDs from the range given for this work.)
 
-**Acceptance.** `cargo test --workspace`, `cd tools && cargo test -p iron_ts_tests --test ui windows`, and one screenshot run
+**Acceptance.** `cargo test --workspace`, `cd tools && cargo test -p platypus_ts_tests --test ui windows`, and one screenshot run
 of the step 8 probe extended with `Window.create({ title: "Probe isolated", width: 160, height: 100 })`: three PNGs.
 
 ---
 
 ## Steps M1 to M3: messages between windows (design section 3b)
 
-### Step M1: the message queue (`iron_engine_api::window`)
+### Step M1: the message queue (`platypus_engine_api::window`)
 
 - Per-domain FIFO `VecDeque<Message { from: WindowRef, to: WindowRef, text: String, request: u64, reply_to: u64,
   deadline_ms: f64 }>`; `post_message_json` (refuses closed targets and texts over `MAX_MESSAGE_BYTES`, logs), `post_request_json`
@@ -542,12 +542,12 @@ of the step 8 probe extended with `Window.create({ title: "Probe isolated", widt
 | M9-API-1498 | `messages_arrive_at_the_next_delivery_in_order_per_sender` (two senders interleaved; nothing delivered before `deliver`; posting during delivery waits; over 1 MiB refused; a closed target drops) |
 | M9-API-1499 | `requests_get_one_reply_or_time_out_and_broadcast_reaches_other_roots` (reply resolves once; second `reply_json` false; no listener and timeout errors; target closed; broadcast skips the sender's family) |
 
-### Step M2: typed messages in compiled code (`tools/iron_ts`)
+### Step M2: typed messages in compiled code (`tools/platypus_ts`)
 
 - `engine_ts.d.ts` supplement: the generic members of design section 3 (`postMessage(data: unknown)`, `onMessage<T>`,
   `onRequest<T, R>`, `request<R>(data, timeoutMs?): Promise<R>`, `Window.onMessage<T>`, `Window.onRequest<T, R>`,
   `Window.broadcast`).
-- `tools/iron_ts/src/lower/facade.rs` / `facade.ts`: `win.postMessage(x)` -> `win.postMessageJson(JSON.stringify(x))` using the
+- `tools/platypus_ts/src/lower/facade.rs` / `facade.ts`: `win.postMessage(x)` -> `win.postMessageJson(JSON.stringify(x))` using the
   typed JSON of `lower/json.rs` (the static type of `x`; a handle type anywhere in it is a compile error naming the field);
   `onMessage<T>(f)` -> `onMessageJson((from, text) => f(from, JSON.parse<T>(text)))` (a parse/shape error is thrown inside the
   callback, so the engine logs it through `callback::take_errors`); `onRequest<T, R>(f)` -> `onRequestJson((from, text, id) =>
@@ -565,7 +565,7 @@ of the step 8 probe extended with `Window.create({ title: "Probe isolated", widt
 | M9-TS-2842 | `request_rejects_on_timeout_and_on_close` |
 | M9-TS-2843 | `broadcast_and_the_domain_listener_receive_messages` |
 
-### Step M3: messages in QuickJS and `@iron/engine` (`iron_engine_api`, `iron_app`, `js/`)
+### Step M3: messages in QuickJS and `@platypus/engine` (`platypus_engine_api`, `platypus_app`, `js/`)
 
 - A JS prelude string in `window.rs` (`QUICKJS_PRELUDE`), evaluated by the module's `register_quickjs` after the class exists:
   defines `Window.prototype.postMessage`, `request`, `onMessage`, `onRequest`, `Window.onMessage`, `Window.onRequest`,
@@ -576,18 +576,18 @@ of the step 8 probe extended with `Window.create({ title: "Probe isolated", widt
 
 | ID | Test |
 |---|---|
-| M9-TS-2844 | `quickjs_post_message_and_on_message_round_trip` (`crates/iron_native/tests/window.rs`, two domains, `deliver`) |
+| M9-TS-2844 | `quickjs_post_message_and_on_message_round_trip` (`crates/platypus_native/tests/window.rs`, two domains, `deliver`) |
 | M9-TS-2845 | `quickjs_post_message_refuses_handles_and_functions` |
 | M9-TS-2846 | `quickjs_request_resolves_after_reply` (run the job queue after `deliver`) |
 
-**Acceptance (M1 to M3).** `cargo test -p iron_engine_api -p iron_native`, `cd tools && cargo test -p iron_ts_tests --test ui
+**Acceptance (M1 to M3).** `cargo test -p platypus_engine_api -p platypus_native`, `cd tools && cargo test -p platypus_ts_tests --test ui
 windows`, `bun test`.
 
 ---
 
-## Step 9: hot reload keeps keyed windows (`iron_engine_api`, `iron_app`)
+## Step 9: hot reload keeps keyed windows (`platypus_engine_api`, `platypus_app`)
 
-**Files.** `crates/iron_engine_api/src/window.rs` (`reload_begin`, `reload_end`, claiming in `create`), `native.rs`
+**Files.** `crates/platypus_engine_api/src/window.rs` (`reload_begin`, `reload_end`, claiming in `create`), `native.rs`
 (`Native::reload`: call `window::reload_begin()` before the resets and close what it returns; after the first frame of the new
 program `reload_end()`), `main.rs` `reload_scripts` (QuickJS: same two calls), `native_render.rs` (drop window runtimes on
 reload; new mounts refresh like panels).
@@ -607,14 +607,14 @@ the windows); `reload_begin` replaces it there. `Native::shutdown` calls `window
 | M9-API-1483 | `the_main_window_survives_reload_with_its_title` |
 
 **Acceptance.** Unit tests; then one screenshot run of the step 8 probe (with a `key: "tool"` added) with
-`IRON_RELOAD_AT_FRAME=5 --frames 10`: both PNGs written, the log shows one reload and no "window closed" line for the keyed tool.
+`PLATYPUS_RELOAD_AT_FRAME=5 --frames 10`: both PNGs written, the log shows one reload and no "window closed" line for the keyed tool.
 
 ---
 
-## Step 10: QuickJS games (`iron_app`, `js/`)
+## Step 10: QuickJS games (`platypus_app`, `js/`)
 
-**Files.** `crates/iron_app/src/main.rs` (where the QuickJS runtime is built and on every reset: `scripts.add_native(|ctx|
-iron_engine_api::window::window_api::register_quickjs(ctx))`, or the `NativeInit` shape `add_native` takes), new
+**Files.** `crates/platypus_app/src/main.rs` (where the QuickJS runtime is built and on every reset: `scripts.add_native(|ctx|
+platypus_engine_api::window::window_api::register_quickjs(ctx))`, or the `NativeInit` shape `add_native` takes), new
 `js/engine/src/window.ts` (`export type WindowStyle`, `export interface WindowOptions`, `export declare class Window` mirroring the
 design listing (static properties `main`, `focused`, `current`, `count`, `domainFocused`, the generic message members), and `export const Window =
 (globalThis as any).Window`), `js/engine/src/index.ts` export, `js/react/src/index.ts` (`createRoot` accepts an object with a
@@ -627,7 +627,7 @@ message for a second root names the window), test files.
 |---|---|
 | M9-TS-2820 | `createRoot of a window commits to the window target` (`js/react/test/window_root.test.tsx`, with a fake `Window` object `{ handle: 3 }`: commits carry target `0x40000003`) |
 | M9-TS-2821 | `createRoot of the main window is the screen root` |
-| M9-TS-2822 | `@iron/engine re-exports the global Window` (`js/engine/test/window.test.ts`, with `globalThis.Window` stubbed) |
+| M9-TS-2822 | `@platypus/engine re-exports the global Window` (`js/engine/test/window.test.ts`, with `globalThis.Window` stubbed) |
 
 **Acceptance.** `bun test`, `bun run typecheck`, `bun run build:fixtures`, `cargo test --workspace`.
 
@@ -637,8 +637,8 @@ message for a second root names the window), test files.
 
 **Files.** `examples/windows/package.json`, `examples/windows/tsconfig.json` (copy `examples/raindrop-demo`'s), and
 `examples/windows/src/main.tsx`. **No** bun `build` / `dev` / `typecheck` scripts in `package.json` (the root
-`bun run build` filters by name and `typecheck` runs only scripts that exist; this example is built by `iron-build`). Do not add it
-to the root `build` filter. No imports: engine and UI names are globals (`iron-build types` writes `types/iron.d.ts` for tsc).
+`bun run build` filters by name and `typecheck` runs only scripts that exist; this example is built by `platypus-build`). Do not add it
+to the root `build` filter. No imports: engine and UI names are globals (`platypus-build types` writes `types/platypus.d.ts` for tsc).
 
 `package.json`:
 ```json
@@ -647,7 +647,7 @@ to the root `build` filter. No imports: engine and UI names are globals (`iron-b
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "iron": { "title": "Windows", "company": "Iron examples", "identifier": "dev.iron.examples.windows" }
+  "platypus": { "title": "Windows", "company": "Platypus examples", "identifier": "dev.platypus.examples.windows" }
 }
 ```
 
@@ -719,14 +719,14 @@ openTool("colours", m.x + m.width + 16, m.y + 230);
 
 Check while writing: optional numbers in an options object (`x` undefined) must reach the API as "left out" (NaN); if the
 compiler passes 0 for an undefined `number | undefined` variable, pass the keys only when defined (two `create` calls), and note
-it in `tools/iron_ts/TODO.md`. If handle-typed props are not supported in compiled JSX, the `handle: number` prop above already
+it in `tools/platypus_ts/TODO.md`. If handle-typed props are not supported in compiled JSX, the `handle: number` prop above already
 avoids them.
 
 **Build and check (one screenshot run):**
 ```bash
-cd tools && cargo run -p iron_build -- build ../examples/windows && cd ..
-cargo build -p iron_app
-cargo run -p iron_app -- examples/windows --screenshot tests/output/windows.png --frames 30
+cd tools && cargo run -p platypus_build -- build ../examples/windows && cd ..
+cargo build -p platypus_app
+cargo run -p platypus_app -- examples/windows --screenshot tests/output/windows.png --frames 30
 ```
 Expect `tests/output/windows.png` (the main window: toolbar, four rows: main, Counter 1, Colours 1, Inspector), and
 `windows-counter-1.png`, `windows-colours-1.png`, `windows-inspector.png` (showing "Last message: picked #e74c3c in Colours 1",
@@ -762,8 +762,8 @@ every folder; confirm it builds there) and to `scripts/screenshots.ts` only if t
 
 | ID | Test |
 |---|---|
-| M9-TS-2830 | `examples_windows_compiles` (in `tools/iron_build` tests, as the other examples' compile checks are done there, or in `check examples`: build `examples/windows` with `--no-tsc` and assert success) |
-| M9-TS-2847 | `the_example_inspector_is_isolated_and_tool_windows_share_the_main_domain` (compile `examples/windows` source in `iron_ts_tests` as a program with prefix `exw_`, run its top level with no host: `window::state` shows Counter 1 and Colours 1 in domain 1 and Inspector in its own domain) |
+| M9-TS-2830 | `examples_windows_compiles` (in `tools/platypus_build` tests, as the other examples' compile checks are done there, or in `check examples`: build `examples/windows` with `--no-tsc` and assert success) |
+| M9-TS-2847 | `the_example_inspector_is_isolated_and_tool_windows_share_the_main_domain` (compile `examples/windows` source in `platypus_ts_tests` as a program with prefix `exw_`, run its top level with no host: `window::state` shows Counter 1 and Colours 1 in domain 1 and Inspector in its own domain) |
 | M9-TS-2848 | `the_example_inspector_gets_the_picked_colour_and_the_totals` (same program: `deliver` domain 1 then the inspector's then 1 again; `pending` empty; the inspector's last-message text, read through an exported function, says `picked #e74c3c in Colours 1`) |
 | M9-TS-2849..2850 | spare for fixes found while writing the example |
 
@@ -776,14 +776,14 @@ Delegate to a Sonnet subagent (CLAUDE.md), with the diff since the design commit
 - New `docs/windows.md`: the API (from design section 3), styles per platform (section 4), how the app draws and routes windows,
   screenshot files, hot reload, limits; linked from `docs/README.md`.
 - `docs/platform.md`: multi-window runner, `PlatformApp` additions, `FakePlatform`, `virtual_windows`, the tool-window subclass.
-- `docs/iron-api.md`: the `Window` module in "The engine API beyond the scene", `#[options]` under "Optional parameters",
+- `docs/platypus-api.md`: the `Window` module in "The engine API beyond the scene", `#[options]` under "Optional parameters",
   static accessor properties on handle classes (step 1b), messages (`...Json` natives, the typed facade, the QuickJS prelude).
 - `docs/windows.md` also covers families, event domains (phase A; phases B and C as future work) and messages.
 - `docs/rendering.md`: `Gpu::create_window_surface`, secondary windows' present mode.
 - `docs/editor.md`: one line in the limits: floating panels can use `Window` (design section 11).
 - `docs/differences.md` if anything differs from browsers/Unity worth listing (no browser equivalent: probably nothing).
-- `CLAUDE.md` layout table: `iron_engine_api` row gains `Window`; `examples/*` row gains `windows`.
-- `TODO.md`: a "Windows API" item (done parts ticked, D1 to D5 open); `tools/iron_ts/TODO.md` "Windows API" item updated.
+- `CLAUDE.md` layout table: `platypus_engine_api` row gains `Window`; `examples/*` row gains `windows`.
+- `TODO.md`: a "Windows API" item (done parts ticked, D1 to D5 open); `tools/platypus_ts/TODO.md` "Windows API" item updated.
 
 ---
 
@@ -815,7 +815,7 @@ example with the Inspector), 12 (docs).
 ## Note for the coordinator (not part of this plan)
 
 A message about `project.json` (default company `"${firstName}'s Company"`, a `license` field with `private` / SPDX values,
-`iron-build init --license`, license files in `iron-build package`) arrived during this design task. This worktree's base
-(`c3ffc1b`) has no `project.json`, no `iron-build init` and no packaging metadata to change, so nothing was done here; it belongs
+`platypus-build init --license`, license files in `platypus-build package`) arrived during this design task. This worktree's base
+(`c3ffc1b`) has no `project.json`, no `platypus-build init` and no packaging metadata to change, so nothing was done here; it belongs
 to the branch that has those. The only overlap with this plan: the main window's starting title comes from the manifest title
-(`project.json` `title` there, `package.json` `iron.title` here).
+(`project.json` `title` there, `package.json` `platypus.title` here).
