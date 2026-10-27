@@ -43,6 +43,10 @@ serde_json = "1.0.154"
 platypus_pack = { path = "../platypus_pack" }
 gltf = { version = "1.4.1", default-features = false, features = ["utils", "names", "KHR_materials_unlit", "KHR_materials_emissive_strength"] }
 
+# The build script turns resources/icon/icon.png into the window icon and the exe's icon.
+[build-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 

@@ -683,11 +683,12 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         }
     }
     if is_pe {
+        // The game's own icon, else Platypus's (whatever icon the host was built with).
         let ico = match &icon {
-            Some((_, data)) => Some(icon::to_ico(data)?),
-            None => None,
+            Some((_, data)) => icon::to_ico(data)?,
+            None => icon::default_ico(),
         };
-        host = pe::set_resources(host, &meta, ico.as_deref())?;
+        host = pe::set_resources(host, &meta, Some(&ico))?;
     }
     let payload_size = payload::write_payload(&mut host, &collected.payload)?;
 
@@ -1262,6 +1263,59 @@ mod tests {
         out
     }
 
+    /// The first image of the exe's main icon group.
+    fn pe_icon_bytes(pe: &[u8]) -> Vec<u8> {
+        let image = editpe::Image::parse(pe).unwrap();
+        let res = image.resource_directory().unwrap();
+        res.get_main_icon().unwrap().unwrap().to_vec()
+    }
+
+    /// A game with no icon and empty title and description, packaged with this test program
+    /// as the host; the exe's bytes.
+    fn packaged_without_icon(tag: &str) -> Vec<u8> {
+        let d = game_folder(tag);
+        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(
+            d.join(platypus_core::project::PROJECT_FILE),
+            r#"{ "name": "tiny", "title": "", "description": "" }"#,
+        )
+        .unwrap();
+        let opts = PackageOptions {
+            host: Some(std::env::current_exe().unwrap()),
+            out: Some(d.join("out/tiny.exe")),
+            no_build: true,
+            ..Default::default()
+        };
+        let p = package(&d, &opts).unwrap();
+        let bytes = std::fs::read(p.path).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+        bytes
+    }
+
+    // M9-ICO-06
+    #[test]
+    fn a_game_without_an_icon_or_names_gets_platypus_ones() {
+        if !cfg!(windows) {
+            return; // the test program is the host; only Windows hosts are PE files
+        }
+        let bytes = packaged_without_icon("no_icon");
+        let r = pe::read_resources(&bytes).unwrap();
+        assert_eq!(r.icon_sizes, icon::SIZES.map(|s| (s, s)));
+        for key in ["ProductName", "FileDescription"] {
+            assert!(
+                r.strings.contains(&(key.into(), "Platypus".into())),
+                "{key}: {:?}",
+                r.strings
+            );
+        }
+        // The 16 px image is the Platypus icon's.
+        let ico = icon::default_ico();
+        // The .ico's first directory entry: the image's length at 14, its offset at 18.
+        let word = |i: usize| u32::from_le_bytes(ico[i..i + 4].try_into().unwrap()) as usize;
+        let (len, at) = (word(14), word(18));
+        assert_eq!(pe_icon_bytes(&bytes), &ico[at..at + len]);
+    }
+
     // M9-TS-2412
     #[test]
     fn package_writes_one_file_with_payload_resources_and_a_working_sign_hook() {
@@ -1308,7 +1362,10 @@ mod tests {
                 r.strings
                     .contains(&("ProductVersion".into(), "4.5.6".into()))
             );
-            assert_eq!(r.icon_sizes.len(), 4);
+            assert_eq!(r.icon_sizes.len(), icon::SIZES.len());
+            // The game's own icon, not Platypus's (a flat colour compresses far smaller).
+            let own = pe_icon_bytes(&bytes);
+            assert_ne!(own, pe_icon_bytes(&packaged_without_icon("own_vs_default")));
         }
         // A second package on top of a packaged file replaces its payload.
         let again = package(

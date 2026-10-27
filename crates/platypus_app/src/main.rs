@@ -557,10 +557,12 @@ fn run() -> Result<()> {
         editor: editor::EditorHost::default(),
         file_drag: file_drop::FileDrag::default(),
     };
+    // The game's own icon, else Platypus's.
     let icon = manifest
         .icon
         .as_deref()
-        .and_then(|path| info::load_icon(&code_root, path));
+        .and_then(|path| info::load_icon(&code_root, path))
+        .or_else(|| Some(info::default_icon()));
     // A window opens at the saved window size (a fixed one at its own); fullscreen modes are
     // applied once it exists.
     let (width, height) = (

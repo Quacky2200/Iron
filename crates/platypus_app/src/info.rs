@@ -110,6 +110,13 @@ fn light_units(platypus: &serde_json::Map<String, Value>) -> bool {
     }
 }
 
+/// The Platypus icon as RGBA, for games without their own (made from `resources/icon/icon.png`
+/// by the build script).
+pub fn default_icon() -> (Vec<u8>, u32, u32) {
+    const RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/window_icon.rgba"));
+    (RGBA.to_vec(), 256, 256)
+}
+
 /// Reads a PNG icon from the game folder as RGBA (`None` if it can't).
 pub fn load_icon(root: &Path, path: &str) -> Option<(Vec<u8>, u32, u32)> {
     let file = platypus_core::resolve_asset(root, path)?;
@@ -227,6 +234,17 @@ fn system() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M9-ICO-03
+    #[test]
+    fn the_default_window_icon_is_the_platypus_on_a_transparent_tile() {
+        let (rgba, w, h) = default_icon();
+        assert_eq!((w, h, rgba.len()), (256, 256, 256 * 256 * 4));
+        let alpha = |x: u32, y: u32| rgba[((y * 256 + x) * 4 + 3) as usize];
+        // Transparent corners, an opaque middle.
+        assert_eq!(alpha(0, 0), 0);
+        assert_eq!(alpha(128, 128), 255);
+    }
 
     // M5-APP-01
     #[test]

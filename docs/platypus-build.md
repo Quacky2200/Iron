@@ -406,14 +406,23 @@ a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much
 | version | `version` / `--version` | `0.1.0` | `FileVersion`, `ProductVersion` (`1.2.3` -> 1.2.3.0; a `-pre` suffix is dropped from the numbers, kept in the text) |
 | copyright | `copyright` / `--copyright` | `Copyright (c) <company>` (empty when the company is empty) | `LegalCopyright` |
 | description | `description` / `--description` | the title | `FileDescription` (what Task Manager shows) |
-| icon | `icon` / `--icon` | none (the host's own icon stays) | exe icon; window and taskbar icon at run time |
+| icon | `icon` / `--icon` | the Platypus icon (`resources/icon/icon.png`) | exe icon; window and taskbar icon at run time |
 | identifier | `identifier` | `dev.platypus.<name>` | `Application.identifier` |
 
 The icon is a `.png` (any size; centred on a transparent square when not square) or an `.ico`. A PNG is converted in-process
-(`icon.rs`, `image` crate) to an `.ico` of 16, 32, 48 and 256 px, and `pe.rs` writes it with the `editpe` crate (the whole `.rsrc`
+(`icon.rs`, `image` crate, Lanczos3 to 256 px and the smaller sizes from that) to an `.ico` of 16, 24, 32, 48, 64, 128 and 256 px
+(PNG-compressed, the container from `platypus_core::icon`), and `pe.rs` writes it with the `editpe` crate (the whole `.rsrc`
 section is parsed and rebuilt; no `rc.exe`, no other tool). The version info is a VS_VERSIONINFO block with the string table
-`040904b0` (US English, Unicode) and the matching `Translation`. The same icon file goes into the payload (`platypus-icon.png|ico`) and
+`040904b0` (US English, Unicode) and the matching `Translation`; an empty title makes `ProductName` `Platypus`, and
+`FileDescription` falls back to the title, then `Platypus`. The same icon file goes into the payload (`platypus-icon.png|ico`) and
 `icon` of the payload's `project.json` points to it, so the window and taskbar icon come from the same file.
+
+**The Platypus icon is the default.** `resources/icon/icon.png` (1254 x 1254, built into `platypus_core::icon::DEFAULT_PNG` with
+`include_bytes!`, so no file is needed at run time) is used wherever a game has none: `package` writes it as the exe's icon
+(replacing the host's), and the host's build script (`crates/platypus_app/build.rs`) turns it into a 256 x 256 window icon that
+`platypus` sets for a game without `icon`, and, on Windows with the MSVC linker, into a `.res` file (`platypus_core::icon::windows_res`:
+the seven sizes as the `MAINICON` group and version info with `ProductName` / `FileDescription` `Platypus`) linked into
+`platypus.exe` and `platypus_editor.exe`, so plain `cargo build` binaries show it too. Tests `M9-ICO-01..06`.
 
 **The payload** (`platypus_core::payload`, format version 1) is appended after the host (and after the resource edit):
 

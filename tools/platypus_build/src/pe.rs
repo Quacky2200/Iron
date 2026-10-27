@@ -9,6 +9,7 @@ use crate::package::Metadata;
 use editpe::constants::RT_GROUP_ICON;
 use editpe::types::{VersionU16, VersionU32};
 use editpe::{Image, ResourceEntryName, VersionInfo, VersionStringTable};
+use platypus_core::icon::PRODUCT_NAME;
 
 /// US English, Unicode: the key of the string table and the `Translation` value.
 const LANG_KEY: &str = "040904b0";
@@ -35,14 +36,23 @@ pub fn version_info(meta: &Metadata) -> VersionInfo {
         ..Default::default()
     };
     let file = meta.file_name();
+    // Task Manager and Explorer show FileDescription as the program's name: the description,
+    // else the title, else Platypus.
+    let or_platypus = |s: &str| if s.is_empty() { PRODUCT_NAME } else { s }.to_string();
+    let product = or_platypus(&meta.title);
+    let description = if meta.description.is_empty() {
+        product.clone()
+    } else {
+        meta.description.clone()
+    };
     let fields = [
         ("CompanyName", meta.company.as_str()),
-        ("FileDescription", meta.description.as_str()),
+        ("FileDescription", description.as_str()),
         ("FileVersion", meta.version.as_str()),
         ("InternalName", meta.exe.as_str()),
         ("LegalCopyright", meta.copyright.as_str()),
         ("OriginalFilename", file.as_str()),
-        ("ProductName", meta.title.as_str()),
+        ("ProductName", product.as_str()),
         ("ProductVersion", meta.version.as_str()),
     ];
     for (k, v) in fields {
@@ -197,7 +207,7 @@ mod tests {
         assert_eq!(get("OriginalFilename"), Some("demo.exe"));
         assert_eq!(r.file_version, [1, 2, 3, 0]);
         assert_eq!(r.product_version, [1, 2, 3, 0]);
-        assert_eq!(r.icon_sizes, [(16, 16), (32, 32), (48, 48), (256, 256)]);
+        assert_eq!(r.icon_sizes, crate::icon::SIZES.map(|s| (s, s)));
         // A payload appended after the edit is found again.
         let mut with = out;
         platypus_core::payload::write_payload(&mut with, &[("a".into(), vec![1])]).unwrap();

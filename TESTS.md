@@ -1398,7 +1398,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2410 | Unit | Data collection takes the other `dist/` files (CSS references; not the bundle, `game.o`, `*.exe`, dot files, asset copies, the output's own data folder), the named assets with `.meta`, `platypus.include` or the default `assets` folder; an unsafe asset path is an error. |
 | M9-TS-2411 | Unit | `1.2.3`, `2.0.0-beta.1+x`, `1.2.3.4`, `junk` become four-part Windows versions. |
 | M9-TS-2412 | Integration | `package` with a stand-in host writes one file whose payload holds the bundle, assets, rewritten package.json and icon, whose PE resources carry the version and a four-size icon, and on which `--sign-cmd` ran; packaging a packaged file replaces its payload. |
-| M9-TS-2420 | Unit | A PNG becomes an `.ico` with 16, 32, 48 and 256 px images that decodes (`platypus_build/src/icon.rs`). |
+| M9-TS-2420 | Unit | A PNG becomes an `.ico` with 16, 24, 32, 48, 64, 128 and 256 px images that decodes (`platypus_build/src/icon.rs`). |
 | M9-TS-2421 | Unit | A non-square image is centred on a square; an `.ico` passes through unchanged; garbage is an error. |
 | M9-TS-2430 | Unit | Version info (ProductName, CompanyName, FileDescription, LegalCopyright, FileVersion, ProductVersion, OriginalFilename, 1.2.3.0 numbers) and the four icon sizes written into a PE file read back, and a payload appended after the edit is found (Windows; `platypus_build/src/pe.rs`). |
 | M9-TS-2440 | Manual | `cargo test -p platypus_build -- --ignored standalone` (needs a built `platypus_app`, GPU): packages `examples/hello`, deletes the game folder and runs the exe from another folder with `--screenshot out.png --frames 5`. Checked by eye for hello (a log-only game, background colour) and boxes (the stripes image from `assets/` shows). |
@@ -1458,6 +1458,12 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-REN-02 | Unit | The deprecated `package.json` fallback reads an `iron` section as well as `platypus` (`platypus` wins when both are there). |
 | M9-REN-03 | Unit | Scene and prefab files saved with `"format": "iron.scene"` / `"iron.prefab"` still load. |
 | M9-REN-04 | Unit | `import { .. } from "@iron/engine"` is erased like `@platypus/engine`. |
+| M9-ICO-01 | Unit | The Platypus icon (`resources/icon/icon.png`, built into `platypus_core::icon::DEFAULT_PNG`) is a 1254 x 1254 PNG. |
+| M9-ICO-02 | Unit | `write_ico` lists its sizes; `windows_res` writes a `.res` file of aligned entries: an empty first entry, 7 icons, the `MAINICON` group and a version block with `ProductName`. |
+| M9-ICO-03 | Unit | The host's default window icon is 256 x 256 RGBA with transparent corners and an opaque middle. |
+| M9-ICO-04 | Integration | `platypus.exe` (built by cargo, Windows MSVC) carries the `MAINICON` group, PNG icon images and `ProductName` = `Platypus`. |
+| M9-ICO-05 | Unit | The default icon decodes and converts to an `.ico` with all seven sizes. |
+| M9-ICO-06 | Unit | `package` of a game without an icon and with empty title and description gives the exe the Platypus icon (all seven sizes, the same 16 px image) and `ProductName` / `FileDescription` = `Platypus`; a game with its own icon keeps it (`M9-TS-2412`). |
 | M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
 | M9-API-901 | Unit | The rate rounds to the nearest integer. |
 | M9-API-902 | Unit | `FpsCounter` closes a window once 0.25 s have passed and reports it; 100 FPS over 0.6 s gives two windows of `100 FPS`. |

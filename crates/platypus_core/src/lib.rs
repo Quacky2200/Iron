@@ -12,6 +12,7 @@ pub const WINDOW_TARGET: u32 = 0x4000_0000;
 
 mod assets;
 pub mod glob;
+pub mod icon;
 mod ids;
 mod ops;
 pub mod payload;
