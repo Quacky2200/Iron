@@ -36,6 +36,10 @@ further: UI is written as React components and hooks. React is the most widely u
 component model is where much of today's UI practice comes from, so web designers and developers already know how to
 build the menus, HUDs and tools of a game this way.
 
+A GameObject component and the React component that draws its UI can live in the same file: a `.tsx` module holds
+the `Component` class that runs on a GameObject next to the JSX that shows its HUD or panel, and JSX makes the two
+sit together naturally (see [examples/arcade](examples/arcade/src/main.tsx)).
+
 Why TypeScript, and why a compiler
 ----------------------------------
 
