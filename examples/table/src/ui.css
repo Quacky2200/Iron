@@ -40,19 +40,22 @@
   user-select: none;
 }
 .head .cell:hover { background: #3d4c6b; }
-/* One line under the whole header row. The sorted column gets a triangle after its title: up for
-   ascending, down for descending (drawn with borders, the font has no arrow glyphs). */
+/* One line under the whole header row. The sorted column gets a thin rounded arrow after its title:
+   up for ascending, down for descending (an SVG image, the font has no arrow glyphs). */
 .head .cell { display: flex; align-items: center; gap: 6px; border-bottom: 3px solid #8fb2ff; }
 .head .num { justify-content: flex-end; }
 .head .asc::after, .head .desc::after {
   content: "";
-  width: 0;
-  height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
+  width: 10px;
+  height: 12px;
+  background: no-repeat center / contain;
 }
-.head .asc::after { border-bottom: 5px solid white; }
-.head .desc::after { border-top: 5px solid white; }
+.head .asc::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='12' viewBox='0 0 10 12' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 10.5v-9M1.8 4.6 5 1.4l3.2 3.2'/%3E%3C/svg%3E");
+}
+.head .desc::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='12' viewBox='0 0 10 12' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 1.5v9M1.8 7.4 5 10.6l3.2-3.2'/%3E%3C/svg%3E");
+}
 .row:nth-child(even) .cell { background: #f1f4f9; }
 .row:hover .cell { background: #d6e4ff; }
 .row.selected .cell { background: #b9d1ff; }
