@@ -6,7 +6,7 @@
 // cullUpdateTransforms, cullCompletely); L turns the camera to look away and back.
 // To run it (docs/benchmarks.md, "Animator"): copy examples/fog-white-room/assets/mannequin.glb and
 // its .meta into assets/, build with `platypus-build build`, then
-// `platypus tools/bench/crowd --bench --bench-input tools/bench/crowd/bench.json --fixed-dt 0.0166667`.
+// `platypus-game tools/bench/crowd --bench --bench-input tools/bench/crowd/bench.json --fixed-dt 0.0166667`.
 
 const COUNT = 50;
 const MODES: AnimatorCullingMode[] = ["alwaysAnimate", "cullUpdateTransforms", "cullCompletely"];

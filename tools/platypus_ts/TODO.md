@@ -486,17 +486,17 @@ two examples needed (M9-TS-3361..3382), `b7730d0` the examples as platypus-build
   `Number(x)` of a missing string is NaN, as for `undefined`); a copy where an object of another shape goes is still a copy
   (Ref<T> became `{ current: T }` so refs are shared); errors in lazily lowered functions can carry the caller's line.
 
-## Resume point (2026-10-27, the rename to Platypus)
+## Resume point (2026-10-27, main merged into the Platypus rename)
 
-**Done:** the project is renamed Iron -> Platypus (`c3b976a6` paths, `b738528a` names; compatibility: `game.irbundle`,
-a `package.json` `iron` section, `iron.scene`/`iron.prefab`, `@iron/*` imports, PlayerPrefs `iron.quality` and the old
-"Iron" settings folder are still read; magics `IRONPAYL`/`IRPK`/`IRTX`/`IRMD` kept; `M9-REN-01..04`, see
-`docs/platypus-build.md`). `db7695fc` `Copyright 2026 The Platypus Authors` above every SPDX line, `NOTICE`.
-`e0974f90` the Platypus icon (`resources/icon/icon.png`) is the default: packaged exes, the host's window icon, and the
-host exes' own icon and version info (`crates/platypus_app/build.rs` links a `.res`; `M9-ICO-01..06`). `3422c791` README
-rewrite; `91d825d7` `docs/PROGRESS.md` and `docs/progress/` (`bun scripts/progress-shots.ts`).
-**Left:** the user's `feature/cpu-renderer` branch still uses the old names (rename it with the same script before
-merging); `cargo build` binaries are `platypus.exe` / `platypus_editor.exe` now (package `platypus_app`).
+**Done:** the rename Iron -> Platypus (compatibility: `game.irbundle`, a `package.json` `iron` section,
+`iron.scene`/`iron.prefab`, `@iron/*` imports, PlayerPrefs `iron.quality`, the old "Iron" settings folder; magics
+`IRONPAYL`/`IRPK`/`IRTX`/`IRMD` kept; `M9-REN-01..04`, `docs/platypus-build.md`), the two-line copyright + SPDX header,
+`NOTICE`, the Platypus icon as the default (`M9-ICO-01..06`). Then main (CPU/GLES renderers, two hosts) was merged in
+("Merge main (CPU/GLES renderers, two hosts) into the Platypus rename") and renamed again: crates
+`platypus_render_cpu` / `platypus_render_gles`, hosts `platypus-game` (games) and `platypus-app` (`"type": "app"`,
+`src/bin/platypus_ui_app.rs`), `PLATYPUS_ANGLE_DIR` / `PLATYPUS_GLES_DUMP`; both hosts carry the icon (`build.rs`
+links the `.res` into every bin). The single `platypus` binary is gone; `cargo build -p platypus_app` builds
+`platypus-game.exe`, `platypus-app.exe` and `platypus_editor.exe`.
 
 **Run:** one area `cargo test -p platypus_ts_tests --test <lang|stdlib|engine|engine_api|ui> [filter]`; all of them
 `cargo test -p platypus_ts_tests`. Keep one command shape: `-p platypus_ts_tests` and `--workspace` unify features differently
