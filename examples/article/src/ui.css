@@ -48,8 +48,10 @@
 .cell { display: block; padding: 6px 12px; border-bottom: 1px solid #ece7dc; }
 .head .cell { background: #4a3f33; color: white; font-weight: bold; border-bottom: none; cursor: pointer; }
 .head .cell:hover { background: #5f5142; }
-.head .cell { border-bottom: 3px solid transparent; }
-.head .sorted { border-bottom-color: #e0a56b; }
+/* The sort marker underlines the title, not the whole (possibly wide) cell. */
+.head .cell { display: flex; align-items: flex-start; }
+.head .num { justify-content: flex-end; }
+.head .sorted > * { padding-bottom: 2px; border-bottom: 3px solid #e0a56b; }
 .row:nth-child(even) .cell { background: #f6f2e9; }
 .row:hover .cell { background: #f1e1c8; }
 .num { text-align: right; }

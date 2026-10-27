@@ -40,8 +40,10 @@
   user-select: none;
 }
 .head .cell:hover { background: #3d4c6b; }
-.head .cell { border-bottom: 3px solid transparent; }
-.head .sorted { border-bottom-color: #8fb2ff; }
+/* The sort marker underlines the title, not the whole (possibly wide) cell. */
+.head .cell { display: flex; align-items: flex-start; }
+.head .num { justify-content: flex-end; }
+.head .sorted > * { padding-bottom: 2px; border-bottom: 3px solid #8fb2ff; }
 .row:nth-child(even) .cell { background: #f1f4f9; }
 .row:hover .cell { background: #d6e4ff; }
 .row.selected .cell { background: #b9d1ff; }
