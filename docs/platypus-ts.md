@@ -1127,7 +1127,7 @@ calls into. Its header comment is the long version.
 
 | Path | What |
 |---|---|
-| `fixtures/sim.ts`, `sim.test.ts` | The zombie game's simulation (678 lines) and its original bun tests |
+| `fixtures/sim.ts`, `sim.test.ts` | A game-rules simulation (678 lines) and its bun tests |
 | `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
 | `bench/engine.ts` | Calls the `Demo` engine API; `build.rs` compiles it with the manifest of [tools/platypus_demo_api](../tools/platypus_demo_api/src/lib.rs) (a small world of entities written with `#[platypus_api]`), whose shims the test binaries link |
 | `bench/scene.ts` | Drives the real scene: `build.rs` compiles it (prefix `scn_`, base 15000) with `platypus_scene`'s manifest (`platypus_scene::api::scene_api::MANIFEST`) and the tests run it against a real `Scene` made current with `platypus_scene::api::enter`; `platypus_ts_tests::scene_anchor()` keeps the `Scene` shims linked |

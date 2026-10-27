@@ -47,7 +47,7 @@ Native (`platypus_ts`) against the QuickJS original of each example, release hos
   3.38x, physics 2.57x; their script time is 20-75x lower. Nothing is slower than QuickJS beyond the noise between runs.
   GPU-bound scenes are equal.
 - Start-up, process start to first frame including the JIT compile: 0.42-0.67 s for most examples.
-- A pure script micro-benchmark (the zombie simulation, 10,000 steps): QuickJS 391 ms, bun (JavaScriptCore JIT) 36.1 ms,
+- A pure script micro-benchmark (the game-rules simulation, 10,000 steps): QuickJS 391 ms, bun (JavaScriptCore JIT) 36.1 ms,
   `platypus_ts` 9.1 ms ([platypus-ts-native.md](platypus-ts-native.md)).
 
 ## Examples

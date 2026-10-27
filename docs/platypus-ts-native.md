@@ -10,7 +10,7 @@ details are in the pages it links.
 - **QuickJS was too slow for script-heavy games.** QuickJS is an interpreter with no JIT. A sine demo that built meshes in
   script ran at about 30 ms a frame until the work moved to Rust; 123 fish in `examples/fishtank` took about 32 ms of
   QuickJS a frame before batching. Script cost decided how a game had to be written. The spike that started platypus_ts
-  (`docs/research/platypus-ts-spike.md`) compiled the zombie game's `sim.ts` (678 lines of game rules) and ran a 10,000-step
+  (`docs/research/platypus-ts-spike.md`) compiled a game's `sim.ts` (678 lines of game rules) and ran a 10,000-step
   benchmark of it in 8.8 ms against 406 ms in QuickJS, with the same checksum.
 - **No bun and no `node_modules` for games.** A game was a bun project (`package.json`, `bun install`, `bun run build`, a
   JavaScript bundle). Building one needed the JavaScript toolchain and a dependency tree. A compiled game needs only the
@@ -209,7 +209,7 @@ and speed-up at each: [benchmarks.md](benchmarks.md), "Stages".
 
 ### A pure script micro-benchmark
 
-`cargo run --release -p platypus_ts_tests --bin bench` (in `tools/`) runs the zombie simulation (`sim.ts`, a busy state,
+`cargo run --release -p platypus_ts_tests --bin bench` (in `tools/`) runs the game-rules simulation (`sim.ts`, a busy state,
 10,000 steps) in QuickJS, bun and native code, all with the same checksum:
 
 | Engine | 10,000 steps | vs QuickJS |

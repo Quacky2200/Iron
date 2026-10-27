@@ -1,4 +1,4 @@
-// Rules of the zombie game, checked without the engine. `bun test` runs these.
+// Rules of the game simulation, checked without the engine. `bun test` runs these.
 import { describe, expect, test } from "bun:test";
 
 import { addPlayer, buildWalls, createState, damageZombie, step, zombieSpeed, type PlayerInput, type SimState, startLevel, type Walls } from "./sim.ts";

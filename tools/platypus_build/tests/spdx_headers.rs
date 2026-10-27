@@ -24,7 +24,7 @@ const EXCLUDED: &[&str] = &[
     "tools/platypus_ts_tests/bench/intl4.ts",
     "tools/platypus_ts_tests/bench/promises.ts",
     "tools/platypus_ts_tests/bench/typed.ts",
-    // Third-party ports (MiniGameEngine, the zombie game) and copies of them.
+    // Third-party ports (MiniGameEngine) and copies of them.
     "examples/sine-circle-demo/",
     "examples/raindrop-demo/",
     "tools/platypus_ts_tests/bench/sine.ts",

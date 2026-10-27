@@ -111,7 +111,7 @@ Each example was measured natively and, where one exists, as its QuickJS origina
 (windowless, 1280x720, fixed step).
 Script-heavy examples run up to 7.2x faster natively (raindrop-demo 7.22x, fishtank 5.37x, godrays-room 4.88x, world
 4.45x), with 20-75x less script time; nothing is slower beyond the noise between runs. On a pure script micro-benchmark
-(a zombie simulation, 10,000 steps) QuickJS takes 391 ms, bun (JavaScriptCore JIT) 36.1 ms and `platypus_ts` 9.1 ms.
+(a game-rules simulation, 10,000 steps) QuickJS takes 391 ms, bun (JavaScriptCore JIT) 36.1 ms and `platypus_ts` 9.1 ms.
 Tables, start-up times and the method: [docs/benchmarks.md](docs/benchmarks.md).
 
 Quick start

@@ -1071,13 +1071,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
 - [x] **Ported examples (2026-10-18)**: `examples/sine-circle-demo` and `examples/raindrop-demo`
   (MiniGameEngine's SineDemo and RaindropDemo: the original's transitions, all four sine
   formulas drawn every degree with `LineRenderer2D`, the weather's ripples, the music, an FPS
-  readout with a vsync toggle) and the 2014 VB.NET Zombie Horders (the rules in `sim.ts`,
-  tested with `bun test`; the original's menu, pause and death screens with a backdrop blur;
-  zombies a little faster up to level 3; the single-player spawn bug fixed). The zombie game
-  moved to its own repository (2026-10-18): zombie-horders, branch `iron`, built by cloning it
-  into `examples/topdown-zombie-game`
-  - [ ] The zombie game's multiplayer: the sim already takes a list of players and inputs;
-    it waits on networking (M6 Script IO, M8)
+  readout with a vsync toggle).
 - [ ] **Optimisation fixes** (found 2026-10-17 with `examples/arcade`; not scheduled yet):
   - [x] Reflection probes redrew the shadow map six times: shadow maps are now drawn once
     a frame from the main view and shared by probe faces, mirrors and render textures
