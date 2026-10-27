@@ -31,7 +31,9 @@ pub mod transform;
 mod tree;
 pub mod units;
 
+mod background;
 pub use attrs::{Attrs, ClosedBy, ElementState};
+pub use background::{border_image_axis, is_svg, repeat_tiles, resolve_stops, tile_rect};
 pub use color::Rgba;
 pub use draw::{
     ClipShape, DrawCmd, GlyphRun, ImageFill, LayerShadow, Polygon, PositionedGlyph, Quad, Radii,

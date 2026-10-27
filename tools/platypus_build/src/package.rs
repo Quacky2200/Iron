@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus-build package <game>`: one executable for a game. A copy of the engine host
-//! (`platypus_app`) gets the game's icon and version info (Windows PE resources, `pe.rs`) and the
+//! (`platypus-game`, or `platypus-app` for a project of type `app`) gets the game's icon and version info (Windows PE resources, `pe.rs`) and the
 //! game's code (bundle, CSS, metadata, icon) as a payload at its end (`platypus_core::payload`). The
 //! assets are copied to a `data/` folder beside it, never embedded. See `docs/platypus-build.md`.
 
 use crate::{Options, build, icon, include, packs, pe};
 use platypus_core::payload::{self, Archive};
-use platypus_core::project::{FixedUser, LoadOptions, Platform, Project, SystemUser, UserInfo};
+use platypus_core::project::{
+    FixedUser, LoadOptions, Platform, Project, ProjectType, SystemUser, UserInfo,
+};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -447,7 +449,7 @@ pub fn collect_files(
 /// How to package.
 #[derive(Debug, Clone, Default)]
 pub struct PackageOptions {
-    /// The engine host to copy (default: `find_host`).
+    /// The engine host to copy (default: `find_host`, by the project's `type`).
     pub host: Option<PathBuf>,
     /// Where to write (default `<game>/dist/<exe>.exe`).
     pub out: Option<PathBuf>,
@@ -464,7 +466,7 @@ pub struct PackageOptions {
     /// The person the templates of `project.json` see (default: the system's user).
     pub user: Option<FixedUser>,
     /// Write the data as packs (`data/assets.dat`, `data/scene-<slug>.dat`, `data/index.json`)
-    /// instead of loose files. Opt-in: `platypus_app` does not read packs yet.
+    /// instead of loose files. Opt-in: the hosts do not read packs yet.
     pub packs: bool,
     /// The codec of the packs (`--codec`, default LZ4).
     pub codec: Option<platypus_pack::Codec>,
@@ -502,9 +504,14 @@ fn exe_name(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-/// The engine host: `--host`, `$PLATYPUS_HOST`, `platypus_app` next to this program, or the newest
-/// `target/{release,debug}/platypus` found going up from the game folder and the current folder.
-pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String> {
+/// The engine host for a project of type `kind` (`platypus-game` for games, `platypus-app` for apps):
+/// `--host`, `$PLATYPUS_HOST`, the host next to this program, or the newest
+/// `target/{release,debug}/<host>` found going up from the game folder and the current folder.
+pub fn find_host(
+    game: &Path,
+    explicit: Option<&Path>,
+    kind: ProjectType,
+) -> Result<PathBuf, String> {
     if let Some(p) = explicit {
         return if p.is_file() {
             Ok(p.to_path_buf())
@@ -524,7 +531,7 @@ pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
     {
-        found.push(dir.join(exe_name("platypus")));
+        found.push(dir.join(exe_name(kind.host())));
     }
     let mut starts = vec![game.to_path_buf()];
     starts.extend(std::env::current_dir().ok());
@@ -532,12 +539,25 @@ pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String
         let s = s.canonicalize().unwrap_or(s);
         for a in s.ancestors() {
             for profile in ["release", "debug"] {
-                found.push(a.join("target").join(profile).join(exe_name("platypus")));
+                found.push(a.join("target").join(profile).join(exe_name(kind.host())));
             }
         }
     }
-    newest_host(found)
-        .ok_or_else(|| "no platypus_app host found (build it, or pass --host <path>)".to_string())
+    newest_host(found).ok_or_else(|| {
+        format!(
+            "no {} host found (cargo build -p platypus_app --bin {}, or pass --host <path>)",
+            kind.host(),
+            kind.host()
+        )
+    })
+}
+
+/// The `type` of the project in `game` (a game when it can't be read: `resolve` reports the
+/// real error later). Read before the host is known, so with the platform this program runs on.
+fn project_type(game: &Path, overrides: &Overrides) -> ProjectType {
+    resolve(game, overrides, Platform::current(), &SystemUser)
+        .map(|(_, p)| p.project_type)
+        .unwrap_or_default()
 }
 
 /// The most recently built of the candidate hosts. Not "release first": a stale release build
@@ -595,7 +615,8 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         warnings = report.warnings;
     }
     // The host without any payload of its own (read first: its kind picks the platform section).
-    let host_path = find_host(game, opts.host.as_deref())?;
+    let kind = project_type(game, &opts.overrides);
+    let host_path = find_host(game, opts.host.as_deref(), kind)?;
     let host_len = payload::host_len(&host_path)?;
     let mut host = std::fs::read(&host_path).map_err(|e| io(&host_path, e))?;
     host.truncate(host_len as usize);
@@ -771,7 +792,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
     })
 }
 
-const USAGE: &str = "usage: platypus-build package <game> [--host platypus.exe] [--out file] [--no-build] [--no-tsc]
+const USAGE: &str = "usage: platypus-build package <game> [--host platypus-game.exe] [--out file] [--no-build] [--no-tsc]
        [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d] [--icon file.png|ico]
        [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--codec lz4|zstd] [--report]]";
 
@@ -1667,7 +1688,7 @@ mod tests {
     }
 
     // M9-TS-2440: needs the engine host and a GPU, so it runs on request:
-    // `cargo test -p platypus_build -- --ignored standalone` (PLATYPUS_HOST or a built target/debug/platypus).
+    // `cargo test -p platypus_build -- --ignored standalone` (PLATYPUS_HOST or a built target/debug/platypus-game).
     #[test]
     #[ignore = "needs platypus_app built and a GPU"]
     fn standalone_exe_runs_from_another_folder_without_the_game_folder() {
@@ -1792,6 +1813,27 @@ mod tests {
             .set_modified(t)
             .unwrap();
         assert_eq!(newest_host(vec![release.clone(), debug]), Some(release));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    // M9-TS-2600
+    #[test]
+    fn the_project_type_picks_the_host() {
+        let d = std::env::temp_dir().join(format!("platypus_build_type_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let ov = Overrides::default();
+        std::fs::write(d.join("project.json"), r#"{ "name": "x" }"#).unwrap();
+        assert_eq!(project_type(&d, &ov), ProjectType::Game);
+        std::fs::write(d.join("project.json"), r#"{ "name": "x", "type": "app" }"#).unwrap();
+        assert_eq!(project_type(&d, &ov), ProjectType::App);
+        // Unreadable: a game (resolve reports the real error later).
+        std::fs::write(d.join("project.json"), "{ nope").unwrap();
+        assert_eq!(project_type(&d, &ov), ProjectType::Game);
+        // An explicit host that is missing is an error (`$PLATYPUS_HOST` is not consulted then).
+        let missing = d.join("none");
+        let e = find_host(&missing, Some(&missing), ProjectType::App).unwrap_err();
+        assert!(e.contains("not found"), "{e}");
+        assert_eq!(ProjectType::App.host(), "platypus-app");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

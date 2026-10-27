@@ -13,10 +13,13 @@ pub mod testing;
 pub mod ui;
 pub mod world;
 
-pub use gpu::{Gpu, RenderError};
+pub use gpu::{Gpu, RenderError, set_low_memory};
 pub use offscreen::OffscreenTarget;
 pub use surface::WindowSurface;
-pub use ui::{CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, needs_backdrop};
+pub use ui::backend::UiBackend;
+pub use ui::{
+    CANVAS_FORMAT, RenderStats, RenderTarget, UiRenderer, glyphs, image_cache, needs_backdrop, plan,
+};
 pub use wgpu;
 pub use world::{
     ALL_LAYERS, Anisotropic, AutoExposure, BEAM_MESH, Bloom, CloudLayer, CookedTexture,
@@ -40,6 +43,13 @@ pub struct Color {
 }
 
 impl Color {
+    pub const TRANSPARENT: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
+
     pub const fn rgb(r: f64, g: f64, b: f64) -> Self {
         Self { r, g, b, a: 1.0 }
     }

@@ -2669,7 +2669,16 @@ impl<L: LayoutEngine> UiTree<L> {
                         node.kind
                     )));
                 }
+                // Text going between empty and not empty (or blank and not) changes its
+                // parent's `:empty` / `:blank`, and what `:has` or siblings select on them.
+                let old = node.text.as_deref().unwrap_or("");
+                let flips = old.is_empty() != new_text.is_empty()
+                    || old.trim().is_empty() != new_text.trim().is_empty();
+                let parent = node.parent;
                 node.text = Some(new_text);
+                if let Some(p) = parent.filter(|_| flips) {
+                    children_changed.insert(p);
+                }
                 // The text block containing this node must be measured again.
                 text_changed.insert(id);
             }

@@ -151,16 +151,16 @@ Quick start
 Windows, with Rust (1.99 or later) and its MSVC toolchain. Bun is only needed for the editor and the JavaScript tests.
 
 ```bash
-# The host (platypus.exe) and the build tool
+# The hosts (platypus-game.exe for games, platypus-app.exe for UI-only apps) and the build tool
 cargo build --release -p platypus_app
 cd tools && cargo build --release -p platypus_build && cd ..
 
 # Build an example and run it
 tools/target/release/platypus-build build examples/fog-park
-target/release/platypus examples/fog-park
+target/release/platypus-game examples/fog-park
 
 # Render one frame to a PNG and exit
-target/release/platypus examples/css --screenshot out.png --frames 30
+target/release/platypus-game examples/css --screenshot out.png --frames 30
 
 # Package a game as one executable (examples/boxes/dist/<name>.exe)
 tools/target/release/platypus-build package examples/boxes

@@ -14,7 +14,7 @@ fn run(name: &str, flag: &str) -> (PathBuf, String) {
     let game = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello.js");
     let png = dir.join("out.png");
     let log = dir.join("run.log");
-    let status = Command::new(env!("CARGO_BIN_EXE_platypus"))
+    let status = Command::new(env!("CARGO_BIN_EXE_platypus-game"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)

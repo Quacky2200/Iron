@@ -120,6 +120,26 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-07 | Golden | `filter: blur` blurs a box and its children; nothing outside the layer bounds changes. |
 | M2-DRW-08 | Golden | `backdropFilter: blur` blurs only what's behind the box, clipped to its rounded shape. |
 | M2-DRW-09 | Integration | Drawing skips subtrees scrolled out of a clipping container (beyond a margin), also below intermediate boxes; scrolling brings them back; a far-off box with a shadow is still drawn. |
+| M2-PLN-01 | Unit | The frame plan of two boxes: two instances in one `Draw` step after a `Clear` of the canvas, one texture, no layers or clips (no GPU). |
+| M2-PLN-02 | Unit | A plan for a canvas seeded with the world has no `Clear` step. |
+| M2-PLN-03 | Unit | A blurred, translucent layer: three textures (canvas, layer, blur scratch), a `Blur` step at the scaled sigma and a `Composite` onto the canvas at its opacity. |
+| M2-PLN-04 | Unit | An `overflow: hidden` clip is one clip-table entry and its children's instances carry its index. |
+| M2-PLN-05 | Unit | Text plans one glyph instance per visible glyph and queues the glyph pixels in the `GlyphCache` (not again on a second plan). |
+| M2-PLN-06 | Unit | An image fill plans a `Draw` step naming its texture; an image the resources don't know is skipped. |
+| M2-PLN-07 | Unit | `needs_backdrop` finds backdrop filters without planning. |
+| M2-GLES-01 | Integration | A GLES 3 context through EGL (ANGLE via `PLATYPUS_ANGLE_DIR`) clears an `SRGB8_ALPHA8` framebuffer and reads it back; skipped without an EGL driver. |
+| M2-GLES-02 | Integration | Boxes with borders (solid, dashed, dotted, per-side colours), per-corner radii and linear, radial and conic gradients: the GLES executor matches the wgpu one pixel for pixel (within 6/255 on all but 0.2% of pixels). |
+| M2-GLES-03 | Integration | Outer and inset box shadows match between the GLES and wgpu executors. |
+| M2-GLES-04 | Integration | `overflow: hidden` clips with a rounded border (several children) match between the two executors. |
+| M2-GLES-05 | Integration | Text at two sizes and colours, including dark text on light, matches between the two executors (the shared glyph cache, uploaded into the GLES pages). |
+| M2-GLES-06 | Integration | Boxes and text at scale 2 and a rotated plane (the clip table's transforms) match between the two executors. |
+| M2-GLES-07 | Integration | Background images match between the GLES and wgpu executors: an unrepeated PNG, a tiled one at a set size, `cover` with rounded corners, nearest-neighbour upscaling, and SVGs (`contain`, a set size over a colour). |
+| M2-GLES-08 | Integration | Background images at scale 2 (a rounded tiled PNG and an SVG rasterized at twice the size) match between the two executors. |
+| M2-GLES-09 | Integration | A translucent group (children composited once at 50%) and two blurred boxes match between the GLES and wgpu executors. |
+| M2-GLES-10 | Integration | `drop-shadow()` (hard, and blurred) and eight colour filter functions (grayscale, brightness, contrast, hue-rotate, sepia, invert, saturate, opacity) match; a drop shadow at scale 1.5 (a shift between texels) too. |
+| M2-GLES-11 | Integration | All 15 `mix-blend-mode`s over a gradient match between the two executors. |
+| M2-GLES-12 | Integration | `backdrop-filter` blur on a rounded translucent box and `backdrop-filter: grayscale()` match between the two executors. |
+| M2-GLES-13 | Integration | Alpha, luminance and repeated-dot `mask-image`s and a translucent layer inside a rounded `overflow: hidden` clip match between the two executors. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |
@@ -266,6 +286,7 @@ layout pass):
 | M3-CSS-11 | Unit + Integration | Nested rules flatten against their parent (`&`, implicit descendant, `>`, compound `&.x`, ident-first `text:first-child`, selector lists via `:is()`), declarations after nested rules still belong to the parent, bad nested rules and nested at-rules warn; nested `:hover` rules restyle children. |
 | M3-CSS-12 | Integration | `@import` loads files relative to the importing sheet (nested imports relative to theirs), applies them before the importer's rules, rebases their `url()`s, and warns about missing files, cycles and conditional imports. |
 | M3-CSS-13 | Unit | Minified function lists get a space between calls (`translateY(0)scale(1)` → `translateY(0) scale(1)`, also before `#` colours); strings and custom properties are kept as written. |
+| M3-CSS-14 | Integration | Setting text on an empty text node (and emptying it again) re-evaluates `:empty` on its parent and `:has(span:not(:empty))` above it. |
 | M3-SVG-01 | Golden | An SVG file (gradient, dashed stroke, path, text) as a 32px background and a 96px `image` rasterized sharp at that size, and a tiled `data:image/svg+xml` background. |
 | M3-SVG-02 | Unit + Integration | Attribute names (camelCase kept, kebab otherwise), natural sizes from width/height/viewBox, escaping, CSS transforms in SVG syntax; an `svg` sizes from its attributes, serializes its content with attributes, CSS presentation properties and `currentColor`, restyles on `:hover` and transitions `fill`; its content isn't laid out, it's hit as one box, its `text` isn't a Platypus text block, and attribute/CSS size changes resize it. |
 | M3-SVG-03 | Golden | Inline SVG at 2x: a gradient from `defs` clipped by a `clipPath`, a dashed `currentColor` ring, a CSS-rotated polygon and SVG text, all styled from a stylesheet. |
@@ -1405,7 +1426,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2550 | Unit | Globs (`platypus_core::glob`): `*` stays inside one path part, `**` crosses parts, `?`, case-sensitive; a plain path in `include` means the folder below it. |
 | M9-TS-2551 | Unit | Dynamic path inference (`platypus_ts::assetpaths`): templates and `+` chains become globs, one `*` per hole (nested holes too); prefix-less paths, paths without a file name, URLs and text with spaces are refused; whole literals and lines are reported. |
 | M9-TS-2552 | Unit | `include` / `exclude` selection (`platypus_build::include`) and `collect_files`: globs work, a pattern's matches are copied under a narrowed `include`, `exclude` removes files, an unmatched `include` is a warning not a silent drop. |
-| M9-TS-2553 | Manual | `platypus-build package examples/emoji --host target/debug/platypus.exe --out <dir>/emoji.exe`, then `emoji.exe --screenshot out.png --frames 150` from that folder with `PLATYPUS_LOG_FILE`: no `not found`, the sounds decode and the SVG emoji are drawn (checked 2026-10-22). |
+| M9-TS-2553 | Manual | `platypus-build package examples/emoji --host target/debug/platypus-game.exe --out <dir>/emoji.exe`, then `emoji.exe --screenshot out.png --frames 150` from that folder with `PLATYPUS_LOG_FILE`: no `not found`, the sounds decode and the SVG emoji are drawn (checked 2026-10-22). |
 | M9-TS-2554 | Unit | Pack placement (`platypus_build::packs`): an asset only one scene names goes to that scene's pack, one two scenes name, or the code, a dynamic path or `include` takes goes to `assets.dat`; prefabs are followed; the scene file is the first entry of its own pack; scene slugs stay distinct. |
 | M9-TS-2556 | Unit | Two builds of the same files write identical bytes and remove an old pack; two keys that differ only in case are an error. |
 | M9-TS-2558 | Unit | A pack written by the build reads back byte-identical through `platypus_pack::Pack` and `Vfs` (GUIDs and importer text from `.meta`, LZ4 for text, mp3 stored, `verify`), and `pack-info` lists it. |
@@ -1438,6 +1459,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1318 | Unit | `license` defaults to `private`, is validated case-insensitively against the list, `custom` takes `licenseFile`, the npm mapping. |
 | M9-API-1321 | Unit | `name` is the only required field: missing or empty is an error naming `project.json`; a command-line override counts. |
 | M9-API-1322 | Unit | An explicitly empty string field stays empty (no default), is listed in `empty_fields` with a warning text, and round-trips through the resolved project. |
+| M9-API-1330 | Unit | `type` in `project.json`: `game` by default, `app` runs on the `platypus-app` host (`ProjectType::host`), is a known key (not in `extra`) and round-trips through `to_json` (the default is not written); any other value is an error naming `type`. |
 | M9-API-1320 | Unit | `platypus_app` `Manifest::load` of a folder uses `project.json` (title, identifier, startScene, layers, platform fps); a broken template leaves the defaults. |
 | M9-TS-2700 | Unit | `init` writes the default templates, `src/main.ts`, and the resolved preview for a given user; the result builds. |
 | M9-TS-2701 | Unit | `init` flags replace only their own fields. |
@@ -1502,7 +1524,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1148 | Unit | `load_sound` loads a WAV whole and streamed from a pack-only `Vfs` (offline mixer, no GPU) and a miss says `not found in assets.dat` (`platypus_app/src/main.rs`). |
 | M9-API-1149 | Unit | A UI SVG image loads from the installed asset file system, not the folder (`platypus_render::ui::images`). |
 | M9-API-1205 | Unit | `asset_root::mount`: loose folder, packs from `index.json` in any manifest order (scene packs above `assets.dat`), packs found by name without a manifest, a manifest path outside the folder or a missing pack is an error. |
-| M9-API-1150 | Manual | `platypus-build package examples/emoji --packs --host target/debug/platypus.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
+| M9-API-1150 | Manual | `platypus-build package examples/emoji --packs --host target/debug/platypus-game.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
 | M9-API-1151 | Unit | `Assets.exists` / `list` / `packOf` in QuickJS answer from the host's index: sorted keys, the `project.json` glob rules, `guid:` and `data:` sources, the pack of each path, nothing without an index (`platypus_engine_api/tests/batch1.rs`). |
 | M9-API-1107 | Unit | Stored, LZ4 and deflate packs read back the same bytes; compressed text shrinks over 4x. |
 | M9-API-1108 | Unit | A pack inside a larger file (an APK asset) opens at its offset, mapped and read. |
@@ -1700,6 +1722,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2917 | Integration | A rejection handled in the same drain is not reported; a `then` chain reports only its last promise. |
 | M9-TS-2918 | Integration | An exception escaping a `setTimeout` or `queueMicrotask` callback is reported and the other timers still run. |
 | M9-TS-2919 | Integration | Clear compile errors: `Promise.all` of promises of different types, top-level `await`, `Promise<Promise<T>>`, async generators, a generic promise of a type no `Promise<..>` names (alias). |
+| M9-TS-2600 | Unit | `platypus-build package` reads the project's `type` before choosing the host: `game` (default, also when `project.json` can't be read) or `app`; a missing explicit host is an error. |
 | M9-TS-3000 | Integration | `let mode: M = "a"; if (o.mode !== undefined) mode = o.mode;` (a union local assigned from an optional field; formerly a Cranelift panic) equals bun's (`platypus_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |
 | M9-TS-3001 | Integration | The same with `as M`, a `const` copy and `o.mode as M` equals bun's (`platypus_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |
 | M9-TS-3002 | Integration | `??` over optional and nullable union members equals bun's (`platypus_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |

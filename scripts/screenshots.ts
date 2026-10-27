@@ -26,9 +26,9 @@ function run(cmd: string[]): boolean {
   return result.exitCode === 0;
 }
 
-// QuickJS bundles (deprecated) need `platypus --force`; platypus_editor forces itself. Examples are native.
+// QuickJS bundles (deprecated) need `platypus-game --force`; platypus_editor forces itself. Examples are native.
 // The app binaries aren't rebuilt by `cargo test`, so build them once up front.
-if (!run(["cargo", "build", "-p", "platypus_app"])) process.exit(1);
+if (!run(["cargo", "build", "-p", "platypus_app", "--bin", "platypus-game", "--bin", "platypus_editor"])) process.exit(1);
 const bin = (name: string) => join(root, "target", "debug", process.platform === "win32" ? `${name}.exe` : name);
 
 let failed = 0;
@@ -36,7 +36,7 @@ for (const name of names) {
   const editor = name === "editor";
   const out = join(output, editor ? "editor.png" : `examples-${name}.png`);
   const game = editor ? [] : [join("examples", name)];
-  const ok = run([bin(editor ? "platypus_editor" : "platypus"), ...game, "--screenshot", out, "--frames", "30"]);
+  const ok = run([bin(editor ? "platypus_editor" : "platypus-game"), ...game, "--screenshot", out, "--frames", "30"]);
   console.log(ok ? `wrote ${out}` : `failed: ${name}`);
   if (!ok) failed++;
 }

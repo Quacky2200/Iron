@@ -261,10 +261,48 @@ pub enum Source {
     Defaults,
 }
 
+/// What a project is (`type` in `project.json`): the host program that runs it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProjectType {
+    /// A game (the default): the full engine, with the 3D world (`iron-game`).
+    #[default]
+    Game,
+    /// An application that is only UI, on a lighter renderer (`iron-app`).
+    App,
+}
+
+impl ProjectType {
+    pub fn parse(s: &str) -> Option<ProjectType> {
+        match s {
+            "game" => Some(ProjectType::Game),
+            "app" => Some(ProjectType::App),
+            _ => None,
+        }
+    }
+
+    /// The value written in `project.json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProjectType::Game => "game",
+            ProjectType::App => "app",
+        }
+    }
+
+    /// The host program's name, without extension (`iron-game`, `iron-app`).
+    pub fn host(self) -> &'static str {
+        match self {
+            ProjectType::Game => "iron-game",
+            ProjectType::App => "iron-app",
+        }
+    }
+}
+
 /// A project with every template resolved and the platform section merged.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Project {
     pub name: String,
+    /// `type`: `game` (default) or `app`, which host program runs and packages it.
+    pub project_type: ProjectType,
     pub title: String,
     pub company: String,
     pub identifier: String,
@@ -349,6 +387,7 @@ const TEXT_KEYS: &[&str] = &[
 /// Keys the loader gives a meaning; everything else goes to [`Project::extra`].
 const KNOWN_KEYS: &[&str] = &[
     "name",
+    "type",
     "title",
     "company",
     "identifier",
@@ -911,6 +950,9 @@ impl Project {
                 m.insert(k.into(), v.clone().into());
             }
         }
+        if self.project_type != ProjectType::Game {
+            m.insert("type".into(), self.project_type.as_str().into());
+        }
         if let Some(r) = self.data_required {
             m.insert("dataRequired".into(), r.into());
         }
@@ -1104,6 +1146,18 @@ fn build(
         ),
         _ => None,
     };
+    let project_type = match doc.get("type") {
+        None => ProjectType::Game,
+        Some(v) => v.as_str().and_then(ProjectType::parse).ok_or_else(|| {
+            let (line, col) = locate(file_text, "\"type\"");
+            ProjectError {
+                file: name.clone(),
+                line,
+                col,
+                message: format!("`type`: expected `game` or `app`, not {v}"),
+            }
+        })?,
+    };
     let include = strings(passthrough(&mut r, "include")?);
     let exclude = strings(passthrough(&mut r, "exclude")?);
     let mut extra = Map::new();
@@ -1114,6 +1168,7 @@ fn build(
     }
     Ok(Project {
         name: project_name,
+        project_type,
         title,
         company,
         identifier,
@@ -1682,5 +1737,38 @@ mod tests {
         assert!(!SystemUser.username().is_empty());
         // The full name may be empty (no display name); it never panics.
         let _ = SystemUser.full_name();
+    }
+
+    // M9-API-1330
+    #[test]
+    fn type_is_game_by_default_and_app_runs_on_the_app_host() {
+        let game = load_ok("type-default", r#"{ "name": "x" }"#);
+        assert_eq!(game.project_type, ProjectType::Game);
+        assert_eq!(game.project_type.host(), "iron-game");
+        assert!(
+            game.to_json().get("type").is_none(),
+            "the default isn't written"
+        );
+        let app = load_ok("type-app", r#"{ "name": "x", "type": "app" }"#);
+        assert_eq!(app.project_type, ProjectType::App);
+        assert_eq!(app.project_type.host(), "iron-app");
+        assert_eq!(app.to_json()["type"], "app");
+        assert!(app.extra.is_empty(), "`type` is a known key");
+    }
+
+    // M9-API-1330
+    #[test]
+    fn an_unknown_type_is_an_error_naming_the_field() {
+        let e = load_text(
+            "type-bad",
+            r#"{ "name": "x", "type": "tool" }"#,
+            &user(),
+            Platform::Windows,
+        )
+        .unwrap_err();
+        assert!(
+            e.message.contains("`type`") && e.message.contains("game"),
+            "{e}"
+        );
     }
 }

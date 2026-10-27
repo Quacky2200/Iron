@@ -30,7 +30,7 @@ pub fn project() -> Option<&'static Path> {
 /// Whether this program is `platypus_editor` (the same source is built as both binaries).
 pub const ENABLED: bool = same(env!("CARGO_BIN_NAME").as_bytes(), b"platypus_editor");
 
-const fn same(a: &[u8], b: &[u8]) -> bool {
+pub(crate) const fn same(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }

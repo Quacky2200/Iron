@@ -1,7 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus-build`: builds a game written in TypeScript into `dist/` for `platypus_app`, with no bun and no
+//! `platypus-build`: builds a game written in TypeScript into `dist/` for the engine hosts (`platypus-game`, `platypus-app`), with no bun and no
 //! `node_modules` (see `docs/platypus-build.md`).
 //!
 //! A build reads `project.json` (deprecated fallback: the `platypus` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
@@ -601,9 +601,8 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
                     warnings.push(format!("{} --cook failed", platypus.display()));
                 }
             }
-            None => warnings.push(
-                "--cook: the `platypus` binary was not found (cargo build -p platypus_app)".into(),
-            ),
+            None => warnings
+                .push("--cook: the `platypus-game` binary was not found (cargo build -p platypus_app --bin platypus-game)".into()),
         }
     }
     Ok(Report {
@@ -619,15 +618,15 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     })
 }
 
-/// The engine binary, for `--cook`: next to the repo's `target/`, or on the PATH.
+/// The `platypus-game` binary, for `--cook`: next to the repo's `target/`, or on the PATH.
 pub fn find_platypus(root: &Path) -> Option<PathBuf> {
     let mut p = root.canonicalize().ok()?;
     while p.pop() {
         for rel in [
-            "target/release/platypus.exe",
-            "target/debug/platypus.exe",
-            "target/release/platypus",
-            "target/debug/platypus",
+            "target/release/platypus-game.exe",
+            "target/debug/platypus-game.exe",
+            "target/release/platypus-game",
+            "target/debug/platypus-game",
         ] {
             let c = p.join(rel);
             if c.exists() {

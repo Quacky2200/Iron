@@ -429,8 +429,7 @@ impl App {
         }
         let open = win::open_windows();
         let (cmds, title) = requests_to_commands(reqs, win::state, &open);
-        if let (Some(t), Some(window)) = (title, self.gfx.as_ref().and_then(|g| g.window.as_ref()))
-        {
+        if let (Some(t), Some(window)) = (title, self.main_window().as_ref()) {
             window.set_title(&t);
         }
         for c in &cmds {

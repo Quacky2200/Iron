@@ -815,3 +815,37 @@ fn imports_can_carry_a_media_query() {
     tree.layout_if_needed();
     assert_eq!(tree.visual(NodeId(a)).unwrap().opacity, 0.25);
 }
+
+// M3-CSS-14
+#[test]
+fn text_set_on_an_empty_node_restyles_empty_and_has() {
+    let mut d = Dom::new();
+    let page = d.class(0, "page");
+    let span = d.el(page, "span", &[]);
+    let text = d.text(span, "");
+    let mut tree = d.build(
+        r#"
+        .page:has(span:not(:empty)) { background-color: red }
+        span:empty { border: 1px solid blue }
+        "#,
+    );
+    assert_eq!(bg(&tree, page), NONE, "no text yet");
+    assert_eq!(tree.visual(NodeId(span)).unwrap().border_colors[0], BLUE);
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(SET_TEXT, &[n(text), "12:00".into()])],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    tree.layout_if_needed();
+    assert_eq!(
+        bg(&tree, page),
+        RED,
+        "`:has(span:not(:empty))` matches once it has text"
+    );
+    assert_eq!(tree.visual(NodeId(span)).unwrap().border_colors[0], NONE);
+    let errors = tree.apply_commit(&Commit {
+        ops: vec![op(SET_TEXT, &[n(text), "".into()])],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    tree.layout_if_needed();
+    assert_eq!(bg(&tree, page), NONE, "and stops matching when emptied");
+}

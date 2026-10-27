@@ -31,12 +31,20 @@ struct State {
     /// The `Screen` size last told to the game, and the display state last pushed.
     screen: Option<(u32, u32, u64)>,
     display: Option<String>,
+    /// When the display state was last read (it asks the OS for every monitor's modes).
+    display_checked: Option<std::time::Instant>,
     cursor_version: Option<u64>,
     root: Option<std::path::PathBuf>,
 }
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
+}
+
+/// The window moved, resized or changed scale: read the display state next frame. The slow
+/// re-read covers what the platform doesn't announce (monitors added or removed).
+pub(super) fn display_dirty() {
+    st(|s| s.display_checked = None);
 }
 
 fn st<R>(f: impl FnOnce(&mut State) -> R) -> R {
@@ -214,10 +222,32 @@ impl App {
             ]);
         }
         // What the window is now, for `Screen.resolutions`, `windowSize`, ...
-        let window = self.gfx.as_ref().and_then(|g| g.window.clone());
-        let state = display::state(window.as_deref(), &self.display);
+        // Reading it asks the OS for every monitor's video modes (milliseconds with a few
+        // monitors), so it is read when the window's size or scale changed (or it moved), else every 2 s.
+        let (w, h, scale) = self.screen;
+        let key = (
+            w.round() as u32,
+            h.round() as u32,
+            f64::from(scale).to_bits(),
+        );
+        let due = st(|s| {
+            let changed = s.screen != Some(key);
+            let stale = s
+                .display_checked
+                .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(2));
+            if changed || stale {
+                s.display_checked = Some(std::time::Instant::now());
+            }
+            changed || stale
+        });
+        let window = self.main_window();
+        let state = if due {
+            display::state(window.as_deref(), &self.display)
+        } else {
+            serde_json::Value::Null
+        };
         let text = state.to_string();
-        if st(|s| s.display.replace(text.clone())).as_deref() != Some(&text) {
+        if due && st(|s| s.display.replace(text.clone())).as_deref() != Some(&text) {
             let res = |v: &serde_json::Value| platypus_engine_api::screen::Resolution {
                 width: v["width"].as_u64().unwrap_or(0) as u32,
                 height: v["height"].as_u64().unwrap_or(0) as u32,
@@ -247,12 +277,6 @@ impl App {
             );
         }
         // The size and scale `Screen` reports follow the window: `onChange` listeners run.
-        let (w, h, scale) = self.screen;
-        let key = (
-            w.round() as u32,
-            h.round() as u32,
-            f64::from(scale).to_bits(),
-        );
         if w > 0.0 && st(|s| s.screen.replace(key)) != Some(key) {
             let _scope = platypus_scene::api::enter(&mut self.scene.scene);
             platypus_engine_api::screen::update(key.0, key.1, f64::from(scale));

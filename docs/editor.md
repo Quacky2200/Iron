@@ -18,8 +18,8 @@ note once and runs). Porting the editor to platypus_ts is part of the removal pl
 
 ## One program, two binaries
 
-`crates/platypus_app` has two binary targets. `platypus_app` is `src/main.rs`. `platypus_editor` is
-`src/bin/platypus_editor.rs`, which includes main.rs with `#[path = "../main.rs"] mod app;` and
+`crates/platypus_app` has three binary targets. `platypus-game` is `src/main.rs`. `platypus-app` and `platypus_editor` are
+`src/bin/platypus_ui_app.rs` and `src/bin/platypus_editor.rs`, which include main.rs with `#[path = "../main.rs"] mod app;` and
 re-exports the modules that reach each other through `crate::` (`info`, `models`, `particles`,
 which main.rs declares `pub(crate)`). The `[[bin]]` entry sets `test = false`, so the tests don't
 run twice.

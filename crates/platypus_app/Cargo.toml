@@ -7,7 +7,11 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
-default-run = "platypus"
+# `platypus-game` (the default), `platypus-app` and `platypus_editor` are the same program told apart by
+# their name (`host.rs`); `platypus-game` runs `project.json` projects of type `game`, `platypus-app`
+# those of type `app`.
+default-run = "platypus-game"
+autobins = false
 
 [dependencies]
 anyhow = "1.0.104"
@@ -19,6 +23,7 @@ platypus_physics = { path = "../platypus_physics" }
 platypus_scene = { path = "../platypus_scene" }
 platypus_platform = { path = "../platypus_platform" }
 platypus_render = { path = "../platypus_render" }
+platypus_render_gles = { path = "../platypus_render_gles" }
 platypus_script = { path = "../platypus_script" }
 platypus_ui = { version = "0.1.0", path = "../platypus_ui" }
 platypus_ui_native = { path = "../platypus_ui_native" }
@@ -50,13 +55,21 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 
-# The engine host, `platypus` (`platypus.exe`), the program that runs games.
+
+# Games: the full engine (Vulkan / DX12 / Metal through wgpu, the 3D world).
 [[bin]]
-name = "platypus"
+name = "platypus-game"
 path = "src/main.rs"
+
+# Apps: only UI, with a lighter renderer (`src/bin/platypus_ui_app.rs`: main.rs again, see `host.rs`).
+[[bin]]
+name = "platypus-app"
+path = "src/bin/platypus_ui_app.rs"
+test = false
 
 # The editor (`src/bin/platypus_editor.rs`): the same program loading the editor's UI.
 # Its tests are platypus_app's, so they don't run twice.
 [[bin]]
 name = "platypus_editor"
+path = "src/bin/platypus_editor.rs"
 test = false

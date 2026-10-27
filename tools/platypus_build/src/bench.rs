@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-const USAGE: &str = "usage: platypus-build bench <examples folder> [--only a,b,..] [--base main] [--host platypus.exe]
+const USAGE: &str = "usage: platypus-build bench <examples folder> [--only a,b,..] [--base main] [--host platypus-game.exe]
   [--no-host-build] [--no-quickjs] [--frames N] [--out docs-folder] [--timeout seconds]
-Builds the release host (cargo build --release -p platypus_app), every example natively, and the base
+Builds the release host (cargo build --release -p platypus_app --bin platypus-game), every example natively, and the base
 branch's QuickJS originals in a temporary folder (deleted afterwards), then runs each with
 `platypus <game> --bench` (no window). Scripted input and frame counts: tools/bench/inputs/<name>.json.";
 
@@ -152,19 +152,26 @@ fn run(o: &Options) -> Result<(), String> {
 
     // The host, release only.
     if o.build_host {
-        eprintln!("bench: cargo build --release -p platypus_app");
+        eprintln!("bench: cargo build --release -p platypus_app --bin platypus-game");
         run_tool(
             Command::new("cargo")
-                .args(["build", "--release", "-p", "platypus_app"])
+                .args([
+                    "build",
+                    "--release",
+                    "-p",
+                    "platypus_app",
+                    "--bin",
+                    "platypus-game",
+                ])
                 .env("CARGO_INCREMENTAL", "0")
                 .current_dir(&repo),
-            "cargo build --release -p platypus_app",
+            "cargo build --release -p platypus_app --bin platypus-game",
         )?;
     }
     let host = o
         .host
         .clone()
-        .unwrap_or_else(|| repo.join("target/release").join(exe("platypus")));
+        .unwrap_or_else(|| repo.join("target/release").join(exe("platypus-game")));
     if !host.is_file() {
         return Err(format!(
             "{} not found (build it, or pass --host)",
