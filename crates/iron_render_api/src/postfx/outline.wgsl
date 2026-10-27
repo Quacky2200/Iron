@@ -4,6 +4,11 @@
 // depth. `fade_distance` thins the lines with distance; `color_threshold` also inks hard
 // brightness edges (texture detail, shadows).
 fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> {
+    // The picture's own border has no neighbours (clamped reads would ink it).
+    let border = pixel() * 2.0;
+    if (any(uv < border) || any(uv > vec2<f32>(1.0) - border)) {
+        return color;
+    }
     let d0 = scene_depth(uv);
     var t = max(thickness, 0.25);
     if (fade_distance > 0.0) {

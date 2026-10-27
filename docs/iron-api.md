@@ -464,6 +464,10 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `SpriteRenderer`, `LineRenderer2D`. The host reads them with `iron_render_api::lights()`, `mesh_renderers()`, ... (`Vec<(Ref, Data)>`)
   and removes the components of destroyed objects with `iron_render_api::destroyed(&objects)`. `Camera` gains `clearFlags`, `rect`,
   `cullingMask`, `layerCullDistances`, `layerCullSpherical`, `antialiasing`, `targetTexture`, `sceneGrid`.
+- **`PostProcess`** (`postfx.rs`, a handle class over a registry, not a component): `PostProcess.create(effect)` with the enum
+  `PostEffect` (the built-in effects; their table and WGSL are `EFFECTS` / `postfx/*.wgsl`), `createCustom(source, parameters?)`,
+  `enabled`, `order`, `camera` (`Camera | null`), `setFloat` / `setColor` / `setVector` and their getters. The host reads the enabled
+  passes with `post_passes()` when `post_version()` changes. See [postprocessing.md](postprocessing.md). Tests `M7-FX-01`..`03`, `09`.
 - **Assets** (handles with asset kinds): `Texture` (`Texture.load(src, { filterMode, wrapMode, mipmaps, anisoLevel, linear })`,
   `Texture.create(w, h, colors)`, `Texture.createRenderTexture(w, h)`), `Mesh` (`Mesh.create({ vertices, triangles, normals?, uv? })`,
   built-in meshes by name), `Material` (`new Material({ color, metallic, ... })` or `Material.create({ .. })`, `copy()`, `withColor(c)`),

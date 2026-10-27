@@ -431,6 +431,12 @@ has it, `FxaaPass` runs over the finished, tonemapped image: it finds edges by g
 and blends along them. It is cheaper than MSAA and smooths texture and shading edges too, a little
 blurrier. Its textures are cached per size.
 
+**Post-process passes.** After FXAA, a view's `WorldView::post` (scripts' `PostProcess` passes: built-in effects
+or their own WGSL) run over its part of the picture, with depth and normals available; see
+[postprocessing.md](postprocessing.md). With any pass present the frame takes the HDR path like bloom, the world
+pass keeps its depth buffer when a pass reads it, and the chain ping-pongs between two target-format textures
+before its last pass draws into the target.
+
 ## Fog
 
 `RenderSettings.fog` (off by default) with `fogMode` (`"linear"`, `"exponential"`, `"exponentialSquared"`),

@@ -1623,25 +1623,28 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] Crisp pixel upscale: a point-filtered choice for `QualitySettings.renderScale`'s
     upscale (it's bilinear, so a low render scale looks soft, not like real low-res pixels);
     `examples/fog-raider`'s PS1 look uses it
-  - [ ] Custom post-process passes: a `PostProcess` API where a game supplies a WGSL fragment
-    function (scene colour and UV in, colour out; depth and normals once available) and named
-    float / colour parameters; passes run in order after the world (decide where against
-    bloom, tonemapping and FXAA), compiled once, errors to the log
-  - [ ] Built-in effects on that API: pixelate, vignette, colour grading (lift / gamma /
-    gain, saturation, a LUT later), CRT scanlines and curvature, film grain, chromatic
-    aberration
-  - [ ] Depth of field, like a real camera's focus: a focal distance (or a target object the
-    camera auto-focuses on, with a smooth pull), an aperture (f-stop) and focal length
-    setting how quickly things blur away from the focal plane, bokeh-shaped highlights
-    (hexagonal or round), near and far blur done separately so foreground edges don't bleed;
-    tilt-shift as a variant. Needs the scene's depth readable after the world pass (a
-    resolve of the multisampled depth, or a depth copy)
-  - [ ] Ink outlines like Borderlands: dark lines along silhouettes and creases, found from
-    jumps in depth and normals (a Sobel-style edge pass), thickness easing off with
-    distance, per-object opt-out (layers), and a cel / toon shading option for materials
-    (banded light) to pair with it. Needs depth and view-space normals after the world pass
-    (a normals target, or normals rebuilt from depth)
-  - [ ] `examples/postfx`: a scene with keys toggling each effect
+  - [x] Custom post-process passes (2026-10-27, branch `claude/postfx-9b4c75`): `PostProcess`
+    (`iron_render_api/src/postfx.rs`): `create(effect)`, `createCustom(wgsl, params)`, `enabled`,
+    `order`, `camera`, `setFloat` / `setColor` / `setVector`; a WGSL `effect(uv, color)` with
+    helpers (`scene`, `scene_depth`, `scene_normal`, `view_uv`, `post_time`, ..); passes run per
+    camera view after bloom, tonemapping and FXAA, compiled once per shader, errors logged and
+    the pass skipped (`docs/postprocessing.md`, `M7-FX-01`..`09`)
+  - [x] Built-in effects on that API: pixelate, vignette, colour grading (lift / gamma / gain,
+    saturation, contrast, hue, balance; a LUT later), CRT scanlines and curvature, film grain,
+    chromatic aberration, plus gaussian blur, tilt-shift and posterize
+  - [x] Depth of field: thin-lens circle of confusion from a focal distance, f-stop and focal
+    length, round or polygon bokeh with bright highlights weighted, a blurred background can't
+    smear over a sharp foreground; tilt-shift as a variant. Depth is resolved from the world
+    pass (MSAA included). Auto-focus is the game's: `examples/postfx` eases `focus_distance` to
+    a chosen object
+    - [ ] Near and far blur as separate layers (today one gather with a behind-the-pixel rule);
+      an autofocus helper on the API
+  - [x] Ink outlines: lines along silhouettes (second difference of depth) and creases (normals
+    rebuilt from depth), thickness easing off with distance, optional brightness edges
+    - [ ] Per-object opt-out (layers) and a cel / toon material option (a `posterize` pass does
+      the banding for now)
+  - [x] `examples/postfx`: a colonnade with every effect switchable (menu and keys), a custom
+    WGSL effect, a tour mode, `-- <effect names>` to start with some on
 
 ## M8 — Multiplayer
 

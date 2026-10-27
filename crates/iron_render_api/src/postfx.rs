@@ -88,7 +88,7 @@ const fn vec4(name: &'static str, x: f32, y: f32, z: f32, w: f32) -> ParamDef {
 pub const EFFECTS: &[EffectDef] = &[
     EffectDef {
         name: "chromaticAberration",
-        params: &[float("amount", 0.03)],
+        params: &[float("amount", 0.015)],
         passes: 1,
         depth: false,
         sources: &[include_str!("postfx/chromatic_aberration.wgsl")],
