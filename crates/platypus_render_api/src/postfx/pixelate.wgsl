@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Big square pixels of `size` screen pixels, sharp-edged, optionally with the colours cut to
 // `levels` steps per channel (0 keeps them all).
 fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> {

@@ -1,3 +1,6 @@
+/* Copyright 2026 The Platypus Authors */
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* A rich-text style article from plain boxes: floats for the figure and the pull-quote, a grid
    table (rows are `display: contents`) between paragraphs, `clear` to end the wrap. */
 .page {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // SPDX-License-Identifier: Apache-2.0
 
 // Post-processing: a sunlit colonnade seen down its avenue, with every built-in `PostProcess`

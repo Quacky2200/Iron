@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Colour fringes that grow towards the edges: red and blue slide apart along the line from the
 // middle of the view, with the colours between spread over eight samples.
 fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> {

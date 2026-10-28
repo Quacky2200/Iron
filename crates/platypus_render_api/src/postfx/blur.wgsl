@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // A gaussian blur in two passes: along x, then along y. The radius (in pixels) is two sigmas,
 // taken with 33 taps spaced radius / 16 apart.
 fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Darkens (or tints) the edges. `roundness` 1 is a circle, 0 follows the view's shape;
 // `smoothness` is how far in the falloff starts.
 fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> {

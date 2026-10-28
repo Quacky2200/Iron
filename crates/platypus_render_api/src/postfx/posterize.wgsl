@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Cel-shaded bands: the brightness is cut into `levels` steps (judged as it looks, with the
 // edges between steps `softness` wide) and the colours keep their hue, so lit surfaces look
 // flat and inked, which pairs with `outline`.

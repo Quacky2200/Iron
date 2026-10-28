@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // An old CRT screen: a bulging glass (corners cut off), dark scanlines `line_height` pixels
 // apart and a red / green / blue phosphor mask across the columns.
 fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Film grain: fresh noise every frame, grains `size` pixels across, strongest in the midtones as
 // film's is (`response` 0 is even everywhere); `colored` mixes in noise that differs per channel.
 fn effect(uv: vec2<f32>, color: vec4<f32>) -> vec4<f32> {

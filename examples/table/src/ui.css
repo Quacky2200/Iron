@@ -1,3 +1,6 @@
+/* Copyright 2026 The Platypus Authors */
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* A table from a grid. `.row` is `display: contents`, so the grid sizes each column from
    the content of every row; the row's cells are the grid items. Row styles go through
    descendant selectors (`.row:hover .cell`), since a `contents` row has no box of its own. */

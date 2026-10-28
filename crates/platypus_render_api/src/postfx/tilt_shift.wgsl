@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Tilt-shift: a band across the view stays sharp and the rest blurs the further it is from the
 // band, which makes a scene look like a miniature. The band can be turned by `angle` (degrees).
 fn coc_at(uv: vec2<f32>) -> f32 {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Depth of field like a real camera's: things at `focus_distance` are sharp and the rest blur by
 // the thin-lens circle of confusion for the focal length and f-stop (on a 24 mm tall sensor),
 // up to `max_blur` pixels.

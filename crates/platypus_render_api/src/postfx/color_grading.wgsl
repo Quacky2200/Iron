@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Colour grading. Exposure (in stops) and white balance work on the light; lift / gamma / gain,
 // contrast, saturation and hue work on how the picture looks (gamma space), like a colourist's
 // wheels: lift moves the shadows, gamma the midtones, gain the highlights.

@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Ink outlines along silhouettes and creases, like a comic or Borderlands. Silhouettes are found
 // as jumps in depth (the second difference of depth over a cross of neighbours, relative to the
 // distance, so a slanted floor is not an edge), creases as turns in the normals rebuilt from

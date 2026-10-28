@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Out-of-focus blur by gathering: 48 taps on a spiral over a disc (or a polygon with `blades`
 // sides), each counted only if its own blur circle reaches this pixel. What is behind a pixel
 // can't smear over it, so a sharp edge in front of a blurred background stays sharp, and a
