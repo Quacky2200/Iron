@@ -74,7 +74,7 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<Value>) {
         }
         let path = entry.path();
         if path.is_dir() {
-            if !matches!(name.as_str(), "dist" | "node_modules" | "src" | "target") {
+            if !matches!(name.as_str(), "build" | "node_modules" | "src" | "target") {
                 walk(root, &path, out);
             }
             continue;

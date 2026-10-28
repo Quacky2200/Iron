@@ -142,13 +142,13 @@ mod tests {
         let cache = d.join("cache");
         std::fs::create_dir_all(&cache).unwrap();
         let v1 = [
-            ("dist/game.irbundle".to_string(), b"one".to_vec()),
+            ("build/game.irbundle".to_string(), b"one".to_vec()),
             ("assets/a.png".to_string(), vec![1; 100]),
         ];
         let exe = exe_with(&d, "game.exe", &v1);
         let dir = prepare(&exe, &cache).unwrap().unwrap();
         assert_eq!(
-            std::fs::read(dir.join("dist/game.irbundle")).unwrap(),
+            std::fs::read(dir.join("build/game.irbundle")).unwrap(),
             b"one"
         );
         assert_eq!(
@@ -162,7 +162,7 @@ mod tests {
         // A new build: a new folder, and the old one is gone. Another game's folder stays.
         let other = cache.join("game-extra-0123456789abcdef");
         std::fs::create_dir_all(&other).unwrap();
-        let v2 = [("dist/game.irbundle".to_string(), b"two".to_vec())];
+        let v2 = [("build/game.irbundle".to_string(), b"two".to_vec())];
         let exe2 = exe_with(&d, "game.exe", &v2);
         let dir2 = prepare(&exe2, &cache).unwrap().unwrap();
         assert_ne!(dir, dir2);

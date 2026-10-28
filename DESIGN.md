@@ -135,7 +135,7 @@ React (TS) ──custom reconciler──▶ op buffer ──▶ Rust UI tree ─
 ### 5.2 Styling
 - A CSS subset (flexbox, grid, box model, colours, borders, radius, shadows, transitions).
 - Optionally default to React Native-style behaviour where it's friendlier.
-- **Both** CSS files and inline style objects. Bun bundles `import "./ui.css"` into `dist/game.css`, which the engine loads with the bundle; `addStyleSheet(cssText)` covers CSS-in-JS. Inline `style` props win over stylesheet rules, as in browsers.
+- **Both** CSS files and inline style objects. Bun bundles `import "./ui.css"` into `build/game.css`, which the engine loads with the bundle; `addStyleSheet(cssText)` covers CSS-in-JS. Inline `style` props win over stylesheet rules, as in browsers.
 
 **Visual features we're targeting** (same names and syntax as CSS, camelCase in style objects):
 

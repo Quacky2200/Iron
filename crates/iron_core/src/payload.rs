@@ -338,7 +338,7 @@ mod tests {
 
     fn sample() -> Vec<(String, Vec<u8>)> {
         vec![
-            ("dist/game.irbundle".into(), b"{\"format\":1}".repeat(50)),
+            ("build/game.irbundle".into(), b"{\"format\":1}".repeat(50)),
             ("assets/tiny.bin".into(), vec![1, 2, 3]),
             ("assets/ünï.txt".into(), vec![7; 1000]),
         ]
@@ -396,7 +396,7 @@ mod tests {
         let mut bad = file.clone();
         bad[3] ^= 0xff; // inside the first entry
         let mut a = Archive::new(Cursor::new(bad)).unwrap().unwrap();
-        assert!(a.read("dist/game.irbundle").is_err());
+        assert!(a.read("build/game.irbundle").is_err());
         let mut newer = file.clone();
         let n = newer.len();
         newer[n - 24] = 9; // version

@@ -43,7 +43,7 @@ pub(crate) const fn same(a: &[u8], b: &[u8]) -> bool {
     true
 }
 
-/// The editor's UI (a game folder with `dist/game.js`): `IRON_EDITOR_UI`, else an
+/// The editor's UI (a game folder with `build/game.js`): `IRON_EDITOR_UI`, else an
 /// `editor` folder next to the program (a packaged editor), else the workspace's.
 pub fn ui_folder() -> PathBuf {
     if let Some(dir) = std::env::var_os("IRON_EDITOR_UI").filter(|v| !v.is_empty()) {
@@ -52,7 +52,7 @@ pub fn ui_folder() -> PathBuf {
     let packaged = std::env::current_exe()
         .ok()
         .and_then(|exe| Some(exe.parent()?.join("editor")))
-        .filter(|dir| dir.join("dist").join("game.js").is_file());
+        .filter(|dir| dir.join("build").join("game.js").is_file());
     packaged.unwrap_or_else(|| workspace_root().join("editor"))
 }
 

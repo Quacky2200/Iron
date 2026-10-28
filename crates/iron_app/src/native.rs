@@ -3,7 +3,7 @@
 //! The native backend: a game compiled by `iron_ts` (TypeScript to machine code) and run in this
 //! process, instead of a QuickJS bundle.
 //!
-//! A native game is `dist/game.irbundle` (JSON written by `iron-build`: the bundled TypeScript
+//! A native game is `build/game.irbundle` (JSON written by `iron-build`: the bundled TypeScript
 //! source plus the stylesheet and asset list) or a bare `.ts` / `.tsx` file. [`Native::load`]
 //! JIT-compiles the source with the manifests of every engine namespace, runs the program's top
 //! level (`register(..)`, `UiRoot.mount(..)`) and spawns the starting components. A module with a
@@ -40,13 +40,13 @@ use std::path::Path;
 /// The first node id the native reconciler hands out; below it are the ids of React's side.
 const FIRST_NODE: u32 = 1 << 30;
 
-/// What `iron-build` wrote (`dist/game.irbundle`), or a bare source file.
+/// What `iron-build` wrote (`build/game.irbundle`), or a bare source file.
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)] // css, assets and title are for the asset and window setup that follows
 pub struct Bundle {
     /// The program: one TypeScript / TSX source text.
     pub source: String,
-    /// The bundled stylesheet, relative to `dist/`, if any.
+    /// The bundled stylesheet, relative to `build/`, if any.
     pub css: Option<String>,
     /// Assets the game names, relative to the game folder.
     pub assets: Vec<String>,
@@ -96,7 +96,7 @@ pub fn is_native(path: &Path) -> bool {
         .is_some_and(|e| e == "irbundle" || e == "ts" || e == "tsx")
 }
 
-/// What `iron-build dev` wrote to `dist/.iron-reload` for a failed build (`{"seq":N,"ok":false,
+/// What `iron-build dev` wrote to `build/.iron-reload` for a failed build (`{"seq":N,"ok":false,
 /// "error":".."}`); `None` when the last build worked or there is no such file.
 pub fn failed_build(bundle: &Path) -> Option<String> {
     let text = std::fs::read_to_string(bundle.with_file_name(".iron-reload")).ok()?;
@@ -920,8 +920,8 @@ mod tests {
         assert!(Bundle::parse(r#"{"format":2,"source":""}"#).is_err());
         assert!(Bundle::parse(r#"{"format":1}"#).is_err());
         assert!(Bundle::parse("not json").is_err());
-        assert!(is_native(Path::new("dist/game.irbundle")));
-        assert!(!is_native(Path::new("dist/game.js")));
+        assert!(is_native(Path::new("build/game.irbundle")));
+        assert!(!is_native(Path::new("build/game.js")));
     }
 
     // M9-API-611

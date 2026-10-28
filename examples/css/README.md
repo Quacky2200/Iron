@@ -1,6 +1,6 @@
 # css
 
-A stylesheet showcase. `src/ui.css` is imported by the entry and built into `dist/game.css`; React
+A stylesheet showcase. `src/ui.css` is imported by the entry and built into `build/game.css`; React
 components pick rules with `className`. The cards show combinators, structural pseudo-classes, `:has`,
 `:not`, `:empty`, attribute states (`:checked`, `:disabled`), `::before` / `::after`, custom properties
 with `var()`, `@font-face`, `clip-path`, `object-fit`, a scrolling list, text fields and right-to-left
@@ -40,7 +40,7 @@ font is not committed; without it the "@font-face" card falls back to the defaul
 
 ## How it works
 
-1. **CSS import.** `import "./ui.css";` is the only import. The builder writes `dist/game.css` and the
+1. **CSS import.** `import "./ui.css";` is the only import. The builder writes `build/game.css` and the
    engine loads it next to the compiled game. Rules use standard CSS (cascade, specificity, `!important`).
 2. **Variables.** `:root` in `ui.css` defines `--accent`, `--card` and so on; rules use `var(--accent)`.
 3. **Run-time stylesheet.** `Accent` adds a rule every second and removes it on cleanup; every rule that

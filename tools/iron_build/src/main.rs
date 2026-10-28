@@ -6,10 +6,10 @@ use iron_build::{Options, Tsc, assets, build, dev, package, types_dts};
 use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage:
-  iron-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/dist
+  iron-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/build
   iron-build types [<game>] [--out file]                write types/iron.d.ts (default <game>/types/iron.d.ts)
   iron-build assets <folder>... [--prune]               write .meta files
-  iron-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.iron-reload)
+  iron-build dev <game> [--no-tsc]                      rebuild on change, signal the app (build/.iron-reload)
   iron-build pack-info <file.dat>                       list a pack: header, codecs, entries
   iron-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json (see: iron-build init --help)
   iron-build package <game> [--host exe] [--out f] ...   one executable (see: iron-build package --help)

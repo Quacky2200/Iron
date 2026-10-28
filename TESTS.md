@@ -33,7 +33,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|
 | M1-BLD-01 | CI | `cargo build --workspace` succeeds on Windows and Linux. |
 | M1-BLD-02 | CI | `cargo clippy --workspace -- -D warnings` and `cargo fmt --check` pass. |
-| M1-BLD-03 | CI | `bun install && bun run build` produces `editor/dist/game.js` (the examples are built by `iron-build`, `M9-TS-1850`). |
+| M1-BLD-03 | CI | `bun install && bun run build` produces `editor/build/game.js` (the examples are built by `iron-build`, `M9-TS-1850`). |
 | M1-BLD-04 | CI | `bun run typecheck` passes: `tsc --noEmit` for the JS packages, the editor and the fixtures, then `iron-build check ../examples --tsc` for the examples (20 built, 0 failed). |
 
 ### Platform
@@ -1401,13 +1401,13 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1850 | Unit | `tsconfig.json` comments and trailing commas are stripped. |
 | M9-TS-1851 | Unit | Game config from `package.json` `iron` and `tsconfig.json`. |
 | M9-TS-1852 | Integration | A build writes `game.irbundle`, `game.css`, the named assets and `.meta`; a compile error fails the build. |
-| M9-TS-1860 | Unit | `dist/.iron-reload` holds `{seq, ok}` or `{seq, ok:false, error}`. |
-| M9-TS-1861 | Unit | The watch fingerprint changes with sources, not with `dist/`. |
+| M9-TS-1860 | Unit | `build/.iron-reload` holds `{seq, ok}` or `{seq, ok:false, error}`. |
+| M9-TS-1861 | Unit | The watch fingerprint changes with sources, not with `build/`. |
 | M9-TS-2300 | Unit | `types/iron.d.ts` is deterministic; it declares the engine and UI names (classes, namespaces, hooks, components, types) as globals, and `@iron/engine`, `@iron/react`, `react` as re-export modules; nothing is `export`ed outside them. |
 | M9-TS-2301 | Unit | Calls have an options-object form (`audio.load(path, { stream })`), creatable classes have constructors and `Class.create({..})`. |
 | M9-TS-2302 | Integration | A program with no imports at all compiles (names are globals). |
 | M9-TS-2303 | Integration | The old `import { .. } from "@iron/engine"` forms still compile (the imports are erased). |
-| M9-TS-2304 | Unit | The generated `dist/.tsc/tsconfig.json` extends the game's, keeps its `include`, adds `iron.d.ts`, forces module detection and `jsx: preserve`. |
+| M9-TS-2304 | Unit | The generated `build/.tsc/tsconfig.json` extends the game's, keeps its `include`, adds `iron.d.ts`, forces module detection and `jsx: preserve`. |
 | M9-TS-2305 | Integration | With `tsc`: a program with no imports type-checks, a wrong call (`new Vector3(1, 2)`) fails with TS2554, the old import forms (engine, `react`, `@iron/react`, JSX) type-check. Skipped with a message when `tsc` is not found. |
 | M9-TS-2306 | Integration | The generated declarations alone have no `tsc` errors with `skipLibCheck` off. Skipped without `tsc`. |
 | M9-TS-2307 | Integration | All the examples type-check against the generated declarations (`tsc` ok, no `node_modules` in the games). Skipped without `tsc`. |
@@ -1429,7 +1429,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-614 | Unit | A game that does not compile is an error naming the compile step, not a panic. |
 | M9-API-615 | Integration | A hot reload of a compiled game keeps the objects, the `@property` fields of components and the UI's hook state, with the new code running. |
 | M9-API-616 | Integration | A reload that does not compile keeps the old game running. |
-| M9-API-617 | Unit | The `dist/.iron-reload` note of a failed build gives its error. |
+| M9-API-617 | Unit | The `build/.iron-reload` note of a failed build gives its error. |
 | M9-API-800 | Integration | Keys sent as `__iron_input` arguments reach `input` state and the `onKeyDown` closures of a compiled game. |
 | M9-API-801 | Integration | `preventDefault()` in a compiled handler is the answer the interaction layer gets (`Native::ui_event`). |
 | M9-API-802 | Integration | `Native::fixed_tick` steps the physics world and the compiled Rigidbody's object falls in the scene. |
@@ -1437,7 +1437,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-804 | Integration | `Screen.onChange`, `QualitySettings.onLevelChanged` and `Application.onFocusChanged` closures of a compiled game run from the host calls; a `spawn: false` class gets no starting object. |
 | M9-API-805 | Unit | `{ spawn: false }` is read from the `register(..)` calls of the source. |
 | M9-API-806 | Integration | `loadSceneAsync` of a compiled game reads the file from the game folder and `onSceneLoaded` runs; `Assets.onChanged` closures run on the host's changes. |
-| M9-API-807 | Manual | `iron-build dev` writes `dist/.iron-reload`; a screenshot run with `IRON_RELOAD_AT_FRAME` after a source edit and rebuild reloads the native game and draws the new code (checked with a boxes copy: colour change shows after the reload). |
+| M9-API-807 | Manual | `iron-build dev` writes `build/.iron-reload`; a screenshot run with `IRON_RELOAD_AT_FRAME` after a source edit and rebuild reloads the native game and draws the new code (checked with a boxes copy: colour change shows after the reload). |
 | M9-API-808 | Integration | Only `register()`ed classes get a starting object (`NativeClass.registered`), `addComponent` works for the others, and `e.target.type` is the element kind of the event's target. |
 | M9-API-620 | Integration | A compiled game's camera, light and cube reach the renderer's views through `render_sync` (no GPU). |
 | M9-API-700 | Integration | `render_sync` turns planes, `RenderSettings` (skybox, bloom, tonemapping) and quality into the renderer's views, and a second sync leaves them as they were (no GPU). |
@@ -1457,7 +1457,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2400 | Unit | Package metadata defaults: title, exe, company, version, copyright, description, identifier, icon from `package.json`; the folder name when nothing is given (`iron_build/src/package.rs`). |
 | M9-TS-2401 | Unit | `iron.*` fields override the package.json ones, flags override both; the exe name is made file-name safe and loses `.exe`. |
 | M9-TS-2402 | Unit | The payload's `package.json` carries the resolved version, title and icon entry. |
-| M9-TS-2410 | Unit | Data collection takes the other `dist/` files (CSS references; not the bundle, `game.o`, `*.exe`, dot files, asset copies, the output's own data folder), the named assets with `.meta`, `iron.include` or the default `assets` folder; an unsafe asset path is an error. |
+| M9-TS-2410 | Unit | Data collection takes the other `build/` files (CSS references; not the bundle, `game.o`, `*.exe`, dot files, asset copies, the output's own data folder), the named assets with `.meta`, `iron.include` or the default `assets` folder; an unsafe asset path is an error. |
 | M9-TS-2411 | Unit | `1.2.3`, `2.0.0-beta.1+x`, `1.2.3.4`, `junk` become four-part Windows versions. |
 | M9-TS-2412 | Integration | `package` with a stand-in host writes one file whose payload holds the bundle, assets, rewritten package.json and icon, whose PE resources carry the version and a four-size icon, and on which `--sign-cmd` ran; packaging a packaged file replaces its payload. |
 | M9-TS-2420 | Unit | A PNG becomes an `.ico` with 16, 32, 48 and 256 px images that decodes (`iron_build/src/icon.rs`). |
@@ -1474,7 +1474,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2559 | Unit | `find_host` picks the most recently built `iron_app` among the candidates (a stale release build does not beat a fresh debug one); `package` prints which host it used (`iron_build::package::newest_host`). |
 | M9-TS-2557 | Integration | A compiled program calls `Assets.list("assets/sfx/*.wav")` and gets the sorted keys as a `string[]`, with `exists` and `packOf`, in every GC mode (`tools/iron_ts_tests/tests/engine_api/assets_native.rs`). |
 | M9-TS-2560 | Unit | `--codec zstd`: `parse_codec`, a pack written with zstd reads back (whole and across a chunk boundary), `index.json` names the codec, `pack-info` lists `zstd`. |
-| M9-TS-2600 | Unit | The payload holds `dist/game.irbundle`, `dist/game.css`, `package.json`, the icon and the bundle-named assets only while those total at most 256 KiB (exactly at the limit: embedded, one byte over: none); `.meta`, unnamed assets and CSS files are never embedded. |
+| M9-TS-2600 | Unit | The payload holds `build/game.irbundle`, `build/game.css`, `package.json`, the icon and the bundle-named assets only while those total at most 256 KiB (exactly at the limit: embedded, one byte over: none); `.meta`, unnamed assets and CSS files are never embedded. |
 | M9-TS-2601 | Unit | `iron.dataRequired` is false for a game without assets and for one whose only assets are embedded essentials (a `.meta` does not count); an unnamed file in `assets/` makes it true. |
 | M9-TS-2602 | Unit | `--data-dir` accepts one plain folder name and refuses empty, `.`, `..`, separators, drive letters and dot names. |
 | M9-TS-2603 | Integration | `package` copies the assets to `<out dir>/data/` with the same relative paths (a 300 KiB file byte for byte, `.meta`, scenes, CSS files), the exe's table of contents has none of the large or unnamed ones, `--data-dir` renames the folder and tells the exe, `--no-data` writes no folder, a bad name is an error. |
@@ -1505,7 +1505,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2700 | Unit | `init` writes the default templates, `src/main.ts`, and the resolved preview for a given user; the result builds. |
 | M9-TS-2701 | Unit | `init` flags replace only their own fields. |
 | M9-TS-2702 | Unit | `init` refuses to overwrite `project.json` without `--force`. |
-| M9-TS-2703 | Unit | `init --icon` copies the icon; `.gitignore` gets `dist/` and `*.meta` once and only if it exists; a bad icon writes nothing. |
+| M9-TS-2703 | Unit | `init --icon` copies the icon; `.gitignore` gets `build/` and `*.meta` once and only if it exists; a bad icon writes nothing. |
 | M9-TS-2704 | Unit | A user without a full name gets the account name for first name and company. |
 | M9-TS-2705 | Unit | `init --license` sets and validates the license, shown in the preview. |
 | M9-TS-2710 | Integration | `package` resolves templates and the platform section into the payload's `project.json` (and the PE version info), the payload has a `package.json` with `UNLICENSED`; the app side reads it back without the user's information. |
@@ -1540,6 +1540,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-APP-03 | Integration | `iron_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `iron-build build` (`crates/iron_app/tests/quickjs_deprecated.rs`). |
 | M9-APP-04 | Integration | The same with `--force` runs, saves the screenshot and logs the deprecation note exactly once. |
 | M9-APP-05 | Integration | A native game (a bare `.ts` source) runs without `--force` and logs no deprecation note. |
+| M9-APP-06 | Unit | A game folder with only an old `dist/` build is refused with an error naming `dist/`, `build/` and `iron-build build`; with `build/game.irbundle` it resolves to that bundle. |
 | M9-BEN-01 | Unit | `iron --bench`: a bench file becomes segments of timed platform events (keys held, clicks, `clickText`, `count`/`every` repeats, unknown kinds refused), and frame stats give fps, median, p99, worst and the script share (`crates/iron_app/src/bench.rs`). |
 | M9-BEN-02 | Unit | `iron-build bench` writes the summary table with speed-ups, marks games the base branch lacks as n/a, and keeps hand-written text around the generated part of `docs/benchmarks.md`. |
 | M9-BEN-03 | Integration | `iron_app game.ts --bench --bench-input spec.json` runs a native game with no window (offscreen target, fake platform), the scripted keys reach it, and the JSON report has the segments, frame counts, fps and start-up time (needs a GPU; `crates/iron_app/tests/bench_smoke.rs`). |
@@ -1565,7 +1566,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1110 | Unit | The VFS answers from the last mounted source, a patch tombstone hides an asset, `guid:` and `data:` sources work, unmounting restores the old answer (`vfs.rs`). |
 | M9-API-1111 | Unit | A game folder (`DirSource`, `.meta` GUIDs) and a pack answer the same calls with the same bytes, info and GUIDs; paths outside the game are refused. |
 | M9-API-1112 | Unit | A path's cooked form is found beside its source form. |
-| M9-API-1143 | Unit | A loaded file outside `dist/assets.plan` gets a warning that names it and `include`; `.meta`, `dist/` and listed files get none (`iron_core::plan_warning`). |
+| M9-API-1143 | Unit | A loaded file outside `build/assets.plan` gets a warning that names it and `include`; `.meta`, `build/` and listed files get none (`iron_core::plan_warning`). |
 
 ## M9.b — Windows API (`docs/research/iron-windows-plan.md`)
 

@@ -91,7 +91,7 @@ fn iron_dialog(report: &Report, path: &Path) -> bool {
     shown
 }
 
-/// The dialog's game folder: `project.json` and `dist/game.irbundle`, its source the dialog's
+/// The dialog's game folder: `project.json` and `build/game.irbundle`, its source the dialog's
 /// TSX after the report's text as constants.
 fn write_dialog_game(dir: &Path, report: &Report, path: &Path) -> std::io::Result<()> {
     let s = |v: &str| serde_json::to_string(v).unwrap_or_else(|_| "\"\"".into());
@@ -123,9 +123,9 @@ fn write_dialog_game(dir: &Path, report: &Report, path: &Path) -> std::io::Resul
         "assets": [],
         "patterns": [],
     });
-    std::fs::create_dir_all(dir.join("dist"))?;
+    std::fs::create_dir_all(dir.join("build"))?;
     std::fs::write(dir.join("project.json"), project.to_string())?;
-    std::fs::write(dir.join("dist").join("game.irbundle"), bundle.to_string())
+    std::fs::write(dir.join("build").join("game.irbundle"), bundle.to_string())
 }
 
 /// Shows the report's file in the system's file browser.

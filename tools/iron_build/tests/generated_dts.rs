@@ -25,7 +25,7 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         if p.is_dir() {
             if matches!(
                 name.as_str(),
-                "target" | "node_modules" | "dist" | "types" | ".git" | ".claude"
+                "target" | "node_modules" | "build" | "types" | ".git" | ".claude"
             ) {
                 continue;
             }

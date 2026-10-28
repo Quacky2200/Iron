@@ -15,7 +15,7 @@ const here = import.meta.dir;
 const repo = join(here, "../..");
 const IMAGES = new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico", ".avif"]);
 // Folders a docs tree never needs.
-const SKIP = new Set(["node_modules", ".git", "dist", "target", ".iron"]);
+const SKIP = new Set(["node_modules", ".git", "build", "target", ".iron"]);
 
 const flag = process.argv.indexOf("--root");
 const rootArg = flag >= 0 ? process.argv[flag + 1] : process.env.MD_READER_ROOT;

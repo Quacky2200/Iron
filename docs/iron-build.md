@@ -10,18 +10,24 @@ cargo run -p iron_build -- build ../examples/hello
 
 | Command | What |
 |---|---|
-| `build <game> [--no-tsc] [--aot] [--cook] [--no-compile] [--no-prebuild]` | Builds `<game>/dist`. |
+| `build <game> [--no-tsc] [--aot] [--cook] [--no-compile] [--no-prebuild]` | Builds `<game>/build`. |
 | `types [<game>] [--out file]` | Writes `<game>/types/iron.d.ts` (type declarations for `tsc`). |
 | `assets <folder>... [--prune]` | Writes `.meta` GUID files (the port of `scripts/assets.ts`). |
 | `dev <game> [--no-tsc]` | Rebuilds on every change and signals the running app. |
 | `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/iron.d.ts` (`bun run typecheck:examples`). |
 | `init [<dir>] [flags]` | Writes a default `project.json` (see "`project.json`"). |
-| `package <game> [flags]` | One executable for the game: `dist/<exe>.exe` (see "Packaging a single executable"). |
+| `package <game> [flags]` | One executable for the game: `build/<exe>.exe` (see "Packaging a single executable"). |
+
+## The output folder: `build/`
+
+A game builds into `<game>/build/` (the editor's UI into `editor/build/`). Games used to build into `dist/`; that folder is not
+read any more (no fallback): `iron_app` on a folder with only `dist/game.irbundle` or `dist/game.js` exits with an error that
+says to rebuild with `iron-build build` (`M9-APP-06`). A stale `dist/` can be deleted; `.gitignore` still ignores it.
 
 ## QuickJS is deprecated (`--force`)
 
-`iron_app` runs games compiled by `iron-build build` (`dist/game.irbundle`, native). A folder (or bundle file) that has only the
-QuickJS form (`dist/game.js`, from bun) is **deprecated**: `iron_app` logs the deprecation note (stderr and `Player.log`) and exits
+`iron_app` runs games compiled by `iron-build build` (`build/game.irbundle`, native). A folder (or bundle file) that has only the
+QuickJS form (`build/game.js`, from bun) is **deprecated**: `iron_app` logs the deprecation note (stderr and `Player.log`) and exits
 with a non-zero status without running, unless `--force` is given, which logs the note once and runs it as before. This holds for
 `--screenshot` runs too. A folder with both runs the native bundle, with no note. `iron_editor` is itself a QuickJS program (`editor/`)
 and counts as forced: it logs the note once and runs. Nothing is removed: the QuickJS crates, `js/` packages and the Rust tests that use
@@ -115,7 +121,7 @@ sets the metadata.
 `iron-build init [<dir>] [--name n] [--title t] [--company c] [--description d] [--icon file.png|ico] [--version v]
 [--identifier id] [--license private|MIT|...] [--force]` writes the default `project.json` of the example above (the values you give
 replace only their own line), refuses to overwrite one without `--force`, creates a minimal `src/main.ts` (a `Hello` component
-logging `hello`) when the folder has no `src/`, adds `dist/` and `*.meta` to a `.gitignore` that already exists, copies `--icon`
+logging `hello`) when the folder has no `src/`, adds `build/` and `*.meta` to a `.gitignore` that already exists, copies `--icon`
 next to `project.json` as `icon.png` / `icon.ico`, and prints what the templates evaluate to now:
 
 ```
@@ -139,20 +145,20 @@ as the templates resolve now:
    (`node_modules/.bin/tsc` in the game folder or any parent, else on the `PATH`). A missing `tsc` is only a note; a failing one
    stops the build. `--no-tsc` skips it (`check` skips it unless `--tsc`; `check --full` prints every error).
 4. **Compile.** The bundle is compiled with all engine manifests (the lists of `iron_native::manifests()` plus `Ui`), so lowering
-   and code generation errors show up now. Errors name `file:line` of the original file. `--aot` also writes `dist/game.o` and
-   `dist/game_bindings.rs` (the object file for a release build that links the game into the executable).
-5. **Stylesheets.** `import "./x.css"` lines are collected in import order into `dist/game.css` (`css.rs`): `@import` is
-   inlined; every `url()` is rewritten: a file up to 32 KiB becomes a `data:` URL, a larger one is copied to `dist/` as
+   and code generation errors show up now. Errors name `file:line` of the original file. `--aot` also writes `build/game.o` and
+   `build/game_bindings.rs` (the object file for a release build that links the game into the executable).
+5. **Stylesheets.** `import "./x.css"` lines are collected in import order into `build/game.css` (`css.rs`): `@import` is
+   inlined; every `url()` is rewritten: a file up to 32 KiB becomes a `data:` URL, a larger one is copied to `build/` as
    `name-<hash>.ext` and the URL is relative to `game.css`. A `url()` that does not exist stays as written, with a warning (the
    Charm font is not in the repository).
 6. **Assets.** `.meta` files are made for new assets (`assets.rs`; existing ones and their GUIDs are kept; a moved file keeps its
    GUID when the move is unambiguous). Every string literal of the program that names an existing asset file under the game folder
    (`Texture.load("assets/x.png")`, `Model.load`, `loadFont`, `scenes/*.scene.json`, sounds) is copied with its `.meta` to the same
-   relative path in `dist/`. Paths follow `iron_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then
+   relative path in `build/`. Paths follow `iron_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then
    runs `iron-game <game> --cook` (the engine's cooker) when `target/{release,debug}/iron-game` is found.
-7. **`dist/game.irbundle`**, written atomically (temporary file and rename).
+7. **`build/game.irbundle`**, written atomically (temporary file and rename).
 
-## Dynamic asset paths and `dist/assets.plan`
+## Dynamic asset paths and `build/assets.plan`
 
 The build also reads the code's template literals and `+` chains with a literal folder first
 (`iron_ts::assetpaths`, an oxc visitor). Each hole becomes `*` (one path part): `` `assets/sfx/${n}.${ext}` `` is `assets/sfx/*.*`,
@@ -162,8 +168,8 @@ assets/sfx/*.* reaches 79 file(s): ...`), warns about a pattern that reaches no 
 literal (`"assets/a.png"`) that names no file, and records the patterns and their matches in `game.irbundle` as `patterns`
 (`glob`, `at`, `matches`). `package` copies the matches too, so a narrowed `include` still ships what the code builds.
 
-`dist/assets.plan` lists, one per line, the files a packaged build would hold (include minus exclude, named assets, `startScene`,
-pattern matches, `dist/` copies from CSS). In the dev loop `iron_app` reads it and `iron_core::resolve_asset` logs once per path
+`build/assets.plan` lists, one per line, the files a packaged build would hold (include minus exclude, named assets, `startScene`,
+pattern matches, `build/` copies from CSS). In the dev loop `iron_app` reads it and `iron_core::resolve_asset` logs once per path
 `asset "assets/x.wav" loaded, but a packaged build would not include it (add it to "include" in project.json)` for a file that
 exists but is not in the plan.
 
@@ -179,7 +185,7 @@ JSON, `format` 1:
 ```
 
 `source` has no `@iron/*` or `react` imports: the host compiles it with the engine manifests and the `Ui` manifest. A host reads
-`format`, `entry`, `source`, `title`, `company`, `identifier`, `css` (relative to `dist/`, or `null`) and `assets`.
+`format`, `entry`, `source`, `title`, `company`, `identifier`, `css` (relative to `build/`, or `null`) and `assets`.
 
 ## Module graph (`tools/iron_ts/src/modules.rs`)
 
@@ -251,14 +257,14 @@ Errors:
 - `<file>: has no export `x``, and `<file:line>: <construct> is unsupported` from lowering, which names the file and line inside the
   module.
 
-**`tsc` and editors.** The generated `dist/.tsc/tsconfig.json` sets `compilerOptions.paths` to `{ "*": ["../../src/modules/*"] }` (the
+**`tsc` and editors.** The generated `build/.tsc/tsconfig.json` sets `compilerOptions.paths` to `{ "*": ["../../src/modules/*"] }` (the
 entry's folder), so `tsc` resolves the same files as the compiler. For an editor, add the same to the game's `tsconfig.json`:
 
 ```json
 { "compilerOptions": { "paths": { "*": ["./src/modules/*"] } } }
 ```
 
-(all the examples have it). **Hot reload:** `iron-build dev` watches the game folder recursively (`dist`, `node_modules`, `types` and
+(all the examples have it). **Hot reload:** `iron-build dev` watches the game folder recursively (`build`, `node_modules`, `types` and
 dot folders aside), so a change in `src/modules` rebuilds and reloads like any other source.
 
 What was decided *not* to build (`node_modules` resolution, a packages section in `project.json`, licence generation, fetching from
@@ -304,7 +310,7 @@ The file (`iron_ts::types_dts`, one deterministic file, about 3000 lines) is, in
    that every class a built-in member belongs to exists.
 4. **The three modules** (`@iron/engine`, `@iron/react`, `react`) as re-exports.
 
-`iron-build build` passes the file to `tsc` itself: it writes `dist/.tsc/iron.d.ts` and `dist/.tsc/tsconfig.json` (which extends the
+`iron-build build` passes the file to `tsc` itself: it writes `build/.tsc/iron.d.ts` and `build/.tsc/tsconfig.json` (which extends the
 game's `tsconfig.json`, keeps its `include`, lists the declarations in `files`, and sets `moduleDetection: force` so top-level names of
 a file never merge with the engine globals, and `jsx: preserve` so no `react/jsx-runtime` is needed) and runs `tsc -p` on it. A game
 folder therefore needs **no `node_modules`, no `@iron/*` or `react` packages and no `types` entry in its `tsconfig.json`**; `tsc` is
@@ -315,9 +321,9 @@ engine's inside that file; the compiler lowers one program, so such a name is re
 
 ## The dev loop (`iron-build dev`)
 
-The watcher polls modification times (200 ms; no dependency) of everything in the game folder except `dist`, `node_modules`,
-`target`, `types` and dot folders, waits 100 ms for a second save, rebuilds, and writes `dist/.iron-reload` **after**
-`dist/game.irbundle`:
+The watcher polls modification times (200 ms; no dependency) of everything in the game folder except `build`, `node_modules`,
+`target`, `types` and dot folders, waits 100 ms for a second save, rebuilds, and writes `build/.iron-reload` **after**
+`build/game.irbundle`:
 
 ```json
 { "seq": 7, "ok": true }
@@ -336,18 +342,18 @@ iron-build package <game> [--host iron-game.exe] [--out file] [--no-build] [--no
     [--packs [--report]]
 ```
 
-It builds the game (unless `--no-build`), then writes `<game>/dist/<exe>.exe` (no extension on other systems): a copy of the
+It builds the game (unless `--no-build`), then writes `<game>/build/<exe>.exe` (no extension on other systems): a copy of the
 engine host (`iron_app`) with the game's **icon and version info** written into its PE resources (Windows hosts only) and the game's
 **code appended as a payload**, and copies the **assets into a `data/` folder beside it**. Assets are never embedded: games have
 gigabytes of them. The result runs from any folder as long as `data/` is next to it; `iron_app <game folder>` is unchanged.
 
 ```
-dist/                      (or the folder of --out)
+build/                     (or the folder of --out)
   mygame.exe               engine host + icon + version info + payload (code only, a few hundred KiB over the host)
   data/                    --data-dir <name> renames it; --no-data does not write it
     assets/...             the same relative paths as in the game folder (textures, models, sounds, fonts, `.meta`)
     scenes/...             the start scene and everything else the game names
-    dist/<font>.ttf        the files the CSS references (hashed fonts and images)
+    build/<font>.ttf       the files the CSS references (hashed fonts and images)
 ```
 
 The command prints the exe size, the number and size of the embedded files, and the number and total size of the copied asset
@@ -363,7 +369,7 @@ folder (or `--data` / `$IRON_DATA`). Nothing is deleted from an existing data fo
 data/
   index.json               the packs in mount order (name, file, role, id, entries, bytes, scene)
   assets.dat               what the code may load at any time (named by the code, reached by a dynamic path, selected by
-                           `include`, `dist/` copies) and the assets two or more scenes share
+                           `include`, `build/` copies) and the assets two or more scenes share
   scene-<slug>.dat         one scene file (the first entry) and the assets only that scene uses
 ```
 
@@ -421,7 +427,7 @@ Entries are deflate-compressed (`flate2`, stored when it does not help or under 
 read. Paths are relative, `/` separated and checked (`payload::safe_path`: no `..`, empty or `.` parts, drive letters, backslashes);
 a table with an unsafe path is refused. **What goes in** (paths relative to the game folder):
 
-- `dist/game.irbundle` and `dist/game.css` (CSS with its small `data:` URLs inlined by the build).
+- `build/game.irbundle` and `build/game.css` (CSS with its small `data:` URLs inlined by the build).
 - `project.json`, the resolved project (so `Application`, the window, the icon and the settings folder agree with the exe's
   version info) plus `dataDir` (the folder name) and `dataRequired` (see below), a small `package.json` (name, version,
   description, npm `license`), and `iron-icon.*`.
@@ -435,8 +441,8 @@ copied to `data/` with the same relative paths:
   `["assets/**"]`**, the whole folder, referenced or not, because the build finds assets only by string literals and misses paths
   built at run time or named inside CSS text) minus `exclude`, and the files the code's dynamic paths reach (below), each with its
   `.meta`. `exclude` trims `include` and the dynamic matches, never an asset the code names by a whole literal. The game
-  folder's copy is used, not `dist/`'s;
-- the other files of `dist/` (hashed fonts and images the CSS references), as `data/dist/...`. Not `game.o`,
+  folder's copy is used, not `build/`'s;
+- the other files of `build/` (hashed fonts and images the CSS references), as `data/build/...`. Not `game.o`,
   `game_bindings.rs`, `*.exe`, `game.js`, `vendor.js`, source maps, dot files or the output's own data folder.
 
 `dataRequired` is **false** when the game has no data files (hello) or when the embedded essentials are all of them (a `.meta`
@@ -464,7 +470,7 @@ Otherwise the program stops with an error that names the folder it looked for an
 was not found (looked for `C:\Games\mygame\data`). Put the `data` folder that `iron-build package` wrote beside the program, or
 pass --data <folder> or set IRON_DATA." (to the log and stderr; the exe is a GUI program, so start it from a terminal to see it).
 Textures, models, sounds, fonts, scenes, `url()`s and `@import`s in the CSS (rebased onto the CSS file's place in the code folder, so
-`dist/font.ttf` is found as `data/dist/font.ttf`), GUID `.meta` files and the asset watcher all use the asset root. `Application`,
+`build/font.ttf` is found as `data/build/font.ttf`), GUID `.meta` files and the asset watcher all use the asset root. `Application`,
 the window title and icon and the PlayerPrefs folder come from the code folder's `project.json` (the identifier), not from the data.
 
 **The file system over that folder** (`asset_root::mount`, `iron_pack::Vfs`; `docs/research/iron-virtual-fs-plan.md` phase 2). At
@@ -496,12 +502,12 @@ application manifest (DPI awareness, long paths), cooked assets (`.iron/cooked`)
 
 ### The same bundle on iOS and Android (plan only)
 
-Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--aot` object `dist/game.o` + `game_bindings.rs`),
+Nothing here is built yet. The inputs are the same: `game.irbundle` (or the `--aot` object `build/game.o` + `game_bindings.rs`),
 `game.css`, assets and the metadata of the table above.
 
 - **iOS** forbids writable-executable memory, so the Cranelift JIT that `iron_app` uses to compile `game.irbundle` at start cannot run:
   the game must be built with `--aot` (an object file for `aarch64-apple-ios`, linked into the app binary with the engine host as a
-  static library) and the bundle's source is not shipped at all. The app is an `.app` folder (host binary, `dist/`, `assets/`,
+  static library) and the bundle's source is not shipped at all. The app is an `.app` folder (host binary, `build/`, `assets/`,
   `Info.plist` from the metadata: `CFBundleName` = title, `CFBundleIdentifier` = identifier, `CFBundleShortVersionString` = version,
   an asset catalog from the icon), assets read from the app bundle (read-only, so no extraction), signed with a provisioning profile and
   uploaded as an `.ipa`. Needs a Mac for the linker, `codesign` and Xcode's tools, and an Apple developer account.

@@ -2,8 +2,8 @@
 
 //! CSS bundling, what `bun build` did for the examples: the stylesheets a program imports are joined in
 //! import order (`@import` is inlined), and every `url()` is rewritten: a small file becomes a `data:`
-//! URL, a larger one is copied into `dist/` under a hashed name and the URL is relative to
-//! `dist/game.css` (which is where `iron_app` reads it from, see `load_game_css`).
+//! URL, a larger one is copied into `build/` under a hashed name and the URL is relative to
+//! `build/game.css` (which is where `iron_app` reads it from, see `load_game_css`).
 
 use base64::Engine as _;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ pub const INLINE_LIMIT: usize = 32 * 1024;
 #[derive(Debug, Default)]
 pub struct CssOut {
     pub css: String,
-    /// Files copied into `dist/` (names relative to it).
+    /// Files copied into `build/` (names relative to it).
     pub copied: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -43,12 +43,12 @@ fn fnv(bytes: &[u8]) -> u32 {
     h
 }
 
-/// Bundles `files` (paths on disk, in order); copied assets go to `dist`.
-pub fn bundle(files: &[PathBuf], dist: &Path) -> std::io::Result<CssOut> {
+/// Bundles `files` (paths on disk, in order); copied assets go to `build`.
+pub fn bundle(files: &[PathBuf], out_dir: &Path) -> std::io::Result<CssOut> {
     let mut out = CssOut::default();
     let mut seen = Vec::new();
     for f in files {
-        let text = file(f, dist, &mut out, &mut seen, 0)?;
+        let text = file(f, out_dir, &mut out, &mut seen, 0)?;
         out.css.push_str(&text);
         if !out.css.ends_with('\n') {
             out.css.push('\n');
@@ -59,7 +59,7 @@ pub fn bundle(files: &[PathBuf], dist: &Path) -> std::io::Result<CssOut> {
 
 fn file(
     path: &Path,
-    dist: &Path,
+    out_dir: &Path,
     out: &mut CssOut,
     seen: &mut Vec<PathBuf>,
     depth: usize,
@@ -86,7 +86,7 @@ fn file(
                     Some(t) if !is_external(&t) => {
                         let p = dir.join(&t);
                         if p.exists() {
-                            result.push_str(&file(&p, dist, out, seen, depth + 1)?);
+                            result.push_str(&file(&p, out_dir, out, seen, depth + 1)?);
                         } else {
                             out.warnings
                                 .push(format!("{}: @import {t} not found", path.display()));
@@ -109,7 +109,7 @@ fn file(
                 if is_external(target) || target.is_empty() {
                     result.push_str(&after[..close]);
                 } else {
-                    result.push_str(&rewrite(dir, target, dist, out, path)?);
+                    result.push_str(&rewrite(dir, target, out_dir, out, path)?);
                 }
                 rest = &after[close..];
             }
@@ -148,7 +148,7 @@ fn import_target(stmt: &str) -> Option<String> {
 fn rewrite(
     dir: &Path,
     target: &str,
-    dist: &Path,
+    out_dir: &Path,
     out: &mut CssOut,
     css: &Path,
 ) -> std::io::Result<String> {
@@ -170,8 +170,8 @@ fn rewrite(
     }
     let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("asset");
     let name = format!("{stem}-{:08x}.{ext}", fnv(&bytes));
-    std::fs::create_dir_all(dist)?;
-    std::fs::write(dist.join(&name), &bytes)?;
+    std::fs::create_dir_all(out_dir)?;
+    std::fs::write(out_dir.join(&name), &bytes)?;
     if !out.copied.contains(&name) {
         out.copied.push(name.clone());
     }
@@ -206,13 +206,13 @@ mod tests {
         )
         .unwrap();
         std::fs::write(d.join("src/z.css"), ".z{}").unwrap();
-        let dist = d.join("dist");
-        let r = bundle(&[d.join("src/a.css"), d.join("src/z.css")], &dist).unwrap();
+        let out_dir = d.join("build");
+        let r = bundle(&[d.join("src/a.css"), d.join("src/z.css")], &out_dir).unwrap();
         assert!(r.css.starts_with(".b { color: red }"), "{}", r.css);
         assert!(r.css.contains("data:image/png;base64,UE5H"), "{}", r.css);
         assert_eq!(r.copied.len(), 1);
         assert!(r.copied[0].starts_with("big-") && r.copied[0].ends_with(".ttf"));
-        assert!(dist.join(&r.copied[0]).exists());
+        assert!(out_dir.join(&r.copied[0]).exists());
         assert!(
             r.css.contains(&format!("url(\"{}\")", r.copied[0])),
             "{}",

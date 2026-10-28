@@ -121,7 +121,7 @@ fn percent_decode(s: &str) -> Vec<u8> {
 static PLAN: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
 static WARNED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
-/// Dev loop: the game paths a packaged build would hold (`dist/assets.plan`, written by
+/// Dev loop: the game paths a packaged build would hold (`build/assets.plan`, written by
 /// `iron-build build`). Afterwards [`resolve_asset`] warns once for a file that exists but is not
 /// in it, since a packaged game would not find it.
 pub fn set_pack_plan(keys: impl IntoIterator<Item = String>) {
@@ -130,7 +130,7 @@ pub fn set_pack_plan(keys: impl IntoIterator<Item = String>) {
 
 /// The warning for a loaded `key` that a packaged build would not include, if any.
 pub fn plan_warning(plan: &std::collections::HashSet<String>, key: &str) -> Option<String> {
-    let skip = key.ends_with(".meta") || key.starts_with("dist/") || key.starts_with(".iron/");
+    let skip = key.ends_with(".meta") || key.starts_with("build/") || key.starts_with(".iron/");
     (!skip && !plan.contains(key)).then(|| {
         format!(
             "asset \"{key}\" loaded, but a packaged build would not include it (add it to \"include\" in project.json)"
@@ -224,7 +224,7 @@ mod tests {
             ["assets/a.png".to_owned()].into_iter().collect();
         assert_eq!(plan_warning(&plan, "assets/a.png"), None);
         assert_eq!(plan_warning(&plan, "assets/a.png.meta"), None);
-        assert_eq!(plan_warning(&plan, "dist/big-1.ttf"), None);
+        assert_eq!(plan_warning(&plan, "build/big-1.ttf"), None);
         let w = plan_warning(&plan, "assets/b.wav").unwrap();
         assert!(w.contains("assets/b.wav") && w.contains("include"), "{w}");
     }

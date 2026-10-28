@@ -153,14 +153,14 @@ Windows, with Rust (1.99 or later) and its MSVC toolchain. Bun is only needed fo
 cargo build --release -p iron_app
 cd tools && cargo build --release -p iron_build && cd ..
 
-# Build an example and run it
+# Build an example (into examples/fog-park/build/) and run it
 tools/target/release/iron-build build examples/fog-park
 target/release/iron_app examples/fog-park
 
 # Render one frame to a PNG and exit
 target/release/iron_app examples/css --screenshot out.png --frames 30
 
-# Package a game as one executable (examples/boxes/dist/<name>.exe)
+# Package a game as one executable (examples/boxes/build/<name>.exe)
 tools/target/release/iron-build package examples/boxes
 ```
 

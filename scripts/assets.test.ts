@@ -19,11 +19,11 @@ afterEach(() => {
 test("every asset gets a .meta with a GUID and importer settings; moves keep the GUID", () => {
   mkdirSync(join(dir, "assets/textures"), { recursive: true });
   mkdirSync(join(dir, "src"));
-  mkdirSync(join(dir, "dist"));
+  mkdirSync(join(dir, "build"));
   writeFileSync(join(dir, "assets/textures/crate.png"), "png");
   writeFileSync(join(dir, "assets/worm.glb"), "glb");
   writeFileSync(join(dir, "src/main.tsx"), "code");
-  writeFileSync(join(dir, "dist/game.js"), "build");
+  writeFileSync(join(dir, "build/game.js"), "build");
   writeFileSync(join(dir, "package.json"), "{}");
   expect(scan(dir).assets).toEqual(["assets/textures/crate.png", "assets/worm.glb"]);
 

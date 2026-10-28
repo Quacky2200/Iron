@@ -626,12 +626,12 @@ handles `null`. Methods of one class with the same script name (`#[js_name]`) ar
 - **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/iron_ts/TODO.md` and `tools/iron_ts/src/lower/facade.rs`. `Camera.main()` is a native static (`CameraRef::main`).
 ### Native games in `iron_app` (compiled in process)
 
-`iron_app` runs a game two ways. A folder with `dist/game.irbundle` (or a `.irbundle` / `.ts` / `.tsx` path) is a **native
+`iron_app` runs a game two ways. A folder with `build/game.irbundle` (or a `.irbundle` / `.ts` / `.tsx` path) is a **native
 game**: [native.rs](../crates/iron_app/src/native.rs) JIT-compiles the bundled TypeScript with `iron_ts::jit` and drives it with no
-QuickJS; otherwise `dist/game.js` runs in QuickJS as before (`App` keeps both sets of fields and branches at the pump points).
+QuickJS; otherwise `build/game.js` runs in QuickJS as before (`App` keeps both sets of fields and branches at the pump points).
 
 - **Bundle** (written by `iron-build`): JSON `{"format":1,"title","entry","source":"<one TS/TSX text>","css":"game.css"|null,
-  "assets":[..]}`. `Bundle::read` / `Bundle::parse`. The stylesheet is still `dist/game.css`, loaded by `load_game_css`.
+  "assets":[..]}`. `Bundle::read` / `Bundle::parse`. The stylesheet is still `build/game.css`, loaded by `load_game_css`.
 - **Compile.** Manifests: `iron_native::manifests()` (all engine namespaces, which also registers their shim addresses in
   `iron_api::symbol`) plus `iron_ts_ui::manifest_json()` and `root_manifest_json()`; extra symbols: `iron_ts_ui::symbols()`; the
   runtime's come from `iron_ts_rt::symbols()` (a build script lists its `#[no_mangle]` exports). Each reload gets a new
@@ -651,7 +651,7 @@ QuickJS; otherwise `dist/game.js` runs in QuickJS as before (`App` keeps both se
   - *Exit.* `App::drop` clears the panel reconcilers (`native_render::clear_state`) and runs `Native::shutdown` (drops the program's closures and resets the engine state) while the program's heap is alive; thread-local destructors run in no fixed order and used to panic at exit.
   - *Still missing:* `onReload`, component references between components across a reload, model completion callbacks.
 
-**Hot reload of a native game** (`Native::reload`, triggered by a change of `dist/game.irbundle` or `dist/.iron-reload`,
+**Hot reload of a native game** (`Native::reload`, triggered by a change of `build/game.irbundle` or `build/.iron-reload`,
 `IRON_RELOAD_AT_FRAME=N` in screenshot runs; about 30 ms for hello): the new source is compiled first (a failure, or a
 `{"ok":false,"error"}` note from `iron-build dev`, keeps the old game). Then the scenes are saved with `iron_scenes::serialize`
 (compiled components through their `@property` tables), the old `NativeHost` is dropped without `onDestroy`, the engine's per-thread
@@ -715,7 +715,7 @@ colliders of models (`colliders: "mesh"`) need the physics hook (agent H).
 
 ## The FPS counter (`crates/iron_app/src/fps.rs`)
 
-A raw frame-rate overlay drawn by the app for every game, QuickJS (`dist/game.js`) or native (`dist/game.irbundle`): lime green
+A raw frame-rate overlay drawn by the app for every game, QuickJS (`build/game.js`) or native (`build/game.irbundle`): lime green
 (`#32ff32`), bold, 13px, `0 1px 2px #000` shadow, no background, in the top right corner 10px from the top and right edges,
 right-aligned, text like `144 FPS`. `FpsCounter` counts frames over windows of 0.25 s of real time and shows `round(frames / elapsed)`
 (no smoothing, no cap). `FpsOverlay` is a tiny `UiTree` (one absolutely placed box, `pointer-events: none`, so no hit testing or focus)

@@ -9,7 +9,7 @@ Design note for `Intl.DateTimeFormat` options (step I3a is built on it): [iron-t
 
 This compiler is the engine's script backend. It compiles a typed subset of TypeScript (games written
 as ordinary classes, functions, components and React UI) to native code, either in process with the
-Cranelift JIT (`iron_app` loads `dist/game.irbundle`, built by `iron-build`) or to an object file
+Cranelift JIT (`iron_app` loads `build/game.irbundle`, built by `iron-build`) or to an object file
 (`--aot`). The QuickJS backend ([scripting.md](scripting.md)) is deprecated and runs only with
 `--force`. The move, its results and its limits are in [iron-ts-native.md](iron-ts-native.md); the
 benchmarks are in [benchmarks.md](benchmarks.md). The sections below were written during the spike and

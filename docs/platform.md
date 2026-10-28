@@ -113,7 +113,7 @@ way and then exits with code 3.
    a process is saved. Screenshot and bench runs save reports but show no dialog.
 3. The process starts `<exe> --crash-report <file> [--plain]` with no stdio and dies. The dialog never runs in the broken
    process (`crash_dialog.rs`).
-4. That supervisor process writes a small game folder to the temp folder: `project.json` and `dist/game.irbundle`, whose
+4. That supervisor process writes a small game folder to the temp folder: `project.json` and `build/game.irbundle`, whose
    source is the constants `GAME`, `REASON`, `DETAILS` and `REPORT_PATH` followed by `crash_dialog.tsx`. It runs the folder
    with `<exe> --crash-dialog <folder>`, with `IRON_CRASH_DIALOG=1` (so a crash inside it opens no dialog) and
    `IRON_LOG_FILE` in that folder. `--crash-dialog` runs the folder even from a packaged exe or the editor.

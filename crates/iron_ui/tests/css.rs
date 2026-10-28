@@ -732,18 +732,18 @@ fn imports_load_before_the_importing_sheet() {
            @import "missing.css";
            @import "print.css" print;
            .a { opacity: 0.5 }"#,
-        "dist",
+        "build",
         &mut |path| {
             asked.push(path.to_owned());
             match path {
                 // Its own import is relative to its folder; it imports the first file
                 // back (a cycle), which is skipped.
-                "dist/theme/base.css" => Some(
+                "build/theme/base.css" => Some(
                     "@import '../colors.css'; @import 'base.css';
                      .a { opacity: 0.1; width: 10px; background-image: url(img/x.png) }"
                         .into(),
                 ),
-                "dist/colors.css" => Some(".a { height: 20px }".into()),
+                "build/colors.css" => Some(".a { height: 20px }".into()),
                 _ => None,
             }
         },
@@ -753,10 +753,10 @@ fn imports_load_before_the_importing_sheet() {
         asked,
         // `print.css` loads too (`@import ... print`), but its rules only apply in print.
         [
-            "dist/theme/base.css",
-            "dist/colors.css",
-            "dist/missing.css",
-            "dist/print.css"
+            "build/theme/base.css",
+            "build/colors.css",
+            "build/missing.css",
+            "build/print.css"
         ]
     );
     let v = tree.visual(NodeId(a)).unwrap();
@@ -771,7 +771,7 @@ fn imports_load_before_the_importing_sheet() {
     assert!(warnings.contains("imports itself"), "{warnings}");
     // URLs in an imported sheet are relative to its own folder.
     let image = format!("{:?}", v.background_images);
-    assert!(image.contains("dist/theme/img/x.png"), "{image}");
+    assert!(image.contains("build/theme/img/x.png"), "{image}");
 }
 
 // M3-MQ-02

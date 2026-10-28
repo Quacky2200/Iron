@@ -20,7 +20,7 @@ pub fn kind(ext: &str) -> Option<&'static str> {
 }
 
 /// Folders that hold no assets.
-const SKIP: &[&str] = &["dist", "node_modules", "src", "target", "types"];
+const SKIP: &[&str] = &["build", "node_modules", "src", "target", "types"];
 const NOT_ASSETS: &[&str] = &[
     "package.json",
     "project.json",

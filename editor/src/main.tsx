@@ -2,7 +2,7 @@
 
 // The Iron editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
 // Inspector, Console, Project) and a status bar, built with @iron/editor-ui.
-// `iron_editor` loads this bundle (editor/dist). The Hierarchy and Scene view show the
+// `iron_editor` loads this bundle (editor/build). The Hierarchy and Scene view show the
 // editor's own world (a demo scene for now); the Inspector is a placeholder.
 import "./editor.css";
 

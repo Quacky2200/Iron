@@ -13,7 +13,7 @@ note once and runs). Porting the editor to iron_ts is part of the removal plan i
 | [editor.rs](../crates/iron_app/src/editor.rs) | `ENABLED`, where the UI lives, the project folder, `EditorHost` (log feed, `editor.*` ops), opening files in a code editor |
 | [project.rs](../crates/iron_app/src/project.rs) | File operations on the project folder (list, copy in, move), confined to it |
 | [logging.rs](../crates/iron_app/src/logging.rs) | The capture layer and ring buffer the console reads |
-| [editor/](../editor/src/main.tsx) | The editor's UI (a Bun workspace built to `editor/dist`) |
+| [editor/](../editor/src/main.tsx) | The editor's UI (a Bun workspace built to `editor/build`) |
 | [js/editor-ui](../js/editor-ui/src/index.ts) | `@iron/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`, `ProjectBrowser`, `SceneView`, `onEditorFrame` and their models |
 
 ## One program, two binaries
@@ -31,7 +31,7 @@ is true:
   as the project (`editor::set_project`, made absolute; `__iron_info.app.project`) and runs
   `editor::ui_folder()` instead: `IRON_EDITOR_UI`, else an `editor` folder next to the executable
   (a packaged editor), else the workspace's `editor/`.
-  The folder is a game folder like any other (`dist/game.js`, `dist/game.css`, `package.json` for
+  The folder is a game folder like any other (`build/game.js`, `build/game.css`, `package.json` for
   the title and window size), so `--screenshot`, hot reload and `bun run dev` work as for games.
 - `main` turns on log capture before anything logs.
 - `__iron_info.app.isEditor` is true (`Application.isEditor`).

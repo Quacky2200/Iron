@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// M3b showcase: stylesheets. `ui.css` is bundled by Bun into dist/game.css and
+// M3b showcase: stylesheets. `ui.css` is bundled by Bun into build/game.css and
 // loaded by the engine; classNames select into it. Shows combinators, structural
 // pseudo-classes, :has/:not/:empty, attributes (:checked/:disabled), ::before and
 // ::after, custom properties, @font-face, and a runtime stylesheet (CSS-in-JS)

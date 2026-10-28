@@ -48,7 +48,7 @@ Iron/
 **Goal:** `cargo run -p iron_app -- examples/hello` opens a window with a clear colour, loads a Bun-built TS bundle, and a `Hello` component logs `hello` once and `tick` every frame.
 
 ### 1. Repository and tooling
-- [x] `git init`, `.gitignore` (target/, node_modules/, dist/), `.gitattributes` (LF line endings, PNGs as binary)
+- [x] `git init`, `.gitignore` (target/, node_modules/, build/), `.gitattributes` (LF line endings, PNGs as binary)
 - [x] Cargo workspace with crates from the layout above — `M1-BLD-01`
 - [x] `rustfmt.toml`; `cargo fmt --check` / `cargo clippy -D warnings` clean — `M1-BLD-02`
 - [x] Bun workspace: root `package.json`, `js/engine`, `examples/hello`, `tests/fixtures`, shared `tsconfig.base.json` (strict) — `M1-BLD-03`, `M1-BLD-04` (Bun 1.4.3)
@@ -93,7 +93,7 @@ Iron/
 - [x] `bun test` unit tests for the JS host (`js/engine/test/`, 4 tests)
 
 ### 7. `iron_app` and the example
-- [x] `iron` binary: game folder (`dist/game.js`) or `.js` path; opens window; runs loop
+- [x] `iron` binary: game folder (`build/game.js`) or `.js` path; opens window; runs loop
 - [x] Fixed 60 Hz tick with catch-up limit; clear colour each frame
 - [x] `examples/hello`: `Hello` logs `hello` on start and `tick` on update
 - [x] `tests/fixtures/{hello,throws}.js` built by Bun from `tests/fixtures/src/*.ts` (`bun run build:fixtures`; CI checks they're up to date)
@@ -226,7 +226,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
   that is blurred with the existing blur pass (exact CSS Gaussian). Multiple shadows stack in CSS order.
 - **D5 — CSS engine:** `cssparser` for stylesheets, the `selectors` crate (Servo's) for matching against
   our tree, and the existing `apply_style` for declarations (kebab-case → camelCase). Stylesheets come
-  from Bun-bundled CSS imports (Bun writes `dist/game.css` next to `game.js`) and from an
+  from Bun-bundled CSS imports (Bun writes `build/game.css` next to `game.js`) and from an
   `addStyleSheet(cssText)` API for CSS-in-JS.
 - **D6 — Events:** Rust hit-tests and sends the target's ancestor path to JS; `@iron/react` runs capture
   and bubble phases over React props (`onClick`, `onPointerDown`, ...) with `stopPropagation` and
@@ -285,7 +285,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
 1. **Stylesheets**
    - [x] Parse stylesheets with `cssparser`: style rules, `@font-face` (feeds `loadFont`), comments,
      `!important`; unsupported at-rules warn — `M3-CSS-01`
-   - [x] Sources: `dist/game.css` loaded with the bundle; `addStyleSheet(cssText)` / `removeStyleSheet`
+   - [x] Sources: `build/game.css` loaded with the bundle; `addStyleSheet(cssText)` / `removeStyleSheet`
    - [x] Declarations: kebab-case → our camelCase props; values as CSS strings into `apply_style`
    - [x] Custom properties (`--x`) and `var(--x, fallback)` — `M3-CSS-05`
 2. **Selectors** (`selectors` crate, `Element` implemented for UI nodes)
@@ -316,7 +316,7 @@ selectors 0.41, cssparser 0.38, cosmic-text 0.19 (alternative), arboard for the 
      structural selectors exist — `M3-CSS-07`
    - [x] Benchmark: one class change on the 2,246-node tree 0.20 ms (target < 1 ms); whole tree 8.8 ms — `M3-BEN-01`
 6. **Example + checks**
-   - [x] `examples/css`: a `.css` file imported through Bun (`dist/game.css`, `url()`s rebased, small
+   - [x] `examples/css`: a `.css` file imported through Bun (`build/game.css`, `url()`s rebased, small
      assets inlined as `data:` URLs), classes, combinators, structural selectors, `:has`/`:not`/`:empty`,
      `:checked`/`:disabled`, `::before`/`::after`, `@font-face`, and a runtime `addStyleSheet` that
      overrides `--accent` every second
@@ -760,7 +760,7 @@ mind. Hot reload is split (2026-10-17): the plumbing is here; keeping state acro
 for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot reload, part 2" in M5.
 
 - [x] Bun watch → rebuild → engine notified: `bun run dev` in an example (`bun build --watch`);
-  the app watches `dist/game.js` and `game.css` with `notify` and reloads once they settle —
+  the app watches `build/game.js` and `game.css` with `notify` and reloads once they settle —
   `M4-HOT-10`
 - [x] Reload plumbing: the new bundle loads into a fresh runtime and is swapped in only if it
   loads and its components spawn; otherwise the old code keeps running with the error logged.
@@ -1383,7 +1383,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     `__iron_info.assets`; `Assets.guidToPath` / `pathToGuid` / `importer`, `"guid:..."`
     sources for textures, models and sounds, importer defaults for `Texture.load` and
     streaming; scenes save GUIDs and find renamed files by them — `M5-AST-03`..`05`
-  - [x] Asset hot reload: the game folder is watched (not `dist/`, `node_modules/`,
+  - [x] Asset hot reload: the game folder is watched (not `build/`, `node_modules/`,
     hidden folders); textures, models (same mesh and texture ids) and sounds from a
     changed file load again in place, then `Assets.onChanged` listeners hear the paths —
     `M5-AST-01`, `M5-AST-02`. Placed model copies keep their materials and nodes.
@@ -1422,7 +1422,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Then the shell: docking, tree view, virtualized list, inspector, undo/redo — `M5-EDT-*`
     - [x] `iron_editor` (`iron_editor.exe` on Windows): a second binary of `iron_app`
       (`src/bin/iron_editor.rs` includes main.rs as a module; `editor::ENABLED` from
-      `CARGO_BIN_NAME`) that loads `editor/dist` (or `IRON_EDITOR_UI`); the editor UI is a
+      `CARGO_BIN_NAME`) that loads `editor/build` (or `IRON_EDITOR_UI`); the editor UI is a
       Bun workspace (`editor/`) in the root `bun run build`; `Application.isEditor` — `M5-EDT-17`
     - [x] `@iron/editor-ui` (`js/editor-ui`): reusable components drawn by Iron's UI, with
       the logic in plain modules — `M5-EDT-06..14`, `-18..20`
@@ -1581,7 +1581,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] HDRP's third spot shape, Box (parallel light from a rectangle), and the beam glow
     mesh (`beamIntensity`) for pyramids
   - [x] Hot reload of a release build keeps the old scene (2026-10-21): with a game's
-    window open, rebuilding `dist/` reloaded it in place, but scenes built in `onStart` came
+    window open, rebuilding `build/` reloaded it in place, but scenes built in `onStart` came
     back from the saved state, so changed geometry (fog-raider's corridor fix) didn't show,
     and the low-res look (`QualitySettings.renderScale`) looked blurrier than before. Check
     what a reload should rebuild versus restore, and re-apply quality settings once.
@@ -2093,7 +2093,7 @@ Left over after the UI events and attributes work (`b116ac6`, `docs/ui-native.md
 
 ## QuickJS deprecated; removal plan (2026-10-22)
 
-`iron_app` refuses a QuickJS bundle (`dist/game.js` without `game.irbundle`) unless `--force` (`M9-APP-01..05`); `iron_editor` forces
+`iron_app` refuses a QuickJS bundle (`build/game.js` without `game.irbundle`) unless `--force` (`M9-APP-01..05`); `iron_editor` forces
 implicitly (its UI is QuickJS) and logs the note once. Nothing is deleted yet. What would go later, in this order:
 - [ ] Port `editor/` and `js/editor-ui` to iron_ts (the editor is the last QuickJS app), then drop the implicit force.
 - [ ] Delete `crates/iron_script`'s QuickJS backend (`QuickJsRuntime`, `ComponentHost`) and the QuickJS paths of `iron_app` (`load_bundles`, `dev_vendor`, bundle reload, `__iron_*` pumps).

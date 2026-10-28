@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* M3b showcase stylesheet: bundled by Bun into dist/game.css, which the engine
-   loads next to dist/game.js. */
+/* M3b showcase stylesheet: bundled by Bun into build/game.css, which the engine
+   loads next to build/game.js. */
 
 @font-face {
   font-family: "Charm";

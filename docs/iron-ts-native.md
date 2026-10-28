@@ -58,7 +58,7 @@ details are in the pages it links.
 ### Building games: `iron-build`
 
 - **`tools/iron_build`** (`iron-build`) has `build`, `types`, `assets`, `dev`, `check`, `init`, `package` and `bench`. A
-  build resolves the module graph, runs `tsc` when present and writes `dist/game.irbundle`, `game.css` and assets. See
+  build resolves the module graph, runs `tsc` when present and writes `build/game.irbundle`, `game.css` and assets. See
   [iron-build.md](iron-build.md).
 - **`project.json` only.** A game is a `project.json` (metadata, template variables, platform sections, licence; only
   `name` is required), a `tsconfig.json` and `src/`. No `package.json`.
@@ -93,7 +93,7 @@ games these are native Rust:
 
 ### QuickJS deprecated
 
-`iron_app` refuses a QuickJS bundle (`dist/game.js` without `game.irbundle`) unless `--force` is given; `iron_editor`, whose
+`iron_app` refuses a QuickJS bundle (`build/game.js` without `game.irbundle`) unless `--force` is given; `iron_editor`, whose
 own UI is still QuickJS, forces implicitly. Nothing is deleted yet. The removal plan, in order, is in TODO.md
 ("QuickJS deprecated; removal plan"): port the editor to iron_ts, then delete the QuickJS backend of `iron_script`,
 `iron_native::register_quickjs`, the `js/` packages and the QuickJS fixtures and bun build paths.

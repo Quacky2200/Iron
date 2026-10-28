@@ -233,7 +233,7 @@ let nextStyleSheet = 1;
 /**
  * Adds a stylesheet from CSS text (CSS-in-JS). `url()`s are relative to the game
  * folder. Returns an id for `removeStyleSheet`. Stylesheets imported with
- * `import "./ui.css"` are bundled into `dist/game.css` and loaded automatically.
+ * `import "./ui.css"` are bundled into `build/game.css` and loaded automatically.
  */
 export function addStyleSheet(css: string): number {
   const id = nextStyleSheet++;

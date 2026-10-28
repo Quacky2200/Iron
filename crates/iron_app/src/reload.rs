@@ -81,11 +81,11 @@ pub fn asset_key(path: &str) -> String {
 fn ignored(relative: &Path) -> bool {
     relative.components().any(|c| {
         let name = c.as_os_str().to_string_lossy();
-        name == "dist" || name == "node_modules" || name == "target" || name.starts_with('.')
+        name == "build" || name == "node_modules" || name == "target" || name.starts_with('.')
     })
 }
 
-/// Watches a game folder for asset files that change (recursively, outside `dist/`,
+/// Watches a game folder for asset files that change (recursively, outside `build/`,
 /// `node_modules/` and hidden folders).
 pub struct AssetWatcher {
     _watcher: RecommendedWatcher,
@@ -187,11 +187,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("iron-assets-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("assets/sub")).unwrap();
-        std::fs::create_dir_all(dir.join("dist")).unwrap();
+        std::fs::create_dir_all(dir.join("build")).unwrap();
         let mut w = AssetWatcher::new(&dir).unwrap();
         std::fs::write(dir.join("assets/sub/crate.png"), "x").unwrap();
         // Builds don't count.
-        std::fs::write(dir.join("dist/game.js"), "x").unwrap();
+        std::fs::write(dir.join("build/game.js"), "x").unwrap();
         let mut got = Vec::new();
         for _ in 0..50 {
             std::thread::sleep(Duration::from_millis(20));

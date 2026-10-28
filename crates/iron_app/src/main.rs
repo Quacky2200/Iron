@@ -6,8 +6,8 @@
 //! `iron [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
 //! game's script bundle and runs it.
 //!
-//! `[game]` is either a game folder (loads `<game>/dist/game.irbundle`, built with
-//! `iron-build build`; a QuickJS `dist/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
+//! `[game]` is either a game folder (loads `<game>/build/game.irbundle`, built with
+//! `iron-build build`; a QuickJS `build/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 pub(crate) mod anim_cull;
@@ -112,7 +112,7 @@ impl Args {
 }
 
 /// The deprecation note for the QuickJS backend (logged once per run).
-const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `iron-build build` (iron_ts, native, writes dist/game.irbundle); pass --force to run this QuickJS bundle anyway";
+const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `iron-build build` (iron_ts, native, writes build/game.irbundle); pass --force to run this QuickJS bundle anyway";
 
 /// What to do with a bundle: native ones always run; QuickJS ones only with `--force` (the
 /// editor, itself QuickJS-based, counts as forced).
@@ -352,7 +352,7 @@ fn run() -> Result<()> {
     iron_core::set_asset_fs(Some(std::sync::Arc::new(vfs.clone())));
     // Dev loop: `iron-build build` lists what a packaged build would hold; loading a file outside
     // it logs a warning (a packaged game would not find it).
-    if let Ok(plan) = std::fs::read_to_string(code_root.join("dist/assets.plan")) {
+    if let Ok(plan) = std::fs::read_to_string(code_root.join("build/assets.plan")) {
         iron_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
     }
     lap.mark("log, manifest, asset mount");
@@ -640,12 +640,21 @@ fn run() -> Result<()> {
 fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
     if path.is_dir() {
         // A game built for the native backend has an `.irbundle`.
-        let native = path.join("dist").join("game.irbundle");
+        let native = path.join("build").join("game.irbundle");
         if native.is_file() {
             return Ok((native, path.to_path_buf()));
         }
-        let bundle = path.join("dist").join("game.js");
+        let bundle = path.join("build").join("game.js");
         if !bundle.is_file() {
+            // Games used to build into `dist/`; that folder is not read any more.
+            let old = path.join("dist");
+            if old.join("game.irbundle").is_file() || old.join("game.js").is_file() {
+                bail!(
+                    "{} has only an old `dist/` build; build output now goes to `build/`: rebuild with `iron-build build {}`",
+                    path.display(),
+                    path.display()
+                );
+            }
             bail!(
                 "{} not found; build it first with `iron-build build {}`",
                 bundle.display(),
@@ -3381,6 +3390,24 @@ mod tests {
         assert_eq!(quickjs_gate(false, false, false), QuickJsGate::Refused);
         assert_eq!(quickjs_gate(false, true, false), QuickJsGate::Forced);
         assert_eq!(quickjs_gate(false, false, true), QuickJsGate::Forced);
+    }
+
+    // M9-APP-06
+    #[test]
+    fn a_game_with_only_an_old_dist_build_is_refused_with_a_pointer_to_build() {
+        let dir = std::env::temp_dir().join(format!("iron-old-dist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("dist")).unwrap();
+        std::fs::write(dir.join("dist/game.irbundle"), "{}").unwrap();
+        let err = resolve_bundle(&dir).unwrap_err().to_string();
+        assert!(err.contains("`dist/`") && err.contains("`build/`"), "{err}");
+        assert!(err.contains("iron-build build"), "{err}");
+        std::fs::create_dir_all(dir.join("build")).unwrap();
+        std::fs::write(dir.join("build/game.irbundle"), "{}").unwrap();
+        let (bundle, root) = resolve_bundle(&dir).unwrap();
+        assert_eq!(bundle, dir.join("build").join("game.irbundle"));
+        assert_eq!(root, dir);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // M9-API-909

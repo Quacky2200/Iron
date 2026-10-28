@@ -1,6 +1,11 @@
 /target
 /tools/target
 node_modules/
+# Build output of games and the editor (`iron-build build`, `bun run build`).
+/examples/*/build/
+/editor/build/
+/tools/bench/*/build/
+# The old output folder, no longer read: ignored so stale copies stay out of `git status`.
 dist/
 *.log
 # Test renders (crates/iron_render/src/testing.rs); goldens live in tests/golden.
