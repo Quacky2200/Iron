@@ -2136,7 +2136,25 @@ Left over after the UI events and attributes work (`b116ac6`, `docs/ui-native.md
 
 `platypus_app` refuses a QuickJS bundle (`build/game.js` without `game.pbundle`) unless `--force` (`M9-APP-01..05`); `platypus_editor` forces
 implicitly (its UI is QuickJS) and logs the note once. Nothing is deleted yet. What would go later, in this order:
-- [ ] Port `editor/` and `js/editor-ui` to platypus_ts (the editor is the last QuickJS app), then drop the implicit force.
+- [~] Port `editor/` and `js/editor-ui` to platypus_ts (the editor is the last QuickJS app), then drop the implicit force.
+  End state (decided 2026-10-28): no `js/` folder; the editor is re-made natively at its current feature state.
+  - [x] `editor/project.json` (title, company, identifier, `renderer: "vulkan"`, 1600 × 900 window), replacing
+    `package.json`'s `platypus` section (2026-10-28).
+  - [ ] Components into `editor/` as plain modules (relative imports: `@platypus/*` and `react` imports are erased
+    by the module graph, so `@platypus/editor-ui` can't stay a package), `init --editor-files` for its
+    `tsconfig.json` / `types/`, then drop `editor/package.json`.
+  - [ ] A native `Editor` namespace (`#[platypus_api]`) for what the QuickJS ops and pushed globals did:
+    the log feed (`logSince(seq)` records instead of `__platypus_log`), `openFile`, and the project file ops
+    (`listDir`, `copyIn`, `move`) answering directly instead of through `__platypus_editor_fs`.
+  - [ ] Gaps found by a trial build (2026-10-28):
+    - Compiler: type predicates (`(g): g is T => ..`) are an unsupported type annotation (stops the
+      build first; a guard returns a boolean, `asserts` nothing).
+    - Native API / declarations: `createPrimitive`, `op`, element `setPointerCapture` /
+      `releasePointerCapture`, `currentTarget` on pointer events, `defaultPrevented` on key events,
+      `Camera.worldToScreenPoint` / `screenPointToRay` / `pixelRect`, SVG `textAnchor`, React `Ref` /
+      `useImperativeHandle`; also check `HideFlags`, `Camera.sceneGrid` and `Gizmos.present`.
+  - [ ] Build with `platypus-build build editor`, run `platypus_editor` on `editor/build/game.pbundle`, drop
+    the implicit `--force`; the model tests (`js/editor-ui/test`) move to native tests.
 - [ ] Delete `crates/platypus_script`'s QuickJS backend (`QuickJsRuntime`, `ComponentHost`) and the QuickJS paths of `platypus_app` (`load_bundles`, `dev_vendor`, bundle reload, `__platypus_*` pumps).
 - [ ] Delete `platypus_native::register_quickjs` (keep the native `#[platypus_api]` registries compiled code uses).
 - [ ] Delete `js/engine`, `js/react`, `js/editor-ui`, `tests/fixtures` (the QuickJS fixtures) and the `bun run build*` / `scripts/dev.ts` / `scripts/screenshots.ts` bun paths.

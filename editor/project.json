@@ -1,0 +1,13 @@
+{
+  "name": "platypus-editor",
+  "title": "Platypus Editor",
+  "company": "Platypus",
+  "identifier": "dev.platypus.editor",
+  "version": "0.1.0",
+  "description": "The Platypus editor",
+  "license": "Apache-2.0",
+  "copyright": "Copyright 2026 The Platypus Authors",
+  "renderer": "vulkan",
+  "fps": false,
+  "display": { "mode": "Windowed", "width": 1600, "height": 900 }
+}
