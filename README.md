@@ -213,8 +213,14 @@ are left out; the test's exclusion list says which.
 Credits and third-party notices
 -------------------------------
 
-Platypus builds on many open-source crates and packages; their licences are in their own sources (`Cargo.lock`,
-`bun.lock`). The Inter font is under the SIL Open Font License (`crates/platypus_ui/fonts/Inter-LICENSE.txt`). The
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) has the notices of everything the engine host is built from: ANGLE
+and the code it bundles, the Inter font, and every Rust crate in `Cargo.lock`, one section per licence. It ships with
+every exe: the host prints it with `platypus-app --licenses`, and `platypus-build package` writes it beside each
+packaged game. It is generated (`cd tools && cargo run -p platypus_notices`, from `Cargo.lock` and
+`tools/platypus_notices/hand-written.md`); the `M9-LIC-02` test fails when it is out of date. The JavaScript packages
+of the editor and tools carry their licences in their own sources (`bun.lock`).
+
+The Inter font is under the SIL Open Font License (`crates/platypus_ui/fonts/Inter-LICENSE.txt`). The
 `text` and `css` examples ship the Charm font by Cadson Demak, from Google Fonts, under the same licence
 (`examples/*/assets/fonts/OFL.txt`). Examples
 that use outside art or music list it in their `assets/CREDITS.md` (crowd, emoji, fog-white-room, sine-circle-demo);
