@@ -179,7 +179,7 @@ default; **default actions run after the script sees the event**, like a browser
 | `KeyDown` | `keydown` to the focused element only | `Escape` with an open modal: asks it to close (see [Dialogs](#dialogs)); `Ctrl/Cmd+C` with static text selected: `Clipboard::Copy`; `Tab`/`Shift+Tab`: move focus (sets `:focus-visible`); other keys scroll (arrows, Page, Space, Home/End) |
 | `KeyUp` | `keyup` to the focused element | none |
 | `Focus(id)` / `Blur(id)` (from `ref.focus()`) | `focusout` then `focusin` | `Focus` ignored if not focusable; `:focus-visible` only if the last focus move was by keyboard (browser heuristic) |
-| `Navigate(dir)` | `focusout`/`focusin` (via `set_focus`) | Moves focus to `nearest_in_direction` and scrolls it into view; nothing if no element has focus. Sets `:focus-visible` |
+| `Navigate(dir)` | `focusout`/`focusin` (via `set_focus`) | The focused element first gets an `ArrowUp`/`ArrowDown`/`ArrowLeft`/`ArrowRight` `keydown`; if that is prevented focus stays (a list box moving its selection, `M9-VSP-10`). Otherwise moves focus to `nearest_in_direction` and scrolls it into view; nothing if no element has focus. Sets `:focus-visible` |
 | `Activate` | `click` on the focused element | Skipped for text fields. No pointer position, `detail` 0 (like a keyboard-activated click) |
 | `Refresh` | hover events, then queued `transition*`/`animation*` events (name in `value`, elapsed seconds in `delta_x`; see [animation.md](animation.md#events)) | drops focus from removed, hidden or disabled elements |
 

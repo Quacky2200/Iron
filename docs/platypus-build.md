@@ -94,6 +94,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
 | `prebuild` | none | a command run in the game folder before compiling (`cmd /C` on Windows, `sh -c` elsewhere), e.g. to write generated sources (`md-reader`: `bun gen-docs.ts`); a failing command stops the build; `--no-prebuild` skips it |
 | `layers`, `quality`, `display` | none | layer names, quality levels and default, window mode and size (as before in `platypus`) |
 | `fps`, `runInBackground` | on / false | FPS counter, `Application.runInBackground` |
+| `videoSettingsPrompt` | off | ask the player once for window mode, resolution, vsync and quality before the window opens ([platform.md](platform.md#startup-video-settings-prompt)) |
 | `dataDir`, `include`, `exclude` | `data`, `["assets/**"]`, none | data folder name beside the exe; what `package` copies to it: paths, folders or globs (`*` inside one path part, `**` across parts, `?`; case-sensitive; a plain folder means `folder/**`), minus the `exclude` globs. An `include` entry that matches no file is a warning |
 | `windows`, `macos`, `linux`, `android`, `ios` | none | an object whose keys replace the top-level ones when building for that platform |
 
@@ -346,8 +347,11 @@ bundle is untouched). Hot reload keeps state the way the QuickJS reload does (sc
 platypus-build package <game> [--host platypus-game.exe] [--out file] [--no-build] [--no-tsc]
     [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d]
     [--icon file.png|.ico] [--sign-cmd "signtool sign /fd sha256 ... {exe}"] [--data-dir name] [--no-data]
-    [--packs [--report]]
+    [--packs [--report]] [--video-settings-prompt | --no-video-settings-prompt]
 ```
+
+`--video-settings-prompt` / `--no-video-settings-prompt` set `videoSettingsPrompt` in the exe's own `project.json`, over the game's
+([platform.md](platform.md#startup-video-settings-prompt)).
 
 It builds the game (unless `--no-build`), then writes `<game>/build/<exe>.exe` (no extension on other systems): a copy of the
 engine host (`platypus_app`) with the game's **icon and version info** written into its PE resources (Windows hosts only) and the game's

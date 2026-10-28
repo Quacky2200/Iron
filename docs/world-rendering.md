@@ -876,10 +876,10 @@ engine loads; the app copies the values onto the renderer before each frame.
 - **Render scale** (`render_scale`, 0.25 to 2): `render_views` draws the whole world (probes,
   mirrors, bloom) into a texture of the scaled size (`upscale.rs`) and stretches it over the target
   with a bilinear blit. Screen UI is drawn afterwards at full resolution.
-- **Vsync** (`vSyncCount`, 0 or 1, off by default; `Quality.vsync`): the app calls `WindowSurface::set_vsync` before each frame,
-  which switches between `AutoVsync` and `AutoNoVsync`. With it off, `Application.targetFrameRate` caps the
+- **Vsync** (`vSyncCount`, 0 or 1, on by default; `Quality.vsync`): the app calls `WindowSurface::set_vsync` before each frame
+  (never waiting for it in screenshot runs), which switches between `AutoVsync` and `AutoNoVsync`. With it off, `Application.targetFrameRate` caps the
   frame rate (see [platform.md](platform.md)). The quality choice is saved in `PlayerPrefs` as `platypus.quality`
-  and restored at startup (except `vSyncCount`: a saved vsync is ignored).
+  and restored at startup; its vsync is kept only with `playerVSync: true` (every save writes it), else the level's is used.
 - **Shadow quality** (`shadow_quality`: `Disable`, `HardOnly`, `All`; `soft_shadow_radius` 1 to 3: `QualitySettings.softShadowQuality` `low`, `medium` or `high`):
   the shadow pass is skipped when disabled, soft shadows become one sample under `HardOnly`, and the
   soft filter is a (2r + 1)^2 box of comparison samples (3x3, 5x5 or 7x7; the radius is in `GpuLight.shadow`).

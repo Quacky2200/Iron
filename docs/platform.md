@@ -64,6 +64,11 @@ window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read 
 5. **Screenshot runs** (`--screenshot`) stay windowed and never apply a mode, and their prefs are
    kept in memory, so renders are the same every time.
 
+**Centred main window.** The main window opens centred on the primary monitor (else the one it is on) when it is
+windowed. `display::centered_position` uses the window's outer size and keeps the title bar on screen when the window is
+bigger than the monitor. Fullscreen and maximized windows and screenshot runs are left alone (`display::center`,
+`WindowConfig::center`; `M5-DSP-05`). Secondary windows are unchanged.
+
 `Screen.width`/`height` (UI pixels) still come from `__platypus_screen`; `Screen.windowSize` is the
 physical size from `__platypus_info.display`.
 
@@ -126,14 +131,17 @@ Tests: `M9-API-917` (`--crash-dialog <folder>` parses), `M9-API-918` (the dialog
 ## Vsync and the frame cap
 
 - `QualitySettings.vSyncCount` (0 or 1) goes out as the seventh argument of `render.quality`. It
-  fills `Quality.vsync` (default off: the engine tracks raw performance, so frames are shown as soon as they are drawn;
-  the quality levels and `Quality::default()` have `vSyncCount` 0 and the examples have no vsync control; scripts may still set it).
-  A saved quality choice never turns it back on (`apply_default_quality` and `_applyDefaultQuality` take vsync from the level). The app calls `WindowSurface::set_vsync` before each frame,
-  which switches the present mode between `AutoVsync` and `AutoNoVsync` and reconfigures the
-  surface only when the mode changes. wgpu picks what the platform has (relaxed or plain FIFO;
+  fills `Quality.vsync` (default on: the quality levels and `Quality::default()` have `vSyncCount` 1; a `render.quality` op
+  without the argument means on).
+  A saved `platypus.quality` keeps its vsync only when it has `playerVSync: true`; every save writes that now (the startup
+  prompt too). Older saves, made while vsync was off by default, take the level's vsync.
+- The app calls `WindowSurface::set_vsync` before each frame with `vsync && !offline`, so screenshot runs never wait for
+  vsync (`--bench` draws to an offscreen target and is unaffected). It switches the present mode between `AutoVsync` and
+  `AutoNoVsync` and reconfigures the surface only when the mode changes. In a window, frame rates are now capped by the
+  display unless the player or game turns vsync off. wgpu picks what the platform has (relaxed or plain FIFO;
   mailbox or immediate).
 - `Application.targetFrameRate` sends `app.targetFrameRate` (-1 means no cap). Like Unity's, it only
-  counts with vsync off (the default), since vsync already paces frames. Screenshot runs ignore it.
+  counts with vsync off, since vsync already paces frames. Screenshot runs ignore it.
 - The cap is `PlatformApp::frame_interval`. After handling events, the loop in `about_to_wait`
   checks the time since the last frame started; if the next frame is not due it sets
   `ControlFlow::WaitUntil(due)` and does not request a redraw. Input events still wake the loop.
@@ -142,6 +150,51 @@ Tests: `M9-API-917` (`--crash-dialog <folder>` parses), `M9-API-918` (the dialog
 - `lifecycle::frame_cap(target_fps, vsync, screenshot)` makes the interval: `None` unless vsync is off,
   the rate is above 0 and it is not a screenshot run (`M5-APP-08`). The rate set by scripts goes into
   `__platypus_info.app.targetFrameRate`, so a full script reload keeps it.
+
+## Startup video-settings prompt
+
+A game can ask the player once, before its window opens, for the window mode, resolution, vsync and quality level. Code:
+[video_prompt.rs](../crates/platypus_app/src/video_prompt.rs), [video_prompt.tsx](../crates/platypus_app/src/video_prompt.tsx),
+[video_prompt_sizes.ts](../crates/platypus_app/src/video_prompt_sizes.ts).
+
+**When it shows.** It is opt-in. The sources, strongest first:
+1. The command line: `platypus-game --video-settings-prompt` forces it (also after a choice, and in a screenshot run, where the
+   PNG is the dialog's and the game does not start); `--no-video-settings-prompt` turns it off.
+2. The build argument `platypus-build package --video-settings-prompt` / `--no-video-settings-prompt`, which writes
+   `videoSettingsPrompt` into the exe's embedded `project.json` over the game's own.
+3. `videoSettingsPrompt` in `project.json`.
+4. Off.
+
+It shows once: the game's prefs hold `platypus.videoSettings.chosen` after Play. It never shows in screenshot, `--bench` or
+`--cook` runs unless forced, and not in the editor.
+
+**How it is hosted.** `main` runs the prompt before anything of the game's window exists, as a child process of the same exe:
+`<exe> --video-settings-dialog <folder>`, with a small game folder written to the temp folder (like the crash dialog above).
+A child is needed because winit allows one event loop per process, and the dialog's window and GPU context are gone before the
+game's are made. The child is UI only (`host::ui_only()`, set by `set_ui_only()`): `platypus-app`'s light path, GLES through
+ANGLE when found, else wgpu with small allocations; the world renderer is never built. The folder's source is constants
+prepended by `video_prompt.rs` followed by `video_prompt.tsx`.
+
+**The dialog.**
+- Window mode: Windowed, Borderless or Fullscreen.
+- A resolution list box. The modes are the monitor's, from winit through `Screen.resolutions`, de-duplicated and largest first
+  by area. Refresh rates show only for exclusive fullscreen. Windowed lists only sizes smaller than the monitor. The saved size
+  is selected, else the nearest. The list takes the wheel, Up/Down/PageUp/PageDown/Home/End, the d-pad and clicks, and scrolls
+  the selection into view. Borderless shows the monitor's own size. The pure helpers are in `video_prompt_sizes.ts`
+  (`bun test`).
+- Vsync On/Off (default on).
+- Quality level (default: the saved one, else the manifest's default).
+- Play and Quit. Esc, gamepad B or closing the window is Quit.
+
+A fixed-size game (`display.resizable: false`) gets no mode or resolution rows, and its display prefs are not written.
+
+**Result.** Play exits with code 10 and the answer travels in the dialog's own `PlayerPrefs` (a temp `PLATYPUS_PREFS_DIR`).
+`Choice::apply` writes `platypus.display`, `platypus.quality` (`{level, current: {vSyncCount}, playerVSync: true}`; saved
+per-setting changes are kept only when the level is the same) and the chosen key, and then the game starts through its normal
+path. Quit exits 0: the game does not start and nothing is recorded. A failure (no GPU, a compile error) logs a warning and
+starts the game without recording anything.
+
+Tests: `M9-VSP-01`..`11` (`TESTS.md`).
 
 ## Focus and pausing
 
