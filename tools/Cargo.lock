@@ -2062,6 +2062,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "platypus_notices"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "platypus_pack"
 version = "0.1.0"
 dependencies = [

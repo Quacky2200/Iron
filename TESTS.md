@@ -1524,6 +1524,21 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2724 | Integration | The `platypus-build` program: `build` and `package` print the empty-field warnings, `check` does not (`tools/platypus_build/tests/cli.rs`). |
 | M9-TS-2725 | Unit | Games are found by `project.json` (or a `package.json` with a `platypus` section, the deprecated fallback), not by any `package.json`. |
 | M9-LIC-01 | Integration | Every tracked source file (`.rs`, `.ts`, `.tsx`, `.js`, `.mts`, `.wgsl`, `.css`, `.py`, `.toml`, `.sh`) has `Copyright 2026 The Platypus Authors` and, on the next line, `SPDX-License-Identifier: Apache-2.0` within its first 4 lines (a check of that rule too), except the commented list of generated files, built fixtures and third-party ports; skipped without git (`tools/platypus_build/tests/spdx_headers.rs`). |
+| M9-LIC-02 | Integration | `notices_are_current`: the committed `THIRD-PARTY-NOTICES.md` is what `platypus_notices` writes now from Cargo.lock and `hand-written.md`; skipped when `cargo metadata --offline` cannot run or a registry source is missing (`tools/platypus_notices/tests/current.rs`). |
+| M9-LIC-03 | Unit | SPDX expressions: `OR` (and the old `/`) give alternatives, `AND` joins licences into each, parentheses and `WITH` are kept, malformed expressions fail. |
+| M9-LIC-04 | Unit | Licence files are classified by name (`LICENSE-MIT`, `UNLICENSE`) or else by text (Apache with the LLVM exception, BSD-3 by its endorsement clause); a pointer file holds no licence; NOTICE / THIRD-PARTY files are notices. |
+| M9-LIC-05 | Unit | Copyright lines are found (`Copyright (c) 2014 ...`, `(c) 2015 ...`, `\u{a9} ...`) but not the licence's own wording (`copyright notice`, `COPYRIGHT HOLDERS`, `[yyyy]`, `(c) You must retain`); each once. |
+| M9-LIC-06 | Unit | `--check`'s comparison ignores CRLF and names the first differing line and the lines gone and added. |
+| M9-LIC-07 | Unit | The tree from `cargo metadata` follows normal and build dependencies (not dev), lists registry crates only (not path ones), authors without e-mail, a crates.io link without a repository; a missing source is its own error. |
+| M9-LIC-08 | Unit | A dual-licensed crate is listed once, under the preferred licence it ships a file for (MIT before Apache-2.0). |
+| M9-LIC-09 | Unit | An `AND` expression lists the crate under each of its licences, with that licence's copyright lines. |
+| M9-LIC-10 | Unit | MPL-2.0 crates say they are used unmodified from crates.io and where the source is. |
+| M9-LIC-11 | Unit | An unknown licence, a GPL with no other choice and a crate with no licence file fail with the list; allow-listed ones pass (no file: the standard text and the Cargo.toml authors; unknown: its own section). |
+| M9-LIC-12 | Unit | Identical licence texts (copyright lines, titles and layout aside) are printed once; each crate keeps its own copyright lines; other wordings of MIT/BSD get their own text, a fixed-text licence (Apache-2.0) never does. |
+| M9-LIC-13 | Unit | NOTICE files and reviewed bundled licence files are included (skipped ones are not); an unreviewed licence file inside a crate fails. |
+| M9-LIC-14 | Unit | `platypus-app --licenses` asks for the notices whatever else is on the line; the embedded text is the committed file (`crates/platypus_app`). |
+| M9-LIC-15 | Integration | `platypus-app --licenses` prints the embedded notices and exits 0 without opening a window (`crates/platypus_app/tests/licenses.rs`). |
+| M9-LIC-16 | Unit | `platypus-build package` writes the embedded `THIRD-PARTY-NOTICES.md` beside the exe; `--no-notices` leaves it out. |
 | M9-REN-01 | Unit | A game built before the rename to Platypus still runs: `build/game.irbundle` is a native bundle and reads like `game.pbundle` (the host logs a deprecation note when it falls back to it). |
 | M9-REN-02 | Unit | The deprecated `package.json` fallback reads an `iron` section as well as `platypus` (`platypus` wins when both are there). |
 | M9-REN-03 | Unit | Scene and prefab files saved with `"format": "iron.scene"` / `"iron.prefab"` still load. |

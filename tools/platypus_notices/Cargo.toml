@@ -1,0 +1,13 @@
+# Copyright 2026 The Platypus Authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Writes THIRD-PARTY-NOTICES.md from the host's crates (`cargo run -p platypus_notices`).
+[package]
+name = "platypus_notices"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json = "1"
