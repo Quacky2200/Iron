@@ -153,6 +153,9 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
 - **Logs:** `platypus-app` is a GUI-subsystem program. Its log goes to `Player.log` (last run:
   `Player-prev.log`) next to the game's `prefs.json`, with ANSI colours, and to stderr when
   started from a terminal or piped. Screenshot runs write no file unless `PLATYPUS_LOG_FILE` is set.
+- **Memory:** hold UI apps to the private working set (Task Manager's Memory column), not private bytes (the
+  D3D11 driver commits ~60 MB it never touches). `PLATYPUS_MEM_TRACE=1` prints memory per start-up stage;
+  procedure and numbers in `docs/rendering.md` "Memory".
 - **Graphics backend:** Vulkan by default on Windows; `WGPU_BACKEND=dx12` switches.
   `PLATYPUS_FRAME_LATENCY` (1 or 2) sets the queued frames. The default is 1, or 2 on DX12, where 1 made
   resizing jitter.

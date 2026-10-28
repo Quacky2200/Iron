@@ -135,6 +135,16 @@ forces wgpu). `tests/vs_wgpu.rs` draws scenes through both executors and compare
 (`M2-GLES-02..13`: identical so far, 0 to 1 in 255); it and `tests/context.rs` need an EGL driver
 (the linked-in ANGLE, or `PLATYPUS_ANGLE_DIR` without it) and skip without one.
 
+Kept small (see "Memory" below): the display comes from `eglGetPlatformDisplayEXT` with Direct3D 11, the
+hardware device and **no D3D debug layer** (`egl::angle_display_attribs`; ANGLE turns the layer on whenever its
+asserts are compiled in, which mozangle's build does; `PLATYPUS_ANGLE_DEBUG=1` leaves it to ANGLE); the config
+asks for no depth, stencil or samples and the log says what it got (`EGL config: 32 bits, depth 0, stencil 0,
+0 samples`). Programs compile the first time a frame needs them (`ProgramKind`: `Quad` and `Blit` at start,
+the image, blur and composite ones later; `M2-GLES-14`), and the colour glyph page stays 1x1 until a colour
+glyph (emoji) arrives. A second after the first frame `gles_gfx.rs` trims the driver once
+(`EglContext::trim_device`: `IDXGIDevice3::Trim` on ANGLE's device, what ANGLE does for a suspended UWP app;
+`PLATYPUS_GLES_TRIM=0` turns it off; `M2-GLES-15`). Screenshot runs never trim (they stop sooner).
+
 **Static ANGLE (feature `static-angle`, on by default; Windows).** `platypus_app` and `platypus_render_gles` compile
 ANGLE (Mozilla's fork, the `mozangle` crate, `egl` feature: EGL + GLES over Direct3D 11) into the program, and `egl.rs`
 calls `egl*` directly (`khronos-egl`'s `static` + `no-pkg-config`, declared as a Windows-only dependency so the
@@ -161,7 +171,64 @@ the loop capped at 60 Hz (softbuffer has no vsync), "3D Not Supported" when the 
 path when softbuffer can't make a surface. `--screenshot` writes the pixels the CPU drew (no GPU involved). What it
 does not draw (each logged once): `border-image`, `mask`s (the layer is drawn unmasked), drop shadows and colour
 matrices on layers (`filter: drop-shadow()`, `grayscale()`, `sepia()`, ...), border styles other than solid (drawn
-solid), the 3D world, world panels and secondary windows. Measured on `css` (RTX 5080, release, Windows, after 8 s): `cpu` ~20 MB private / ~50 MB working set, `gles` ~133 / ~93 MB, `vulkan` (wgpu with the world renderer) ~331 / ~136 MB. Next to the GLES picture of `css` the CPU one differs only where the list above says: its dashed borders (the `:empty` slot and the filled slot) are drawn solid.
+solid), the 3D world, world panels and secondary windows. Its memory is in "Memory" below. Next to the GLES
+picture of `css` the CPU one differs only where the list above says: its dashed borders (the `:empty` slot and the
+filled slot) are drawn solid. It is far slower than GLES on animated UI: `launcher`'s drifting background holds
+~30 fps at 1280x720 and ~18 fps at 1920x1080 on about two cores, where GLES holds 60 fps at ~9% of one core, and
+the launcher's glows and frosted (`backdrop-filter`) controls come out darker (colour-matrix filters on layers).
+It stays an opt-in.
+
+### Memory
+
+Three numbers, all from `GetProcessMemoryInfo` (`PROCESS_MEMORY_COUNTERS_EX2`) or the matching counters:
+
+- **Private working set**: the process's own pages in RAM (`\Process(platypus-app)\Working Set - Private`). This is
+  Task Manager's "Memory" column (active private working set), so it is the number to hold UI apps to.
+- **Private bytes**: memory committed to the process (`PrivateMemorySize64`, Process Explorer's "Private Bytes",
+  Task Manager's "Commit size"). On the GPU paths it includes what the graphics driver commits for itself, most of
+  it never resident.
+- **Working set**: every resident page, the shared images of the exe and DLLs (the NVIDIA driver's are over 190 MB
+  of image) included.
+
+**Measuring.** Build the release host (`cargo build --release -p platypus_app`) and the example, start
+`target/release/platypus-app examples/<game> --renderer gles` (a window opens), wait ~8 s without touching it, read the
+three numbers (PowerShell: `$p.PrivateMemorySize64`, `$p.WorkingSet64`, and `WorkingSetPrivate` of
+`Win32_PerfFormattedData_PerfProc_Process` for the pid), close the window. `PLATYPUS_MEM_TRACE=1` prints the three at
+every start-up stage to stderr (the compiler's phases, the host's set-up, the window, the EGL context, the GLES
+renderer, the first frames, the driver trim; `mem_trace.rs`); `PLATYPUS_MEM_TRACE=regions` also lists the heaps and the
+largest committed private allocations once the frames run. A run varies by about 2 MB; about one run in eight the
+trim frees nothing and private bytes stay ~14 MB higher.
+
+Measured 2026-10-28 (RTX 5080, Windows 11, release, static ANGLE, 1280x720 window, FPS counter on), MB as private
+working set / private bytes / working set:
+
+| Game (`ui` tier) | GLES before | GLES now | CPU | light wgpu, Vulkan | light wgpu, DX12 |
+|---|---|---|---|---|---|
+| css | 41.6 / 134 / 93 | **29.5** / 100 / 87 | 17 / 20 / 46 | 91 / 163 / 166 | 99 / 238 / 174 |
+| launcher | 45.2 / 151 / 100 | **34.8** / 138 / 94 | 37 / 41 / 69 | 97 / 200 / 176 | 113 / 276 / 192 |
+| md-reader | 60.4 / 149 / 118 | **45.5** / 119 / 103 | 35 / 38 / 70 | 70 / 175 / 128 | 83 / 269 / 142 |
+| hello | 39.0 / 128 / 88 | **23.3** / 95 / 72 | | | |
+| boxes, form, text | 41-45 / 131-183 / 93-97 | **25-28** / 98-129 / 75-78 | | | |
+
+The "light wgpu" columns are the GLES choice with `PLATYPUS_GLES=0` (wgpu with small GPU blocks, no world renderer)
+and `WGPU_BACKEND`; `--renderer vulkan` (wgpu with the world) is ~80 / 331 / 135 on css. ANGLE from a VS Code install
+(`--no-default-features`, `PLATYPUS_ANGLE_DIR`) measures the same as the linked-in one (css 31 / 102 / 81, launcher
+36-38 / 142-196 / 89-96): what remains is the driver and our own memory, not the ANGLE build.
+
+**Where it goes** (css on GLES, private bytes / private working set, from the trace): the host before any renderer
+~10 / ~7.5 MB (process start 2.4, engine manifests 3.3, compile and JIT ~2, UI, fonts and CSS ~1; the compiler's
+arenas are freed after the JIT, a peak of 53 MB private for md-reader's 2.4 MB source falls to 12 MB; audio is not
+started for a game that plays nothing, fontique scans lazily); the window +1.5; the EGL context (the Direct3D 11
+device, NVIDIA's user-mode driver, ANGLE's renderer) **+60 / +9**: the same as a bare ANGLE context in a tiny
+program, so inherent; the GLES renderer +5 / +4; the first frame +37 / +7, all of it the first instanced draw (an
+empty frame costs +11, a trivial fragment shader as much as the full one, glyph uploads ~2): the driver's
+compiler and command memory, of which the trim gives back ~14 MB of private bytes. What changed: no debug layer
+(-12 private, -10 private working set), lazy programs and colour page (-8 private), the trim (-14 private), the
+dropped source text (md-reader -2.4). Tried without effect: frame latency 1, ANGLE feature level 10.1 or 11.0,
+compacting the heaps, program binaries (no `d3dcompiler_47.dll` at all on a second run, same memory). Open: a
+DirectComposition surface (`EGL_DIRECT_COMPOSITION_ANGLE`, ~4 MB less private, not adopted: it changes how the
+window composes), a glyph mask page that grows from 512 px (~3-5 MB), program binaries for start-up time (~0.7 s
+of linking).
 
 Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
 resizing jitter. `PLATYPUS_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On

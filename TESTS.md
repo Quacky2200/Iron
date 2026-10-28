@@ -140,6 +140,8 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-GLES-11 | Integration | All 15 `mix-blend-mode`s over a gradient match between the two executors. |
 | M2-GLES-12 | Integration | `backdrop-filter` blur on a rounded translucent box and `backdrop-filter: grayscale()` match between the two executors. |
 | M2-GLES-13 | Integration | Alpha, luminance and repeated-dot `mask-image`s and a translucent layer inside a rounded `overflow: hidden` clip match between the two executors. |
+| M2-GLES-14 | Integration | A new GLES renderer has compiled only the quad and blit programs; boxes and plain text add none and leave the colour glyph page unsized; a blurred box compiles the blur and composite programs once; with ANGLE linked in, the driver trim succeeds and the next frame's pixels are the same. |
+| M2-GLES-15 | Unit | The GLES path trims the driver once, no sooner than a second after the first frame shown, and not with `PLATYPUS_GLES_TRIM=0`. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

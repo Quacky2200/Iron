@@ -1722,6 +1722,15 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     (`extends Component`, a lowered `register(..)`, found in the parsed code) makes a program `world2d`; the hierarchy
     helpers are lowered only when called. `hello` now logs from a timer (stays `ui`); `physics` became `world2d` (rapier
     bodies live on GameObjects). Tests `M9-HOST-15..18`.
+  - [x] UI memory on GLES (2026-10-28): no D3D debug layer (ANGLE enabled it: mozangle builds without `NDEBUG`), a
+    config without depth/stencil/samples, programs and the colour glyph page made on first use, one driver trim
+    a second after the first frame, a native game's source dropped once compiled, `PLATYPUS_MEM_TRACE`. Private
+    working set (Task Manager's Memory) css 41.6 -> 29.5 MB, launcher 45.2 -> 34.8, md-reader 60.4 -> 45.5; private
+    bytes css 134 -> ~100 (the D3D11 device alone is ~60). `docs/rendering.md` "Memory". Tests `M2-GLES-14..15`.
+    - [ ] A glyph mask page that starts at 512 px and grows (~3-5 MB private on GLES; the atlas is shared with wgpu).
+    - [ ] Program binaries cached on disk (`glGetProgramBinary`): ~0.7 s less start-up, no memory change measured.
+    - [ ] DirectComposition surface (`EGL_DIRECT_COMPOSITION_ANGLE`): ~4 MB less private; check resizing, alpha and
+      screenshots first.
 - [ ] **M9.b2** `platypus_ts`: ahead-of-time TypeScript compiler (oxc → typed Platypus IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/platypus-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.
