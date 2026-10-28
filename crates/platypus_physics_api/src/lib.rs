@@ -196,38 +196,84 @@ pub(crate) fn do_raycast_masked(
     max_distance: f64,
     layer_mask: u32,
 ) -> u32 {
-    let len =
-        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
     st(|s| {
-        let accept = |collider: u32| {
-            let layer = object_in(s, collider).map_or(0, layer_of);
-            layer_mask & (1 << layer) != 0
-        };
+        let accept = |collider: u32| on_layers(s, collider, layer_mask);
         let hit = s.physics.raycast_now(
             [origin.x as f32, origin.y as f32, origin.z as f32],
             [direction.x as f32, direction.y as f32, direction.z as f32],
             max_distance.min(f64::from(f32::MAX)) as f32,
             &accept,
         );
-        let Some((collider, distance, normal)) = hit else {
-            return 0;
-        };
-        let d = f64::from(distance);
-        let point = V3 {
-            x: origin.x + direction.x / len * d,
-            y: origin.y + direction.y / len * d,
-            z: origin.z + direction.z / len * d,
-        };
-        let object = object_in(s, collider);
-        s.hits.push(HitData {
-            collider,
-            object,
-            distance: d,
-            point,
-            normal: from3(normal),
-        });
-        s.hits.len() as u32
+        match hit {
+            Some(hit) => push_hit(s, origin, direction, hit),
+            None => 0,
+        }
     })
+}
+
+/// `do_raycast_masked` for every collider on the ray, nearest first: the hit numbers.
+pub(crate) fn do_raycast_all(
+    origin: V3,
+    direction: V3,
+    max_distance: f64,
+    layer_mask: u32,
+) -> Vec<u32> {
+    st(|s| {
+        let accept = |collider: u32| on_layers(s, collider, layer_mask);
+        let hits = s.physics.raycast_all(
+            [origin.x as f32, origin.y as f32, origin.z as f32],
+            [direction.x as f32, direction.y as f32, direction.z as f32],
+            max_distance.min(f64::from(f32::MAX)) as f32,
+            &accept,
+        );
+        hits.into_iter()
+            .map(|hit| push_hit(s, origin, direction, hit))
+            .collect()
+    })
+}
+
+/// The colliders a sphere touches whose GameObject's layer is in `layer_mask`.
+pub(crate) fn do_overlap_sphere(center: V3, radius: f64, layer_mask: u32) -> Vec<u32> {
+    st(|s| {
+        let accept = |collider: u32| on_layers(s, collider, layer_mask);
+        s.physics.overlap_sphere(
+            [center.x as f32, center.y as f32, center.z as f32],
+            radius as f32,
+            &accept,
+        )
+    })
+}
+
+/// Is the collider's GameObject (layer 0 without one) on a layer of `layer_mask`?
+fn on_layers(s: &State, collider: u32, layer_mask: u32) -> bool {
+    let layer = object_in(s, collider).map_or(0, layer_of);
+    layer_mask & (1 << layer) != 0
+}
+
+/// Keeps a ray hit for the script to read; the number is the hit (never 0).
+fn push_hit(
+    s: &mut State,
+    origin: V3,
+    direction: V3,
+    (collider, distance, normal): (u32, f32, [f32; 3]),
+) -> u32 {
+    let len =
+        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
+    let d = f64::from(distance);
+    let point = V3 {
+        x: origin.x + direction.x / len * d,
+        y: origin.y + direction.y / len * d,
+        z: origin.z + direction.z / len * d,
+    };
+    let object = object_in(s, collider);
+    s.hits.push(HitData {
+        collider,
+        object,
+        distance: d,
+        point,
+        normal: from3(normal),
+    });
+    s.hits.len() as u32
 }
 
 /// The layer (0 to 31) of a GameObject; 0 (Default) when there is no scene.
@@ -457,6 +503,32 @@ pub mod physics_api {
             max_distance,
             layer_mask,
         ))
+    }
+
+    /// Casts a ray at once and answers every collider it hits within `maxDistance` (unlimited by
+    /// default), nearest first. Unity does not order them; this does. `layerMask` and the
+    /// start-inside rule are those of `raycast`.
+    #[optional(max_distance = 1e30, layer_mask = 4294967295)]
+    pub fn raycast_all(
+        origin: V3,
+        direction: V3,
+        max_distance: f64,
+        layer_mask: u32,
+    ) -> Vec<HitRef> {
+        do_raycast_all(origin, direction, max_distance, layer_mask)
+            .into_iter()
+            .map(HitRef)
+            .collect()
+    }
+
+    /// Every collider a sphere touches or is inside (triggers too), by creation order.
+    /// `layerMask` keeps the colliders whose GameObject is on those layers.
+    #[optional(layer_mask = 4294967295)]
+    pub fn overlap_sphere(center: V3, radius: f64, layer_mask: u32) -> Vec<ColliderRef> {
+        do_overlap_sphere(center, radius, layer_mask)
+            .into_iter()
+            .map(ColliderRef)
+            .collect()
     }
 
     /// Joins two bodies (`b` 0: to the world). Kinds and `params`: `"fixed"`; `"ball"` (turns

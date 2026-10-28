@@ -407,6 +407,94 @@ impl Physics {
             .min_by(|a, b| a.1.total_cmp(&b.1))
     }
 
+    /// Casts a ray at once and answers every collider it hits within `max` metres, nearest first
+    /// (id, distance, surface normal). `accept` and the start-inside rule are those of
+    /// [`Self::raycast_now`].
+    pub fn raycast_all(
+        &self,
+        origin: [f32; 3],
+        direction: [f32; 3],
+        max: f32,
+        accept: &dyn Fn(ScriptId) -> bool,
+    ) -> Vec<(ScriptId, f32, [f32; 3])> {
+        let dir = Vector::from_array(direction);
+        if dir.length_squared() == 0.0 {
+            return Vec::new();
+        }
+        let ray = Ray::new(Vector::from_array(origin), dir.normalize());
+        let usable = |c: &Collider| {
+            accept(c.user_data as u32) && !c.shape().contains_point(c.position(), ray.origin)
+        };
+        let mut hits: Vec<(ScriptId, f32, [f32; 3])> = if self.dirty {
+            self.colliders
+                .values()
+                .filter_map(|&h| {
+                    let c = self.world.colliders.get(h)?;
+                    if !usable(c) {
+                        return None;
+                    }
+                    let hit = c
+                        .shape()
+                        .cast_ray_and_get_normal(c.position(), &ray, max, true)?;
+                    Some((
+                        c.user_data as u32,
+                        hit.time_of_impact,
+                        hit.normal.to_array(),
+                    ))
+                })
+                .collect()
+        } else {
+            let accepted = |_: ColliderHandle, c: &Collider| usable(c);
+            let filter = QueryFilter::default().predicate(&accepted);
+            self.world
+                .intersect_ray(ray, max, true, filter)
+                .map(|(_, c, hit)| {
+                    (
+                        c.user_data as u32,
+                        hit.time_of_impact,
+                        hit.normal.to_array(),
+                    )
+                })
+                .collect()
+        };
+        hits.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        hits
+    }
+
+    /// Every collider a sphere touches (inside it counts), by id, ascending. `accept` says which
+    /// colliders count; sensors are included, as in Unity.
+    pub fn overlap_sphere(
+        &self,
+        center: [f32; 3],
+        radius: f32,
+        accept: &dyn Fn(ScriptId) -> bool,
+    ) -> Vec<ScriptId> {
+        let ball = rapier3d::parry::shape::Ball::new(radius.max(0.0));
+        let pose = Pose::from_parts(Vector::from_array(center), Rotation::IDENTITY);
+        let touches = |c: &Collider| {
+            accept(c.user_data as u32)
+                && rapier3d::parry::query::intersection_test(&pose, &ball, c.position(), c.shape())
+                    .is_ok_and(|i| i.intersecting)
+        };
+        let mut ids: Vec<ScriptId> = if self.dirty {
+            self.colliders
+                .values()
+                .filter_map(|&h| self.world.colliders.get(h))
+                .filter(|c| touches(c))
+                .map(|c| c.user_data as u32)
+                .collect()
+        } else {
+            let accepted = |_: ColliderHandle, c: &Collider| touches(c);
+            let filter = QueryFilter::default().predicate(&accepted);
+            self.world
+                .intersect_shape(pose, &ball, filter)
+                .map(|(_, c)| c.user_data as u32)
+                .collect()
+        };
+        ids.sort_unstable();
+        ids
+    }
+
     /// Runs one `physics.*` op (the name without the prefix). Returns an error message
     /// for a bad op; nothing is changed then.
     pub fn apply(&mut self, name: &str, args: &[Value]) -> Result<(), String> {

@@ -2404,8 +2404,12 @@ declare namespace Physics :: function addMesh(points: readonly Vector3[], indice
 declare namespace Physics :: function afterNextStep(f: () => void): void;
 declare namespace Physics :: function createBody(kind: string): PhysicsBody;
 declare namespace Physics :: function createJoint(kind: string, a: PhysicsBody, b: PhysicsBody, anchorA: Vector3, anchorB: Vector3, params: readonly number[]): PhysicsJoint;
+declare namespace Physics :: function overlapSphere(center: Vector3, radius: number, layerMask?: number): PhysicsCollider[];
+declare namespace Physics :: function overlapSphere(center: Vector3, radius: number, options?: { layerMask?: number }): PhysicsCollider[];
 declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, maxDistance?: number, layerMask?: number): RaycastHit | null;
 declare namespace Physics :: function raycast(origin: Vector3, direction: Vector3, options?: { maxDistance?: number; layerMask?: number }): RaycastHit | null;
+declare namespace Physics :: function raycastAll(origin: Vector3, direction: Vector3, maxDistance?: number, layerMask?: number): RaycastHit[];
+declare namespace Physics :: function raycastAll(origin: Vector3, direction: Vector3, options?: { maxDistance?: number; layerMask?: number }): RaycastHit[];
 declare namespace Physics :: function step(): void;
 declare namespace Physics :: let gravity: Vector3;
 declare namespace Physics2D

@@ -480,3 +480,66 @@ fn raycasts_filter_by_layer_and_name_the_hit_object() {
         0
     );
 }
+
+// M9-API-214
+//
+// `raycastAll` answers every collider on the ray nearest first (honouring the layer mask and the
+// start-inside rule); `overlapSphere` answers the colliders a sphere touches, by layer.
+#[test]
+fn raycast_all_and_overlap_sphere_list_every_collider() {
+    let mut scene = setup();
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let far = make("far");
+    place(far, 10.0, 0.0, 0.0);
+    comp::col_attach(far, unit_box());
+    let near = make("near");
+    place(near, 5.0, 0.0, 0.0);
+    comp::col_attach(near, unit_box());
+    platypus_scene::api::with_scene(|s| s.set_layer(near, 3));
+    let off = make("off");
+    place(off, 0.0, 20.0, 0.0);
+    comp::col_attach(off, unit_box());
+    run(1);
+    let x_axis = V3 {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let at = |x: f64, y: f64| V3 { x, y, z: 0.0 };
+    let all = |from: V3, mask: u32| -> Vec<(Option<ObjectId>, f64)> {
+        crate::do_raycast_all(from, x_axis, 1.0e30, mask)
+            .into_iter()
+            .map(|n| {
+                crate::st(|s| {
+                    let h = &s.hits[n as usize - 1];
+                    (h.object, (h.distance * 100.0).round() / 100.0)
+                })
+            })
+            .collect()
+    };
+    // Both boxes, nearest first.
+    assert_eq!(
+        all(at(0.0, 0.0), u32::MAX),
+        vec![(Some(near), 4.5), (Some(far), 9.5)]
+    );
+    // The layer mask drops one; starting inside the near box skips it.
+    assert_eq!(all(at(0.0, 0.0), 1), vec![(Some(far), 9.5)]);
+    assert_eq!(all(at(5.0, 0.0), u32::MAX), vec![(Some(far), 4.5)]);
+    assert!(all(at(0.0, 5.0), u32::MAX).is_empty());
+
+    // A sphere at the origin of radius 5 reaches the near box (face at 4.5) but not the far one.
+    let touched = |center: V3, radius: f64, mask: u32| -> Vec<Option<ObjectId>> {
+        crate::do_overlap_sphere(center, radius, mask)
+            .into_iter()
+            .map(crate::object_of_collider)
+            .collect()
+    };
+    assert_eq!(touched(at(0.0, 0.0), 5.0, u32::MAX), vec![Some(near)]);
+    assert_eq!(touched(at(0.0, 0.0), 10.0, u32::MAX).len(), 2);
+    // Centred inside a box counts as touching it.
+    assert_eq!(touched(at(10.0, 0.0), 0.1, u32::MAX), vec![Some(far)]);
+    // The layer mask keeps only layer 0 or only layer 3.
+    assert_eq!(touched(at(0.0, 0.0), 10.0, 1), vec![Some(far)]);
+    assert_eq!(touched(at(0.0, 0.0), 10.0, 1 << 3), vec![Some(near)]);
+    assert!(touched(at(0.0, 0.0), 2.0, u32::MAX).is_empty());
+}
