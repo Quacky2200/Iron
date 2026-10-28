@@ -865,6 +865,44 @@ impl<'i> RuleBodyItemParser<'i, Vec<Keyframe>, ()> for KeyframeParser {
 }
 
 /// `background-color` → `backgroundColor`; custom properties (`--x`) are unchanged.
+/// Decodes the CSS escape that follows a backslash in a string (`rest` starts after the
+/// backslash): up to six hex digits and one closing space (`\201C `) give that code point
+/// (U+FFFD for zero, a surrogate or past U+10FFFF), a newline is a line continuation (no
+/// character), anything else stands for itself. Returns the character and the bytes of `rest` used.
+pub fn css_escape(rest: &str) -> (Option<char>, usize) {
+    let Some(first) = rest.chars().next() else {
+        return (None, 0);
+    };
+    if first.is_ascii_hexdigit() {
+        let digits = rest
+            .bytes()
+            .take(6)
+            .take_while(u8::is_ascii_hexdigit)
+            .count();
+        let code = u32::from_str_radix(&rest[..digits], 16).unwrap_or(0);
+        let ch = char::from_u32(code)
+            .filter(|c| *c != '\0')
+            .unwrap_or(char::REPLACEMENT_CHARACTER);
+        // One whitespace ends the escape ("\r\n" counts as one).
+        let tail = &rest[digits..];
+        let space = if tail.starts_with("\r\n") {
+            2
+        } else if tail.starts_with([' ', '\t', '\n', '\r', '\u{c}']) {
+            1
+        } else {
+            0
+        };
+        return (Some(ch), digits + space);
+    }
+    if rest.starts_with("\r\n") {
+        return (None, 2);
+    }
+    if matches!(first, '\n' | '\r' | '\u{c}') {
+        return (None, 1);
+    }
+    (Some(first), first.len_utf8())
+}
+
 pub fn camel_case(prop: &str) -> String {
     if prop.starts_with("--") {
         return prop.to_owned();
