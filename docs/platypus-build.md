@@ -12,9 +12,9 @@ cargo run -p platypus_build -- build ../examples/hello
 |---|---|
 | `build <game> [--no-tsc] [--aot] [--cook] [--no-compile] [--no-prebuild]` | Builds `<game>/build`. |
 | `types [<game>] [--out file]` | Writes `<game>/types/platypus.d.ts` (type declarations for `tsc`). |
-| `assets <folder>... [--prune]` | Writes `.meta` GUID files (the port of `scripts/assets.ts`). |
+| `assets <folder>... [--prune]` | Writes `.meta` GUID files (it replaced the Bun `scripts/assets.ts`, which is deleted). |
 | `dev <game> [--no-tsc]` | Rebuilds on every change and signals the running app. |
-| `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/platypus.d.ts` (`bun run typecheck:examples`). |
+| `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/platypus.d.ts` (`bun run typecheck` runs it). |
 | `init [<dir>] [flags]` | Writes a default `project.json`, a self-contained `tsconfig.json` and `types/platypus.d.ts` (see "`project.json`"). |
 | `init --editor-files [<dir>...]` | Rewrites only `tsconfig.json` and `types/platypus.d.ts` of a game, or of every game in a folder (see "Editor files"). |
 | `package <game> [flags]` | One executable for the game: `build/<exe>.exe` (see "Packaging a single executable"). |
@@ -26,18 +26,16 @@ an LLVM 20 or newer install for that command (for example `LIBCLANG_PATH='C:\llv
 
 ## The output folder: `build/`
 
-A game builds into `<game>/build/` (the editor's UI into `editor/build/`). Games used to build into `dist/`; that folder is not
+A game builds into `<game>/build/`. Games used to build into `dist/`; that folder is not
 read any more (no fallback): `platypus-app` on a folder with only `dist/game.pbundle`, `dist/game.irbundle` or `dist/game.js` exits with an error that
 says to rebuild with `platypus-build build` (`M9-APP-06`). A stale `dist/` can be deleted; `.gitignore` still ignores it.
 
-## QuickJS is deprecated (`--force`)
+## QuickJS is removed
 
-`platypus_app` runs games compiled by `platypus-build build` (`build/game.pbundle`, native). A folder (or bundle file) that has only the
-QuickJS form (`build/game.js`, from bun) is **deprecated**: `platypus_app` logs the deprecation note (stderr and `Player.log`) and exits
-with a non-zero status without running, unless `--force` is given, which logs the note once and runs it as before. This holds for
-`--screenshot` runs too. A folder with both runs the native bundle, with no note. `platypus_editor` is itself a QuickJS program (`editor/`)
-and counts as forced: it logs the note once and runs. Nothing is removed: the QuickJS crates, `js/` packages and the Rust tests that use
-them as libraries keep working (removal plan: TODO.md, "QuickJS deprecated").
+`platypus_app` runs only games compiled by `platypus-build build` (`build/game.pbundle`, or a `.ts` / `.tsx` file). A folder or file that
+holds only a QuickJS bundle (`build/game.js`, or a `.js` path) is refused with "... is a QuickJS bundle: QuickJS is no longer part of
+Platypus; rebuild the game with `platypus-build build`" and a non-zero exit (`M9-APP-02`). `--force` no longer exists; passing it is an
+argument error (`M9-APP-01`). The `platypus_editor` binary was removed with it (the editor is to be re-made natively in TypeScript).
 
 ## `project.json`: the project file
 
@@ -395,7 +393,7 @@ The watcher polls modification times (200 ms; no dependency) of everything in th
 ```
 
 The app watches that one file; a new `seq` means reload `game.pbundle` (on `ok: false` log the error and keep the old code; the old
-bundle is untouched). Hot reload keeps state the way the QuickJS reload does (scene save/restore, `onReload`).
+bundle is untouched). Hot reload keeps state through scene save/restore and `onReload` (see [scripting.md](scripting.md#hot-reload)).
 
 ## Packaging a single executable (`platypus-build package`)
 
@@ -422,7 +420,7 @@ it reads `cargo metadata --offline` for `platypus_app` on `x86_64-pc-windows-msv
 each crate's `LICENSE*` / `COPYING*` / `NOTICE*` / `UNLICENSE` files from the local cargo registry, then writes
 `hand-written.md` verbatim followed by one section per licence: the crates with their version, link and copyright lines,
 the licence text once, other wordings of MIT/BSD-style texts de-duplicated, and a last section of NOTICE files and the
-licences of code bundled inside crates (QuickJS in `rquickjs-sys`, Zstandard, ...). A crate offered under a choice
+licences of code bundled inside crates (Zstandard, ...). A crate offered under a choice
 (`MIT OR Apache-2.0`) is listed under the first of MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-3-Clause,
 BSD-2-Clause, ISC, Zlib, Unicode-3.0, BSL-1.0, 0BSD, Unlicense, CC0-1.0, MPL-2.0 that it ships a file for; `AND` lists
 it under each; MPL-2.0 crates say they are used unmodified, with their source link. It fails with the list on an
@@ -580,7 +578,7 @@ installs it for every loader; `platypus_core::read_asset(root, path)` (which fal
 tests do) is the one call textures, sprites, models (and the textures a glTF names), sounds, fonts, `url()` / `@import` in CSS, SVG
 images, cursors, scenes, prefabs and `Assets`/`asset.readText` make. A streamed sound (`audio.load(path, true)`) is read in 256 KiB
 windows through the pack's chunk table (`Vfs::open_range`, `platypus_core::RangeRead`), so a big compressed sound is never inflated whole.
-The asset database scripts see (`__platypus_info.assets`) lists the `.meta` assets of the folder and of the packs. Packs are read-only:
+The asset database scripts see (`Assets`, fed by `asset_db::scan`) lists the `.meta` assets of the folder and of the packs. Packs are read-only:
 the asset watcher runs only over a folder.
 
 Errors name where the lookup went, top to bottom: `asset "assets/sfx/boom.wav" not found in scene data, assets.dat or folder`
@@ -625,17 +623,16 @@ Nothing here is built yet. The inputs are the same: `game.pbundle` (or the `--ao
 runs), and there is no vsync or frame cap. Each frame waits for the GPU work of the frame before it (like a swapchain queueing one
 frame), so GPU time counts. It warms up, measures, and writes JSON (`--bench-out file`, else stdout): fps, mean / median / p95 /
 p99 / worst frame ms, and the mean split into `script` (game code: hooks, timers, the UI it renders), `sync` (a compiled game's
-`sync_native_render`: animation, splines, cameras, registries into `WorldViews`; 0 under QuickJS, which does that in script),
+`sync_native_render`: animation, splines, cameras, registries into `WorldViews`),
 `render` (layout and draw list, world, GPU wait) and `other`; start-up (process start to the first frame), load time and peak
 working set. Finer splits: `syncParts` (where `sync_native_render` goes: resources, line renderers, settings, each kind of
 component, panels, texts, ...; `platypus_app/src/sync_profile.rs`), `startupParts` (log and asset mount, bundle read, asset index,
 UI tree and fonts, the compiler's phases from `platypus_ts::timing`: engine manifests, source rewrites, oxc parse, type inference and
 lowering, throw analysis, IR passes, Cranelift code generation, JIT linking; the program's top level and starting components; the
-headless GPU device, renderer set-up and the first frame; plus the program's and prelude's line counts), `opsApplyMs` (applying
-what scripts queued: React commits and a QuickJS game's ops, part of `other`) and `opMarshalMs` (QuickJS: copying `__platypus_op`
-arguments out of JavaScript, part of `script`). The timers run only in bench runs. Flags: `--warmup N` (120), `--frames N` (600), `--fixed-dt s` (every frame advances the game's clock by exactly
+headless GPU device, renderer set-up and the first frame; plus the program's and prelude's line counts). `backend` is always `"native"`
+(the QuickJS-only `opsApplyMs` and `opMarshalMs` are gone). The timers run only in bench runs. Flags: `--warmup N` (120), `--frames N` (600), `--fixed-dt s` (every frame advances the game's clock by exactly
 `s`, so runs are comparable whatever their speed), `--size WxH`, `--bench-shots dir` (a PNG after each segment, to check the
-input did what it should), `--force` for a QuickJS bundle as usual.
+input did what it should).
 
 `--bench-input spec.json` scripts the run: `{"warmup": N, "segments": [{"name", "warmup", "frames", "input": [...]}]}`. Input
 frames count from the segment's start (its warm-up included); kinds are `key` (`code`, optional `key`, `hold` frames),
@@ -644,12 +641,12 @@ frames count from the segment's start (its warm-up included); kinds are `key` (`
 `button`; `count` and `every` repeat one. They are sent as the platform sends the OS's (`window_input`), so both backends see
 the same input. The examples' scripts are in `tools/bench/inputs/<name>.json` (the example sources stay unchanged).
 
-`platypus-build bench <examples> [--only a,b] [--base main] [--no-quickjs] [--no-host-build] [--frames N] [--timeout s]` builds the
-release host (`cargo build --release -p platypus_app`), every example natively, and the base branch's QuickJS originals:
-`git archive <base>` into a folder of the OS temp dir (deleted afterwards), `bun install`, then each example's own
-`bun run build`, with files git does not hold (fonts kept out of git, downloaded models) copied in from the branch's folder. It
-runs both with `--fixed-dt 1/60 --size 1280x720` and writes `docs/benchmarks/results.json` and the generated part of
-`docs/benchmarks.md` (between its `bench:begin` / `bench:end` markers; text around them is kept). To re-run:
+`platypus-build bench <examples> [--only a,b] [--no-host-build] [--frames N] [--timeout s]` builds the
+release host (`cargo build --release -p platypus_app`) and every example natively, and times only the native backend (the
+QuickJS originals, `--base` and `--no-quickjs` are gone). It
+runs them with `--fixed-dt 1/60 --size 1280x720` and writes `docs/benchmarks/results.json` and the generated part of
+`docs/benchmarks.md` (between its `bench:begin` / `bench:end` markers; text around them is kept; the markdown has fps,
+median / p99 and the script / sync columns). To re-run:
 
 ```bash
 cd tools && cargo run -q -p platypus_build -- bench ../examples
@@ -670,6 +667,6 @@ unless asked: `cargo test -p platypus_build -- --ignored standalone`, needs a bu
 `M9-API-1300..1318` the project loader (`platypus_core/src/project.rs`: templates, escapes, errors with line, name splitting, platform sections, package.json fallback, license, required `name`, silent defaults, empty fields: `1321..1322`), `1320` the app reads it, `M9-TS-2700..2705` `init`, `2710..2711` templates and license in a package, `2720..2721` the build config and the examples (found by `project.json`, none has a `package.json`), `2722` and `2724` the empty-field warnings (build, package; not check), `2723` package default warnings, `2725` game discovery.
 
 `M9-TS-1800..1806` module graph, `1810` declarations, `1830..1831` `.meta` files, `1840` CSS bundling, `1850..1852` config and a
-full build, `1860..1861` the dev status file and the change fingerprint. `bun run typecheck:examples` (`platypus-build check ../examples --tsc`, from `tools`)
+full build, `1860..1861` the dev status file and the change fingerprint. `bun run typecheck` (`platypus-build check ../examples --tsc`, from `tools`)
 builds all 45 examples and prints a table; failures there are missing language or engine features, listed in
 `docs/research/platypus-examples-on-platypus-ts.md`.

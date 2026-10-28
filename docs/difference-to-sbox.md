@@ -21,8 +21,8 @@ workflow. The differences are the stack, the language, and how games are publish
 | | s&box | Platypus |
 |---|---|---|
 | Engine base | Source 2 (C++), Valve's engine | Rust core, own renderer (wgpu) |
-| Scripting | C# | TypeScript in QuickJS now, AOT planned (`platypus_ts`, on a branch) |
-| UI | Razor panels with CSS | React reconciler with CSS (`@platypus/react`) |
+| Scripting | C# | TypeScript compiled ahead of time to native code (`platypus_ts`) |
+| UI | Razor panels with CSS | React reconciler with CSS (`platypus_ui_native`) |
 | Licence and publishing | Free to use, but release goes through Valve and s&box | Planned open source, licence to be chosen; no approval step (see below) |
 | Physics | Source 2 physics | rapier (3D and 2D), built in |
 | Audio | Source 2 audio | kira mixer, built in |
@@ -43,7 +43,7 @@ s&box has been in public development for years, and its APIs and engine have bee
 lot. Each rework costs the people building on top of it, and that's a real problem for a new
 engine that wants to be stable itself.
 
-Platypus's bindings from TypeScript into QuickJS have stayed the same in our own testing. We want
+Platypus's script API (`#[platypus_api]`) has stayed the same in our own testing. We want
 the same stability level that a long-lived Unreal release has, where a version is used for
 years because it doesn't need much change. We keep familiar Unity and s&box API names, which
 helps us avoid the urge to rename things for taste.

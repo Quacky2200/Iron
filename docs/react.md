@@ -1,17 +1,23 @@
-# @platypus/react
+# @platypus/react (removed)
 
-Package: [js/react](../js/react/src). A custom `react-reconciler` host config that turns React
-tree mutations into UI commits for the Rust [UiTree](ui-tree.md), and runs UI events back through
-React handlers. React 19 and `react-reconciler` run unmodified inside QuickJS.
+> **Removed on 2026-10-28 with QuickJS.** `js/react` (a `react-reconciler` host config running React 19 inside QuickJS,
+> sending `__platypus_commit` to the Rust [UiTree](ui-tree.md)) is deleted. The live UI runtime is the native
+> reconciler, [ui-native.md](ui-native.md). This page is kept for the **element, prop, event and ref model**, which the
+> native reconciler follows (same elements, same `on*` props and event payloads, same refs); read the file table,
+> the host config, the diffing and `__platypus_*` parts as history. Hot-reload "Fast Refresh" no longer exists.
+
+The package was a custom `react-reconciler` host config that turned React
+tree mutations into UI commits for the Rust [UiTree](ui-tree.md), and ran UI events back through
+React handlers.
 
 | File | Role |
 |---|---|
-| [index.ts](../js/react/src/index.ts) | Public API: `createRoot`, `Text`, `Span`, prop and JSX types, re-exports |
-| [host.ts](../js/react/src/host.ts) | The reconciler host config, `Instance`, `instances`, `Container`s with their op queues, `flush` |
-| [style.ts](../js/react/src/style.ts) | `PlatypusStyle` type, `styleEntries`, `styleDiff` |
-| [attrs.ts](../js/react/src/attrs.ts) | Attribute props, `attrEntries`, `attrDiff` |
-| [events.ts](../js/react/src/events.ts) | Event classes and `dispatchUiEvent` (installed as `__platypus_ui_event`) |
-| [opcodes.ts](../js/react/src/opcodes.ts) | Opcode constants; must match [opcodes.rs](../crates/platypus_ui/src/opcodes.rs) |
+| index.ts | Public API: `createRoot`, `Text`, `Span`, prop and JSX types, re-exports |
+| host.ts | The reconciler host config, `Instance`, `instances`, `Container`s with their op queues, `flush` |
+| style.ts | `PlatypusStyle` type, `styleEntries`, `styleDiff` |
+| attrs.ts | Attribute props, `attrEntries`, `attrDiff` |
+| events.ts | Event classes and `dispatchUiEvent` (installed as `__platypus_ui_event`) |
+| opcodes.ts | Opcode constants; must match [opcodes.rs](../crates/platypus_ui/src/opcodes.rs) |
 
 ## Elements
 
@@ -23,7 +29,7 @@ exposes **`Text`** and **`Span`** as components that call `createElement("text" 
 type selectors still use `text` and `span` ([css.md](css.md)). Strings become `#text` nodes
 (`createTextInstance`); `shouldSetTextContent` is always `false`, so text is always a real node.
 
-## Reconciler host config ([host.ts](../js/react/src/host.ts))
+## Reconciler host config (host.ts)
 
 Mutation mode only (`supportsMutation: true`). The design is: **collect ops during React's commit,
 send one `__platypus_commit` at the end** (decision D1 in TODO.md).
@@ -78,7 +84,7 @@ Note the ops carry **raw values** (numbers or CSS strings); Rust does all parsin
 
 ## `createRoot`
 
-`createRoot(target?)` ([index.ts](../js/react/src/index.ts)) builds a `ConcurrentRoot`. With no argument
+`createRoot(target?)` (index.ts) builds a `ConcurrentRoot`. With no argument
 it is the **screen's** root: the container is `screenContainer` (target 0, the engine's root node 0).
 Pass a `WorldPanel` component, or its id, to get that panel's root (`containerFor(id)`), whose commits
 go to the panel's own UI tree ([world-rendering.md](world-rendering.md#world-panels)). Each target
@@ -91,10 +97,10 @@ Unmounting frees the target for a new root. `root.render(el)` uses
 **Fast Refresh (dev builds).** In a dev build ([scripting.md](scripting.md#from-typescript-to-a-running-game))
 React lives in `vendor.js` and the game's code runs again on each edit:
 
-- [refresh.ts](../js/react/src/refresh.ts) loads first in the vendor bundle. It calls
+- refresh.ts loads first in the vendor bundle. It calls
   `injectIntoGlobalHook(globalThis)` before React and the reconciler load, and defines the
   `$RefreshReg$` / `$RefreshSig$` globals that Bun's `--react-fast-refresh` transform calls in the
-  game's code. Typings for the runtime are in [react-refresh.d.ts](../js/react/src/react-refresh.d.ts).
+  game's code. Typings for the runtime are in react-refresh.d.ts.
 - `host.ts` ends with `reconciler.injectIntoDevTools()`, so the hook sees the renderer and can find
   its roots. Without the hook (production builds) this does nothing.
 - While the game's code is loading again (`_loadingGame()` from `@platypus/engine`), `createRoot(target)`
@@ -104,7 +110,7 @@ React lives in `vendor.js` and the game's code runs again on each edit:
 - After the new code ran, `performReactRefresh` re-renders the components whose code changed. State
   is kept where the hook signatures still match; React remounts a component whose hooks changed.
 
-## Events ([events.ts](../js/react/src/events.ts))
+## Events (events.ts)
 
 Importing `@platypus/react` runs `globalThis.__platypus_ui_event = dispatchUiEvent`; the app detects that
 global to decide whether to dispatch events at all. Flow and data layout are in
@@ -133,7 +139,7 @@ global to decide whether to dispatch events at all. Flow and data layout are in
 ## Text fields
 
 `Input` (one line) and `TextArea` (wrapping, `rows` sets its default height) in
-[index.ts](../js/react/src/index.ts) take `FieldProps`: `value`, `defaultValue`, `placeholder`,
+index.ts take `FieldProps`: `value`, `defaultValue`, `placeholder`,
 `readOnly`, `onChange`/`onInput`, plus the usual attributes, `style` and events. Fields are focusable
 without `tabIndex`. Engine side: [ui-tree.md](ui-tree.md#text-fields) and
 [input-and-events.md](input-and-events.md#text-fields-m3c-step-5).
@@ -176,5 +182,5 @@ Ops are drained once per frame, so focus changes apply on the next frame, not sy
 - `EventProps`: pointer/mouse (`onClick`, `onDoubleClick`, `onContextMenu`, `onPointerDown/Up/Move/Enter/Leave`,
   `onMouse*`, `onWheel`), keyboard (`onKeyDown/Up`), focus (`onFocus`, `onBlur`), pointer capture (`onGotPointerCapture`, `onLostPointerCapture`; no `*Capture` variants), drag and drop (`onDragStart` ... `onDragEnd`), `onChange`/`onInput` on fields, each with a
   `*Capture` variant except enter/leave.
-- `PlatypusStyle` ([style.ts](../js/react/src/style.ts)) is a type only. The authoritative list of
+- `PlatypusStyle` (style.ts) is a type only. The authoritative list of
   properties is `apply_style` in Rust; add a property in both places.

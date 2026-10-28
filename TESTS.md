@@ -12,7 +12,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|---|
 | **Unit** | `cargo test` | inside each crate (`#[cfg(test)]`) | Yes |
 | **Integration** | `cargo test` | `crates/*/tests/` | Yes |
-| **JS unit** | `bun test` | `js/*/test/` | Yes |
+| **JS unit** | `bun test` | `js/editor-ui/test/` only (the editor sources; `js/engine`, `js/react` and their tests were removed with QuickJS on 2026-10-28) | No |
 | **Headless render** | `cargo test` + wgpu offscreen | `crates/platypus_render/tests/` | Yes (software adapter if no GPU) |
 | **Golden image** | headless render compared to a reference PNG with tolerance | `tests/golden/` | Yes |
 | **Benchmark** | `criterion` | `crates/*/benches/` | Tracked, warns on regression; doesn't fail |
@@ -33,7 +33,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|
 | M1-BLD-01 | CI | `cargo build --workspace` succeeds on Windows and Linux. |
 | M1-BLD-02 | CI | `cargo clippy --workspace -- -D warnings` and `cargo fmt --check` pass. |
-| M1-BLD-03 | CI | `bun install && bun run build` produces `editor/build/game.js` (the examples are built by `platypus-build`, `M9-TS-1850`). |
+| M1-BLD-03 | CI | `bun install && bun run build` produces `editor/build/game.js` (the examples are built by `platypus-build`, `M9-TS-1850`). (No longer applies: the Bun build and `bun run build` were removed with QuickJS on 2026-10-28.) |
 | M1-BLD-04 | CI | `bun run typecheck` passes: `tsc --noEmit` for the JS packages, the editor and the fixtures, then `platypus-build check ../examples --tsc` for the examples (20 built, 0 failed). |
 
 ### Platform
@@ -105,7 +105,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-LAY-04 | Unit | Layout only recomputes when something is dirty: a second `compute` with no changes does no work. |
 | M2-LAY-05 | Unit | The same fixtures pass through the `LayoutEngine` trait, so a Yoga backend can run them later. |
 | M2-UI-OP-01 | Integration | `UiTree::apply_ops` with typed `Op`s builds the same tree as the script arrays; `Op::decode` rejects bad arity, types and opcodes (`crates/platypus_ui/tests/tree.rs`). |
-| M2-LAY-06 | Integration | A React render error unmounts the UI (with absolutely positioned boxes in it) and the tree still lays out: removing a node takes it off its containing block's out-of-flow list, so no cached layout visits it. |
+| ~~M2-LAY-06~~ | Integration | A React render error unmounts the UI (with absolutely positioned boxes in it) and the tree still lays out: removing a node takes it off its containing block's out-of-flow list, so no cached layout visits it. (removed 2026-10-28: QuickJS removed) |
 | M2-LAY-07 | Integration | Appending a child to a long column measures only the new text: the cost doesn't grow with the column's length, alone or inside a row flex item sized from its content. |
 
 ### Drawing
@@ -158,8 +158,8 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 ### Integration (React in QuickJS)
 | ID | Kind | Checks |
 |---|---|---|
-| M2-INT-01 | Integration | The `boxes` fixture bundle runs in `QuickJsRuntime`; applying its commits to `UiTree` gives the expected tree and layout rects. |
-| M2-INT-02 | Integration | A `setTimeout`-driven state change produces only incremental ops (no recreation of unchanged nodes). |
+| ~~M2-INT-01~~ | Integration | The `boxes` fixture bundle runs in `QuickJsRuntime`; applying its commits to `UiTree` gives the expected tree and layout rects. (removed 2026-10-28: QuickJS removed) |
+| ~~M2-INT-02~~ | Integration | A `setTimeout`-driven state change produces only incremental ops (no recreation of unchanged nodes). (removed 2026-10-28: QuickJS removed) |
 | M2-MAN-01 | Manual | `platypus-app examples/boxes`: resizing the window relayouts smoothly; the counter adds and removes boxes. |
 
 ### Performance
@@ -242,9 +242,9 @@ layout pass):
 | ID | Kind | Checks |
 |---|---|---|
 | M3-EVT-01 | Integration | A click hits the topmost node under the point, respecting rounded corners, `pointerEvents: none`, `display: none` and overflow clipping. |
-| M3-EVT-02 | Integration | Events capture down and bubble up the path; `stopPropagation()` stops them; `preventDefault()` is reported back. |
-| M3-EVT-03 | Integration | `onClick` in a React component runs when its box is clicked; `:hover` / `:active` styles apply while the pointer is over / pressed. |
-| M3-EVT-04 | Integration | Tab / Shift-Tab follow `tabIndex` and tree order; the focused node gets key events; `:focus`, `:focus-visible`, `:focus-within` apply. |
+| ~~M3-EVT-02~~ | Integration | Events capture down and bubble up the path; `stopPropagation()` stops them; `preventDefault()` is reported back. (removed 2026-10-28: QuickJS removed) |
+| ~~M3-EVT-03~~ | Integration | `onClick` in a React component runs when its box is clicked; `:hover` / `:active` styles apply while the pointer is over / pressed. (removed 2026-10-28: QuickJS removed) |
+| ~~M3-EVT-04~~ | Integration | Tab / Shift-Tab follow `tabIndex` and tree order; the focused node gets key events; `:focus`, `:focus-visible`, `:focus-within` apply. (removed 2026-10-28: QuickJS removed) |
 | M3-EVT-06 | Integration + JS unit | Pointer capture needs a held button; while captured, moves and hover go to the capturer even over another element; the release goes to it and clicks it, then `lostpointercapture` and hover returns to what's under the pointer; capture ends on `releasePointerCapture`, removal and window blur; React sends the ops and `hasPointerCapture` follows the events. |
 | M3-EVT-05 | Integration + Golden | `overflow: hidden` clips children (including rounded clips); `overflow: scroll` scrolls with the wheel and keeps hit testing consistent with what's drawn. |
 | M3-EVT-07 | Integration | A span inside text is the target over its own characters (and in event paths, under its text); elsewhere, and over a `pointerEvents: none` span, the text element is hit. |
@@ -284,7 +284,7 @@ layout pass):
 | M3-ANI-06 | Golden | One keyframe animation (colour, rotation, radius) sampled at 0/25/50/75/100% through negative delays, and a width + colour transition caught halfway. |
 | M3-SCR-01 | Integration | `scrollbar-gutter: stable` narrows a clipping box's content by the scrollbar and its margins (less for `thin`, nothing for `visible`); `overscroll-behavior: contain` stops a wheel at an inner scroller's end from scrolling the outer one. |
 | M3-GAME-01 | Golden | Image tints: an untinted grayscale tile, red and half-transparent blue tints, a green-tinted border image and a yellow-tinted `image` element. |
-| M3-GAME-02 | Unit + JS unit | UI scale modes (none, fixed, target height, fit a design) give the right factor, clamped and safe for a minimised window; the `uiScale` op's arguments parse; `setUiScale` sends each form. |
+| ~~M3-GAME-02~~ | Unit + JS unit | UI scale modes (none, fixed, target height, fit a design) give the right factor, clamped and safe for a minimised window; the `uiScale` op's arguments parse; `setUiScale` sends each form. (removed 2026-10-28: QuickJS removed) |
 | M3-CSS-11 | Unit + Integration | Nested rules flatten against their parent (`&`, implicit descendant, `>`, compound `&.x`, ident-first `text:first-child`, selector lists via `:is()`), declarations after nested rules still belong to the parent, bad nested rules and nested at-rules warn; nested `:hover` rules restyle children. |
 | M3-CSS-12 | Integration | `@import` loads files relative to the importing sheet (nested imports relative to theirs), applies them before the importer's rules, rebases their `url()`s, and warns about missing files, cycles and conditional imports. |
 | M3-CSS-13 | Unit | Minified function lists get a space between calls (`translateY(0)scale(1)` → `translateY(0) scale(1)`, also before `#` colours); strings and custom properties are kept as written. |
@@ -299,7 +299,7 @@ layout pass):
 | M3-MQ-01 | Unit | Media queries: min/max and range syntax, em units, media types with `not`/`only`, comma lists, nested `and`/`or`/`not`, aspect ratios, resolution in dppx/dpi, colour scheme, pointer/hover, reduced motion; unknown features don't match and malformed queries are rejected. |
 | M3-MQ-02 | Integration | `@media` rules (top level and nested in a rule) apply and stop applying as the window resizes and the colour scheme changes; `print` never applies; `@import ... (min-width)` imports apply only when the query matches, and `supports()` imports are skipped. |
 | M3-IMG-01 | Integration / JS unit | `image` elements: `Image` sends `src` as an attribute; the tree requests each `src` once, takes the natural size the app reports (one known axis keeps the ratio; failed loads stay empty), and draws the image in the content box per `objectFit` / `objectPosition`, clipped. |
-| M3-INP-01 | Integration | A controlled `<input>`: typing calls `onChange`, the value round-trips, selection with mouse and Shift+arrows works, copy/paste uses the clipboard. |
+| ~~M3-INP-01~~ | Integration | A controlled `<input>`: typing calls `onChange`, the value round-trips, selection with mouse and Shift+arrows works, copy/paste uses the clipboard. (removed 2026-10-28: QuickJS removed) |
 | M3-INP-02 | Integration | Text-field shortcuts (Ctrl/Cmd+A/C/X/V) follow the physical key `code` when the layout's `key` isn't a Latin letter (Russian layout: `key` "ф", `code` "KeyA" selects all); AltGr (Ctrl+Alt) still types. |
 | M3-PAD-01 | Integration | Gamepad button events from `gilrs` reach scripts (using a simulated device where possible). |
 | M3-PAD-02 | Unit | Each pad connection reaches scripts once: pads already plugged in are announced on the first poll, a repeated `Connected` for a known pad is dropped, and one that disconnects and comes back is announced again. |
@@ -339,12 +339,12 @@ layout pass):
 | ID | Kind | Checks |
 |---|---|---|
 | M4-HOT-01 | Integration | Changing a component's `onUpdate` and reloading runs the new code on the next tick. |
-| M4-HOT-02 | Integration | `@property` values and script components' plain fields survive a reload (`speed` set to 42 is still 42, a counter keeps counting), references between objects are remapped, `onStart` doesn't run again and `onReload` does, and the clock carries on. |
-| M4-HOT-03 | Integration | Objects, hierarchy and transforms come back where they were after a script reload (rebuilt from the saved scenes). |
+| ~~M4-HOT-02~~ | Integration | `@property` values and script components' plain fields survive a reload (`speed` set to 42 is still 42, a counter keeps counting), references between objects are remapped, `onStart` doesn't run again and `onReload` does, and the clock carries on. (removed 2026-10-28: QuickJS removed) |
+| ~~M4-HOT-03~~ | Integration | Objects, hierarchy and transforms come back where they were after a script reload (rebuilt from the saved scenes). (removed 2026-10-28: QuickJS removed) |
 | M4-HOT-04 | Integration | A reload with a syntax error (or a throwing top level) keeps the old code running and reports the error. |
-| M4-HOT-05 | Integration | A renamed or removed property is dropped with a warning; new properties get their defaults; a saved class that isn't registered any more makes the reload start over. |
+| ~~M4-HOT-05~~ | Integration | A renamed or removed property is dropped with a warning; new properties get their defaults; a saved class that isn't registered any more makes the reload start over. (removed 2026-10-28: QuickJS removed) |
 | M4-HOT-06 | Integration | A dev build reloaded in place: a React counter keeps its count while rendering with the new code (Fast Refresh), a live component answers with its new class and keeps its fields, and the top level's style sheet is swapped, not added twice. |
-| M4-HOT-07 | Benchmark | Reload of a ~1 MB bundle with 1,000 components (each with a child object), keeping their state: **< 100 ms** (`crates/platypus_scene/benches/reload.rs`; ~146 ms on 2026-10-17, not met yet). |
+| ~~M4-HOT-07~~ | Benchmark | Reload of a ~1 MB bundle with 1,000 components (each with a child object), keeping their state: **< 100 ms** (`crates/platypus_scene/benches/reload.rs`; ~146 ms on 2026-10-17, not met yet). (removed 2026-10-28: QuickJS removed) |
 | M4-HOT-08 | Manual | Edit a TS file while the game runs; the change appears without restarting. |
 | M4-HOT-09 | Integration | Clearing the UI tree for a reload removes every script node (attached or not, skipping `:outro`), and the new bundle's reconciler can reuse IDs from 1. |
 | M4-HOT-10 | Integration | The bundle watcher reports a change to `game.js` once, after it settles; other files in the folder are ignored. |
@@ -361,8 +361,8 @@ layout pass):
 | M5-OBJ-03 | Unit | Moved objects (with their children) are reported once; unchanged sets aren't moves; a disabled parent deactivates its subtree. |
 | M5-OBJ-04 | JS unit | GameObjects: creating and parenting send ops and mirror the hierarchy; re-parenting keeps the world position; world transforms compose through parents (`position`, `forward`, `lookAt`, `eulerAngles`, `inverseTransformPoint`); engine moves update the mirror without echoing ops. |
 | M5-OBJ-05 | JS unit | Components: `addComponent` with props, `getComponent`, `findObjectOfType`, removal; engine-spawned components get the engine's object. |
-| M5-OBJ-06 | Integration | In QuickJS, a component creates a turret with a child and a `Spinner`; the spinner turns it 45° in 30 ticks (the child swings with it in Rust's scene), stops when the turret is disabled, and gets `onDestroy` when it's destroyed with its children. |
-| M5-OBJ-07 | Integration | `scene.*` ops: bad ops fail; script changes aren't echoed back but engine moves are, as local transforms; destroying reports the subtree; ids past 2^24 stay exact. |
+| ~~M5-OBJ-06~~ | Integration | In QuickJS, a component creates a turret with a child and a `Spinner`; the spinner turns it 45° in 30 ticks (the child swings with it in Rust's scene), stops when the turret is disabled, and gets `onDestroy` when it's destroyed with its children. (removed 2026-10-28: QuickJS removed) |
+| ~~M5-OBJ-07~~ | Integration | `scene.*` ops: bad ops fail; script changes aren't echoed back but engine moves are, as local transforms; destroying reports the subtree; ids past 2^24 stay exact. (removed 2026-10-28: QuickJS removed) |
 | M5-MTH-01 | JS unit | `Vector3` / `Vector2` / `Vector2Int` / `Mathf` behave like Unity's (magnitude, normalized, angle, reflect, projectOnPlane, moveTowards, signedAngle, deltaAngle, ...) and are immutable. |
 | M5-MTH-02 | JS unit | `Quaternion`: Euler degrees in Unity's order round-trip; `lookRotation`, `fromToRotation` (also opposite vectors), `slerp`, `rotateTowards`; Unity's statics `Quaternion.slerp` / `slerpUnclamped` / `lerp` / `lerpUnclamped` / `rotateTowards` / `dot` (clamped, the short way round). |
 | M5-MTH-03 | JS unit | `Plane` / `Ray` / `Bounds` / `Rect` queries; `Pose` and `Vector4`; `Color.hex` (sRGB to linear and back) / `lerp`; `Mathf` extras (angles, `smoothDamp`, Perlin noise, powers of two, gamma). |
@@ -375,14 +375,14 @@ layout pass):
 | M5-RND-05 | Golden | The world pass: a floor in perspective, a green plane seen through a half-transparent blue one, a textured plane, and a translucent screen-UI bar blended over the 3D view. |
 | M5-RND-06 | Golden | Cameras draw into their viewports in depth order: a perspective view on the left, an orthographic top-down view on the right (a floor marker to the east appears right of centre), and a picture-in-picture inset over the left view. |
 | M5-CAM-01 | JS unit | `Matrix4x4` (TRS, inverse, determinant); camera conversions for perspective and orthographic cameras with a `rect` (screen and viewport points round-trip, parallel orthographic rays); `Camera.main` / `allCameras` order; `CameraFollow` and `CameraOrbit`. |
-| M5-OBJ-08 | Integration | Lifecycle hooks run in Unity's order: start, fixed updates, update, late update, pre-render, destroy. |
+| ~~M5-OBJ-08~~ | Integration | Lifecycle hooks run in Unity's order: start, fixed updates, update, late update, pre-render, destroy. (removed 2026-10-28: QuickJS removed) |
 | M5-OBJ-09 | Unit | `Scene::tree_version` changes for renames, new children, children moved away and objects destroyed below an object, not for moves, flags, an unchanged name or edits in another tree. |
 | M5-OBJ-11 | Unit | `Scene::moved_since`: after `update_world` nothing has moved; a move stamps the object and everything below it (not its parents or other trees) until the next update; a parent's move reaches children moved earlier in the epoch; stale objects, re-parented ones and destroyed ones count as moved. |
 | M5-OBJ-10 | Unit | `mark_moved` stops at objects already stale and listed: over 3000 random moves, re-parentings, creations, destructions, `update_world`s and `take_moved`s in 40-deep hierarchies the moved list equals the old walk-the-whole-subtree one, in order, and every world matrix equals one composed from the locals. |
 | M5-PNL-01 | JS unit | Each React root (screen or world panel) commits to its own engine tree with its target id; updates to a panel's nodes only go to the panel's tree; one root per target. |
 | M5-PNL-02 | Unit | Rays meet panel quads at the right UV and distance (centre, corner); rays behind or parallel miss. |
 | M5-PNL-03 | Manual | In `examples/world`, hovering the world panel's menu items highlights them, clicking counts, and the screen HUD still takes clicks over the panel. |
-| M5-RB-01 | Integration | In QuickJS with the app's physics sync: a crate with a `Rigidbody` and `BoxCollider` falls through a trigger and lands on a static floor (its GameObject at rest 0.5 m up; `onTriggerEnter` then `onCollisionEnter`); a kinematic body follows its script-moved GameObject. |
+| ~~M5-RB-01~~ | Integration | In QuickJS with the app's physics sync: a crate with a `Rigidbody` and `BoxCollider` falls through a trigger and lands on a static floor (its GameObject at rest 0.5 m up; `onTriggerEnter` then `onCollisionEnter`); a kinematic body follows its script-moved GameObject. (removed 2026-10-28: QuickJS removed) |
 | M5-RB-02 | JS unit | Colliders make a static body at the object (scaled sizes, materials); a `Rigidbody` makes it dynamic with mass and constraints; colliders share the body; `ForceMode` impulses; Unity's capsule height; contacts reach `onCollisionEnter/Exit` and `onTriggerEnter` on both objects. |
 | M5-MSH-01 | Unit | Built-in primitives are valid, have unit normals, wind outwards (positive volume) and have Unity's sizes; missing normals are made from triangles. |
 | M5-ANI-01 | JS unit | `AnimationCurve`: linear and eased segments, steps (infinite tangents), loop / ping-pong wrapping, smooth keys through their points, sorted keys, saving with steps kept. |
@@ -426,9 +426,9 @@ layout pass):
 | M5-AST-06 | Unit | Cooking: BC1 / BC3 blocks round-trip closely (one-way gradients tightly), cut-outs keep their holes and smooth alpha its steps; cooked textures and models save and load back (models under fresh ids, descriptions renumbered); a linear request doesn't take an sRGB cook; a newer source makes the cook stale. |
 | M5-MAT-01 | Unit | Tangents made from UVs point along increasing u with the bitangent (up the image) on the side `w` says; mirrored UVs flip it; every primitive's tangents are unit length and perpendicular to its normals. |
 | M5-MAT-02 | JS unit | `Material` sends its maps, specular colour, rendering mode, cut-off and double-sidedness with `render.meshRenderer`; `with()` changes one setting and keeps the rest; scenes save the settings that differ from the defaults (and textures' `linear` / `anisoLevel`) and load them back. |
-| M5-RB-03 | Integration | A `CharacterController` walking with `simpleMove` along a floor covers the expected distance, stays grounded and keeps its capsule on the floor. |
+| ~~M5-RB-03~~ | Integration | A `CharacterController` walking with `simpleMove` along a floor covers the expected distance, stays grounded and keeps its capsule on the floor. (removed 2026-10-28: QuickJS removed) |
 | M5-JNT-01 | Integration | Joints in `platypus_physics`: a rope keeps a ball within its length of a world anchor, a ball joint keeps a pendulum's length, a motorised hinge turns, a spring settles near its rest length; bad joints are refused; removing one works. |
-| M5-JNT-02 | Integration | Through the components: a `Rope` from a world point holds a weight about its length below; a `HingeJoint` with a motor turns its wheel. |
+| ~~M5-JNT-02~~ | Integration | Through the components: a `Rope` from a world point holds a weight about its length below; a `HingeJoint` with a motor turns its wheel. (removed 2026-10-28: QuickJS removed) |
 | M5-AUD-01 | JS unit | `AudioSource`: a 2D source plays its clip on awake (path clips load once) and applies volume, pitch and mute to what's playing; pause / unPause / stop; a 3D source plays from an emitter that follows its object (only real moves are sent) and is removed with it; one-shots don't interrupt `play()`; `playClipAtPoint` removes its emitter when the sound ends. |
 | M5-AUD-02 | JS unit | `AudioListener` sends its pose on awake and when it moves or turns; `AudioListener.volume` sets the master volume. |
 | M5-TEX-01 | Unit + JS unit | Textures: `Texture.load` sends the file and settings and gets its size from `__platypus_textures` (`whenLoaded`, failures reject); `Texture.create` sends sRGB bytes top row first from linear colours bottom row first; materials carry a texture and tiling to `MeshRenderer`; the app decodes pixels into uploads, refusing mismatched sizes and paths outside the game; mip levels average in linear light, weighted by alpha. |
@@ -437,7 +437,7 @@ layout pass):
 | M5-PRT-01 | Unit | Particle simulation (`crates/platypus_app/src/particles.rs`): rate and bursts emit on time, particles die after their lifetime, `stop` lets them finish; one-shot systems stop after their duration and keep to `maxParticles`; gravity pulls local particles down in the world whatever the object's rotation; cones spray within their angle from their disc; size and colour over lifetime and texture-sheet frames; additive quads; unknown settings are refused. |
 | M5-PRT-02 | JS unit | `ParticleSystem` sends its settings on awake and again only when they change (nested edits too); `play` / `stop` / `pause` / `emit` become ops; `__platypus_particles` reports update `particleCount` / `isPlaying` and fire `onStopped` and `stopAction: "destroy"`. |
 | M5-RND-09 | Golden | Glows: bloom (HDR world pass, threshold, intensity, scatter) on a hot emissive bar, an additive sphere, additive soft spots, and a spot light's beam (soft edges, fading along its length). |
-| M5-RB2D-01 | Integration | 2D physics through the app's sync (`tests/fixtures/src/physics2d.ts`): a box at z = 2 falls through a 2D trigger onto an edge at z = 0 (`onTriggerEnter2D`, `onCollisionEnter2D`), rests on it and keeps its z and its x/y rotation; a circle rolls down an edge slope; a capsule with `freezeRotation` stands upright; a polygon lands; `Physics2D.raycast` hits the trigger above the box. |
+| ~~M5-RB2D-01~~ | Integration | 2D physics through the app's sync (`tests/fixtures/src/physics2d.ts`): a box at z = 2 falls through a 2D trigger onto an edge at z = 0 (`onTriggerEnter2D`, `onCollisionEnter2D`), rests on it and keeps its z and its x/y rotation; a circle rolls down an edge slope; a capsule with `freezeRotation` stands upright; a polygon lands; `Physics2D.raycast` hits the trigger above the box. (removed 2026-10-28: QuickJS removed) |
 | M5-RB2D-02 | JS unit | 2D colliders: boxes and circles become slabs `Physics2D.depth` deep (circles turned to face z), polygons convex slabs, edges static meshes; `Rigidbody2D` keeps to the plane (constraints), speaks Vector2 and degrees, reads spin from the engine's angular velocity; `Physics2D.gravity`. |
 | M5-CUR-01 | JS unit | Game mouse input: `mousePosition`, mouse buttons (`getMouseButton*`, Fire1), raw `mouseDelta` adding up within a frame (y up), `getAxis("Mouse X" / "Mouse Y" / "Mouse ScrollWheel")`; `Cursor.visible` / `lockState` / `setCursor` become `cursor.*` ops. Showing, locking and images need the window: a manual check. |
 | M5-APP-01 | Unit | The game's manifest comes from its `package.json` (`name`, `version`, `author`, and `platypus.title` / `company` / `identifier` / `icon`), with the folder name and defaults when missing; `__platypus_info` carries the app and system sections and later GPU / screen additions. |
@@ -477,7 +477,7 @@ layout pass):
 | M5-CUL-07 | Unit + Integration | Bone matrices: the app's cache (`bone_cache.rs`) keeps a skeleton's run while none of its bones moved (the list kept in place) and works out exactly the moved ones' again (also when asked before `update_world`), the parts of one figure sharing a run; a removed skin lays the list out again. The renderer sends only the drawn figures' runs (in a view or a shadow map; `WorldStats::bones`), once for the shadow pass and every view sharing the list, and two views over one list draw the same frame as one. |
 | M5-CUL-06 | Integration | A camera drawing into a render texture (how a secondary window shows the world: windows draw no world of their own) counts for `seen()`: a figure the screen's camera looks away from is reported once a render-texture camera looks at it. |
 | M5-CUL-05 | Integration | Skinned meshes are frustum-culled by their bind-pose box under every bone (one under the camera drawn, one beside it and one far away culled, counted in `stats()`), casters outside every shadow layer are left out of the shadow maps (`WorldStats::shadow_casters`: the far one), and `seen()` uses the same boxes. |
-| M5-LAY-01 | Integration | `scene.layer`: objects start on layer 0, keep the layer set, refuse ones outside 0 to 31; unknown objects read as 0. |
+| ~~M5-LAY-01~~ | Integration | `scene.layer`: objects start on layer 0, keep the layer set, refuse ones outside 0 to 31; unknown objects read as 0. (removed 2026-10-28: QuickJS removed) |
 | M5-LAY-02 | Unit | Cameras draw only the layers in their culling mask, and a layer's things only out to its cull distance, measured along the view or (spherical) straight from the camera. |
 | M5-LAY-03 | JS unit | `LayerMask` names (built-ins and the manifest's, bad entries skipped), `getMask` / `contains`; `GameObject.layer` sends and range-checks; `Camera.cullingMask` (signed masks made unsigned), `layerCullDistances` (copies) and `layerCullSpherical` go out with `render.camera`; `fieldOfView` is clamped to 1 to 179 and converts to and from `horizontalFieldOfView`. |
 | M5-LAY-04 | JS unit | `Light.cullingMask`, `ReflectionProbe.cullingMask` and `Mirror.cullingMask` go out with their ops, unsigned (all layers by default). |
@@ -495,7 +495,7 @@ layout pass):
 | M5-MSH-02 | JS unit | `MeshRenderer` sends its mesh (primitive or script `Mesh`) and material and resends on change; `Mesh.create` sends flat arrays and `destroy` removes it; `Light` and `RenderSettings.ambientLight` ops; `shadowCastingMode` reaches the op; `Mirror` (quads along +z) and `ReflectionProbe` (size, resolution, box projection, `renderProbe`) ops; `createPrimitive` adds the mesh and the matching collider. |
 | M5-RND-07 | Golden | Lit primitives: a plane, cube, sphere and capsule under a directional and a point light, an unlit emissive cube and a see-through cylinder. |
 | M5-SCN-01 | JS unit | Scene save → load round-trips objects, hierarchy, layers, enabled flags, engine and script components, `@property` values, references, shared meshes and textures and render settings exactly (saving again gives the same data); properties are set before `onAwake`; unknown components and values are skipped with warnings. |
-| M5-SCN-02 | Integration | In QuickJS, a component saves a scene (with `@property` fields and an engine `Light`), loads it back as the single scene and keeps itself with `dontDestroyOnLoad`; Rust's scene ends up with the loaded objects where they were saved. |
+| ~~M5-SCN-02~~ | Integration | In QuickJS, a component saves a scene (with `@property` fields and an engine `Light`), loads it back as the single scene and keeps itself with `dontDestroyOnLoad`; Rust's scene ends up with the loaded objects where they were saved. (removed 2026-10-28: QuickJS removed) |
 | M5-SCN-03 | JS unit | `SceneManager`: the `Main` scene, additive loads, the active scene taking new objects, moving roots between scenes, unloading (not the last), events in order; single loads replacing all but `DontDestroyOnLoad`; `loadSceneAsync` from a file, failures rejecting; bad data refused. |
 | M5-SCN-04 | JS unit | `GameObject.instantiate` copies objects with children and components; references inside the copy point at the copies, outside ones stay; world placement without a parent, local under one. |
 | M5-SCN-05 | — | Asset references survive moving/renaming the file (GUID in `.meta`): covered by `M5-AST-05`. |
@@ -514,7 +514,7 @@ layout pass):
 | ID | Kind | Checks |
 |---|---|---|
 | M4-PHY-01 | Integration | A dropped box lands on a plane and comes to rest at the right height. |
-| M4-PHY-02 | Integration | Collision enter/exit events reach TS components. |
+| ~~M4-PHY-02~~ | Integration | Collision enter/exit events reach TS components. (removed 2026-10-28: QuickJS removed) |
 | M4-PHY-03 | Integration | Character controller walks up a step and stops at a wall. |
 | M4-PHY-04 | Integration | Physics bodies survive a script hot reload. |
 | M4-PHY-05 | Integration | Raycasts queued in a tick are answered after the step with the collider, distance and normal; misses report `-1` in the flat batch. |
@@ -547,9 +547,9 @@ layout pass):
 | M5-EDT-12 | JS unit | Dock layouts save to JSON and load back equal; unknown tabs (and their empty groups) are dropped; malformed JSON gives null. |
 | M5-EDT-13 | JS unit | Menubar accelerators parse (`Ctrl+Shift+S`, `F5`, `Ctrl++`, `Del`), show normalized and match key presses by code and modifiers, searching submenus. |
 | M5-EDT-14 | JS unit + component | Menubar keys skip separators and disabled items, Right / Left open and close submenus or move between menus, Enter chooses, Escape closes a level at a time; the React `MenuBar` opens on press, switches on hover, runs items, closes on Escape and on a press outside (`menubar.test.tsx`). |
-| M5-EDT-15 | Unit | The log capture layer keeps records (level, target, message plus fields) in order in a ring buffer read by sequence number (`logging.rs`). |
-| M5-EDT-16 | Unit | `editor.openFile`: VS Code's `code -g file:line:col` by default when on PATH, else nothing to run; a `PLATYPUS_EDITOR_OPEN` template is split with quotes and fills `{file}` / `{line}` / `{col}`; relative paths resolve against the first root that has them (`editor.rs`). |
-| M5-EDT-17 | Unit | `editor.*` ops are refused outside `platypus_editor`. |
+| ~~M5-EDT-15~~ | Unit | The log capture layer keeps records (level, target, message plus fields) in order in a ring buffer read by sequence number (`logging.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M5-EDT-16~~ | Unit | `editor.openFile`: VS Code's `code -g file:line:col` by default when on PATH, else nothing to run; a `PLATYPUS_EDITOR_OPEN` template is split with quotes and fills `{file}` / `{line}` / `{col}`; relative paths resolve against the first root that has them (`editor.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M5-EDT-17~~ | Unit | `editor.*` ops are refused outside `platypus_editor`. (removed 2026-10-28: QuickJS removed) |
 | M5-EDT-18 | JS unit | Console code links: `path/file.ext:line[:col]`, Windows drives and backslashes, absolute Unix paths; URLs with ports and times aren't links. |
 | M5-EDT-19 | JS unit | Console: identical entries collapse with counts at the first one's place; level counts (debug as info); filters by level and by search over message and target. |
 | M5-EDT-20 | JS unit | The log feed asks for history once (`editor.logHistory`), parses `__platypus_log` records and skips ones already seen (after a reload); clearing empties it; `openInEditor` is an op. |
@@ -559,9 +559,9 @@ layout pass):
 | M5-DND-04 | Integration | Files from the system: `FileDragEnter` sends `dragenter` / `dragover` with the paths, moves change the target, `FileDrop` sends `drop` with the paths as the event's strings, `FileDragCancel` a `dragleave`. |
 | M5-DND-05 | Unit | The app gathers winit's per-file hover / drop / cancel events into one `FileDragEnter`, moves only when the cursor moved, one `FileDrop` or `FileDragCancel` (`file_drop.rs`). |
 | M5-DND-06 | JS unit | `PlatypusDragEvent`: one `dataTransfer` from `dragstart` to `drop` and `dragend` (`setData` / `getData` / `types`, `dropEffect`, `dropped`); `setDragImage` is a `dragImage` op; `draggable` is an attribute; system files arrive as `dataTransfer.files` with names and `"Files"` in `types`. |
-| M5-DND-07 | Unit | Project file ops: paths can't leave the project (`..`, absolute, drives); listings put folders first and skip dot files; copies come in renamed instead of overwriting, folders whole; moves refuse overwriting, moving into itself or the root (`project.rs`). |
+| ~~M5-DND-07~~ | Unit | Project file ops: paths can't leave the project (`..`, absolute, drives); listings put folders first and skip dot files; copies come in renamed instead of overwriting, folders whole; moves refuse overwriting, moving into itself or the root (`project.rs`). (removed 2026-10-28: QuickJS removed) |
 | M5-DND-08 | JS unit | Project paths (join, parent, breadcrumbs, `canMoveInto`, sizes); `listDir` / `copyIn` / `move` requests resolve or reject through `__platypus_editor_fs`. |
-| M5-DND-09 | Integration | End to end through QuickJS and React (`tests/fixtures/dnd.js`): dragging the item onto the folder drops its data and `dragend` says dropped; system files dropped on the folder reach its `onDrop`. |
+| ~~M5-DND-09~~ | Integration | End to end through QuickJS and React (`tests/fixtures/dnd.js`): dragging the item onto the folder drops its data and `dragend` says dropped; system files dropped on the folder reach its `onDrop`. (removed 2026-10-28: QuickJS removed) |
 | M5-DND-10 | JS component | The project browser lists the folder from `editor.listDir`; files dropped on a folder row call `editor.copyIn` into it; a file dragged onto a folder calls `editor.move`, and onto itself isn't accepted. |
 | M5-DND-11 | Manual | In the window (`platypus_editor <project>`): drag a file from Explorer / Finder onto the Project panel and onto a folder in it (copied there); drag an item onto a folder or breadcrumb (moved); the drag image follows the pointer and the cursor shows whether it can drop. |
 | M5-EDT-21 | Manual | `platypus_editor --screenshot out.png` (or `bun run screenshots editor`): menubar, Hierarchy tree with icons and chevrons, Scene / Inspector placeholders, Console with coloured levels, counts and underlined code links, status bar. Checked by eye, also with a menu and submenu open and with tabs docked elsewhere. |
@@ -1097,8 +1097,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-02 | Unit | The TypeScript declaration is generated from the manifest: `declare namespace`, parameter and result types, handle types, doc comments as JSDoc (`crates/platypus_api/tests/api.rs`). |
 | M9-API-03 | Unit | The JSON manifest names each symbol and type (`handle:GameObject`, `f64`) for the compiler (`crates/platypus_api/tests/api.rs`). |
 | M9-API-04 | Unit | The generated `extern "C"` shims call the functions with the C ABI, including `f32`, `i32`, `bool` and handles as raw ids (`crates/platypus_api/tests/api.rs`). |
-| M9-API-05 | Unit | The generated QuickJS bindings install the namespace as a global with typed arguments and results (`crates/platypus_api/tests/api.rs`). |
-| M9-API-06 | Benchmark (ignored) | 1,000,000 typed QuickJS calls against the same through an `__platypus_op`-style queue; prints the time per call (`crates/platypus_api/tests/api.rs`). |
+| ~~M9-API-05~~ | Unit | The generated QuickJS bindings install the namespace as a global with typed arguments and results (`crates/platypus_api/tests/api.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-06~~ | Benchmark (ignored) | 1,000,000 typed QuickJS calls against the same through an `__platypus_op`-style queue; prints the time per call (`crates/platypus_api/tests/api.rs`). (removed 2026-10-28: QuickJS removed) |
 | M9-API-07 | Unit | Shims reach the world the host made current; with none they answer their defaults (`crates/platypus_api/tests/context.rs`). |
 | M9-API-08 | Unit | A nested call inside `context::with` finds no world instead of a second `&mut` (`crates/platypus_api/tests/context.rs`). |
 | M9-API-09 | Unit | Context scopes nest and restore the previous world (`crates/platypus_api/tests/context.rs`). |
@@ -1223,21 +1223,21 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-589 | Integration | The updater form `setN(n => n + 1)`: two updaters in one handler apply to the latest state (`platypus_ts_tests/tests/ui.rs`). |
 | M9-TS-590 | Integration | `style={obj}` with a typed object sets its fields; an optional field left out is not set. |
 | M9-TS-591 | Integration | `{...obj}` on a host element sets attributes; on a component it spreads into the props. |
-| M9-API-23 | Integration | QuickJS bindings: a value class is a plain object (arguments read from it, results new objects) (`crates/platypus_api/tests/quickjs.rs`). |
-| M9-API-24 | Integration | QuickJS bindings: `&str`/`String` are JS strings (non-BMP and accents). |
-| M9-API-25 | Integration | A value object missing a field is a catchable JS exception. |
-| M9-API-26 | Integration | The `Scene` namespace of `platypus_scene` works from QuickJS on the current scene (`crates/platypus_scene/tests/api.rs`). |
+| ~~M9-API-23~~ | Integration | QuickJS bindings: a value class is a plain object (arguments read from it, results new objects) (`crates/platypus_api/tests/quickjs.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-24~~ | Integration | QuickJS bindings: `&str`/`String` are JS strings (non-BMP and accents). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-25~~ | Integration | A value object missing a field is a catchable JS exception. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-26~~ | Integration | The `Scene` namespace of `platypus_scene` works from QuickJS on the current scene (`crates/platypus_scene/tests/api.rs`). (removed 2026-10-28: QuickJS removed) |
 | M9-TS-592 | Unit | A class field's type is inferred from constants, arithmetic, `C.x` of a constant object and object literals; a call is still an error asking for an annotation. |
 | M9-API-27 | Integration | Namespace properties: a `#[property]` function without a receiver is a getter, `set_x(v)` its setter; manifest kinds, `.d.ts` (`let` / `const`) and JSON (`crates/platypus_api/tests/ns_props.rs`). |
 | M9-API-28 | Integration | The shims of namespace properties take no receiver. |
-| M9-API-29 | Integration | QuickJS gets accessors for namespace properties (`Cfg.level = 9`). |
-| M9-API-30 | Integration | `Color` (`crates/platypus_engine_api/tests/engine.rs`): constants, `hex` (sRGB to linear), `lerp`, `toHex`, `withAlpha`. |
-| M9-API-31 | Integration | `Time` follows the host's frames and the time scale (a bad scale reads as 1). |
-| M9-API-32 | Integration | `input` reports this frame's presses and releases; key repeats are not presses. |
-| M9-API-33 | Integration | `Screen` and `QualitySettings` are read and set. |
-| M9-API-34 | Integration | `Gizmos` collect lines and present them to a camera; the host takes the frame once. |
+| ~~M9-API-29~~ | Integration | QuickJS gets accessors for namespace properties (`Cfg.level = 9`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-30~~ | Integration | `Color` (`crates/platypus_engine_api/tests/engine.rs`): constants, `hex` (sRGB to linear), `lerp`, `toHex`, `withAlpha`. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-31~~ | Integration | `Time` follows the host's frames and the time scale (a bad scale reads as 1). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-32~~ | Integration | `input` reports this frame's presses and releases; key repeats are not presses. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-33~~ | Integration | `Screen` and `QualitySettings` are read and set. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-34~~ | Integration | `Gizmos` collect lines and present them to a camera; the host takes the frame once. (removed 2026-10-28: QuickJS removed) |
 | M9-API-35 | Integration | `Camera` defaults, field of view clamp, orthographic settings, removal with its object. |
-| M9-API-36 | Integration | Value classes are JS classes in QuickJS (constructor, methods, getters, instances as results) (`crates/platypus_scene/tests/api.rs`). |
+| ~~M9-API-36~~ | Integration | Value classes are JS classes in QuickJS (constructor, methods, getters, instances as results) (`crates/platypus_scene/tests/api.rs`). (removed 2026-10-28: QuickJS removed) |
 | M9-TS-593 | Integration | `Color` statics, `new Color`, `lerp`/`withAlpha`/`toHex` work in compiled code (`platypus_ts_tests/tests/engine2.rs`, `bench/engine2.ts`). |
 | M9-TS-594 | Integration | Namespace properties (`Time.timeScale = ..`, `Time.deltaTime`, `Screen.fullScreen`, `QualitySettings.vSyncCount`) and `input` work in compiled code. |
 | M9-TS-595 | Integration | `Camera.attach(go)` with property assignments, and `Gizmos` (static colour, `drawLine`, `present`) work in compiled code. |
@@ -1256,25 +1256,25 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-617..620 | Integration | `Assets`: GUID and path lookups (backslashes and `./` cleaned), `guid:` sources, importer JSON, enumeration, compared with `assets.ts` in bun through a prelude that adapts the shape. |
 | M9-TS-621..623 | Integration | `Application` and `SystemInfo` read in compiled code against the manifest and machine the host installs, settable `targetFrameRate` / `runInBackground`, compared with `app.ts` in bun. |
 | M9-TS-624..626 | Integration | `TimeSince`, `TimeUntil` and `Time` after three engine ticks, compared with `clock.ts` in bun. |
-| M9-API-37 | Integration | `Random` in QuickJS gives the TypeScript generator numbers for a seed; an omitted `bool` chance defaults to 0.5. |
-| M9-API-38 | Integration | `LayerMask` in QuickJS: names, masks, `contains`. |
-| M9-API-39 | Integration | Log lines reach the host sink with their level; `Debug.assert` logs only when false. |
-| M9-API-40 | Integration | `PlayerPrefs` in QuickJS, and the ordered changes the host writes to the file. |
-| M9-API-41 | Integration | `Assets` in QuickJS: lookups, `guid:` sources, importer JSON, polled changes. |
-| M9-API-42 | Integration | `Application` / `SystemInfo` in QuickJS, script writes returned as requests, focus and pause changes. |
-| M9-API-43 | Integration | `TimeSince` / `TimeUntil` value classes in QuickJS follow the game clock. |
+| ~~M9-API-37~~ | Integration | `Random` in QuickJS gives the TypeScript generator numbers for a seed; an omitted `bool` chance defaults to 0.5. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-38~~ | Integration | `LayerMask` in QuickJS: names, masks, `contains`. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-39~~ | Integration | Log lines reach the host sink with their level; `Debug.assert` logs only when false. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-40~~ | Integration | `PlayerPrefs` in QuickJS, and the ordered changes the host writes to the file. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-41~~ | Integration | `Assets` in QuickJS: lookups, `guid:` sources, importer JSON, polled changes. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-42~~ | Integration | `Application` / `SystemInfo` in QuickJS, script writes returned as requests, focus and pause changes. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-43~~ | Integration | `TimeSince` / `TimeUntil` value classes in QuickJS follow the game clock. (removed 2026-10-28: QuickJS removed) |
 | M9-TS-627..636 | Integration | `input` after the engine delivered events and ticked: keys held / pressed / released, mouse position, delta and wheel, mouse buttons as keys, `getAxis` (keys, stick, mouse), `getButton` / `getButtonDown`, gamepads by id; a second program checks the frame after (a key released, a pad gone, a blur), compared with `input.ts` in bun (`inputs`, `inputs2`). |
 | M9-TS-637..642 | Integration | `TimeSpan`: `new TimeSpan(ms)` rounding, `of`, `fromX`, parts and totals (negative too), arithmetic, comparison, `toString` constant and custom formats, `parse`, compared with `time.ts` in bun. |
 | M9-TS-643..650 | Integration | `DateTime` in New York time: fields, epoch and kind, every standard and custom format, month / year / day arithmetic with clamping, daylight-saving gaps and overlaps, field carrying (`new DateTime(2024, 13, 1)`), ISO parsing, statics, compared with `time.ts` in bun. |
-| M9-API-44 | Integration | `input` in QuickJS follows the tick (`time::advance`): events become this frame, the stick beats the keys when pushed further, pads are read by id, a blur clears held keys. |
-| M9-API-45 | Integration | `TimeSpan` and `DateTime` as JavaScript classes in QuickJS: `new X(..)` goes through `create`, members and statics work. |
+| ~~M9-API-44~~ | Integration | `input` in QuickJS follows the tick (`time::advance`): events become this frame, the stick beats the keys when pushed further, pads are read by id, a blur clears held keys. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-45~~ | Integration | `TimeSpan` and `DateTime` as JavaScript classes in QuickJS: `new X(..)` goes through `create`, members and statics work. (removed 2026-10-28: QuickJS removed) |
 | M9-TS-651 | Integration | `Task.delay`, `Task.delaySeconds` and `Task.frame` in an async function wait on the runtime timers advanced with engine time (`tests/engine/task.rs`). |
 | M9-TS-652..660 | Integration | `Mathf` (constants, interpolation, stepping, angles, comparisons, powers of two, Perlin noise, colour space, `smoothDamp`): every number printed in full equals the original `math.ts` in bun (`bench/mathf.ts`). |
 | M9-TS-661..664 | Integration | `Vector2`, `Vector3`, `Vector4` (all members and statics, four values each paired with every other) and `Vector2Int` / `Vector3Int`, bit-for-bit equal to `math.ts` (`bench/vectors.ts`; `Math.hypot` of three or more numbers uses the native algorithm in both, see `docs/platypus-api.md`). |
 | M9-TS-665..670 | Integration | `Quaternion` (construction, `euler` both forms, products, `slerp`, `rotateTowards`, `eulerAngles` over a grid, `lookRotation`, `fromToRotation`) and `Matrix4x4` (`trs`, `mul`, `inverse`, `determinant`, projections, point and vector transforms, `fromColumns`), bit-for-bit equal to `math.ts`. |
 | M9-TS-671..674 | Integration | `Rect` / `RectInt`, `Ray`, `Plane` (NaN where the original answers null), `Bounds` and `Pose`, bit-for-bit equal to `math.ts`. |
-| M9-API-46 | Integration | The math types as JavaScript classes in QuickJS: `new X(..)` through `create`, instances from methods, statics and getters (`crates/platypus_math/tests/quickjs.rs`). |
-| M9-API-47 | Integration | Overloads by argument count in QuickJS (`Quaternion.euler` two forms, `lookRotation`, `Matrix4x4.trs`), and the shapes (`Ray`, `Plane`, `Bounds`, `Pose`). |
+| ~~M9-API-46~~ | Integration | The math types as JavaScript classes in QuickJS: `new X(..)` through `create`, instances from methods, statics and getters (`crates/platypus_math/tests/quickjs.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-47~~ | Integration | Overloads by argument count in QuickJS (`Quaternion.euler` two forms, `lookRotation`, `Matrix4x4.trs`), and the shapes (`Ray`, `Plane`, `Bounds`, `Pose`). (removed 2026-10-28: QuickJS removed) |
 | M9-TS-675 | Integration | The vector-valued members of `Rng` and `Random` (`insideUnitCircle`, `onUnitSphere`, `insideUnitSphere`, `rotation`) equal the original in bun, bit for bit. |
 | M9-TS-676..683 | Integration | Animation curves, clips and sampling (`Keyframe`, `AnimationCurve`, `AnimationClip.sampleAnimation`): Hermite evaluation over a custom curve and steps, wrap modes before and after, key editing and indexes, clip length / curve replacement / removal / events, sampling a three-level rig (position, scale, quaternion and Euler channels, `GameObject.active`, a missing path), clip wrap modes, JSON round trip; bit-for-bit equal to `animation.ts` run in bun over `scene.ts` (`bench/anim_clips.ts`). |
 | M9-TS-684..691 | Integration | The `Animation` component: named states and `play` / `stop` / `isPlaying`, state properties (`time`, `speed`, `weight`, `normalizedTime`), `crossFade` weights over time, wrap modes of a state (once holds the last frame then stops), clip events (loop passes, once), the default clip and `playAutomatically`, animating `Camera` properties (`fieldOfView`, `backgroundColor.r`, `orthographic`) through the property registry, blending two clips with sign-aligned quaternions, objects inactive in the hierarchy; bit-for-bit equal to `animation.ts` in bun (`bench/anim_player.ts`). |
@@ -1311,26 +1311,26 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1239 | Integration | `Model.load` / `instantiate` (options `position`, `rotation`, `scale`, `parent`, `colliders`; an object literal with those keys is the options, not a value): the file is read once, copies asked for before the host reports the description get their nodes when it does (renderers per primitive, glTF materials, colliders through a hook); a scene saves a copy as `"model"` without its nodes and builds them again on load. |
 | M9-TS-1500..1510 | Integration | JSX and hooks need no manifest from the caller (`tools/platypus_ts/tests/jsx_builtin.rs`): a component with no manifests or with another one, a hook-only program (single line), fragments, `{cond && <x/>}`, `.map` children, spread props, text children and conditionals, a JSX syntax error reports its line and the TSX parser's message, TypeScript that is not TSX is not blamed on the TSX parse, an explicit `Ui` manifest is still accepted. |
 | M9-TS-1511 | Integration | The `Ui` manifest embedded in `platypus_ts` equals `platypus_ts_ui::manifest_json()` (`tools/platypus_ts_ui/tests/embedded_manifest.rs`). |
-| M9-API-100 | Integration | A handle in QuickJS is an opaque object: the id is in an internal slot, `JSON.stringify` gives `{}`, no own or enumerable properties, `[object Thing]`, `instanceof`, script-added properties are own (`crates/platypus_api/tests/handles_quickjs.rs`). |
-| M9-API-101 | Integration | Handle class statics, methods, properties, setters and `new Class(args)` (through `create`) in QuickJS; a getter alone is read only. |
-| M9-API-102 | Integration | The id 0 is `null` going out and coming in; optional handle parameters default to `null`. |
-| M9-API-103 | Integration | A handle of the wrong class, a number or a plain object, a detached method and `new` on a class without `create` are `TypeError`s. |
-| M9-API-104 | Integration | Modules share one class per handle name; a class named like its namespace is the namespace object. |
-| M9-API-105 | Integration | Methods with more than four parameters, value results, `&[f64]` and `&[V]` parameters from JS arrays (objects, arrays or instances as elements). |
-| M9-API-106 | Integration | The same calls from compiled shims (raw ids) and QuickJS agree. |
-| M9-API-107 | Integration | QuickJS value classes: `toJSON` is the compact array, `X.fromJSON` reads the array (exact length) or the object form (left-out fields 0, alpha 1), and functions accept arrays. |
-| M9-API-108 | Integration | `GameObject`, `Transform` and `Camera` as handle classes over the real scene (`crates/platypus_engine_api/tests/handles_quickjs.rs`); classes with one id are not interchangeable. |
-| M9-API-109 | Integration | Handles made by a script and read by the shims (and the reverse), and a handle made by the host with `handle_new`. |
-| M9-API-110 | Integration | `AnimationCurve` factories, `fromPoints` from an array of vectors, methods on the returned handle. |
-| M9-API-111 | Integration | `SceneManager`, `Scene` and `Prefab` as handle classes (`crates/platypus_scenes/tests/handles_quickjs.rs`). |
-| M9-API-112 | Integration | A namespace and a class with the same name (`Scene`) merge, whichever is registered first. |
+| ~~M9-API-100~~ | Integration | A handle in QuickJS is an opaque object: the id is in an internal slot, `JSON.stringify` gives `{}`, no own or enumerable properties, `[object Thing]`, `instanceof`, script-added properties are own (`crates/platypus_api/tests/handles_quickjs.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-101~~ | Integration | Handle class statics, methods, properties, setters and `new Class(args)` (through `create`) in QuickJS; a getter alone is read only. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-102~~ | Integration | The id 0 is `null` going out and coming in; optional handle parameters default to `null`. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-103~~ | Integration | A handle of the wrong class, a number or a plain object, a detached method and `new` on a class without `create` are `TypeError`s. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-104~~ | Integration | Modules share one class per handle name; a class named like its namespace is the namespace object. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-105~~ | Integration | Methods with more than four parameters, value results, `&[f64]` and `&[V]` parameters from JS arrays (objects, arrays or instances as elements). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-106~~ | Integration | The same calls from compiled shims (raw ids) and QuickJS agree. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-107~~ | Integration | QuickJS value classes: `toJSON` is the compact array, `X.fromJSON` reads the array (exact length) or the object form (left-out fields 0, alpha 1), and functions accept arrays. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-108~~ | Integration | `GameObject`, `Transform` and `Camera` as handle classes over the real scene (`crates/platypus_engine_api/tests/handles_quickjs.rs`); classes with one id are not interchangeable. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-109~~ | Integration | Handles made by a script and read by the shims (and the reverse), and a handle made by the host with `handle_new`. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-110~~ | Integration | `AnimationCurve` factories, `fromPoints` from an array of vectors, methods on the returned handle. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-111~~ | Integration | `SceneManager`, `Scene` and `Prefab` as handle classes (`crates/platypus_scenes/tests/handles_quickjs.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-112~~ | Integration | A namespace and a class with the same name (`Scene`) merge, whichever is registered first. (removed 2026-10-28: QuickJS removed) |
 | M9-API-113 | Integration | `QuickJsRuntime::add_native` installs a native API and reinstalls it after `reset()` (`crates/platypus_script/tests/native.rs`). |
 | M9-API-120 | Integration | Every function of every manifest (namespaces, class statics, methods, properties, value classes) exists in QuickJS after `platypus_native::register_quickjs` (`crates/platypus_native/tests/surface.rs`). |
-| M9-API-121 | Integration | Methods of one class with the same script name dispatch by argument count (`this` is passed on); no version for the count is a `TypeError`. |
-| M9-API-122 | Integration | A JS function passed as a `Callback` is kept (survives scripts ending and a collection), called with the event's arguments, and `off(token)` removes it (`crates/platypus_api/tests/callbacks_quickjs.rs`). |
-| M9-API-123 | Integration | Handle and boolean callback arguments reach JS as handle objects / `null` and booleans; a callback with no arguments. |
-| M9-API-124 | Integration | An exception in a JS callback is recorded (`take_errors`), the other callbacks still run, and a callback may subscribe from inside a call. |
-| M9-API-125 | Integration | A callback survives repeated collections while only the engine holds it; a non-function is a `TypeError`. |
+| ~~M9-API-121~~ | Integration | Methods of one class with the same script name dispatch by argument count (`this` is passed on); no version for the count is a `TypeError`. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-122~~ | Integration | A JS function passed as a `Callback` is kept (survives scripts ending and a collection), called with the event's arguments, and `off(token)` removes it (`crates/platypus_api/tests/callbacks_quickjs.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-123~~ | Integration | Handle and boolean callback arguments reach JS as handle objects / `null` and booleans; a callback with no arguments. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-124~~ | Integration | An exception in a JS callback is recorded (`take_errors`), the other callbacks still run, and a callback may subscribe from inside a call. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-125~~ | Integration | A callback survives repeated collections while only the engine holds it; a non-function is a `TypeError`. (removed 2026-10-28: QuickJS removed) |
 | M9-API-126 | Integration | Physics from QuickJS: a Rigidbody with a BoxCollider falls and rests on a floor at y = 1 (as the compiled test), `ForceMode` / `RigidbodyConstraints`, a wrong handle is a `TypeError` (`crates/platypus_native/tests/physics.rs`). |
 | M9-API-127 | Integration | Raycast from QuickJS: distance, point, normal of the hit, a miss and a too-short ray are `null`, `maxDistance` optional. |
 | M9-API-128 | Integration | Bodies, colliders and a rope joint made from script; gravity getter/setter; bad arguments are `TypeError`s. |
@@ -1584,11 +1584,11 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-VSP-14 | Unit | A host dialog (`Lifecycle::set_modal`) pauses the game even with `runInBackground`, reports it, and resumes it with the paused time; screenshot runs never pause. |
 | M9-VSP-15 | Unit | `Application.showVideoSettings()` queues a `ShowVideoSettings` request; `video_settings_changed` runs the `onVideoSettingsChanged` listeners until `offVideoSettingsChanged`. |
 | M9-VSP-16 | Unit | A choice applied in a running game maps to the window's settings (`Choice::display`: exclusive size and rate, borderless, the window size kept; none for a fixed-size game); the dialog a running game opens says Apply / Cancel (`STARTUP` false), the startup one Play / Quit. |
-| M9-APP-01 | Unit | `--force` parses and is off by default (`platypus_app`). |
-| M9-APP-02 | Unit | The QuickJS gate: native bundles run, QuickJS ones are refused unless forced, and the editor counts as forced. |
-| M9-APP-03 | Integration | `platypus_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `platypus-build build` (`crates/platypus_app/tests/quickjs_deprecated.rs`). |
-| M9-APP-04 | Integration | The same with `--force` runs, saves the screenshot and logs the deprecation note exactly once. |
-| M9-APP-05 | Integration | A native game (a bare `.ts` source) runs without `--force` and logs no deprecation note. |
+| M9-APP-01 | Unit | `--force` is no longer an option (a parse error) (`platypus_app`). |
+| M9-APP-02 | Unit | A QuickJS bundle (`build/game.js`, a `.js` file) is refused with a pointer to `platypus-build build`; native bundles run. |
+| ~~M9-APP-03~~ | Integration | `platypus_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `platypus-build build` (`crates/platypus_app/tests/quickjs_deprecated.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-APP-04~~ | Integration | The same with `--force` runs, saves the screenshot and logs the deprecation note exactly once. (removed 2026-10-28: QuickJS removed) |
+| ~~M9-APP-05~~ | Integration | A native game (a bare `.ts` source) runs without `--force` and logs no deprecation note. (removed 2026-10-28: QuickJS removed) |
 | M9-APP-06 | Unit | A game folder with only an old `dist/` build is refused with an error naming `dist/`, `build/` and `platypus-build build`; with `build/game.pbundle` it resolves to that bundle. |
 | M9-BEN-01 | Unit | `platypus-app --bench`: a bench file becomes segments of timed platform events (keys held, clicks, `clickText`, `count`/`every` repeats, unknown kinds refused), and frame stats give fps, median, p99, worst and the script share (`crates/platypus_app/src/bench.rs`). |
 | M9-BEN-02 | Unit | `platypus-build bench` writes the summary table with speed-ups, marks games the base branch lacks as n/a, and keeps hand-written text around the generated part of `docs/benchmarks.md`. |
@@ -1608,7 +1608,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1149 | Unit | A UI SVG image loads from the installed asset file system, not the folder (`platypus_render::ui::images`). |
 | M9-API-1205 | Unit | `asset_root::mount`: loose folder, packs from `index.json` in any manifest order (scene packs above `assets.dat`), packs found by name without a manifest, a manifest path outside the folder or a missing pack is an error. |
 | M9-API-1150 | Manual | `platypus-build package examples/emoji --packs --host target/debug/platypus-app.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
-| M9-API-1151 | Unit | `Assets.exists` / `list` / `packOf` in QuickJS answer from the host's index: sorted keys, the `project.json` glob rules, `guid:` and `data:` sources, the pack of each path, nothing without an index (`platypus_engine_api/tests/batch1.rs`). |
+| ~~M9-API-1151~~ | Unit | `Assets.exists` / `list` / `packOf` in QuickJS answer from the host's index: sorted keys, the `project.json` glob rules, `guid:` and `data:` sources, the pack of each path, nothing without an index (`platypus_engine_api/tests/batch1.rs`). (removed 2026-10-28: QuickJS removed) |
 | M9-API-1107 | Unit | Stored, LZ4 and deflate packs read back the same bytes; compressed text shrinks over 4x. |
 | M9-API-1108 | Unit | A pack inside a larger file (an APK asset) opens at its offset, mapped and read. |
 | M9-API-1109 | Unit | The writer refuses a repeated GUID, a repeated path of the same form, and paths outside the game. |
@@ -1656,8 +1656,8 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1482 | Unit | `reload_end` returns the keyed windows nobody claimed (once). Acceptance: the probe with `PLATYPUS_RELOAD_AT_FRAME=5 --frames 10` keeps the keyed tool window and replaces the keyless isolated one. |
 | M9-API-1483 | Unit | The main window survives a reload with its title; the new code sets it again. |
 | M9-API-1484 | Unit | A failed reload (`reload_abort`) gives the old code its window listeners back and forgets the windows the failed code made; the windows the host was to close stay open. |
-| M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`), and an accessor on the class object in QuickJS (`typeof Demo.current === "object"`, read through the getter each time) (`crates/platypus_api/tests/static_props.rs`). |
-| M9-API-1491 | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. |
+| M9-API-1490 | Unit | A static property of a handle class is a getter without `this` in the manifest and the `.d.ts` (`static readonly`) (the QuickJS accessor half was removed 2026-10-28) (`crates/platypus_api/tests/static_props.rs`). |
+| ~~M9-API-1491~~ | Unit | A static setter writes through; assigning to a read-only static throws `TypeError` in strict mode. (removed 2026-10-28: QuickJS removed) |
 | M9-API-1410 | Unit | The main window exists from the start (handle 1) and takes the title `set_main` gives (`crates/platypus_engine_api/tests/window.rs`). |
 | M9-API-1411 | Unit | Setting a title queues `Title(w, ..)` and reads back at once. |
 | M9-API-1412 | Unit | `create` returns a handle at once (2, 3, never reused), queues one `Create`, and the window is not `created` yet. |
@@ -1675,9 +1675,9 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1424 | Unit | `Window.current` is the window whose event is being dispatched, else the main window; guards nest. |
 | M9-API-1425 | Unit | `off` removes any listener by token, once. |
 | M9-API-1426 | Unit | `Window.main.close()` asks to quit (`Application.quit`) and queues no `Close`. |
-| M9-API-1430 | Unit | A QuickJS call with one options object fills the `#[options]` function's optional parameters by camelCase name (`crates/platypus_api/tests/options.rs`). |
-| M9-API-1431 | Unit | Left-out, `undefined` and `null` keys take the declared defaults (NaN, empty, false, the `= value`). |
-| M9-API-1432 | Unit | Positional calls still work; plain objects are options objects, arrays, functions, dates, class and value-class instances are not. |
+| ~~M9-API-1430~~ | Unit | A QuickJS call with one options object fills the `#[options]` function's optional parameters by camelCase name (`crates/platypus_api/tests/options.rs`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-1431~~ | Unit | Left-out, `undefined` and `null` keys take the declared defaults (NaN, empty, false, the `= value`). (removed 2026-10-28: QuickJS removed) |
+| ~~M9-API-1432~~ | Unit | Positional calls still work; plain objects are options objects, arrays, functions, dates, class and value-class instances are not. (removed 2026-10-28: QuickJS removed) |
 | M9-API-1433 | Unit | `Window.create({ title, style: "tool", width })` in QuickJS: `Window.main` and `Window.count` are properties, `isChild`, `parent.handle`, flags through the object (`crates/platypus_native/tests/window.rs`). |
 | M9-API-1434 | Unit | Window listeners run from QuickJS; `w.onCloseRequested(() => w.cancelClose())` makes `close_requested(w)` false; a closed handle keeps its last values. |
 | M9-TS-2800 | Integration | Compiled `Window.create({ title, style: "tool", width, height, key })` maps the keys by name; the tool's parent is the main window (`tools/platypus_ts_tests/tests/ui/windows.rs`, `bench/windows.ts`). |
@@ -1705,7 +1705,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1497 | Unit | `input` is per event domain: keys, mouse and gamepads of an isolated domain do not reach the main game, `tick_domain` / `blur_domain` act on one domain, and reads follow `window::current_domain()` (`crates/platypus_engine_api/tests/input_domains.rs`). |
 | M9-API-1498 | Unit | Messages queue per domain and arrive at the next `deliver`, in posting order with the sender as `from`, the target's listeners before the domain's; ones posted during delivery wait; over 1 MiB is refused; a closed target refuses and drops queued messages (`crates/platypus_engine_api/tests/window_messages.rs`). |
 | M9-API-1499 | Unit | A request gets one reply (a second `replyJson` is false), or fails with `no request listener`, `timed out` (once) or `window closed`; a late reply from a domain listener works; `broadcast` reaches the root of every other family and never the sender's own. |
-| M9-API-1500 | Integration | QuickJS `input` follows the current event domain: main reads its own keys, an isolated window's `run` callback reads its own (keys, mouse, per-domain frame `tick`), a promise job reads the main domain's, `blur` clears only that domain's keys, and listeners belong to the registering domain (`game_input.rs`, `tests/fixtures/src/input_domains.ts`). |
+| ~~M9-API-1500~~ | Integration | QuickJS `input` follows the current event domain: main reads its own keys, an isolated window's `run` callback reads its own (keys, mouse, per-domain frame `tick`), a promise job reads the main domain's, `blur` clears only that domain's keys, and listeners belong to the registering domain (`game_input.rs`, `tests/fixtures/src/input_domains.ts`). (removed 2026-10-28: QuickJS removed) |
 | M9-API-1501 | Integration | `render_sync` turns native fog (mode, range, colour, height fog, light shafts), auto / fixed exposure and its blend time, a pyramid spot light with its volumetric intensity, a fog volume and `Camera.fog = false` into the renderer's views, and the player's quality switch for auto exposure takes the auto part out again (no GPU; `render_sync.rs`). |
 | M9-API-1502 | Unit | `RenderSettings` fog starts off; an unknown mode is ignored; setting a height fog or light shaft property turns it on with the defaults, and its `...Enabled` switch turns it off (`crates/platypus_render_api/tests/fog_settings.rs`). |
 | M9-API-1503 | Unit | Auto exposure properties and curve points; `freezeExposure()` sets the manual exposure to the main camera's read-back exposure and turns auto exposure off (nothing to freeze to before the first read-back). |
@@ -1725,7 +1725,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2841 | Integration | `await win.request<{ n: number }>(..)` resolves with the typed reply once both domains were delivered and the microtasks ran. |
 | M9-TS-2842 | Integration | `request` rejects with `timed out`, `window closed` and `no request listener`. |
 | M9-TS-2843 | Integration | `Window.broadcast(data)` reaches the other family's `Window.onMessage<T>` listener; the sender's own domain gets nothing. |
-| M9-TS-2844 | Integration | In QuickJS `win.postMessage(obj)` / `win.onMessage(f)` / `Window.onMessage(f)` / `win.run(f)` round-trip through `deliver` in two domains; a value class travels as `[x, y, z]`; `Window.broadcast` reaches the other family (`crates/platypus_native/tests/window.rs`, `QUICKJS_PRELUDE`). |
+| ~~M9-TS-2844~~ | Integration | In QuickJS `win.postMessage(obj)` / `win.onMessage(f)` / `Window.onMessage(f)` / `win.run(f)` round-trip through `deliver` in two domains; a value class travels as `[x, y, z]`; `Window.broadcast` reaches the other family (`crates/platypus_native/tests/window.rs`, `QUICKJS_PRELUDE`). (removed 2026-10-28: QuickJS removed) |
 | M9-TS-2845 | Integration | `postMessage` in QuickJS throws `TypeError` (naming the key) for engine handles, functions, `undefined` and cycles and queues nothing; over 1 MiB returns false. |
 | M9-TS-2846 | Integration | In QuickJS `win.request(data)` returns a promise that resolves with the parsed reply after both domains delivered and the job queue ran; it rejects with `timed out`, `no request listener`, and `request refused` for a closed window. |
 | M9-TS-2847 | Integration | A function returning a number, string, class object, object literal or element is a valid `onClick` (top-level function or arrow); clicking runs it and drops the result, also with a collection at every allocation (`tests/ui/ui.rs`). |
@@ -1843,14 +1843,14 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1610 | Integration | The manifest lists enums, records, list results, a rest parameter, `options_after`, `like` and the doc comments, in `Namespace` and in the JSON (`crates/platypus_api/tests/records_enums.rs`). |
 | M9-API-1611 | Integration | The enum helpers (`name`, `parse`, `index`, `from_index`, the names list) convert both ways (`crates/platypus_api/tests/records_enums.rs`). |
 | M9-API-1612 | Integration | List and record results come back flat through `platypus_api_result`; enums travel as indexes (unknown ones are the first value); `platypus_<Enum>_name` gives a name (`crates/platypus_api/tests/records_enums.rs`). |
-| M9-API-1613 | Integration | QuickJS gets arrays, objects, strings, rest arguments and an options object after a parameter (`crates/platypus_api/tests/records_enums.rs`). |
+| ~~M9-API-1613~~ | Integration | QuickJS gets arrays, objects, strings, rest arguments and an options object after a parameter (`crates/platypus_api/tests/records_enums.rs`). (removed 2026-10-28: QuickJS removed) |
 | M9-API-1614 | Integration | A create with `options(after = ..)` reads the parameters after the named one through the shim (`crates/platypus_api/tests/records_enums.rs`). |
 | M9-API-1615 | Integration | A program with a pending top-level `await` shows the UI it mounted before it, keeps the registered class unspawned for frames, and spawns it (and runs its first update) once the timer lets the module finish (`crates/platypus_app/src/native.rs`). |
 | M9-API-1616 | Integration | A rejected top-level `await` stops the startup: `startup_error()` names the module and the error and nothing spawns (`native.rs`). |
 | M9-API-1617 | Integration | A scene that names a component class no `register` call named gets a warning naming the class and saying it never registered (`native.rs`). |
 | M9-API-1618 | Integration | A hot reload into a program that awaits restores the saved world and spawns the new class once its startup has finished (`native.rs`). |
 | M9-API-1619 | Unit | `@platypus/engine`'s `Assets.exists` / `list` / `packOf` hand over to the engine's `Assets` namespace (QuickJS parity) and answer as an empty game without it (`js/engine/test/assets.test.ts`). |
-| M9-API-1620 | Integration | A `Vec<String>` result of `#[platypus_api]`: the shim returns the count, `platypus_api_result_str(i)` gives the strings (empty past the end), the manifest says `list:string`, QuickJS gets an array of strings (`crates/platypus_api/tests/records_enums.rs`). |
+| M9-API-1620 | Integration | A `Vec<String>` result of `#[platypus_api]`: the shim returns the count, `platypus_api_result_str(i)` gives the strings (empty past the end), the manifest says `list:string` (`crates/platypus_api/tests/records_enums.rs`). |
 | M9-TS-3103 | Unit | Enums, records, lists, rest, docs, `like` and `options_after` become declarations (`tools/platypus_ts/src/types_dts.rs`). |
 | M9-TS-3110 | Integration | Every point of every `Shapes` function on edge cases equals the old compiled TypeScript (`RefShapes`) bit for bit, in normal, stress GC and collection-off modes (`tools/platypus_ts_tests/tests/engine_api/outlines.rs`, `bench/outlines.ts`). |
 | M9-TS-3111 | Integration | Shape points are `Vector2` objects; object literals pass where points go (`tools/platypus_ts_tests/tests/engine_api/outlines.rs`). |
@@ -2002,7 +2002,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3320 | Integration | `{ x: 0, y: 0, ...dict }` into an object type copies by key; `{ ...dict, z: 1 }` and `{ ...copy, ...{ q: 2 } }` into a `Record<string, number>` make dictionaries, equal to bun (`lang3.rs`). |
 | M9-TS-3321 | Integration | `Object.keys` / `values` / `entries` of an object and `b[k as keyof Box]` over the keys equal bun (`lang3.rs`). |
 | M9-TS-3322 | Integration | A dictionary value assigned into a field of another type throws a `TypeError` naming the key and the struct (`lang3.rs`; no bun comparison). |
-| M9-API-1621 | Integration | `&[String]` and `Vec<String>` parameters: the shim reads a script array of strings (null is empty), the manifest type is `strings`, the declaration `string[]`, QuickJS passes an array of JS strings (`crates/platypus_api/tests/records_enums.rs`). |
+| M9-API-1621 | Integration | `&[String]` and `Vec<String>` parameters: the shim reads a script array of strings (null is empty), the manifest type is `strings`, the declaration `string[]` (`crates/platypus_api/tests/records_enums.rs`). |
 | M9-TS-3323 | Integration | A compiled program passes `string[]` (also empty, with non-ASCII text, a mapped array) to `&[String]` / `Vec<String>` parameters of a host function, equal to bun with a JS stand-in (`lang3.rs`, `bench/lang3_prelude.js`). |
 | M9-TS-3324 | Integration | `onFocus` / `onBlur` / `onFocusCapture` / `onBlurCapture` in a compiled game driven by a real `Interaction` (`Input::Focus`, `Blur`, Tab): `focusin` / `focusout` bubble from the input to the form, capture runs first, `relatedTarget` names the other element (`ui.rs`, `bench/ui.ts`). |
 | M9-TS-3325 | Integration | `onTransitionRun` / `Start` / `End` / `Cancel` in a compiled game: `propertyName` (kebab-case), `elapsedTime` in seconds and an empty `pseudoElement`, from a transition driven by `Input::Refresh` (`ui.rs`). |
@@ -2010,7 +2010,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3327 | Integration | Drag and drop in a compiled game: one `dataTransfer` from `dragstart` to `dragend` (`setData` / `getData` / `types` / `dropEffect`), `dropped`, an unaccepted drag, and files dragged in from the system as `dataTransfer.files` with their names (`ui.rs`). |
 | M9-TS-3328 | Integration | `onMouseEnter` / `onMouseLeave` / `onMouseMove` in a compiled game (non-bubbling events still run the target's handlers); a non-bubbling `scroll` does not reach the parent's `onScroll` (`ui.rs`). |
 | M9-TS-3329 | Unit | `EventKind::ALL` lists every event type (an exhaustive `match` stops compiling when one is added) (`crates/platypus_ui/tests/ui_tables.rs`). |
-| M9-TS-3330 | Unit | The `on*` props of the tables are exactly those `HANDLERS` of `js/react/src/events.ts` runs per event type, and the non-bubbling types agree (`ui_tables.rs`). |
+| ~~M9-TS-3330~~ | Unit | The `on*` props of the tables are exactly those `HANDLERS` of `js/react/src/events.ts` runs per event type, and the non-bubbling types agree (`ui_tables.rs`). (removed 2026-10-28: QuickJS removed) |
 | M9-TS-3331 | Unit | The slots of `propertyName` / `animationName` / `elapsedTime` / `relatedTarget` / `dropped` / `dataTransfer` read what `UiEvent::script_args` fills (`ui_tables.rs`). |
 | M9-TS-3332 | Integration | Focus events from `Interaction` reach native reconciler handlers (capture, bubble, `relatedTarget` in `data[9]`), and a non-bubbling `scroll` stays on its element (`crates/platypus_ui_native/tests/reconcile.rs`). |
 | M9-TS-3333 | Integration | `cols` sizes a textarea (8 px per character, CSS wins); `title` and `type` are kept (type lower-cased) and match `[title=..]` / `input[type=password]` selectors, also after a change (`crates/platypus_ui/tests/editor.rs`). |
@@ -2018,17 +2018,17 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1622 | Unit | An `enums(extern X = ..)` enum adds no second set of symbols or manifest entry (the declaring namespace lists it once, the other names `enum:X`); an explicit variant name wins; `aliases(..)` and the helpers exist (`crates/platypus_api/tests/enums_nullables.rs`). |
 | M9-API-1623 | Integration | `Option<f64>` / `Option<V>` / `Option<String>` cross the C ABI with NaN, NaN fields and the `platypus_api_result_none()` flag, both ways; the manifest says `opt:f64`, `opt:value:V`, `opt:string` (`enums_nullables.rs`). |
 | M9-API-1624 | Unit | An `Option<Enum>` parameter is none for -1 or an unknown index (a setter changes nothing); a `Vec<Enum>` result is the count and the indexes in the result buffer; the explicit-name converters (`enums_nullables.rs`). |
-| M9-API-1625 | Integration | QuickJS: an enum takes and gives names, an unknown name is a `TypeError`, `Option` results are `null`, an object or `null` sets an optional value, `Enum.name(i)` / `.parse(s)` exist, an alias is the same global (`enums_nullables.rs`). |
+| ~~M9-API-1625~~ | Integration | QuickJS: an enum takes and gives names, an unknown name is a `TypeError`, `Option` results are `null`, an object or `null` sets an optional value, `Enum.name(i)` / `.parse(s)` exist, an alias is the same global (`enums_nullables.rs`). (removed 2026-10-28: QuickJS removed) |
 | M9-API-1626 | Unit | `#[nullable(undefined)]` is `"nullable":true,"undefined":true` in the manifest JSON, on a function and on a class property (`enums_nullables.rs`). |
 | M9-API-1627 | Integration | The engine enums from QuickJS (`FogMode`, `VolumeDetail`, `FilterMode`, `TextureWrapMode`, `PrimitiveType`, `PrimitiveMesh`, `FullScreenMode`, `ShadowQualityMode`, `WindowStyle`, `LoadSceneMode`, `AnimatorController`): names in and out, `Enum.name` / `parse`, unknown names throw a `TypeError` (`crates/platypus_native/tests/enums.rs`). |
 | M9-API-1628 | Integration | The engine nullables from QuickJS are `null` when none and take `null`: `fixedExposure`, `Camera.main`, `Window.focused` / `find` / `at` / `byHandle` / `parent`, `openError`, `LineRenderer2D.fillColor` (`enums.rs`). |
 | M9-TS-3340 | Integration | Compiled code with every GC mode: enum constants and dynamic strings, an unknown name changes nothing, `Texture.create(.., { filterMode, wrapMode })` defaults, `Record<FullScreenMode, number>` indexed by `Screen.supportedFullScreenModes`, `PrimitiveType.Cube`, `PrimitiveMesh`, `Camera.main === undefined`, `fixedExposure` and `fillColor` set and `null`, `AnimatorController` (`tools/platypus_ts_tests/tests/engine_api/facade.rs`, `bench/facade.ts`). |
 | M9-API-1629 | Integration | QuickJS gets `Screen.windowSize`, `currentResolution`, `resolutions` and `Animator.getCurrentAnimatorStateInfo()` (a record with a string field) as plain objects and arrays of them (`crates/platypus_native/tests/enums.rs`). |
-| M9-API-1630 | Integration | A record with a `string` field: the numbers go to the result buffer and the strings to the string list, in field order, element after element for a list; manifest field type `string`; QuickJS objects (`crates/platypus_api/tests/enums_nullables.rs`). |
-| M9-API-1631 | Integration | `#[options(name = "PokeOptions", only)]`: the manifest has `optionsName`, `optionsOnly` and the parameter docs from the `/// key: text` lines (they leave the function's doc); QuickJS reads the options object, positional calls still work (`enums_nullables.rs`). |
+| M9-API-1630 | Integration | A record with a `string` field: the numbers go to the result buffer and the strings to the string list, in field order, element after element for a list; manifest field type `string` (`crates/platypus_api/tests/enums_nullables.rs`). |
+| M9-API-1631 | Integration | `#[options(name = "PokeOptions", only)]`: the manifest has `optionsName`, `optionsOnly` and the parameter docs from the `/// key: text` lines (they leave the function's doc) (`enums_nullables.rs`). |
 | M9-TS-3341 | Integration | Compiled code with every GC mode: `Screen.windowSize`, `currentResolution`, `resolutions` and `Animator.getCurrentAnimatorStateInfo()` come back as objects (records with number and string fields, lists of records) (`tools/platypus_ts_tests/tests/engine_api/facade.rs`). |
 | M9-TS-3342 | Unit | A named options object is an `interface` with the parameter docs (a handle key also takes `null`), `options?: Name` is the signature, `only` drops the positional form, array parameters are `readonly`, the module re-exports the name (`tools/platypus_ts/src/types_dts.rs`). |
-| M9-API-1632 | Integration | An `Option<Record>` parameter and result travel as JSON text: optional keys, `null` for a nested option, a value class as an array or an object, an enum by name, `pairs`, a script key (`as "label"`); a missing required key, a wrong type or an unknown enum name is reported and is none; the manifest says `opt:record:R` and `opt:opt:like:V` / `opt:list:pair` / `opt:string` for the fields; QuickJS takes an object or `null` and gives an object with value-class instances (`crates/platypus_api/tests/enums_nullables.rs`). |
+| M9-API-1632 | Integration | An `Option<Record>` parameter and result travel as JSON text: optional keys, `null` for a nested option, a value class as an array or an object, an enum by name, `pairs`, a script key (`as "label"`); a missing required key, a wrong type or an unknown enum name is reported and is none; the manifest says `opt:record:R` and `opt:opt:like:V` / `opt:list:pair` / `opt:string` for the fields (`crates/platypus_api/tests/enums_nullables.rs`). |
 | M9-API-1633 | Integration | `RenderSettings.heightFog` / `skybox` / `bloom` / `autoExposure` / `volumetricFog` from QuickJS take an object or `null` and read back as objects (colour instances, `null` for no sun, the curve as pairs, the defaults of keys left out); a bad object is ignored (`crates/platypus_native/tests/enums.rs`). |
 | M9-TS-3343 | Integration | Compiled code with every GC mode: the same properties from literals, a variable of the game's own interface and `cond ? { .. } : null`, a key written as `null` differs from one left out (`sunDirection`), the values read back (`tools/platypus_ts_tests/tests/engine_api/facade.rs`). |
 | M9-TS-3344 | Integration | `JSON.parse(f())` of a text a call returns survives collections: the operand is held in a local while the parser allocates (every GC mode) (`tools/platypus_ts_tests/tests/stdlib/json.rs`, `bench/json.ts`). |
@@ -2040,10 +2040,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1637 | Integration | `#[promise]` functions from QuickJS: `SceneManager.loadSceneAsync` and `Prefab.load` return a real `Promise` that the engine settles in the tick the host loads the file (`finish_load` + `dispatch`), and rejects with an `Error` for a file that cannot be read or parsed (`crates/platypus_native/tests/subscriptions.rs`; the compiled side is `M9-API-1512`, `1513`, `1517` in `crates/platypus_app/src/native.rs`). |
 | M9-API-1638 | Integration | `Texture.whenLoaded()` from QuickJS resolves when the host reports the load (`texture_loaded`), at once for a loaded texture, and rejects with an `Error` when loading failed (`crates/platypus_native/tests/subscriptions.rs`). |
 | M9-API-1639 | Integration | Lists of records and records that hold handles from QuickJS: `LODGroup.setLODs(levels)` (`renderers: MeshRenderer[]`), `ParticleSystem.bursts` (optional `cycles` / `interval`), `colorOverLifetime`, `sizeOverLifetime`, `shape` (keys left out keep their values); a non-array or a wrong handle is a `TypeError` (`crates/platypus_native/tests/lists.rs`). |
-| M9-API-1640 | Integration | Records hold lists of numbers (`Vec<f64>`, `list:f64`) and of records (`Vec<R>`, `records:R`, optional too); QuickJS reads and writes them nested (`crates/platypus_api/tests/record_lists.rs`). |
-| M9-API-1641 | Integration | `#[options(.., object)]`: the manifest says `optionsObject` (and `#[global]`: `global`); QuickJS reads every parameter, the required ones too, from one object (positional calls still work). |
+| M9-API-1640 | Integration | Records hold lists of numbers (`Vec<f64>`, `list:f64`) and of records (`Vec<R>`, `records:R`, optional too) (`crates/platypus_api/tests/record_lists.rs`). |
+| M9-API-1641 | Integration | `#[options(.., object)]`: the manifest says `optionsObject` (and `#[global]`: `global`). |
 | M9-API-1642 | Unit | A class function declared twice under one script name is in the manifest twice, in declaration order (the compiler picks by the argument types). |
-| M9-API-1643 | Integration | `#[setter(prop)]` is another version of a property setter (the manifest has both; QuickJS keeps the first) and `#[constructor]` marks the positional constructor (`crates/platypus_api/tests/record_lists.rs`). |
+| M9-API-1643 | Integration | `#[setter(prop)]` is another version of a property setter (the manifest has both) and `#[constructor]` marks the positional constructor (`crates/platypus_api/tests/record_lists.rs`). |
 | M9-API-1644 | Integration | Gamepads from QuickJS: `input.gamepads()` is a list of records whose `buttons` / `axes` are dictionaries in order (standard names, 0 when not reported); `input.on(type, f)` (`#[subscription(.., json = ..)]`) passes the event as JSON text and returns a stop function (`crates/platypus_native/tests/services.rs`). |
 | M9-TS-3352 | Integration | Compiled code with every GC mode: the same lists of records through JSON text with handles as ids (`bench/facade.ts` `recordLists`, `tools/platypus_ts_tests/tests/engine_api/facade.rs`). |
 | M9-TS-3353 | Integration | Compiled code with every GC mode: `Camera.screenToWorldPoint`, `horizontalFieldOfView` (read and write) and `rect` are native (an 800x600 window, a 90 degree camera) (`tools/platypus_ts_tests/tests/engine_api/facade.rs`, `bench/facade.ts` `cameraMaths`). |

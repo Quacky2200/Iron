@@ -38,7 +38,7 @@ Platypus is an s&box-inspired game engine and editor: a **Rust** engine core, **
 | CSS | `cssparser` + `selectors` (Servo) for stylesheets and matching; Taffy's parser + our own for values | Both CSS files and inline style objects. |
 | Physics | `rapier` | Jolt bindings as a possible later option. |
 | Scripting language | TypeScript | Gameplay, UI and editor tools. |
-| Script engine | Behind `ScriptRuntime` trait | QuickJS (`rquickjs`) or `deno_core` first; Bun (now Rust) as an experiment. |
+| Script engine | Compiled TypeScript (`platypus_ts`, Cranelift) | QuickJS (the first backend, behind a `ScriptRuntime` trait) was removed 2026-10-28; compiled TypeScript is the only backend. |
 | UI framework | React via a custom `react-reconciler` host | |
 | Tooling | Bun (bundler, package manager, tests) + `tsc --watch` | Runtime strips types; `tsc` reports type errors. |
 | Asset input | glTF 2.0 / GLB | FBX later via Blender or `russimp`. |
@@ -73,8 +73,11 @@ Why it matters:
 
 ## 4. Scripting
 
-### 4.1 `ScriptRuntime` trait
-A thin interface so the JS engine can be swapped per platform:
+### 4.1 `ScriptRuntime` trait (historical)
+Removed on 2026-10-28 together with QuickJS (`platypus_script`, `platypus_native`, `@platypus/engine`); compiled
+TypeScript (`platypus_ts`) is the only backend and calls the engine API directly (`docs/platypus-api.md`). The text
+below is the original design, kept for the ideas behind the boundary. A thin interface so the JS engine can be
+swapped per platform:
 
 ```rust
 trait ScriptRuntime {
@@ -89,11 +92,11 @@ trait ScriptRuntime {
 
 Component calls go through JS host functions installed by `@platypus/engine`
 (`__platypus_create`, `__platypus_dispatch(id, method, ...args)`, ...), driven from Rust by
-`ComponentHost`, so the trait itself stays engine-agnostic. The current definition
-lives in `crates/platypus_script/src/lib.rs`.
+`ComponentHost`, so the trait itself stays engine-agnostic.
 
-Planned backends:
-- **QuickJS (`rquickjs`)**: small, instant startup, interpreter only. Required on **iOS** (no JIT allowed in apps).
+Backends considered (none built; compiled TypeScript replaced them):
+- **QuickJS (`rquickjs`)**: was the first backend, removed. Small, instant startup, interpreter only. iOS (no JIT
+  allowed in apps) would need an interpreter or ahead-of-time compiled game code.
 - **`deno_core` (V8)**: fast JIT on desktop and Android.
 - **Bun**: experimental backend. Bun is now written in Rust (1.4, Aug 2026) but is still JavaScriptCore underneath and has no stable embedding API.
 
@@ -295,7 +298,7 @@ the s&box way. An ECS can go underneath later if profiling asks for it.
 | Android | Medium | `cargo-ndk` + Gradle wrapper (or `xbuild`) → signed AAB. Doable from Windows. |
 | Quest (VR) | Medium | Android + OpenXR; reuses Android work. |
 | PC VR | Medium | OpenXR; swapchain sharing with wgpu is the tricky part. |
-| iOS | Medium–Hard | Static lib in an Xcode wrapper; needs a Mac, Apple developer account, and **no JIT** (QuickJS backend). Downloadable games are an App Store policy risk. |
+| iOS | Medium–Hard | Static lib in an Xcode wrapper; needs a Mac, Apple developer account, and **no JIT** (the QuickJS backend that would have covered this was removed; it needs AOT-compiled game code). Downloadable games are an App Store policy risk. |
 
 `cargo-mobile2` can generate the Xcode and Gradle wrappers.
 
@@ -324,6 +327,6 @@ Milestones 1–4 together are a useful standalone result: React-driven native ga
 - Text: `cosmic-text` or `parley`?
 - Styling: CSS files, style objects, or both? How much of the CSS spec?
 - ~~Renderer: own vs reuse Bevy crates (§7.4)?~~ Own renderer (2026-10-17).
-- First script backend: QuickJS or `deno_core`?
+- First script backend: QuickJS or `deno_core`? (Decided: neither; compiled TypeScript. QuickJS was built, then removed.)
 - Entity model: full ECS or s&box-style GameObject + Component?
 - Distribution: Steam Workshop, own platform, or both?

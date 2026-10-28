@@ -1,9 +1,9 @@
 # Particles
 
-Code: [particles.ts](../js/engine/src/particles.ts) (the `ParticleSystem` component),
-[particles.rs](../crates/platypus_app/src/particles.rs) (the simulation),
-[world_view.rs](../crates/platypus_app/src/world_view.rs) (ops, per-frame update, quads) and the
-`__platypus_particles` call in [main.rs](../crates/platypus_app/src/main.rs). Particles are drawn as ordinary
+Code: `ParticleSystem` is a native component declared in `crates/platypus_render_api` (`effects.rs`),
+[particles.rs](../crates/platypus_app/src/particles.rs) (the simulation) and
+[world_view.rs](../crates/platypus_app/src/world_view.rs) (per-frame update, quads), synced by `render_sync.rs`. (The
+`particles.ts` script component and the `__platypus_particles` call into JS were removed with QuickJS.) Particles are drawn as ordinary
 camera-facing `WorldQuad`s, so sorting, blending and textures are in
 [world-rendering.md](world-rendering.md) and [assets-and-models.md](assets-and-models.md).
 
@@ -35,9 +35,9 @@ Shapes emit along the object's **up (+y)**, unlike Unity's +z cones, so a founta
 [count]`. `emit` is queued and runs at the next update, when the object's position is known.
 
 Each frame, in `App::tick` right after the component hooks, `WorldViews::update_particles(dt, scene)`
-advances every system on an active object by the frame's scaled `dt` (`ComponentHost::frame_dt`, so
+advances every system on an active object by the frame's scaled `dt` (so
 `Time.timeScale` applies). It returns `[id, count, alive, ...]` for systems whose particle count or
-alive state changed, and the app calls `__platypus_particles` with that list. The component uses it for
+alive state changed, and the app reports that list to the native `ParticleSystem` (`native_render::report_particles`). The component uses it for
 `particleCount`, `isPlaying` and, when a one-shot system finishes, `onStopped` and `stopAction:
 "destroy"`.
 
@@ -76,4 +76,4 @@ life: `life * cycles * frames`. The texture defaults to `DEFAULT_PARTICLE_TEXTUR
 ## Tests
 
 Unit tests in `particles.rs` (emission rate and bursts, lifetimes, gravity and cone direction, curves
-and sheets) and `js/engine/test/particles.test.ts`.
+and sheets).

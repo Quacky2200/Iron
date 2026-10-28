@@ -5,9 +5,8 @@ How the window's mode, vsync, the frame cap and `PlayerPrefs` work. Code: `platy
 `platypus_render` ([surface.rs](../crates/platypus_render/src/surface.rs)), `platypus_app`
 ([display.rs](../crates/platypus_app/src/display.rs), [prefs.rs](../crates/platypus_app/src/prefs.rs),
 [logging.rs](../crates/platypus_app/src/logging.rs),
-[main.rs](../crates/platypus_app/src/main.rs)) and `@platypus/engine`
-([screen.ts](../js/engine/src/screen.ts), [prefs.ts](../js/engine/src/prefs.ts),
-[app.ts](../js/engine/src/app.ts), [quality.ts](../js/engine/src/quality.ts)).
+[main.rs](../crates/platypus_app/src/main.rs)) and the native script API (`Screen`, `PlayerPrefs`,
+`Application`, `QualitySettings` in `platypus_engine_api`; the `@platypus/engine` TypeScript is deleted).
 
 ## Window modes
 
@@ -51,16 +50,16 @@ window requests try `MaximizedWindow` then `FullScreenWindow`. Scripts can read 
    unknown mode names and sizes below 1 are ignored). The window is created at the resulting size.
    With `resizable: false` in the manifest's `platypus.display`, the window opens at the manifest's
    own size (saved sizes are ignored) and can't be resized (`WindowConfig::resizable`).
-2. `__platypus_info.display` is set before the bundle runs (`display::state`). It holds the settings
+2. The display state is built before the game starts (`display::state`). It holds the settings
    plus `supportedModes`, `resolutions` and `currentResolution`; before the window exists the last
-   two are empty/null and all four modes are listed. It is rebuilt and re-evaluated once the window
-   is ready and after every `screen.set`.
+   two are empty/null and all four modes are listed. It is rebuilt once the window
+   is ready and after every `screen.set`. (The QuickJS `__platypus_info` script that carried it is gone.)
 3. `window_ready` applies a non-windowed mode **before the first frame**, so the window never
    flashes at the wrong size (it is created hidden and shown after its first frame).
-4. At run time `Screen.setResolution(w, h, mode, refreshRate)` sends `screen.set mode width height
-   refreshRate`. The `fullScreenMode` and `fullScreen` setters send a size of 0, so the app picks the
+4. At run time `Screen.setResolution(w, h, mode, refreshRate)` asks the host (`screen.set mode width height
+   refreshRate`). The `fullScreenMode` and `fullScreen` setters send a size of 0, so the app picks the
    monitor's resolution or the last window size (see above). The app applies it, writes what was asked for to the `platypus.display` pref and
-   re-evaluates `__platypus_info.display` with what took effect.
+   rebuilds the display state with what took effect.
 5. **Screenshot runs** (`--screenshot`) stay windowed and never apply a mode, and their prefs are
    kept in memory, so renders are the same every time.
 
@@ -69,8 +68,7 @@ windowed. `display::centered_position` uses the window's outer size and keeps th
 bigger than the monitor. Fullscreen and maximized windows and screenshot runs are left alone (`display::center`,
 `WindowConfig::center`; `M5-DSP-05`). Secondary windows are unchanged.
 
-`Screen.width`/`height` (UI pixels) still come from `__platypus_screen`; `Screen.windowSize` is the
-physical size from `__platypus_info.display`.
+`Screen.width`/`height` (UI pixels, i.e. logical pixels) and `Screen.windowSize` (physical pixels) come from the host's screen state.
 
 ## Third-party notices
 
@@ -155,9 +153,7 @@ Tests: `M9-API-917` (`--crash-dialog <folder>` parses), `M9-API-918` (the dialog
   Otherwise it sets `ControlFlow::Wait` and requests a redraw.
 - The target frame rate is not saved; games keep it in `PlayerPrefs` if players choose it.
 - `lifecycle::frame_cap(target_fps, vsync, screenshot)` makes the interval: `None` unless vsync is off,
-  the rate is above 0 and it is not a screenshot run (`M5-APP-08`). The rate set by scripts goes into
-  `__platypus_info.app.targetFrameRate`, so a full script reload keeps it.
-
+  the rate is above 0 and it is not a screenshot run (`M5-APP-08`).
 ## Startup video-settings prompt
 
 A game can ask the player once, before its window opens, for the window mode, resolution, vsync and quality level. Code:
@@ -195,7 +191,7 @@ edges or maximize button), centred on the screen like the game's, its content a 
   by area. Refresh rates show only for exclusive fullscreen. Windowed lists only sizes smaller than the monitor. The saved size
   is selected, else the nearest. The list takes the wheel, Up/Down/PageUp/PageDown/Home/End, the d-pad and clicks, and scrolls
   the selection into view. Borderless shows the monitor's own size. The pure helpers are in `video_prompt_sizes.ts`
-  (`bun test`).
+  (its Bun test was deleted with the JS test setup).
 - Vsync On/Off (default on).
 - Quality level (default: the saved one, else the manifest's default).
 - Play and Quit. Esc, gamepad B or closing the window is Quit.
@@ -217,9 +213,7 @@ background pause. Apply puts the choice into effect the way scripts would: the w
 `apply_display` (saved as `platypus.display`; not for fixed-size games), then `QualitySettings.setQualityLevel` and
 `vSyncCount` (saved as `platypus.quality` with `playerVSync`), marks the prompt answered and runs the
 `Application.onVideoSettingsChanged` listeners; the game window gets focus back. Cancel, Esc or closing the dialog changes
-nothing. Screenshot and bench runs, a dialog already open and a dialog that fails to start only log a warning. Compiled
-games only (QuickJS games get the call but nothing happens).
-
+nothing. Screenshot and bench runs, a dialog already open and a dialog that fails to start only log a warning.
 Tests: `M9-VSP-01`..`16` (`TESTS.md`).
 
 ## Focus and pausing
@@ -232,9 +226,7 @@ in the background and whether that pauses it.
   window). `App::input` feeds those three into `Lifecycle`.
 - **Pausing** happens in the background unless `runInBackground` is on (`Application.runInBackground`,
   which sends `app.runInBackground`, or `runInBackground` in `project.json`; default off). Screenshot
-  runs never pause. Switching `runInBackground` off while in the background pauses at once. The script
-  value goes into `__platypus_info.app.runInBackground`, which a full reload keeps.
-- `Lifecycle::update` is called from `App::sync_lifecycle` (after each input event and op) and returns a
+  runs never pause. Switching `runInBackground` off while in the background pauses at once.- `Lifecycle::update` is called from `App::sync_lifecycle` (after each input event and op) and returns a
   `Change`: `paused`, `resumed` (with how long the pause lasted) and `report`, the new
   `(focused, paused)` for scripts when either changed.
 - **While paused**, `App::tick` returns early after polling the hot reload watchers: no fixed ticks,
@@ -246,15 +238,14 @@ in the background and whether that pauses it.
   and `FixedClock::restart` makes the first frame count as one tick instead of catching up. `FixedClock`
   turns frame times into fixed ticks (at most `MAX_TICKS_PER_FRAME`, dropping the rest after a hitch).
   The mixer unmutes.
-- **Scripts.** `__platypus_focus(focused, paused)` updates `Application.isFocused` and `isPaused`, then calls
+- **Scripts.** The host (`native_pump.rs`) updates `Application.isFocused` and `isPaused`, then calls
   `onApplicationPause(paused)` on active components when pausing changed, then the `onFocusChanged`
   listeners and `onApplicationFocus(focused)` when focus changed. A throwing listener doesn't stop the
   rest. New scripts after a reload start believing they are focused and running
   (`scripts_restarted`), so the next update tells them the real state.
 
 Tests: `M5-APP-05` (window events), `-06` (muting, in `platypus_audio/tests/audio.rs`), `-07` (`Lifecycle` and
-`FixedClock`), `-08` (the frame cap) and `-09` (manifest and `__platypus_info`) in the app crate; `-10` (the JS
-side) in `js/engine/test/app.test.ts`.
+`FixedClock`), `-08` (the frame cap) and `-09` (manifest) in the app crate (`-10`, the JS side, was removed with QuickJS).
 
 ## PlayerPrefs
 
@@ -270,18 +261,17 @@ and `save`. Values are numbers and strings.
   Names come from the manifest and are made file-name safe. `PLATYPUS_PREFS_DIR` replaces the folder
   (tests, portable installs). With no settings folder, or on screenshot runs, prefs live in memory
   only.
-- **Read.** The app loads the file at startup and puts it in `__platypus_info.prefs`. `prefs.ts` copies
-  it into a map when the engine loads, so reads never cross the boundary. A file that is not a JSON
+- **Read.** The app loads the file at startup and keeps it in a map, so reads do not touch the disk. A file that is not a JSON
   object is ignored with a warning.
-- **Write.** Sets and deletes go to the app as `prefs.set key value`, `prefs.delete key`,
-  `prefs.deleteAll` and `prefs.save`. The file is written on `save()` and when the `App` is dropped
+- **Write.** Sets and deletes go to the app (`prefs.set key value`, `prefs.delete key`,
+  `prefs.deleteAll` and `prefs.save`). The file is written on `save()` and when the `App` is dropped
   (so on exit). `Prefs::save` skips the write when nothing changed and writes through a temporary
   file and a rename, so a crash cannot leave half a file.
 - **Engine keys** start with `platypus.`: `platypus.display` (the window mode and size, a JSON object) and
   `platypus.quality` (the quality level and its current values, a JSON string). `deleteAll` removes
   them too.
-- **Quality.** Every quality or shadow change saves `platypus.quality`. `_applyDefaultQuality`
-  restores it when the engine loads (level by name, then the saved values over that level), without
+- **Quality.** Every quality or shadow change saves `platypus.quality`. The host
+  restores it when the game starts (level by name, then the saved values over that level), without
   writing the starting state back as if the player had chosen it.
 
 ## Multi-window

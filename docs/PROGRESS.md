@@ -31,17 +31,18 @@ next. The plan with every item is [TODO.md](../TODO.md); how the code works is [
   is Rust annotated with `#[platypus_api]`, which also generates the game's TypeScript declarations
   (`types/platypus.d.ts`), so there is no hand-written `.d.ts`. `platypus-build` builds, checks, packages (one `.exe`
   with the game as a payload, its icon and version info; the Platypus icon when a game has none) and benchmarks games.
-- **Benchmarks**: `platypus-build bench` measures every example natively and against its QuickJS original.
-- **QuickJS** (the first script backend) is deprecated: the host refuses a QuickJS bundle unless `--force`. Only the
-  editor still runs on it.
-- **The editor** (M5.e) is in progress: menubar, docking, console, project browser and a Scene view with gizmos; the
-  Inspector, undo / redo and the manual checks of its controls are not done.
+- **Benchmarks**: `platypus-build bench` measures every example natively (the QuickJS comparison was dropped with QuickJS).
+- **QuickJS** (the first script backend) was removed on 2026-10-28: the host runs only compiled games and refuses a
+  QuickJS bundle with a pointer to `platypus-build build`.
+- **The editor** (M5.e): the `platypus_editor` binary is gone with QuickJS; the editor is to be re-made natively in
+  TypeScript at its previous state (menubar, docking, console, project browser, a Scene view with gizmos; no Inspector
+  or undo). The `editor/` sources stay until then.
 - **Platforms**: developed and tested on Windows (Vulkan by default, DX12 optional). Linux and macOS are untested.
 
 ## Benchmarks
 
 Native (`platypus_ts`) against the QuickJS original of each example, release host, windowless, 1280x720, fixed step
-(final run of 2026-10-23, details in [benchmarks.md](benchmarks.md)):
+(final run of 2026-10-23, from before the QuickJS removal; details in [benchmarks.md](benchmarks.md)):
 
 - Script-heavy examples gain the most: raindrop-demo 7.22x, fishtank 5.37x, godrays-room 4.88x, world 4.45x, splines
   3.38x, physics 2.57x; their script time is 20-75x lower. Nothing is slower than QuickJS beyond the noise between runs.

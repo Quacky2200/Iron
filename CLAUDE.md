@@ -1,13 +1,16 @@
 # Platypus
 
-An s&box-like game engine. The core is Rust. Gameplay is TypeScript running in QuickJS, bundled by Bun.
-UI is React through a custom reconciler, drawn by our own renderer. The editor will be built the same
-way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-EVT-01`): `TESTS.md`.
+An s&box-like game engine. The core is Rust. Gameplay is TypeScript compiled to native code by our own
+compiler (`tools/platypus_ts`: oxc, Platypus IR, Cranelift, JIT-loaded by `platypus-app`; no JavaScript
+engine, no Bun). UI is React-style TSX rendered by a native reconciler (`platypus_ui_native`), drawn by our
+own renderer. The editor is being re-made natively in TypeScript by another agent. Full design: `DESIGN.md`.
+Plan and progress: `TODO.md`. Test IDs (e.g. `M3-EVT-01`): `TESTS.md`.
 
-**Core rule: Rust owns the world, JS owns behaviour.**
-- Scripts never hold engine references, only numeric IDs.
-- Scripts talk to Rust through ops (`__platypus_op(name, ...args)`) and batched UI commits (`__platypus_commit(ops)`).
-- Rust calls into JS through `__platypus_*` globals.
+**Core rule: Rust owns the world, scripts own behaviour.**
+- Scripts never hold engine references, only handles (64-bit ids) and value types.
+- Compiled code calls the engine through the `extern "C"` shims `#[platypus_api]` generates (`platypus_api`);
+  the same declarations give the compiler its manifests and TypeScript its `types/platypus.d.ts`.
+- QuickJS (rquickjs) was removed on 2026-10-28; `platypus-app` refuses a QuickJS `game.js`.
 
 ## Layout
 
@@ -15,39 +18,35 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 |---|---|
 | `crates/platypus_core` | `project.rs`: `project.json` (the game's metadata, template variables like `${firstName}`, platform sections, `license`, `renderer` (`vulkan`/`gles`/`cpu`, left out: chosen from the build-time tier; the old `type` warns and is ignored), only `name` is required, other fields default; empty strings warn in build/package; deprecated fallback to `package.json`'s `platypus` section; games need no `package.json`; `platypus-build init` writes one). Shared types: `Value` (crosses the JS boundary), `NodeId`, `Commit`, ops, asset path safety (`resolve_asset`, `decode_data_url`) |
 | `crates/platypus_platform` | winit window + event loop (`Platform`, `PlatformApp`), `InputEvent` conversion, gilrs gamepads |
-| `crates/platypus_script` | `ScriptRuntime` trait + QuickJS backend (rquickjs 0.14), timers prelude, `ComponentHost` (component lifecycle) |
 | `crates/platypus_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`), focus/keys/default actions (`interaction.rs`), drag and drop (`interaction/dnd.rs`) |
 | `crates/platypus_ui/src/tables` | Plain-data tables of what a script can say to the UI: style properties (`PlatypusStyle`: type, doc, group), attributes, elements, event fields / interfaces / `on*` props, React hook signatures. `tools/platypus_ts/src/ui_dts.rs` writes the UI half of `types/platypus.d.ts` and the compiled prelude from them; `platypus_ui` tests check them against `apply_style`, `Attrs::set` and the event layout |
 | `crates/platypus_ui_native` | Native reconciler (re-render semantics, hooks, keyed diff, portals, events) over `UiTree`; see `docs/ui-native.md` |
-| `crates/platypus_math` | `#[platypus_api]` math types (f64, bit-for-bit as `js/engine/src/math.ts`): `Mathf`, `Vector2/3/4`, `Quaternion`, `Matrix4x4`, `Rect`, `Ray`, `Plane`, `Bounds`, `Pose`, `Shapes` (GDI outlines, `outlines.rs`), `Spline` (`spline.rs`); see `docs/platypus-api.md` |
+| `crates/platypus_math` | `#[platypus_api]` math types (f64, bit-for-bit as the old TypeScript `math.ts`): `Mathf`, `Vector2/3/4`, `Quaternion`, `Matrix4x4`, `Rect`, `Ray`, `Plane`, `Bounds`, `Pose`, `Shapes` (GDI outlines, `outlines.rs`), `Spline` (`spline.rs`); see `docs/platypus-api.md` |
 | `crates/platypus_animation` | Animation without a script engine: curves, clips, pose blending (design: `docs/research/platypus-native-animation.md`); the script API is in `platypus_engine_api::animation` |
 | `crates/platypus_kinds` | Registry of component kinds (`register`, `get`, `all`): how the scene loader, `instantiate` and the editor make, save and load components without knowing their classes (placeholders for references) |
 | `crates/platypus_scenes` | Scenes in Rust: `SceneManager`, `Scene`, `Prefab`, `instantiate`, the `platypus.scene` JSON loader/saver (same format as `scenes.ts`), kinds for `Camera` / `Animation` / `Animator`; see `docs/platypus-api.md` |
 | `crates/platypus_engine_api` | `#[platypus_api]` declarations of `Color`, `Time`, `TimeSince`, `TimeSpan` / `DateTime`, `input`, `Random`, `LayerMask`, `Debug` / `Log`, `PlayerPrefs`, `Assets`, `Application` / `SystemInfo`, `Gizmos`, `Camera`, `Screen`, `Window` (windows, families, messages), `QualitySettings`, `Spline` / `SplineAnimate` (`spline.rs`), audio (state per thread, host functions); see `docs/platypus-api.md` |
 | `crates/platypus_render` | wgpu renderer for the draw list, in two halves: a backend-neutral `ui/plan.rs` (draw list to `FramePlan`, `PlanResources`, `glyphs.rs` `GlyphCache`, `image_cache.rs` `ImageCache`; tested without a GPU) and the wgpu executor `UiRenderer` (a `UiBackend`); a GLES renderer for `platypus-app` is to be a second executor: quads, SDF rounded boxes, shadows, blur layers, gradients, images, glyph atlas (swash); `render_overlay` blends UI over the 3D world. `world/` is the 3D pass (`WorldRenderer`, `WorldCamera`, `WorldQuad`). `testing.rs` has golden helpers and a shared test GPU |
-| `crates/platypus_scene` | GameObjects: generational `ObjectId`s, names, enabled/active, parent/children, local `Transform` (glam) and cached world matrices, `take_moved()`; `ScriptScene` runs `scene.*` ops (script ids, engine ids from 2^30) and batches engine moves for `__platypus_scene` |
-| `crates/platypus_physics` | rapier world driven by `physics.*` ops (script-chosen body/collider IDs); `step()` per fixed tick, `take_batch()` → `__platypus_physics(moved, contacts, rays, characters)`. Plane locks (a locked axis plus both turns across it, e.g. every Rigidbody2D) are pinned by Platypus (`set_constraints`, `hold_pins`), not rapier: see Gotchas |
+| `crates/platypus_scene` | GameObjects: generational `ObjectId`s, names, enabled/active, parent/children, local `Transform` (glam) and cached world matrices, `take_moved()`; `ScriptScene` holds the app's scene (script ids, engine ids from 2^30) |
+| `crates/platypus_physics` | rapier world driven by `physics.*` ops (script-chosen body/collider IDs); `step()` per fixed tick. Plane locks (a locked axis plus both turns across it, e.g. every Rigidbody2D) are pinned by Platypus (`set_constraints`, `hold_pins`), not rapier: see Gotchas |
 | `crates/platypus_physics_api` | Native physics API for compiled scripts (`Physics`, `Body`, `Collider`, `RaycastHit`) over `platypus_physics`; `step()` moves attached GameObjects and queues contacts |
-| `crates/platypus_audio` | kira mixer driven by `audio.*` ops: sounds (decoded or streamed), playbacks, buses, spatial emitters; `Mixer` trait over a device or `OfflineBackend`; finished sounds → `__platypus_audio(ended)` |
+| `crates/platypus_audio` | kira mixer driven by `audio.*` ops: sounds (decoded or streamed), playbacks, buses, spatial emitters; `Mixer` trait over a device or `OfflineBackend`; finished sounds are polled by the host |
 | `crates/platypus_app` (panels) | `panels.rs`: world panels (a UI tree + interaction + texture each), camera rays and panel hits; `world_view.rs`: cameras and planes from `render.*` ops; `main.rs` routes the pointer and keys between the screen and panels (`Surface`) |
-| `crates/platypus_app` (native.rs) | The native backend: a game compiled in process by `tools/platypus_ts` (JIT, `build/game.pbundle`) driven per frame and event instead of QuickJS (`Native`); see `docs/platypus-api.md` |
+| `crates/platypus_app` (native.rs) | The native backend: a game compiled in process by `tools/platypus_ts` (JIT, `build/game.pbundle`) driven per frame and event (`Native`); see `docs/platypus-api.md` |
 | `crates/platypus_app` (render_sync.rs, native_render.rs) | The render side of the native backend: registries to `WorldViews` ops each frame, world panels with their own reconciler, cloth, `UiResources`, cursor, screen and quality; see `docs/platypus-api.md` |
 | `crates/platypus_app` (windows.rs) | Secondary windows (`Window.create`): a UI tree, interaction and surface (or offscreen target in screenshot runs) per window, event routing, per-domain dispatch of isolated families, `--screenshot` writing `out-<slug>.png`; the platform side is `platypus_platform/src/windows.rs` + the runner, the API `platypus_engine_api::window`; guide `docs/windows.md` |
 | `crates/platypus_app` (video_prompt.rs) | The optional startup video-settings prompt (`videoSettingsPrompt`, `--video-settings-prompt`): `video_prompt.tsx` run once in a UI-only child process of the same exe (`--video-settings-dialog`, `host::ui_only()`), its answer written to `platypus.display` / `platypus.quality`; see `docs/platform.md`. Vsync is on by default |
-| `crates/platypus_native` | `register_quickjs` / `install`: every native `#[platypus_api]` namespace (math, scene, engine services, scenes, physics, rendering data) installed in a QuickJS context |
 | `crates/platypus_render_gles` | GLES 3 executor of `platypus_render`'s `FramePlan` (`glow`; context through EGL): the light renderer of `platypus-app` for games that are only UI. ANGLE is linked in on Windows (feature `static-angle`, on by default: Mozilla's `mozangle`, EGL + GLES over D3D11, +7 MB per exe; building it needs libclang, see Commands); without the feature EGL is loaded at run time (`PLATYPUS_ANGLE_DIR`, Mesa elsewhere). Quad pass, glyph atlas, images and layers (blur, opacity groups, filters, masks, blend modes, backdrop filters) done and pixel-identical to wgpu in the tests (`M2-GLES-01..13`, which run without any DLL when ANGLE is linked in); `EglContext::window` + `render_overlay`; `platypus-app` draws with it (`gles_gfx.rs`), wgpu fallback (`docs/rendering.md`) |
 | `crates/platypus_render_cpu` | CPU renderer for the UI draw list (`vello_cpu` + `softbuffer`, images decoded lazily at drawn size). An opt-in UI-only renderer of `platypus-app` (`renderer: "cpu"` or `--renderer cpu`, `cpu_gfx.rs`; never chosen automatically); its gaps are in `docs/rendering.md` |
 | `crates/platypus_pack` | Asset packs (`.ppk`): `PackWriter`, `Pack`, `Vfs` over loose folders and packs; design `docs/research/platypus-asset-packs.md` |
-| `crates/platypus_app` | The engine host `platypus-app` (the default of `cargo run -p platypus_app`), the one program for every game. It picks its renderer per run (`host.rs`): `--renderer vulkan\|gles\|cpu`, else `project.json` `renderer`, else the bundle's tier found at build time (`platypus_ts::renderer`: a program that is only UI starts on GLES through the linked-in ANGLE, `gles_gfx.rs`, with no world renderer; one that uses the 2D or 3D world on wgpu with the world renderer; `cpu` is opt-in, `cpu_gfx.rs`). A UI-only start asked for the world shows "3D Not Supported" (`notice.rs`). `platypus-app [game folder] [--screenshot out.png] [--frames N] [--fps\|--no-fps] [--renderer r]`, `platypus-app --licenses` (prints the built-in third-party notices and exits) (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `PLATYPUS_FPS=0` or `"fps": false` in `project.json`). Loads `build/game.pbundle` + `build/game.css` and wires scripts → UI → renderer. `platypus_editor` is a second binary of the same code that runs `editor/` (always with the world) |
-| `js/engine` | `@platypus/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random`; 2D shapes: `LineRenderer2D` (SDF strokes, fills, `sortingOrder`) and `Shapes` (lines.ts), `TextMesh`, `Spline`/`SplineAnimate` (spline.ts), `Gizmos` (gizmos.ts). Transforms reach Rust batched (`flushTransforms` → one `scene.locals` op per script turn) |
-| `js/editor-ui` | `@platypus/editor-ui`: editor components drawn by Platypus's UI (`MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`), logic in plain modules (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) |
-| `editor/` | The editor's UI, run by `platypus_editor` (`crates/platypus_app/src/bin/platypus_editor.rs`, `editor.rs`); see `docs/editor.md` |
-| `js/react` | `@platypus/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
+| `crates/platypus_app` | The engine host `platypus-app` (the default of `cargo run -p platypus_app`), the one program for every game. It picks its renderer per run (`host.rs`): `--renderer vulkan\|gles\|cpu`, else `project.json` `renderer`, else the bundle's tier found at build time (`platypus_ts::renderer`: a program that is only UI starts on GLES through the linked-in ANGLE, `gles_gfx.rs`, with no world renderer; one that uses the 2D or 3D world on wgpu with the world renderer; `cpu` is opt-in, `cpu_gfx.rs`). A UI-only start asked for the world shows "3D Not Supported" (`notice.rs`). `platypus-app [game folder] [--screenshot out.png] [--frames N] [--fps\|--no-fps] [--renderer r]`, `platypus-app --licenses` (prints the built-in third-party notices and exits) (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `PLATYPUS_FPS=0` or `"fps": false` in `project.json`). Loads `build/game.pbundle` (or compiles a `.ts` given directly) + `build/game.css` and wires scripts → UI → renderer; a QuickJS `build/game.js` is refused. |
+| `js/editor-ui` | The old QuickJS editor's components (`@platypus/editor-ui`); not built, kept while another agent re-makes the editor natively (then `js/` goes) |
+| `editor/` | The old QuickJS editor's UI; not built (no `platypus_editor` binary since the QuickJS removal); another agent is re-making the editor natively in TypeScript |
 | `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth`, `sine-circle-demo` and `raindrop-demo` (MiniGameEngine ports), `shapes`, `splines`, `clock` (twelve faces), `fishtank`, `fog` (distance, height fog and light shafts in a misty clearing), `fog-teapots` (the classic distance-fog picture: teapots on a mirrored checkerboard), `fog-raider` (a PS1 tomb with fog a few metres away, its distance on keys), `fog-blocks` (a Minecraft-like hill in sky-blue fog under a cloud deck), `fog-park` (a Victorian London park: pond mist by morning, gas lanterns glowing in the fog by night), `fog-world` (an endless streamed block world: the fog is the render distance, fog culling skips the spare ring), `godrays-forest` (god rays through a forest canopy), `godrays-cell` (god rays through a barred prison window, with dust), `godrays-room` (god rays through a broken roof, a window and shutters into a dusty room, a day passing), `godrays-sunset` (a 25th-floor flat over a city as the sun sets: beams through mullions and blinds, the city's windows lighting up), `godrays-shed` (a craft's green or red scanning beam sweeping a dusty garden shed through its window and plank gaps), `godrays-lift` (a dark hotel corridor: the lift's doors open and its light floods out), `godrays-clouds` (crepuscular rays: the sun through gaps in a high cloud layer over patchwork fields), `light-units` (real-world light units: a 100000 lux courtyard and a lamplit hall, light meter and physical camera), `tunnel` (auto exposure: a road tunnel, dark inside, the exit a white blaze, dazzling on the way out), `dark-room` (eye adaptation: louvred shutters open on a dim bedroom, blinding, then settling, and close again), `emoji` (a spinner wheel picks one of 50 Noto SVG emoji, each with its own show: entrance, signature pose with sprite particles and props, scene, crowd reaction and exit; sounds synthesised by `tools/make_sfx.py`) `postfx` (post-processing: a colonnade with every built-in `PostProcess` effect switchable, depth of field, ink outlines, a custom WGSL pass; `docs/postprocessing.md`), `postfx-look` (stacked looks: noir, dream, comic, old TV, arcade), `postfx-aberration`, `postfx-focus` (depth of field, tilt-shift, blur), `postfx-outline`, `postfx-film` (vignette, grain, grading: one effect or combination each) `flow` (floats: an article with a floated picture and pull-quote, text wrapping around them), `table` (a table from a grid of `display: contents` rows), `article` (floats and a sortable table in one article) `windows` (extra OS windows: owned tools, an isolated Inspector over messages) games (built with `platypus-build build`; each is just a `project.json`, `tsconfig.json` and `src/`, no `package.json`; the `main` ones await porting) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md`. `docs/upstream/` holds reports for upstream projects (the rapier friction issue and PR) |
 | `tools/platypus_build` | `platypus-build` (build/types/assets/dev/check/package/init): module graph (`platypus_ts::modules`) -> `build/game.pbundle` (with the renderer tier, `platypus_ts::renderer`) + `game.css` + assets for a game compiled by platypus_ts, no bun; `init` writes `project.json`, a self-contained `tsconfig.json` and `types/platypus.d.ts`, `init --editor-files <game or folder>` refreshes the last two; see `docs/platypus-build.md` |
 | `tools/platypus_notices` | Writes `THIRD-PARTY-NOTICES.md` (built into `platypus-app --licenses` and `platypus-build package`): `cargo metadata` of the host, licence files from the cargo registry, one section per licence; `hand-written.md` (ANGLE, Inter) verbatim; reviewed allow tables in `tables.rs` |
-| `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
+| `tests/fixtures` | Data for Rust tests (glTF models in `assets/`, `fonts/`, `images/`); `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
 ### UI model
 - **Elements:** `box`, `text`, `span`, `input`, `textarea`, `image`, `list`, `dialog`, `svg` (with SVG
@@ -58,7 +57,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 
 ## Commands
 
-On Windows the shell needs `export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"`, and building `platypus_app` needs
+On Windows the shell needs `export PATH="$HOME/.cargo/bin:$PATH"`, and building `platypus_app` needs
 libclang for the linked-in ANGLE (mozangle's bindgen): set `LIBCLANG_PATH` to an LLVM 20 or newer `bin` folder per command
 (this machine: `export LIBCLANG_PATH='C:\llvm-23.1.4\bin'`; never in a committed file). Without libclang,
 `cargo build -p platypus_app --no-default-features` leaves ANGLE out (GLES then needs `PLATYPUS_ANGLE_DIR`, else wgpu).
@@ -73,19 +72,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 ```bash
-bun test
-```
-```bash
-bun run typecheck
+cd tools && cargo run -p platypus_build -- check ../examples --tsc
 ```
 ```bash
 cd tools && cargo run -p platypus_build -- build ../examples/hello
-```
-```bash
-bun run build
-```
-```bash
-bun run build:fixtures
 ```
 ```bash
 cargo run -p platypus_app -- examples/css --screenshot out.png --frames 30
@@ -107,20 +97,15 @@ Run it whenever `Cargo.lock` changes: `notices_are_current` (`M9-LIC-02`) fails 
 unknown or copyleft licence, or with a licence file inside it, fails until reviewed in `tools/platypus_notices/src/tables.rs`.
 
 - Examples are games compiled by `platypus-build` (no bun, no `node_modules`; engine and UI names are the globals of the generated,
-  git-ignored `types/platypus.d.ts`), so plain `tsc` in an example folder fails with "Cannot find name". `bun run typecheck` checks
-  the real bun packages (`js/*`, `editor`, `tests/fixtures`: `typecheck:js`) and then every example with the generated types
-  (`typecheck:examples` = `cd tools && cargo run -q -p platypus_build -- check ../examples --tsc`).
-  `cd tools && cargo run -p platypus_build -- check ../examples` builds all 20 examples (no `tsc`).
-- `bun run build` builds the editor (`editor/`, still bundled by Bun for QuickJS); `bun run build:fixtures` is the same for
-  `tests/fixtures`.
-- `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
-- Examples: `platypus-build dev <game>` rebuilds on every edit and signals the running `platypus-app` window. `bun run dev` in `editor/`
-  (`scripts/dev.ts`) is the Bun dev build (vendor.js + game.js, React Fast Refresh) that remains for the editor and QuickJS
-  bundles. Other reloads keep state through scene serialization.
+  git-ignored `types/platypus.d.ts`), so plain `tsc` in an example folder fails with "Cannot find name". The `check ../examples --tsc`
+  line builds every example and type-checks it with the generated types (`tsc` from the root `node_modules`: the root
+  `package.json` holds only the `typescript` dev dependency; `npm install` / `bun install` once). Without `--tsc` it only builds.
+- Examples: `platypus-build dev <game>` rebuilds on every edit and signals the running `platypus-app` window; reloads keep state
+  through scene serialization.
 - The `cargo run` line renders a screenshot and exits; check it by eye. `--cook` prepares a
   game's textures and models into `.platypus/cooked/` (git-ignored) and exits.
-- `bun scripts/assets.ts <game folder>` writes `.meta` files (GUIDs, import settings) for new
-  assets; `bun run dev` in `editor/` and `platypus-build assets` / `platypus-build dev` run it.
+- `platypus-build assets <game folder>` writes `.meta` files (GUIDs, import settings) for new
+  assets; `platypus-build dev` runs it too.
 - `bun run screenshots` renders every example to `tests/output/` (git-ignored), next to the
   golden tests' renders (build the examples with `platypus-build` first).
 - Benchmarks: `cargo bench -p platypus_ui --bench restyle` (and the other benches in `crates/platypus_ui/benches`).
@@ -137,12 +122,13 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
 - **Charm font:** it is committed with the `text` and `css` examples (`examples/*/assets/fonts/`, SIL OFL 1.1 with `OFL.txt`, from Google Fonts, credited in their README, source and the root README). The base checkout's `.git/info/exclude` still lists the Charm paths, so a new copy needs `git add -f`. `build/` is ignored.
 - **Code style:** match the surrounding code. Comments are short and say why. Tests are named after behaviour and tagged with their `TESTS.md` ID in a comment.
 - **Notes for agents (speed):** a scan found these make work slow, so avoid them.
-  - **Two levels of checks.** Per step run `cargo fmt`, the new tests, the existing tests of the area you touched (`-p <crate>`, or `cargo test -p platypus_ts_tests --test <lang|stdlib|engine|engine_api|ui> <filter>`), clippy on the crates you edited, and the `generated_dts` guard when declarations change. Run the FULL sweep (root and `tools/` fmt, clippy, `cargo test --workspace`, `PLATYPUS_TS_GC=stress cargo test -p platypus_ts_tests` (all five groups), `platypus_build check ../examples --tsc`, `bun run typecheck`, `bun test`) once at the end of a planned group of work or before a merge, then look at regressions together.
+  - **Two levels of checks.** Per step run `cargo fmt`, the new tests, the existing tests of the area you touched (`-p <crate>`, or `cargo test -p platypus_ts_tests --test <lang|stdlib|engine|engine_api|ui> <filter>`), clippy on the crates you edited, and the `generated_dts` guard when declarations change. Run the FULL sweep (root and `tools/` fmt, clippy, `cargo test --workspace`, `PLATYPUS_TS_GC=stress cargo test -p platypus_ts_tests` (all five groups), `platypus_build check ../examples --tsc`) once at the end of a planned group of work or before a merge, then look at regressions together.
   - **One build command shape.** Use the same command line and environment every time (same flags, `--workspace` or `-p`, `CARGO_INCREMENTAL` unchanged within a session): a different shape changes the build hash and rebuilds everything, leaving stale copies of every crate in `target/`. Never run two cargo builds at once in the shared checkout.
   - **Read big files in parts.** `tools/platypus_ts/src/lower/expr.rs` (about 5,800 lines), `crates/platypus_ui/src/tree.rs`, `platypus_api_macros/src/lib.rs`, `platypus_app/src/main.rs`, `TESTS.md` (326 KB) and `tools/platypus_ts/TODO.md` (long lines are cut off by Read) are huge: use Grep and read ranges, never the whole file. New code goes in a new module rather than growing these files.
   - **Notes stay short.** Keep the "Resume point" of `tools/platypus_ts/TODO.md` to about 30 lines and replace it, don't append; put history in git, not in TODO/NOTES.
   - **Line endings.** Many files are CRLF on disk (`.gitattributes` says LF): use the Edit tool, not shell tools, and do not mass-convert files in a feature commit.
-  - **QuickJS is deprecated** (`--force`): don't spend effort on its parity, and don't add QuickJS-only tests.
+  - **No QuickJS:** it was removed (2026-10-28) with `js/engine`, `js/react` and the JS fixtures; don't bring back
+    JavaScript-engine paths. `editor/` and `js/editor-ui` are another agent's (the native editor re-make): leave them alone.
   - **Disk is tight.** No extra target dirs or worktrees. Prune stale build output with a script that keeps the newest build per crate (old hashes pile up); never run a bare `cargo clean` while another agent builds.
 - **Write clippy-clean code the first time:** write Rust the way `cargo clippy --workspace --all-targets -- -D warnings` wants it (no needless clones, borrows or returns, `is_empty()` over `len() == 0`, `&str`/`&[T]` parameters, `Default` where `new()` takes nothing, no `too_many_arguments`: group them in a struct, and so on) instead of fixing lints after the fact. Declare things once and in the right place (one interface, type or table that others reuse) rather than repeating them. Never silence a lint with `#[allow]` unless a short comment says why.
 - **CSS:** prefer standard CSS over s&box's custom extensions. The CSS parity backlog is TODO.md "M3d".
@@ -167,11 +153,7 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
   `PLATYPUS_FRAME_LATENCY` (1 or 2) sets the queued frames. The default is 1, or 2 on DX12, where 1 made
   resizing jitter.
 - **GPU tests:** use `platypus_render::testing::shared_gpu()`. Creating devices in parallel deadlocks.
-- **Bun CSS:** importing CSS needs `--outdir build --entry-naming "game.[ext]"`.
-  - It emits `game.js` + `game.css`.
-  - Small assets are inlined as `data:` URLs.
-  - Larger ones are copied with hashed names, and their `url()` is relative to the CSS file. The engine rebases them.
-- **Library versions:** cssparser 0.38, selectors 0.41, parley 0.12, taffy 0.15, rquickjs 0.14, edition 2024, Rust 1.99. APIs differ from older docs.
+- **Library versions:** cssparser 0.38, selectors 0.41, parley 0.12, taffy 0.15, edition 2024, Rust 1.99. APIs differ from older docs.
 - **Parley fonts:** after registering a font, Parley needs a fresh `LayoutContext`, or its resolver cache keeps the old fonts.
 - **Screenshot runs open a real window** for a moment, and it takes the user's clicks (a probe in
   `examples/physics` once got 60 extra bodies). Tell the user when a batch of runs is going.
@@ -299,6 +281,8 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
   - One host (2026-10-28): `platypus-app` runs every game, its renderer chosen from the build-time tier
     (`ui` -> GLES through statically linked ANGLE, `world2d`/`world3d` -> wgpu with the world) or `renderer` /
     `--renderer` (`vulkan`, `gles`, `cpu`); `type` is gone; `init` writes tsconfig.json + types (TODO.md).
+  - QuickJS removed (2026-10-28): no rquickjs, `platypus_script`, `platypus_native`, `js/engine`, `js/react`, JS fixtures,
+    `--force` or `platypus_editor` binary; compiled TypeScript is the only backend (TODO.md "QuickJS removed").
   - platypus_ts (another session, branch `claude/recursing-wright-856ffa`, ~106 commits ahead):
     an AOT compiler from TypeScript to native code (oxc → Platypus IR → Cranelift) with a precise
     GC and closures; the zombie sim and the whole SineDemo compile and run natively (M9.b2).
@@ -307,13 +291,13 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
   1. Merge platypus_ts back (from `claude/recursing-wright-856ffa`; history has been rewritten, so
      check its base first; bring it in as linear commits, no merge commits, as with other
      agents' work).
-  2. The editor (M5.e): the manual check of the Scene view controls, an Inspector bound to
+  2. The editor (M5.e), being re-made natively in TypeScript by another agent: the manual check of the Scene view controls, an Inspector bound to
      the scene (`@property` fields), undo/redo, accessibility; then M6 (Script IO).
   - Follow-ups left inside M5.c / M5.d are unticked items there (TAA, refraction, LOD
     cross-fade, morph targets, linked prefabs, cloth self-collision, mobile texture
     formats, ...): later.
-  - "Optimisation fixes" in TODO.md (backdrop blur cost, the reload benchmark, QuickJS
-    allocation in hot maths, batching hundreds of 2D shapes, the rest of the frame) wait until
+  - "Optimisation fixes" in TODO.md (backdrop blur cost, the reload benchmark,
+    batching hundreds of 2D shapes, the rest of the frame) wait until
     they're picked.
   - Also in TODO.md: a canvas UI element embedding the 3D engine in React UI (an Electron
     replacement).

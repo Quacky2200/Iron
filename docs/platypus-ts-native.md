@@ -3,7 +3,8 @@
 This page explains, for readers who were not there, how Platypus's gameplay scripts moved from JavaScript bundled by bun and
 interpreted by QuickJS to TypeScript compiled to machine code by Platypus's own compiler, platypus_ts. It says why, what changed,
 how a game is written now, what the move bought in frame time, and what is still open or unverified. It summarises; the
-details are in the pages it links.
+details are in the pages it links. QuickJS has since been removed from Platypus (2026-10-28); the QuickJS comparisons below were
+measured before that and are kept as the record of the move.
 
 ## Why
 
@@ -43,7 +44,7 @@ details are in the pages it links.
 ### The engine API, declared once
 
 - **`#[platypus_api]`** on a Rust module (`crates/platypus_api_macros`) generates the manifest, the TypeScript declarations,
-  `extern "C"` shims for compiled code and typed QuickJS bindings. Math (`platypus_math`), engine services
+  `extern "C"` shims for compiled code (it also generated QuickJS bindings until they were removed). Math (`platypus_math`), engine services
   (`platypus_engine_api`), scenes (`platypus_scenes`), physics (`platypus_physics_api`) and rendering data (`platypus_render_api`) are
   declared this way. See [platypus-api.md](platypus-api.md).
 - **No hand-written `.d.ts`.** `platypus-build types` writes `types/platypus.d.ts` from the manifests, the UI tables and the
@@ -91,12 +92,12 @@ games these are native Rust:
   `platypus-build package --packs` puts the data files in packs; it is opt-in. See
   `docs/research/platypus-virtual-fs-plan.md` and `docs/research/platypus-asset-packs.md`.
 
-### QuickJS deprecated
+### QuickJS removed
 
-`platypus_app` refuses a QuickJS bundle (`build/game.js` without `game.pbundle`) unless `--force` is given; `platypus_editor`, whose
-own UI is still QuickJS, forces implicitly. Nothing is deleted yet. The removal plan, in order, is in TODO.md
-("QuickJS deprecated; removal plan"): port the editor to platypus_ts, then delete the QuickJS backend of `platypus_script`,
-`platypus_native::register_quickjs`, the `js/` packages and the QuickJS fixtures and bun build paths.
+QuickJS was deleted on 2026-10-28: `platypus_script`, `platypus_native`, `rquickjs`, `js/engine`, `js/react`, the JS fixtures, the
+bun build paths and the `platypus_editor` binary are gone. `platypus_app` refuses a QuickJS bundle (`build/game.js`) with a pointer
+to `platypus-build build`; `--force` no longer exists. The editor is to be re-made natively in TypeScript (TODO.md); `js/editor-ui`
+and `editor/` stay as sources until then.
 
 ## How games differ
 
@@ -253,7 +254,7 @@ remove some or all of that; measurements and options: `docs/research/platypus-ts
   object into the host at package time.
 - **Type checking:** `tsgo` as the optional external checker, or a `platypus-build --check` mode with the compiler's own
   diagnostics for its subset (`docs/research/platypus-ts-type-checking.md`).
-- **Code review pass** after the merge to `main` (TODO.md, "Code review"), and the QuickJS removal steps.
+- **Code review pass** after the merge to `main` (TODO.md, "Code review").
 
 ## Further reading
 

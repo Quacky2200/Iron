@@ -35,8 +35,8 @@ gameplay next to a separate UI toolkit or markup language, so one person can wor
 Why TypeScript, and why a compiler
 ----------------------------------
 
-Platypus started on QuickJS, a small JavaScript interpreter. It is easy to embed, but without a JIT its performance
-is poor, and shipping a JIT runtime (V8, or Bun's JavaScriptCore) inside every game is heavy. The goal was
+Platypus started on QuickJS, a small JavaScript interpreter (removed since). It was easy to embed, but without a JIT its
+performance was poor, and shipping a JIT runtime (V8, or Bun's JavaScriptCore) inside every game is heavy. The goal was
 performance in the range of ahead-of-time compiled C#, so instead of embedding a runtime we wrote a compiler:
 `platypus_ts` turns a typed subset of TypeScript into native code ([docs/platypus-ts-native.md](docs/platypus-ts-native.md)).
 Perhaps it is the first game engine to do this: TypeScript compiled natively as its scripting language, an
@@ -83,7 +83,7 @@ What exists today; the dated overview with a picture of every example is [docs/P
 **Scripting and language**
 - TypeScript compiled natively: classes, closures, generics, async / await and promises, Map / Set, JSON, RegExp,
   template literals, modules (`src/modules/` for copied-in packages), checked by `tsc` against generated declarations.
-- Not yet: a dynamic `any` / `unknown` (designed, not built). QuickJS, the first script backend, is deprecated.
+- Not yet: a dynamic `any` / `unknown` (designed, not built). QuickJS, the first script backend, was removed: compiled TypeScript is the only backend.
 
 **UI and CSS**
 - `box`, `text`, `input`, `textarea`, `image`, `list`, `dialog` and inline `svg` elements; flex and grid layout.
@@ -129,8 +129,8 @@ What exists today; the dated overview with a picture of every example is [docs/P
 
 **Tooling and benchmarks**
 - Screenshot runs and windowless bench runs, golden image tests, a test plan with IDs ([TESTS.md](TESTS.md)).
-- The editor (`platypus_editor`) is in progress: menubar, docking, console, project browser and a Scene view; no
-  Inspector or undo yet.
+- The editor binary is gone until the editor is re-made natively in TypeScript (at its previous feature state: menubar,
+  docking, console, project browser and a Scene view; no Inspector or undo).
 
 **Platforms**
 - Developed and tested on Windows. Linux and macOS are untested.
@@ -138,8 +138,8 @@ What exists today; the dated overview with a picture of every example is [docs/P
 Performance
 -----------
 
-Each example was measured natively and, where one exists, as its QuickJS original in the same release host
-(windowless, 1280x720, fixed step).
+Each example was measured natively and, before QuickJS was removed, as its QuickJS original in the same release host
+(windowless, 1280x720, fixed step; the QuickJS numbers below are from that time).
 Script-heavy examples run up to 7.2x faster natively (raindrop-demo 7.22x, fishtank 5.37x, godrays-room 4.88x, world
 4.45x), with 20-75x less script time; nothing is slower beyond the noise between runs. On a pure script micro-benchmark
 (a game-rules simulation, 10,000 steps) QuickJS takes 391 ms, bun (JavaScriptCore JIT) 36.1 ms and `platypus_ts` 9.1 ms.
@@ -148,7 +148,8 @@ Tables, start-up times and the method: [docs/benchmarks.md](docs/benchmarks.md).
 Quick start
 -----------
 
-Windows, with Rust (1.99 or later) and its MSVC toolchain. Bun is only needed for the editor and the JavaScript tests.
+Windows, with Rust (1.99 or later) and its MSVC toolchain. Bun is only used to run `bun run typecheck` and
+the screenshot script.
 
 ```bash
 # The host (platypus-app.exe, every game) and the build tool. On Windows the host links ANGLE,
@@ -217,8 +218,7 @@ Credits and third-party notices
 and the code it bundles, the Inter font, and every Rust crate in `Cargo.lock`, one section per licence. It ships with
 every exe: the host prints it with `platypus-app --licenses`, and `platypus-build package` writes it beside each
 packaged game. It is generated (`cd tools && cargo run -p platypus_notices`, from `Cargo.lock` and
-`tools/platypus_notices/hand-written.md`); the `M9-LIC-02` test fails when it is out of date. The JavaScript packages
-of the editor and tools carry their licences in their own sources (`bun.lock`).
+`tools/platypus_notices/hand-written.md`); the `M9-LIC-02` test fails when it is out of date.
 
 The Inter font is under the SIL Open Font License (`crates/platypus_ui/fonts/Inter-LICENSE.txt`). The
 `text` and `css` examples ship the Charm font by Cadson Demak, from Google Fonts, under the same licence

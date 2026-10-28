@@ -10,8 +10,7 @@ Design note for `Intl.DateTimeFormat` options (step I3a is built on it): [platyp
 This compiler is the engine's script backend. It compiles a typed subset of TypeScript (games written
 as ordinary classes, functions, components and React UI) to native code, either in process with the
 Cranelift JIT (`platypus_app` loads `build/game.pbundle`, built by `platypus-build`) or to an object file
-(`--aot`). The QuickJS backend ([scripting.md](scripting.md)) is deprecated and runs only with
-`--force`. The move, its results and its limits are in [platypus-ts-native.md](platypus-ts-native.md); the
+(`--aot`). The QuickJS backend was removed (2026-10-28; [scripting.md](scripting.md)): this is the only script backend. The move, its results and its limits are in [platypus-ts-native.md](platypus-ts-native.md); the
 benchmarks are in [benchmarks.md](benchmarks.md). The sections below were written during the spike and
 still describe the design.
 
@@ -25,7 +24,7 @@ cd tools && cargo clippy --workspace --all-targets -- -D warnings
 cd tools && cargo test --workspace
 cd tools && PLATYPUS_TS_GC=stress cargo test -p platypus_ts_tests      # collect at every allocation
 cd tools && cargo test -p platypus_ts_tests --test engine contacts # one area (lang, stdlib, engine, engine_api, ui), one filter
-cd tools && cargo run --release -p platypus_ts_tests --bin bench   # QuickJS vs bun vs native, 10,000 steps
+cd tools && cargo run --release -p platypus_ts_tests --bin bench   # bun vs native, 10,000 steps (the QuickJS column is gone)
 cd tools && cargo run --release -p platypus_ts_tests --bin sine_bench 2000
 ```
 
@@ -1128,13 +1127,13 @@ calls into. Its header comment is the long version.
 | Path | What |
 |---|---|
 | `fixtures/sim.ts`, `sim.test.ts` | A game-rules simulation (678 lines) and its bun tests |
-| `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in QuickJS and bun, not compiled) |
+| `bench/*.ts` | One TypeScript module per language area (`closures`, `loops`, `switches`, `classes`, `inherit` ...); `bench.ts` and `sine_bench.ts` are the JavaScript sides of the benchmarks (run in bun, not compiled) |
 | `bench/engine.ts` | Calls the `Demo` engine API; `build.rs` compiles it with the manifest of [tools/platypus_demo_api](../tools/platypus_demo_api/src/lib.rs) (a small world of entities written with `#[platypus_api]`), whose shims the test binaries link |
 | `bench/scene.ts` | Drives the real scene: `build.rs` compiles it (prefix `scn_`, base 15000) with `platypus_scene`'s manifest (`platypus_scene::api::scene_api::MANIFEST`) and the tests run it against a real `Scene` made current with `platypus_scene::api::enter`; `platypus_ts_tests::scene_anchor()` keeps the `Scene` shims linked |
 | `build.rs` | Compiles `fixtures/sim.ts` and every `bench/<name>.ts` in a list of `(name, prefix, struct_base)` at build time, writes the `.obj` and `<name>_bindings.rs` to `OUT_DIR` and passes the objects to the linker. Each program is cached there under a hash of its (bundled) source, prefix, base, manifests and the build script's own executable (relinked by cargo whenever `platypus_ts` changes), so a bench edit recompiles one program and a compiler edit all of them, in parallel. Build scripts run unoptimised (no `build-override`): `platypus_ts` built once more at `opt-level = 3` cost more than it saved |
 | `src/lib.rs` | One `pub mod` per module that `include!`s its bindings, plus helpers (`root`, `push_f64s`, `gc_mode_from_env`, builders for the sim's state); `demo_api_anchor()` uses `platypus_demo_api` so the linker keeps its shims |
 | `tests/<group>/*.rs` | Five test binaries by area, one file per module: `lang` (language, the bun-compared case files, the JIT), `stdlib` (Math, JSON, RegExp, typed arrays, Date, Intl, Temporal), `engine` (scenes, components, physics, animation, `sim_port` with 13 ported cases, `gc`), `engine_api` (engine services and maths, the facade) and `ui` (UI and windows); `tests/common/cases.rs` (the `//## name` case runner) is shared by `lang` and `engine_api` |
-| `src/bin/{bench,sine_bench}.rs` | The benchmarks: the same work in QuickJS, bun and native code, one checksum for all |
+| `src/bin/{bench,sine_bench}.rs` | The benchmarks: the same work in bun and native code, one checksum for both |
 
 Each language-area test calls the generated functions through the bindings (`ts_<prefix><name>`) inside
 `in_every_gc_mode`, which runs the body normally, with `ts_rt_gc_stress(true)` and with
@@ -1170,7 +1169,7 @@ The generated bindings add `classes() -> Vec<platypus_ts_rt::NativeClass>` (name
 script engine: `spawn(class, object)` (roots the instance, runs `onAwake`), `update(dt, active)` (`onStart` once,
 all `onUpdate`, then all `onLateUpdate`), `fixed_update`, `pre_render`, `destroy`, `destroy_on_objects`. It runs
 `ts_rt_microtasks_run()` after every hook and disables a component whose hook left an exception pending
-(`Fault { id, class, hook }`). Same rules as `platypus_script::ComponentHost`. Not built: `@property` save/load
+(`Fault { id, class, hook }`). Same rules as the removed QuickJS `ComponentHost`. Not built: `@property` save/load
 through `PROPS_<Class>` in the host, `getComponent`/`addComponent`, a message for the fault, `this.transform`.
 Tests `M9-TS-556..561`.
 
@@ -1329,7 +1328,7 @@ The host edits components without a script running. `platypus_ts_rt::NativeHost`
 `go.getComponent(Player)` and `go.addComponent(Player, { speed: 3 })` (also on `this`, through its `gameObject`) are compiler
 intrinsics for classes of the program: the class becomes its struct id, and `ts_rt_component_get` / `ts_rt_component_add_gc` search and
 extend a per-thread registry the host keeps in step. `addComponent` builds the object at once and applies the options; its `onAwake`
-runs when the calling hook returns (the QuickJS host runs it immediately). `getComponent(Base)` finds exact classes only, not subclass
+runs when the calling hook returns (the removed QuickJS host ran it immediately). `getComponent(Base)` finds exact classes only, not subclass
 instances. Tests `M9-TS-601..604`.
 
 `Task.delay(ms)`, `Task.delaySeconds(s)` and `Task.frame()` are a class of TypeScript appended to the program (`prelude::TASK`) over `setTimeout`; the host advances the timers with engine time (`ts_rt_timers_advance`). Test `M9-TS-651`.

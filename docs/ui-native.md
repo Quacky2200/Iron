@@ -2,13 +2,13 @@
 
 Crate: [platypus_ui_native](../crates/platypus_ui_native/src/lib.rs). Design and migration plan:
 [research/platypus-ui-native.md](research/platypus-ui-native.md). Tests: `M2-NAT-01`..`12`
-([reconcile.rs](../crates/platypus_ui_native/tests/reconcile.rs), [native_oracle.test.tsx](../js/react/test/native_oracle.test.tsx)).
+([reconcile.rs](../crates/platypus_ui_native/tests/reconcile.rs); the Bun oracle test against real React, `native_oracle.test.tsx`, was deleted with `js/react`).
 
 A component is a function from hooks to an `Element` description (plain data). A `Runtime` keeps an instance tree
 parallel to the descriptions, diffs each new description against it and applies typed ops
-(`platypus_ui::opcodes::Op`, [ui-tree.md](ui-tree.md#typed-ops)) to a `UiTree` as one batch per update. React stays as it is
-(`@platypus/react`); both draw into the same `UiTree`, so give the runtime a node-id range the script side does not use
-(`Runtime::new(first_node)`).
+(`platypus_ui::opcodes::Op`, [ui-tree.md](ui-tree.md#typed-ops)) to a `UiTree` as one batch per update. It is the only
+UI runtime: the QuickJS `@platypus/react` reconciler was deleted. A `Runtime` takes a node-id range
+(`Runtime::new(first_node)`) so several can draw into one `UiTree` (screen UI and world panels).
 
 | Piece | What it does |
 |---|---|
@@ -30,7 +30,7 @@ fields, hot-reload state, and wiring into `platypus_app` (another session's area
 
 `crates/platypus_ui/src/tables` lists the style properties (with their TypeScript types and docs), attributes, elements, event fields and `on*` props. Compiled games read them in three places: `tools/platypus_ts/src/ui_dts.rs` prints `PlatypusStyle`, `PlatypusProps`, the event interfaces and `JSX` into the generated `types/platypus.d.ts`; the same file writes the compiled prelude (`StyleEntry`, and the `UiEvent` class whose fields read `Ui.evNum(slot)` / `Ui.evStr(slot)`); `lower/jsx.rs` turns an `on*` prop into the event type the table names (`onChange` listens to `input`, `onFocus` to `focusin`). `crates/platypus_ui/tests/ui_tables.rs` keeps the tables honest against `apply_style`, `Attrs::set`, `UiEvent::script_args` and `EventKind` (every `EventKind` has an `on*` prop or is listed in `NOT_EXPOSED` with a reason; `EventKind::ALL` is checked for completeness; the props equal `HANDLERS` of `js/react/src/events.ts`).
 
-**Events from the interaction layer.** `platypus_ui_native::event_of(&UiEvent)` turns what `Interaction` sends into the `Event` the handlers get: the numbers and strings are the ones `script_args` gives QuickJS (slots in `tables/events.rs`), and it bubbles unless the type is in `NON_BUBBLING` (`pointerenter`, `pointerleave`, `scroll`, `cancel`, `close`); a non-bubbling event still runs its target's own handlers. The event props and their payloads (the `PlatypusEvent` interfaces):
+**Events from the interaction layer.** `platypus_ui_native::event_of(&UiEvent)` turns what `Interaction` sends into the `Event` the handlers get: the numbers and strings are the ones `script_args` lays out (slots in `tables/events.rs`), and it bubbles unless the type is in `NON_BUBBLING` (`pointerenter`, `pointerleave`, `scroll`, `cancel`, `close`); a non-bubbling event still runs its target's own handlers. The event props and their payloads (the `PlatypusEvent` interfaces):
 
 | Props | Event types | Interface and fields |
 |---|---|---|

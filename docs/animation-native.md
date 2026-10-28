@@ -1,7 +1,7 @@
 # Native animation (`platypus_animation`)
 
 Animation without a script engine. Design and review: [research/platypus-native-animation.md](research/platypus-native-animation.md).
-Behaviour and numbers follow `js/engine/src/animation.ts`, which stays as the oracle for the tests.
+This is the only implementation: the TypeScript one (`js/engine/src/animation.ts`) was deleted with QuickJS.
 
 ## Crates
 
@@ -9,7 +9,7 @@ Behaviour and numbers follow `js/engine/src/animation.ts`, which stays as the or
   (`bind.rs`), pose blending (`pose.rs`), the `Animation` component (`player.rs`), controller data (`controller.rs`), the
   `Animator` (`animator.rs`), culling (`culling.rs`), bench timers (`profile.rs`) and the property registry (`registry.rs`).
   No script engine in it.
-- `crates/platypus_engine_api/src/animation.rs`, `animator.rs`: the script API (`#[platypus_api]`), for compiled code and QuickJS.
+- `crates/platypus_engine_api/src/animation.rs`, `animator.rs`: the script API (`#[platypus_api]`), for compiled code.
 
 ## Frame
 

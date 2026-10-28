@@ -2,7 +2,7 @@
 
 Crates: [platypus_platform](../crates/platypus_platform/src) (OS input),
 [platypus_ui](../crates/platypus_ui/src) (`events.rs`, `interaction.rs`, hit testing in `tree.rs`), glue in
-[platypus_app/main.rs](../crates/platypus_app/src/main.rs), JS side in [react.md](react.md). Test plan:
+[platypus_app/main.rs](../crates/platypus_app/src/main.rs), the script side in [ui-native.md](ui-native.md) (`react.md` describes the deleted QuickJS reconciler). Test plan:
 M3-EVT-* in [TESTS.md](../TESTS.md).
 
 ## End to end
@@ -15,7 +15,7 @@ flowchart LR
   H --> P[Pointer: hover/active/click]
   H --> F[focus, Tab, keys, scroll]
   P & F -->|UiEvent| D[dispatch callback]
-  D -->|call_global __platypus_ui_event| JS[dispatchUiEvent: capture then bubble]
+  D -->|platypus_ui_native::event_of| JS[native reconciler: capture then bubble]
   JS -->|defaultPrevented| D
   D -->|prevented?| H
   H -->|default actions| T[UiTree state / focus / scroll]
@@ -65,7 +65,7 @@ need no `image`. A rejected image is logged and skipped.
 
 `App::input` maps `InputEvent` to `platypus_ui::Input` and calls `handle_ui`:
 
-- Positions are divided by `App::scale()`, the window DPI factor times the [UI scale](#ui-scale-m3d-step-9b) (UI pixels). `Lines` wheel deltas are
+- Positions are divided by `App::scale()`, the window DPI factor (UI pixels are logical pixels; there is no UI scale). `Lines` wheel deltas are
   multiplied by `WHEEL_LINE` (40 px), touchpad pixels are divided by scale.
 - Buttons become DOM numbers via `dom_button` (0 left, 1 middle, 2 right, 3/4 back/forward).
   `PointerDown` carries `time_ms` (engine clock) for double-click detection.
@@ -82,17 +82,17 @@ need no `image`. A rejected image is logged and skipped.
   `.ico` of type 2 whose hotspot sits where `.ico` keeps colour planes). The hotspot is the CSS one,
   else the file's own, else the top-left corner. Images are scaled for the window's DPI and ones
   over `MAX_CURSOR_SIZE` (128px) are rejected.
-- `dispatch(scripts, enabled, event)` calls `__platypus_ui_event(...)` with `UiEvent::script_args()` via
-  `call_global`; it returns `true` only if the JS result is `Bool(true)`, i.e. a handler called
-  `preventDefault()`. JS errors are logged and treated as "not prevented". If the game has no
-  `__platypus_ui_event`, nothing is dispatched but built-in behaviour (hover, focus, Tab) still works.
+- The native backend (`native.rs`) turns each `UiEvent` into an `Event` with `platypus_ui_native::event_of` and runs the
+  compiled handlers (capture then bubble); it returns `true` only if a handler called `preventDefault()`. If the game
+  has no handlers, nothing is dispatched but built-in behaviour (hover, focus, Tab) still works. (The QuickJS
+  `__platypus_ui_event` call is gone; `UiEvent::script_args()` stays as the shared payload layout.)
 - `KeyDown` forwards `text` (what the key types). `InputEvent::Ime` becomes `Input::ImePreedit` or
   `Input::ImeCommit`; `Ime::Disabled` becomes an empty `ImePreedit` (ends composing).
 - After each `handle_ui`, `Interaction::take_clipboard()` is serviced and `update_ime` runs (see
   [Text fields](#text-fields-m3c-step-5)); `frame()` also calls `UiTree::set_time(now_ms)` (caret
   blink) and `update_ime` (the caret may have moved with layout).
-- Script ops `focus`, `blur` (and `scrollTo`, `scrollBy`, `scrollIntoView`, which take a behavior string as 4th arg and map to `Input::ScrollTo/ScrollBy/ScrollIntoView`) are
-  turned into `Input` values in `App::tick`. At the end of each tick the app sends `Input::Refresh`.
+- Script requests `focus`, `blur`, `scrollTo`, `scrollBy`, `scrollIntoView` (a behavior string as 4th arg) become
+  `Input::Focus/Blur/ScrollTo/ScrollBy/ScrollIntoView` in `App::tick`. At the end of each tick the app sends `Input::Refresh`.
 
 ## Hit testing ([tree.rs](../crates/platypus_ui/src/tree.rs) `hit_test`)
 
@@ -162,7 +162,7 @@ click count, wheel deltas, modifiers, key/code/repeat, focus `related`, optional
 `script_args()` builds `[type, path, data, strings?]` where `data` is a fixed-order number array:
 `[x, y, button, buttons, detail, deltaX, deltaY, modifiers, repeat, related, scrollLeft, scrollTop,
 scrollWidth, scrollHeight, clientWidth, clientHeight]`, with `strings = [key, code]` for keyboard
-events and `[value]` for `input` events (`UiEvent.value`). [events.ts](../js/react/src/events.ts) decodes by index, so both must change together.
+events and `[value]` for `input` events (`UiEvent.value`). The native `event_of` decodes by index (slots in `tables/events.rs`), so both must change together.
 
 ## `Interaction` ([interaction.rs](../crates/platypus_ui/src/interaction.rs))
 
@@ -216,8 +216,8 @@ the keyword is the fallback. Bad lists are rejected like other invalid values.
 
 ### Script cursor (M5.a2)
 
-Scripts' `Cursor` ([cursor.ts](../js/engine/src/cursor.ts), Unity's names) sends `cursor.*` ops, handled
-by `App::cursor_op` into a `ScriptCursor { visible, lock, image }`:
+Scripts' `Cursor` (Unity's names; the native `Cursor` API of `platypus_engine_api`) sets a `ScriptCursor { visible, lock, image }`
+through the `cursor.*` requests of `App::cursor_op`:
 
 - `cursor.visible bool` hides or shows the OS cursor over the window.
 - `cursor.lock none|locked|confined` calls `set_cursor_grab` (`apply_cursor_lock`). `Locked` hides the
@@ -358,11 +358,11 @@ at its first poll (some `gilrs` backends send no `Connected` for them); `announc
   (`convert_gamepad` returns `None`).
 
 ### To scripts
-`App::input` handles `Gamepad` events first and returns early. It calls `__platypus_input` (only if the
-bundle defines it; `App.game_input`) with `game_input::script_args(id, event)`
-([game_input.rs](../crates/platypus_app/src/game_input.rs)):
+`App::input` handles `Gamepad` events first and returns early. It gives them to the native backend
+(`Native::game_input`) with the layout of `game_input::script_args(id, event)`
+([game_input.rs](../crates/platypus_app/src/game_input.rs)); the `__platypus_input` JS call is gone:
 
-| Event | `__platypus_input` args |
+| Event | Arguments |
 |---|---|
 | connected | `"gamepadconnected", id, name` |
 | disconnected | `"gamepaddisconnected", id` |
@@ -375,8 +375,8 @@ bundle defines it; `App.game_input`) with `game_input::script_args(id, event)`
 Key events are forwarded after the UI has handled them, **except while a text field has focus**
 (`UiTree::is_editor`): typed keys stay the field's. Focus loss always sends `blur`.
 
-### `input` in `@platypus/engine`
-[input.ts](../js/engine/src/input.ts) installs `__platypus_input` and keeps the state:
+### `input` (native API)
+The native `input` of `platypus_engine_api` (the `input.ts` of `@platypus/engine` is deleted) keeps the state:
 
 - `input.isKeyDown(code)` by physical `code` (`"KeyW"`).
 - `input.gamepads()`, `input.gamepad(id)`: connected pads as `Gamepad { id, name, connected,
@@ -384,15 +384,15 @@ Key events are forwarded after the UI has handled them, **except while a text fi
 - `input.isButtonDown(name)`: any connected pad holds it (value above 0.5).
 - `input.on(type, fn)` returns an unsubscribe function. Types: `keydown`, `keyup`,
   `gamepadconnected`, `gamepaddisconnected`, `gamepadbuttondown`, `gamepadbuttonup` (fired when a
-  value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run. Compiled games take the same kinds and event fields (`InputEvent`; see `platypus-api.md`).
+  value crosses 0.5), `gamepadaxis`. A throwing listener is logged and the rest still run. The event fields are `InputEvent` (see `platypus-api.md`).
 - `blur` clears held keys and zeroes pad buttons, since the releases may never arrive.
 
 ### The mouse for gameplay (M5.a2)
 
-`App::input` also sends the mouse to scripts through `__platypus_input`, **before** and whatever the UI
+`App::input` also sends the mouse to the game's `input`, **before** and whatever the UI
 does with it (so game code sees clicks over UI too; check the UI state yourself if that matters):
 
-| Event | `__platypus_input` args |
+| Event | Arguments |
 |---|---|
 | move | `"mousemove", x, y` (UI pixels: window pixels divided by `App::scale()`) |
 | button down / up | `"keydown", "MouseLeft" \| "MouseRight" \| "MouseMiddle" \| "Mouse<n>", "", false` and `"keyup", code, ""` |
@@ -402,7 +402,7 @@ does with it (so game code sees clicks over UI too; check the UI state yourself 
 Raw `MouseMotion` events return after this and never reach the UI. Mouse buttons are ordinary keys in
 the script's key state, so `input.isKeyDown("MouseLeft")` works.
 
-[input.ts](../js/engine/src/input.ts) keeps `mousePosition`, and accumulates `mousedelta` and `wheel`
+The `input` state keeps `mousePosition`, and accumulates `mousedelta` and `wheel`
 into pending sums that roll over once per tick with the key press sets, so `mouseDelta` and
 `mouseScrollDelta` are this tick's totals. `mouseDelta` has y **up** positive (raw device y is down).
 `getMouseButton(n)`, `getMouseButtonDown(n)` and `getMouseButtonUp(n)` use Unity's numbers (0 left,
@@ -416,7 +416,7 @@ sensitivity), and `"Mouse ScrollWheel"` is the wheel's y times `0.1`. Lock the c
 with hysteresis (pushed at |v| >= 0.6, released below 0.3, so one push moves once; the y axis is
 up-positive; state is per pad and axis and dropped on disconnect). The app only sends these to
 `handle_ui` while `Interaction::focused()` is set, so the d-pad stays the game's until UI takes
-focus (e.g. a menu calling `ref.focus()`). The event is still sent to `__platypus_input` either way.
+focus (e.g. a menu calling `ref.focus()`). The event is still sent to the game's `input` either way.
 
 `nearest_in_direction(tree, from, direction)` ([interaction.rs](../crates/platypus_ui/src/interaction.rs))
 considers the elements in `tab_order`, keeps those whose centre lies that way (more than 0.5 px
@@ -457,36 +457,26 @@ the side. The lowest score wins; there is no wrap-around.
 **App side.** `platypus_platform` turns winit's `HoveredFile`, `DroppedFile` and
 `HoveredFileCancelled` into `InputEvent::FileHovered/FileDropped/FileHoverCancelled` (one per
 file). [file_drop.rs](../crates/platypus_app/src/file_drop.rs) gathers them and, once a frame
-(`pump_file_drag`, after `EditorHost::pump`), sends the screen's UI `FileDragEnter`, then
+(`pump_file_drag`), sends the screen's UI `FileDragEnter`, then
 `PointerMove`s while the cursor moves, then `FileDrop` or `FileDragCancel`. Windows sends the
 window no cursor moves during a drag from another program, so the position comes from
 `platypus_platform::cursor_in_window` (`GetCursorPos`); elsewhere it is the last pointer position.
-Dropped paths are also given to `EditorHost::allow_sources` (see [editor.md](editor.md)).
+(The editor host that used to receive the dropped paths is gone.)
 
-**Scripts.** [events.ts](../js/react/src/events.ts) maps the seven events to `onDragStart`,
+**Scripts.** The native reconciler maps the seven events to `onDragStart`,
 `onDrag`, `onDragEnter`, `onDragOver`, `onDragLeave`, `onDrop` and `onDragEnd` (all bubble;
 `drag` and `dragover` have continuous priority). `PlatypusDragEvent` (a pointer event) has
 `dataTransfer: PlatypusDataTransfer` and, for `dragend`, `dropped`. The transfer of an element drag
-is one JS object from `dragstart` to `dragend` (`setData`/`getData`/`clearData`/`types`,
+is one object from `dragstart` to `dragend` (`setData`/`getData`/`clearData`/`types`,
 `dropEffect`, `effectAllowed`, `setDragImage`); for system files a transfer is made from the
 paths, with `files: { path, name }[]` and `"Files"` in `types`. The data never crosses to Rust.
-Compiled games read the same fields from the prelude class `UiDataTransfer` (see
+Games read the fields from the prelude class `UiDataTransfer` (see
 [ui-native.md](ui-native.md)); `PlatypusDragEvent` is in the generated declarations with `PlatypusDataTransfer`
 and `PlatypusDroppedFile`.
 
-## UI scale (M3d step 9b)
+## UI scale (removed)
 
-Screen UI can be laid out in "UI pixels" that the engine draws bigger or smaller, so a menu designed
-for 1080p fills a 4K window the same (s&box `ScreenPanel` scaling). Scripts set it with
-`setUiScale` in `@platypus/engine`, which sends the `uiScale` op.
-
-- [ui_scale.rs](../crates/platypus_app/src/ui_scale.rs): `UiScale` is `None`, `Fixed(f)`, `Height(h)`
-  (the window is `h` UI pixels high) or `Fit(w, h)` (the design fits inside the window).
-  `factor(width, height)` gives logical pixels per UI pixel, clamped to 0.25..8 so a tiny window
-  stays readable and a huge factor does not blow up the glyph atlas; a non-finite or non-positive
-  result falls back to 1. `from_op` parses the op arguments; bad ones are warned about in `tick()`.
-- `ui_factor(window, ui_scale)` in main.rs returns physical pixels per UI pixel (DPI times the
-  UI factor). It sets the layout size (`set_size`), the render target's `scale`, pointer and wheel
-  positions (`App::scale()`), and the IME cursor area (converted back to the window's logical
-  pixels).
-- Tests: M3-GAME-02 (`ui_scale.rs` units, `js/engine/test/engine.test.ts`).
+The QuickJS-only `setUiScale` (`ui_scale.rs`, the `uiScale` op) is gone. UI pixels are logical pixels: the window
+DPI factor is the only scale (`App::scale()`), used for the layout size, the render target's `scale`, pointer and wheel
+positions and the IME cursor area. A game that wants a resolution-independent HUD sizes it in CSS (`vh`, `zoom`).
+`M3-GAME-02` was removed with it.

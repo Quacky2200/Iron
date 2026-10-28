@@ -4,7 +4,10 @@ Code: [platypus_render/src/world](../crates/platypus_render/src/world/mod.rs) (t
 [platypus_app/world_view.rs](../crates/platypus_app/src/world_view.rs) (cameras and planes from scripts),
 [platypus_app/panels.rs](../crates/platypus_app/src/panels.rs) (world panels), the drawing and input routing
 in [platypus_app/main.rs](../crates/platypus_app/src/main.rs), and
-[rendering.ts](../js/engine/src/rendering.ts) on the script side. Milestones M5.a and M5.a2. Objects and
+`render_sync.rs` / `native_render.rs` (native registries turned into `WorldViews` ops each frame). The old
+script side (`js/engine/src/rendering.ts` and the other `@platypus/engine` files, `render.*` ops sent through
+`__platypus_op`, the `__platypus_*` calls back into JS) was deleted with QuickJS on 2026-10-28; the `render.*` ops
+below are now the internal vocabulary between the native registries and `WorldViews`. Milestones M5.a and M5.a2. Objects and
 components are in [scene-and-objects.md](scene-and-objects.md); the 2D UI renderer is in
 [rendering.md](rendering.md). Textures, sprites and glTF models are in
 [assets-and-models.md](assets-and-models.md); particles are in [particles.md](particles.md).
@@ -414,8 +417,8 @@ The HDRP-style settings are in `AutoExposure`; the state is per camera.
 - **Read-back.** After submit, `after_submit` maps each eye's staging buffer (`device.poll(Poll)`); `collect`
   reads them next frame into `ExposureReading { ev, scene_ev }` (the EV100 in use, and how bright it metered;
   NaN before the first). `WorldRenderer::exposure(key)` and `reset_exposure(key)` expose them. When a camera's
-  values change, the app calls `__platypus_exposure(id, ev, sceneEv|null)`, which sets `Camera.exposure` and
-  `Camera.sceneBrightness`. `Camera.resetExposure()` sends `render.exposureReset id`; `WorldViews` queues it
+  values change, the app sets `Camera.exposure` and
+  `Camera.sceneBrightness` (natively; the `__platypus_exposure` JS call is gone). `Camera.resetExposure()` sends `render.exposureReset id`; `WorldViews` queues it
   and the app applies it. Test `M7-EXP-05`.
 - **Script settings.** `RenderSettings.autoExposure` is `{ minEV, maxEV, compensation, speedDarkToLight,
   speedLightToDark, metering ("average" | "centerWeighted" | "spot"), lowPercent, highPercent, darkAdaptation,
@@ -565,7 +568,7 @@ whose camera shows it (`Camera.fog`, `render.camera` argument 17, on by default;
   counted in `WorldStats::fog_culled`. Height fog and fog volumes never cull. With a background unlike the
   fog colour, culled things would have been fog-coloured silhouettes, so turn culling off there.
   Scripts read `RenderStats` (`meshes`, `culledMeshes`, `quads`, `culledQuads`, `fogCulled`, `lights`,
-  `culledLights`, `shadowMaps`, `shadowCasters`); `main.rs` calls `__platypus_render_stats` with them each frame they change.
+  `culledLights`, `shadowMaps`, `shadowCasters`); the host hands them to the native `RenderStats` each frame they change.
 - **Left clear.** The editor grid and gizmo lines.
 
 `examples/fishtank` uses linear fog for its depth haze. `examples/fog` is a misty clearing with a pergola
@@ -579,7 +582,7 @@ culling drew 45-50 meshes against 65-73 (16-20 hidden by fog), about 2.2 against
 
 ## Render textures
 
-A `RenderTexture(width, height)` ([textures.ts](../js/engine/src/textures.ts)) is a `Texture` that
+A `RenderTexture(width, height)` is a `Texture` that
 cameras draw into. It sends `render.renderTexture id width height` (`setSize` sends it again; up to 16384
 texels); the app calls `WorldRenderer::set_render_texture`, which makes a `RENDER_TEXTURE_FORMAT`
 (`Rgba8UnormSrgb`) texture kept under that id. Materials, sprites and quads show it like any asset
@@ -620,8 +623,7 @@ Screenshot runs and window frames both go through `draw_frame`.
 ## Components from scripts
 
 `Camera`, `PlaneRenderer`, `MeshRenderer`, `Light`, `SpriteRenderer`, `ParticleSystem`, `Mirror`,
-`ReflectionProbe`, `LODGroup` and `WorldPanel` are components in `@platypus/engine` ([rendering.ts](../js/engine/src/rendering.ts),
-[textures.ts](../js/engine/src/textures.ts), [particles.ts](../js/engine/src/particles.ts)). They send
+`ReflectionProbe`, `LODGroup` and `WorldPanel` are native components (`platypus_render_api`). They reach the renderer as
 `render.*` ops keyed by the component id, and `WorldViews`
 ([world_view.rs](../crates/platypus_app/src/world_view.rs)) stores them in one map per kind.
 
@@ -659,7 +661,7 @@ The component re-sends its op when a property changes. The defaults are a dark c
 `MeshRenderer` takes a primitive name or a `Mesh` and a `Material` (`color`, `emission`, `smoothness`,
 `metallic`, `unlit`, `mainTexture`, tiling; `Material.create` and `with` take named settings, and
 `withColor` and `withTexture` make copies; see [assets-and-models.md](assets-and-models.md#materials-and-meshes)). `Mesh.create` sends script
-data (`Mesh.createFlat` does too, from flat arrays). `GameObject.createPrimitive(type)` ([primitives.ts](../js/engine/src/primitives.ts)) makes an
+data (`Mesh.createFlat` does too, from flat arrays). `GameObject.createPrimitive(type)` makes an
 object with the matching mesh and collider.
 
 `WorldViews::views(scene, size, extra)` runs every frame, after `update_world`:
@@ -679,7 +681,7 @@ object with the matching mesh and collider.
 
 Components on destroyed objects are dropped by `forget_objects`.
 
-A `Camera` has `sceneGrid` (default off, not saved with scenes), and `Gizmos` ([gizmos.ts](../js/engine/src/gizmos.ts)) is
+A `Camera` has `sceneGrid` (default off, not saved with scenes), and `Gizmos` is
 Unity's immediate-mode line drawing: `color`, `matrix`, `drawLine`, `drawRay`, `drawWireCube`,
 `drawWireDisc`, `drawWireSphere` and `drawFrustum` append world-space segments (through `matrix`, in
 `color`) to one list, `lineCount` reads it, `clear()` drops it, and `present(camera)` sends it as
@@ -688,18 +690,18 @@ with nothing drawn clears them. Unlike Unity, nothing calls `OnDrawGizmos`: the 
 and presents it each frame (see [editor.md](editor.md#the-scene-view)). `Camera.main` skips cameras whose
 object has `HideFlags.HideInHierarchy`.
 
-`LineRenderer2D` ([lines.ts](../js/engine/src/lines.ts)) draws thick lines on the object's local XY plane:
+`LineRenderer2D` draws thick lines on the object's local XY plane:
 `points`, `width`, `color` and `loop`, plus `fillColor` (null: no fill), `fillRule` (`evenodd` by default,
 or `nonzero`) and `sortingOrder` (higher draws over lower, equal ones in creation order; sprites and text show over shapes). A fill always closes the shape, and a `width` of 0 leaves just the fill. It sends the points
 flat at most once per frame (in `onPreRender`) and sends `render.remove` when destroyed.
 
-`Shapes` ([shapes.ts](../js/engine/src/shapes.ts)) makes points for `LineRenderer2D`, after GDI's drawing calls:
+`Shapes` makes points for `LineRenderer2D`, after GDI's drawing calls:
 `rectangle`, `roundedRectangle`, `ellipse`, `circle`, `arc`, `pie`, `regularPolygon`, `polygon`, `triangle`,
 `bezier`, and the cardinal splines `curve` and `closedCurve` (tension 0.5 is Catmull-Rom). They lie on the XY
 plane with y up, and angles are in degrees counter-clockwise from +x. Closed shapes do not repeat the first
 point: set `loop`, or add a `fillColor`.
 
-`Spline` and `SplineAnimate` ([spline.ts](../js/engine/src/spline.ts)) are the core of Unity's Splines (`M5-SPL-01`). A
+`Spline` and `SplineAnimate` are the core of Unity's Splines (`M5-SPL-01`). A
 `Spline` is a list of knots (`position`, `tangentIn`, `tangentOut`, `mode`); every segment is a cubic Bezier.
 A knot's `TangentMode` is `auto` (a cardinal spline through its neighbours: a third of `tension` times the chord
 across the knot, so 0.5 is Catmull-Rom like GDI's curves), `bezier` (its own handles, relative to the knot) or
@@ -720,7 +722,7 @@ They have no Rust side.
 ## Coordinates
 
 - Right-handed, +y up. A camera looks down its **-z**. Projections have depth 0 to 1
-  (`glam::camera::rh::proj::directx`), and `Matrix4x4` in `@platypus/engine` matches, so a camera's matrices
+  (`glam::camera::rh::proj::directx`), and `Matrix4x4` in `platypus_math` matches, so a camera's matrices
   in TypeScript equal what the renderer uses.
 - A quad faces +z. A panel's top-left corner is at (-w/2, +h/2) in its object's space.
 - **Screen points are top-left UI pixels**: the window's pixels divided by the DPI scale and the UI
@@ -741,12 +743,10 @@ const panel = menu.addComponent(WorldPanel, { width: 640, height: 400, pixelsPer
 createRoot(panel).render(<Menu />);
 ```
 
-**Commit targets.** `createRoot(target)` ([react.md](react.md#createroot)) gives the panel its own React
-root whose commits carry the component id: `__platypus_commit(ops, target)`. QuickJS stores each commit
-with its target, and `ScriptRuntime::drain_targeted_commits` returns `(target, Commit)` pairs. Target 0
-is the screen. `App::apply_script_output` routes each commit to the screen tree or to
-`Panels::get_or_create(target, ...)`, which makes the panel's tree on the first commit (commits can
-arrive before `WorldPanel.onStart` sends `render.panel`).
+**Panel roots.** `createRoot(panel)` gives the panel its own native reconciler (`platypus_ui_native::Runtime`)
+whose ops go to the panel's tree, keyed by the component id; the screen is target 0. (The QuickJS commit
+targets, `__platypus_commit(ops, target)`, `ScriptRuntime::drain_targeted_commits` and `App::apply_script_output`
+are gone.) `Panels::get_or_create(target, ...)` makes the panel's tree on first use.
 
 **Panel trees.** Each `Panel` has its own `UiTree` and `Interaction` (hover, focus, scroll state):
 
@@ -757,7 +757,7 @@ arrive before `WorldPanel.onStart` sends `render.panel`).
 - Size, `pixelsPerMeter` (default 500), `resolution` (default 2, clamped 0.25 to 4) and `tint` come
   from `render.panel`. Size is clamped to at least 1 UI pixel.
 
-**TextMesh.** A `TextMesh` ([text-mesh.ts](../js/engine/src/text-mesh.ts)) is text in the world with no React
+**TextMesh.** A `TextMesh` is text in the world with no React
 root: `text`, `fontSize`, `color`, `font`, `fontWeight`, `alignment`, `maxWidth`, `pixelsPerUnit` (default 100)
 and `resolution`. It sends `render.text` at most once per frame and `render.remove` when destroyed.
 `Panels::apply_text` makes a panel (not interactive) and builds its UI tree in Rust: one absolutely
@@ -809,7 +809,7 @@ tree and interaction.
 
 Every GameObject has a `layer` from 0 to 31 (`GameObject.layer`, op `scene.layer id n`, default 0;
 `ScriptScene::layer` reads it, 0 for unknown ids). `LayerMask`
-([layers.ts](../js/engine/src/layers.ts)) names layers: Unity's built-ins (0 Default, 1 TransparentFX,
+(the `LayerMask` API) names layers: Unity's built-ins (0 Default, 1 TransparentFX,
 2 Ignore Raycast, 4 Water, 5 UI) plus the game's `project.json` `layers` (`{ "8": "Player" }`,
 passed on by `info.rs`). A mask is a `u32`, a bit per layer; scripts may use signed masks (`~mask`),
 which are made unsigned before they cross the op boundary. Missing or null masks mean every layer
@@ -844,7 +844,7 @@ perspective and orthographic) and tests spheres and boxes. Meshes use the box of
   over the views of the last `render_views` call, and `shadow_casters`, the casters drawn into shadow maps),
   which the tests use.
 
-**LOD groups.** `LODGroup` (`rendering.ts`: `size`, `setLODs([{ screenRelativeTransitionHeight,
+**LOD groups.** `LODGroup` (`size`, `setLODs([{ screenRelativeTransitionHeight,
 renderers }])`, `forceLOD(i)`) sends `render.lodGroup`. Levels go from most to least detailed, and the
 heights must go down. For each camera `views()` computes how tall the group looks: `Camera::screen_height(size, distance)`
 is `size / (2 · distance · tan(fov / 2))` (perspective) or `size / (2 · half_height)` (orthographic),
@@ -861,11 +861,11 @@ masks are covered by the `M5-RND-15` golden.
 ## Quality settings
 
 `WorldRenderer` has the knobs; scripts set them through `QualitySettings`
-(`js/engine/src/quality.ts`), whose levels (Low / Medium / High / Ultra, overridable in the game's
+(`QualitySettings`, native), whose levels (Low / Medium / High / Ultra, overridable in the game's
 `package.json` under `platypus.quality`) send `render.quality` (anti-aliasing, render scale, shadow mode,
 soft filter, `lodBias`, `vSyncCount`, anisotropic filtering, texture mip limit) and `render.shadowSettings`
 (distance, map size, cascades). The default level is applied when the
-engine loads; the app copies the values onto the renderer before each frame.
+game starts; the app copies the values onto the renderer before each frame.
 
 - **MSAA** (`msaa`): the main world pass draws into a multisampled colour target (cached by size,
   format and count) with a multisampled depth buffer, resolving into the target (or the bloom HDR
@@ -975,13 +975,13 @@ rendering modes under a sky), `-18` (tonemapping, exposure and FXAA), `-19` (a r
 monitor quad) and `-20` (cascades, a spot light and a point light; it also checks the shadow map count), and `-21`
 (a tube skinned to two bones, bent, with a bent shadow), `-22` (the ground grid: axes, fade, hidden by a box) `-23` (gizmo lines: constant width, faint behind a mesh) `-24` (thick 2D strokes: round joins and caps, soft edges, a 2-pixel line, hidden behind a cube) and `-25` (filled shapes: tessellation units, both fill rules, a golden, the `world_view` unit and JS units). Cooked textures are tested with cooking
 (`M5-AST-06`, see [assets-and-models.md](assets-and-models.md#tests)).
-Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`); JS units
+Unit tests: `M5-MAT-01` (tangents, `mesh.rs`) and `M5-SHD-01` (shadow planning, `shadows.rs`). The JS units
 `M5-MAT-02` (`Material` ops and scene saves), `M5-RTX-01` (render textures) and `M5-SHD-02` (cascades) in
-`js/engine/test`.
+`js/engine/test` were deleted with QuickJS, as were the "JS unit" parts of the `M7-FOG` and `M7-SPOT` tests below.
 Render pipeline and light units: `M7-RP-01`..`03`, `M7-HD-01`, `M7-HD-02`.
 Auto exposure: `M7-EXP-01` (adapts to the view), `-02` (per camera, split screens), `-03` (metering modes and percentiles), `-04` (fixed exposure, blending, hold, freeze), `-05` (read-back, `Camera.exposure`, reset), `-06` (soft floor and compensation curve).
 
 Fog: `M7-FOG-01` (golden: the three modes against clear air, background clear), `M7-FOG-02` (orthographic depth fog; quads, shapes and strokes fog) and `M7-FOG-03` (`render.fog` and `Camera.fog` reaching `WorldView.fog`, in `world_view.rs`; JS units in `fog.test.ts`) and `M7-FOG-04` (height fog: golden, unit and JS unit; the horizon sinks into it) and `M7-FOG-05` (light shafts: golden, unit and JS unit; the froxel volume) and `M7-FOG-06` (fog volumes: golden, unit in `world_view.rs` and JS unit) and `M7-FOG-07` (fog culling: `FogReach` unit, integration counts, JS unit) and `M7-FOG-08` (spot cones and lantern glows per pixel: golden) and `M7-FOG-09` (typed arrays arriving as number lists, `typed_arrays_arrive_as_number_lists` in the script conformance tests) and `M7-FOG-10` (god rays: golden of a grate of thin bars; the ripple along a row is 30% higher with them) and `M7-FOG-11` (the temporal volume: averaged frames ripple less than one) and `M7-FOG-12` (a turning sun's beams follow without trailing) and `M7-FOG-13` (the volume's noise settings and denoising modes) and `M7-FOG-14` (a turning camera's beams: motion trust, Catmull-Rom history, `motionSamples`) and `M7-FOG-15` (depth bias; shadowed local lights in the volume; light motion). Pyramid spot lights: `M7-SPOT-01` (a wide, thin rectangle, turned with its object) and `M7-SPOT-02` (`spotShape` and `aspectRatio` in the light op, JS unit).
 `examples/materials` is the manual check. `M5-PNL-02` (rays and panel quads) is a unit test in `panels.rs`, `M5-PNL-01`
-(per-root commits) is in `js/react/test/reconciler.test.tsx`, and `M5-CAM-01` (camera conversions) is
-in `js/engine/test/camera.test.ts`. `examples/world` is the manual check (`M5-PNL-03`).
+(per-root commits) and `M5-CAM-01` (camera conversions) were JS tests, deleted with QuickJS.
+`examples/world` is the manual check (`M5-PNL-03`).

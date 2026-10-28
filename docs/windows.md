@@ -5,7 +5,7 @@ own UI, and talking between windows. The example is `examples/windows`. Design a
 `docs/research/platypus-windows.md` (plan: `platypus-windows-plan.md`). Code: `crates/platypus_engine_api/src/window.rs` (the API and its
 state), `crates/platypus_platform/src/windows.rs` and the runner (`docs/platform.md`, "Multi-window"),
 `crates/platypus_app/src/windows.rs` (trees, surfaces, routing, drawing) and `native_render.rs` (`sync_window_roots`),
-`js/engine/src/window.ts` (types for QuickJS games), `tools/platypus_ts/src/builtins.rs` (the typed members for compiled games) and `tools/platypus_ts/src/lower/messages.rs` (their compiled form).
+`tools/platypus_ts/src/builtins.rs` (the typed members for compiled games) and `tools/platypus_ts/src/lower/messages.rs` (their compiled form).
 
 **Honest status.** The winit runner has not been run on a real display. Everything was checked with the fake platform
 (`FakePlatform`), unit tests of the pure parts (`plan`, `place`, `WindowTree`, the message queues) and `--screenshot` runs, where
@@ -46,7 +46,7 @@ Left out, a window is 400 x 300 and is placed centred on its parent, cascading.
 | `key` | A name that keeps the window across a hot reload and finds it again with `Window.find(key)`. |
 | `runInBackground` | Root windows of isolated families: keep that domain's timers running while unfocused (default true). |
 
-Positional arguments (`Window.create("Title", 320, 200)`) also work in QuickJS games. Most options can be changed later through
+Positional arguments (`Window.create("Title", 320, 200)`) also work. Most options can be changed later through
 properties: `title`, `style` (not to or from `"child"`), `x`, `y`, `width`, `height`, `setPosition`, `setSize`, `center()`,
 `minimized`, `maximized`, `visible`, `resizable`, ..., `focus()` and `close()`.
 
@@ -99,7 +99,7 @@ A window made with a `key` survives a hot reload with its position and size (the
 warning, and `createRoot(win)` mounts the new UI. Windows **without** a key close at the start of a reload (without
 `onCloseRequested` or `onClosed`, since their listeners belong to the old code). Keyed windows nobody claimed by the end of the new
 code's first frame close. Listeners are dropped at the reload and must be registered again by the new code, which is what the
-example's `openPalette()` does on every start. The main window always stays. Queued messages and pending requests are dropped. If the new QuickJS code fails to load, the old code keeps running and gets its listeners, queued messages and pending requests back (`window::reload_abort`); whatever the failed code registered or created is dropped, and windows already told to close stay closed.
+example's `openPalette()` does on every start. The main window always stays. Queued messages and pending requests are dropped. If the new code fails to load, the old code keeps running and gets its listeners, queued messages and pending requests back (`window::reload_abort`); whatever the failed code registered or created is dropped, and windows already told to close stay closed.
 
 ### Running code in a window
 
@@ -127,7 +127,7 @@ Window.current.onRequest<{ kind: string }, number>((from, req, reply) => reply(3
 - **What can travel:** values that are plain JSON: numbers, strings, booleans, `null`, arrays, plain objects. Value classes
   (`Vector3`, `Color`, ...) travel in their compact JSON form (`Vector3` is `[x, y, z]`); type the field as a tuple. **No handles**
   (`GameObject`, `Component`, `Texture`, `Window`: send `win.handle` and read it with `Window.byHandle(n)`), no functions, no `Map` or
-  `Set`, no cycles. Compiled games check this at build time from the static type; QuickJS games throw a `TypeError` at the
+  `Set`, no cycles. Games check this at build time from the static type; a value that still breaks it throws a `TypeError` at the
   call.
 - **Size:** at most 1 MiB of UTF-8 JSON per message. Over that, or to a closed window, `postMessage` returns `false` and logs.
 - **Delivery:** always asynchronous, also within one family, queued for the target's domain and run at the start of that domain's
@@ -165,7 +165,7 @@ Window.main.emit("edit", { name: thing.name, y: 2 });
   still calls `reply`; a rejection before the reply fails the `request`).
 - **Typing:** the handler's parameter type (or the explicit `on<T>(..)` / `answer<T, R>(..)`) tells the compiler how to decode the
   payload; a handler without parameters (`on("ping", () => ..)`) takes none, and an `answer` handler's return type is `R`.
-  `ask<R>` needs its reply type, as `request<R>` does. QuickJS games treat the types as hints only. A later idea: one shared
+  `ask<R>` needs its reply type, as `request<R>` does. A later idea: one shared
   event-type map (`interface Events { select: Thing; ... }`) so a name fixes both ends.
 - **Names:** any non-empty string (an empty one throws `Window event names must not be empty`). Events never collide with the
   built-in events (`onClosed`, `onResized`, ...): those stay `onX` methods, a custom name is only ever matched against other
@@ -185,7 +185,7 @@ Window.main.emit("edit", { name: thing.name, y: 2 });
   (`window::parse_event`).
 - **When to use the raw layer:** one message type for a whole window (a protocol with its own `kind` field), or a handler that
   must reply later or from a callback: `onRequest` gives you `reply`. `answer` replies once, with the handler's return value
-  (`undefined` becomes `null` in QuickJS).
+  (`undefined` becomes `null`).
 
 ## Event domains and isolation
 
@@ -217,11 +217,11 @@ The engine API enforces the separation:
 >   own `runInBackground` option (default true) decides whether *its* timers keep running while it is unfocused.
 > - An isolated window's keys **never reach the main `input`**. To tell the game about a key, send a message.
 > - **Focus loss clears the held keys** of that domain, so a key released in another window does not stay stuck.
-> - QuickJS promise jobs (`await` continuations) and other callbacks with no domain tag read the **main** domain's input, even if
+> - Callbacks with no domain tag (such as an `await` continuation) may read the **main** domain's input, even if
 >   the `await` began in an isolated window. Read the keys before the first `await`.
 > - `input.on(..)` listeners belong to the domain they were registered in.
-> - Compiled games behave the same way (`crates/platypus_engine_api/tests/input_domains.rs`); QuickJS games match since
->   `crates/platypus_app/src/game_input.rs` sends each domain's events with that domain entered.
+> - Tested in `crates/platypus_engine_api/tests/input_domains.rs`; `crates/platypus_app/src/game_input.rs` sends each domain's
+>   events with that domain entered.
 
 ```ts
 class Player extends Component {
@@ -295,7 +295,7 @@ Not built, listed as optional later steps in `platypus-windows-plan.md`: embedde
 ## Limits
 
 - Fullscreen secondary windows, per-window display modes and choosing a monitor.
-- File drops, drag and drop between windows, and per-window UI scale (`setUiScale` is the main window's).
+- File drops and drag and drop between windows.
 - Component hooks (`onUpdate`, ...) belong to the scene, which is the main domain's; other domains run timers, UI handlers and
   messages.
 - Secondary windows present with vsync off and draw every main frame (hidden and minimised ones are skipped).

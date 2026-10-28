@@ -9,8 +9,16 @@ Crates: [platypus_api](../crates/platypus_api/src/lib.rs) (manifest types and ge
 [platypus-ts-engine-boundary.md](research/platypus-ts-engine-boundary.md).
 
 One module of ordinary Rust is the single source for a namespace of the script API: the manifest, the
-TypeScript declarations, the `extern "C"` shims that compiled scripts link to, and typed QuickJS
-bindings. They are all generated from the same functions, so they cannot drift apart.
+TypeScript declarations and the `extern "C"` shims that compiled scripts link to. They are all generated from the same
+functions, so they cannot drift apart.
+
+> **QuickJS removed (2026-10-28).** `platypus_api` has no `qjs.rs` and no `quickjs` feature; `#[platypus_api(..)]` no
+> longer takes `quickjs` and generates no `register_quickjs`; the `platypus_native` crate (`install`,
+> `register_quickjs`) and `window::QUICKJS_PRELUDE` are deleted. Where this page still mentions QuickJS (a "QuickJS"
+> column, "in QuickJS" notes, the old `quickjs` flag), that is the history of how a type or feature was bound; only the
+> compiled (`extern "C"`) side exists. Tests that exercised the QuickJS bindings (`M9-API-05`, `-06`, `-23`..`-26`,
+> `-29`..`-34`, `-36`..`-47`, `-100`..`-112`, `-121`..`-125`, `-1151`, `-1430`..`-1432`, `-1500`, `-1613`, `-1625`) were
+> removed; the manifest, shim and declaration parts of the others stay.
 
 ## Usage
 
@@ -24,7 +32,7 @@ impl Handle for ObjectId {
     fn from_raw(raw: u64) -> Self { ObjectId(raw) }
 }
 
-#[platypus_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]
+#[platypus_api(namespace = "Demo", handles(GameObject = ObjectId))]
 pub mod demo {
     use super::ObjectId;
 
@@ -36,7 +44,7 @@ pub mod demo {
 }
 ```
 
-Arguments: `namespace = ".."` (required), `quickjs` (also generate `register_quickjs`) and
+Arguments: `namespace = ".."` (required) and
 `handles(TsName = RustType, ..)` (Rust types that implement `platypus_api::Handle`) and
 `values(TsName = RustType [field: scalar, ..], ..)` (value classes, below). The module must be
 inline (`pub mod x { .. }`).
@@ -136,14 +144,12 @@ Rust newtype: `Transform` is `TransformRef(ObjectId)` and shares the object's ra
 - **Shims.** `platypus_<Class>_<jsName>` with `this: u64` first: `platypus_Transform_setPosition(this, x, y, z)`
   (a value result still goes through a trailing out pointer). A setter is `set` plus the capitalised
   property name. Namespace functions keep `platypus_<Namespace>_<jsName>`.
-- **QuickJS.** A class is a JS class whose instances are opaque handle objects; see "Handles in QuickJS".
 
 **Static properties.** Inside an `impl`, `#[property] pub fn main() -> T` (no `self`, no parameters) is a static getter and
 `pub fn set_main(v: T)` next to it (same type) the static setter: `Window.main` reads like a property in both backends. The
 manifest has a `get` / `set` function of the class without a `this` parameter (the compiler keeps a static getter with the
 class statics, so `ext_static_prop` reads it, and the setter in `static_setters`). The `.d.ts` says `static readonly main: T;`
-(`static get` / `static set` for a writable one), and `platypus-build types` the same. In QuickJS the property is an accessor on the
-class object (configurable, not enumerable), so strict-mode assignment to a read-only one throws `TypeError`. A static function
+(`static get` / `static set` for a writable one), and `platypus-build types` the same. A static function
 and a static property of one class cannot share a script name (compile error). A static and an instance member may (`Window.focused`
 and `win.focused`): the instance one lives on the prototype. Tests: `crates/platypus_api/tests/static_props.rs` (`M9-API-1490`, `1491`).
 
@@ -155,22 +161,21 @@ The module's code is kept as it is. Inside the module the macro adds:
 |---|---|
 | `MANIFEST` | A `const Namespace`: name, handle names, value classes, handle classes and, per function, `kind`, `name`, `rust_name`, `symbol`, `doc`, `params`, `ret` |
 | `extern "C"` shims | One `#[no_mangle] pub extern "C" fn` per `pub fn` (including those in `impl` blocks of declared handles), named `platypus_<Namespace>_<jsName>` (`platypus_Demo_add`) or `platypus_<Class>_<jsName>` for a class. Private functions are not exported |
-| `register_quickjs(ctx)` | With `quickjs`: installs the global `Demo` object whose `add` is a native closure with typed arguments (no `Value` array, no op queue) |
 
 Doc comments on the functions become the JSDoc of the declaration. Functions cannot be `async` or
 generic; `self` is allowed only in a handle class's `impl`, by value.
 
 ## Types
 
-| Rust | TypeScript | C ABI | QuickJS |
-|---|---|---|---|
-| `f64` | `number` | `f64` | `f64` |
-| `f32` | `number` | `f32` (narrowed when it crosses) | `f32` |
-| `i32` / `u32` | `number` | `i32` / `u32` | `i32` / `u32` |
-| `bool` | `boolean` | `bool` | `bool` |
-| `()` | `void` | `()` | `()` |
-| declared handle | `number & { readonly __handle: "Name" }` (a class: `Name`) | `u64` (`Handle::to_raw`) | an opaque `Name` object, `null` for 0 |
-| declared value class | a class with the declared fields (`new Vector3(1, 2, 3)`) | one scalar per field as parameters (`v_0, v_1, v_2`); a result through a trailing out pointer to room for the fields | a `Vector3` instance (an object with the fields; arrays are accepted as arguments) |
+| Rust | TypeScript | C ABI |
+|---|---|---|
+| `f64` | `number` | `f64` |
+| `f32` | `number` | `f32` (narrowed when it crosses) |
+| `i32` / `u32` | `number` | `i32` / `u32` |
+| `bool` | `boolean` | `bool` |
+| `()` | `void` | `()` |
+| declared handle | `number & { readonly __handle: "Name" }` (a class: `Name`) | `u64` (`Handle::to_raw`) |
+| declared value class | a class with the declared fields (`new Vector3(1, 2, 3)`) | one scalar per field as parameters (`v_0, v_1, v_2`); a result through a trailing out pointer to room for the fields |
 
 | `&str` / `String` | `string` | a parameter: `*const u8` to the script string object; a result: `*const u8` plus a trailing `out_len: *mut i64` | a JS string |
 | `&[f64]` / `&[V]` | `number[]` / `Vector3[]` | `*const u8` to the script array | a JS array (elements: instances, objects or arrays) |
@@ -239,50 +244,36 @@ let pos = platypus_api::context::with(&WORLD, |w| w.position(id)).unwrap_or_defa
 
 ## Status
 
-Additive. `__platypus_op` and the ops in [scripting.md](scripting.md) are untouched. `platypus_scene` is the
-first engine crate using `#[platypus_api]` (`Scene`, in `platypus_scene::api`; see
-[scene-and-objects.md](scene-and-objects.md#the-typed-script-api-platypus_sceneapi)), but nothing in the
-app calls it yet. The `platypus_ts` compiler reads the JSON manifest and calls the shims directly
+This is the script API of every engine crate (`platypus_scene::api`, `platypus_engine_api`, `platypus_render_api`,
+`platypus_physics_api`, `platypus_scenes`, `platypus_math`); the op channel it once sat next to (`__platypus_op`) is gone. See
+[scene-and-objects.md](scene-and-objects.md#the-typed-script-api-platypus_sceneapi). The `platypus_ts` compiler reads the JSON manifest and calls the shims directly
 (`--manifest`, see [platypus-ts.md](platypus-ts.md); the test namespace is `tools/platypus_demo_api`). Value
 classes (`Vector3`) with methods and getters (`a.add(b)`), handle classes (`GameObject`, `Transform`)
 and the engine context exist, and so do strings across the boundary (`GameObject.name` and `find`);
 static functions and operators on value classes are not built.
 
-Measured with `cargo test -p platypus_api --release -- --ignored --nocapture` (1,000,000 calls): about
-150 ns per call through the typed function and about 245 ns through a simplified `__platypus_op` (a name,
-a rest array of numbers and a queue push; the real op also converts each argument to a `Value`, so
-the real gap is larger). Most of the remaining 150 ns is QuickJS's own call overhead. The large win
-is for compiled code, which calls the shim directly.
+Compiled code calls the shim directly. (The measured call cost against the QuickJS `__platypus_op` path, about 150 ns
+against 245 ns, no longer has a counterpart; the QuickJS bindings for values, strings and handles
+(`M9-API-23..26`, `-100..-113`) were removed.)
 
-## QuickJS bindings for values and strings
-
-`#[platypus_api(namespace = "X", quickjs, ...)]` now also generates QuickJS functions for namespace functions that take or return
-a string or a value class (they used to be a macro error). A `&str` or `String` is a JS string; a value class (`Vector3`) is
-a plain object with the fields' names (`{ x, y, z }`): an argument is read field by field (a missing field is a JS exception
-the script can catch) and a result is a new object. Every generated function returns `rquickjs::Result`. Handle classes
-(`GameObject.name`, `transform.position`) are now in the QuickJS bindings, see "Handles in QuickJS"; the namespace functions
-(`Scene.setLocalPosition(go, v)`) still work with handle objects. `platypus_scene`'s `Scene` namespace has `quickjs` on, so the same API
-runs from QuickJS and from compiled code. Tests `M9-API-23..26`.
-
-## Namespace properties and value classes in QuickJS
+## Namespace properties and value classes
 
 - **Namespace properties.** In a namespace (no `impl`), `#[property] pub fn color() -> Color` is a getter and `pub fn set_color(c: Color)`
   next to it the setter: scripts write `Gizmos.color = c` and `Time.deltaTime`. The manifest has them as functions of kind `get` and
   `set` with no receiver, the `.d.ts` as `let color: Color;` (`const` when read only), the shims as `platypus_Gizmos_color()` /
-  `platypus_Gizmos_setColor(..)`, QuickJS as accessors on the namespace object, and `platypus_ts` calls the getter on a read and the
+  `platypus_Gizmos_setColor(..)`, and `platypus_ts` calls the getter on a read and the
   setter on an assignment (`Place::NsProp`, also for `+=`). A value class's statics are the properties and functions of a namespace
   with the same name (`Color.white`, `Color.hex("#ff0000")`).
-- **Value classes in QuickJS.** Each value type is a real JS class (made once, `globalThis.Vector3 ??= class ...`): the constructor takes
-  the fields, methods (`#[method(Vector3)]`) and getters (`#[getter(Vector3)]`) are on the prototype and call hidden Rust functions
-  (`__platypus_vm_<Value>_<name>`), results are instances. Modules that mention the same value type share the class.
+- **Value classes.** Methods (`#[method(Vector3)]`) and getters (`#[getter(Vector3)]`) are free Rust functions with the
+  receiver's fields first; the compiler turns `a.add(b)` into a call of that shim.
 
 ## The engine API beyond the scene
 
 [platypus_engine_api](../crates/platypus_engine_api/src/lib.rs) declares, with `#[platypus_api]`, what the sine-circle demo and most gameplay
 code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen` and `QualitySettings`, with the names and behaviour of
-`js/engine`. Each keeps its state per thread and has plain Rust functions for the host: `time::advance(real_dt)`,
+the former `js/engine` (deleted). Each keeps its state per thread and has plain Rust functions for the host: `time::advance(real_dt)`,
 `input::{key_down_event, key_up_event, mouse_button_event, mouse_move, end_frame}`, `gizmos::take_frame()`, `camera::cameras()`,
-`screen::{state, quality, set_size}`. `platypus_app` is not wired to them yet (another session's area). Tests `M9-API-27..36`.
+`screen::{state, quality, set_size}`, which `platypus_app` calls. Tests `M9-API-27..36` (`-29`..`-34` and `-36` tested the QuickJS side and were removed).
 
 `platypus_engine_api` also has `audio` (`load(path, stream)`, `Sound.play(loop)`, `Playback.pause/resume/stop`, recorded as
 `AudioCommand`s for the host). A Rust parameter written `r#loop` is the script's `loop`. Tests `M9-TS-593..597`.
@@ -292,20 +283,18 @@ code use besides `Scene`: `Color`, `Time`, `input`, `Gizmos`, `Camera`, `Screen`
 - `#[optional(a, b)]` on a function marks trailing parameters a call may leave out. The manifest says
   `optional`, the declaration writes `seed?: number`, and the function sees a default: **NaN** for a
   number (so `seed.is_nan()` means "left out"), an empty string, `false` or a zero handle. A compiled
-  call fills them in; QuickJS treats a missing or `undefined` argument the same way.
-- `#[options]` (with `#[optional(..)]`) lets QuickJS pass the optional parameters as one plain object, by camelCase name:
-  `Window.create({ title: "Palette", style: "tool", minWidth: 200 })`. It applies when the call has exactly one argument past
-  the required ones and that argument is a plain object (`Object.prototype`, not an array, function, handle or value-class
-  instance: `platypus_api::qjs::options_object`); a key that is missing, `undefined` or `null` is left out and takes the declared
-  default. Positional calls keep working. The manifest and the `.d.ts` do not change: compiled code already maps a trailing
-  object literal onto the optional parameters by name (`call_ext_args`). A function with `#[options]` cannot have optional
-  value-class parameters (a value is itself a plain object). Tests `M9-API-1430..1434`.
+  call fills them in.
+- `#[options]` (with `#[optional(..)]`) marks a function whose optional parameters a script passes as one plain object, by camelCase name:
+  `Window.create({ title: "Palette", style: "tool", minWidth: 200 })`. Compiled code maps a trailing
+  object literal onto the optional parameters by name (`call_ext_args`); positional calls keep working. The manifest and the `.d.ts`
+  do not say more. A function with `#[options]` cannot have optional value-class parameters (a value is itself a plain
+  object). Tests `M9-API-1433..1434` (`-1430`..`-1432`, the QuickJS side, were removed).
 - `new Rng(seed)`: a handle class whose static `create` has parameters is constructed with them
   (`new Class(args)` calls `create(args)`).
 - `#[js_name = "graphicsDeviceVendorID"]` gives the script name when `snake_case` to `camelCase` does not
   spell it. A Rust keyword is written raw (`r#in` for `TimeUntil.in(2)`).
 
-## The first batch moved out of `js/engine` (2026-10-19)
+## The first batch moved out of `js/engine` (2026-10-19; `js/engine` is deleted)
 
 `platypus_engine_api` now also declares `Rng` / `Random`, `LayerMask`, `Debug` / `Log` / `Console`,
 `PlayerPrefs`, `Assets`, `Application` / `SystemInfo`, `TimeSince` / `TimeUntil`. Each keeps its state per
@@ -328,33 +317,31 @@ the TypeScript, all because a call has fixed typed parameters:
 
 ### Input, TimeSpan and DateTime
 
-- **Input is per event domain** (window family): `input` reads the keys of the family whose code is running; main-game components always read the main window's, an isolated window's keys never reach it, focus loss clears a domain's keys, and QuickJS promise jobs read the main domain's. QuickJS and compiled code agree. See `docs/windows.md` ("Input belongs to the window's event domain").
-- `input` follows `js/engine/src/input.ts`: events (`key_down`, `key_up_event`, `mouse_move`, `mouse_delta`, `wheel`,
+- **Input is per event domain** (window family): `input` reads the keys of the family whose code is running; main-game components always read the main window's, an isolated window's keys never reach it, focus loss clears a domain's keys, and callbacks with no domain tag read the main domain's. See `docs/windows.md` ("Input belongs to the window's event domain").
+- `input` (it followed the deleted `js/engine/src/input.ts`): events (`key_down`, `key_up_event`, `mouse_move`, `mouse_delta`, `wheel`,
   `gamepad_*`, `blur`) arrive as they happen and become "this frame" at `input::tick()`, which `time::advance` calls (the engine
   tick). Mouse buttons are keys (`MouseLeft`...). Gamepads are read by id (`gamepadCount`, `gamepadId(i)`, `gamepadName(id)`,
   `gamepadButton(id, name)`, `gamepadAxis(id, name)`); `input.gamepads()` gives `{ id, name, connected, buttons, axes }` (the standard
   buttons and axes by name, `0` when not reported; written in TypeScript over the readers above by the facade) and
-  `input.on(kind, fn)` takes every kind of `js/engine`'s `InputEvents` and returns the unsubscribe function: `keydown` / `keyup` (`{ code, key, repeat }`; `key` is the layout's text, from `key_down_with_text` / `key_up_with_text`), `gamepadconnected` / `gamepaddisconnected` (`{ gamepad }`), `gamepadbuttondown` / `gamepadbuttonup` (`{ gamepad, button }`) and `gamepadaxis` (`{ gamepad, axis, value }`). The kind is the enum `InputEventType`, the event the record `InputEvent` (fields of other kinds are empty). `Application.args` (the strings after `--` on `platypus-app`'s command line, `AppInfo.args`) and `Application.quit(exitCode?)` (`Request::Quit(i32)`; `platypus-app` exits with the code) are natives too. Tests: `M9-TS-3361..3383` (`tools/platypus_ts_tests/tests/{engine_api/app,ui/ui,lang/readers}.rs`).
+  `input.on(kind, fn)` takes every kind of input event and returns the unsubscribe function: `keydown` / `keyup` (`{ code, key, repeat }`; `key` is the layout's text, from `key_down_with_text` / `key_up_with_text`), `gamepadconnected` / `gamepaddisconnected` (`{ gamepad }`), `gamepadbuttondown` / `gamepadbuttonup` (`{ gamepad, button }`) and `gamepadaxis` (`{ gamepad, axis, value }`). The kind is the enum `InputEventType`, the event the record `InputEvent` (fields of other kinds are empty). `Application.args` (the strings after `--` on `platypus-app`'s command line, `AppInfo.args`) and `Application.quit(exitCode?)` (`Request::Quit(i32)`; `platypus-app` exits with the code) are natives too. Tests: `M9-TS-3361..3383` (`tools/platypus_ts_tests/tests/{engine_api/app,ui/ui,lang/readers}.rs`).
 - `TimeSpan` (field `totalMilliseconds`) and `DateTime` (fields `epochMilliseconds`, `utc`; local time through the OS zone or
   `datetime::set_zone`) are value classes. A static `create` makes `new TimeSpan(ms)` and `new DateTime(y, m, ...)` round and
-  carry as TypeScript does (compiled code and QuickJS both call it; the engine builds its own results with the fields).
+  carry as TypeScript does (compiled code calls it; the engine builds its own results with the fields).
   Differences: `parse` logs an error and returns NaN instead of throwing, `DateTime.parse` knows ISO 8601 only (no whitespace),
   `subtract(TimeSpan)` is `subtractTimeSpan`, `DateTime.fromDate(Date)` and `Task` are not there.
-- A function with more than four parameters reads its QuickJS arguments from the rest list (`new DateTime(..)` has eight).
 
 ### The math types (`platypus_math`)
 
 `crates/platypus_math` declares `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`,
-`Ray`, `Plane`, `Bounds` and `Pose` as `js/engine/src/math.ts` has them (the scene, input, gizmos and colour APIs use its
+`Ray`, `Plane`, `Bounds` and `Pose` as the deleted `js/engine/src/math.ts` had them (the scene, input, gizmos and colour APIs use its
 types, so they live below `platypus_scene`). Values are **doubles** (the TypeScript's), computed in the same order, so
 results are bit for bit the same as bun's for everything but `Math.hypot` of three or more numbers, where engines differ
 in the last bit: the native version scales by the largest and sums the squares (two numbers use the C library's `hypot`,
 as bun does), and the tests that compare with bun run the original with the same algorithm. The scene's `Vector3` /
 `Quaternion` are now these f64 types too (positions are still stored as f32 in the scene), and `Color` is f64.
 
-- `new Vector3(x, y, z)` calls the static `create` (a missing component is 0); the classes in QuickJS are made by it too.
-- A name with several versions (`Quaternion.euler(x, y, z)` and `euler(vector)`) is chosen by argument count in QuickJS and
-  by argument types in compiled code. A function of more than four parameters reads its QuickJS arguments from the rest list.
+- `new Vector3(x, y, z)` calls the static `create` (a missing component is 0).
+- A name with several versions (`Quaternion.euler(x, y, z)` and `euler(vector)`) is chosen by argument types in compiled code.
 - A value class argument may be another value class with the same fields (a `Vector2Int` where a `Vector2` goes).
 - Differences: the `...Like` parameters are the classes; `toArray()`, `from(v)`, `new Matrix4x4(array)` and `.m` are not
   there (`Matrix4x4.fromColumns` and `get(row, col)` are); `Mathf.smoothDamp` returns a `Vector2` (value, velocity);
@@ -364,8 +351,8 @@ as bun does), and the tests that compare with bun run the original with the same
 
 ### Defaults for left-out parameters
 
-`#[optional(keep_world = true, fade = 0.3)]` gives a left-out parameter a value instead of NaN / false / empty: a compiled call and
-QuickJS both pass it (`GameObject.setParent(parent, keepWorld = true)` is declared this way). The manifest says `"default": 1`
+`#[optional(keep_world = true, fade = 0.3)]` gives a left-out parameter a value instead of NaN / false / empty: a compiled call
+passes it (`GameObject.setParent(parent, keepWorld = true)` is declared this way). The manifest says `"default": 1`
 (a flag is 0 or 1).
 
 ## Scenes (`platypus_scenes`, `platypus_kinds`)
@@ -439,7 +426,7 @@ puts the 18 classes into `platypus_kinds` for scene files and `instantiate`).
   `M9-TS-1100..1105`.
 ## Audio (`audio`, `AudioSource`, `AudioListener`)
 
-`audio.rs` is `js/engine/src/audio.ts`: `audio.load(path, stream?)`, `audio.play(path, {..})`, `Sound.play({ volume, rate, pan, loop,
+`audio.rs` (it replaced the deleted `js/engine/src/audio.ts`) has `audio.load(path, stream?)`, `audio.play(path, {..})`, `Sound.play({ volume, rate, pan, loop,
 fadeIn, start, bus, emitter })`, `Playback` (`setVolume/Rate/Pan(v, fade?)`, `pause/resume/stop(fade?)`, `seek`, `playing`, `paused`,
 `onEnded(f)`), `Bus` (`audio.createBus({ volume, parent })`), `Emitter` (`audio.createEmitter(position, { minDistance, maxDistance, bus })`),
 `audio.setListener`, `audio.setMasterVolume`. Each change is an `AudioCommand`; the host takes them with `audio::take_commands()` and
@@ -546,97 +533,41 @@ The closure returns nothing.
   dropped. The runtime tells `platypus_api` how to root, make a script string and take a thrown exception through
   `callback::install_bridge`; `platypus_ts_rt` installs it with its heap. A string argument is a new rooted script string for the call.
   An exception thrown by a callback is swallowed and listed by `callback::take_errors()`.
-- **QuickJS.** A function with a `Callback` parameter is not generated for QuickJS yet.
 - **Differences.** The TypeScript `on(..)` returned an unsubscribe function; here `onX(f)` returns a token (a number, never 0) and a
   matching `off(token)` removes it: `input.off`, `Assets.offChanged`, `Application.offFocusChanged`, `SceneManager.offSceneEvent`.
   `input.onKeyDown` gets `(code, repeat)` (no layout `key`); gamepad events get the id as a number. `Assets.onChanged` gets the paths as
   one string, one per line. Scene events get the `Scene` handle and the mode as `"single"` / `"additive"`. Listeners are called at once
   (`SceneManager` after the load or unload finished); `take_events()` still works.
-## Handles in QuickJS
+## Handles and the engine namespaces
 
-The decision (user, 2026-10-20, `research/platypus-native-physics.md` section 7): whatever the compiled side treats as internal (engine
-ids, handles) reaches QuickJS as an **opaque internal value**, like a V8 internal field. Plain data (numbers, strings, arrays,
-value classes) is encoded normally.
+A handle (an engine id such as a GameObject, a component, a texture) is a `u64` on the compiled side (`Handle::to_raw`); `0` is
+`null` in `GameObject | null`. Plain data (numbers, strings, arrays, value classes) is encoded normally. (The QuickJS
+form of a handle, an opaque `HandleBox` object with a JS class per handle, `platypus_api::qjs`, `platypus_native::install` and
+`register_quickjs` were removed with QuickJS, with their tests `M9-API-100..113`, `-120`..`-125`.)
 
-- **The object.** A handle is an instance of a Rust class (`platypus_api::qjs::HandleBox { raw, class }`) given the prototype of the
-  handle's JS class (`GameObject.prototype`). The id is in the engine-side slot, not a property: it has no own properties,
-  `JSON.stringify(go)` is `{}`, `Object.prototype.toString.call(go)` is `[object GameObject]` (`Symbol.toStringTag`), and only
-  properties the script sets are own. Id 0 is `null` going out; `null` / `undefined` are 0 coming in.
-- **The class.** `register_quickjs` makes, for each name in `handles(..)`, a global JS class once (`Scene.GameObject` is the same
-  object). Modules that declare the same handle share it and each adds its members. Statics (`GameObject.create()`) are properties
-  of the class (overloads by argument count work for them); methods and `#[property]` accessors (with the setter) are
-  non-enumerable properties of the prototype; `new Class(args)` calls the static `create`; a class without `create` throws.
-  A namespace named like its class (`AnimationCurve`) is the class itself. If a namespace object and a class have the same name
-  (`Scene` helper functions and the scene class), they are merged in either order and the class wins (`install_namespace`).
-- **Checks.** A handle argument must be an instance of exactly that class (`Transform` where `GameObject` goes is a
-  `TypeError: expected a GameObject, got a Transform`); a method with a non-handle `this` throws.
-- **Host side.** `platypus_api::qjs::handle_new(ctx, "GameObject", raw)` makes the object and `handle_arg` reads the id back (for the
-  app's own bindings, tests).
-- **No identity.** Every read makes a new object, so `a === b` is false for the same id (listed in `tools/platypus_ts/TODO.md`).
-- **Value classes.** Each QuickJS value class has `toJSON()` (the compact array of numbers, as compiled code stringifies) and a static
-  `X.fromJSON(v)` taking that array (exactly the fields' count) or the object form (left-out fields 0, `a` 1). A function
-  parameter of a value type accepts an instance, the object form (all fields) or the array.
-- **Arrays.** `&[String]` (or `Vec<String>`, owned) reads a JS array of strings (manifest type `strings`, `ExtTy::StrArr` in the compiled lowering; an optional one left out is empty; `M9-API-1621`, `M9-TS-3323`); `&[f64]` reads a JS array of numbers; `&[V]` an array of value instances, objects or arrays. Typed arrays and array
-  results are not built.
-- Code: `crates/platypus_api/src/qjs.rs`, the macro's `handle_class` branch. Tests `M9-API-100..113`.
-
-### Installing the APIs: one call
-
-`platypus_native::install(&mut quickjs_runtime)` (crate `crates/platypus_native`) installs the whole native API: it runs
-`platypus_native::register_quickjs(ctx)` in the runtime's context and again in every context a `reset()` (hot reload) makes
-(`QuickJsRuntime::add_native`). The order inside is fixed: `platypus_engine_api::register_quickjs` (math, scene, animation, input,
-time, audio, camera, ...), `platypus_scenes::register_quickjs` (`SceneManager`, `Scene`, `Prefab`),
-`platypus_physics_api::register_quickjs`, `platypus_render_api::register_quickjs`. `platypus_native::manifests()` lists them all for the compiler.
-
-**Classes and namespaces in QuickJS** (every `#[platypus_api]` module of the engine has the `quickjs` flag; test `M9-API-120` checks
-that every function of every manifest exists, `M9-API-144` that every property of every component round-trips):
-
-- *Math (value classes):* `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds`, `Pose`, `Color`, `Keyframe`, `TimeSpan`, `DateTime`, `TimeSince`, `TimeUntil`.
-- *Scene and objects:* `Scene` (helper functions; also the scene class), `GameObject`, `Transform`, `SceneManager`, `Prefab`, `HideFlags`, `LayerMask`.
-- *Services:* `Time`, `input`, `Random` / `Rng`, `Debug`, `Log`, `Console`, `PlayerPrefs`, `Assets`, `Application`, `SystemInfo`, `Cursor` / `CursorLockMode`, `Screen`, `QualitySettings`, `Gizmos`.
-- *Animation:* `AnimationCurve`, `AnimationClip`, `Animation`, `AnimationState`, `Animations`, `Animator`, `AnimationController` with its parameter / condition / transition / blend tree / node / builder classes.
-- *Audio:* `audio` (`Sound`, `Playback`, `Bus`, `Emitter`), `AudioSource`, `AudioListener`.
-- *Physics:* `Physics` (`PhysicsBody`, `PhysicsCollider`, `PhysicsJoint`, `RaycastHit`), `Rigidbody`, `BoxCollider`, `SphereCollider`, `CapsuleCollider`, `MeshCollider`, `CharacterController`, `FixedJoint`, `CharacterJoint`, `HingeJoint`, `SpringJoint`, `RopeJoint`, `Rope`, `ForceMode`, `RigidbodyConstraints`, `Physics2D` (`Rigidbody2D`, `BoxCollider2D`, `CircleCollider2D`, `CapsuleCollider2D`, `PolygonCollider2D`, `EdgeCollider2D`, `RaycastHit2D`).
-- *Rendering data:* `Camera` (`Cameras`), `Light`, `MeshRenderer`, `SkinnedMeshRenderer`, `SpriteRenderer`, `LineRenderer`, `LineRenderer2D`, `LODGroup`, `Mirror`, `ReflectionProbe`, `PlaneRenderer`, `WorldPanel`, `CameraFollow`, `CameraOrbit`, `ParticleSystem`, `Cloth`, `Material`, `Sprite`, `Texture`, `Mesh`, `Model`, `Primitives` / `PrimitiveType`, `RenderSettings`.
+- *Arrays.* `&[String]` (or `Vec<String>`, owned) is an array of strings (manifest type `strings`, `ExtTy::StrArr` in the compiled lowering; an optional one left out is empty; `M9-API-1621`, `M9-TS-3323`); `&[f64]` an array of numbers; `&[V]` an array of value instances, objects or arrays. Typed arrays and array results are not built.
+- *Namespaces.* Every `#[platypus_api]` module of the engine is a namespace the compiler links: math (value classes: `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds`, `Pose`, `Color`, `Keyframe`, `TimeSpan`, `DateTime`, `TimeSince`, `TimeUntil`); scene and objects (`Scene`, `GameObject`, `Transform`, `SceneManager`, `Prefab`, `HideFlags`, `LayerMask`); services (`Time`, `input`, `Random` / `Rng`, `Debug`, `Log`, `Console`, `PlayerPrefs`, `Assets`, `Application`, `SystemInfo`, `Cursor`, `Screen`, `QualitySettings`, `Gizmos`); animation (`AnimationCurve`, `AnimationClip`, `Animation`, `Animator`, `AnimationController` and its builders); audio (`audio`, `AudioSource`, `AudioListener`); physics (`Physics`, `Rigidbody`, colliders, joints, `Rope`, `Physics2D` and its 2D classes); rendering data (`Camera`, `Light`, `MeshRenderer`, `SkinnedMeshRenderer`, `SpriteRenderer`, `LineRenderer`, `LineRenderer2D`, `LODGroup`, `Mirror`, `ReflectionProbe`, `PlaneRenderer`, `WorldPanel`, `ParticleSystem`, `Cloth`, `Material`, `Sprite`, `Texture`, `Mesh`, `Model`, `Primitives`, `RenderSettings`). The compiler gets their manifests from the engine crates (`platypus_ts` `engine_manifests`).
 
 **Callbacks.** A `Callback<(..)>` parameter (listener APIs: `input.onKeyDown(f)`, `Assets.onChanged`, `SceneManager.onSceneLoaded`,
-`Screen.onChange`, `ParticleSystem.onStopped`, `Playback.onEnded`, ...) takes a JS function. The engine keeps it as a reference
-counted `Function` (`platypus_api::qjs::keep_function`), so the collector treats it as a root until the `Callback` is dropped, and
-calls it with the same arguments the compiled side gives (numbers, booleans, strings, handle objects); the listener APIs return
-the numeric token and `off(token)` removes it. An exception in a callback is not thrown into the engine: it is recorded for
-`platypus_api::callback::take_errors()` and the other callbacks still run. **Drop the callbacks before the runtime**: QuickJS asserts when
-objects are alive at `JS_FreeRuntime`, so reset the engine state that holds listeners (`input::reset`, `assets::reset`,
-`app::reset`, `screen::reset`, `audio::reset`, `platypus_render_api::reset`, `platypus_scenes::reset`) before dropping or replacing a
-runtime (the `reset()` of a hot reload included).
+`Screen.onChange`, `ParticleSystem.onStopped`, `Playback.onEnded`, ...) takes a script closure, rooted as described under "Callbacks" above; the listener
+APIs return the numeric token and `off(token)` removes it. An exception in a callback is not thrown into the engine: it is recorded for
+`platypus_api::callback::take_errors()` and the other callbacks still run. Reset the engine state that holds listeners (`input::reset`,
+`assets::reset`, `app::reset`, `screen::reset`, `audio::reset`, `platypus_render_api::reset`, `platypus_scenes::reset`) before replacing the
+program (a hot reload does).
 
-**Optional parameters** of value classes are NaN-filled when left out (as in compiled code), optional arrays are empty, optional
-handles `null`. Methods of one class with the same script name (`#[js_name]`) are chosen by argument count like namespace functions.
-
-**Hand-over for `platypus_app`** (not done here, the area is the lead's):
-1. Where the app builds its `QuickJsRuntime`, call `platypus_native::install(&mut rt)?` once before loading the bundle (add `platypus_native` to
-   `crates/platypus_app/Cargo.toml`). It replaces calling the per-crate functions.
-2. Wrap script execution (load, tick, event callbacks, the hot-reload `__platypus_restore_state`) in `platypus_scene::api::enter(&mut scene)`, so `GameObject.create()` and friends
-   have a current scene, and call `platypus_scenes::register_engine_kinds()`, `platypus_render_api::register_kinds()`,
-   `platypus_engine_api::audio_components::register_kinds()` (and the physics kinds) as the compiled host does.
-3. Feed the per-thread state each frame as in "The engine API beyond the scene": `time::advance`, `input::*` events,
-   `Physics.step()` (or `platypus_physics_api::step()` once per fixed tick), `gizmos::take_frame()`, `audio::take_commands()` for the mixer
-   and `audio::ended(..)` back, `platypus_render_api::take_commands()` / `texture_loaded`, `report_particles`, `assets::changed`, `app::set_focus`,
-   `screen::set_size`.
-4. On a runtime reset (hot reload) call the `reset()` functions listed under Callbacks first, then `rt.reset()` (the natives are
-   installed again by `install`). Handle objects do not survive a reload; the Rust state does.
-5. The old `__platypus_op("scene.*" / "physics.*" / "audio.*")` paths and these native globals both exist: a game bundle should use the
-   native globals **or** the `@platypus/engine` classes, not hand ids between them.
+**Optional parameters** of value classes are NaN-filled when left out, optional arrays are empty, optional handles `null`. Methods of one
+class with the same script name (`#[js_name]`) are chosen by argument types.
 
 - **Engine facade (2026-10-20):** the compiler maps the TypeScript object shapes onto the per-field API (`RenderSettings.skybox = { .. }`, `GameObject` option keys, `Camera.rect` / `layerCullDistances` / `main`, `Screen.windowSize` / `resolutions`, `QualitySettings.names`, `Sprite.grid`, `LODGroup.setLODs`, Cloth / SkinnedMeshRenderer array options, `new Material(color, emission, smoothness)`, the `AnimatorController` builder); see `tools/platypus_ts/TODO.md` and `tools/platypus_ts/src/lower/facade.rs`. `Camera.main()` is a native static (`CameraRef::main`).
 ### Native games in `platypus_app` (compiled in process)
 
-`platypus_app` runs a game two ways. A folder with `build/game.pbundle` (or a `.pbundle` / `.ts` / `.tsx` path) is a **native
-game**: [native.rs](../crates/platypus_app/src/native.rs) JIT-compiles the bundled TypeScript with `platypus_ts::jit` and drives it with no
-QuickJS; otherwise `build/game.js` runs in QuickJS as before (`App` keeps both sets of fields and branches at the pump points).
+`platypus_app` runs one kind of game: a folder with `build/game.pbundle` (or a `.pbundle` / `.ts` / `.tsx` path).
+[native.rs](../crates/platypus_app/src/native.rs) JIT-compiles the bundled TypeScript with `platypus_ts::jit` and drives it. A QuickJS
+bundle (`build/game.js`) is refused.
 
 - **Bundle** (written by `platypus-build`): JSON `{"format":1,"title","entry","source":"<one TS/TSX text>","css":"game.css"|null,
   "assets":[..]}`. `Bundle::read` / `Bundle::parse`. The stylesheet is still `build/game.css`, loaded by `load_game_css`.
-- **Compile.** Manifests: `platypus_native::manifests()` (all engine namespaces, which also registers their shim addresses in
+- **Compile.** Manifests: each engine crate's `manifests()` (all engine namespaces, which also registers their shim addresses in
   `platypus_api::symbol`) plus `platypus_ts_ui::manifest_json()` and `root_manifest_json()`; extra symbols: `platypus_ts_ui::symbols()`; the
   runtime's come from `platypus_ts_rt::symbols()` (a build script lists its `#[no_mangle]` exports). Each reload gets a new
   `struct_base` (100,000 apart).
@@ -719,7 +650,7 @@ colliders of models (`colliders: "mesh"`) need the physics hook (agent H).
 
 ## The FPS counter (`crates/platypus_app/src/fps.rs`)
 
-A raw frame-rate overlay drawn by the app for every game, QuickJS (`build/game.js`) or native (`build/game.pbundle`): lime green
+A raw frame-rate overlay drawn by the app for every game: lime green
 (`#32ff32`), bold, 13px, `0 1px 2px #000` shadow, no background, in the top right corner 10px from the top and right edges,
 right-aligned, text like `144 FPS`. `FpsCounter` counts frames over windows of 0.25 s of real time and shows `round(frames / elapsed)`
 (no smoothing, no cap). `FpsOverlay` is a tiny `UiTree` (one absolutely placed box, `pointer-events: none`, so no hit testing or focus)
@@ -921,16 +852,9 @@ parameters `rest`; type strings `enum:X`, `record:X`, `list:value:V`, `list:reco
 diff shows exactly which declarations changed).
 
 **Shapes** is native: `platypus_math::outlines` (`crates/platypus_math/src/outlines.rs`, declared as the namespace `Shapes`), ported
-from the TypeScript in the same order of operations. Compiled code and QuickJS call the same functions. The compiled facade copy
+from the TypeScript in the same order of operations. The compiled facade copy
 is gone; `tools/platypus_ts_tests/bench/outlines.ts` keeps it, renamed `RefShapes`, as a differential oracle (`M9-TS-3110`: every
-point of every shape on edge cases equals the native one bit for bit, in every GC mode). `js/engine/src/shapes.ts` is a typed
-alias of the global `Shapes`.
-
-**QuickJS installs the native API.** `platypus_app` now calls `platypus_native::install` for bundled (JavaScript) games, where it only
-called `Window`'s `register_quickjs`, including after a hot reload. The globals it adds (`Shapes`, `Spline`, `TangentMode`, ...)
-are the ones compiled games call. `js/engine`'s own classes are still module values; they do not read these globals except the
-ones a thin wrapper names (`Shapes`).
-
+point of every shape on edge cases equals the native one bit for bit, in every GC mode).
 **Spline** is native too: `platypus_math::spline` (`crates/platypus_math/src/spline.rs`, plain maths: knots, `closed`, `tension`, the cached
 control points and length table, `locate` / `evaluate` / `tangent` / `sample` / `nearest`) and `platypus_engine_api::spline` (the
 `Spline` handle class over a per-thread registry; `new Spline(points?, { closed?, tension?, mode? })` is `create` with
@@ -941,8 +865,8 @@ is not garbage collected (`Spline.destroy()` frees it), a knot index must be a w
 out-of-range one was) and a `NaN` `t` gives NaN points. The oracle is the old compiled TypeScript, kept renamed (`RefSpline`) in
 `bench/outlines.ts`: `M9-TS-3112` builds splines of 0 to 6 knots (open and closed, three tensions, auto and linear), edits them
 with every mutator and compares every number (`count`, `length`, handles, `segmentPoint`, `segmentDerivative`, `locate`,
-`evaluate`, `tangent`, `sample`, `nearest`, the knots) bit for bit. In QuickJS `Spline` is the same global class
-(`js/engine/src/spline.ts` types it; its bun tests became the QuickJS tests `M9-API-1603`..`1605`).
+`evaluate`, `tangent`, `sample`, `nearest`, the knots) bit for bit. (`M9-API-1603`..`1605`, the QuickJS side of `Spline`, were
+not kept.)
 
 **SplineAnimate** is a native component (`platypus_engine_api::spline`, the `SplineAnimate` handle class, kind `SplineAnimate`). Its
 fields (`spline`, `container`, `duration`, `loopMode`, `alignment`, `playing`, `elapsed`) are data in the registry; `t` and `place()` are
@@ -958,11 +882,9 @@ Components of destroyed objects go with them (`objects::process_destroyed`).
 inline asset `{"$type":"Spline","closed":..,"tension":..,"knots":[{"position","tangentIn","tangentOut","mode"}]}` (asset kind
 `Spline`, `register_kinds()`); loading makes a new spline (`M9-API-1607`). `platypus_scenes::register_engine_kinds` registers both.
 
-**QuickJS.** A bundled game's `GameObject` is the op-based one in `js/engine/src/scene.ts`, so the native component cannot be attached
-to it. `js/engine/src/spline.ts` keeps `SplineAnimate` as a thin script component that leaves the path maths to three native statics of
-the same class: `SplineAnimate.pose(spline, elapsed, duration, loopMode)` (a `{ position, direction }` record),
-`SplineAnimate.progress(..)` (`t`) and `SplineAnimate.facing(direction)` (the rotation); the loop, ping-pong and alignment logic
-exists once, in Rust (`M9-API-1606`). Its container handling is the script `Transform`'s.
+The path maths is also exposed as three native statics of the same class: `SplineAnimate.pose(spline, elapsed, duration, loopMode)`
+(a `{ position, direction }` record), `SplineAnimate.progress(..)` (`t`) and `SplineAnimate.facing(direction)` (the rotation); the
+loop, ping-pong and alignment logic exists once, in Rust (`M9-API-1606`). (The thin QuickJS script component over them is gone.)
 
 Differences from the TypeScript component: the update runs once a frame after the scripts' `onUpdate`s (in the old version in
 component order), so a game that moves the spline in its own `onUpdate` sees the object placed in the same frame; a destroyed or

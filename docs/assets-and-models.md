@@ -1,10 +1,9 @@
 # Textures, sprites and models
 
-Code: [textures.ts](../js/engine/src/textures.ts), [models.ts](../js/engine/src/models.ts) and
-[rendering.ts](../js/engine/src/rendering.ts) (`Mesh`, `Material`) on the script side;
-[world_view.rs](../crates/platypus_app/src/world_view.rs) (`texture_op`, `model_op`),
-[models.rs](../crates/platypus_app/src/models.rs) (glTF) and the `__platypus_textures`/`__platypus_models` calls in
-[main.rs](../crates/platypus_app/src/main.rs) in the app;
+Code: the native `Texture`, `Model`, `Mesh` and `Material` API (`platypus_render_api`; the `textures.ts`, `models.ts` and
+`rendering.ts` of `js/engine` and the `__platypus_textures` / `__platypus_models` calls into JS were removed with QuickJS);
+[world_view.rs](../crates/platypus_app/src/world_view.rs) (`texture_op`, `model_op`) and
+[models.rs](../crates/platypus_app/src/models.rs) (glTF) in the app;
 [world/texture.rs](../crates/platypus_render/src/world/texture.rs) and
 [world/mod.rs](../crates/platypus_render/src/world/mod.rs) (`set_texture`, `set_mesh`) in the renderer.
 How these are drawn is in [world-rendering.md](world-rendering.md).
@@ -33,8 +32,8 @@ A `RenderTexture` is a texture cameras draw into (see [world-rendering.md](world
 
 **Loading is synchronous in the app.** `WorldViews::texture_op` reads the file (a relative path, no
 `..`, through `platypus_core::read_asset`, i.e. the packs or folder the app mounted, see `docs/platypus-build.md`; `data:` URLs work too), decodes it with the `image` crate to RGBA8 and
-queues a `TextureData` in `texture_uploads`. `apply_script_output` collects `(id, width, height)` and
-calls `__platypus_textures([[id, w, h], ...])` after the batch of ops, which sets `width`, `height` and
+queues a `TextureData` in `texture_uploads`. The host collects `(id, width, height)` and
+reports them to the `Texture` registry after the batch of ops, which sets `width`, `height` and
 `isLoaded` and resolves `whenLoaded`. A failure logs a warning and reports 0 x 0 (`failed`). The size
 is also kept in `texture_sizes`, which sprites need before they can be laid out. `Texture.destroy()`
 sends `render.textureRemove`, and things still using it draw the checker.
@@ -102,8 +101,8 @@ removed mesh draw nothing. The renderer also keeps a mesh's buffers by id (`set_
 (x, y, z per vertex; u, v in Unity's bottom-up space, flipped for the engine). They send the same
 `render.mesh` op without making an object per vertex: the fast way for big, rebuilt meshes such as terrain chunks. `setFlat` passes typed arrays straight through to the op and only builds plain arrays when a scene saves the mesh (`Mesh._data` is a getter), so reused `Float32Array` / `Uint32Array` buffers upload cheaply (a chunk went from 1.7 to 0.6 ms).
 
-**Mesh colliders from render meshes.** A `MeshCollider` with `sharedMesh` sends a `physics.collider` op
-whose shape is `renderMesh [mesh id, convex 0/1, scale x y z]`. The app rewrites it in
+**Mesh colliders from render meshes.** A `MeshCollider` with `sharedMesh` asks for a collider whose shape is
+`renderMesh [mesh id, convex 0/1, scale x y z]`. The app rewrites it in
 `WorldViews::resolve_mesh_collider` into a `mesh` or `convex` shape holding that mesh's (scaled)
 positions and indices from `mesh_data`, then hands it to physics. So scripts never send big arrays
 twice.
@@ -155,9 +154,9 @@ the game folder:
   `interpolation` (`linear`/`step`/`cubic`) and the `times` and `values` (cubic splines keep in-tangent,
   value, out-tangent per key). Morph target channels are skipped.
 - Meshes go to `mesh_uploads` and `mesh_data`, textures to `texture_uploads`, and the description is
-  sent to `__platypus_models([id, json | null, ...])` (null: it failed) after the ops batch.
+  reported to the `Model` registry (nothing if it failed) after the ops batch.
 
-**In scripts.** `__platypus_models` calls `Model._loaded`. `instantiate` makes a GameObject named after the
+**In scripts.** `instantiate` makes a GameObject named after the
 file with the model's nodes as children (each a `GameObject` with the node's transform), and a
 `MeshRenderer` per primitive with the right `Material`. In scripts, `mask` becomes `cutout`, `blend` becomes `fade`, and the metallic-roughness map is
 read with `gltfPacking` (occlusion red, roughness green, metallic blue). A node with several primitives gets one child
@@ -173,8 +172,8 @@ become `Model.animations` (`AnimationClip`s with paths from the copy's root); a 
 ## The asset database
 
 Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` and `importer`).
-[scripts/assets.ts](../scripts/assets.ts) writes them, and `scripts/dev.ts` runs it before building (or run
-`bun scripts/assets.ts [folders] [--prune]`).
+`platypus-build assets <game> [--prune]` writes them, and `platypus-build dev` runs it before building
+(the Bun `scripts/assets.ts` and `scripts/dev.ts` are deleted).
 
 - Assets are found by extension: textures (png, jpg, jpeg, svg, hdr), models (glb, gltf, bin), audio (wav,
   ogg, mp3, flac), fonts and other JSON data. Code, builds, `node_modules`, `package.json` and other
@@ -185,12 +184,11 @@ Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` a
 - A file moved without its `.meta` keeps its GUID when it is unambiguous (one orphaned meta and one new
   file with that name). Orphaned metas are only reported, and deleted with `--prune`.
 - The app reads the metas at start-up with `asset_db::scan` ([asset_db.rs](../crates/platypus_app/src/asset_db.rs))
-  and puts `[{ path, guid, importer }]` in `__platypus_info.assets`. Unreadable metas are skipped with a warning.
-- Compiled and native-API programs also have `Assets.exists(path)`, `list(glob)` (a `string[]`) and `packOf(path)` over every
-  loadable asset, not only the ones with a `.meta` (`docs/platypus-api.md`). Bundled QuickJS games get the same three from
-  `@platypus/engine`'s `Assets` (it hands them to the engine's namespace).
+  and hands `[{ path, guid, importer }]` to the native `Assets` (`native_pump::seed_asset_index`). Unreadable metas are skipped with a warning.
+- Programs also have `Assets.exists(path)`, `list(glob)` (a `string[]`) and `packOf(path)` over every
+  loadable asset, not only the ones with a `.meta` (`docs/platypus-api.md`).
 - In scripts: `Assets.all`, `guidToPath(guid)`, `pathToGuid(path)`, `importer(path)` and `resolve(src)`
-  ([assets.ts](../js/engine/src/assets.ts)). `Texture.load`, `Model.load` and `new Sound` accept
+  (assets.ts). `Texture.load`, `Model.load` and `new Sound` accept
   `"guid:<guid>"` sources. `Texture.load` takes unset options from the importer, and a `Sound` streams when
   its importer says so. Scenes save the GUID next to the path of textures, sounds and models and load by
   GUID first, so renamed files are still found.
@@ -205,13 +203,13 @@ and calls `reload_assets`:
 
 - **Textures.** `WorldViews` remembers each file texture's op arguments (`texture_files`). A changed file
   runs the same op again under the same id, so every material using it updates, and scripts hear the new
-  size through `__platypus_textures`.
+  size through the same report.
 - **Models.** `model_files` keeps the path and engine ids a model got. `EngineIds::record(replay)` hands out
   the old ids first, so meshes and textures keep their ids; extra parts get new ones. Placed copies keep
   their old materials and nodes (place the model again to see new ones).
 - **Sounds.** `App::sound_files` keeps the `audio.load` arguments by file; the sound loads again under its
   id. Playbacks already running keep the old audio.
-- Then `__platypus_assets_changed(paths)` calls the `Assets.onChanged(fn)` listeners (it returns a function
+- Then the host calls the `Assets.onChanged(fn)` listeners (`reload_assets`) (it returns a function
   that stops listening), for anything else scripts read from files. A throwing listener does not stop the
   others.
 
@@ -255,10 +253,11 @@ a build. It logs how many files it cooked, lists the ones that failed, then exit
 ## Tests
 
 `M5-TEX-01` and `M5-TEX-02` (texture ops, sprite sizing and pivot) are unit tests in `world_view.rs`;
-`M5-GLB-01` (mesh colliders from a render mesh) is there too. Goldens `M5-RND-08` cover textured meshes
-and sprites and the missing checker. JS units are `js/engine/test/{textures,models,meshes}.test.ts`; the
+`M5-GLB-01` (the glTF loader) is in `models.rs` (its render-mesh collider test in `world_view.rs` was removed with
+the `physics.collider` op). Goldens `M5-RND-08` cover textured meshes
+and sprites and the missing checker. The JS units (`js/engine/test/{textures,models,meshes}.test.ts`) were deleted; the
 fixture model is `tests/fixtures/assets/house.glb`. Newer IDs: `M5-AST-01` (the asset watcher in
 `reload.rs`; textures and models reloading under their ids in `world_view.rs`), `M5-AST-02` and
-`M5-AST-05` (`Assets.onChanged`, GUIDs and importers: `js/engine/test/assets.test.ts`), `M5-AST-03`
-(`scripts/assets.test.ts`), `M5-AST-04` (`asset_db.rs`) and `M5-AST-06` (cooking, in `cook.rs`). Skins and
+`M5-AST-05` (`Assets.onChanged`, GUIDs and importers; the JS test is gone), `M5-AST-03`
+(the `.meta` writer, now `platypus-build assets`; its Bun test `scripts/assets.test.ts` is gone), `M5-AST-04` (`asset_db.rs`) and `M5-AST-06` (cooking, in `cook.rs`). Skins and
 animations in glTF are `M5-SKN-01` and `-02` ([animation-3d.md](animation-3d.md#tests)).

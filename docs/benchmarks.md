@@ -1,5 +1,7 @@
 # Benchmarks
 
+> The QuickJS columns below are from before the QuickJS removal (2026-10-28); `platypus-build bench` now times only the native backend.
+
 Frame times of every example on the native backend (platypus_ts, JIT-compiled `game.pbundle`) against the QuickJS original
 of the same example on `main` (its own `bun run build`), measured before this branch is merged back. Both run in the
 same release host, without a window (`platypus-app --bench`: an offscreen target, no vsync, no frame cap; each frame waits for
@@ -75,8 +77,7 @@ No build or run failed and no run logged errors.
   folder.
 - **Like-for-like script time:** a QuickJS game's **script** column holds the JavaScript, the native API calls it makes
   (math, scene, rendering data: QuickJS games call the same `#[platypus_api]` functions) and its animation, spline and camera
-  follow components; native counts those components under **sync**. `opMarshalMs` (copying `__platypus_op` arguments out of
-  JavaScript) and `opsApplyMs` (applying them, under **other**) stay at 0.3 ms or less.
+  follow components; native counts those components under **sync**. `opMarshalMs` and `opsApplyMs` (JSON fields of that time, now removed) stayed at 0.3 ms or less.
 
 ## Stages
 

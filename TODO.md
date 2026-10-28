@@ -11,7 +11,7 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] Window/input: `winit` + `gilrs`
 - [x] Audio: `kira`
 - [x] Layout: Taffy first, Yoga fallback behind `LayoutEngine`
-- [x] **First script backend:** QuickJS (`rquickjs` 0.14). `deno_core` follows as a second backend.
+- [x] **First script backend:** QuickJS (`rquickjs` 0.14). `deno_core` follows as a second backend. (QuickJS was removed 2026-10-28; compiled TypeScript, `platypus_ts`, is the only backend and `deno_core` was never added.)
 - [x] Rust edition 2024, latest stable (1.99 at time of writing)
 - [x] Licence: Apache-2.0 (see `LICENSE` and the README; it lets people modify anywhere and keep their changes with less friction). It was private until a working demo. Done with it: `license = "Apache-2.0"` in the Cargo manifests and package.json files, an `SPDX-License-Identifier: Apache-2.0` header on our source files, checked by `M9-LIC-01`. The holder line came with the rename: `Copyright 2026 The Platypus Authors` above it, and `NOTICE`
 - [x] Third-party notices (2026-10-28): `tools/platypus_notices` writes `THIRD-PARTY-NOTICES.md` from Cargo.lock (the host's crates, one section per licence, texts once, NOTICE files and bundled code) and `hand-written.md` (ANGLE and what it bundles, Inter); unknown licences, copyleft and crates without a licence file fail unless in its reviewed table. Built into `platypus-app` (`--licenses`) and `platypus-build` (`package` writes it beside every exe, `--no-notices` to skip); `notices_are_current` fails when Cargo.lock changes without it (`M9-LIC-02..16`)
@@ -1124,8 +1124,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       the parent's world transform is one walk up, not three per level
     - [x] `Spline` evaluates from cached control points in plain numbers
     - [x] The fish tank flocks over a spatial grid in plain numbers
-  - [ ] QuickJS allocation: every `Vector3` / `Quaternion` op allocates. Scalar or
-    in-place variants for hot paths (`addInPlace`, `set`), or a faster engine later (M9.a)
+  - [x] QuickJS allocation: every `Vector3` / `Quaternion` op allocates. (Moot: QuickJS was removed 2026-10-28; compiled code has no such cost.)
   - [ ] 2D shapes: check draw calls and re-tessellation with hundreds of shapes, and batch
     them where it helps
   - [ ] Profile the rest of the frame (~6 ms engine and render with 123 fish, ~800 shapes)
@@ -1180,8 +1179,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
   - [ ] Frame time split: script (per hook: `onUpdate`, animation, physics callbacks, UI
     commits), engine (scene, physics step, audio), render (CPU encode, GPU passes via
     timestamp queries: shadows, world, light volume, post, UI), present / vsync wait
-  - [ ] Scripts: time per component class and per hot function (QuickJS sampling or
-    instrumented `__platypus_run`), allocations and GC pauses
+  - [ ] Scripts: time per component class and per hot function (a sampling profiler or
+    instrumented hooks of the native backend), allocations and GC pauses
   - [ ] Animation: animators, bones and curves sampled per frame, time per character
   - [ ] Rendering counters beside `RenderStats`: draw calls, triangles, pipeline switches,
     texture and buffer memory, shadow maps drawn
@@ -1716,8 +1715,8 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] 2D-world content on the GLES path: shapes, sprites, text meshes and the camera's clear drawn through the UI draw list
     (or a small GLES 2D pass), so `world2d` programs start on GLES too (today they go to wgpu like `world3d`).
   - [ ] wgpu failing at start (no Vulkan / DX12 device) falls back to the GLES path for `ui` games, and says so.
-  - [ ] Remove the root `tsconfig.base.json` together with the QuickJS packages that still extend it (`js/engine`,
-    `js/react`, `js/editor-ui`, `editor/`, `tests/fixtures`); the examples and `tools/bench/crowd` no longer use it.
+  - [ ] Remove the root `tsconfig.base.json` together with the packages that still extend it (`js/editor-ui`, `editor/`;
+    `js/engine`, `js/react` and the `tests/fixtures` JS are already gone); the examples and `tools/bench/crowd` no longer use it.
   - ANGLE no longer needs scoping to one binary (the old `ui_app_only` idea): there is one host.
   - [x] The scene counts (2026-10-28): a `GameObject`, `Transform`, scene or prefab (file or API), or a component class
     (`extends Component`, a lowered `register(..)`, found in the parsed code) makes a program `world2d`; the hierarchy
@@ -1951,8 +1950,8 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     - [ ] Windows aarch64
     - [ ] Debug info / source maps for crashes; unwind tables where the platform needs them
     - [ ] CI job building and running `tools/` tests on each host
-- [ ] **M9.c** Release packaging for macOS, Linux, Android and iOS (iOS: QuickJS backend, Xcode
-  wrapper)
+- [ ] **M9.c** Release packaging for macOS, Linux, Android and iOS (iOS: no JIT, so the game must be AOT-compiled and linked in
+  (the QuickJS backend this once relied on was removed); Xcode wrapper)
 
 ## M10 — Optional extras
 
@@ -2132,11 +2131,18 @@ Left over after the UI events and attributes work (`b116ac6`, `docs/ui-native.md
 - [ ] **`<input type>` behaviour:** `type` is stored lower-cased and matches `input[type=password]` selectors, but changes no behaviour and every input is a text field. Implement per type: `password` (masked text, no copy), `number` (digit filtering, step/min/max, spin keys), `checkbox` / `radio` (look, checked state, `onChange`), `range`, `color`, `date`/`time` if wanted, `search`, `email`/`tel`/`url` keyboard hints, `hidden`, `button`/`submit`. Keep React's controlled and uncontrolled semantics.
 - [ ] **`pseudoElement` on transition and animation events** is always `""`: generated `::before` / `::after` boxes are not event targets, so events for them are reported on the owning element. Make generated boxes report their pseudo-element name (`"::before"`, `"::after"`) as in the DOM.
 
-## QuickJS deprecated; removal plan (2026-10-22)
+## QuickJS removed (2026-10-28; was "deprecated; removal plan", 2026-10-22)
 
-`platypus_app` refuses a QuickJS bundle (`build/game.js` without `game.pbundle`) unless `--force` (`M9-APP-01..05`); `platypus_editor` forces
-implicitly (its UI is QuickJS) and logs the note once. Nothing is deleted yet. What would go later, in this order:
-- [~] Port `editor/` and `js/editor-ui` to platypus_ts (the editor is the last QuickJS app), then drop the implicit force.
+QuickJS is gone from Platypus: `platypus_app` runs only compiled games and refuses a QuickJS bundle with a pointer to
+`platypus-build build` (`--force` no longer exists, `M9-APP-01`, `-02`). Done:
+- [x] Delete `crates/platypus_script` (the QuickJS backend, `ComponentHost`) and the QuickJS paths of `platypus_app` (`load_bundles`, `dev_vendor`, bundle reload, `__platypus_*` pumps, `setUiScale`).
+- [x] Delete `crates/platypus_native` (`register_quickjs`, `install`) and the `quickjs` flag and `qjs.rs` of `platypus_api`.
+- [x] Delete `js/engine`, `js/react`, the JS fixtures of `tests/fixtures` and the `bun run build*` / `scripts/dev.ts` / `scripts/assets.ts` bun paths (root `package.json` keeps only `typecheck` and `screenshots`).
+- [x] Rust integration tests that used ScriptRuntime/QuickJS as a library: deleted with their crates (the removed test IDs are marked in TESTS.md).
+- [x] The `platypus_editor` binary and its host side (`editor.rs`, `project.rs`, the editor log capture and `editor.*` ops) are removed; `editor/` and `js/editor-ui` sources stay.
+
+Left:
+- [ ] **Re-make the editor natively in TypeScript at its current feature state** (another agent is on it); then delete `js/` and `editor/`.
   End state (decided 2026-10-28): no `js/` folder; the editor is re-made natively at its current feature state.
   - [x] `editor/project.json` (title, company, identifier, `renderer: "vulkan"`, 1600 × 900 window), replacing
     `package.json`'s `platypus` section (2026-10-28).
@@ -2153,19 +2159,16 @@ implicitly (its UI is QuickJS) and logs the note once. Nothing is deleted yet. W
       `releasePointerCapture`, `currentTarget` on pointer events, `defaultPrevented` on key events,
       `Camera.worldToScreenPoint` / `screenPointToRay` / `pixelRect`, SVG `textAnchor`, React `Ref` /
       `useImperativeHandle`; also check `HideFlags`, `Camera.sceneGrid` and `Gizmos.present`.
-  - [ ] Build with `platypus-build build editor`, run `platypus_editor` on `editor/build/game.pbundle`, drop
-    the implicit `--force`; the model tests (`js/editor-ui/test`) move to native tests.
-- [ ] Delete `crates/platypus_script`'s QuickJS backend (`QuickJsRuntime`, `ComponentHost`) and the QuickJS paths of `platypus_app` (`load_bundles`, `dev_vendor`, bundle reload, `__platypus_*` pumps).
-- [ ] Delete `platypus_native::register_quickjs` (keep the native `#[platypus_api]` registries compiled code uses).
-- [ ] Delete `js/engine`, `js/react`, `js/editor-ui`, `tests/fixtures` (the QuickJS fixtures) and the `bun run build*` / `scripts/dev.ts` / `scripts/screenshots.ts` bun paths.
-- [ ] Rust integration tests that use ScriptRuntime/QuickJS as a library: port to compiled games or delete with their crates.
+  - [ ] Build with `platypus-build build editor` and run it natively (the `platypus_editor` binary went with
+    QuickJS); the model tests (`js/editor-ui/test`) move to native tests.
+- [ ] **Replace `scripts/screenshots.ts` and `scripts/progress-shots.ts` with Rust tools under `tests/tools/`**, then drop the root `package.json` bun scripts.
 
 ## Code review (after the platypus_ts branch is merged into `main`)
 
 Most of this branch (about 300 commits) was written by agents and checked by tests, ratchets and snapshots, which catch regressions but not design drift. Once `claude/recursing-wright-856ffa` is merged into `main` (the user decides squash or merge as-is), do a human-readable review pass:
 - [ ] **Run `/code-review`** on the merged range (start at `high` effort, then `xhigh` on the compiler and engine crates) and triage the findings into TODO items.
 - [ ] **Read-only review agents per area**, one report each (no edits): `tools/platypus_ts` (the compiler: `lower/expr.rs` is about 5,800 lines, split candidates), `tools/platypus_ts_rt` (GC, maps, JSON: unsafe code and rooting), `crates/platypus_api_macros` (3,900 lines), `crates/platypus_app` (`main.rs` 3,300 lines, `native.rs`, `render_sync.rs`, `windows.rs`), `crates/platypus_ui` / `platypus_ui_native`, `crates/platypus_render_api` (generated registries), packs and the virtual file system, `platypus-build`.
-- [ ] **Look for design drift and duplication:** the same logic in the QuickJS and native paths, copies of the same table, helpers that grew into modules, `#[allow]` without a reason, `unsafe` blocks without a safety comment, `TODO`/`FIXME` left in code, dead code behind deprecated QuickJS paths.
+- [ ] **Look for design drift and duplication:** the same logic in the QuickJS and native paths, copies of the same table, helpers that grew into modules, `#[allow]` without a reason, `unsafe` blocks without a safety comment, `TODO`/`FIXME` left in code, dead code left behind by the QuickJS removal.
 - [ ] **Security-minded pass** (`/security-review`): asset path handling (`resolve_asset`, the unsafe-paths design), pack reading (`.ppk`), JSON parsing, the `prebuild` command of `project.json`, anything that runs external commands.
 - [ ] **Split the largest files** the review flags (new modules rather than growing them), and keep the notes in `CLAUDE.md` ("Notes for agents") current.
 - [ ] **Prune the notes:** `TESTS.md` (split by milestone), `TODO.md` (done items to history), the `CLAUDE.md` Status section (stale), the `tools/platypus_ts/TODO.md` log.

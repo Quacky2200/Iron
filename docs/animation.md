@@ -92,7 +92,7 @@ All bubble. React side: [react.md](react.md#events-eventsts).
 | ID | Where |
 |---|---|
 | M3-ANI-01 | unit tests in `motion.rs` (timing, interpolation, shorthand parsing) |
-| M3-ANI-02 | `crates/platypus_ui/tests/motion.rs` (transitions, events); `js/react/test/events.test.tsx` |
-| M3-ANI-03 | unit tests in `motion.rs` and `css.rs` (`@keyframes` parsing); `tests/motion.rs` (running animations); `events.test.tsx` |
+| M3-ANI-02 | `crates/platypus_ui/tests/motion.rs` (transitions, events) |
+| M3-ANI-03 | unit tests in `motion.rs` and `css.rs` (`@keyframes` parsing); `tests/motion.rs` (running animations) |
 | M3-ANI-04 | `tests/motion.rs` (`@starting-style`, dialog open) |
 | M3-ANI-05 | `tests/motion.rs` (`:outro` removal) |

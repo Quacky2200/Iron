@@ -1,384 +1,123 @@
 # Scripting
 
-Crates and packages: [platypus_script](../crates/platypus_script/src) (Rust), [js/engine](../js/engine/src)
-(`@platypus/engine`), plus the loader in [platypus_app/main.rs](../crates/platypus_app/src/main.rs).
-Design background: [DESIGN.md](../DESIGN.md) section 3 and 4.
+Games are TypeScript compiled to machine code by `platypus_ts` (oxc, a typed IR, Cranelift) and run in the host's
+process. There is no JavaScript engine: QuickJS (`platypus_script`, `platypus_native`, `@platypus/engine`,
+`@platypus/react`, `__platypus_op` / `__platypus_commit` and the `__platypus_*` calls into JS) was removed on
+2026-10-28. Design background: [DESIGN.md](../DESIGN.md) sections 3 and 4. The compiler: [platypus-ts.md](platypus-ts.md)
+and [platypus-ts-native.md](platypus-ts-native.md); the script API: [platypus-api.md](platypus-api.md).
 
-## Values crossing the boundary
+The rule is unchanged: **Rust owns the world, scripts own behaviour.** Scripts hold numeric ids (or handle numbers),
+never engine references, and the engine calls into the game's components by class and hook, never storing script
+function references across a reload.
 
-[platypus_core::Value](../crates/platypus_core/src/value.rs) is the only thing that crosses: `Null`,
-`Bool`, `Number(f64)`, `String`, `Array`. There are no objects, no functions, no handles to JS.
-Engine objects are numeric ids ([ids.rs](../crates/platypus_core/src/ids.rs): `EntityId`,
-`ComponentId`, `NodeId`). `from_js`/`to_js` in
-[quickjs.rs](../crates/platypus_script/src/quickjs.rs) convert; anything that is not bool, number,
-string or array becomes `Null`. Typed arrays (`Float32Array`, `Float64Array`, `Uint32Array`, `Int32Array`, `Uint16Array`, `Int16Array`, `Uint8Array`, `Int8Array`, `subarray` views included) arrive as number lists: `typed_numbers` reads their bytes directly, with no per-element JS calls (`M7-FOG-09`).
+## The native backend
 
-## `ScriptRuntime`
+[native.rs](../crates/platypus_app/src/native.rs) holds `Native`, the compiled game. `Native::load` JIT-compiles the
+bundle's source with the manifests of every engine namespace, runs the program's top level (`register(..)`,
+`UiRoot.mount(..)`) and spawns the starting components (one GameObject per class registered without `spawn: false`).
+A module with a top-level `await` keeps the program from starting: until every module has finished, the registered
+classes are not spawned, the start scene is not loaded and no hook runs, while timers, microtasks and the UI mounted
+so far keep going.
 
-Defined in [lib.rs](../crates/platypus_script/src/lib.rs). Every backend provides the same globals.
-
-| Method | Purpose |
+| App event | Native call |
 |---|---|
-| `load_bundle(name, code)` | Evaluate a Bun-built IIFE (or, for a dev build's game code, the CommonJS wrapper `load_game` makes); `name` is used in error locations |
-| `eval(code)` | Evaluate an expression to a `Value` (tests, console, feature checks) |
-| `call_global(name, args)` | Call a global function: the way Rust calls into JS |
-| `tick(now_ms)` | Fire due timers (see below); returns uncaught errors since last tick |
-| `drain_ops()` / `drain_commits()` | Take what scripts queued since last call |
-| `drain_targeted_commits()` | Like `drain_commits`, with the UI tree each commit is for (the default method says 0 for all) |
-| `reset()` | Fresh context; drops ops, commits, timers, errors; keeps the log sink |
-| `set_log_sink(sink)` | Where `console.*` goes (default: `tracing`, target `script`) |
+| fixed tick (60 Hz, at most 5 catch-up ticks a frame; `TICK`) | `Native::fixed_tick`: `onFixedUpdate`, physics step, contact hooks |
+| frame | `Native::frame`: `Time`, timers and microtasks, `onUpdate` / `onLateUpdate` (`dt` capped at 0.1 s), animation, UI state |
+| before drawing | `Native::pre_render` (`onPreRender`) |
+| UI events | `Native::ui_events` (pointer, keys, focus) to the `platypus_ui_native::Runtime` |
+| game input, focus and pause | `Native::game_input`, `Native::focus_changed` |
+| hot reload | `Native::reload` |
 
-Difference from DESIGN.md section 4.1: the trait there has no `tick` or `drain_commits`; the code
-added both (timers and UI commits are first-class). The shared behaviour is pinned by the
-conformance suite ([conformance.rs](../crates/platypus_script/src/conformance.rs)), which any new
-backend must pass via `runtime_conformance_tests!`.
+Every call runs with the app's scene made current (`platypus_scene::api::enter`), because compiled code reaches the
+scene through a per-thread pointer. After each call the app applies what the game asked for (`native_after`: scene
+changes, fonts, stylesheets, cursor, audio commands) and mirrors the render registries into `WorldViews`
+(`sync_native_render`, see [world-rendering.md](world-rendering.md)). The order of a frame is in
+[README.md](README.md#the-frame-pipeline); while the game is paused in the background none of it runs
+([platform.md](platform.md#focus-and-pausing)). Component order and lifecycle:
+[scene-and-objects.md](scene-and-objects.md#components-and-the-lifecycle).
 
-## QuickJS backend
+A component that throws is logged and disabled; others keep running. Timers (`setTimeout`, no `setInterval` or
+`requestAnimationFrame`) and promise jobs run from `Native::frame`.
 
-[quickjs.rs](../crates/platypus_script/src/quickjs.rs), `QuickJsRuntime` (rquickjs):
+## Values and the engine boundary
 
-- Holds a `Context`, a `Runtime` and `Rc<RefCell<Shared>>`. `Shared` (ops, commits, errors, log
-  sink) is what the native functions write into and survives `reset()`. Field order matters:
-  the context must drop before its runtime (also handled in `reset`).
-- `new_context` creates a runtime and context, runs `install_globals`, then evaluates
-  [prelude.js](../crates/platypus_script/src/prelude.js).
-- **Native globals** installed by `install_globals`:
-  - `console.log/info/debug/warn/error` -> the log sink.
-  - `__platypus_op(name, ...args)` -> pushes an `Op { name, args }` onto `Shared.ops`.
-  - `__platypus_commit(ops, target?)` -> pushes a `Commit { ops }` onto `Shared.commits` with its UI tree
-    `target` (default 0, the screen; others are world panels). `drain_commits()` drops the targets;
-    `drain_targeted_commits()` returns `(target, Commit)` pairs.
-  - `__platypus_report_error(e)` -> pushes onto `Shared.errors` (used by the prelude).
-- **Microtasks**: every entry point (`load_bundle`, `eval`, `call_global`) ends with `run_jobs()`,
-  draining pending promise jobs, then calling the global `__platypus_flush` if defined (it sends queued transforms, see [scene-and-objects.md](scene-and-objects.md#transform-batching)); an error from it goes to `Shared.errors`. React 19 relies on microtasks, so "jobs run before returning to
-  Rust" is part of the contract. A job that throws is kept in `Shared.errors` and returned by the
-  next `tick`.
-- Bundles are evaluated non-strict with the bundle name as the filename, so stack traces point at
-  `game.js:line`. `thrown_to_error` builds a `ScriptError` ([error.rs](../crates/platypus_script/src/error.rs))
-  with message, stack and a file/line parsed from the stack.
-
-## Timers (the prelude)
-
-[prelude.js](../crates/platypus_script/src/prelude.js) implements `setTimeout`/`clearTimeout` entirely
-in JS so that Rust never holds a JS function (DESIGN rule). Timers live in a `Map` keyed by id,
-with a due time on *engine time* and a sequence number for stable ordering.
-
-`QuickJsRuntime::tick(now_ms)` repeatedly calls the global `__platypus_fire_next_timer(now)`. Each
-call fires the earliest due timer (ties broken by sequence) and returns `true`, so microtasks run
-between timers because `call_global` drains jobs. The loop is capped at `MAX_TIMERS_PER_TICK`
-(1000) so `setTimeout(f, 0)` loops cannot freeze a frame; timers that throw are reported through
-`__platypus_report_error` and the others still run. There is no `setInterval` or `requestAnimationFrame`.
-
-## Ops and commits
-
-| Channel | JS side | Rust side | Used for |
-|---|---|---|---|
-| Ops | `__platypus_op(name, ...args)` (`op()` in `@platypus/engine`) | `drain_ops()` -> `OpBuffer` of `Op {name, args}` | `loadFont`, `uiScale`, `addStyleSheet`, `removeStyleSheet`, `focus`, `blur`, `setPointerCapture`, `releasePointerCapture`, `scrollTo`..., and the `physics.*` and `audio.*` families |
-| Commits | `__platypus_commit(ops, target)` | `drain_targeted_commits()` -> `Vec<(u32, Commit)>` | React UI mutations, for the screen or a world panel |
-
-Ops are generic (a name plus arguments, see [ops.rs](../crates/platypus_core/src/ops.rs)); the doc
-comment notes a binary encoding is planned once the op set settles (TESTS.md `M2-BEN-04`).
-A typed alternative to string-named ops is being built as `platypus_api` (see [platypus-api.md](platypus-api.md)).
-There is no registry: the **app** matches on `op.name` in `App::tick`
-([main.rs](../crates/platypus_app/src/main.rs)) and logs `unknown script op` otherwise. `physics.*` and `audio.*` ops are matched by prefix and
-forwarded to `Physics::apply` and the mixer; `cloth.*` goes to `ClothSystem`
-([physics-and-audio.md](physics-and-audio.md#cloth)); `app.runInBackground` and `app.targetFrameRate` are the
-app's own; `scene.*` goes to `ScriptScene::apply` and `render.*` to
-`WorldViews`/`Panels` (see [scene-and-objects.md](scene-and-objects.md) and
-[world-rendering.md](world-rendering.md)).
-
-A `Commit` is a `Vec<Value>`, each op `[opcode, ...args]`
-([opcodes.rs](../crates/platypus_ui/src/opcodes.rs), mirrored by
-[opcodes.ts](../js/react/src/opcodes.ts)). Applied as a unit by `UiTree::apply_commit`; see
-[ui-tree.md](ui-tree.md).
-
-## `ComponentHost` and `@platypus/engine`
-
-Rust side: [components.rs](../crates/platypus_script/src/components.rs). `ComponentHost` keeps a
-`Vec<Entry { id, class, object, hooks, started, enabled }>` and talks to JS only by calling globals:
-
-| Rust call | JS global (installed by `@platypus/engine`) |
-|---|---|
-| `registered_classes` | `__platypus_registered()` -> names of the starting classes (registered without `spawn: false`) |
-| `spawn_on(class, object, name)` (`spawn` has no object) | `__platypus_create(class, id, object, name)` |
-| first run of a component | `__platypus_hooks(id)` -> names of its lifecycle methods, kept in the `Entry` |
-| `update_active(dt, active)` | `__platypus_tick(dt)` (script `Time`; returns the scaled `dt`), then `__platypus_dispatch(id, "onStart"/"onUpdate"/"onLateUpdate", ...args)` |
-| `fixed_update(dt, active)` | `onFixedUpdate`, batched the same way |
-| `pre_render(active)` | `onPreRender`, batched the same way |
-| `remove`, `remove_on_objects`, and on error | `onDestroy` (not after an error), then `__platypus_destroy(id)` |
-| `adopt(id, class, object)` | none: takes over a component a script made with `addComponent` |
-
-`run` batches a hook: one `__platypus_run(method, ids, ...args)` call covers each run of consecutive components,
-instead of one `__platypus_dispatch` per component. A new component's `onStart` flushes the batch first, so the
-order is unchanged. If a call throws, JS has set `__platypus_run_at` to the index that failed; the host disables
-that component (`fail`) and goes on with the rest. A bundle without `__platypus_run` falls back to `run_each`
-(one `__platypus_dispatch(id, method, ...args)` per component).
-
-`onStart` runs once before any other hook. Each hook only runs on components that define it and whose
-GameObject is active (the `active` closure). A component that throws is
-logged, disabled and destroyed; others keep running. The order within a frame is in
-[scene-and-objects.md](scene-and-objects.md#components-and-the-lifecycle). Callbacks are looked up by
-`(component id, method name)` at call time, never stored, so a reloaded bundle's code is picked up.
-
-JS side: [js/engine/src/index.ts](../js/engine/src/index.ts).
-
-- `Component` base class (`id`, `gameObject`, `transform`, optional `onStart`, `onUpdate`,
-  `onLateUpdate`, `onFixedUpdate`, `onPreRender`, `onDestroy`, `onReload`), `register({ Name: Class }, { spawn })`
-  (an object, so names survive minification; `spawn: false` names a class for scene files without
-  starting one). `GameObject`, math, `Time`, cameras and the rest of the
-  M5.a API are in [scene-and-objects.md](scene-and-objects.md) and [world-rendering.md](world-rendering.md).
-- `op(name, ...args)`, `loadFont(face)`, `addStyleSheet(css)` / `removeStyleSheet(id)`. JS allocates
-  stylesheet ids; the app maps them to tree ids (`App.sheets`).
-- `setUiScale(scale)`: sends the `uiScale` op (`"none"`, `"fixed" f`, `"height" h`, `"fit" w h`).
-  Takes `{ height: 1080 }`, `{ width, height }`, a number (fixed zoom) or `null` (the default). The
-  app handles it in `ui_scale.rs` (see [input-and-events.md](input-and-events.md#ui-scale-m3d-step-9b)).
-- `input` ([input.ts](../js/engine/src/input.ts)): keyboard and gamepad state and events for
-  gameplay code, fed by `__platypus_input(type, ...args)` from the app (see
-  [input-and-events.md](input-and-events.md#gamepads-and-game-input-m3c-step-6)).
-- `physics` ([physics.ts](../js/engine/src/physics.ts)) and `audio` ([audio.ts](../js/engine/src/audio.ts)):
-  bodies, colliders, sounds, buses. They queue `physics.*`/`audio.*` ops and receive results through
-  `__platypus_physics` and `__platypus_audio` (see [physics-and-audio.md](physics-and-audio.md)).
-- The `__platypus_*` host functions are assigned on `globalThis` at import time; instances live in a
-  `Map<number, Component>`.
-- [globals.ts](../js/engine/src/globals.ts) declares the ambient types (`__platypus_op`, timers,
-  `process.env.NODE_ENV`, `__platypus_ui_event`, `__platypus_input`, `__platypus_physics`, `__platypus_audio`, and the scene hooks below). It is hand-written for now (a generated `.d.ts` is planned).
-
-The scene globals, installed by `@platypus/engine` and called by Rust: `__platypus_registered`,
-`__platypus_create(class, id, object, name)`, `__platypus_hooks(id)`, `__platypus_dispatch`, `__platypus_run(method, ids, ...args)`, `__platypus_flush()`, `__platypus_destroy`,
-`__platypus_tick(dt)` (script `Time`, once per frame), `__platypus_scene(moved)` (engine moves of objects, see
-[scene-and-objects.md](scene-and-objects.md#the-move-batch)) and `__platypus_screen(width, height, scale)`
-(the screen size in UI pixels, when it changes). `__platypus_animate(dt)` poses animated objects between `onUpdate`
-and `onLateUpdate` ([animation-3d.md](animation-3d.md#when-it-runs)); `__platypus_focus(focused, paused)` reports
-focus and background pausing ([platform.md](platform.md#focus-and-pausing)); `__platypus_assets_changed(paths)`
-reports reloaded asset files ([assets-and-models.md](assets-and-models.md#hot-reload-of-assets)). `__platypus_asset_text([id, text | null, ...])` answers
-`asset.readText` (files scenes load, see [scene-and-objects.md](scene-and-objects.md#scenes)). Like `__platypus_ui_event`, the optional ones
-(`__platypus_tick`, `__platypus_animate`, `__platypus_focus`, `__platypus_assets_changed`, `__platypus_scene`, `__platypus_screen`,
-`__platypus_physics`, `__platypus_audio`) are probed or
-called tolerantly, so games that don't import the engine still run.
-
-`platypus_app` makes **one GameObject per starting class** (registered without `spawn: false`) with that
-component (`spawn_starting_components`; a start scene is loaded by the scripts themselves, see
-[scene-and-objects.md](scene-and-objects.md#scenes)) and ticks at a fixed 60 Hz (`TICK`, max 5 catch-up ticks per
-frame). Per frame the order is:
-
-1. For each fixed tick: `fixed_update` (`onFixedUpdate`), `apply_script_output` (commits, then ops in
-   order), `step_physics` (calls `__platypus_physics(moved, contacts, rays, characters)` if defined), the
-   cloth step, then `send_scene_moves` (`__platypus_scene`).
-2. `ScriptRuntime::tick` (timers and microtasks).
-3. `apply_script_output`, `update_active` (`__platypus_tick`, then `onUpdate`, `__platypus_animate` and
-   `onLateUpdate`, `dt` capped at 0.1 s), `apply_script_output`, then `update_audio`, which calls
-   `__platypus_audio(ended)`.
-
-Before all that, `App::tick` polls the script and asset watchers. While the game is paused in the
-background (see [platform.md](platform.md#focus-and-pausing)) it stops there: none of the steps run.
-4. At draw time: `pre_render` (`onPreRender`), `apply_script_output`, `__platypus_screen` if the size
-   changed, then panels and the world are drawn ([world-rendering.md](world-rendering.md)).
-
-See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
+Compiled code calls the engine through `extern "C"` shims generated by `#[platypus_api]`
+([platypus-api.md](platypus-api.md)), with typed arguments, not a generic `Value` channel. `platypus_core::Value`
+(`Null`, `Bool`, `Number(f64)`, `String`, `Array`) remains for the places that still need an untyped value (UI
+event payloads: `UiEvent::script_args`, the internal `physics.*` / `audio.*` / `render.*` / `cloth.*` op vocabulary of
+the Rust crates). Engine objects are numeric ids ([ids.rs](../crates/platypus_core/src/ids.rs)). Assets are resolved
+with [resolve_asset](../crates/platypus_core/src/assets.rs): relative paths only, no `..`, no schemes, no drive
+letters; `data:` URLs go through `decode_data_url`. Game scripts therefore cannot read arbitrary files.
 
 ## From TypeScript to a running game
 
-1. The examples are compiled by `platypus-build` (see [platypus-build.md](platypus-build.md); they no longer have Bun `build` / `dev` /
-   `typecheck` scripts). The QuickJS path below is what remains for the editor (`editor/`) and the test fixtures: a folder with
-   `src/main.tsx` and a `build` script:
-   `bun build src/main.tsx --outdir build --entry-naming game.[ext] --format iife --target browser
-   --define process.env.NODE_ENV='"development"'`. Bun strips types, bundles React and the `@platypus/*`
-   workspace packages into one IIFE, and (when CSS is imported) writes `build/game.css` next to it.
-   The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
+1. `platypus-build build <game>` ([platypus-build.md](platypus-build.md)) bundles the game's modules into
+   `build/game.pbundle` (JSON: the bundled TypeScript source, the stylesheet, the asset list and the renderer tier)
+   and `build/game.css`, checked by `tsc` against the generated `types/platypus.d.ts`. No Bun is involved.
 2. `platypus-app <folder>` ([main.rs](../crates/platypus_app/src/main.rs)) runs the current folder when no game is
-   given (`parse_args_from`; the folder may come before or after the options, `M5-APP-03`). It calls
-   `resolve_bundle`: a directory
-   means `<dir>/build/game.js` with the directory as the asset root; a `.js` path uses its parent.
-3. `QuickJsRuntime::new()`, `load_bundles`, then `ComponentHost::registered_classes` + `spawn` each.
-   `load_bundles` loads `game.js` alone, or for a dev build (below) `vendor.js` and then the game's
-   code through `platypus_script::load_game`.
-4. `ui_events` is probed once with `typeof __platypus_ui_event === 'function'` (set by `@platypus/react`);
-   games without React UI skip event dispatch.
-5. `build/game.css`, if present, is added with `add_stylesheet_with_base(css, "build")` so its relative
-   `url(...)`s are rebased onto the game folder (see [css.md](css.md)). `@font-face` faces found in it
-   are loaded through the same `load_font` helper as `loadFont()`.
-6. Assets (`url()` images, fonts) are resolved with
-   [resolve_asset](../crates/platypus_core/src/assets.rs): relative paths only, no `..`, no schemes, no
-   drive letters. `data:` URLs (Bun inlines small assets) go through `decode_data_url`.
-   Game scripts therefore cannot read arbitrary files.
-
-**Dev builds.** `bun run dev` in `editor/` runs [scripts/dev.ts](../scripts/dev.ts) instead of the
-`build` script. It writes two files to `build/`:
-
-- `vendor.js`: an IIFE with React, the reconciler, the `react-refresh` runtime, `@platypus/engine` and
-  `@platypus/react` ([vendor.ts](../js/react/src/vendor.ts)), built once. It keeps a table of those
-  modules behind `globalThis.__platypus_require`.
-- `game.js`: the game's own code as CommonJS (`--format cjs`), with `react`, `react/*` and `@platypus/*`
-  left external, so its `require` calls get the vendor bundle's copies. Bun's `--react-fast-refresh`
-  adds the `$RefreshReg$` / `$RefreshSig$` calls. It starts with the banner `// @platypus-dev`.
-
-The split exists because React, the reconciler and the engine must stay in one runtime for Fast
-Refresh: the game's code can run again while their module state (the fiber tree, the scene's
-classes and instances) stays. `bun run dev --once` builds once without watching. A production
-`bun run build` still makes one self-contained `game.js`.
-
-The app detects a dev build by the banner (`dev_vendor` in [main.rs](../crates/platypus_app/src/main.rs)):
-if `game.js` starts with `// @platypus-dev`, it reads `vendor.js` from the same folder (a missing one is
-logged as an error and the code loads as a plain bundle).
-
-Test bundles are built the same way into `tests/fixtures/*.js` (`bun run build:fixtures`) and
-embedded in Rust tests with `include_str!`; see [testing.md](testing.md).
-
-An experimental ahead-of-time compiler for a TypeScript subset exists in `tools/`; see
-[platypus-ts.md](platypus-ts.md). The engine does not use it yet.
+   given (`parse_args_from`; the folder may come before or after the options, `M5-APP-03`). A directory means
+   `<dir>/build/game.pbundle` with the directory as the asset root; a `.pbundle`, `.ts` or `.tsx` path also works.
+   A QuickJS bundle (`build/game.js`, or a `.js` file) is refused with "... is a QuickJS bundle: QuickJS is no longer
+   part of Platypus; rebuild the game with `platypus-build build`" (`M9-APP-02`); `--force` is no longer an option
+   (`M9-APP-01`).
+3. `build/game.css`, if present, is added with `add_stylesheet_with_base(css, "build")` so its relative `url(...)`s are
+   rebased onto the game folder (see [css.md](css.md)). `@font-face` faces found in it are loaded through the same
+   `load_font` helper as `loadFont()`.
 
 ## Hot reload
 
 Flow, from an edit to the new code running:
 
-1. `bun run dev` in `editor/` runs `scripts/dev.ts` (see "Dev builds" above), which builds
-   `build/vendor.js` once and runs `bun build --watch` for the game's code, so every save
-   rewrites `build/game.js` and, when CSS is imported, `build/game.css`.
-2. `platypus-app <folder>` starts a `BundleWatcher` ([reload.rs](../crates/platypus_app/src/reload.rs)). It uses
-   `notify` on the `build` folder (not the files: Bun may replace them) and only counts events for
-   the bundle, its CSS and `vendor.js` by file name. Access events are ignored.
-3. `App::tick` polls the watcher first thing. `poll` reports a change once the files have been quiet
-   for `SETTLE` (150 ms), because Bun writes the JS and the CSS separately, and big files in
-   several writes.
-4. `App::reload_scripts` reads the bundle. If it is a dev build and `vendor.js` is the same text as
-   the loaded one, it takes the in-place path (next). Otherwise it saves the old code's state
-   (below) and calls `platypus_script::reload`.
+1. `platypus-build dev <game>` rebuilds `build/game.pbundle` (and the CSS) on every edit and signals the running
+   `platypus-app` (the protocol is in [platypus-build.md](platypus-build.md#the-dev-loop-platypus-build-dev)). Fast
+   Refresh, `vendor.js` and `scripts/dev.ts` no longer exist.
+2. `platypus-app <folder>` starts a `BundleWatcher` ([reload.rs](../crates/platypus_app/src/reload.rs)) on the bundle and
+   its CSS. `poll` reports a change once the files have been quiet for `SETTLE` (150 ms), because the JSON and the CSS
+   are written separately.
+3. `App::tick` polls the watchers first thing. `reload_scripts` -> `reload_native`: a failed build (the build tool
+   leaves a failure status) or a bundle that does not compile logs `reload failed, keeping the old code` and the
+   game keeps running; the next save tries again.
 
-Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning
-and runs without hot reload.
+Screenshot runs (`--screenshot`) have no watcher. If the watch can't start, the app logs a warning and runs without
+hot reload. Other files in the game folder (textures, models, sounds) have their own `AssetWatcher` and reload in
+place without touching the scripts: see [assets-and-models.md](assets-and-models.md#hot-reload-of-assets).
+`platypus-build dev` and `platypus-build assets` write `.meta` files for new assets
+([assets-and-models.md](assets-and-models.md#the-asset-database)).
 
-Other files in the game folder (textures, models, sounds) have their own `AssetWatcher` in the same file.
-Those reload in place without touching the scripts: see
-[assets-and-models.md](assets-and-models.md#hot-reload-of-assets). `bun run dev` also writes `.meta` files
-for new assets before building ([assets-and-models.md](assets-and-models.md#the-asset-database)).
-
-**`--cook`.** `platypus-app <folder> --cook` doesn't load any scripts: it prepares textures and models into
+**`--cook`.** `platypus-app <folder> --cook` doesn't run the game: it prepares textures and models into
 `.platypus/cooked/` and exits ([assets-and-models.md](assets-and-models.md#cooking)).
 
-**In place (dev builds, Fast Refresh).** When only `game.js` changed, `reload_in_place` runs the new
-code in the same runtime, so React state, the world, physics and sounds all stay. The sequence is
-`platypus_script::load_game` ([components.rs](../crates/platypus_script/src/components.rs)):
+**What `Native::reload` does.** The new source is compiled first; nothing is touched until that works. Then:
 
-1. `__platypus_hot_begin()` ([hot.ts](../js/engine/src/hot.ts)) runs the undo callbacks the old top level
-   registered with `_undoOnReload` (only `addStyleSheet` does: it removes its sheet), then sets
-   `_loadingGame()`.
-2. The code is evaluated inside a wrapper, `(function (require, module, exports) { <code>\n})(__platypus_require, ...)`.
-   The wrapper shares the code's first line, so error line numbers stay right. The top level runs
-   again: `register` replaces the classes by name, and `createRoot()` returns the live root while
-   `_loadingGame()` is set, and that root's `render` does nothing then ([react.md](react.md#createroot)).
-3. `__platypus_hot_end()` runs, even if the code threw. It calls `_patchClasses` ([scene.ts](../js/engine/src/scene.ts)):
-   every live component whose class is now registered as a different class under its name gets the
-   new prototype (`Object.setPrototypeOf`), keeps its fields and gets defaults for fields the new
-   class added. Then the after-load callbacks run: `vendor.ts` registers `performReactRefresh`, which
-   re-renders the components whose code changed and keeps their state where the hooks still match.
-4. Back in Rust: `ComponentHost::refresh_hooks` forgets which lifecycle methods each component has
-   (the new classes may add or drop some), `game.css` is removed and loaded again, and
-   `Input::Refresh` is sent. The log line is `reloaded <bundle> in place in N ms`.
+- Every scene is saved with the scene format ([scene-and-objects.md](scene-and-objects.md#scenes)): objects,
+  hierarchy, transforms, components (compiled ones through their `@property` tables) and which scene is active.
+- The old components are dropped (no `onDestroy`: the program is being replaced) and everything that holds closures of
+  the old code is reset: `input`, assets, `Application`, `Screen`, audio, splines, animation, cameras, the render
+  registries, the physics API, scenes, window listeners (windows with a key stay for the new code to claim), timers
+  and pending awaits. The world is a fresh `Scene`.
+- The new program runs its top level, and once every module has finished (its `register(..)` calls may come after an
+  `await`), the saved scenes load again: components come back on their objects with their saved `@property` fields, and `onAwake` runs for them
+  (as in a scene load; there is no `onReload` hook in the compiled runtime). Objects the new top level made are removed
+  first, as the saved ones stand for them. The UI keeps its hook state (`Runtime::refresh`) except for components whose
+  hook list changed.
+- The app then wipes what the old scripts built on its side (`reset_native_render`, script stylesheets and `game.css`
+  loaded again from disk, physics bodies rebuilt from the components' properties, the mixer) and logs
+  `reloaded <bundle> in N ms`.
 
-A syntax error stops before anything ran. A throwing top level may have run partly. Either way the
-error is logged as `reload failed: ...` and the runtime stays (there is no fresh runtime to fall
-back on, unlike the full reload).
-
-It falls back to the full reload below when the build isn't a dev build, when `vendor.js` changed
-(or can't be read). That path keeps state through scenes, but React state is lost.
-
-Limits of the in-place path:
-
-- Only style sheets are undone from the top level. Fonts (`loadFont`), `input` and scene listeners and
-  timers registered at the top level are not, so they pile up on each reload. Register them in
-  components instead.
-- Class statics start fresh, since the class is a new object. Top-level objects (constants,
-  `new GameObject(...)`) are created again, and module-level variables are new.
-- A live component whose class is no longer registered keeps its old code. `__platypus_hot_end` warns
-  `reload: X isn't registered, so its components keep the old code (register({ X }, { spawn: false }))`.
-- Fast Refresh needs the dev build's transform. Production builds don't refresh; they use the full
-  reload.
-
-M4-HOT-06 covers the in-place path ([testing.md](testing.md#fixture-bundles)).
-
-**New runtime first, then swap.** `platypus_script::reload(rt, fresh, host, load, bootstrap)` runs the
-`load` closure on a fresh `QuickJsRuntime` (one `load_bundle`, or `load_bundles` for a dev build: vendor, then
-game code), reads `registered_classes` and calls the `bootstrap` closure, all
-in `fresh`. The app's closure restores the saved state, or, with nothing to restore, calls
-`spawn_starting_components`, which makes the objects and components in a new `ScriptScene`;
-`spawn_each` is the plain one-component-per-class bootstrap. Only when every step works are `rt` and the `ComponentHost` replaced (the old context
-is dropped). A syntax error, a throwing top level or a throwing constructor returns an error, and
-both stay as they were. `reload_scripts` logs `reload failed, keeping the old code` and returns
-before touching the UI, physics or audio. The game keeps running and the next save tries again.
-M4-HOT-01 and M4-HOT-04 cover the success and failure paths.
-
-**State is saved first.** `reload_scripts` asks the old runtime for its state before building the new one.
-If `__platypus_save_state` exists (it does when the bundle imports `@platypus/engine`'s scenes), the old code
-returns one JSON string; a bundle without it, or a save that throws (logged as `saving state failed,
-starting over`), just starts over. The JSON is a `ReloadState` ([scenes.ts](../js/engine/src/scenes.ts)):
-
-- Every scene, saved with the scene format ([scene-and-objects.md](scene-and-objects.md#scenes)):
-  objects, hierarchy, transforms, components and `@property` values, and which scene is active.
-  Default transforms are left out. The `DontDestroyOnLoad` scene too.
-- In this reload mode a script component's other plain fields are saved too (counters, timers,
-  state), with references to objects and components remapped. A field that can't be saved
-  (functions, engine handles, class instances) is left out quietly instead of warning.
-- The quality level and settings (`_qualityState`) and the clock (`Time`, frame count, time scale).
-
-**Restoring.** The fresh runtime gets `__platypus_reloading = true` before the bundle loads, so the start
-scene is not loaded on top of the saved ones. After the bundle's top level and registration, the
-bootstrap sets the flag back and calls `__platypus_restore_state(json)`. If it returns true, the scenes are
-rebuilt with `loadObjects` in reload mode and `spawn_starting_components` is skipped; otherwise it runs
-as on a first start.
-
-- Script components come back marked as restored: no `onAwake`, no `onStart` (they started already;
-  `__platypus_hooks` leaves `onStart` out), and `onReload()` is called once everything is built. Put
-  re-attaching event listeners, timers and callbacks there. A throwing `onReload` is logged.
-- Engine components (`Rigidbody`, `MeshRenderer`, `Light`, ...) are rebuilt like a scene load:
-  `onAwake` and `onStart` run, so bodies and renderers are made again.
-- A property that no longer exists on the class (renamed or removed) is dropped with a warning; new
-  properties keep their defaults.
-- **Fallback.** If a saved component class isn't registered any more, `restoreState` warns with what to
-  register (`register({ X }, { spawn: false })`), loads the start scene and returns false, so the game
-  starts over.
-
-The log line `reloaded <bundle> in N ms` has a `restored` field that says which way it went.
-`PLATYPUS_RELOAD_AT_FRAME=N` makes a `--screenshot` run call `reload_scripts` after frame N, so a reload can
-be checked without a window or a file edit (the bundle on disk is reloaded as it is).
-
-**What is reset.** After a successful swap `reload_scripts` wipes the world the old scripts
-built, and the restored scenes rebuild their part of it as ops:
-
-- The UI tree: `UiTree::clear_script_nodes` (see [ui-tree.md](ui-tree.md#node-lifetime)), because
-  the new bundle's reconciler starts its IDs again.
-- Script stylesheets (`addStyleSheet`) and `game.css`, which is removed and loaded again from disk
-  with `load_game_css`.
-- `uiScale` goes back to unset.
-- Physics: a new `Physics::new()`. Bodies and their IDs are gone; `Rigidbody` and colliders are made
-  again from their saved properties.
-- Audio: the mixer is dropped, which stops every sound; it is created again on first use.
-- The scene, cameras, planes and world panels: a new `ScriptScene` and `WorldViews`, no panels, and
-  pointer and key focus back on the screen. The screen size is sent again on the next frame.
-
-Then it sends `Input::Refresh` and probes `__platypus_ui_event`, `__platypus_input`, `__platypus_physics`, `__platypus_audio` and
-`__platypus_scene` again. The new bundle's top level has already queued its UI and ops, and they apply
-after the wipe.
-
-M4-HOT-02, 03 and 05 cover the saved state, the rebuilt objects and the fallback. M4-HOT-07 is the
-benchmark ([testing.md](testing.md#benchmarks)): about 146 ms for 1,000 components, over the 100 ms target.
+`PLATYPUS_RELOAD_AT_FRAME=N` makes a `--screenshot` run reload after frame N, so a reload can be checked without a
+window or a file edit.
 
 **Limits.**
 
-- **A reload restores objects; it doesn't rebuild them.** What `onStart` (or `onAwake`) built comes
-  back from the saved state, and `onStart` doesn't run again, so a change to what it builds
-  (geometry, materials, colours, lights) doesn't show after a reload, only changed behaviour
-  (`onUpdate`, handlers) does. Restart the game to see it (close the window and run `platypus-app` again).
-  There's no key or option to force a fresh start yet; a reload starts over only when a saved
-  component class isn't registered any more (the fallback above). Code at the bundle's top level
-  runs again on every reload (module-level variables start fresh), and `onReload` runs on restored
-  components: rebuild caches there.
-- Textures made with `Texture.create` are saved with their pixels and options (filter, wrap,
-  mipmaps), so materials using them come back the same (M4-HOT-11).
-- Not kept: physics velocities and other body state beyond the saved properties, playing sounds,
-  particles in flight, module-level variables in the bundle (they start fresh; keep state in
-  component fields), React state (the new bundle renders its UI from scratch; only the in-place
-  path above keeps it), and fields that can't be saved.
-- `bun build --watch` doesn't watch `@platypus/engine` or `@platypus/react` sources outside the example
-  folder, so editing those doesn't trigger a rebuild. Touch a file in the example or rebuild
-  (in a dev build, restart `bun run dev`: `vendor.js` is built once).
-- Keys held at the time of the reload are forgotten.
+- **A reload restores objects; it doesn't rebuild them.** What `onStart` built comes back from the saved
+  state, so a change to what it builds (geometry, materials, colours, lights) may not show after a reload, only changed
+  behaviour (`onUpdate`, handlers) does. Restart the game to see it. Code at the
+  program's top level runs again on every reload (module-level variables start fresh): rebuild caches in `onAwake`.
+- Not kept: physics velocities and other body state beyond the saved properties, playing sounds, particles in flight,
+  module-level variables (keep state in `@property` fields), non-`@property` fields, component references between
+  components, model completion callbacks, and keys held at the time of the reload.
+- If a saved component class isn't registered any more the reload warns with what to register and the scene loads
+  without it.
+
+M4-HOT-01 and M4-HOT-04 cover the success and failure paths; `M4-HOT-02`, `-03`, `-05`, `-07` (the QuickJS state save,
+rebuilt objects, fallback and the 1,000-component benchmark) were removed with QuickJS.

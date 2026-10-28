@@ -81,7 +81,7 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   `hover`/`any-hover`. Lengths are px; `em`/`rem` are 16px.
 - **Environment.** `MediaEnv { width, height, resolution, dark, reduced_motion, pointer, hover }`
   lives on `UiTree` (`media_env`, `set_media_env`). The size follows `set_size` (UI pixels).
-  The app sets `resolution` (DPI times UI scale) and `dark` (from `window.theme()`) every frame in
+  The app sets `resolution` (the DPI factor) and `dark` (from `window.theme()`) every frame in
   `PlatformApp::frame`; reduced motion stays off and the pointer stays `fine` with hover until the
   app reports otherwise.
 - **Re-evaluation.** `UiTree.media_results` holds the last result of every rule's conditions.
@@ -316,9 +316,9 @@ The tree does not know the game folder, so font loading is the app's job:
   [main.rs](../crates/platypus_app/src/main.rs), `add_stylesheet()` logs the warnings (target `css`) and
   calls `load_font` for each `FontFace`, which reads the file via `resolve_asset` (or a `data:` URL)
   and calls `UiTree::register_font(data, family, weight, italic)`. Text re-lays out when fonts load.
-- **`game.css`**: Bun writes it next to `game.js`. The app loads `bundle.with_extension("css")` and
+- **`game.css`**: `platypus-build build` writes it next to `game.pbundle`. The app loads `bundle.with_extension("css")` and
   passes `base` = its folder relative to the game folder (`"build"`).
-- **Rebasing**: Bun emits `url()`s relative to the CSS file. With a non-empty `base`,
+- **Rebasing**: the build emits `url()`s relative to the CSS file. With a non-empty `base`,
   `rebase_sheet` rewrites every declaration (rules, `@starting-style`, keyframes) through `css::rebase_urls` (relative URLs
   become `"build/..."`; `data:` URLs and anything with a scheme or leading slash are untouched) and
   prefixes `@font-face` sources. The renderer later resolves the rewritten path against the game

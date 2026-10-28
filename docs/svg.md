@@ -36,9 +36,8 @@ Tint (`background-image-tint`) and `image-rendering` apply to the raster like an
 
 Code: [svg.rs](../crates/platypus_ui/src/svg.rs) (helpers), [tree.rs](../crates/platypus_ui/src/tree.rs)
 (`svg_markup`, measuring, drawing), [attrs.rs](../crates/platypus_ui/src/attrs.rs),
-[style.rs](../crates/platypus_ui/src/style.rs), and in JS
-[attrs.ts](../js/react/src/attrs.ts), [host.ts](../js/react/src/host.ts),
-[style.ts](../js/react/src/style.ts).
+[style.rs](../crates/platypus_ui/src/style.rs), and for the script side the native reconciler
+([ui-native.md](ui-native.md); the JS `attrs.ts` / `host.ts` / `style.ts` are deleted).
 
 **Why serialize.** The SVG elements are ordinary tree nodes, so selectors, `:hover`, inheritance,
 custom properties, transitions and animations all work on them through the usual cascade. Platypus does

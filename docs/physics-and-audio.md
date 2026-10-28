@@ -1,24 +1,28 @@
 # Physics and audio (M4)
 
 Crates and packages: [platypus_physics](../crates/platypus_physics/src/lib.rs) (rapier3d 0.36),
-[platypus_audio](../crates/platypus_audio/src/lib.rs) (kira 0.12), their TypeScript sides
-[physics.ts](../js/engine/src/physics.ts) and [audio.ts](../js/engine/src/audio.ts) in
-`@platypus/engine`, and the wiring in [platypus_app/main.rs](../crates/platypus_app/src/main.rs). On top of the
-handles there are Unity-style components ([physics-components.ts](../js/engine/src/physics-components.ts),
-[physics2d.ts](../js/engine/src/physics2d.ts), [audio-components.ts](../js/engine/src/audio-components.ts)),
-and [physics_sync.rs](../crates/platypus_app/src/physics_sync.rs) ties bodies to GameObjects. Demos:
+[platypus_audio](../crates/platypus_audio/src/lib.rs) (kira 0.12), the native script API of physics
+(`platypus_physics_api`: `Physics`, `Body`, `Collider`, `RaycastHit`) and of audio (`platypus_engine_api`), and the wiring in
+[platypus_app](../crates/platypus_app/src/main.rs). [physics_sync.rs](../crates/platypus_app/src/physics_sync.rs) ties bodies to GameObjects. Demos:
 [examples/physics](../examples/physics/src/main.tsx) (handles), [examples/world](../examples/world/src/main.tsx)
 and [examples/platformer](../examples/platformer/src/main.tsx) (components).
 
+> **QuickJS removal (2026-10-28).** The script side described below (`physics.ts`, `audio.ts`, the component
+> files, `__platypus_op("physics.*" / "audio.*" / "cloth.*")`, the `__platypus_physics` / `__platypus_audio` calls
+> into JS and `apply_script_output`) was deleted. Compiled games call the native API directly; the Rust crates,
+> the op names (still the vocabulary of `Physics::apply` and `Mixer::apply`), the batch layout, the per-tick
+> order, the cloth solver and the offline mixer are unchanged. Read the "Ops", "Per fixed tick", "Batch format"
+> and "TypeScript API" sections as the design of those layers, not as a description of a QuickJS call path. The
+> TypeScript API itself is declared in `types/platypus.d.ts` (`platypus-build types`).
+
 ## Ops and IDs
 
-Both follow the core rule: Rust owns the world, JS owns behaviour. Scripts never hold rapier or
-kira handles. They **choose numeric IDs** themselves (module counters in `physics.ts`/`audio.ts`,
-like UI node ids), so creating a body or sound needs no round trip, and queue ops with
-`__platypus_op("physics.<name>", ...)` or `__platypus_op("audio.<name>", ...)`.
+Both follow the core rule: Rust owns the world, scripts own behaviour. Scripts never hold rapier or
+kira handles. They use numeric IDs (chosen by the script side or the native API), so creating a body or
+sound needs no round trip.
 
-`App::apply_script_output` routes by prefix: `physics.*` goes to `Physics::apply(name, args)`,
-`audio.*` to `App::audio_op`. A bad op (unknown name, wrong arguments, unknown ID) returns an
+Physics and audio operations are named by prefix (`physics.<name>`, `audio.<name>`): `physics.*` goes to
+`Physics::apply(name, args)`. A bad op (unknown name, wrong arguments, unknown ID) returns an
 `Err`; the app logs a warning and carries on.
 
 Physics ops: `gravity`, `timestep`, `body`, `collider`, `removeBody`, `removeCollider`, `set`
@@ -36,8 +40,7 @@ triangle meshes (`mesh`, static geometry). A collider whose shape is `renderMesh
 app into a `mesh` or `convex` one from a render mesh's data
 ([assets-and-models.md](assets-and-models.md#materials-and-meshes)).
 
-`attach` is not a physics op: `App::apply_script_output` gives each `physics.*` op to
-`Attachments::op` first, which handles `attach` and notes `removeBody`, and only the others reach
+`attach` is not a physics op: `Attachments::op` handles `attach` and notes `removeBody`, and only the other ops reach
 `Physics::apply`.
 
 Audio ops: `load`, `play`, `set` (`volume`, `rate`, `pan`), `pause`, `resume`, `stop`, `seek`,
@@ -86,11 +89,10 @@ four arrays rather than many objects: `__platypus_physics(moved, contacts, rays,
 
 ## TypeScript API
 
-All of it is exported from `@platypus/engine`. IDs and ops are hidden behind small handle classes.
+The names below are the engine's globals (declared in the generated `types/platypus.d.ts`; the old
+`@platypus/engine` package is deleted). IDs and ops are hidden behind small handle classes.
 
 ```ts
-import { physics, audio, Component, register } from "@platypus/engine";
-
 physics.addCollider({ shape: { box: { x: 10, y: 0.5, z: 2 } }, position: { x: 0, y: -0.5, z: 0 } });
 const body = physics.createBody({ position: { x: 0, y: 5, z: 0 } }); // dynamic by default
 body.addCollider({ shape: { ball: 0.5 }, restitution: 0.5 });
@@ -153,9 +155,9 @@ while playing and is read in windows (`Vfs::open_range` -> `Mixer::load_stream`)
 
 ## Components on GameObjects (M5.a2)
 
-Scripts normally use components rather than the handles above. They are built on the handles and live in
-[physics-components.ts](../js/engine/src/physics-components.ts); nothing in Rust knows about
-components, only about bodies and the `attach` link.
+Scripts normally use components rather than the handles above. They were built on the handles in TypeScript (deleted); the native API of
+`platypus_physics_api` / `platypus_engine_api` replaces them, and the physics layer itself only knows about bodies and
+the `attach` link.
 
 **One body per object.** `physicsFor(go)` makes a `fixed` body at the object's pose the first time any
 physics component needs it and sends `physics.attach body object`. `Rigidbody` switches that body to
@@ -200,7 +202,7 @@ The result is returned so `step_physics` can still call `__platypus_physics`.
   needed.
 - `Rope`: a chain of capsule segments (each a GameObject with a CapsuleCollider and Rigidbody)
   joined by ball joints, from this object to an optional `end` Rigidbody. By default it's drawn as
-  one smooth tube: a `LineRenderer` (`js/engine/src/lines.ts`) on its own object, given the links'
+  one smooth tube: a `LineRenderer` on its own object, given the links'
   joint points each `onPreRender`. It rebuilds a script `Mesh` (Catmull-Rom smoothed path, rings
   carried along by parallel transport so they don't twist) only when the points change.
   `renderMode: "segments"` draws each link as a capsule instead.
@@ -214,7 +216,7 @@ them apart). A throwing listener is logged and the others still run.
 
 ### 2D physics
 
-[physics2d.ts](../js/engine/src/physics2d.ts) has `Rigidbody2D` (`bodyType` dynamic, kinematic or
+The 2D API has `Rigidbody2D` (`bodyType` dynamic, kinematic or
 static; `mass`, `gravityScale`, `drag`, `freezeRotation`, `velocity`, `addForce(ForceMode2D)`),
 `BoxCollider2D`, `CircleCollider2D`, `CapsuleCollider2D`, `PolygonCollider2D` and `EdgeCollider2D`, with
 `Vector2` APIs and angles in degrees about z.
@@ -230,7 +232,7 @@ normal, distance). Callbacks are `onCollisionEnter2D`/`Exit2D` (`Collision2D`) a
 
 ### Audio components
 
-[audio-components.ts](../js/engine/src/audio-components.ts):
+(declared in `platypus_engine_api`):
 
 - `AudioSource`: `clip` (a `Sound` or a path; paths are loaded once and shared), `playOnAwake`, `volume`,
   `pitch`, `panStereo`, `loop`, `mute`, `spatialBlend`, `minDistance`, `maxDistance`, `outputBus`, and
@@ -244,8 +246,7 @@ normal, distance). Callbacks are `onCollisionEnter2D`/`Exit2D` (`Collision2D`) a
 ## Cloth
 
 `Cloth` (Unity's) simulates a copy of its object's mesh. Code: [cloth.rs](../crates/platypus_physics/src/cloth.rs)
-(the solver), [cloth_sync.rs](../crates/platypus_app/src/cloth_sync.rs) (`ClothSystem`, the `cloth.*` ops) and
-[cloth.ts](../js/engine/src/cloth.ts). Demo: [examples/cloth](../examples/cloth/src/main.tsx).
+(the solver), [cloth_sync.rs](../crates/platypus_app/src/cloth_sync.rs) (`ClothSystem`, the `cloth.*` ops, now fed from the native registries; `cloth.ts` is deleted). Demo: [examples/cloth](../examples/cloth/src/main.tsx).
 
 - **Solver.** `platypus_physics::cloth::Cloth` uses position-based dynamics: Verlet integration, then
   `iterations` constraint passes. Each mesh edge keeps its length (`stretching_stiffness`), vertex pairs
@@ -272,7 +273,7 @@ normal, distance). Callbacks are `onCollisionEnter2D`/`Exit2D` (`Collision2D`) a
   `pinBox` and `sphereColliders` / `capsuleColliders` (objects carrying those colliders).
 - Cloth does not collide with rapier bodies or itself; it only feels the colliders listed on it.
 - Tests: `M5-CLO-01` (solver, in `cloth.rs`), `-02` (`ClothSystem` hanging from a pinned edge, in
-  `cloth_sync.rs`) and `-03` (`Cloth` ops, `js/engine/test/cloth.test.ts`).
+  `cloth_sync.rs`) and `-03` (`Cloth` ops; its JS test was deleted).
 
 ## The mixer and offline mode
 

@@ -4,10 +4,10 @@ Where Platypus's CSS and rendering knowingly behave differently from a browser (
 and why. **Read this before changing one of these areas**: each entry is a deliberate trade-off or
 a known gap, not an accident. When you fix one, delete its entry; when you add one, say why.
 
-## QuickJS backend (deprecated)
+## QuickJS backend (removed)
 
-QuickJS games run only with `platypus-app --force` (see `docs/platypus-build.md`). Parity with the native backend is no longer pursued: the QuickJS
-rows below describe how it behaved when it was maintained, and are not updated.
+QuickJS was removed on 2026-10-28; compiled TypeScript is the only backend and `platypus-app` refuses a QuickJS bundle (see `docs/platypus-build.md`).
+Rows below that mention QuickJS or `js/engine` describe the "Before" column, kept for the history of a decision.
 
 ## Script API vs Unity, s&box and C# (M5.a)
 
@@ -46,17 +46,17 @@ physics). What is left out or differs:
 
 ## Native Shapes, Spline and SplineAnimate (2026-10-22)
 
-They were TypeScript (`js/engine`, and a compiled copy in `facade.ts`); they are native Rust now, called by compiled code and QuickJS alike.
+They were TypeScript (`js/engine`, and a compiled copy in `facade.ts`); they are native Rust now, called by compiled code.
 
 | Area | Platypus | Before | Why |
 |---|---|---|---|
 | `Spline.knots` | A read-only snapshot: a fresh array of fresh `{ position, tangentIn, tangentOut, mode }` each time (edit through `setPosition`, `setTangents`, `setMode`, `insertKnot`, `removeKnot`) | The live array of the spline's own knot objects | A native spline is data in Rust |
 | `Spline.version`, `destroy()` | `version` is read-only; a `Spline` is a handle number nothing frees by itself, `destroy()` frees it | A plain field; garbage collected | Handles are numbers |
 | Knot indexes | A whole number in range; anything else is ignored (the old code threw on `1.5`) | Any number | Typed API |
-| `TangentMode`, `SplineLoopMode`, `SplineAlignment` | Strings in scripts, indexes on the wire; `TangentMode.parse(s)` / `.name(i)` convert; a compiled call with a name that is not one reads the first value, QuickJS throws a `TypeError` | Literal unions | Enums travel as indexes (plan decision 6) |
+| `TangentMode`, `SplineLoopMode`, `SplineAlignment` | Strings in scripts, indexes on the wire; `TangentMode.parse(s)` / `.name(i)` convert; a compiled call with a name that is not one reads the first value | Literal unions | Enums travel as indexes (plan decision 6) |
 | `SplineAnimate` update | Once a frame after the scripts' `onUpdate`s (next to `animation::update`); only for an object active in the hierarchy | In component order with the other `onUpdate`s | A native component; a game that moves the spline in its own `onUpdate` sees the object placed the same frame |
 | `SplineAnimate` in scene files | All fields saved, `spline` as an inline `Spline` asset | `spline` not saved | Decision 4 of the plan |
-| `SplineAnimate` base | A handle class like `Camera` (no `extends Component`); the QuickJS one stays a script component over native helpers | A `Component` subclass | A bundled game's `GameObject` is not native yet |
+| `SplineAnimate` base | A handle class like `Camera` (no `extends Component`) | A `Component` subclass | A bundled game's `GameObject` is not native yet |
 | `Shapes` | The namespace `Shapes`; `polygon(...points)` takes any number of points or one `...array` | A class of statics | Plan decision 5 |
 | `NaN` arguments | `Shapes.bezier(.., 0)` and a `NaN` `t` give NaN points, as in JavaScript | The compiled copy answered 0 for these (a typed-array read out of range is 0) | Edge cases outside every example |
 
@@ -74,7 +74,7 @@ List properties (`SkinnedMeshRenderer.bones`, `Cloth.pins` / `sphereColliders` /
 
 ## Models, animation and renderers (compiled games, 2026-10-23)
 
-| Area | Platypus (native) | `js/engine` (QuickJS) | Why |
+| Area | Platypus (native) | `js/engine` (QuickJS, deleted) | Why |
 |---|---|---|---|
 | `getComponent(MeshRenderer)` on a skinned part | Finds nothing: a `SkinnedMeshRenderer` is a renderer of its own, as in Unity | `SkinnedMeshRenderer extends MeshRenderer`, so it is found | Engine handles have no subclassing yet; Unity's shape. Ask for `SkinnedMeshRenderer` (`fog-white-room` does both) |
 | Options objects (`Material.create({ mainTextureScale })`, `new X({ .. })`) | A value-class key takes a plain object (`{ x: 4, y: 4 }`, `Vector2Like`), as the TypeScript's `MaterialOptions` did | - | Was declared as the class, so `tsc` refused plain objects |
@@ -145,8 +145,8 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `resolve()` and `resolve(v)` | `resolve()` with no value only for `Promise<void>` / `Promise<number>`; `resolve(v)` takes a value, not a promise | Any value or thenable | No thenable adoption for non-Promise values |
 | Methods taken off an object literal | A method, getter or setter of an object literal may use `this` (the object, as in JavaScript); a method read off the object and called alone (`const f = o.m; f()`) keeps its binding to the object, where JavaScript has `this` undefined (strict mode) | `this` is undefined | A bound closure, as arrow properties are |
 | Async iteration | `for await` over arrays and iterables works; no async generators | Supported | Async generators are not built yet |
-| Top-level `await` across modules | ECMAScript order (an importer runs after the module it imports has finished, a sibling runs meanwhile; bun-compared, `M9-TS-3202..3207`). A module cycle through a late module counts the cyclic edge as finished; an importer awaits its late dependencies in import order. The host starts the registered classes, loads the start scene and runs component hooks only after every module has finished; timers, microtasks and the UI mounted before the first `await` run meanwhile; a module still pending after about ten seconds is named in the log; a rejected top-level `await` stops the startup and names the module and the error | Same order | Same order; QuickJS evaluates the module before the host starts |
-| `register(Class)` | A run-time call in call order, anywhere (`if`, loops, functions, after an `await`); the argument must name a class (`register(cls)` of a variable is a compile error: a class is not a value). `addComponent(Class)` works for a class that never registered (as in QuickJS); a scene or prefab naming a class that never registered gets a warning naming it | Any class value | Same |
+| Top-level `await` across modules | ECMAScript order (an importer runs after the module it imports has finished, a sibling runs meanwhile; bun-compared, `M9-TS-3202..3207`). A module cycle through a late module counts the cyclic edge as finished; an importer awaits its late dependencies in import order. The host starts the registered classes, loads the start scene and runs component hooks only after every module has finished; timers, microtasks and the UI mounted before the first `await` run meanwhile; a module still pending after about ten seconds is named in the log; a rejected top-level `await` stops the startup and names the module and the error | Same order | Same order |
+| `register(Class)` | A run-time call in call order, anywhere (`if`, loops, functions, after an `await`); the argument must name a class (`register(cls)` of a variable is a compile error: a class is not a value). `addComponent(Class)` works for a class that never registered; a scene or prefab naming a class that never registered gets a warning naming it | Any class value | Same |
 | Unhandled rejections and escaped exceptions | Silent; an exception escaping a queued job is dropped | Reported | No reporting hook yet |
 | Timers | Virtual time from `ts_rt_timers_advance(now_ms)` (the game clock), at least 1 ms; `setTimeout` takes no extra arguments; none fire until the host advances them | Real time, extra arguments | The host owns the clock and the loop |
 | `Promise` / `async` on WebAssembly | Not available (coroutines) | n/a | Not a target in the next year |
@@ -214,7 +214,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `sound-in` / `sound-out` | Not supported | s&box only (not CSS) | CSS stays about display; play UI sounds from event handlers |
-| UI scale | `setUiScale` zooms all screen UI (layout in UI pixels) | CSS `zoom` per element | One switch for the whole HUD, like s&box's ScreenPanel |
+| UI scale | None: UI pixels are logical pixels (the QuickJS-only `setUiScale` is gone); use CSS `zoom` on a root element | CSS `zoom` per element | |
 | `background-image-tint`, `border-image-tint` | s&box properties, no CSS equivalent; multiply image pixels by a colour; gradients and masks aren't tinted | — | Common in game UI (one white icon, many colours) |
 
 ## Floats (`docs/ui-tree.md`, "Floats")
@@ -352,7 +352,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `pseudoElement` of transition and animation events | Always `""`; the event goes to the element | The pseudo-element's name (`::before`) | Generated boxes are not event targets |
 | `animationiteration` / `animationend` `elapsedTime` | `n * duration` and the active duration, as in the spec | Same | — |
 | `onFocus` / `onBlur` | Listen to `focusin` / `focusout` (they bubble); `focus` / `blur` are never sent | Same in React; the DOM has both | React semantics |
-| `relatedTarget` | `{ id }` of the other element (QuickJS: its instance) | The element | Scripts hold ids, not elements |
+| `relatedTarget` | `{ id }` of the other element | The element | Scripts hold ids, not elements |
 | `title` | Stored on the element (`[title]` selectors work) | Shows a tooltip | No tooltip UI yet |
 | `cols` | A textarea is `cols` x 8 logical pixels wide when CSS sets no width | `cols` average characters of the font | Fixed character width, like the default sizes of fields |
 | `type` on `input` | Stored lower-cased (`input[type="password"]` selectors work); every input is a text field | Changes the control (masking, numbers, checkboxes) | Only text editing exists |

@@ -50,7 +50,7 @@ No asset files. Sibling example fog-blocks reuses the same meshing code on a fix
 3. **Meshing.** `buildChunk(cx, cz)` reads heights for the chunk plus a one-column border, emits a top face per column,
    side faces down to each lower neighbour, a water surface for low ground, and tree blocks skipping faces hidden by
    neighbours. Faces are written by index into reused typed arrays (the comment says this is much faster than
-   `push` in QuickJS) and sliced at the end.
+   `push`) and sliced at the end.
 4. **Streaming.** `stream(budget)` drops chunks outside radius `r + 1` (disables the object and pushes it to a
    `pool`), lists missing chunks nearest first, and builds as many as fit in `BUILD_BUDGET_MS = 6`. A pooled chunk is
    refilled with `c.mesh.setFlat(data)`; otherwise a new `GameObject("Chunk")` is made. The radius is `distance + 2`

@@ -12,10 +12,10 @@ explains where the two differ and why, so readers don't have to guess.
 | | Platypus | Bevy |
 |---|---|---|
 | Goal | An s&box / Unity-style engine with React and TypeScript for gameplay and UI | A modular Rust engine built around an ECS |
-| Who writes gameplay | TypeScript, in QuickJS (dev and shipped), with a planned AOT path (M9.b) | Rust, with systems and plugins |
+| Who writes gameplay | TypeScript, compiled ahead of time to native code (`platypus_ts`) | Rust, with systems and plugins |
 | World model | GameObjects with components, scenes as JSON, `@property` fields | Entities, components as data, systems |
 | UI | React reconciler → our own UI tree, CSS cascade, Taffy layout, Parley text, drawn by our renderer | `bevy_ui` (ECS entities, Taffy layout) |
-| Editor | Built with the same React and Platypus UI (`editor/`, `platypus_editor`) | Experimental and in progress; check Bevy's current status |
+| Editor | Built with the same React and Platypus UI (`editor/`; the binary is gone until it is re-made natively in TypeScript) | Experimental and in progress; check Bevy's current status |
 | Physics | Built in: rapier (3D and 2D), joints, character controller, cloth | Provided by community crates such as Avian or bevy_rapier |
 | Audio | Built in: kira mixer, buses, spatial emitters | Built in via rodio (`bevy_audio`), or community crates |
 | Renderer | Own wgpu renderer (`platypus_render`), decided 2026-10-17 | Own wgpu-based renderer and render graph |
@@ -37,10 +37,9 @@ explains where the two differ and why, so readers don't have to guess.
 - **No ECS.** `DESIGN.md` §7.4 looked at reusing Bevy's rendering and asset crates and rejected it,
   because they bring Bevy's ECS and app model. Platypus keeps Rust owning the world (`platypus_scene`)
   and JavaScript owning behaviour (components with `onUpdate`, `onFixedUpdate`, and so on). The
-  scripts hold only numeric IDs and talk to Rust through `__platypus_op` and `__platypus_commit`.
-- **TypeScript gameplay.** Gameplay is TypeScript bundled by Bun and run in QuickJS. An AOT
-  compiler from TypeScript to native code (`platypus_ts`, oxc → Cranelift) exists on a branch and is
-  not yet merged.
+  scripts hold only numeric IDs and call the engine API (`#[platypus_api]`) directly.
+- **TypeScript gameplay.** Gameplay is TypeScript compiled to native code by `platypus_ts` (oxc →
+  Cranelift). No JavaScript engine runs a game.
 - **React UI.** The UI is a React reconciler over our own tree. Components, state and events work
   as in React, and CSS does the styling. Bevy's UI is built from ECS entities and components.
 - **s&box and Unity conventions.** Names, units and flows follow Unity and s&box where that's

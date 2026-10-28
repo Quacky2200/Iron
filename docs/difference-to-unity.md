@@ -18,8 +18,8 @@ sits in. This page covers those differences and what we want to keep from Unity.
 
 ## The main difference: TypeScript, not C#
 
-Unity scripts are C#. Platypus scripts are TypeScript, bundled by Bun and run in QuickJS in
-development and shipped builds, with an AOT path planned (M9.b).
+Unity scripts are C#. Platypus scripts are TypeScript, compiled ahead of time to native code
+(`platypus_ts`) in development and shipped builds.
 
 Why:
 - **TypeScript is the most common typed language among web developers,** and React is the
@@ -30,15 +30,15 @@ Why:
   models with the game client.
 
 What we're not claiming: TypeScript is not faster than C# for hot code, and the web tooling
-doesn't replace a mature game-profiling pipeline. The AOT compiler (`platypus_ts`, on a branch) is
-the answer to speed, and it's not merged yet.
+doesn't replace a mature game-profiling pipeline. The AOT compiler (`platypus_ts`) is
+the answer to speed.
 
 ## Other differences
 
 | | Unity | Platypus |
 |---|---|---|
-| Scripting | C#, with IL2CPP or Mono | TypeScript, QuickJS now, AOT planned |
-| UI | uGUI and UI Toolkit (UXML/USS, a CSS-like system) | React components with CSS (`@platypus/react` and a CSS cascade) |
+| Scripting | C#, with IL2CPP or Mono | TypeScript, compiled to native code |
+| UI | uGUI and UI Toolkit (UXML/USS, a CSS-like system) | React components with CSS (`platypus_ui_native` and a CSS cascade) |
 | Renderer | Built in, with SRP and HDRP/URP | Own wgpu renderer (`platypus_render`) |
 | Engine code | Closed source (C++ runtime) | Planned open source, Rust core, TypeScript gameplay |
 | Licence | Free under a revenue threshold, paid seats above it (see below) | Planned: free, see the licence section |
@@ -83,7 +83,7 @@ Concretely:
   deprecation period and a migration note.
 - Keep dev and shipped runtimes on the same behaviour, so a game that works in dev works shipped.
 
-The bindings from TypeScript to QuickJS have been stable so far in our own testing. That is the
+The script API (`#[platypus_api]` declarations) has been stable so far in our own testing. That is the
 start of a track record, not proof of one yet.
 
 ## Open questions and risks

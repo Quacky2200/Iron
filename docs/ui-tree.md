@@ -37,8 +37,8 @@ never reuses them. Generated `::before`/`::after`/`::marker`/`::backdrop` nodes 
 
 ## Commits and opcodes
 
-[opcodes.rs](../crates/platypus_ui/src/opcodes.rs) defines eight opcodes shared with
-[opcodes.ts](../js/react/src/opcodes.ts) (keep them in sync by hand):
+[opcodes.rs](../crates/platypus_ui/src/opcodes.rs) defines eight opcodes (the
+JS `opcodes.ts` that mirrored them is deleted; the native reconciler builds typed `Op`s directly):
 
 | Opcode | Args | Effect |
 |---|---|---|
@@ -659,4 +659,4 @@ Until the size is known it fits as if the natural size matched the box. `paint::
 
 ## Typed ops
 
-`platypus_ui::opcodes::Op` is the decoded form of a commit op (`Create`, `SetStyle`, `AppendChild`, ...). `UiTree::apply_commit` decodes each `[opcode, ...args]` array with `Op::decode` (arity and argument types checked there, errors in op order) and applies it; `UiTree::apply_ops(&[Op])` applies already-typed ops as one batch. There is one applier (`apply_op`), shared by the React path and the planned native reconciler ([research/platypus-ui-native.md](research/platypus-ui-native.md)). A non-string style or attribute name now rejects the whole op instead of skipping the one pair. Test `M2-UI-OP-01`.
+`platypus_ui::opcodes::Op` is the decoded form of a commit op (`Create`, `SetStyle`, `AppendChild`, ...). `UiTree::apply_commit` decodes each `[opcode, ...args]` array with `Op::decode` (arity and argument types checked there, errors in op order) and applies it; `UiTree::apply_ops(&[Op])` applies already-typed ops as one batch. There is one applier (`apply_op`), used by the native reconciler (`platypus_ui_native`, [ui-native.md](ui-native.md)); the QuickJS React `__platypus_commit` path is gone. A non-string style or attribute name now rejects the whole op instead of skipping the one pair. Test `M2-UI-OP-01`.

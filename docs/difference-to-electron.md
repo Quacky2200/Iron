@@ -22,11 +22,11 @@ but to keep the web developer's way of building UIs while cutting what each app 
 
 ## What Platypus does differently
 
-- **React and CSS for the UI, running on our own renderer.** `@platypus/react` drives a UI tree that
+- **React and CSS for the UI, running on our own renderer.** React components drive a UI tree (the native reconciler, `platypus_ui_native`) that
   Platypus lays out with Taffy and draws with wgpu. There is no DOM and no browser engine.
-- **TypeScript in QuickJS.** The JavaScript runtime is small compared with V8. Scripts talk to
-  the Rust core through `__platypus_op` and `__platypus_commit`, and a typed `@platypus/api` surface is
-  planned so an app can call the engine as a normal TypeScript module, without an IPC bridge.
+- **TypeScript compiled to native code.** There is no JavaScript runtime in the app at all (QuickJS was
+  removed). Scripts call the Rust core directly, without an IPC bridge, and a typed `@platypus/api` surface is
+  planned so an app can call the engine as a normal TypeScript module.
 - **Rust for the platform.** Memory safety and a single native binary per platform. Windowing
   (winit), GPU (wgpu), audio (kira), physics (rapier) and gamepads (gilrs) are all Rust crates.
 - **One binary, no bundled browser.** An app ships its own code plus the engine, not a copy of
