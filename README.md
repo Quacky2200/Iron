@@ -213,6 +213,8 @@ Credits and third-party notices
 -------------------------------
 
 Platypus builds on many open-source crates and packages; their licences are in their own sources (`Cargo.lock`,
-`bun.lock`). The Inter font is under the SIL Open Font License (`crates/platypus_ui/fonts/Inter-LICENSE.txt`). Examples
+`bun.lock`). The Inter font is under the SIL Open Font License (`crates/platypus_ui/fonts/Inter-LICENSE.txt`). The
+`text` and `css` examples ship the Charm font by Cadson Demak, from Google Fonts, under the same licence
+(`examples/*/assets/fonts/OFL.txt`). Examples
 that use outside art or music list it in their `assets/CREDITS.md` (crowd, emoji, fog-white-room, sine-circle-demo);
 ports of other projects (the MiniGameEngine demos, the clock's lava lamp) say so in their source headers.

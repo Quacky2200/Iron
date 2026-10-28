@@ -35,8 +35,11 @@ Screenshot run (safest; the interactive window may crash some GPUs):
 | `src/ui.css` | 329 lines of rules: variables on `:root`, `.card`, `.item`, `.toggle`, `.slot`, shapes, `.scroller`, inputs |
 | `assets/images/landscape.png` | A photo for the clipping and `object-fit` demos (path `PHOTO` in `main.tsx`) |
 
-The CSS also references the Charm font (`../assets/fonts/Charm-*.ttf`, relative to the CSS file). That
-font is not committed; without it the "@font-face" card falls back to the default font.
+The CSS also references the Charm font (`../assets/fonts/Charm-*.ttf`, relative to the CSS file).
+[Charm](https://fonts.google.com/specimen/Charm) is a Thai/Latin display font by Cadson Demak
+(The Charm Project Authors, [source](https://github.com/cadsondemak/charm)), taken from Google Fonts and
+used under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). Without the files the "@font-face" card
+falls back to the default font.
 
 ## How it works
 

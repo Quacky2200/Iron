@@ -10,7 +10,8 @@
 // the title. The Clipping card shows overflow and clip-path on images, `Image` with
 // object-fit (fill, contain, cover), and a list
 // that scrolls with the wheel, keys and its scrollbar. The Variables card has text
-// fields (a controlled input and a textarea). The Charm card ends with right-to-left
+// fields (a controlled input and a textarea). The Charm font (Cadson Demak, from Google Fonts,
+// SIL OFL 1.1: assets/fonts/OFL.txt) is declared in ui.css. The Charm card ends with right-to-left
 // text: an Arabic line and an input with `dir="rtl"`.
 import "./ui.css";
 

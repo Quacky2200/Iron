@@ -122,7 +122,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
     Sonnet model, and commit the docs with the step or right after it. Give the subagent only
     what changed since the last docs commit (the commits and files from `git diff`), and have it
     read just that code and the affected doc pages, not the whole codebase.
-- **Charm font:** never commit it. It lives in `/Charm/` with local copies under `examples/*/assets/fonts/`. It's excluded via `.git/info/exclude` and `dist/` is ignored. Check `git status` before committing.
+- **Charm font:** it is committed with the `text` and `css` examples (`examples/*/assets/fonts/`, SIL OFL 1.1 with `OFL.txt`, from Google Fonts, credited in their README, source and the root README). The base checkout's `.git/info/exclude` still lists the Charm paths, so a new copy needs `git add -f`. `dist/` is ignored.
 - **Code style:** match the surrounding code. Comments are short and say why. Tests are named after behaviour and tagged with their `TESTS.md` ID in a comment.
 - **Notes for agents (speed):** a scan found these make work slow, so avoid them.
   - **Two levels of checks.** Per step run `cargo fmt`, the new tests, the existing tests of the area you touched (`-p <crate>`, or `cargo test -p platypus_ts_tests --test <lang|stdlib|engine|engine_api|ui> <filter>`), clippy on the crates you edited, and the `generated_dts` guard when declarations change. Run the FULL sweep (root and `tools/` fmt, clippy, `cargo test --workspace`, `PLATYPUS_TS_GC=stress cargo test -p platypus_ts_tests` (all five groups), `platypus_build check ../examples --tsc`, `bun run typecheck`, `bun test`) once at the end of a planned group of work or before a merge, then look at regressions together.

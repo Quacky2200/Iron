@@ -5,8 +5,10 @@
 // wrapping and alignment, decorations, text shadows, emoji and CJK through
 // system font fallback, a font loaded at runtime, and live-updating text.
 
-// Loaded from the game folder. Charm is a Thai/Latin display font (SIL OFL);
-// if the files aren't there, text using it falls back to the default font.
+// Loaded from the game folder. Charm is a Thai/Latin display font by Cadson Demak
+// (The Charm Project Authors), from Google Fonts (https://fonts.google.com/specimen/Charm)
+// under the SIL Open Font License 1.1: see assets/fonts/OFL.txt. If the files aren't
+// there, text using it falls back to the default font.
 loadFont({ family: "Charm", src: "assets/fonts/Charm-Regular.ttf", weight: 400 });
 loadFont({ family: "Charm", src: "assets/fonts/Charm-Bold.ttf", weight: 700 });
 

@@ -31,9 +31,10 @@ interactive window may crash some GPUs; the screenshot run is the safest. A pack
 | `tsconfig.json` | Extends the base config with `"jsx": "react-jsx"` |
 | `src/main.tsx` | Everything: `loadFont` calls, `Card`, `Clock`, `App`, `createRoot().render(<App />)` |
 
-Assets: the "Charm" font is loaded from `assets/fonts/Charm-Regular.ttf` and `Charm-Bold.ttf`. The font
-is not committed to the repo (it is kept as local copies per example); in this checkout there is no
-`examples/text/assets` folder. As the source comment says, if the files are missing, text using
+Assets: the "Charm" font is loaded from `assets/fonts/Charm-Regular.ttf` and `Charm-Bold.ttf`.
+[Charm](https://fonts.google.com/specimen/Charm) is a Thai/Latin display font by Cadson Demak
+(The Charm Project Authors, [source](https://github.com/cadsondemak/charm)), taken from Google Fonts and
+used under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). If the files are missing, text using
 `fontFamily: "Charm, serif"` falls back to the default font.
 
 ## How it works

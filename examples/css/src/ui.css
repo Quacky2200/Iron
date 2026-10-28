@@ -4,6 +4,9 @@
 /* M3b showcase stylesheet: bundled by Bun into dist/game.css, which the engine
    loads next to dist/game.js. */
 
+/* Charm: a Thai/Latin display font by Cadson Demak (The Charm Project Authors), from
+   Google Fonts (https://fonts.google.com/specimen/Charm) under the SIL Open Font
+   License 1.1: see ../assets/fonts/OFL.txt. */
 @font-face {
   font-family: "Charm";
   src: url("../assets/fonts/Charm-Regular.ttf");
