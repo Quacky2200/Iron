@@ -128,6 +128,18 @@ extern "C" fn console_hook(level: i32, text: *const u8, len: usize) {
     }
 }
 
+/// `IRON_TS_GC=stress` collects at every allocation of the game's code and poisons freed memory,
+/// so a missing root crashes at once instead of now and then; `off` never collects on its own.
+/// The same switch as the iron_ts tests (`iron_ts_tests::gc_mode_from_env`), for chasing memory
+/// bugs in a running game.
+fn gc_mode_from_env() {
+    match std::env::var("IRON_TS_GC").as_deref() {
+        Ok("stress") => iron_ts_rt::ts_rt_gc_stress(true),
+        Ok("off") => iron_ts_rt::ts_rt_gc_enable(false),
+        _ => {}
+    }
+}
+
 /// Registers the scene-file kinds of every engine crate, once per thread.
 fn register_kinds() {
     iron_scenes::register_engine_kinds();
@@ -219,6 +231,7 @@ impl Native {
             Some(iron_engine_api::window::runtime_leave_domain),
         );
         register_kinds();
+        gc_mode_from_env();
         let game = Self::compile(&bundle, generation)?;
         let mut lap = iron_ts::timing::Lap::start();
         let mut rt = Runtime::new(FIRST_NODE);
@@ -265,7 +278,7 @@ impl Native {
         let mut lap = iron_ts::timing::Lap::start();
         let manifests = manifests();
         lap.mark("engine manifests (JSON)");
-        compile_and_load(
+        let game = compile_and_load(
             &bundle.source,
             &JitOptions {
                 prefix: "g_",
@@ -276,7 +289,14 @@ impl Native {
                 ..Default::default()
             },
         )
-        .map_err(|e| anyhow!("compiling the game: {e}"))
+        .map_err(|e| anyhow!("compiling the game: {e}"))?;
+        // So a crash in the compiled code can be named (`crash.rs`).
+        super::crash::note_jit_functions(
+            game.function_names()
+                .into_iter()
+                .filter_map(|n| game.function(&n).map(|a| (n, a))),
+        );
+        Ok(game)
     }
 
     /// Has every module finished evaluating, so the game runs?

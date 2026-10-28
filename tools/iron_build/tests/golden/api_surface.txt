@@ -2218,6 +2218,8 @@ declare namespace Application :: const platform: string;
 declare namespace Application :: const productName: string;
 declare namespace Application :: const systemLanguage: string;
 declare namespace Application :: const version: string;
+declare namespace Application :: function crash(message?: string, plain?: boolean): void;
+declare namespace Application :: function crash(options?: { message?: string; plain?: boolean }): void;
 declare namespace Application :: function offFocusChanged(token: number): boolean;
 declare namespace Application :: function onFocusChanged(f: (a0: boolean) => void): () => void;
 declare namespace Application :: function quit(exitCode?: number): void;

@@ -7,6 +7,16 @@
 
 use iron_api::iron_api;
 use std::cell::RefCell;
+use std::sync::OnceLock;
+
+/// What `Application.crash(message, plain)` runs: the host's crash report and dialog. It ends the
+/// process.
+static CRASH_HOOK: OnceLock<fn(&str, bool)> = OnceLock::new();
+
+/// Sets the handler of `Application.crash` (the host does, at start).
+pub fn set_crash_hook(hook: fn(&str, bool)) {
+    let _ = CRASH_HOOK.set(hook);
+}
 
 /// The game's manifest.
 #[derive(Clone, Debug, PartialEq)]
@@ -334,6 +344,19 @@ pub mod application_api {
             0
         };
         STATE.with(|s| s.borrow_mut().requests.push(Request::Quit(code)));
+    }
+
+    /// Ends the game at once as a crash: a crash report is saved beside the log and the crash
+    /// dialog shows, as for an unexpected error. `message` says why. `plain` shows the system's
+    /// plain dialog instead of Iron's own (the one used when Iron's can't run). A game should end
+    /// with `quit`; this is for errors it can't recover from, and for trying the dialog.
+    #[optional(message, plain)]
+    pub fn crash(message: &str, plain: bool) {
+        if let Some(hook) = super::CRASH_HOOK.get() {
+            hook(message, plain);
+        }
+        // No host handler (a test, a tool): end the process all the same.
+        std::process::exit(3);
     }
 }
 

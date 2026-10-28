@@ -11,3 +11,5 @@ tests/output/
 examples/*/types/
 # Asset import settings and GUIDs (`iron-build assets`/`dev`): a build-host detail, rebuilt on demand.
 *.meta
+# The local list of unsafe code for review passes; kept out of the repository.
+docs/AUDIT-UNSAFE-CODE.md

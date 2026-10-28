@@ -277,7 +277,7 @@ pointer events use), `scale` and `aspect`, set by `__iron_screen`. Window mode, 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
 `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
 `args` (the command line's arguments after `--`, `iron game -- --level 2`, from `__iron_info.app.args`), `isMobilePlatform`, `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
-`quit(exitCode)`, which `iron` exits with; the last four are in [platform.md](platform.md#focus-and-pausing)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
+`quit(exitCode)`, which `iron` exits with; the four focus members before it are in [platform.md](platform.md#focus-and-pausing). `crash(message?, plain?)` ends the game as a crash: it saves a crash report beside `Player.log`, shows the crash dialog (with `plain`, the system's message box) and exits with code 3. It is for errors a game can't recover from and for trying the dialog, see [platform.md](platform.md#crash-report-file-and-dialog)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__iron_info` from the
 game's `project.json` (see docs/iron-build.md; formerly the `iron` section of `package.json`:  `title`, `company`, `identifier`
 `icon`, a PNG used for the window icon, and `display`, the default window mode and size; the title is the window title) and the machine
