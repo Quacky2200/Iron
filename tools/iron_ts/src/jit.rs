@@ -200,7 +200,7 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
     let exports = std::thread::scope(|s| {
         std::thread::Builder::new()
             .stack_size(64 << 20)
-            .spawn_scoped(s, || codegen::generate(&mut jit, &module))
+            .spawn_scoped(s, || codegen::generate(&mut jit, &module, true))
             .map_err(|e| e.to_string())?
             .join()
             .map_err(|_| "code generation panicked".to_string())?
