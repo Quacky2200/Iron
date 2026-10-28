@@ -16,10 +16,10 @@ cargo run -p platypus_app -- examples/launcher
 
 The list of games is made at build time by `gen-games.ts`, which `project.json`'s `prebuild` runs
 with bun: each example's folder, title and description (from its `project.json`) go into
-`src/games.gen.ts`, and its screenshot from `bun run screenshots`
+`src/games.gen.ts`, and its screenshot from the `screenshots` tool
 (`tests/output/examples-<name>.png`) is copied into `content/shots/` with a background gradient
 in its colours (`palette.ts`). Both outputs are git-ignored. An example without a screenshot
-shows its title on a colour picked from its name; run `bun run screenshots` first for pictures.
+shows its title on a colour picked from its name; run `cd tools && cargo run -p platypus_shots --bin screenshots` first for pictures.
 
 ## Using it
 

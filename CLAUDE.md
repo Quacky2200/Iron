@@ -47,6 +47,7 @@ Plan and progress: `TODO.md`. Test IDs (e.g. `M3-EVT-01`): `TESTS.md`.
 | `tools/platypus_build` | `platypus-build` (build/types/assets/dev/check/package/init): module graph (`platypus_ts::modules`) -> `build/game.pbundle` (with the renderer tier, `platypus_ts::renderer`) + `game.css` + assets for a game compiled by platypus_ts, no bun; `init` writes `project.json`, a self-contained `tsconfig.json` and `types/platypus.d.ts`, `init --editor-files <game or folder>` refreshes the last two; see `docs/platypus-build.md` |
 | `tools/platypus_notices` | Writes `THIRD-PARTY-NOTICES.md` (built into `platypus-app --licenses` and `platypus-build package`): `cargo metadata` of the host, licence files from the cargo registry, one section per licence; `hand-written.md` (ANGLE, Inter) verbatim; reviewed allow tables in `tables.rs` |
 | `tests/fixtures` | Data for Rust tests (glTF models in `assets/`, `fonts/`, `images/`); `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
+| `tests/tools/shots` | `platypus_shots` (a member of the `tools/` workspace): `screenshots` renders every example to `tests/output/`, `progress-shots` makes `docs/progress/` for `docs/PROGRESS.md` |
 
 ### UI model
 - **Elements:** `box`, `text`, `span`, `input`, `textarea`, `image`, `list`, `dialog`, `svg` (with SVG
@@ -106,8 +107,10 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
   game's textures and models into `.platypus/cooked/` (git-ignored) and exits.
 - `platypus-build assets <game folder>` writes `.meta` files (GUIDs, import settings) for new
   assets; `platypus-build dev` runs it too.
-- `bun run screenshots` renders every example to `tests/output/` (git-ignored), next to the
-  golden tests' renders (build the examples with `platypus-build` first).
+- `cd tools && cargo run -p platypus_shots --bin screenshots [-- names]` (the old `bun run screenshots`) builds the release host and each example,
+  then renders it to `tests/output/examples-<name>.png` (git-ignored; a window opens for a moment per example).
+  `cd tools && cargo run -p platypus_shots --bin progress-shots [-- names]` makes the `docs/PROGRESS.md` pictures in `docs/progress/` (windowless
+  `--bench` runs, shrunk with the `image` crate). Both take `--no-host-build` / `--no-build` (`tests/tools/shots`).
 - Benchmarks: `cargo bench -p platypus_ui --bench restyle` (and the other benches in `crates/platypus_ui/benches`).
 
 ## Working agreements

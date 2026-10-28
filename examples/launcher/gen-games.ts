@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Lists the examples for the launcher: each one's folder, title and description (from its
-// project.json) go into src/games.gen.ts, and its screenshot from `bun run screenshots`
+// project.json) go into src/games.gen.ts, and its screenshot from the `screenshots` tool (tests/tools/shots)
 // (tests/output/examples-<name>.png) is copied into content/shots/, where `image` elements
 // can load it, and its colours (palette.ts) give it a background gradient. Both outputs are
 // git-ignored; `bun run build` runs this.
@@ -64,4 +64,4 @@ writeFileSync(
 );
 const missing = games.filter((g) => !g.shot).map((g) => g.name);
 console.log(`launcher: ${games.length} games, ${games.length - missing.length} screenshots`);
-if (missing.length) console.log(`  no screenshot (bun run screenshots ${missing.join(" ")}): ${missing.join(", ")}`);
+if (missing.length) console.log(`  no screenshot (cd tools && cargo run -p platypus_shots --bin screenshots -- ${missing.join(" ")}): ${missing.join(", ")}`);

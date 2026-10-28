@@ -658,7 +658,7 @@ drawn with `render_overlay` after the world and the game's UI, in `frame()` and 
 scale factor (not the UI scale, not the render scale).
 
 On or off, in order: `--fps` / `--no-fps` on the command line; off with `PLATYPUS_FPS=0` (or `false`, `off`, `no`) or `"platypus": { "fps": false }`
-in `package.json`; otherwise on, except in `--screenshot` runs (off unless `--fps`, so goldens and `bun run screenshots` don't change).
+in `package.json`; otherwise on, except in `--screenshot` runs (off unless `--fps`, so goldens and the `screenshots` tool's renders don't change).
 `platypus_editor` has it off unless `--fps`. A short screenshot run shows the partial window.
 
 ## Fog, light shafts and exposure in native games (2026-10-21)

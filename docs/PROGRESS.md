@@ -123,12 +123,12 @@ From [TODO.md](../TODO.md) and [tools/platypus_ts/TODO.md](../tools/platypus_ts/
 Windowless runs (`--bench`: an offscreen target, no OS window opens), a fixed step of 1/60 s so each picture is the same
 moment of the game's clock on any machine, 120 frames in, more where an effect needs time to settle (fog and god rays
 600, the eye-adaptation bedroom 900, the tunnel 420), then shrunk to 640 px (800 for a few showpieces) as JPEG at
-quality 85, PNG for UI examples. The shrinking uses Windows PowerShell's System.Drawing.
+quality 85, PNG for UI examples, shrunk with the `image` crate (Catmull-Rom). The tool is `tests/tools/shots`
+(`progress-shots`, which replaced `scripts/progress-shots.ts`).
 
 ```bash
-cargo build --release -p platypus_app
-cd tools && cargo run -q -p platypus_build -- check ../examples && cd ..
-bun scripts/progress-shots.ts            # every example; or name some: bun scripts/progress-shots.ts fog tunnel
+cd tools && cargo run -p platypus_shots --bin progress-shots                  # builds the release host and the examples first
+cd tools && cargo run -p platypus_shots --bin progress-shots -- fog tunnel    # just these; --no-host-build / --no-build reuse builds
 ```
 
 The full-size renders and each run's bench JSON stay in `tests/output/progress/` (git-ignored). Look at every picture

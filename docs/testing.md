@@ -84,10 +84,12 @@ Most tests build a tree by emitting ops directly (helpers such as `Dom` or the `
 - `PLATYPUS_UPDATE_GOLDEN=1 cargo test -p platypus_render` rewrites references instead of comparing.
 - Every `assert_golden` call also writes its render to `tests/output/<id>.png`, passing or
   not, for inspection. The folder is git-ignored.
-- `bun run screenshots [names...]` (`scripts/screenshots.ts`; to be replaced by a Rust tool under `tests/tools/`) builds
-  `platypus_app` and renders each example to
-  `tests/output/examples-<name>.png` (build the examples with `platypus-build build` first). `tests/output/history/`
-  keeps older screenshots for comparison.
+- `cd tools && cargo run -p platypus_shots --bin screenshots [-- names...]` (`tests/tools/shots`, replacing the old `bun run screenshots` /
+  `scripts/screenshots.ts`) builds the release `platypus-app` and each example (`platypus_build` as a library), then
+  renders it with `--screenshot` to `tests/output/examples-<name>.png`; a window opens for a moment per example.
+  `--no-host-build` and `--no-build` reuse what is built. `tests/output/history/` keeps older screenshots for comparison.
+- `cd tools && cargo run -p platypus_shots --bin progress-shots [-- names...]` (replacing `scripts/progress-shots.ts`) makes the pictures of
+  [PROGRESS.md](PROGRESS.md) (see there; `M9-SHOT-01`, `-02`).
   Updating goldens is always explicit; review the PNG by eye before committing.
 - `shared_gpu()` is **required** in GPU tests: one device per test binary behind a mutex
   (creating devices from parallel threads can deadlock some Vulkan layers).

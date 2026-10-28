@@ -3,8 +3,7 @@
   "private": true,
   "license": "Apache-2.0",
   "scripts": {
-    "typecheck": "cd tools && cargo run -q -p platypus_build -- check ../examples --tsc",
-    "screenshots": "bun scripts/screenshots.ts"
+    "typecheck": "cd tools && cargo run -q -p platypus_build -- check ../examples --tsc"
   },
   "devDependencies": {
     "typescript": "^5.9.0"
