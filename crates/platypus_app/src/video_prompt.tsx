@@ -6,7 +6,8 @@
 // `REFRESH`, `VSYNC` and `LEVEL` (constants: the game's current choice) and the resolution
 // list's helpers (`video_prompt_sizes.ts`) in front of this text. Play saves the choice in this
 // window's PlayerPrefs (`mode`, `width`, `height`, `refreshRate`, `vsync`, `level`) and exits
-// with 10; Quit, Esc or closing the window exits with 0.
+// with 10; Quit, Esc or closing the window exits with 0. Opened by a running game
+// (`Application.showVideoSettings`, `STARTUP` false) the buttons are Apply and Cancel.
 
 const PLAY = 10;
 /** Rows a Page Up / Page Down moves in the resolution list. */
@@ -178,18 +179,17 @@ function Dialog() {
 
   return (
     <box style={{ width: "100%", height: "100%", flexDirection: "column", alignItems: "center", padding: 24, backgroundColor: "#1b1c21" }}>
-      {/* The game's own icon and name (the host writes the icon beside this source). */}
-      <box style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-        <Image src="icon.png" style={{ width: 48, height: 48, flexShrink: 0 }} />
-        <box style={{ flexDirection: "column" }}>
-          {headerLines(GAME, SUBTITLE).map((line, i) => (
-            <text key={i} style={i === 0 ? { color: "#ffffff", fontSize: 22 } : { color: "#8d93a0", fontSize: 14, marginTop: 2 }}>
-              {line}
-            </text>
-          ))}
-        </box>
+      {/* The game's name (its icon is the window's, in the title bar). */}
+      <box style={{ flexDirection: "column", alignItems: "center" }}>
+        {headerLines(GAME, SUBTITLE).map((line, i) => (
+          <text key={i} style={i === 0 ? { color: "#ffffff", fontSize: 22 } : { color: "#8d93a0", fontSize: 14, marginTop: 2 }}>
+            {line}
+          </text>
+        ))}
       </box>
-      <text style={{ color: "#b6bac4", fontSize: 14, marginTop: 8, textAlign: "center" }}>Choose how the game looks. You can change it later in its settings.</text>
+      <text style={{ color: "#b6bac4", fontSize: 14, marginTop: 10, textAlign: "center" }}>
+        {STARTUP ? "Choose how the game looks. You can change it later in its settings." : "Choose how the game looks."}
+      </text>
       <box style={{ flexDirection: "column", width: "100%", maxWidth: 400, marginTop: 6 }}>
       {/* A fixed-size game has no mode or resolution to choose: the rows are not displayed. */}
       <box style={{ flexDirection: "column", display: RESIZABLE ? "flex" : "none" }}>
@@ -220,8 +220,9 @@ function Dialog() {
       </box>
       <box style={{ flexGrow: 1 }} />
       <box style={{ flexDirection: "row", justifyContent: "center", marginTop: 16 }}>
-        <Button label="Quit" primary={false} onPress={() => Application.quit(0)} />
-        <Button label="Play" primary={true} onPress={start} focusRef={play} />
+        {/* In a running game the dialog never quits it: Cancel just closes the dialog. */}
+        <Button label={STARTUP ? "Quit" : "Cancel"} primary={false} onPress={() => Application.quit(0)} />
+        <Button label={STARTUP ? "Play" : "Apply"} primary={true} onPress={start} focusRef={play} />
       </box>
       <text style={{ color: "#6f7480", fontSize: 11, marginTop: 10, textAlign: "center" }}>VSync keeps frames in step with the display.</text>
     </box>

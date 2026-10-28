@@ -2223,9 +2223,12 @@ declare namespace Application :: const version: string;
 declare namespace Application :: function crash(message?: string, plain?: boolean): void;
 declare namespace Application :: function crash(options?: { message?: string; plain?: boolean }): void;
 declare namespace Application :: function offFocusChanged(token: number): boolean;
+declare namespace Application :: function offVideoSettingsChanged(token: number): boolean;
 declare namespace Application :: function onFocusChanged(f: (a0: boolean) => void): () => void;
+declare namespace Application :: function onVideoSettingsChanged(f: () => void): () => void;
 declare namespace Application :: function quit(exitCode?: number): void;
 declare namespace Application :: function quit(options?: { exitCode?: number }): void;
+declare namespace Application :: function showVideoSettings(): void;
 declare namespace Application :: let runInBackground: boolean;
 declare namespace Application :: let targetFrameRate: number;
 declare namespace Assets

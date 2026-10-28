@@ -83,6 +83,7 @@ impl App {
                     self.lifecycle.run_in_background = on;
                     self.sync_lifecycle();
                 }
+                Request::ShowVideoSettings => self.open_video_settings(),
             }
         }
         for c in platypus_engine_api::prefs::take_changes() {

@@ -663,6 +663,8 @@ fn run() -> Result<()> {
         info,
         editor: editor::EditorHost::default(),
         file_drag: file_drop::FileDrag::default(),
+        manifest: manifest.clone(),
+        video_dialog: None,
     };
     // The game's own icon, else Platypus's.
     let icon = Some(manifest.window_icon(&code_root));
@@ -981,6 +983,10 @@ struct App {
     editor: editor::EditorHost,
     /// Files dragged onto the window from the system.
     file_drag: file_drop::FileDrag,
+    /// The game's manifest, for the video-settings dialog `Application.showVideoSettings` opens.
+    manifest: info::Manifest,
+    /// That dialog's process while it is open (the game is paused).
+    video_dialog: Option<video_prompt::Running>,
     done: bool,
 }
 
@@ -2995,6 +3001,7 @@ impl PlatformApp for App {
         // tree is still 1x1, and their layout and scrolling (`scrollIntoView` on mount)
         // would happen at that size.
         self.sync_screen();
+        self.poll_video_settings();
         // Domain turns: the main game's messages first, then its tick, then the isolated domains
         // (messages, timers, input), then the setup window of new windows ends.
         if !self.lifecycle.paused() {
@@ -3227,6 +3234,8 @@ impl PlatformApp for App {
     }
 
     fn idle(&mut self) {
+        // The video-settings dialog pauses the game: its answer arrives here.
+        self.poll_video_settings();
         // Hot reload still picks up rebuilds; they show once the game resumes.
         if self
             .watcher

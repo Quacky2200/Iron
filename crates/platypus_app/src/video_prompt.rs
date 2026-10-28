@@ -17,7 +17,7 @@
 //! keys the engine already reads (`platypus.display`, `platypus.quality`), so the game starts
 //! through its normal path, and a game's own settings menu still changes it later.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use platypus_platform::display::{DisplaySettings, FullScreenMode};
@@ -85,6 +85,9 @@ pub struct Current {
     pub display: DisplaySettings,
     pub vsync: bool,
     pub level: String,
+    /// The startup prompt (Play / Quit) rather than the one a running game opened
+    /// (`Application.showVideoSettings`: Apply / Cancel).
+    pub startup: bool,
 }
 
 /// The saved quality choice (`platypus.quality`, JSON text in prefs).
@@ -121,6 +124,7 @@ impl Current {
             display,
             vsync,
             level,
+            startup: true,
         }
     }
 
@@ -135,7 +139,7 @@ impl Current {
         };
         format!(
             // Typed: a literal `false` would make `RESIZABLE ? <Row/> : null` only ever null.
-            "const GAME: string = {};\nconst SUBTITLE: string = {};\nconst RESIZABLE: boolean = {};\nconst MODE: string = {};\nconst WIDTH: number = {w};\nconst HEIGHT: number = {h};\nconst REFRESH: number = {};\nconst VSYNC: boolean = {};\nconst LEVEL: string = {};\n",
+            "const GAME: string = {};\nconst SUBTITLE: string = {};\nconst RESIZABLE: boolean = {};\nconst MODE: string = {};\nconst WIDTH: number = {w};\nconst HEIGHT: number = {h};\nconst REFRESH: number = {};\nconst VSYNC: boolean = {};\nconst LEVEL: string = {};\nconst STARTUP: boolean = {};\n",
             s(&self.title),
             s(&self.subtitle),
             self.resizable,
@@ -143,6 +147,7 @@ impl Current {
             d.refresh_rate,
             self.vsync,
             s(&self.level),
+            self.startup,
         )
     }
 }
@@ -183,19 +188,29 @@ impl Choice {
     /// `platypus.display` (not for a fixed-size game, whose window always has its own size) and
     /// `platypus.quality` (the level, with the player's vsync), and marks the prompt answered.
     pub fn apply(&self, prefs: &mut Prefs, display: DisplaySettings, resizable: bool) {
-        if resizable {
-            let mut v = json!({ "mode": self.mode.name() });
-            if let Some((w, h, hz)) = self.size {
-                v["width"] = json!(w);
-                v["height"] = json!(h);
-                v["refreshRate"] = json!(hz);
-            }
-            let chosen = super::display::from_json(Some(&v), display);
+        if let Some(chosen) = self.display(display, resizable) {
             prefs.set("platypus.display", super::display::to_json(&chosen));
         }
         let quality = quality_pref(saved_quality(prefs).as_ref(), &self.level, self.vsync);
         prefs.set("platypus.quality", Value::String(quality.to_string()));
         prefs.set(CHOSEN_KEY, Value::Bool(true));
+    }
+}
+
+impl Choice {
+    /// The window's mode and size the choice asks for, over `current`; `None` for a fixed-size
+    /// game (its window keeps its own size).
+    pub fn display(&self, current: DisplaySettings, resizable: bool) -> Option<DisplaySettings> {
+        if !resizable {
+            return None;
+        }
+        let mut v = json!({ "mode": self.mode.name() });
+        if let Some((w, h, hz)) = self.size {
+            v["width"] = json!(w);
+            v["height"] = json!(h);
+            v["refreshRate"] = json!(hz);
+        }
+        Some(super::display::from_json(Some(&v), current))
     }
 }
 
@@ -234,54 +249,100 @@ pub struct Screenshot<'a> {
     pub frames: u32,
 }
 
-/// Runs the dialog in a child process and waits for it.
-/// `icon`: the game's window icon as RGBA (its own, else Platypus's), for the dialog's window
-/// and header.
+/// Runs the dialog in a child process and waits for it (the startup prompt).
+/// `icon`: the game's window icon as RGBA (its own, else Platypus's), for the dialog's window.
 pub fn run(current: &Current, icon: &Icon, screenshot: Option<Screenshot<'_>>) -> Outcome {
-    let Ok(exe) = std::env::current_exe() else {
-        return Outcome::Failed;
-    };
-    let dir = std::env::temp_dir().join(format!("platypus-video-settings-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    if let Err(e) = write_dialog_game(&dir, current, icon) {
-        tracing::warn!("video settings prompt: {e}");
-        return Outcome::Failed;
+    match Running::start(current, icon, screenshot) {
+        Some(running) => running.wait(),
+        None => Outcome::Failed,
     }
-    let mut cmd = Command::new(exe);
-    cmd.arg(DIALOG_FLAG)
-        .arg(&dir)
-        // A crash in the dialog must not open the crash dialog; its prefs and log stay with it.
-        .env(super::crash_dialog::CHILD_ENV, "1")
-        .env("PLATYPUS_PREFS_DIR", &dir)
-        .env("PLATYPUS_LOG_FILE", dir.join("dialog.log"));
-    if let Some(s) = &screenshot {
-        cmd.arg("--screenshot")
-            .arg(s.path)
-            .args(["--frames", &s.frames.to_string()]);
+}
+
+/// The dialog's process, while it is open.
+pub struct Running {
+    child: std::process::Child,
+    dir: PathBuf,
+    screenshot: bool,
+}
+
+impl Running {
+    /// Starts the dialog's process; `None` when it can't (logged).
+    pub fn start(
+        current: &Current,
+        icon: &Icon,
+        screenshot: Option<Screenshot<'_>>,
+    ) -> Option<Running> {
+        let exe = std::env::current_exe().ok()?;
+        let dir =
+            std::env::temp_dir().join(format!("platypus-video-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        if let Err(e) = write_dialog_game(&dir, current, icon) {
+            tracing::warn!("video settings dialog: {e}");
+            return None;
+        }
+        let mut cmd = Command::new(exe);
+        cmd.arg(DIALOG_FLAG)
+            .arg(&dir)
+            // A crash in the dialog must not open the crash dialog; its prefs and log stay with it.
+            .env(super::crash_dialog::CHILD_ENV, "1")
+            .env("PLATYPUS_PREFS_DIR", &dir)
+            .env("PLATYPUS_LOG_FILE", dir.join("dialog.log"));
+        if let Some(s) = &screenshot {
+            cmd.arg("--screenshot")
+                .arg(s.path)
+                .args(["--frames", &s.frames.to_string()]);
+        }
+        match cmd.spawn() {
+            Ok(child) => Some(Running {
+                child,
+                dir,
+                screenshot: screenshot.is_some(),
+            }),
+            Err(e) => {
+                tracing::warn!("video settings dialog: {e}");
+                let _ = std::fs::remove_dir_all(&dir);
+                None
+            }
+        }
     }
-    let code = cmd.status().ok().and_then(|s| s.code());
-    let outcome = match code {
-        _ if screenshot.is_some() => Outcome::Screenshot,
-        Some(0) => Outcome::Quit,
-        Some(EXIT_PLAY) => Choice::from_prefs(Prefs::open(dir.join("prefs.json")).all())
-            .map_or(Outcome::Failed, Outcome::Play),
-        _ => Outcome::Failed,
-    };
-    if outcome == Outcome::Failed {
-        let log = std::fs::read_to_string(dir.join("dialog.log")).unwrap_or_default();
-        tracing::warn!(
-            "the video settings prompt did not run (exit {code:?}); starting the game\n{log}"
-        );
+
+    /// Waits for the player's answer.
+    pub fn wait(mut self) -> Outcome {
+        let code = self.child.wait().ok().and_then(|s| s.code());
+        self.finish(code)
     }
-    let _ = std::fs::remove_dir_all(&dir);
-    outcome
+
+    /// The answer, once the dialog has closed (a running game asks every frame).
+    pub fn poll(&mut self) -> Option<Outcome> {
+        match self.child.try_wait() {
+            Ok(None) => None,
+            Ok(Some(status)) => Some(self.finish(status.code())),
+            Err(_) => Some(self.finish(None)),
+        }
+    }
+
+    fn finish(&mut self, code: Option<i32>) -> Outcome {
+        let outcome = match code {
+            _ if self.screenshot => Outcome::Screenshot,
+            Some(0) => Outcome::Quit,
+            Some(EXIT_PLAY) => Choice::from_prefs(Prefs::open(self.dir.join("prefs.json")).all())
+                .map_or(Outcome::Failed, Outcome::Play),
+            _ => Outcome::Failed,
+        };
+        if outcome == Outcome::Failed {
+            let log = std::fs::read_to_string(self.dir.join("dialog.log")).unwrap_or_default();
+            tracing::warn!("the video settings dialog did not run (exit {code:?})\n{log}");
+        }
+        let _ = std::fs::remove_dir_all(&self.dir);
+        outcome
+    }
 }
 
 /// An icon as RGBA pixels, width and height (`info::load_icon`, `info::default_icon`).
 pub type Icon = (Vec<u8>, u32, u32);
 
 /// The dialog's folder: `project.json` (a fixed-size UI app named after the game, with its icon,
-/// so the window and taskbar show the game), `icon.png` (also its header's image) and
+/// so the window and taskbar show the game), `icon.png` and
 /// `build/game.pbundle`, its source the dialog's TSX after the constants.
 fn write_dialog_game(dir: &Path, current: &Current, icon: &Icon) -> std::io::Result<()> {
     std::fs::create_dir_all(dir.join("build"))?;
@@ -307,11 +368,80 @@ fn write_dialog_game(dir: &Path, current: &Current, icon: &Icon) -> std::io::Res
         "source": format!("{}{SIZES_SOURCE}{DIALOG_SOURCE}", current.constants()),
         "files": [],
         "css": null,
-        "assets": ["icon.png"],
+        "assets": [],
         "patterns": [],
     });
     std::fs::write(dir.join("project.json"), project.to_string())?;
     std::fs::write(dir.join("build").join("game.pbundle"), bundle.to_string())
+}
+
+/// `Application.showVideoSettings()`: the same dialog over a running game. The game pauses while
+/// it is open (the dialog is a process of its own, polled each frame and while idle); Apply puts
+/// the choice into effect through the paths scripts use (the window's mode and size, the quality
+/// level and vsync) and saves it; Cancel changes nothing.
+impl super::App {
+    pub(super) fn open_video_settings(&mut self) {
+        if self.offline {
+            tracing::warn!("Application.showVideoSettings: no dialog in screenshot or bench runs");
+            return;
+        }
+        if self.video_dialog.is_some() {
+            return;
+        }
+        let resizable = self.manifest.display["resizable"].as_bool().unwrap_or(true);
+        let live = platypus_engine_api::screen::quality();
+        let current = Current {
+            level: live.name.clone(),
+            vsync: live.v_sync_count > 0,
+            startup: false,
+            ..Current::new(&self.manifest, &self.prefs, self.display, resizable)
+        };
+        let icon = self.manifest.window_icon(&self.code_root);
+        match Running::start(&current, &icon, None) {
+            Some(running) => {
+                self.video_dialog = Some(running);
+                self.lifecycle.set_modal(true);
+                self.sync_lifecycle();
+            }
+            None => tracing::warn!("Application.showVideoSettings: the dialog could not start"),
+        }
+    }
+
+    /// Whether the dialog closed; then its answer is applied and the game resumes.
+    pub(super) fn poll_video_settings(&mut self) {
+        let Some(outcome) = self.video_dialog.as_mut().and_then(Running::poll) else {
+            return;
+        };
+        self.video_dialog = None;
+        self.lifecycle.set_modal(false);
+        if let Outcome::Play(choice) = outcome {
+            self.apply_video_choice(&choice);
+        }
+        self.sync_lifecycle();
+        // The dialog had focus: give it back to the game's window.
+        if let Some(w) = self.main_window() {
+            w.focus_window();
+        }
+    }
+
+    fn apply_video_choice(&mut self, choice: &Choice) {
+        let resizable = self.manifest.display["resizable"].as_bool().unwrap_or(true);
+        if let Some(wanted) = choice.display(self.display, resizable) {
+            self.apply_display(wanted);
+            self.prefs
+                .set("platypus.display", super::display::to_json(&self.display));
+        }
+        let (level, vsync) = (choice.level.clone(), choice.vsync);
+        // As a script would: `setQualityLevel` then `vSyncCount` (saved with `playerVSync`).
+        self.in_game(|| {
+            use platypus_engine_api::screen::quality_api;
+            quality_api::set_quality_level_by_name(&level);
+            quality_api::set_v_sync_count(i32::from(vsync));
+            platypus_engine_api::app::video_settings_changed();
+        });
+        self.prefs.set(CHOSEN_KEY, Value::Bool(true));
+        self.prefs.save();
+    }
 }
 
 #[cfg(test)]
@@ -498,5 +628,51 @@ mod tests {
         );
         assert!(!bundle.contains("const GAME: string = \\\"Platypus"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M9-VSP-16
+    #[test]
+    fn a_choice_applied_in_a_running_game_maps_to_the_window_settings() {
+        let current = DisplaySettings {
+            mode: FullScreenMode::Windowed,
+            window_width: 1280,
+            window_height: 720,
+            ..DisplaySettings::default()
+        };
+        let exclusive = Choice {
+            mode: FullScreenMode::ExclusiveFullScreen,
+            size: Some((1920, 1080, 144.0)),
+            vsync: false,
+            level: "Low".into(),
+        };
+        let d = exclusive.display(current, true).unwrap();
+        assert_eq!(
+            (d.mode, d.width, d.height, d.refresh_rate),
+            (FullScreenMode::ExclusiveFullScreen, 1920, 1080, 144.0)
+        );
+        // The window size is remembered for going back to a window.
+        assert_eq!((d.window_width, d.window_height), (1280, 720));
+        let borderless = Choice {
+            mode: FullScreenMode::FullScreenWindow,
+            size: None,
+            ..exclusive.clone()
+        };
+        assert_eq!(
+            borderless.display(current, true).unwrap().mode,
+            FullScreenMode::FullScreenWindow
+        );
+        // A fixed-size game's window is left alone.
+        assert_eq!(exclusive.display(current, false), None);
+        // The dialog a running game opens says Apply / Cancel, the startup one Play / Quit.
+        let manifest = Manifest::from_json(&json!({ "platypus": { "title": "Fox" } }), "fox");
+        let c = Current::new(&manifest, &Prefs::in_memory(), current, true);
+        assert!(c.constants().contains("const STARTUP: boolean = true;"));
+        let live = Current {
+            startup: false,
+            ..c
+        };
+        assert!(live.constants().contains("const STARTUP: boolean = false;"));
+        assert!(DIALOG_SOURCE.contains(r#"STARTUP ? "Quit" : "Cancel""#));
+        assert!(DIALOG_SOURCE.contains(r#"STARTUP ? "Play" : "Apply""#));
     }
 }

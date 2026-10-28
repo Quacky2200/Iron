@@ -177,10 +177,11 @@ prepended by `video_prompt.rs` followed by `video_prompt.tsx`.
 
 **The dialog.** A fixed 600 x 500 window (300 tall without the mode and resolution rows; `resizable: false`, so no resize
 edges or maximize button), centred on the screen like the game's, its content a centred column:
-- A header with the game's icon and title, and its `subtitle` in smaller, dimmer text under the title when it has one. The
-  window's title and taskbar icon are the game's too: `Manifest::window_title` (title, else name, else "Platypus") and
-  `Manifest::window_icon` (the project's icon, else Platypus's), the same values the game's own window uses. The host writes
-  the icon as `icon.png` into the dialog's folder; the title and subtitle come as constants.
+- A header with the game's title, and its `subtitle` in smaller, dimmer text under it when it has one (centred text; no
+  image). The window's title and its title-bar / taskbar icon are the game's: `Manifest::window_title` (title, else name,
+  else "Platypus") and `Manifest::window_icon` (the project's icon, else Platypus's), the same values the game's own window
+  uses. The host writes the icon as `icon.png` into the dialog's folder (its `project.json` icon); the title and subtitle
+  come as constants.
 - Window mode: Windowed, Borderless or Fullscreen.
 - A resolution list box. The modes are the monitor's, from winit through `Screen.resolutions`, de-duplicated and largest first
   by area. Refresh rates show only for exclusive fullscreen. Windowed lists only sizes smaller than the monitor. The saved size
@@ -199,7 +200,19 @@ per-setting changes are kept only when the level is the same) and the chosen key
 path. Quit exits 0: the game does not start and nothing is recorded. A failure (no GPU, a compile error) logs a warning and
 starts the game without recording anything.
 
-Tests: `M9-VSP-01`..`11` (`TESTS.md`).
+**From a running game.** `Application.showVideoSettings()` opens the same dialog over the game (a game's own "Video
+settings..." button; the arcade's settings menu has one). It returns at once (a `ShowVideoSettings` request,
+`native_pump.rs`); the host starts the same UI-only child (`video_prompt::Running`, with `STARTUP` false: the buttons say
+Apply and Cancel, and Cancel never quits the game) and polls it each frame and while idle. The game pauses meanwhile
+(`Lifecycle::set_modal`, even with `runInBackground`): `Application.isPaused` is true and the pause hooks run as for the
+background pause. Apply puts the choice into effect the way scripts would: the window's mode and size through
+`apply_display` (saved as `platypus.display`; not for fixed-size games), then `QualitySettings.setQualityLevel` and
+`vSyncCount` (saved as `platypus.quality` with `playerVSync`), marks the prompt answered and runs the
+`Application.onVideoSettingsChanged` listeners; the game window gets focus back. Cancel, Esc or closing the dialog changes
+nothing. Screenshot and bench runs, a dialog already open and a dialog that fails to start only log a warning. Compiled
+games only (QuickJS games get the call but nothing happens).
+
+Tests: `M9-VSP-01`..`16` (`TESTS.md`).
 
 ## Focus and pausing
 

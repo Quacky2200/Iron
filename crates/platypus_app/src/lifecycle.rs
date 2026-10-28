@@ -17,6 +17,8 @@ pub struct Lifecycle {
     /// Occluded (macOS, Wayland) or sized to nothing (Windows minimises to 0 × 0).
     occluded: bool,
     zero_size: bool,
+    /// A dialog of the host's is open over the game (`Application.showVideoSettings`).
+    modal: bool,
     /// When the pause began.
     paused_at: Option<Instant>,
     /// The focus and pause state scripts were last told (they start focused, running).
@@ -42,6 +44,7 @@ impl Lifecycle {
             focused: true,
             occluded: false,
             zero_size: false,
+            modal: false,
             paused_at: None,
             reported: (true, false),
         }
@@ -59,6 +62,12 @@ impl Lifecycle {
         self.zero_size = width == 0 || height == 0;
     }
 
+    /// A host dialog opened or closed over the game: it pauses the game, even with
+    /// `runInBackground`.
+    pub fn set_modal(&mut self, modal: bool) {
+        self.modal = modal;
+    }
+
     /// Whether the window is in the background: unfocused or minimised.
     fn background(&self) -> bool {
         !self.focused || self.occluded || self.zero_size
@@ -66,7 +75,7 @@ impl Lifecycle {
 
     /// Whether the game should be paused now.
     pub fn should_pause(&self) -> bool {
-        !self.always_run && !self.run_in_background && self.background()
+        !self.always_run && (self.modal || (!self.run_in_background && self.background()))
     }
 
     pub fn paused(&self) -> bool {
@@ -223,6 +232,26 @@ mod tests {
         // Reloaded scripts hear the current state again.
         l.scripts_restarted();
         assert_eq!(l.update(t0).report, Some((false, true)));
+    }
+
+    // M9-VSP-14
+    #[test]
+    fn a_host_dialog_pauses_the_game_even_with_run_in_background() {
+        let t0 = Instant::now();
+        let mut l = Lifecycle::new(true, false);
+        l.set_modal(true);
+        let c = l.update(t0);
+        assert!(c.paused && l.paused());
+        assert_eq!(c.report, Some((true, true)));
+        l.set_modal(false);
+        assert_eq!(
+            l.update(t0 + Duration::from_secs(2)).resumed,
+            Some(Duration::from_secs(2))
+        );
+        // Screenshot runs never pause.
+        let mut shot = Lifecycle::new(false, true);
+        shot.set_modal(true);
+        assert!(!shot.update(t0).paused);
     }
 
     // M5-APP-07

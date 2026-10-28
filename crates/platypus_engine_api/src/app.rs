@@ -122,6 +122,8 @@ pub enum Request {
     RunInBackground(bool),
     /// `Application.quit(exitCode)`: the process's exit code (0 by default).
     Quit(i32),
+    /// `Application.showVideoSettings()`: open the video-settings dialog.
+    ShowVideoSettings,
 }
 
 /// What changed in [`set_focus`], so the host can run `onApplicationPause` / `onApplicationFocus`.
@@ -142,6 +144,7 @@ struct State {
     fps: f64,
     requests: Vec<Request>,
     focus_listeners: platypus_api::callback::Listeners<(bool,)>,
+    video_listeners: platypus_api::callback::Listeners<()>,
 }
 
 thread_local! {
@@ -155,6 +158,7 @@ thread_local! {
         fps: 0.0,
         requests: Vec::new(),
         focus_listeners: Default::default(),
+        video_listeners: Default::default(),
     });
 }
 
@@ -204,7 +208,15 @@ pub fn reset() {
         s.paused = false;
         s.requests.clear();
         s.focus_listeners.clear();
+        s.video_listeners.clear();
     });
+}
+
+/// The player applied new video settings in the dialog `showVideoSettings` opened: runs the
+/// `onVideoSettingsChanged` listeners.
+pub fn video_settings_changed() {
+    let cbs = STATE.with(|s| s.borrow().video_listeners.snapshot());
+    platypus_api::callback::emit(&cbs, ());
 }
 
 fn app<R>(f: impl FnOnce(&AppInfo) -> R) -> R {
@@ -351,6 +363,28 @@ pub mod application_api {
     /// Stops a listener from `onFocusChanged`; false when the token is unknown.
     pub fn off_focus_changed(token: u32) -> bool {
         STATE.with(|s| s.borrow_mut().focus_listeners.remove(token))
+    }
+
+    /// Opens the video-settings dialog (window mode, resolution, vsync, quality level: the one
+    /// `videoSettingsPrompt` shows at startup) over the game, for a game's own "Video settings..."
+    /// button. Returns at once; the game pauses while the dialog is open (`isPaused`, the pause
+    /// hooks run as for the background pause). Apply puts the choice into effect and saves it
+    /// (`onVideoSettingsChanged` then runs); Cancel, Esc or closing the dialog changes nothing.
+    /// Nothing happens in screenshot or bench runs, or while the dialog is already open.
+    pub fn show_video_settings() {
+        STATE.with(|s| s.borrow_mut().requests.push(Request::ShowVideoSettings));
+    }
+
+    /// Calls `f()` after the player applied new settings in `showVideoSettings`'s dialog;
+    /// returns a token for `offVideoSettingsChanged`.
+    #[subscription(off = "off_video_settings_changed")]
+    pub fn on_video_settings_changed(f: platypus_api::Callback<()>) -> u32 {
+        STATE.with(|s| s.borrow_mut().video_listeners.add(f))
+    }
+
+    /// Stops a listener from `onVideoSettingsChanged`; false when the token is unknown.
+    pub fn off_video_settings_changed(token: u32) -> bool {
+        STATE.with(|s| s.borrow_mut().video_listeners.remove(token))
     }
 
     /// The command line's arguments for the game: everything after `--`

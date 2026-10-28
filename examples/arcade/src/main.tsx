@@ -586,6 +586,8 @@ function Settings(props: { t: Theme; style: Style }) {
   // The engine applies window changes after this frame: look again shortly after.
   const [, setTick] = useState(0);
   const refresh = () => setTimeout(() => setTick((t) => t + 1), 100);
+  // Choices made in the engine's video-settings dialog show here too.
+  useEffect(() => Application.onVideoSettingsChanged(() => setTick((t) => t + 1)), []);
   const mode = Screen.fullScreenMode;
   const size = Screen.windowSize;
   const monitor = Screen.currentResolution;
@@ -670,7 +672,9 @@ function Settings(props: { t: Theme; style: Style }) {
         ))}
       </Row>
       <text style={{ color: t.label, fontSize: 12 }}>VSync paces frames to the display; with it off, the frame cap keeps the GPU from running flat out.</text>
-      <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+      <box style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8 }}>
+        {/* The engine's own dialog (window mode, resolution, vsync, quality); this menu shows its choice after. */}
+        <Choice label="Video settings..." onClick={() => Application.showVideoSettings()} />
         <Choice label="Back to the game (Esc)" active onClick={() => GameManager.current?.setPaused(false)} />
       </box>
     </box>
