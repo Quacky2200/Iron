@@ -323,13 +323,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 # Rust crates
 
-The host is built from 441 third-party Rust crates from crates.io: the normal and build dependencies of `platypus_app` for `x86_64-pc-windows-msvc`, as Cargo.lock pins them. Each is listed under its licence with the copyright lines of its licence file (or, where the published crate has no licence file, the authors in its Cargo.toml), and the licence text follows once. A crate offered under a choice of licences (`MIT OR Apache-2.0`) is listed under the one Platypus uses: the first of MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-3-Clause, BSD-2-Clause, ISC, Zlib, Unicode-3.0, BSL-1.0, 0BSD, Unlicense, CC0-1.0, MPL-2.0 that it ships a licence file for. A crate under several licences at once (`AND`) is listed under each. Crates that word a licence differently from its usual text have their own text after it.
+The host is built from 430 third-party Rust crates from crates.io: the normal and build dependencies of `platypus_app` for `x86_64-pc-windows-msvc`, as Cargo.lock pins them. Each is listed under its licence with the copyright lines of its licence file (or, where the published crate has no licence file, the authors in its Cargo.toml), and the licence text follows once. A crate offered under a choice of licences (`MIT OR Apache-2.0`) is listed under the one Platypus uses: the first of MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-3-Clause, BSD-2-Clause, ISC, Zlib, Unicode-3.0, BSL-1.0, 0BSD, Unlicense, CC0-1.0, MPL-2.0 that it ships a licence file for. A crate under several licences at once (`AND`) is listed under each. Crates that word a licence differently from its usual text have their own text after it.
 
-Licences: MIT (322), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3-Clause (9), BSD-2-Clause (1), ISC (1), Zlib (3), Unicode-3.0 (48), BSL-1.0 (2), CC0-1.0 (1), MPL-2.0 (17).
+Licences: MIT (311), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3-Clause (9), BSD-2-Clause (1), ISC (1), Zlib (3), Unicode-3.0 (48), BSL-1.0 (2), CC0-1.0 (1), MPL-2.0 (17).
 
 ## MIT
 
-322 crates.
+311 crates.
 
 - `adler2` 2.0.1: <https://github.com/oyvindln/adler2>
   - Authors: Jonas Schievink, oyvindln
@@ -388,8 +388,6 @@ Licences: MIT (322), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3
 - `color` 0.3.3: <https://github.com/linebender/color>
 - `compact_str` 0.10.0: <https://github.com/ParkMyCar/compact_str>
   - Copyright (c) 2021 Parker Timmerman
-- `convert_case` 0.12.0: <https://github.com/rutrum/convert-case>
-  - Copyright (c) 2025 rutrum
 - `core_maths` 0.1.1: <https://github.com/robertbastian/core_maths>
   - Copyright (c) 2024 Robert Bastian
 - `corosensei` 0.2.2: <https://github.com/Amanieu/corosensei>
@@ -721,8 +719,6 @@ Licences: MIT (322), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3
   - Copyright (c) 2017 Emilio Cobos Álvarez
 - `presser` 0.3.1: <https://github.com/EmbarkStudios/presser>
   - Copyright (c) 2019 Embark Studios
-- `proc-macro-crate` 3.5.0: <https://github.com/bkchr/proc-macro-crate>
-  - Authors: Bastian Köcher
 - `proc-macro2` 1.0.107: <https://github.com/dtolnay/proc-macro2>
   - Authors: David Tolnay, Alex Crichton
 - `profiling` 1.0.18: <https://github.com/aclysma/profiling>
@@ -755,8 +751,6 @@ Licences: MIT (322), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3
   - Copyright (c) 2016 Elliott Linder
 - `regress` 0.12.0: <https://github.com/ridiculousfish/regress>
   - Copyright (c) 2020 ridiculous_fish
-- `relative-path` 2.0.2: <https://github.com/udoprog/relative-path>
-  - Copyright (c) 2014 The Rust Project Developers
 - `renderdoc-sys` 1.1.0: <https://github.com/ebkalderon/renderdoc-rs>
   - Copyright (c) 2022 Eyal Kalderon
 - `resvg` 0.48.1: <https://github.com/linebender/resvg>
@@ -768,15 +762,6 @@ Licences: MIT (322), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3
   - Copyright (c) 2020 The GeoRust Project Developers
 - `roxmltree` 0.21.1: <https://github.com/RazrFalcon/roxmltree>
   - Copyright (c) 2018 Yevhenii Reizner
-- `rquickjs` 0.14.0: <https://github.com/DelSkayn/rquickjs.git>
-  - Copyright (c) 2020 Mees Delzenne
-  - Copyright (c) 2025 Rquickjs Contributors
-- `rquickjs-core` 0.14.0: <https://github.com/DelSkayn/rquickjs.git>
-  - Published without a licence file; authors: Mees Delzenne, K.
-- `rquickjs-macro` 0.14.0: <https://github.com/DelSkayn/rquickjs.git>
-  - Published without a licence file; authors: K., Mees Delzenne
-- `rquickjs-sys` 0.14.0: <https://github.com/DelSkayn/rquickjs.git>
-  - Published without a licence file; authors: Mees Delzenne
 - `rstar` 0.13.0: <https://github.com/georust/rstar>
   - Published without a licence file; authors: Stefan Altmayer, The Georust Developers
 - `rtrb` 0.4.0: <https://github.com/mgeier/rtrb>
@@ -868,12 +853,6 @@ Licences: MIT (322), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3
   - Copyright (c) 2016 The Rust Project Developers
 - `tinyvec` 1.13.3: <https://github.com/Lokathor/tinyvec>
   - Authors: Lokathor
-- `toml_datetime` 1.1.2+spec-1.1.0: <https://github.com/toml-rs/toml>
-  - Copyright (c) Individual contributors
-- `toml_edit` 0.25.17+spec-1.1.0: <https://github.com/toml-rs/toml>
-  - Copyright (c) Individual contributors
-- `toml_parser` 1.1.5+spec-1.1.0: <https://github.com/toml-rs/toml>
-  - Copyright (c) Individual contributors
 - `tracing` 0.1.44: <https://github.com/tokio-rs/tracing>
   - Copyright (c) 2019 Tokio Contributors
 - `tracing-attributes` 0.1.31: <https://github.com/tokio-rs/tracing>
@@ -977,7 +956,6 @@ Licences: MIT (322), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3
   - Copyright (c) Microsoft Corporation.
 - `windows_x86_64_msvc` 0.53.1: <https://github.com/microsoft/windows-rs>
   - Copyright (c) Microsoft Corporation.
-- `winnow` 1.0.4: <https://github.com/winnow-rs/winnow>
 - `write16` 1.0.0: <https://github.com/hsivonen/write16>
   - Copyright Mozilla Foundation
 - `wuff` 0.2.9: <https://github.com/nicoburns/wuff>
@@ -3608,35 +3586,6 @@ Except as contained in this notice, the name of a copyright holder
 shall not be used in advertising or otherwise to promote the sale,
 use or other dealings in these Data Files or Software without prior
 written authorization of the copyright holder.
-```
-
-### QuickJS, the JavaScript engine rquickjs-sys compiles in (`rquickjs-sys` 0.14.0, `quickjs/LICENSE`)
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2017-2026 Fabrice Bellard
-Copyright (c) 2017-2024 Charlie Gordon
-Copyright (c) 2023-2026 Ben Noordhuis
-Copyright (c) 2023-2026 Saúl Ibarra Corretgé
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 ```
 
 ### spin, the lock code tracing-core includes (`tracing-core` 0.1.36, `src/spin/LICENSE`)
