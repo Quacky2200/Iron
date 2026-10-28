@@ -150,11 +150,7 @@ impl App {
         {
             return gles
                 .notice
-                .get_or_insert_with(|| {
-                    super::notice::Notice::new(
-                        "3D is not supported by platypus-app: run this with platypus-game",
-                    )
-                })
+                .get_or_insert_with(|| super::notice::Notice::new("3D Not Supported"))
                 .draw_list(size.0, size.1, scale);
         }
         self.ui.draw_list()
