@@ -77,7 +77,7 @@ every class and namespace of `platypus_render_api` is tagged. The examples:
 |---|---|
 | `ui` | article, boxes, css, flow, form, hello, launcher, md-reader, physics (UI boxes over rapier), table, text, windows |
 | `world2d` | raindrop-demo, shapes, sine-circle-demo, splines |
-| `world3d` | every other example (42), among them clock (its 3D faces), emoji (`WorldPanel`), fishtank (`RenderSettings` fog), platformer (`ParticleSystem`) |
+| `world3d` | every other example (38), among them clock (its 3D faces), emoji (`WorldPanel`), fishtank (`RenderSettings` fog), platformer (`ParticleSystem`) |
 
 Until 2D content draws on GLES (TODO.md), `world2d` starts on wgpu like `world3d`.
 
