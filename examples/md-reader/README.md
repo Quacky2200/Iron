@@ -75,7 +75,7 @@ cargo run --release -p platypus_app -- examples/md-reader -- --goto "docs/ui-tre
   ```
 
   In PowerShell: `$env:MD_READER_ROOT = "..\..\..\my-project\docs"` before the build. Every
-  `.md` under the folder is included (not `node_modules`, `.git`, `dist`, `target`), with paths
+  `.md` under the folder is included (not `node_modules`, `.git`, `build`, `target`), with paths
   relative to it, and the path bar starts with the folder's name.
 
 ## Files

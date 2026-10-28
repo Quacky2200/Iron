@@ -6,7 +6,7 @@
 //   bun ../../scripts/dev.ts          build, then rebuild the game's code on every edit
 //   bun ../../scripts/dev.ts --once   build once
 //
-// It writes two bundles to dist/: `vendor.js` (React, the reconciler, the refresh
+// It writes two bundles to build/: `vendor.js` (React, the reconciler, the refresh
 // runtime, @platypus/engine and @platypus/react; built once) and `game.js` (the game's own code,
 // CommonJS with those left external, with Fast Refresh registrations, marked
 // `// @platypus-dev`). A running `platypus-game` window then reloads game.js in place: React keeps
@@ -27,7 +27,7 @@ for (const created of updateMetas(".").created) console.log(`+ ${created}.meta`)
 
 const vendor = await Bun.build({
   entrypoints: [join(import.meta.dir, "../js/react/src/vendor.ts")],
-  outdir: "dist",
+  outdir: "build",
   naming: "vendor.js",
   format: "iife",
   target: "browser",
@@ -38,13 +38,13 @@ if (!vendor.success) {
   process.exit(1);
 }
 // A game.css from an older build would otherwise linger.
-if (existsSync("dist/game.css")) rmSync("dist/game.css");
+if (existsSync("build/game.css")) rmSync("build/game.css");
 
 const args = [
   "build",
   entry,
   "--outdir",
-  "dist",
+  "build",
   "--entry-naming",
   "game.[ext]",
   "--format",

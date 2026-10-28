@@ -1,0 +1,280 @@
+//! A crash that is not a Rust panic (an access violation in compiled game code, the runtime or a
+//! driver, or heap corruption) otherwise ends the process with an exit code and no log line. On
+//! Windows this logs what it can first: the exception, where it happened (and the compiled game
+//! function, when the address is in one), the registers, the code there and a backtrace. When the
+//! fault is the game's own (in this exe or its compiled code, or heap corruption), it also saves a
+//! crash report beside the log and starts the crash dialog's process on it (`crash_dialog.rs`):
+//! the dialog never runs in the broken process. `Application.crash` takes the same way.
+
+use super::crash_dialog::{CHILD_ENV, PLAIN_FLAG, REPORT_FLAG};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// The exit code after `Application.crash`.
+pub const EXIT_CRASH: i32 = 3;
+
+/// The compiled game's exported functions by address, ascending, to name a fault in JIT code.
+static JIT_FUNCS: Mutex<Vec<(usize, String)>> = Mutex::new(Vec::new());
+
+/// Where reports go and whether a dialog shows, set once the game is known.
+static REPORTS: OnceLock<Reports> = OnceLock::new();
+
+/// Set by the first report: a fault while reporting, or a second crash, adds nothing.
+static REPORTED: AtomicBool = AtomicBool::new(false);
+
+struct Reports {
+    dir: PathBuf,
+    game: String,
+    log: Option<PathBuf>,
+    dialog: bool,
+}
+
+/// Sets where crash reports are saved (the log's folder), the game's name, the log file and
+/// whether the dialog shows (not in screenshot or bench runs, nor in the crash dialog itself).
+pub fn set_reports(dir: PathBuf, game: String, log: Option<PathBuf>, dialog: bool) {
+    let dialog = dialog && std::env::var_os(CHILD_ENV).is_none();
+    let _ = REPORTS.set(Reports {
+        dir,
+        game,
+        log,
+        dialog,
+    });
+}
+
+/// Adds a compiled module's functions (name, address); a reload adds the new module's.
+pub fn note_jit_functions(funcs: impl IntoIterator<Item = (String, usize)>) {
+    let Ok(mut table) = JIT_FUNCS.lock() else {
+        return;
+    };
+    table.extend(funcs.into_iter().map(|(name, addr)| (addr, name)));
+    table.sort_unstable_by_key(|(addr, _)| *addr);
+}
+
+/// The nearest exported game function at or below `addr`, as `name+offset`. Only a hint: a
+/// local (not exported) function in between is not in the table.
+fn jit_function_at(addr: usize) -> Option<String> {
+    let table = JIT_FUNCS.try_lock().ok()?;
+    let i = table.partition_point(|(a, _)| *a <= addr).checked_sub(1)?;
+    let (start, name) = &table[i];
+    // Beyond 1 MB the address is not plausibly in that function.
+    (addr - start < 1 << 20).then(|| format!("{name}+{:#x}", addr - start))
+}
+
+/// Saves a report (`crash-<seconds>.txt` beside the log) and, unless this run shows no dialogs,
+/// starts the crash dialog's process on it. Only the first call of a process does anything.
+fn save_and_show(reason: &str, details: &str, plain: bool) {
+    if REPORTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let Some(r) = REPORTS.get() else {
+        return;
+    };
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let path = r.dir.join(format!("crash-{secs}.txt"));
+    let log = r
+        .log
+        .as_ref()
+        .map(|l| format!("Log: {}\n", l.display()))
+        .unwrap_or_default();
+    let text = format!(
+        "Iron crash report\nGame: {}\nReason: {reason}\nTime: {secs} (Unix seconds)\n{log}\n{details}\n",
+        r.game
+    );
+    if let Err(e) = std::fs::write(&path, text) {
+        eprintln!(
+            "crash: the report could not be saved to {}: {e}",
+            path.display()
+        );
+        return;
+    }
+    tracing::error!("crash report saved to {}", path.display());
+    if r.dialog
+        && let Ok(exe) = std::env::current_exe()
+    {
+        let mut dialog = Command::new(exe);
+        // Not the game's stdio: whatever reads the game's output must not wait for the dialog.
+        dialog
+            .arg(REPORT_FLAG)
+            .arg(&path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if plain {
+            dialog.arg(PLAIN_FLAG);
+        }
+        if let Err(e) = dialog.spawn() {
+            eprintln!("crash: the dialog could not start: {e}");
+        }
+    }
+}
+
+/// `Application.crash(message, plain)`: a report and the dialog, as for an unexpected error, then
+/// the process ends with [`EXIT_CRASH`].
+fn script_crash(message: &str, plain: bool) {
+    let reason = if message.is_empty() {
+        "The game called Application.crash()".to_string()
+    } else {
+        format!("The game called Application.crash: {message}")
+    };
+    tracing::error!("crash: {reason}");
+    let details = format!("{reason}\n\n{}", std::backtrace::Backtrace::force_capture());
+    save_and_show(&reason, &details, plain);
+    std::process::exit(EXIT_CRASH);
+}
+
+/// Installs the reporter (once) and `Application.crash`'s handler.
+pub fn install() {
+    iron_engine_api::app::set_crash_hook(script_crash);
+    #[cfg(windows)]
+    {
+        use std::sync::Once;
+        use windows_sys::Win32::System::Diagnostics::Debug::AddVectoredExceptionHandler;
+        static ONCE: Once = Once::new();
+        let _ = own_image();
+        // A vectored handler, first in line: an unhandled-exception filter is replaced by
+        // libraries that install their own, and was never reached by the crashes this was
+        // written for.
+        // SAFETY: the handler is a plain function that lives for the whole program.
+        ONCE.call_once(|| unsafe {
+            AddVectoredExceptionHandler(1, Some(report));
+        });
+    }
+}
+
+/// The address range of this program's own image, worked out once.
+#[cfg(windows)]
+fn own_image() -> (usize, usize) {
+    static RANGE: OnceLock<(usize, usize)> = OnceLock::new();
+    *RANGE.get_or_init(|| {
+        use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+        use windows_sys::Win32::System::ProcessStatus::{K32GetModuleInformation, MODULEINFO};
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+        // SAFETY: queries about this process's own exe, into a zeroed plain struct.
+        unsafe {
+            let module = GetModuleHandleW(std::ptr::null());
+            let mut info: MODULEINFO = std::mem::zeroed();
+            if K32GetModuleInformation(
+                GetCurrentProcess(),
+                module,
+                &mut info,
+                std::mem::size_of::<MODULEINFO>() as u32,
+            ) == 0
+            {
+                return (0, 0);
+            }
+            let base = info.lpBaseOfDll as usize;
+            (base, base + info.SizeOfImage as usize)
+        }
+    })
+}
+
+/// The general registers at the fault: which one held a bad pointer, and what was in it.
+///
+/// # Safety
+/// `ctx` is null or the context record of the exception being handled.
+#[cfg(all(windows, target_arch = "x86_64"))]
+unsafe fn registers(ctx: *const windows_sys::Win32::System::Diagnostics::Debug::CONTEXT) -> String {
+    // SAFETY: by the contract.
+    let Some(c) = (unsafe { ctx.as_ref() }) else {
+        return String::new();
+    };
+    format!(
+        "registers: rip {:#x} rsp {:#x} rbp {:#x}\n  rax {:#x} rbx {:#x} rcx {:#x} rdx {:#x}\n  rsi {:#x} rdi {:#x} r8 {:#x} r9 {:#x}\n  r10 {:#x} r11 {:#x} r12 {:#x} r13 {:#x} r14 {:#x} r15 {:#x}",
+        c.Rip,
+        c.Rsp,
+        c.Rbp,
+        c.Rax,
+        c.Rbx,
+        c.Rcx,
+        c.Rdx,
+        c.Rsi,
+        c.Rdi,
+        c.R8,
+        c.R9,
+        c.R10,
+        c.R11,
+        c.R12,
+        c.R13,
+        c.R14,
+        c.R15
+    )
+}
+
+#[cfg(all(windows, not(target_arch = "x86_64")))]
+unsafe fn registers(_: *const windows_sys::Win32::System::Diagnostics::Debug::CONTEXT) -> String {
+    String::new()
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn report(
+    info: *mut windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS,
+) -> i32 {
+    const CONTINUE_SEARCH: i32 = 0;
+    const ACCESS_VIOLATION: u32 = 0xC000_0005;
+    const HEAP_CORRUPTION: u32 = 0xC000_0374;
+    // SAFETY: the system passes a valid record for the exception being raised.
+    let rec = unsafe { &*(*info).ExceptionRecord };
+    let code = rec.ExceptionCode as u32;
+    // A vectored handler also sees exceptions that are handled later (C++ exceptions, debugger
+    // and driver probes): only these two are crashes worth a report.
+    if code != ACCESS_VIOLATION && code != HEAP_CORRUPTION {
+        return CONTINUE_SEARCH;
+    }
+    let at = rec.ExceptionAddress as usize;
+    // Executing a bad address means the code at `at` is not there to read either.
+    let code_readable = !(code == ACCESS_VIOLATION
+        && rec.NumberParameters >= 2
+        && rec.ExceptionInformation[0] == 8);
+    let access = (code == ACCESS_VIOLATION && rec.NumberParameters >= 2).then(|| {
+        let what = match rec.ExceptionInformation[0] {
+            0 => "reading",
+            1 => "writing",
+            8 => "executing",
+            _ => "accessing",
+        };
+        format!("{what} {:#x}", rec.ExceptionInformation[1])
+    });
+    let func = jit_function_at(at);
+    let (start, end) = own_image();
+    let in_exe = (start..end).contains(&at);
+    let thread = std::thread::current();
+    // SAFETY: as above, the context of the faulting thread.
+    let mut registers = unsafe { registers((*info).ContextRecord) };
+    // The code before the fault, to see where the bad address came from (a disassembler reads it).
+    if code_readable && at > 96 {
+        // SAFETY: the faulting instruction is mapped code (it was fetched), and so are the 96
+        // bytes before it in the same function or the one before.
+        let bytes = unsafe { std::slice::from_raw_parts((at - 96) as *const u8, 112) };
+        let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        registers.push_str(&format!("\ncode [rip-96, rip+16): {}", hex.join(" ")));
+    }
+    let what = match (code, &access) {
+        (HEAP_CORRUPTION, _) => "Heap corruption".to_string(),
+        (_, Some(a)) => format!("Access violation {a}"),
+        _ => "Access violation".to_string(),
+    };
+    let place = match &func {
+        Some(f) => format!(" (in compiled game code, near {f})"),
+        None if in_exe => " (in the game's program)".to_string(),
+        None => String::new(),
+    };
+    let reason = format!("{what} at {at:#x}{place}");
+    let message = format!(
+        "crash: exception {code:#010x}: {reason} on thread {:?}\n{registers}\n{}",
+        thread.name().unwrap_or("<unnamed>"),
+        std::backtrace::Backtrace::force_capture()
+    );
+    // Both: the log file may be the only place a GUI build writes to.
+    eprintln!("{message}");
+    tracing::error!("{message}");
+    // A fault elsewhere (a driver) may be one its code handles: only ours are certainly fatal.
+    if code == HEAP_CORRUPTION || func.is_some() || in_exe {
+        save_and_show(&reason, &message, false);
+    }
+    CONTINUE_SEARCH
+}

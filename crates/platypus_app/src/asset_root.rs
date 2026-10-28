@@ -3,7 +3,7 @@
 
 //! Where a game's assets are read from, apart from where its code is.
 //!
-//! A game folder has both (`dist/game.pbundle` and `assets/`), so the asset root is the game
+//! A game folder has both (`build/game.pbundle` and `assets/`), so the asset root is the game
 //! folder. A packaged exe (`platypus-build package`) carries only the code, which `payload.rs`
 //! extracts to a cache folder; its assets are the `data/` folder beside the exe (or another one
 //! named by `--data` / `$PLATYPUS_DATA`). Every asset read goes through the [`Vfs`] that [`mount`]
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn css_urls_rebase_onto_the_code_folder_and_assets_resolve_inside_the_root() {
         let code = Path::new("/c/code");
-        assert_eq!(css_base(code, &code.join("dist/game.css")), "dist");
+        assert_eq!(css_base(code, &code.join("build/game.css")), "build");
         assert_eq!(css_base(code, Path::new("/elsewhere/game.css")), "");
         let d = temp("resolve");
         std::fs::write(d.join("a.png"), b"x").unwrap();

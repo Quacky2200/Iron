@@ -1,8 +1,8 @@
 /* Copyright 2026 The Platypus Authors */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* M3b showcase stylesheet: bundled by Bun into dist/game.css, which the engine
-   loads next to dist/game.js. */
+/* M3b showcase stylesheet: bundled by Bun into build/game.css, which the engine
+   loads next to build/game.js. */
 
 /* Charm: a Thai/Latin display font by Cadson Demak (The Charm Project Authors), from
    Google Fonts (https://fonts.google.com/specimen/Charm) under the SIL Open Font

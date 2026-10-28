@@ -3,7 +3,7 @@
 
 //! Which files of a game folder a packaged build takes: `include` / `exclude` of `project.json`
 //! (paths, folders, globs), the dynamic path families the code builds, and what the code names.
-//! Shared by `platypus-build build` (the report and `dist/assets.plan`) and `package`.
+//! Shared by `platypus-build build` (the report and `build/assets.plan`) and `package`.
 //! Plan: `docs/research/platypus-virtual-fs-plan.md` sections 2.5 and 2.6.
 
 use crate::assets;
@@ -25,7 +25,7 @@ pub enum Reason {
 pub const DEFAULT_INCLUDE: &str = "assets/**";
 
 /// Every file under the game folder (relative, `/`-separated, sorted), without dot names and the
-/// top-level `dist`, `node_modules` and `target`.
+/// top-level `build`, `node_modules` and `target`.
 pub fn game_files(game: &Path) -> Vec<String> {
     fn walk(base: &Path, dir: &Path, top: bool, out: &mut Vec<String>) {
         let Ok(rd) = std::fs::read_dir(dir) else {
@@ -34,7 +34,7 @@ pub fn game_files(game: &Path) -> Vec<String> {
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
             if name.starts_with('.')
-                || (top && matches!(name.as_str(), "dist" | "node_modules" | "target"))
+                || (top && matches!(name.as_str(), "build" | "node_modules" | "target"))
             {
                 continue;
             }

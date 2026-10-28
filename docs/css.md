@@ -317,10 +317,10 @@ The tree does not know the game folder, so font loading is the app's job:
   calls `load_font` for each `FontFace`, which reads the file via `resolve_asset` (or a `data:` URL)
   and calls `UiTree::register_font(data, family, weight, italic)`. Text re-lays out when fonts load.
 - **`game.css`**: Bun writes it next to `game.js`. The app loads `bundle.with_extension("css")` and
-  passes `base` = its folder relative to the game folder (`"dist"`).
+  passes `base` = its folder relative to the game folder (`"build"`).
 - **Rebasing**: Bun emits `url()`s relative to the CSS file. With a non-empty `base`,
   `rebase_sheet` rewrites every declaration (rules, `@starting-style`, keyframes) through `css::rebase_urls` (relative URLs
-  become `"dist/..."`; `data:` URLs and anything with a scheme or leading slash are untouched) and
+  become `"build/..."`; `data:` URLs and anything with a scheme or leading slash are untouched) and
   prefixes `@font-face` sources. The renderer later resolves the rewritten path against the game
   folder.
 - **`@import`**. `UiTree::add_stylesheet_with_imports(css, base, load)` is the real entry point

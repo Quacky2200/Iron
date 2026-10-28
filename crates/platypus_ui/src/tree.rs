@@ -622,7 +622,7 @@ impl<L: LayoutEngine> UiTree<L> {
     }
 
     /// Like [`UiTree::add_stylesheet`], for a stylesheet stored in folder `base` of
-    /// the game folder (e.g. `dist` for the bundler's `game.css`): its relative
+    /// the game folder (e.g. `build` for the bundler's `game.css`): its relative
     /// `url(...)`s are rewritten to be relative to the game folder.
     pub fn add_stylesheet_with_base(&mut self, css: &str, base: &str) -> AddedStylesheet {
         self.add_stylesheet_with_imports(css, base, &mut |_| None)

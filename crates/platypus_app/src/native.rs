@@ -4,7 +4,7 @@
 //! The native backend: a game compiled by `platypus_ts` (TypeScript to machine code) and run in this
 //! process, instead of a QuickJS bundle.
 //!
-//! A native game is `dist/game.pbundle` (JSON written by `platypus-build`: the bundled TypeScript
+//! A native game is `build/game.pbundle` (JSON written by `platypus-build`: the bundled TypeScript
 //! source plus the stylesheet and asset list) or a bare `.ts` / `.tsx` file. [`Native::load`]
 //! JIT-compiles the source with the manifests of every engine namespace, runs the program's top
 //! level (`register(..)`, `UiRoot.mount(..)`) and spawns the starting components. A module with a
@@ -41,13 +41,13 @@ use std::path::Path;
 /// The first node id the native reconciler hands out; below it are the ids of React's side.
 const FIRST_NODE: u32 = 1 << 30;
 
-/// What `platypus-build` wrote (`dist/game.pbundle`), or a bare source file.
+/// What `platypus-build` wrote (`build/game.pbundle`), or a bare source file.
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)] // css, assets and title are for the asset and window setup that follows
 pub struct Bundle {
     /// The program: one TypeScript / TSX source text.
     pub source: String,
-    /// The bundled stylesheet, relative to `dist/`, if any.
+    /// The bundled stylesheet, relative to `build/`, if any.
     pub css: Option<String>,
     /// Assets the game names, relative to the game folder.
     pub assets: Vec<String>,
@@ -104,7 +104,7 @@ pub fn is_native(path: &Path) -> bool {
         .is_some_and(|e| e == "pbundle" || e == "irbundle" || e == "ts" || e == "tsx")
 }
 
-/// What `platypus-build dev` wrote to `dist/.platypus-reload` for a failed build (`{"seq":N,"ok":false,
+/// What `platypus-build dev` wrote to `build/.platypus-reload` for a failed build (`{"seq":N,"ok":false,
 /// "error":".."}`); `None` when the last build worked or there is no such file.
 pub fn failed_build(bundle: &Path) -> Option<String> {
     let text = std::fs::read_to_string(bundle.with_file_name(".platypus-reload")).ok()?;
@@ -133,6 +133,18 @@ extern "C" fn console_hook(level: i32, text: *const u8, len: usize) {
         4 => tracing::error!(target: "script", "{s}"),
         2 => tracing::debug!(target: "script", "{s}"),
         _ => tracing::info!(target: "script", "{s}"),
+    }
+}
+
+/// `PLATYPUS_TS_GC=stress` collects at every allocation of the game's code and poisons freed memory,
+/// so a missing root crashes at once instead of now and then; `off` never collects on its own.
+/// The same switch as the platypus_ts tests (`platypus_ts_tests::gc_mode_from_env`), for chasing memory
+/// bugs in a running game.
+fn gc_mode_from_env() {
+    match std::env::var("PLATYPUS_TS_GC").as_deref() {
+        Ok("stress") => platypus_ts_rt::ts_rt_gc_stress(true),
+        Ok("off") => platypus_ts_rt::ts_rt_gc_enable(false),
+        _ => {}
     }
 }
 
@@ -227,6 +239,7 @@ impl Native {
             Some(platypus_engine_api::window::runtime_leave_domain),
         );
         register_kinds();
+        gc_mode_from_env();
         let game = Self::compile(&bundle, generation)?;
         let mut lap = platypus_ts::timing::Lap::start();
         let mut rt = Runtime::new(FIRST_NODE);
@@ -273,7 +286,7 @@ impl Native {
         let mut lap = platypus_ts::timing::Lap::start();
         let manifests = manifests();
         lap.mark("engine manifests (JSON)");
-        compile_and_load(
+        let game = compile_and_load(
             &bundle.source,
             &JitOptions {
                 prefix: "g_",
@@ -284,7 +297,14 @@ impl Native {
                 ..Default::default()
             },
         )
-        .map_err(|e| anyhow!("compiling the game: {e}"))
+        .map_err(|e| anyhow!("compiling the game: {e}"))?;
+        // So a crash in the compiled code can be named (`crash.rs`).
+        super::crash::note_jit_functions(
+            game.function_names()
+                .into_iter()
+                .filter_map(|n| game.function(&n).map(|a| (n, a))),
+        );
+        Ok(game)
     }
 
     /// Has every module finished evaluating, so the game runs?
@@ -914,8 +934,8 @@ mod tests {
         assert!(Bundle::parse(r#"{"format":2,"source":""}"#).is_err());
         assert!(Bundle::parse(r#"{"format":1}"#).is_err());
         assert!(Bundle::parse("not json").is_err());
-        assert!(is_native(Path::new("dist/game.pbundle")));
-        assert!(!is_native(Path::new("dist/game.js")));
+        assert!(is_native(Path::new("build/game.pbundle")));
+        assert!(!is_native(Path::new("build/game.js")));
     }
 
     // M9-REN-01

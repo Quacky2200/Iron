@@ -9664,6 +9664,15 @@ No matching component was found for:
     getComponentInChildren(cls) {
       return this.getComponent(cls) ?? this.children.map((c) => c.getComponentInChildren(cls)).find((c) => c);
     }
+    getComponentsInChildren(cls) {
+      return [...this.getComponents(cls), ...this.children.flatMap((c) => c.getComponentsInChildren(cls))];
+    }
+    getComponentInParent(cls) {
+      return this.getComponent(cls) ?? this.parent?.getComponentInParent(cls);
+    }
+    getComponentsInParent(cls) {
+      return [...this.getComponents(cls), ...this.parent?.getComponentsInParent(cls) ?? []];
+    }
     removeComponent(component) {
       const i = this.components.indexOf(component);
       if (i < 0)

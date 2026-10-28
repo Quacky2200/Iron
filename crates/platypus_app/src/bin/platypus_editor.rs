@@ -4,7 +4,7 @@
 // A windowed program, like `platypus-game`.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 //! `platypus_editor`: the Platypus editor. The same program as `platypus-game` (main.rs, included as a
-//! module), which sees `editor::ENABLED` and loads the editor's UI (`editor/dist`) with
+//! module), which sees `editor::ENABLED` and loads the editor's UI (`editor/build`) with
 //! the editor-only ops (`editor.*`) turned on.
 
 // main.rs's crate-level attributes are for when it is the crate root.

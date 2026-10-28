@@ -148,14 +148,19 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
         ObjectBuilder::new(isa, "platypus_ts", default_libcall_names())
             .map_err(|e| e.to_string())?,
     );
-    generate(&mut module, m)?;
+    generate(&mut module, m, false)?;
     let object = module.finish().emit().map_err(|e| e.to_string())?;
     Ok(Compiled { object })
 }
 
 /// Defines every function and datum of `m` in `module`. Returns the exported functions by symbol
-/// name. The same code drives the object writer and the JIT.
-pub(crate) fn generate<M: ClifModule>(module: &mut M, m: &Module) -> R<Vec<(String, CFuncId)>> {
+/// name. The same code drives the object writer and the JIT. `far_refs`: the module's own data
+/// and function addresses are absolute (the JIT, whose code and data may be far apart).
+pub(crate) fn generate<M: ClifModule>(
+    module: &mut M,
+    m: &Module,
+    far_refs: bool,
+) -> R<Vec<(String, CFuncId)>> {
     let call_conv = module.isa().default_call_conv();
     let fcfg = module.isa().frontend_config();
     let mut exports: Vec<(String, CFuncId)> = Vec::new();
@@ -386,6 +391,7 @@ pub(crate) fn generate<M: ClifModule>(module: &mut M, m: &Module) -> R<Vec<(Stri
                 exc_exit: None,
                 labels: HashMap::new(),
                 call_conv,
+                far_refs,
             };
             cg.prologue(m.init == Some(fi))?;
             cg.stmts(&f.body)?;
@@ -440,9 +446,38 @@ struct Cg<'a, 'b, M: ClifModule> {
     /// label -> (break target, continue target)
     labels: HashMap<LabelId, (ir::Block, ir::Block)>,
     call_conv: CallConv,
+    /// Take the module's own data and function addresses as absolute values, not RIP-relative
+    /// (see `data_addr`). The JIT sets it; an object file keeps the shorter relative form.
+    far_refs: bool,
 }
 
 impl<M: ClifModule> Cg<'_, '_, M> {
+    /// The address of one of the module's data objects. In the JIT, code and data are separate
+    /// allocations that can lie more than 2 GB apart (likelier after a hot reload, in a grown
+    /// process), out of reach of a 32-bit RIP-relative reference: cranelift-jit panics applying
+    /// it. Not colocated, the address is a 64-bit immediate (`is_pic` is off), which reaches.
+    fn data_addr(&mut self, id: DataId) -> Value {
+        let gv = self.module.declare_data_in_func(id, self.b.func);
+        if self.far_refs
+            && let ir::GlobalValueData::Symbol { colocated, .. } =
+                &mut self.b.func.global_values[gv]
+        {
+            *colocated = false;
+        }
+        self.b.ins().symbol_value(types::I64, gv)
+    }
+
+    /// The address of one of the module's functions, as a value (for a closure): absolute in the
+    /// JIT, for the reason in `data_addr`. Calls need nothing: an out-of-range call goes through
+    /// a veneer.
+    fn func_addr(&mut self, id: CFuncId) -> Value {
+        let fr = self.module.declare_func_in_func(id, self.b.func);
+        if self.far_refs {
+            self.b.func.dfg.ext_funcs[fr].colocated = false;
+        }
+        self.b.ins().func_addr(types::I64, fr)
+    }
+
     fn null_num(&mut self) -> Value {
         self.b.ins().f64const(f64::from_bits(NULL_NUM_BITS))
     }
@@ -644,8 +679,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
             }
             for (g, gl) in self.m.globals.iter().enumerate() {
                 if gl.ty.is_ptr() {
-                    let gv = self.module.declare_data_in_func(self.gdata[g], self.b.func);
-                    let addr = self.b.ins().symbol_value(types::I64, gv);
+                    let addr = self.data_addr(self.gdata[g]);
                     self.rt("ts_rt_add_global_root", &[types::I64], None, &[addr]);
                 }
             }
@@ -792,10 +826,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
             Stmt::StoreGlobal(g, e) => {
                 let val = self.expr(e)?;
                 let slot = self.slot_of(val, &e.ty);
-                let gv = self
-                    .module
-                    .declare_data_in_func(self.gdata[*g], self.b.func);
-                let addr = self.b.ins().symbol_value(types::I64, gv);
+                let addr = self.data_addr(self.gdata[*g]);
                 self.b.ins().store(self.mf_t, slot, addr, 0);
             }
             Stmt::If(c, t, e) => {
@@ -898,18 +929,8 @@ impl<M: ClifModule> Cg<'_, '_, M> {
             ExprKind::Num(n) => b_f64(self, *n),
             ExprKind::Bool(v) => self.b.ins().iconst(types::I8, *v as i64),
             ExprKind::Tag(t) => self.b.ins().iconst(types::I32, *t as i64),
-            ExprKind::Str(i) => {
-                let gv = self
-                    .module
-                    .declare_data_in_func(self.sdata[*i as usize], self.b.func);
-                self.b.ins().symbol_value(types::I64, gv)
-            }
-            ExprKind::Blob(i) => {
-                let gv = self
-                    .module
-                    .declare_data_in_func(self.bdata[*i as usize], self.b.func);
-                self.b.ins().symbol_value(types::I64, gv)
-            }
+            ExprKind::Str(i) => self.data_addr(self.sdata[*i as usize]),
+            ExprKind::Blob(i) => self.data_addr(self.bdata[*i as usize]),
             ExprKind::Bits(a) => {
                 let v = self.expr(a)?;
                 self.slot_of(v, &a.ty)
@@ -925,8 +946,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
             ExprKind::StrTag(a) => {
                 let s = self.expr(a)?;
                 let table = self.tagtab.ok_or("a tag was used before any tag exists")?;
-                let gv = self.module.declare_data_in_func(table, self.b.func);
-                let base = self.b.ins().symbol_value(types::I64, gv);
+                let base = self.data_addr(table);
                 let count = self.b.ins().iconst(types::I64, self.m.tags.len() as i64);
                 self.rt(
                     "ts_rt_str_tag",
@@ -939,8 +959,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
             ExprKind::TagStr(a) => {
                 let tag = self.expr(a)?;
                 let table = self.tagtab.ok_or("a tag was used before any tag exists")?;
-                let gv = self.module.declare_data_in_func(table, self.b.func);
-                let base = self.b.ins().symbol_value(types::I64, gv);
+                let base = self.data_addr(table);
                 let idx = self.b.ins().uextend(types::I64, tag);
                 let off = self.b.ins().ishl_imm_u(idx, 3);
                 let addr = self.b.ins().iadd(base, off);
@@ -949,10 +968,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
             ExprKind::Null => self.null_of(&e.ty),
             ExprKind::Var(v) => self.b.use_var(self.vars[*v as usize]),
             ExprKind::Global(g) | ExprKind::GlobalVar(g) => {
-                let gv = self
-                    .module
-                    .declare_data_in_func(self.gdata[*g], self.b.func);
-                let addr = self.b.ins().symbol_value(types::I64, gv);
+                let addr = self.data_addr(self.gdata[*g]);
                 self.load_slot(addr, 0, &e.ty)
             }
             ExprKind::Un(op, a) => {
@@ -1397,10 +1413,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
                     .ins()
                     .iadd_imm_s(kind, -(self.m.struct_base as i64 + 1));
                 let off = self.b.ins().imul_imm_s(idx, 8);
-                let gv = self
-                    .module
-                    .declare_data_in_func(self.vtdata[*table], self.b.func);
-                let base = self.b.ins().symbol_value(types::I64, gv);
+                let base = self.data_addr(self.vtdata[*table]);
                 let slot = self.b.ins().iadd(base, off);
                 let target = self.b.ins().load(types::I64, self.mf_t, slot, 0);
                 let sig = sig_of(self.call_conv, &ptys, &self.m.funcs[fid].ret);
@@ -1432,10 +1445,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
                     .b
                     .ins()
                     .iadd_imm_s(kind, -(self.m.struct_base as i64 + 1));
-                let gv = self
-                    .module
-                    .declare_data_in_func(self.itdata[*table], self.b.func);
-                let base = self.b.ins().symbol_value(types::I64, gv);
+                let base = self.data_addr(self.itdata[*table]);
                 let addr = self.b.ins().iadd(base, idx);
                 let hit = self.b.ins().load(types::I8, self.mf_t, addr, 0);
                 self.b.ins().jump(join, &[ir::BlockArg::Value(hit)]);
@@ -1518,10 +1528,7 @@ impl<M: ClifModule> Cg<'_, '_, M> {
                     Some(env) => self.expr(env)?,
                     None => self.b.ins().iconst(types::I64, 0),
                 };
-                let fr = self
-                    .module
-                    .declare_func_in_func(self.cfuncs[*fid], self.b.func);
-                let addr = self.b.ins().func_addr(types::I64, fr);
+                let addr = self.func_addr(self.cfuncs[*fid]);
                 self.rt(
                     "ts_rt_closure_new_gc",
                     &[types::I64, types::I64],

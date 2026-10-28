@@ -88,7 +88,7 @@ pub struct DirSource {
 }
 
 /// Folders that hold no assets (the same list as `scripts/assets.ts`).
-const SKIP: &[&str] = &["dist", "node_modules", "src", "target", "types"];
+const SKIP: &[&str] = &["build", "node_modules", "src", "target", "types"];
 
 impl DirSource {
     pub fn new(root: &Path) -> DirSource {
@@ -674,14 +674,14 @@ mod tests {
     fn a_folder_and_a_pack_answer_the_same_calls() {
         let d = temp("dir");
         std::fs::create_dir_all(d.join("assets")).unwrap();
-        std::fs::create_dir_all(d.join("dist")).unwrap();
+        std::fs::create_dir_all(d.join("build")).unwrap();
         std::fs::write(d.join("assets/hit.wav"), b"RIFF....").unwrap();
         std::fs::write(
             d.join("assets/hit.wav.meta"),
             "{\n  \"guid\": \"0123456789abcdef0123456789abcdef\",\n  \"importer\": {}\n}\n",
         )
         .unwrap();
-        std::fs::write(d.join("dist/game.pbundle"), b"{}").unwrap();
+        std::fs::write(d.join("build/game.pbundle"), b"{}").unwrap();
         let dir = Vfs::dir(&d);
         let mut spec = EntrySpec::new("assets/hit.wav", b"RIFF....");
         spec.guid = Guid::parse("0123456789abcdef0123456789abcdef").unwrap();

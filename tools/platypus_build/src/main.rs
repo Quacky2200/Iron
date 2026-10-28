@@ -7,10 +7,10 @@ use platypus_build::{Options, Tsc, assets, build, dev, package, types_dts};
 use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage:
-  platypus-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/dist
+  platypus-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/build
   platypus-build types [<game>] [--out file]                write types/platypus.d.ts (default <game>/types/platypus.d.ts)
   platypus-build assets <folder>... [--prune]               write .meta files
-  platypus-build dev <game> [--no-tsc]                      rebuild on change, signal the app (dist/.platypus-reload)
+  platypus-build dev <game> [--no-tsc]                      rebuild on change, signal the app (build/.platypus-reload)
   platypus-build pack-info <file.dat>                       list a pack: header, codecs, entries
   platypus-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json (see: platypus-build init --help)
   platypus-build package <game> [--host exe] [--out f] ...   one executable (see: platypus-build package --help)

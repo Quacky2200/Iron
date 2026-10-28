@@ -155,14 +155,14 @@ Windows, with Rust (1.99 or later) and its MSVC toolchain. Bun is only needed fo
 cargo build --release -p platypus_app
 cd tools && cargo build --release -p platypus_build && cd ..
 
-# Build an example and run it
+# Build an example (into examples/fog-park/build/) and run it
 tools/target/release/platypus-build build examples/fog-park
 target/release/platypus-game examples/fog-park
 
 # Render one frame to a PNG and exit
 target/release/platypus-game examples/css --screenshot out.png --frames 30
 
-# Package a game as one executable (examples/boxes/dist/<name>.exe)
+# Package a game as one executable (examples/boxes/build/<name>.exe)
 tools/target/release/platypus-build package examples/boxes
 ```
 

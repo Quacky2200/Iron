@@ -7,8 +7,8 @@
 //! `platypus-game [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
 //! game's script bundle and runs it.
 //!
-//! `[game]` is either a game folder (loads `<game>/dist/game.pbundle`, built with
-//! `platypus-build build`; a QuickJS `dist/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
+//! `[game]` is either a game folder (loads `<game>/build/game.pbundle`, built with
+//! `platypus-build build`; a QuickJS `build/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
 //! `N` frames (default 60) and exits, which is handy for checking output.
 
 pub(crate) mod anim_cull;
@@ -18,6 +18,8 @@ mod bench;
 pub(crate) mod bone_cache;
 mod cloth_sync;
 pub(crate) mod cook;
+mod crash;
+mod crash_dialog;
 mod cursor;
 mod display;
 mod editor;
@@ -98,6 +100,9 @@ struct Args {
     script_args: Vec<String>,
     /// `--bench`: a windowless timed run (see `bench.rs`).
     bench: Option<bench::BenchArgs>,
+    /// `--crash-dialog <folder>`: the crash dialog's own run (`crash_dialog.rs`), whatever game
+    /// a packaged exe holds.
+    crash_dialog: bool,
 }
 
 impl Args {
@@ -108,7 +113,7 @@ impl Args {
 }
 
 /// The deprecation note for the QuickJS backend (logged once per run).
-const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `platypus-build build` (platypus_ts, native, writes dist/game.pbundle); pass --force to run this QuickJS bundle anyway";
+const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `platypus-build build` (platypus_ts, native, writes build/game.pbundle); pass --force to run this QuickJS bundle anyway";
 
 /// What to do with a bundle: native ones always run; QuickJS ones only with `--force` (the
 /// editor, itself QuickJS-based, counts as forced).
@@ -131,6 +136,10 @@ fn quickjs_gate(native: bool, force: bool, editor: bool) -> QuickJsGate {
 
 fn parse_args() -> Result<Args> {
     let mut args = parse_args_from(std::env::args_os().skip(1))?;
+    // The crash dialog runs its own folder, not the editor or a packaged game.
+    if args.crash_dialog {
+        return Ok(args);
+    }
     // `platypus_editor [project]`: the editor runs its own UI on the project folder.
     if editor::ENABLED {
         editor::set_project(&args.game);
@@ -174,6 +183,7 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         force: false,
         script_args: Vec::new(),
         bench: None,
+        crash_dialog: false,
     };
     let mut frames_given = false;
     while let Some(arg) = args.next() {
@@ -187,6 +197,10 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
             Some("--cook") => parsed.cook = true,
             Some("--force") => parsed.force = true,
+            Some(crash_dialog::DIALOG_FLAG) => {
+                parsed.crash_dialog = true;
+                game = Some(args.next().context(usage)?.into());
+            }
             Some("--fps") => parsed.fps = Some(true),
             Some("--no-fps") => parsed.fps = Some(false),
             Some("--") => {
@@ -221,7 +235,12 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
 static EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 pub(crate) fn main() -> Result<()> {
+    // Started by a game that crashed: show its crash dialog, nothing else.
+    if let Some(code) = crash_dialog::main_if_asked() {
+        std::process::exit(code);
+    }
     bench::mark_start();
+    crash::install();
     logging::attach_console();
     // The editor's console shows the log from the start.
     logging::capture(editor::ENABLED);
@@ -266,14 +285,26 @@ fn run() -> Result<()> {
         Ok((_, root)) => Some(root),
         Err(_) => None,
     };
-    let settings = manifest_dir
-        .as_deref()
-        .map(info::Manifest::load)
-        .and_then(|m| prefs::settings_dir(&m))
+    let manifest = manifest_dir.as_deref().map(info::Manifest::load);
+    let settings = manifest
+        .as_ref()
+        .and_then(prefs::settings_dir)
         .filter(|_| !args.offline());
-    if let Some(log) = logging::init(logging::log_path(settings.as_deref())) {
+    let log = logging::init(logging::log_path(settings.as_deref()));
+    if let Some(log) = &log {
         tracing::info!("log: {}", log.display());
     }
+    // Crash reports go beside the log (the temp folder without one); no dialog without a player.
+    crash::set_reports(
+        log.as_deref()
+            .and_then(Path::parent)
+            .map_or_else(std::env::temp_dir, Path::to_path_buf),
+        manifest
+            .as_ref()
+            .map_or_else(|| "The game".to_string(), |m| m.title.clone()),
+        log.clone(),
+        !args.offline(),
+    );
     if args.cook {
         // Cooking needs only the folder, not a build.
         let root = if args.game.is_dir() {
@@ -322,7 +353,7 @@ fn run() -> Result<()> {
     platypus_core::set_asset_fs(Some(std::sync::Arc::new(vfs.clone())));
     // Dev loop: `platypus-build build` lists what a packaged build would hold; loading a file outside
     // it logs a warning (a packaged game would not find it).
-    if let Ok(plan) = std::fs::read_to_string(code_root.join("dist/assets.plan")) {
+    if let Ok(plan) = std::fs::read_to_string(code_root.join("build/assets.plan")) {
         platypus_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
     }
     lap.mark("log, manifest, asset mount");
@@ -614,12 +645,12 @@ fn run() -> Result<()> {
 fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
     if path.is_dir() {
         // A game built for the native backend has a `.pbundle`.
-        let native = path.join("dist").join("game.pbundle");
+        let native = path.join("build").join("game.pbundle");
         if native.is_file() {
             return Ok((native, path.to_path_buf()));
         }
         // Games built before the rename to Platypus still load.
-        let legacy = path.join("dist").join(native::LEGACY_BUNDLE);
+        let legacy = path.join("build").join(native::LEGACY_BUNDLE);
         if legacy.is_file() {
             tracing::warn!(
                 "{} is deprecated: rebuild with `platypus-build build` (writes game.pbundle)",
@@ -627,8 +658,20 @@ fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
             );
             return Ok((legacy, path.to_path_buf()));
         }
-        let bundle = path.join("dist").join("game.js");
+        let bundle = path.join("build").join("game.js");
         if !bundle.is_file() {
+            // Games used to build into `dist/`; that folder is not read any more.
+            let old = path.join("dist");
+            if ["game.pbundle", native::LEGACY_BUNDLE, "game.js"]
+                .iter()
+                .any(|name| old.join(name).is_file())
+            {
+                bail!(
+                    "{} has only an old `dist/` build; build output now goes to `build/`: rebuild with `platypus-build build {}`",
+                    path.display(),
+                    path.display()
+                );
+            }
             bail!(
                 "{} not found; build it first with `platypus-build build {}`",
                 bundle.display(),
@@ -3422,12 +3465,40 @@ mod tests {
         assert_eq!(quickjs_gate(false, false, true), QuickJsGate::Forced);
     }
 
+    // M9-APP-06
+    #[test]
+    fn a_game_with_only_an_old_dist_build_is_refused_with_a_pointer_to_build() {
+        let dir = std::env::temp_dir().join(format!("platypus-old-dist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("dist")).unwrap();
+        std::fs::write(dir.join("dist/game.pbundle"), "{}").unwrap();
+        let err = resolve_bundle(&dir).unwrap_err().to_string();
+        assert!(err.contains("`dist/`") && err.contains("`build/`"), "{err}");
+        assert!(err.contains("platypus-build build"), "{err}");
+        std::fs::create_dir_all(dir.join("build")).unwrap();
+        std::fs::write(dir.join("build/game.pbundle"), "{}").unwrap();
+        let (bundle, root) = resolve_bundle(&dir).unwrap();
+        assert_eq!(bundle, dir.join("build").join("game.pbundle"));
+        assert_eq!(root, dir);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // M9-API-909
     #[test]
     fn fps_flags_parse() {
         assert_eq!(parse(&[]).unwrap().fps, None);
         assert_eq!(parse(&["--fps"]).unwrap().fps, Some(true));
         assert_eq!(parse(&["g", "--no-fps"]).unwrap().fps, Some(false));
+    }
+
+    // M9-API-917
+    #[test]
+    fn crash_dialog_flag_names_the_dialog_folder() {
+        let a = parse(&["--crash-dialog", "C:/tmp/dialog"]).unwrap();
+        assert!(a.crash_dialog);
+        assert_eq!(a.game, PathBuf::from("C:/tmp/dialog"));
+        assert!(!parse(&["g"]).unwrap().crash_dialog);
+        assert!(parse(&["--crash-dialog"]).is_err());
     }
 
     // M5-APP-03

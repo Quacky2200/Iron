@@ -662,7 +662,7 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<String>) {
         }
         let path = entry.path();
         if path.is_dir() {
-            if !matches!(name.as_str(), "dist" | "node_modules" | "src" | "target") {
+            if !matches!(name.as_str(), "build" | "node_modules" | "src" | "target") {
                 collect(root, &path, out);
             }
         } else if let Ok(rel) = path.strip_prefix(root) {

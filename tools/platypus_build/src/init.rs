@@ -157,7 +157,7 @@ pub fn init(
     let gi = dir.join(".gitignore");
     if let Ok(text) = std::fs::read_to_string(&gi) {
         let has = |p: &str| text.lines().any(|l| l.trim().trim_start_matches('/') == p);
-        let missing: Vec<&str> = ["dist/", "*.meta"]
+        let missing: Vec<&str> = ["build/", "*.meta"]
             .into_iter()
             .filter(|p| !has(p))
             .collect();
@@ -242,7 +242,7 @@ pub fn preview(r: &InitReport) -> String {
         out.push_str(&format!("copied the icon to {}\n", i.display()));
     }
     if r.gitignore_updated {
-        out.push_str("added dist/ and *.meta to .gitignore\n");
+        out.push_str("added build/ and *.meta to .gitignore\n");
     }
     out.push_str("as the templates resolve now:\n");
     for (k, v) in [
@@ -403,7 +403,7 @@ mod tests {
         assert!(!init(&d, &o, &matthew()).unwrap().gitignore_updated);
         assert_eq!(
             std::fs::read_to_string(d.join(".gitignore")).unwrap(),
-            "node_modules\ndist/\n*.meta\n"
+            "node_modules\nbuild/\n*.meta\n"
         );
         // A bad icon writes nothing new.
         std::fs::write(&src, b"not an image").unwrap();

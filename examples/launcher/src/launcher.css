@@ -1,7 +1,7 @@
 /* Copyright 2026 The Platypus Authors */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* The launcher's look: a dark console-style front end. Bundled by Bun into dist/game.css. */
+/* The launcher's look: a dark console-style front end. Bundled by Bun into build/game.css. */
 
 :root {
   --bg: #07090d;

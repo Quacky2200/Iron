@@ -264,15 +264,15 @@ pub fn copy_data(files: &[DataFile], dir: &Path) -> Result<u64, String> {
 
 /// The files of the game.
 ///
-/// The **payload** holds only `dist/game.pbundle`, `dist/game.css`, the rewritten `package.json`
+/// The **payload** holds only `build/game.pbundle`, `build/game.css`, the rewritten `package.json`
 /// (`payload_package_json`), the icon as `platypus-icon.<ext>` and the *essentials*: the assets the
 /// bundle itself names (`assets` in `game.pbundle`, no `.meta`), but only when together they are
 /// at most [`ESSENTIALS_LIMIT`] (256 KiB); past it none is embedded, a large file never is.
 ///
 /// The **data** files are everything the game may read: every asset the bundle names, the scene
 /// `platypus.startScene`, everything `include` selects (paths, folders, globs; default `["assets/**"]`, minus `exclude`) and the matches of the dynamic path patterns the build found, each
-/// with its `.meta`, and the other files of `dist/` (what the CSS references). Not `game.o`,
-/// `game_bindings.rs`, `*.exe`, `game.js`, source maps, dot files, copies of assets in `dist/` or
+/// with its `.meta`, and the other files of `build/` (what the CSS references). Not `game.o`,
+/// `game_bindings.rs`, `*.exe`, `game.js`, source maps, dot files, copies of assets in `build/` or
 /// anything under `exclude` (the output's own data folder).
 ///
 /// `info.required` is false when the game has no data files, or when the essentials are all of
@@ -284,7 +284,7 @@ pub fn collect_files(
     data_dir: &str,
     exclude: &[PathBuf],
 ) -> Result<Collected, String> {
-    let bundle_path = game.join("dist/game.pbundle");
+    let bundle_path = game.join("build/game.pbundle");
     let bundle: Value = serde_json::from_str(
         &std::fs::read_to_string(&bundle_path).map_err(|e| io(&bundle_path, e))?,
     )
@@ -353,13 +353,13 @@ pub fn collect_files(
             }
         }
     }
-    // dist/: all but the copies of assets already taken, build products and executables.
-    let mut dist = Vec::new();
-    if game.join("dist").is_dir() {
-        walk(game, &game.join("dist"), &mut dist)?;
+    // build/: all but the copies of assets already taken, build products and executables.
+    let mut built = Vec::new();
+    if game.join("build").is_dir() {
+        walk(game, &game.join("build"), &mut built)?;
     }
-    for rel in dist {
-        let inner = rel.strip_prefix("dist/").unwrap_or(&rel);
+    for rel in built {
+        let inner = rel.strip_prefix("build/").unwrap_or(&rel);
         let skip = matches!(
             inner,
             "game.pbundle"
@@ -393,11 +393,11 @@ pub fn collect_files(
     }
 
     let mut files = Vec::new();
-    for rel in ["dist/game.pbundle", "dist/game.css"] {
+    for rel in ["build/game.pbundle", "build/game.css"] {
         let p = game.join(rel);
         match std::fs::read(&p) {
             Ok(bytes) => files.push((rel.to_string(), bytes)),
-            Err(e) if rel == "dist/game.pbundle" => return Err(io(&p, e)),
+            Err(e) if rel == "build/game.pbundle" => return Err(io(&p, e)),
             Err(_) => {}
         }
     }
@@ -451,10 +451,10 @@ pub fn collect_files(
 pub struct PackageOptions {
     /// The engine host to copy (default: `find_host`, by the project's `type`).
     pub host: Option<PathBuf>,
-    /// Where to write (default `<game>/dist/<exe>.exe`).
+    /// Where to write (default `<game>/build/<exe>.exe`).
     pub out: Option<PathBuf>,
     pub overrides: Overrides,
-    /// Do not build first: use the `dist/` that is there.
+    /// Do not build first: use the `build/` that is there.
     pub no_build: bool,
     pub no_tsc: bool,
     /// A command to sign the finished file; `{exe}` is replaced by its (quoted) path.
@@ -562,7 +562,7 @@ fn project_type(game: &Path, overrides: &Overrides) -> ProjectType {
 
 /// The most recently built of the candidate hosts. Not "release first": a stale release build
 /// from before the payload support would win over a fresh debug one and die with
-/// `.\dist\game.js not found`. Equal times go to the earlier candidate.
+/// `.\build\game.js not found`. Equal times go to the earlier candidate.
 pub fn newest_host(candidates: Vec<PathBuf>) -> Option<PathBuf> {
     let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
     for p in candidates {
@@ -684,7 +684,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         } else {
             meta.exe.clone()
         };
-        game.join("dist").join(name)
+        game.join("build").join(name)
     });
     let data_path = out
         .parent()
@@ -1001,15 +1001,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         for (p, c) in [
             (
-                "dist/game.pbundle",
+                "build/game.pbundle",
                 r#"{"format":1,"assets":["assets/a.png","scenes/s.scene.json","../evil"]}"#,
             ),
-            ("dist/game.css", "body{}"),
-            ("dist/font-1.ttf", "FONT"),
-            ("dist/assets/a.png", "COPY"),
-            ("dist/game.o", "OBJ"),
-            ("dist/old.exe", "EXE"),
-            ("dist/.platypus-reload", "{}"),
+            ("build/game.css", "body{}"),
+            ("build/font-1.ttf", "FONT"),
+            ("build/assets/a.png", "COPY"),
+            ("build/game.o", "OBJ"),
+            ("build/old.exe", "EXE"),
+            ("build/.platypus-reload", "{}"),
             ("assets/a.png", "PNG"),
             ("assets/a.png.meta", "META"),
             ("assets/unused.png", "UNUSED"),
@@ -1026,7 +1026,7 @@ mod tests {
 
     // M9-TS-2410
     #[test]
-    fn collect_takes_dist_the_named_assets_and_includes_but_not_the_rest() {
+    fn collect_takes_build_the_named_assets_and_includes_but_not_the_rest() {
         let d = game_folder("collect");
         // The unsafe `../evil` in the asset list is refused.
         let mut p = pkg();
@@ -1036,7 +1036,7 @@ mod tests {
                 .contains("unsafe")
         );
         std::fs::write(
-            d.join("dist/game.pbundle"),
+            d.join("build/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png","scenes/s.scene.json"]}"#,
         )
         .unwrap();
@@ -1051,7 +1051,7 @@ mod tests {
         .unwrap();
         let data: Vec<&str> = c.data.iter().map(|f| f.rel.as_str()).collect();
         for want in [
-            "dist/font-1.ttf",
+            "build/font-1.ttf",
             "assets/a.png",
             "assets/a.png.meta",
             "scenes/s.scene.json",
@@ -1061,12 +1061,12 @@ mod tests {
             assert!(data.contains(&want), "{want} missing from {data:?}");
         }
         for not in [
-            "dist/game.pbundle",
-            "dist/game.css",
-            "dist/game.o",
-            "dist/old.exe",
-            "dist/.platypus-reload",
-            "dist/assets/a.png",
+            "build/game.pbundle",
+            "build/game.css",
+            "build/game.o",
+            "build/old.exe",
+            "build/.platypus-reload",
+            "build/assets/a.png",
             "assets/unused.png",
         ] {
             assert!(!data.contains(&not), "{not} should be left out");
@@ -1086,10 +1086,10 @@ mod tests {
             &proj(&p, "f", &Overrides::default()),
             None,
             "data",
-            &[d.join("dist")],
+            &[d.join("build")],
         )
         .unwrap();
-        assert!(!c.data.iter().any(|f| f.rel.starts_with("dist/")));
+        assert!(!c.data.iter().any(|f| f.rel.starts_with("build/")));
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -1108,7 +1108,7 @@ mod tests {
             std::fs::write(d.join(f), f).unwrap();
         }
         std::fs::write(
-            d.join("dist/game.pbundle"),
+            d.join("build/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png"],"patterns":[{"glob":"assets/sfx/*.*"}]}"#,
         )
         .unwrap();
@@ -1158,7 +1158,7 @@ mod tests {
     fn the_payload_holds_only_code_and_tiny_essentials() {
         let d = game_folder("payload");
         std::fs::write(
-            d.join("dist/game.pbundle"),
+            d.join("build/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png","scenes/s.scene.json"]}"#,
         )
         .unwrap();
@@ -1174,8 +1174,8 @@ mod tests {
         let names: Vec<&str> = c.payload.iter().map(|(n, _)| n.as_str()).collect();
         // Small named assets are essentials: embedded, with the code.
         for want in [
-            "dist/game.pbundle",
-            "dist/game.css",
+            "build/game.pbundle",
+            "build/game.css",
             "project.json",
             "platypus-icon.png",
             "assets/a.png",
@@ -1184,7 +1184,7 @@ mod tests {
             assert!(names.contains(&want), "{want} missing from {names:?}");
         }
         // Not the other assets, their `.meta`, the fonts or anything else.
-        for not in ["assets/a.png.meta", "assets/unused.png", "dist/font-1.ttf"] {
+        for not in ["assets/a.png.meta", "assets/unused.png", "build/font-1.ttf"] {
             assert!(!names.contains(&not), "{not} must not be embedded");
         }
         // The unused asset and the font still need the data folder.
@@ -1228,8 +1228,8 @@ mod tests {
     fn a_game_whose_assets_are_all_essentials_starts_without_a_data_folder() {
         let d = std::env::temp_dir().join(format!("platypus_pkg_small_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(d.join("dist")).unwrap();
-        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::create_dir_all(d.join("build")).unwrap();
+        std::fs::write(d.join("build/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         let p = json!({});
         // No assets at all (hello): nothing to need.
         let c =
@@ -1240,7 +1240,7 @@ mod tests {
         std::fs::write(d.join("assets/t.png"), b"T").unwrap();
         std::fs::write(d.join("assets/t.png.meta"), b"M").unwrap();
         std::fs::write(
-            d.join("dist/game.pbundle"),
+            d.join("build/game.pbundle"),
             r#"{"format":1,"assets":["assets/t.png"]}"#,
         )
         .unwrap();
@@ -1342,7 +1342,7 @@ mod tests {
     fn package_writes_one_file_with_payload_resources_and_a_working_sign_hook() {
         let d = game_folder("package");
         std::fs::write(
-            d.join("dist/game.pbundle"),
+            d.join("build/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png"]}"#,
         )
         .unwrap();
@@ -1409,7 +1409,7 @@ mod tests {
     #[test]
     fn templates_resolve_at_package_time_into_the_payload_and_the_version_info() {
         let d = game_folder("templates");
-        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("build/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         std::fs::write(
             d.join("project.json"),
             r#"{ "name": "fox", "title": "${firstName}'s Game", "company": "${fullName}",
@@ -1492,7 +1492,7 @@ mod tests {
     #[test]
     fn a_license_ships_beside_the_exe_and_in_the_metadata() {
         let d = game_folder("license");
-        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("build/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         std::fs::write(d.join("LICENSE"), "MIT text").unwrap();
         std::fs::write(d.join("EULA.txt"), "custom text").unwrap();
         let run = |project: &str, out: &str| {
@@ -1577,7 +1577,7 @@ mod tests {
     fn assets_are_copied_to_a_data_folder_beside_the_exe_and_not_embedded() {
         let d = game_folder("data");
         std::fs::write(
-            d.join("dist/game.pbundle"),
+            d.join("build/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png"]}"#,
         )
         .unwrap();
@@ -1587,7 +1587,7 @@ mod tests {
         let big = vec![9u8; 300 * 1024];
         std::fs::write(d.join("assets/big.bin"), &big).unwrap();
         std::fs::write(
-            d.join("dist/game.pbundle"),
+            d.join("build/game.pbundle"),
             r#"{"format":1,"assets":["assets/a.png","assets/big.bin"]}"#,
         )
         .unwrap();
@@ -1600,22 +1600,22 @@ mod tests {
             "assets/a.png",
             "assets/a.png.meta",
             "assets/unused.png",
-            "dist/font-1.ttf",
+            "build/font-1.ttf",
         ] {
             assert!(data.join(rel).is_file(), "{rel} not in data/");
         }
-        assert!(!data.join("dist/game.pbundle").exists());
+        assert!(!data.join("build/game.pbundle").exists());
         assert!(p.data_files >= 6);
         assert!(p.data_bytes >= big.len() as u64);
         // The exe's table of contents has the code and no asset beyond the tiny essentials.
         let a = Archive::open(&p.path).unwrap().unwrap();
         let names: Vec<&str> = a.entries.iter().map(|e| e.path.as_str()).collect();
-        assert!(names.contains(&"dist/game.pbundle") && names.contains(&"project.json"));
+        assert!(names.contains(&"build/game.pbundle") && names.contains(&"project.json"));
         for not in [
             "assets/big.bin",
             "assets/unused.png",
             "assets/a.png.meta",
-            "dist/font-1.ttf",
+            "build/font-1.ttf",
         ] {
             assert!(!names.contains(&not), "{not} embedded in {names:?}");
         }
@@ -1653,7 +1653,7 @@ mod tests {
     #[test]
     fn package_warns_about_empty_and_default_metadata_and_still_packages() {
         let d = game_folder("warns");
-        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("build/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         std::fs::write(
             d.join("project.json"),
             r#"{ "name": "g", "company": "", "description": "" }"#,

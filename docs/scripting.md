@@ -181,20 +181,20 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
 1. The examples are compiled by `platypus-build` (see [platypus-build.md](platypus-build.md); they no longer have Bun `build` / `dev` /
    `typecheck` scripts). The QuickJS path below is what remains for the editor (`editor/`) and the test fixtures: a folder with
    `src/main.tsx` and a `build` script:
-   `bun build src/main.tsx --outdir dist --entry-naming game.[ext] --format iife --target browser
+   `bun build src/main.tsx --outdir build --entry-naming game.[ext] --format iife --target browser
    --define process.env.NODE_ENV='"development"'`. Bun strips types, bundles React and the `@platypus/*`
-   workspace packages into one IIFE, and (when CSS is imported) writes `dist/game.css` next to it.
+   workspace packages into one IIFE, and (when CSS is imported) writes `build/game.css` next to it.
    The `--define` is required because React reads `process.env.NODE_ENV` and QuickJS has no `process`.
 2. `platypus-game <folder>` ([main.rs](../crates/platypus_app/src/main.rs)) runs the current folder when no game is
    given (`parse_args_from`; the folder may come before or after the options, `M5-APP-03`). It calls
    `resolve_bundle`: a directory
-   means `<dir>/dist/game.js` with the directory as the asset root; a `.js` path uses its parent.
+   means `<dir>/build/game.js` with the directory as the asset root; a `.js` path uses its parent.
 3. `QuickJsRuntime::new()`, `load_bundles`, then `ComponentHost::registered_classes` + `spawn` each.
    `load_bundles` loads `game.js` alone, or for a dev build (below) `vendor.js` and then the game's
    code through `platypus_script::load_game`.
 4. `ui_events` is probed once with `typeof __platypus_ui_event === 'function'` (set by `@platypus/react`);
    games without React UI skip event dispatch.
-5. `dist/game.css`, if present, is added with `add_stylesheet_with_base(css, "dist")` so its relative
+5. `build/game.css`, if present, is added with `add_stylesheet_with_base(css, "build")` so its relative
    `url(...)`s are rebased onto the game folder (see [css.md](css.md)). `@font-face` faces found in it
    are loaded through the same `load_font` helper as `loadFont()`.
 6. Assets (`url()` images, fonts) are resolved with
@@ -203,7 +203,7 @@ See [physics-and-audio.md](physics-and-audio.md#per-fixed-tick).
    Game scripts therefore cannot read arbitrary files.
 
 **Dev builds.** `bun run dev` in `editor/` runs [scripts/dev.ts](../scripts/dev.ts) instead of the
-`build` script. It writes two files to `dist/`:
+`build` script. It writes two files to `build/`:
 
 - `vendor.js`: an IIFE with React, the reconciler, the `react-refresh` runtime, `@platypus/engine` and
   `@platypus/react` ([vendor.ts](../js/react/src/vendor.ts)), built once. It keeps a table of those
@@ -232,10 +232,10 @@ An experimental ahead-of-time compiler for a TypeScript subset exists in `tools/
 Flow, from an edit to the new code running:
 
 1. `bun run dev` in `editor/` runs `scripts/dev.ts` (see "Dev builds" above), which builds
-   `dist/vendor.js` once and runs `bun build --watch` for the game's code, so every save
-   rewrites `dist/game.js` and, when CSS is imported, `dist/game.css`.
+   `build/vendor.js` once and runs `bun build --watch` for the game's code, so every save
+   rewrites `build/game.js` and, when CSS is imported, `build/game.css`.
 2. `platypus-game <folder>` starts a `BundleWatcher` ([reload.rs](../crates/platypus_app/src/reload.rs)). It uses
-   `notify` on the `dist` folder (not the files: Bun may replace them) and only counts events for
+   `notify` on the `build` folder (not the files: Bun may replace them) and only counts events for
    the bundle, its CSS and `vendor.js` by file name. Access events are ignored.
 3. `App::tick` polls the watcher first thing. `poll` reports a change once the files have been quiet
    for `SETTLE` (150 ms), because Bun writes the JS and the CSS separately, and big files in

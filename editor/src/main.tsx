@@ -3,7 +3,7 @@
 
 // The Platypus editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
 // Inspector, Console, Project) and a status bar, built with @platypus/editor-ui.
-// `platypus_editor` loads this bundle (editor/dist). The Hierarchy and Scene view show the
+// `platypus_editor` loads this bundle (editor/build). The Hierarchy and Scene view show the
 // editor's own world (a demo scene for now); the Inspector is a placeholder.
 import "./editor.css";
 

@@ -198,7 +198,7 @@ Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` a
 ## Hot reload of assets
 
 While a game runs from a folder (not in screenshot runs), an `AssetWatcher`
-([reload.rs](../crates/platypus_app/src/reload.rs)) watches it recursively with `notify`, ignoring `dist/`,
+([reload.rs](../crates/platypus_app/src/reload.rs)) watches it recursively with `notify`, ignoring `build/`,
 `node_modules/`, `target/` and hidden folders. `poll` reports files created or modified once they have been
 quiet for `SETTLE`, as game paths (`asset_key`: forward slashes, no leading `./`). `App::tick` polls it
 and calls `reload_assets`:

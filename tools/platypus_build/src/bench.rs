@@ -405,7 +405,7 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// Copies files of `from`'s folders that `to` lacks. At the top only folders count, and not the
-/// code or build output (`src`, `dist`, ...): the original keeps its own manifest and code.
+/// code or build output (`src`, `build`, ...): the original keeps its own manifest and code.
 fn copy_missing(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
     for e in std::fs::read_dir(from)? {
         let e = e?;
@@ -415,7 +415,7 @@ fn copy_missing(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
             && (!is_dir
                 || matches!(
                     name.as_str(),
-                    "src" | "dist" | "node_modules" | "types" | ".platypus"
+                    "src" | "build" | "node_modules" | "types" | ".platypus"
                 ))
         {
             continue;

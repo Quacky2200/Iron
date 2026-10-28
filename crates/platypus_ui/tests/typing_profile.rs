@@ -15,7 +15,7 @@ use platypus_ui::{Input, Interaction, UiTree};
 #[test]
 #[ignore]
 fn typing_into_the_form() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/form/dist");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/form/build");
     let js = std::fs::read_to_string(root.join("game.js")).expect("run `bun run build` first");
     let css = std::fs::read_to_string(root.join("game.css")).unwrap();
 

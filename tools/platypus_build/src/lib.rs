@@ -1,13 +1,13 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus-build`: builds a game written in TypeScript into `dist/` for the engine hosts (`platypus-game`, `platypus-app`), with no bun and no
+//! `platypus-build`: builds a game written in TypeScript into `build/` for the engine hosts (`platypus-game`, `platypus-app`), with no bun and no
 //! `node_modules` (see `docs/platypus-build.md`).
 //!
 //! A build reads `project.json` (deprecated fallback: the `platypus` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
 //! entry file (`platypus_ts::modules`), runs `tsc --noEmit -p .` when `tsc` can be found, compiles the
 //! bundle with all engine manifests (so errors are found now, not when the game starts), and writes
-//! `dist/game.pbundle` (the resolved source, the CSS and asset lists), `dist/game.css`, and the assets
+//! `build/game.pbundle` (the resolved source, the CSS and asset lists), `build/game.css`, and the assets
 //! the program names.
 
 pub mod assets;
@@ -249,7 +249,7 @@ pub fn types_dts() -> Result<String, String> {
 pub struct Options {
     /// Skip the `tsc` check.
     pub no_tsc: bool,
-    /// Also write the AOT object `dist/game.o` (release builds).
+    /// Also write the AOT object `build/game.o` (release builds).
     pub aot: bool,
     /// Run `platypus-game <game> --cook` afterwards (needs the `platypus-game` binary; see `find_platypus`).
     pub cook: bool,
@@ -317,7 +317,7 @@ fn find_tsc(root: &Path) -> Option<PathBuf> {
 }
 
 /// The `tsconfig.json` text `tsc` is run with: the game's own file extended, its `include` kept (as
-/// paths from `dist/.tsc/`), plus the generated declarations (`platypus.d.ts` next to it). Every file is a
+/// paths from `build/.tsc/`), plus the generated declarations (`platypus.d.ts` next to it). Every file is a
 /// module (`moduleDetection: force`, so top-level names of a game never merge with the engine's
 /// globals), and JSX is only checked (the game needs no `react/jsx-runtime`).
 pub fn tsc_config(config: &GameConfig) -> String {
@@ -353,9 +353,9 @@ pub fn tsc_config(config: &GameConfig) -> String {
     .unwrap_or_default()
 }
 
-/// Writes `dist/.tsc/{tsconfig.json,platypus.d.ts}` and returns the config path.
+/// Writes `build/.tsc/{tsconfig.json,platypus.d.ts}` and returns the config path.
 fn write_tsc_files(root: &Path, config: &GameConfig) -> Result<PathBuf, String> {
-    let dir = root.join("dist/.tsc");
+    let dir = root.join("build/.tsc");
     let dts = types_dts()?;
     write_atomic(&dir.join("platypus.d.ts"), dts.as_bytes()).map_err(|e| e.to_string())?;
     let cfg = dir.join("tsconfig.json");
@@ -367,7 +367,7 @@ fn run_tsc(root: &Path, config: &GameConfig) -> Tsc {
     let Some(tsc) = find_tsc(root) else {
         return Tsc::Missing;
     };
-    let cfg = match write_tsc_files(root, config).map(|_| "dist/.tsc/tsconfig.json") {
+    let cfg = match write_tsc_files(root, config).map(|_| "build/.tsc/tsconfig.json") {
         Ok(c) => c,
         Err(e) => return Tsc::Failed(e),
     };
@@ -439,14 +439,14 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
-/// Builds the game in `root` into `root/dist`.
+/// Builds the game in `root` into `root/build`.
 pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let t0 = Instant::now();
     let config = GameConfig::load(root)?;
     if let Some(cmd) = config.prebuild.as_ref().filter(|_| !opts.no_prebuild) {
         run_prebuild(root, cmd).map_err(|e| format!("{}: {e}", config.name))?;
     }
-    let dist = root.join("dist");
+    let out_dir = root.join("build");
     let entry = root.join(&config.entry);
     // The engine's global names stay the engine's: a module's own `class Random` is renamed.
     let reserved = platypus_ts::modules::global_names(&types_dts()?);
@@ -469,8 +469,8 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
                 .map_err(|e| format!("{}: {}", config.name, bundle.locate_in(&e)))?;
         object_bytes = out.object.len();
         if opts.aot {
-            write_atomic(&dist.join("game.o"), &out.object).map_err(|e| e.to_string())?;
-            write_atomic(&dist.join("game_bindings.rs"), out.bindings.as_bytes())
+            write_atomic(&out_dir.join("game.o"), &out.object).map_err(|e| e.to_string())?;
+            write_atomic(&out_dir.join("game_bindings.rs"), out.bindings.as_bytes())
                 .map_err(|e| e.to_string())?;
         }
     }
@@ -480,23 +480,23 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let mut css_name = None;
     let mut copied = Vec::new();
     if !css_paths.is_empty() {
-        let out = css::bundle(&css_paths, &dist).map_err(|e| e.to_string())?;
+        let out = css::bundle(&css_paths, &out_dir).map_err(|e| e.to_string())?;
         warnings.extend(out.warnings);
         copied = out.copied;
-        write_atomic(&dist.join("game.css"), out.css.as_bytes()).map_err(|e| e.to_string())?;
+        write_atomic(&out_dir.join("game.css"), out.css.as_bytes()).map_err(|e| e.to_string())?;
         css_name = Some("game.css".to_string());
     } else {
-        let _ = std::fs::remove_file(dist.join("game.css"));
+        let _ = std::fs::remove_file(out_dir.join("game.css"));
     }
 
-    // Assets: .meta files, then what the program names, copied into dist/ with the same relative path.
+    // Assets: .meta files, then what the program names, copied into build/ with the same relative path.
     assets::update(root, false).map_err(|e| e.to_string())?;
     let names = referenced_assets(&bundle.source, root);
     for a in &names {
         for src_rel in [a.clone(), format!("{a}.meta")] {
             let src = root.join(&src_rel);
             if src.is_file() {
-                let to = dist.join(&src_rel);
+                let to = out_dir.join(&src_rel);
                 if let Some(d) = to.parent() {
                     std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
                 }
@@ -560,11 +560,11 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     for p in &patterns {
         plan.extend(p.matches.iter().filter(|f| !excluded(f)).cloned());
     }
-    plan.extend(copied.iter().map(|c| format!("dist/{c}")));
+    plan.extend(copied.iter().map(|c| format!("build/{c}")));
     plan.sort();
     plan.dedup();
     write_atomic(
-        &dist.join("assets.plan"),
+        &out_dir.join("assets.plan"),
         plan.join(
             "
 ",
@@ -588,7 +588,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
         })).collect::<Vec<_>>(),
     });
     let text = serde_json::to_string_pretty(&pbundle).map_err(|e| e.to_string())?;
-    write_atomic(&dist.join("game.pbundle"), text.as_bytes()).map_err(|e| e.to_string())?;
+    write_atomic(&out_dir.join("game.pbundle"), text.as_bytes()).map_err(|e| e.to_string())?;
 
     if opts.cook {
         match find_platypus(root) {
@@ -743,17 +743,17 @@ mod tests {
         .unwrap();
         assert_eq!(r.assets, ["assets/hit.wav"]);
         assert!(
-            d.join("dist/assets/hit.wav").exists() && !d.join("dist/assets/unused.png").exists()
+            d.join("build/assets/hit.wav").exists() && !d.join("build/assets/unused.png").exists()
         );
-        assert!(d.join("dist/assets/hit.wav.meta").exists());
+        assert!(d.join("build/assets/hit.wav.meta").exists());
         assert_eq!(
-            std::fs::read_to_string(d.join("dist/game.css"))
+            std::fs::read_to_string(d.join("build/game.css"))
                 .unwrap()
                 .trim(),
             ".a { color: red }"
         );
         let b: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(d.join("dist/game.pbundle")).unwrap())
+            serde_json::from_str(&std::fs::read_to_string(d.join("build/game.pbundle")).unwrap())
                 .unwrap();
         assert_eq!(b["format"], 1);
         assert_eq!(b["css"], "game.css");
@@ -935,7 +935,7 @@ mod tests {
         let d = globals_game("oldimp", WITH_IMPORTS);
         let r = build(&d, &no_tsc()).unwrap();
         assert!(r.object_bytes > 0);
-        let src = std::fs::read_to_string(d.join("dist/game.pbundle")).unwrap();
+        let src = std::fs::read_to_string(d.join("build/game.pbundle")).unwrap();
         assert!(!src.contains("@platypus/engine\\\""), "the import was kept");
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -966,7 +966,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
         .unwrap();
         let r = build(&d, &no_tsc()).unwrap();
         assert!(r.object_bytes > 0);
-        let src = std::fs::read_to_string(d.join("dist/game.pbundle")).unwrap();
+        let src = std::fs::read_to_string(d.join("build/game.pbundle")).unwrap();
         assert!(src.contains("class Random_2"), "{src}");
         assert!(src.contains("Random.value"), "{src}");
         let _ = std::fs::remove_dir_all(&d);

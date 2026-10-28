@@ -1355,7 +1355,7 @@ mod var_tests {
 
 /// Rewrites relative `url(...)` references in `value` to be relative to `base`
 /// (a folder inside the game folder). Used for stylesheets the bundler wrote into
-/// `dist/`, whose urls are relative to the stylesheet. `data:` URLs and anything
+/// `build/`, whose urls are relative to the stylesheet. `data:` URLs and anything
 /// with a scheme are left alone.
 pub fn rebase_urls(value: &str, base: &str) -> String {
     let base = base.trim_end_matches(['/', '\\']);
@@ -1399,19 +1399,19 @@ mod rebase_tests {
         assert_eq!(
             rebase_urls(
                 r#"url("./_.._/assets/font.ttf") format("truetype")"#,
-                "dist"
+                "build"
             ),
-            r#"url("dist/_.._/assets/font.ttf") format("truetype")"#
+            r#"url("build/_.._/assets/font.ttf") format("truetype")"#
         );
         assert_eq!(
-            rebase_urls("url(a.png), url(b.png)", "dist/"),
-            r#"url("dist/a.png"), url("dist/b.png")"#
+            rebase_urls("url(a.png), url(b.png)", "build/"),
+            r#"url("build/a.png"), url("build/b.png")"#
         );
         assert_eq!(
-            rebase_urls("url(data:image/png;base64,AAA=)", "dist"),
+            rebase_urls("url(data:image/png;base64,AAA=)", "build"),
             "url(data:image/png;base64,AAA=)"
         );
-        assert_eq!(rebase_urls("red", "dist"), "red");
+        assert_eq!(rebase_urls("red", "build"), "red");
         assert_eq!(rebase_urls("url(x.png)", ""), "url(x.png)");
     }
 }

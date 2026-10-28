@@ -38,7 +38,7 @@ const KINDS: Record<string, "texture" | "model" | "audio" | "font" | "data"> = {
 };
 
 /** Folders that hold no assets: builds, packages, code, tools' state. */
-const SKIP = new Set(["dist", "node_modules", "src", "target"]);
+const SKIP = new Set(["build", "node_modules", "src", "target"]);
 /** Files that aren't assets even with an asset extension. */
 const NOT_ASSETS = new Set(["package.json", "project.json", "tsconfig.json", "bun.lock", "bun.lockb"]);
 
