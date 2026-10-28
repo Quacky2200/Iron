@@ -81,6 +81,25 @@ fn the_d_pad_moves_focus_to_the_nearest_element_that_way() {
     );
 }
 
+// M9-VSP-10
+#[test]
+fn the_d_pad_is_an_arrow_key_first_and_preventing_it_keeps_focus() {
+    let (mut tree, b) = grid();
+    let mut ui = Interaction::new();
+    go(&mut ui, &mut tree, Input::Focus(b[0]));
+    // A list handling ArrowDown (preventDefault) keeps focus and moves its own selection.
+    let mut keys = Vec::new();
+    ui.handle(&mut tree, Input::Navigate(Direction::Down), &mut |e| {
+        keys.push((e.kind.name(), e.key.clone(), e.target()));
+        e.key == "ArrowDown"
+    });
+    assert_eq!(keys, [("keydown", "ArrowDown".to_string(), b[0])]);
+    assert_eq!(ui.focused(), Some(b[0]));
+    // Not prevented: focus moves as before.
+    go(&mut ui, &mut tree, Input::Navigate(Direction::Down));
+    assert_eq!(ui.focused(), Some(b[3]));
+}
+
 // M3-PAD-01
 #[test]
 fn activate_clicks_the_focused_element() {

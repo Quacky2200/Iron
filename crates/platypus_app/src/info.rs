@@ -38,6 +38,9 @@ pub struct Manifest {
     pub run_in_background: bool,
     /// `platypus.fps`: `false` turns the FPS counter off.
     pub fps: Option<bool>,
+    /// `platypus.videoSettingsPrompt`: ask for the video settings once at startup
+    /// (`video_prompt.rs`).
+    pub video_settings_prompt: Option<bool>,
     /// `platypus.lightUnits`: `physical` for real-world units (the sun in lux, lamps in lumens,
     /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Platypus's own).
     pub physical_units: bool,
@@ -87,6 +90,7 @@ impl Manifest {
             display: p.display,
             run_in_background: p.run_in_background,
             fps: p.fps,
+            video_settings_prompt: p.video_settings_prompt,
             physical_units,
             project_type: p.project_type,
         }
@@ -328,6 +332,21 @@ mod tests {
             Some(false)
         );
         assert_eq!(Manifest::from_json(&Value::Null, "g").fps, None);
+    }
+
+    // M9-VSP-06
+    #[test]
+    fn the_video_settings_prompt_comes_from_the_manifest_and_is_off_by_default() {
+        let prompt = |v: Value| Manifest::from_json(&v, "g").video_settings_prompt;
+        assert_eq!(
+            prompt(json!({ "platypus": { "videoSettingsPrompt": true } })),
+            Some(true)
+        );
+        assert_eq!(
+            prompt(json!({ "platypus": { "videoSettingsPrompt": false } })),
+            Some(false)
+        );
+        assert_eq!(prompt(Value::Null), None);
     }
 
     // M7-RP-01

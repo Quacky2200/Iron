@@ -6,7 +6,7 @@
 //! fullscreen (compositors own the display mode), and phones and tablets only run
 //! fullscreen; asking for something unsupported falls back to the nearest mode.
 
-use winit::dpi::PhysicalSize;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::monitor::{MonitorHandle, VideoModeHandle};
 use winit::window::{Fullscreen, Window};
 
@@ -263,9 +263,64 @@ pub fn apply(window: &Window, s: &DisplaySettings) -> DisplaySettings {
     out
 }
 
+/// Where a window of `outer` size (decorations included) sits in the middle of a monitor at
+/// `origin` of `size`, in physical pixels. Never above or left of the monitor's origin, so the
+/// title bar stays on screen when the window is bigger than the monitor.
+pub fn centered_position(origin: (i32, i32), size: (u32, u32), outer: (u32, u32)) -> (i32, i32) {
+    let axis = |o: i32, m: u32, w: u32| {
+        let free = (i64::from(m) - i64::from(w)).max(0) / 2;
+        (i64::from(o) + free).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+    };
+    (
+        axis(origin.0, size.0, outer.0),
+        axis(origin.1, size.1, outer.1),
+    )
+}
+
+/// Centres a window on the primary monitor (else the one it is on) when it is windowed: a
+/// fullscreen or maximized window is left alone.
+pub fn center(window: &Window) {
+    if window.fullscreen().is_some() || window.is_maximized() {
+        return;
+    }
+    let Some(monitor) = window
+        .primary_monitor()
+        .or_else(|| window.current_monitor())
+    else {
+        return;
+    };
+    let (origin, size, outer) = (monitor.position(), monitor.size(), window.outer_size());
+    let (x, y) = centered_position(
+        (origin.x, origin.y),
+        (size.width, size.height),
+        (outer.width, outer.height),
+    );
+    window.set_outer_position(PhysicalPosition::new(x, y));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M5-DSP-05
+    #[test]
+    fn windows_are_centred_on_the_monitor_with_the_title_bar_on_screen() {
+        assert_eq!(
+            centered_position((0, 0), (1920, 1080), (1296, 759)),
+            (312, 160)
+        );
+        // A second monitor left of the primary one (negative origin).
+        assert_eq!(
+            centered_position((-2560, 0), (2560, 1440), (1280, 720)),
+            (-1920, 360)
+        );
+        // Bigger than the monitor: pinned to its top-left corner.
+        assert_eq!(
+            centered_position((100, 50), (1280, 720), (1920, 1080)),
+            (100, 50)
+        );
+        assert_eq!(centered_position((0, 0), (800, 600), (800, 600)), (0, 0));
+    }
 
     // M5-DSP-01
     #[test]

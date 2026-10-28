@@ -39,6 +39,9 @@ pub struct WindowConfig {
     pub virtual_windows: bool,
     /// Whether the player can resize the window (games drawn for one size turn it off).
     pub resizable: bool,
+    /// Centre the main window on the primary monitor when it opens windowed (screenshot runs
+    /// leave it where the OS puts it).
+    pub center: bool,
 }
 
 impl Default for WindowConfig {
@@ -50,6 +53,7 @@ impl Default for WindowConfig {
             icon: None,
             virtual_windows: false,
             resizable: true,
+            center: true,
         }
     }
 }
@@ -387,6 +391,10 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
                 self.tree.insert(WindowKey::MAIN, None);
                 self.virtual_backend.set_scale(window.scale_factor());
                 self.app.window_ready(window.clone());
+                // After the app applied a saved mode (fullscreen is left alone), before it shows.
+                if self.config.center {
+                    crate::display::center(&window);
+                }
                 set_black_background(&window);
                 // Hidden windows get no redraw events, so draw the first frame now and
                 // only then show the window.

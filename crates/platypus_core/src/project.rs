@@ -333,6 +333,10 @@ pub struct Project {
     pub exclude: Option<Vec<String>>,
     pub fps: Option<bool>,
     pub run_in_background: bool,
+    /// `videoSettingsPrompt`: ask the player for the display mode, resolution, vsync and quality
+    /// once, before the game's window opens (`platypus-build package --video-settings-prompt`
+    /// writes it into a packaged game's copy).
+    pub video_settings_prompt: Option<bool>,
     pub layers: Value,
     pub quality: Value,
     pub display: Value,
@@ -407,6 +411,7 @@ const KNOWN_KEYS: &[&str] = &[
     "exclude",
     "fps",
     "runInBackground",
+    "videoSettingsPrompt",
     "layers",
     "quality",
     "display",
@@ -968,6 +973,9 @@ impl Project {
         if self.run_in_background {
             m.insert("runInBackground".into(), true.into());
         }
+        if let Some(v) = self.video_settings_prompt {
+            m.insert("videoSettingsPrompt".into(), v.into());
+        }
         for (k, v) in [
             ("layers", &self.layers),
             ("quality", &self.quality),
@@ -1195,6 +1203,7 @@ fn build(
             .get("runInBackground")
             .and_then(Value::as_bool)
             .unwrap_or(false),
+        video_settings_prompt: doc.get("videoSettingsPrompt").and_then(Value::as_bool),
         layers,
         quality,
         display,
@@ -1442,7 +1451,8 @@ mod tests {
             d.join("package.json"),
             r#"{ "name": "old", "version": "0.4.0", "author": "Acme", "description": "d",
                  "platypus": { "title": "Old ${firstName}", "startScene": "s.json", "layers": {"8": "A"},
-                           "quality": {"default": "High"}, "fps": false, "runInBackground": true } }"#,
+                           "quality": {"default": "High"}, "fps": false, "runInBackground": true,
+                           "videoSettingsPrompt": true } }"#,
         )
         .unwrap();
         let u = user();
@@ -1463,6 +1473,8 @@ mod tests {
         assert_eq!(p.layers["8"], "A");
         assert_eq!(p.quality["default"], "High");
         assert_eq!((p.fps, p.run_in_background), (Some(false), true));
+        assert_eq!(p.video_settings_prompt, Some(true));
+        assert_eq!(p.to_json()["videoSettingsPrompt"], true);
         // No files at all: defaults named after the folder.
         let e = temp("empty");
         let p = Project::load(&e, &LoadOptions::new(Platform::Windows, &u)).unwrap();

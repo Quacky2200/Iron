@@ -485,6 +485,7 @@ layout pass):
 | M5-DSP-02 | Unit | Saved display settings override the manifest's `platypus.display`; bad values are ignored; saving and reading back is exact. |
 | M5-DSP-03 | JS unit | `Screen` reads the engine's display state (mode, window size, supported modes, monitor resolutions) and sends `screen.set`; `Application.targetFrameRate` and `QualitySettings.vSyncCount` go to the engine; quality choices are saved to prefs and come back on the next launch without being saved again. |
 | M5-DSP-04 | Unit + JS unit | Exclusive fullscreen without a size takes the monitor's current resolution and rate (not the smallest mode), an explicit size is kept, and leaving fullscreen goes back to the remembered window size; `Screen.fullScreenMode` / `fullScreen` ask for a mode without a size. |
+| M5-DSP-05 | Unit | `display::centered_position`: the main window opens centred on the primary monitor when windowed (outer size, so the frame counts), never above or left of the monitor's origin when it is bigger; fullscreen, maximized and screenshot runs are left alone (`platypus_platform`). |
 | M5-PRF-01 | Unit | The prefs file saves and loads back (making its folders), skips unchanged writes, and a broken file starts afresh. |
 | M5-PRF-02 | JS unit | `PlayerPrefs` reads what the engine loaded (fallbacks for missing keys and wrong types, ints truncated) and sends set / delete / deleteAll / save. |
 | M5-QUA-02 | JS unit | Texture quality: `QualitySettings.anisotropicFiltering` and `globalTextureMipmapLimit` (clamped 0 to 3) go out with the quality op and come with each level. |
@@ -1541,12 +1542,23 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-910 | Unit | `platypus.fps` is read from the manifest. |
 | M9-API-911 | Integration | `platypus-game <fixture> --screenshot --frames 3 --fps` saves the file and the log has no errors (needs a GPU). |
 | M9-API-912 | Integration | The same with `--no-fps`. |
-| M9-API-913 | Unit | `Quality::default()` has vsync off and the `render.quality` op turns it on only with a vSyncCount of 1 or more. |
-| M9-API-914 | Integration | Quality levels start with `vSyncCount` 0, and a saved `platypus.quality` with `vSyncCount: 1` is applied without it. |
-| M9-API-915 | JS | `QualitySettings.vSyncCount` is 0 by default and a saved vsync is ignored when the saved choice is applied. |
+| M9-API-913 | Unit | `Quality::default()` has vsync on; the `render.quality` op turns it off with a vSyncCount of 0 and leaving the argument out means the default (on). |
+| M9-API-914 | Integration | Quality levels start with `vSyncCount` 1; a saved `platypus.quality` without `playerVSync` (older saves) is applied with the level's vsync, one with `playerVSync: true` keeps its `vSyncCount: 0`. |
+| M9-API-915 | JS | `QualitySettings.vSyncCount` is 1 by default; an older save's vsync is ignored and a player's (`playerVSync`) is kept. |
 | M9-API-916 | Unit | `FpsCounter::value` is the last closed window's unrounded rate (0 before one closed); the host publishes it as `Application.fps` whether or not the overlay is drawn. |
 | M9-API-917 | Unit | `--crash-dialog <folder>` parses: the folder is the game, and the run is the crash dialog's (not the editor's or a packaged game's). |
 | M9-API-918 | Unit | The crash dialog reads the game and the reason from a crash report, with defaults when they are missing. |
+| M9-VSP-01 | Unit | The startup video-settings prompt: the command line (`--video-settings-prompt` / `--no-video-settings-prompt`) wins over the project's `videoSettingsPrompt` (a packaged game's build argument is already in it); off by default (`video_prompt::should_prompt`). |
+| M9-VSP-02 | Unit | It is shown once (`platypus.videoSettings.chosen` in prefs, as a bool or the engine's number) and never in screenshot or bench runs, unless forced by the command line. |
+| M9-VSP-03 | Unit | The dialog's answer (its PlayerPrefs) becomes the engine's `platypus.display` and `platypus.quality` (the level with `vSyncCount` and `playerVSync: true`; per-setting changes kept only on the same level) and marks the prompt answered; missing answers are no choice. |
+| M9-VSP-04 | Unit | A fixed-size game (`display.resizable: false`) gets no mode or resolution rows (`RESIZABLE` false) and its answer leaves `platypus.display` alone; the manifest's default level and vsync on start the dialog. |
+| M9-VSP-05 | Unit | The dialog starts from the saved level and the player's saved vsync; an older save's vsync does not count. |
+| M9-VSP-06 | Unit | `platypus.videoSettingsPrompt` is read from the manifest (`Manifest`), unset by default; `project.json` keeps it through `to_json`. |
+| M9-VSP-07 | Unit | `--video-settings-prompt`, `--no-video-settings-prompt` and `--video-settings-dialog <folder>` parse. |
+| M9-VSP-08 | Unit | `platypus-build package --video-settings-prompt` / `--no-video-settings-prompt` set `videoSettingsPrompt` in the exe's embedded `project.json` over the project's; without the argument the project's value (or none) is kept. |
+| M9-VSP-09 | Integration | `platypus-game <game> --screenshot out.png --video-settings-prompt` saves the dialog's picture (its own UI-only window, 600 x 500 logical pixels), not the game's (needs a GPU). |
+| M9-VSP-10 | Unit | The d-pad (`Input::Navigate`) reaches the focused element as an arrow key's `keydown` first; preventing it keeps focus (a list box moves its selection), else focus moves as before (`platypus_ui` tests/navigation.rs). |
+| M9-VSP-11 | Bun | The prompt's resolution list: the monitor's modes de-duplicated and sorted largest first (rates only for exclusive fullscreen, windows only below the monitor's size); the saved size is selected, else the nearest (`video_prompt_sizes.test.ts`). |
 | M9-APP-01 | Unit | `--force` parses and is off by default (`platypus_app`). |
 | M9-APP-02 | Unit | The QuickJS gate: native bundles run, QuickJS ones are refused unless forced, and the editor counts as forced. |
 | M9-APP-03 | Integration | `platypus_app` on a QuickJS bundle without `--force` (`--screenshot`) exits non-zero, writes no screenshot and logs the deprecation message naming `--force` and `platypus-build build` (`crates/platypus_app/tests/quickjs_deprecated.rs`). |

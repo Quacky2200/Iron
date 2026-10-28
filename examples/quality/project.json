@@ -1,6 +1,7 @@
 {
   "name": "quality",
   "title": "Platypus - Quality settings",
+  "videoSettingsPrompt": true,
   "quality": {
     "default": "High"
   }

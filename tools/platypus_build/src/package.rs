@@ -472,6 +472,9 @@ pub struct PackageOptions {
     pub codec: Option<platypus_pack::Codec>,
     /// List every file of every pack in the report.
     pub report: bool,
+    /// `--video-settings-prompt` / `--no-video-settings-prompt`: the exe's `videoSettingsPrompt`,
+    /// over the project's.
+    pub video_settings_prompt: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -636,7 +639,11 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         Some(u) => u,
         None => &SystemUser,
     };
-    let (meta, project) = resolve(game, &opts.overrides, platform, user)?;
+    let (meta, mut project) = resolve(game, &opts.overrides, platform, user)?;
+    // The build argument goes into the exe's own `project.json`, so it wins over the game's.
+    if let Some(on) = opts.video_settings_prompt {
+        project.video_settings_prompt = Some(on);
+    }
     // Never blocks: the exe is made, the person is told what its version info lacks.
     for w in project
         .empty_field_warnings()
@@ -794,7 +801,8 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
 
 const USAGE: &str = "usage: platypus-build package <game> [--host platypus-game.exe] [--out file] [--no-build] [--no-tsc]
        [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d] [--icon file.png|ico]
-       [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--codec lz4|zstd] [--report]]";
+       [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--codec lz4|zstd] [--report]]
+       [--video-settings-prompt | --no-video-settings-prompt]";
 
 /// The `package` command: `args` are the ones after the word `package`. Returns the exit code.
 pub fn run_cli(args: &[String]) -> i32 {
@@ -831,6 +839,8 @@ pub fn run_cli(args: &[String]) -> i32 {
                 }
             },
             "--report" => opts.report = true,
+            "--video-settings-prompt" => opts.video_settings_prompt = Some(true),
+            "--no-video-settings-prompt" => opts.video_settings_prompt = Some(false),
             s if !s.starts_with("--") && game.is_none() => game = Some(PathBuf::from(s)),
             _ => {
                 eprintln!("{USAGE}");
@@ -1311,6 +1321,45 @@ mod tests {
         let bytes = std::fs::read(p.path).unwrap();
         let _ = std::fs::remove_dir_all(&d);
         bytes
+    }
+
+    // M9-VSP-08
+    #[test]
+    fn the_video_settings_prompt_argument_goes_into_the_exe_over_the_project() {
+        let packaged = |tag: &str, project: &str, arg: Option<bool>| -> Value {
+            let d = game_folder(tag);
+            std::fs::write(d.join("build/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+            std::fs::write(d.join(platypus_core::project::PROJECT_FILE), project).unwrap();
+            let opts = PackageOptions {
+                host: Some(std::env::current_exe().unwrap()),
+                out: Some(d.join("out/vsp.exe")),
+                no_build: true,
+                video_settings_prompt: arg,
+                ..Default::default()
+            };
+            let p = package(&d, &opts).unwrap();
+            let mut a = Archive::open(&p.path).unwrap().unwrap();
+            let j: Value = serde_json::from_slice(&a.read("project.json").unwrap()).unwrap();
+            let _ = std::fs::remove_dir_all(&d);
+            j
+        };
+        let off = r#"{ "name": "vsp", "videoSettingsPrompt": false }"#;
+        assert_eq!(
+            packaged("vsp_on", off, Some(true))["videoSettingsPrompt"],
+            true
+        );
+        let on = r#"{ "name": "vsp", "videoSettingsPrompt": true }"#;
+        assert_eq!(
+            packaged("vsp_off", on, Some(false))["videoSettingsPrompt"],
+            false
+        );
+        // Without the argument the project's own value is kept (or none at all).
+        assert_eq!(packaged("vsp_keep", on, None)["videoSettingsPrompt"], true);
+        assert!(
+            packaged("vsp_none", r#"{ "name": "vsp" }"#, None)
+                .get("videoSettingsPrompt")
+                .is_none()
+        );
     }
 
     // M9-ICO-06

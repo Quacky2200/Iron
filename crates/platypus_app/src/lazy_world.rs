@@ -21,7 +21,7 @@ impl LazyWorld {
             inner: None,
             physical_units,
         };
-        if !super::host::IS_UI_APP {
+        if !super::host::ui_only() {
             world.get(gpu);
         }
         world

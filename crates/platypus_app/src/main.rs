@@ -52,6 +52,7 @@ pub(crate) mod reload;
 mod render_sync;
 pub(crate) mod sync_profile;
 mod ui_scale;
+mod video_prompt;
 mod windows;
 pub(crate) mod world_view;
 
@@ -103,6 +104,11 @@ struct Args {
     /// `--crash-dialog <folder>`: the crash dialog's own run (`crash_dialog.rs`), whatever game
     /// a packaged exe holds.
     crash_dialog: bool,
+    /// `--video-settings-prompt` / `--no-video-settings-prompt`: the startup video-settings prompt
+    /// forced on or off (`video_prompt.rs`).
+    video_prompt: Option<bool>,
+    /// `--video-settings-dialog <folder>`: the prompt's own run, UI only.
+    video_dialog: bool,
 }
 
 impl Args {
@@ -136,8 +142,9 @@ fn quickjs_gate(native: bool, force: bool, editor: bool) -> QuickJsGate {
 
 fn parse_args() -> Result<Args> {
     let mut args = parse_args_from(std::env::args_os().skip(1))?;
-    // The crash dialog runs its own folder, not the editor or a packaged game.
-    if args.crash_dialog {
+    // The crash dialog and the video-settings prompt run their own folders, not the editor or a
+    // packaged game.
+    if args.crash_dialog || args.video_dialog {
         return Ok(args);
     }
     // `platypus_editor [project]`: the editor runs its own UI on the project folder.
@@ -166,7 +173,7 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: platypus [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--data folder] [--force] [-- script args]
+    let usage = "usage: platypus [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [--force] [-- script args]
        platypus [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
 --force runs a QuickJS (deprecated) bundle; games built with `platypus-build build` are native; arguments after -- reach scripts as Application.args;
 --bench runs without a window as fast as it can and writes timings as JSON (docs/platypus-build.md, \"Benchmarks\")";
@@ -184,6 +191,8 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         script_args: Vec::new(),
         bench: None,
         crash_dialog: false,
+        video_prompt: None,
+        video_dialog: false,
     };
     let mut frames_given = false;
     while let Some(arg) = args.next() {
@@ -201,6 +210,12 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
                 parsed.crash_dialog = true;
                 game = Some(args.next().context(usage)?.into());
             }
+            Some(video_prompt::DIALOG_FLAG) => {
+                parsed.video_dialog = true;
+                game = Some(args.next().context(usage)?.into());
+            }
+            Some(video_prompt::PROMPT_FLAG) => parsed.video_prompt = Some(true),
+            Some(video_prompt::NO_PROMPT_FLAG) => parsed.video_prompt = Some(false),
             Some("--fps") => parsed.fps = Some(true),
             Some("--no-fps") => parsed.fps = Some(false),
             Some("--") => {
@@ -273,6 +288,10 @@ fn run() -> Result<()> {
             return Err(e);
         }
     };
+    // The video-settings prompt's window is only UI.
+    if args.video_dialog {
+        host::set_ui_only();
+    }
     // `--bench` reports where start-up goes (`startupParts`).
     if args.bench.is_some() {
         platypus_ts::timing::enable();
@@ -384,7 +403,7 @@ fn run() -> Result<()> {
         tracing::warn!(
             "this project's type is `game`: platypus-app draws only its UI (no 3D world); run it with platypus-game"
         );
-    } else if !host::IS_UI_APP
+    } else if !host::ui_only()
         && !editor::ENABLED
         && wanted == platypus_core::project::ProjectType::App
     {
@@ -398,7 +417,7 @@ fn run() -> Result<()> {
     // The player's saved settings (not for screenshot runs, which stay the same every
     // time) and the window mode: the manifest's default, then the player's choice.
     let offline = args.offline();
-    let prefs = if offline {
+    let mut prefs = if offline {
         prefs::Prefs::in_memory()
     } else {
         prefs::Prefs::load(&manifest)
@@ -407,6 +426,42 @@ fn run() -> Result<()> {
     // settings: saved ones would tell its scripts about a window size it never has.
     let resizable = manifest.display["resizable"].as_bool().unwrap_or(true);
     let defaults = display::from_json(Some(&manifest.display), Default::default());
+    // The startup video-settings prompt, before anything of the game's window exists; its choice
+    // goes into the prefs read below.
+    if !editor::ENABLED
+        && !args.video_dialog
+        && args.bench.is_none()
+        && video_prompt::should_prompt(
+            args.video_prompt,
+            manifest.video_settings_prompt,
+            video_prompt::chosen(&prefs),
+            offline,
+        )
+    {
+        let current = if resizable {
+            display::from_json(prefs.get("platypus.display"), defaults)
+        } else {
+            defaults
+        };
+        let current = video_prompt::Current::new(&manifest, &prefs, current, resizable);
+        let icon = video_prompt::icon_path(&code_root, &manifest);
+        let shot = args
+            .screenshot
+            .as_deref()
+            .map(|path| video_prompt::Screenshot {
+                path,
+                frames: args.frames,
+            });
+        match video_prompt::run(&current, icon.as_deref(), shot) {
+            video_prompt::Outcome::Play(choice) => {
+                choice.apply(&mut prefs, current.display, resizable);
+                prefs.save();
+            }
+            // Quit: the game doesn't start. A screenshot run's picture is the dialog's.
+            video_prompt::Outcome::Quit | video_prompt::Outcome::Screenshot => return Ok(()),
+            video_prompt::Outcome::Failed => {}
+        }
+    }
     let display_settings = if resizable {
         display::from_json(prefs.get("platypus.display"), defaults)
     } else {
@@ -635,6 +690,7 @@ fn run() -> Result<()> {
             height,
             virtual_windows,
             resizable,
+            center: !virtual_windows,
         },
         app,
     )?;
@@ -2551,8 +2607,9 @@ impl App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
+        // Screenshot runs never wait for the display (as before vsync was on by default).
         gfx.surface
-            .set_vsync(&gfx.gpu, self.world_view.quality.vsync);
+            .set_vsync(&gfx.gpu, self.world_view.quality.vsync && !self.offline);
         if let Some(world) = gfx.world.ensure(&gfx.gpu, self.world_view.needs_world()) {
             apply_world_view(
                 world,
@@ -2664,7 +2721,7 @@ impl PlatformApp for App {
         if !self.offline && self.display.mode != platypus_platform::FullScreenMode::Windowed {
             self.display = platypus_platform::display::apply(&window, &self.display);
         }
-        if host::IS_UI_APP {
+        if host::ui_only() {
             // GLES through EGL (ANGLE) first; wgpu with small GPU blocks (the world renderer is
             // built only if something asks for it) when that isn't available.
             if std::env::var_os("PLATYPUS_GLES").is_none_or(|v| v != "0")
@@ -3066,8 +3123,9 @@ impl PlatformApp for App {
         load_images(&mut self.ui, &mut gfx.renderer, &gfx.gpu);
         let cmds = self.ui.draw_list();
         self.scene.scene.update_world();
+        // Screenshot runs never wait for the display (as before vsync was on by default).
         gfx.surface
-            .set_vsync(&gfx.gpu, self.world_view.quality.vsync);
+            .set_vsync(&gfx.gpu, self.world_view.quality.vsync && !self.offline);
         if let Some(world) = gfx.world.ensure(&gfx.gpu, self.world_view.needs_world()) {
             apply_world_view(
                 world,
@@ -3500,6 +3558,24 @@ mod tests {
         assert_eq!(a.game, PathBuf::from("C:/tmp/dialog"));
         assert!(!parse(&["g"]).unwrap().crash_dialog);
         assert!(parse(&["--crash-dialog"]).is_err());
+    }
+
+    // M9-VSP-07
+    #[test]
+    fn video_settings_flags_parse() {
+        assert_eq!(parse(&["g"]).unwrap().video_prompt, None);
+        let on = parse(&["g", "--video-settings-prompt"]).unwrap();
+        assert_eq!((on.video_prompt, on.game), (Some(true), PathBuf::from("g")));
+        assert_eq!(
+            parse(&["--no-video-settings-prompt", "g"])
+                .unwrap()
+                .video_prompt,
+            Some(false)
+        );
+        let dialog = parse(&["--video-settings-dialog", "C:/tmp/vs"]).unwrap();
+        assert!(dialog.video_dialog);
+        assert_eq!(dialog.game, PathBuf::from("C:/tmp/vs"));
+        assert!(parse(&["--video-settings-dialog"]).is_err());
     }
 
     // M5-APP-03

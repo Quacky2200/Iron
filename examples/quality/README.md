@@ -10,6 +10,9 @@ Engine features exercised:
   `antiAliasing`, `renderScale`, `shadows` (`"disable" | "hardOnly" | "all"`), `softShadowQuality` (`"low" | "medium" | "high"`),
   `shadowResolution`.
 - `project.json` `quality.default` to pick the starting level.
+- `project.json` `videoSettingsPrompt: true`: the first start asks for the window mode, resolution, vsync and quality level
+  in a small window before the game opens (once; `--video-settings-prompt` shows it again, `--no-video-settings-prompt`
+  skips it).
 - `LineRenderer` (`positions`, `width`, `material`), `Material.create`, `Time.time`, `transform.rotate`.
 - React `useState`/`useEffect` in a menu that subscribes to engine events.
 

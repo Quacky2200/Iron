@@ -1696,6 +1696,13 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   platform support table), `examples/windows`, guide `docs/windows.md`; steps in `tools/platypus_ts/TODO.md` "Windows API". Open
   optional leftovers: embedded `child` style, modal dialogs, `Camera.targetWindow`, transparent windows, `Application.wantsToQuit`,
   domains on their own thread / process, and a manual check of the winit runner on a real display (never run there yet).
+- [x] **Startup video settings** (2026-10-28): an optional prompt shown once before the game's window (`videoSettingsPrompt` in
+  `project.json`, `platypus-build package --video-settings-prompt`, `platypus-game --video-settings-prompt` / `--no-...`):
+  window mode, a resolution list box, vsync, quality level, Play / Quit; a UI-only child process (`video_prompt.rs`,
+  `video_prompt.tsx`); the choice goes into `platypus.display` / `platypus.quality`. Vsync is now on by default (a saved
+  choice keeps it only with `playerVSync`). The main window opens centred on the primary monitor when windowed. The d-pad
+  reaches the focused element as arrow keys first. Tests `M9-VSP-01`..`11`, `M5-DSP-05`. Open: ANGLE is not shipped beside
+  packaged exes, so the dialog uses the wgpu fallback there; port to `main` (Iron names).
 - [ ] **M9.b2** `platypus_ts`: ahead-of-time TypeScript compiler (oxc → typed Platypus IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/platypus-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.

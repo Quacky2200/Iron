@@ -135,7 +135,8 @@ pub enum Input {
     ImeCommit(String),
     /// Moves focus to the nearest focusable element in a direction (gamepad d-pad).
     /// Does nothing until something has focus, so the d-pad stays the game's until UI
-    /// takes focus (e.g. a menu calling `ref.focus()`).
+    /// takes focus (e.g. a menu calling `ref.focus()`). The focused element first gets it as
+    /// an arrow key's `keydown`; preventing that keeps focus where it is.
     Navigate(Direction),
     /// Clicks the focused element (gamepad South / A).
     Activate,
@@ -536,6 +537,24 @@ impl Interaction {
                 let Some(from) = self.focused else {
                     return;
                 };
+                // The focused element sees the d-pad as an arrow key first: one that handles
+                // it (a list moving its selection) prevents the move.
+                let key = match direction {
+                    Direction::Up => "ArrowUp",
+                    Direction::Down => "ArrowDown",
+                    Direction::Left => "ArrowLeft",
+                    Direction::Right => "ArrowRight",
+                };
+                if self.key_event(
+                    tree,
+                    EventKind::KeyDown,
+                    key.into(),
+                    key.into(),
+                    false,
+                    dispatch,
+                ) {
+                    return;
+                }
                 if let Some(next) = nearest_in_direction(tree, from, direction) {
                     self.keyboard = true;
                     self.set_focus(tree, Some(next), true, dispatch);
