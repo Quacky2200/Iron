@@ -54,8 +54,7 @@ pub(crate) fn count_joints() -> u32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[platypus_api(
-    namespace = "PhysicsJoints", quickjs,
-    handles(
+    namespace = "PhysicsJoints", handles(
         GameObject = ObjectId,
         Rigidbody = RigidbodyRef,
         FixedJoint = FixedJointRef,

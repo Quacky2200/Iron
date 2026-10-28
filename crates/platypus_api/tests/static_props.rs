@@ -1,8 +1,8 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Static properties of handle classes: `Demo.current` is a getter on the class in the manifest and in
-//! QuickJS (`Window.main` reads the same in both backends). IDs are in TESTS.md (M9-API-*).
+//! Static properties of handle classes: `Demo.current` is a getter on the class in the manifest
+//! (`Window.main`). IDs are in TESTS.md (M9-API-*).
 use platypus_api::{FnKind, Handle, Ty, platypus_api};
 use std::cell::Cell;
 
@@ -23,7 +23,7 @@ thread_local! {
     static READS: Cell<u32> = const { Cell::new(0) };
 }
 
-#[platypus_api(namespace = "Demo", quickjs, handles(Demo = DemoId))]
+#[platypus_api(namespace = "Demo", handles(Demo = DemoId))]
 pub mod demo {
     use super::{CURRENT, DemoId, LEVEL, READS};
 
@@ -64,18 +64,9 @@ pub mod demo {
     }
 }
 
-fn with_js<R>(f: impl for<'js> FnOnce(&rquickjs::Ctx<'js>) -> R) -> R {
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        demo::register_quickjs(&ctx).unwrap();
-        f(&ctx)
-    })
-}
-
 // M9-API-1490
 #[test]
-fn a_static_property_of_a_handle_class_is_an_accessor_in_quickjs() {
+fn a_static_property_of_a_handle_class_is_a_getter_without_a_receiver() {
     CURRENT.with(|c| c.set(1));
     READS.with(|r| r.set(0));
     // The manifest: a getter of the class without a receiver.
@@ -105,51 +96,5 @@ fn a_static_property_of_a_handle_class_is_an_accessor_in_quickjs() {
     );
     // The shim has no receiver either.
     assert_eq!(demo::platypus_Demo_current(), 1);
-
-    with_js(|ctx| {
-        let t: String = ctx.eval("typeof Demo.current").unwrap();
-        assert_eq!(t, "object");
-        let is_fn: bool = ctx
-            .eval("typeof Object.getOwnPropertyDescriptor(Demo, 'current').get === 'function'")
-            .unwrap();
-        assert!(is_fn);
-        let enumerable: bool = ctx
-            .eval("Object.getOwnPropertyDescriptor(Demo, 'current').enumerable")
-            .unwrap();
-        assert!(!enumerable);
-        // Read through the getter each time: advancing changes what it returns.
-        let ids: String = ctx
-            .eval(
-                "const a = Demo.current.id; Demo.advance(); const b = Demo.current.id; a + ',' + b",
-            )
-            .unwrap();
-        assert_eq!(ids, "1,2");
-        // The instance getter of the same script name still lives on the prototype.
-        let lv: String = ctx.eval("Demo.current.level + ',' + Demo.level").unwrap();
-        assert_eq!(lv, "30,3");
-        let on_proto: bool = ctx
-            .eval("Object.getOwnPropertyDescriptor(Demo.prototype, 'level') !== undefined")
-            .unwrap();
-        assert!(on_proto);
-    });
-    assert!(READS.with(|r| r.get()) >= 3);
-}
-
-// M9-API-1491
-#[test]
-fn a_static_setter_writes_through_and_a_read_only_one_ignores_writes() {
-    LEVEL.with(|l| l.set(3));
-    with_js(|ctx| {
-        let v: u32 = ctx.eval("Demo.level = 9; Demo.level").unwrap();
-        assert_eq!(v, 9);
-        assert_eq!(LEVEL.with(|l| l.get()), 9);
-        // A write to a getter-only property throws in strict mode (rquickjs evaluates strictly).
-        assert!(ctx.eval::<(), _>("Demo.current = null;").is_err());
-        let still: String = ctx.eval("typeof Demo.current").unwrap();
-        assert_eq!(still, "object");
-        let err: String = ctx
-            .eval("(() => { 'use strict'; try { Demo.current = null; return 'no error'; } catch (e) { return e.constructor.name; } })()")
-            .unwrap();
-        assert_eq!(err, "TypeError");
-    });
+    assert!(READS.with(|r| r.get()) >= 1);
 }

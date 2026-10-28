@@ -4,7 +4,6 @@
 //! A screenshot run with `--video-settings-prompt` renders the startup prompt (the dialog's own
 //! UI-only window, not the game) and saves it (needs a GPU, like the other rendering tests).
 
-use std::path::PathBuf;
 use std::process::Command;
 
 // M9-VSP-09
@@ -13,14 +12,16 @@ fn a_forced_prompt_in_a_screenshot_run_saves_the_dialogs_picture() {
     let dir = std::env::temp_dir().join(format!("platypus-vsp-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let game = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello.js");
+    // A one-file game: the host compiles a `.ts` given to it directly.
+    let game = dir.join("main.ts");
+    std::fs::write(&game, "console.log(\"hello\");\n").unwrap();
     let png = dir.join("out.png");
     let log = dir.join("run.log");
     let status = Command::new(env!("CARGO_BIN_EXE_platypus-app"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)
-        .args(["--frames", "5", "--force", "--video-settings-prompt"])
+        .args(["--frames", "5", "--video-settings-prompt"])
         .env("PLATYPUS_LOG_FILE", &log)
         .status()
         .unwrap();

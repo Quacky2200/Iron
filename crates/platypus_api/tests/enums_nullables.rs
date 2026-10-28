@@ -48,8 +48,7 @@ thread_local! {
 
 /// The declaring namespace: `Mode` and its converters.
 #[platypus_api(
-    namespace = "Kinds", quickjs,
-    enums(
+    namespace = "Kinds", enums(
         /// How hard.
         Hardness = Mode [Soft, Hard]
     )
@@ -65,8 +64,7 @@ pub mod kinds_api {
 
 /// Uses `Hardness` without declaring it again.
 #[platypus_api(
-    namespace = "Things", quickjs,
-    handles(Item = Item),
+    namespace = "Things", handles(Item = Item),
     values(Rgb = Rgb [r: f64, g: f64]),
     enums(
         extern Hardness = Mode [Soft, Hard],
@@ -338,47 +336,6 @@ fn an_optional_enum_parameter_is_none_for_a_left_out_or_unknown_name_and_a_list_
     assert_eq!(things_api::platypus_Things_loud(0), 1);
 }
 
-// M9-API-1625
-#[test]
-fn quickjs_takes_names_for_enums_null_for_none_and_an_alias_is_the_same_global() {
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        kinds_api::register_quickjs(&ctx).unwrap();
-        things_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"
-                Things.mode = 'hard';
-                let bad = '';
-                try { Things.mode = 'nope'; } catch (e) { bad = e.name; }
-                const first = Things.mode;
-                Things.mode = 'soft';
-                Things.level = 3;
-                const lv = Things.level;
-                Things.level = null;
-                Things.tint = { r: 0.5, g: 0.25 };
-                const t = Things.tint;
-                Things.tint = null;
-                JSON.stringify([
-                  first, bad, Things.mode, lv, Things.level, t.r, Things.tint,
-                  Things.note('hard'), Things.note('soft'),
-                  Things.modes(), Things.loud('QUIET'),
-                  Hardness.name(1), Hardness.parse('hard'), Shout.parse('Boomy'),
-                  Stuff === Item, HardnessAlias === Hardness,
-                  Things.item(2) === null, Things.item(0) === null,
-                ])
-                "#,
-            )
-            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
-        assert_eq!(
-            out,
-            r#"["hard","TypeError","soft",3,null,0.5,null,"hard",null,["hard","soft"],"Boomy","hard",1,1,true,true,false,true]"#
-        );
-    });
-}
-
 // M9-API-1626
 #[test]
 fn nullable_undefined_is_in_the_manifest_json() {
@@ -417,25 +374,11 @@ fn a_record_with_a_string_field_keeps_the_text_in_the_string_list_in_field_order
     assert_eq!((str_at(0), str_at(1)), ("a".to_string(), "bb".to_string()));
     let json = things_api::MANIFEST.to_json();
     assert!(json.contains(r#"{"name":"text","type":"string""#), "{json}");
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        kinds_api::register_quickjs(&ctx).unwrap();
-        things_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(r#"JSON.stringify([Things.label(2), Things.labels()])"#)
-            .unwrap();
-        assert_eq!(
-            out,
-            r#"[{"text":"n2","size":2},[{"text":"a","size":1},{"text":"bb","size":2}]]"#
-        );
-    });
 }
 
 // M9-API-1631
 #[test]
-fn a_named_options_object_has_a_type_with_the_parameter_docs_and_quickjs_reads_it() {
+fn a_named_options_object_has_a_type_with_the_parameter_docs() {
     let json: serde_json::Value = serde_json::from_str(&things_api::MANIFEST.to_json()).unwrap();
     let poke = json["functions"]
         .as_array()
@@ -450,25 +393,6 @@ fn a_named_options_object_has_a_type_with_the_parameter_docs_and_quickjs_reads_i
     assert_eq!(poke["params"][1]["doc"], "How hard to poke.");
     assert_eq!(poke["params"][2]["doc"], "Whether it makes a sound.");
     assert!(poke["params"][0].get("doc").is_none());
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        kinds_api::register_quickjs(&ctx).unwrap();
-        things_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"
-                const it = Things.item(3);
-                JSON.stringify([
-                  Things.poke(it), Things.poke(it, { level: 2 }), Things.poke(it, { loud: true, mode: 'hard' }),
-                  Things.poke(it, 2, true),
-                ])
-                "#,
-            )
-            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
-        assert_eq!(out, "[3,6,4.5,6.5]");
-    });
 }
 
 /// A script string object as the compiled code makes them.
@@ -568,28 +492,4 @@ fn an_optional_record_travels_as_json_text_both_ways_with_optional_keys_and_null
             .unwrap()["returns"],
         "opt:record:Look"
     );
-    // QuickJS: an object (or null) in, an object with value instances out.
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        kinds_api::register_quickjs(&ctx).unwrap();
-        things_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"
-                Things.look = { width: 3, tint: new Rgb(0.5, 1), mode: 'soft', curve: [[0, 1], [2, 3]], label: 'q' };
-                const a = Things.look;
-                Things.look = null;
-                const b = Things.look;
-                Things.look = { width: 1, sun: null };
-                JSON.stringify([a, a.tint instanceof Rgb, b, Things.look])
-                "#,
-            )
-            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
-        assert_eq!(
-            out,
-            r#"[{"width":3,"tint":[0.5,1],"mode":"soft","curve":[[0,1],[2,3]],"label":"q"},true,null,{"width":1,"sun":null}]"#
-        );
-    });
 }

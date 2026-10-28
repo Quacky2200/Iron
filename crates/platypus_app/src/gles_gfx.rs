@@ -149,7 +149,6 @@ impl App {
 
     /// `SystemInfo` and `Window.main` for a light (UI-only) renderer on `window`.
     pub(crate) fn light_system_info(&mut self, window: &Window, device: &str, kind: &str) {
-        use platypus_script::ScriptRuntime as _;
         let size = window.inner_size();
         let dpi = window.scale_factor();
         self.info.set_system(serde_json::json!({
@@ -165,9 +164,6 @@ impl App {
             "display",
             super::display::state(Some(window), &self.display),
         );
-        if let Err(e) = self.scripts.eval(&self.info.script()) {
-            tracing::error!("system info: {e}");
-        }
         let title = platypus_engine_api::window::state(platypus_engine_api::window::MAIN)
             .map_or_else(String::new, |s| s.title);
         platypus_engine_api::window::set_main(
@@ -252,7 +248,7 @@ impl App {
     /// `--screenshot`: draws the UI once and writes it as a PNG.
     pub(crate) fn save_screenshot_gles(&mut self, path: &Path) -> Result<()> {
         let (dpi, size) = self.main_metrics().context("no window")?;
-        let scale = super::ui_factor_for(dpi, size, self.ui_scale);
+        let scale = super::ui_factor_for(dpi);
         self.load_gles_images();
         let cmds = self.light_ui_commands(size, scale);
         let fps_cmds = self.light_fps_commands(size, dpi);
@@ -270,7 +266,7 @@ impl App {
         let Some((dpi, size)) = self.main_metrics() else {
             return;
         };
-        let scale = super::ui_factor_for(dpi, size, self.ui_scale);
+        let scale = super::ui_factor_for(dpi);
         let Some(window) = self.gles.as_ref().map(|g| g.window.clone()) else {
             return;
         };

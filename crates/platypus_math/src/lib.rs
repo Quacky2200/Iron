@@ -41,25 +41,3 @@ pub fn manifests() -> Vec<String> {
         outlines::shapes_api::MANIFEST.to_json(),
     ]
 }
-
-/// Installs every namespace of this crate in a QuickJS context.
-pub fn register_quickjs<'js>(
-    ctx: &platypus_api::rquickjs::Ctx<'js>,
-) -> platypus_api::rquickjs::Result<()> {
-    math::mathf_api::register_quickjs(ctx)?;
-    math::vector2_api::register_quickjs(ctx)?;
-    math::vector3_api::register_quickjs(ctx)?;
-    math::vector4_api::register_quickjs(ctx)?;
-    quat::quaternion_api::register_quickjs(ctx)?;
-    quat::matrix4x4_api::register_quickjs(ctx)?;
-    shapes::vector2_int_api::register_quickjs(ctx)?;
-    shapes::vector3_int_api::register_quickjs(ctx)?;
-    shapes::rect_api::register_quickjs(ctx)?;
-    shapes::rect_int_api::register_quickjs(ctx)?;
-    shapes::ray_api::register_quickjs(ctx)?;
-    shapes::plane_api::register_quickjs(ctx)?;
-    shapes::bounds_api::register_quickjs(ctx)?;
-    shapes::pose_api::register_quickjs(ctx)?;
-    outlines::shapes_api::register_quickjs(ctx)?;
-    Ok(())
-}

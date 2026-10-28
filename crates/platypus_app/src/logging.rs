@@ -9,16 +9,9 @@
 //! parent's console, and piped output (scripts, tests) gets it as before.
 //!
 //! `PLATYPUS_LOG_FILE` names another file; `RUST_LOG` filters as usual.
-//!
-//! The editor's console reads the log too: with [`capture`] on, every record (engine
-//! and scripts' `console.*`, which log with target `script`) also goes into a ring
-//! buffer that [`records_since`] reads.
 
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::Arc;
 
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -109,7 +102,6 @@ pub fn init(file: Option<PathBuf>) -> Option<PathBuf> {
     tracing_subscriber::registry()
         .with(file_layer)
         .with(console_layer)
-        .with(CaptureLayer.with_filter(filter()))
         .init();
     // Panics go to the log too (a GUI program's stderr is often nowhere).
     let default_hook = std::panic::take_hook();
@@ -120,152 +112,9 @@ pub fn init(file: Option<PathBuf>) -> Option<PathBuf> {
     opened.map(|(p, _)| p)
 }
 
-/// The most records the ring buffer keeps; older ones drop off.
-const CAPTURE_LIMIT: usize = 5000;
-
-static CAPTURING: AtomicBool = AtomicBool::new(false);
-static CAPTURED: Mutex<Captured> = Mutex::new(Captured {
-    records: VecDeque::new(),
-    next_seq: 1,
-    started: None,
-});
-
-struct Captured {
-    records: VecDeque<LogRecord>,
-    next_seq: u64,
-    started: Option<Instant>,
-}
-
-/// One log record as the editor's console shows it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct LogRecord {
-    /// Counts up from 1, so readers can ask for what they haven't seen.
-    pub seq: u64,
-    /// 0 trace, 1 debug, 2 info, 3 warn, 4 error.
-    pub level: u8,
-    pub target: String,
-    pub message: String,
-    /// Milliseconds since capture started.
-    pub time_ms: f64,
-}
-
-/// Starts (or stops) keeping log records for the editor.
-pub fn capture(on: bool) {
-    CAPTURING.store(on, Ordering::Relaxed);
-}
-
-/// The kept records with `seq` above `after`, oldest first.
-pub fn records_since(after: u64) -> Vec<LogRecord> {
-    let captured = CAPTURED.lock().unwrap_or_else(|e| e.into_inner());
-    captured
-        .records
-        .iter()
-        .filter(|r| r.seq > after)
-        .cloned()
-        .collect()
-}
-
-/// Adds one record to the ring buffer (when capturing).
-fn push_record(level: u8, target: &str, message: String) {
-    if !CAPTURING.load(Ordering::Relaxed) {
-        return;
-    }
-    let mut captured = CAPTURED.lock().unwrap_or_else(|e| e.into_inner());
-    let started = *captured.started.get_or_insert_with(Instant::now);
-    let seq = captured.next_seq;
-    captured.next_seq += 1;
-    if captured.records.len() >= CAPTURE_LIMIT {
-        captured.records.pop_front();
-    }
-    captured.records.push_back(LogRecord {
-        seq,
-        level,
-        target: target.to_string(),
-        message,
-        time_ms: started.elapsed().as_secs_f64() * 1000.0,
-    });
-}
-
-/// Forwards records to the ring buffer: the message, then any other fields as
-/// `name=value`.
-struct CaptureLayer;
-
-#[derive(Default)]
-struct MessageVisitor {
-    message: String,
-    fields: String,
-}
-
-impl tracing::field::Visit for MessageVisitor {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        if field.name() == "message" {
-            self.message.push_str(value);
-        } else {
-            self.record_debug(field, &value);
-        }
-    }
-
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        use std::fmt::Write;
-        if field.name() == "message" {
-            let _ = write!(self.message, "{value:?}");
-        } else {
-            let _ = write!(self.fields, " {}={value:?}", field.name());
-        }
-    }
-}
-
-impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
-        if !CAPTURING.load(Ordering::Relaxed) {
-            return;
-        }
-        let meta = event.metadata();
-        let level = match *meta.level() {
-            tracing::Level::TRACE => 0,
-            tracing::Level::DEBUG => 1,
-            tracing::Level::INFO => 2,
-            tracing::Level::WARN => 3,
-            tracing::Level::ERROR => 4,
-        };
-        let mut visitor = MessageVisitor::default();
-        event.record(&mut visitor);
-        push_record(level, meta.target(), visitor.message + &visitor.fields);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // M5-EDT-15
-    #[test]
-    fn captured_records_keep_level_target_and_fields_in_order() {
-        let subscriber = tracing_subscriber::registry().with(CaptureLayer);
-        let before = CAPTURED.lock().unwrap().next_seq - 1;
-        capture(true);
-        tracing::subscriber::with_default(subscriber, || {
-            tracing::warn!(target: "script", "careful");
-            tracing::info!(count = 3, "loaded");
-        });
-        capture(false);
-        let got: Vec<_> = records_since(before)
-            .into_iter()
-            .map(|r| (r.level, r.target, r.message))
-            .collect();
-        assert_eq!(
-            got,
-            vec![
-                (3, "script".to_string(), "careful".to_string()),
-                (2, module_path!().to_string(), "loaded count=3".to_string()),
-            ]
-        );
-        assert!(records_since(u64::MAX).is_empty());
-    }
 
     // M5-APP-04
     #[test]

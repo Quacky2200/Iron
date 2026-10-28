@@ -9,7 +9,4 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
-platypus_api = { path = "../platypus_api", default-features = false, features = ["quickjs"] }
-
-[dev-dependencies]
-rquickjs = "0.14.0"
+platypus_api = { path = "../platypus_api", default-features = false }

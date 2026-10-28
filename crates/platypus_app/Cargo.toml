@@ -7,8 +7,7 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
-# `platypus-app` (the host of every game) and `platypus_editor` are the same program told apart by
-# their name (`editor::ENABLED`); `platypus-app` picks its renderer per game (`host.rs`).
+# `platypus-app`, the host of every game, picks its renderer per game (`host.rs`).
 default-run = "platypus-app"
 autobins = false
 
@@ -24,10 +23,8 @@ platypus_platform = { path = "../platypus_platform" }
 platypus_render = { path = "../platypus_render" }
 platypus_render_gles = { path = "../platypus_render_gles", default-features = false }
 platypus_render_cpu = { path = "../platypus_render_cpu" }
-platypus_script = { path = "../platypus_script" }
 platypus_ui = { version = "0.1.0", path = "../platypus_ui" }
 platypus_ui_native = { path = "../platypus_ui_native" }
-platypus_native = { path = "../platypus_native" }
 platypus_engine_api = { path = "../platypus_engine_api" }
 platypus_animation = { path = "../platypus_animation" }
 platypus_scenes = { path = "../platypus_scenes" }
@@ -68,10 +65,3 @@ windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_F
 [[bin]]
 name = "platypus-app"
 path = "src/main.rs"
-
-# The editor (`src/bin/platypus_editor.rs`): the same program loading the editor's UI.
-# Its tests are platypus_app's, so they don't run twice.
-[[bin]]
-name = "platypus_editor"
-path = "src/bin/platypus_editor.rs"
-test = false

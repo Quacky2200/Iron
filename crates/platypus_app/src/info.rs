@@ -187,8 +187,6 @@ impl Info {
                 "runInBackground": manifest.run_in_background,
                 "lightUnits": if manifest.physical_units { "physical" } else { "legacy" },
                 "targetFrameRate": -1,
-                "isEditor": super::editor::ENABLED,
-                "project": super::editor::project().map(|p| p.to_string_lossy().into_owned()),
             }),
         );
         map.insert("system".into(), system());
@@ -215,14 +213,6 @@ impl Info {
         {
             system.extend(fields);
         }
-    }
-
-    /// A script that installs it as `globalThis.__platypus_info`.
-    pub fn script(&self) -> String {
-        format!(
-            "globalThis.__platypus_info = {};",
-            Value::Object(self.0.clone())
-        )
     }
 }
 
@@ -266,6 +256,11 @@ fn system() -> Value {
 mod tests {
     use super::*;
 
+    /// What scripts read, as JSON text.
+    fn text(info: &Info) -> String {
+        Value::Object(info.0.clone()).to_string()
+    }
+
     // M9-ICO-03
     #[test]
     fn the_default_window_icon_is_the_platypus_on_a_transparent_tile() {
@@ -299,11 +294,10 @@ mod tests {
             ("platformer", "platformer")
         );
 
-        // The script carries the app and system sections, and later additions.
+        // The info carries the app and system sections, and later additions.
         let mut info = Info::new(&m);
         info.set_system(json!({ "graphicsDeviceName": "Test GPU" }));
-        let script = info.script();
-        assert!(script.starts_with("globalThis.__platypus_info = {"));
+        let script = text(&info);
         assert!(script.contains("\"productName\":\"Fox Run\""));
         assert!(script.contains("\"graphicsDeviceName\":\"Test GPU\""));
         assert!(script.contains("\"processorCount\":"));
@@ -370,11 +364,7 @@ mod tests {
             "g",
         );
         assert_eq!(sub.subtitle, "Shadow of the Realm");
-        assert!(
-            Info::new(&sub)
-                .script()
-                .contains("\"subtitle\":\"Shadow of the Realm\"")
-        );
+        assert!(text(&Info::new(&sub)).contains("\"subtitle\":\"Shadow of the Realm\""));
         m.title = String::new();
         m.name = "fox".into();
         assert_eq!(m.window_title(), "fox");
@@ -425,11 +415,10 @@ mod tests {
         assert!(!units(json!({ "lightUnits": "candles" })));
         // The old pipeline choice no longer picks anything (it only warns).
         assert!(!units(json!({ "renderPipeline": "hd" })));
-        let script = Info::new(&Manifest::from_json(
+        let script = text(&Info::new(&Manifest::from_json(
             &json!({ "platypus": { "lightUnits": "physical" } }),
             "g",
-        ))
-        .script();
+        )));
         assert!(script.contains("\"lightUnits\":\"physical\""));
         assert!(!script.contains("renderPipeline"));
     }
@@ -441,10 +430,10 @@ mod tests {
         assert!(m.run_in_background);
         assert!(!Manifest::from_json(&Value::Null, "g").run_in_background);
         let mut info = Info::new(&m);
-        assert!(info.script().contains("\"runInBackground\":true"));
+        assert!(text(&info).contains("\"runInBackground\":true"));
         info.set_app("runInBackground", json!(false));
         info.set_app("targetFrameRate", json!(30));
-        let script = info.script();
+        let script = text(&info);
         assert!(script.contains("\"runInBackground\":false"));
         assert!(script.contains("\"targetFrameRate\":30"));
     }

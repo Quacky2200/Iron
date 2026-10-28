@@ -423,8 +423,7 @@ impl From<&Resolution> for DisplayMode {
 }
 
 #[platypus_api(
-    namespace = "Screen", quickjs,
-    records(
+    namespace = "Screen", records(
         /// A size in pixels.
         WindowSize = ScreenSize [width: f64, height: f64],
         /// One display mode of the monitor (its size and refresh rate).
@@ -665,8 +664,7 @@ pub enum ShadowKind {
 }
 
 #[platypus_api(
-    namespace = "QualitySettings", quickjs,
-    enums(
+    namespace = "QualitySettings", enums(
         /// Which shadows are drawn: none, only hard ones, or soft ones too.
         ShadowQualityMode = ShadowKind [Disable, HardOnly, All]
     )

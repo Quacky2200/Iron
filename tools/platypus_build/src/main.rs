@@ -16,7 +16,7 @@ const USAGE: &str = "usage:
   platypus-build init --editor-files [<dir>...]             refresh tsconfig.json + types/platypus.d.ts of a game or a folder of games
   platypus-build package <game> [--host exe] [--out f] ...   one executable (see: platypus-build package --help)
   platypus-build check <examples folder> [--tsc] [--full]   build every game in it and print a table
-  platypus-build bench <examples folder> [--only a,b] ...   time every game, native vs QuickJS (see: platypus-build bench --help)";
+  platypus-build bench <examples folder> [--only a,b] ...   time every game (see: platypus-build bench --help)";
 
 fn options(args: &[String]) -> Options {
     Options {

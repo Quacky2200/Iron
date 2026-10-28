@@ -532,42 +532,6 @@ fn every_event_kind_is_in_the_all_list() {
     );
 }
 
-// M9-TS-3330
-//
-// The `on*` props of the tables are the ones `@platypus/react` runs for the same event types
-// (`HANDLERS` in `js/react/src/events.ts`), so a game reads the same names on both backends; the
-// non-bubbling types are the same in both.
-#[test]
-fn event_props_match_the_quickjs_dispatcher() {
-    let src = include_str!("../../../js/react/src/events.ts");
-    let block =
-        &src[src.find("const HANDLERS").unwrap()..src.find("// `scroll` doesn't bubble").unwrap()];
-    let mut js: BTreeSet<(String, String)> = BTreeSet::new();
-    for line in block.lines() {
-        let t = line.trim();
-        let Some((kind, rest)) = t.split_once(": [") else {
-            continue;
-        };
-        if kind.contains(' ') || !rest.ends_with("],") {
-            continue;
-        }
-        for prop in rest.trim_end_matches("],").split(',') {
-            js.insert((kind.to_string(), prop.trim().trim_matches('"').to_string()));
-        }
-    }
-    let table: BTreeSet<(String, String)> = EVENT_PROPS
-        .iter()
-        .map(|p| (p.kind.to_string(), p.prop.to_string()))
-        .collect();
-    assert_eq!(js, table, "js/react HANDLERS and EVENT_PROPS differ");
-    let nb = &src[src.find("const NON_BUBBLING").unwrap()..];
-    let nb = &nb[..nb.find(");").unwrap()];
-    for k in NON_BUBBLING {
-        assert!(nb.contains(&format!("\"{k}\"")), "{k} bubbles in js/react");
-    }
-    assert_eq!(nb.matches('"').count() / 2, NON_BUBBLING.len());
-}
-
 // M9-TS-3331
 //
 // The slots of the transition, animation, focus and drag fields read what the events carry: the

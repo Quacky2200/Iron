@@ -55,7 +55,7 @@ fn change(f: impl FnOnce(&mut CursorState)) {
     });
 }
 
-#[platypus_api(namespace = "Cursor", quickjs)]
+#[platypus_api(namespace = "Cursor")]
 pub mod cursor_api {
     use super::{STATE, change};
 
@@ -97,7 +97,7 @@ pub mod cursor_api {
     }
 }
 
-#[platypus_api(namespace = "CursorLockMode", quickjs)]
+#[platypus_api(namespace = "CursorLockMode")]
 pub mod cursor_lock_mode_api {
     /// Free to leave the window.
     #[property]

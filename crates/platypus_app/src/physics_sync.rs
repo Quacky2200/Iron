@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 
-use platypus_core::Value;
 use platypus_core::glam::{Quat, Vec3};
 use platypus_physics::{Batch, Physics};
 use platypus_scene::ScriptScene;
@@ -20,31 +19,6 @@ pub struct Attachments {
 }
 
 impl Attachments {
-    /// Handles `physics.attach` and notes `physics.removeBody`; returns whether the op
-    /// was `attach` (which the physics world doesn't see).
-    pub fn op(&mut self, name: &str, args: &[Value]) -> bool {
-        let id = |i: usize| args.get(i).and_then(Value::as_f64).map(|v| v as u32);
-        match name {
-            "attach" => {
-                match (id(0), id(1)) {
-                    (Some(body), Some(object)) => {
-                        self.body_objects.insert(body, object);
-                        self.object_bodies.insert(object, body);
-                    }
-                    _ => tracing::warn!("physics.attach needs a body and an object"),
-                }
-                true
-            }
-            "removeBody" => {
-                if let Some(object) = id(0).and_then(|b| self.body_objects.remove(&b)) {
-                    self.object_bodies.remove(&object);
-                }
-                false
-            }
-            _ => false,
-        }
-    }
-
     /// One physics step with the scene: bodies follow the objects scripts moved, the
     /// world steps, then objects follow the bodies that moved. Returns the step's batch
     /// (for `__platypus_physics`).
@@ -70,152 +44,5 @@ impl Attachments {
             }
         }
         batch
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use platypus_core::ComponentId;
-    use platypus_scene::SceneEvent;
-    use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-
-    use super::*;
-
-    const RIGIDBODIES: &str = include_str!("../../../tests/fixtures/rigidbodies.js");
-    const PHYSICS_2D: &str = include_str!("../../../tests/fixtures/physics2d.js");
-
-    /// Loads `bundle`, spawns `class` on an engine object and runs `ticks` fixed ticks
-    /// and frames through the app's scene and physics sync, as the app does.
-    fn simulate(name: &str, bundle: &str, class: &str, ticks: u32) -> QuickJsRuntime {
-        let mut rt = QuickJsRuntime::new();
-        rt.load_bundle(name, bundle).unwrap();
-        let mut host = ComponentHost::new();
-        let mut scene = ScriptScene::new();
-        let mut physics = Physics::new();
-        let mut attached = Attachments::default();
-        let game = scene.create_engine_object(class);
-        host.spawn_on(&mut rt, class, Some(game), class).unwrap();
-
-        for tick in 0..ticks {
-            let active = |o: u32| scene.active(o);
-            assert!(host.fixed_update(&mut rt, 1.0 / 60.0, &active).is_empty());
-            assert!(host.update_active(&mut rt, 1.0 / 60.0, &active).is_empty());
-            for op in rt.drain_ops() {
-                if let Some(name) = op.name.strip_prefix("scene.") {
-                    match scene.apply(name, &op.args).unwrap() {
-                        Some(SceneEvent::ComponentAdded {
-                            object,
-                            component,
-                            class,
-                        }) => host.adopt(ComponentId(component), &class, Some(object)),
-                        Some(SceneEvent::ComponentRemoved(id)) => {
-                            host.remove(&mut rt, ComponentId(id))
-                        }
-                        Some(SceneEvent::Destroyed(objects)) => {
-                            host.remove_on_objects(&mut rt, &objects)
-                        }
-                        None => {}
-                    }
-                } else if let Some(name) = op.name.strip_prefix("physics.") {
-                    if !attached.op(name, &op.args) {
-                        physics
-                            .apply(name, &op.args)
-                            .unwrap_or_else(|e| panic!("{name}: {e}"));
-                    }
-                } else if !op.name.starts_with("render.") {
-                    panic!("unexpected op {}", op.name);
-                }
-            }
-            let batch = attached.step(&mut physics, &mut scene);
-            let moved = scene.take_batch();
-            if !moved.is_empty() {
-                rt.call_global("__platypus_scene", &[Value::Array(moved)])
-                    .unwrap();
-            }
-            if !batch.is_empty() {
-                rt.call_global("__platypus_physics", &batch.to_args())
-                    .unwrap();
-            }
-            // Promise callbacks (raycast answers).
-            let errors = rt.tick(f64::from(tick) * 1000.0 / 60.0);
-            assert!(errors.is_empty(), "uncaught: {errors:?}");
-        }
-        rt
-    }
-
-    // M5-RB-01
-    #[test]
-    fn rigidbodies_move_their_game_objects_and_collide() {
-        let mut rt = simulate("rigidbodies.js", RIGIDBODIES, "Drop", 150);
-
-        // The crate (a 1 m box dropped from 3 m onto a static floor whose top is at 0)
-        // rests with its centre half a metre up, its GameObject with it, and its
-        // components heard the trigger and the landing. The kinematic paddle, moved by its script, carried
-        // its body along.
-        let log = rt.eval("__rb_log()").unwrap();
-        let Value::String(log) = log else {
-            panic!("{log:?}")
-        };
-        // It falls through the trigger zone first, then lands.
-        assert_eq!(log, "trigger zone, crate hit Floor");
-        let crate_y = rt.eval("__crate_y()").unwrap().as_f64().unwrap();
-        assert!((crate_y - 0.5).abs() < 0.03, "crate y = {crate_y}");
-        let paddle = rt.eval("__paddle_body_x()").unwrap().as_f64().unwrap();
-        assert!((paddle - 2.5).abs() < 1e-3, "paddle body x = {paddle}");
-
-        // M5-RB-03: the character walked 2 m/s for 2.5 s along the floor, grounded, its
-        // capsule's bottom on the floor (centre 1 m up).
-        let Value::Array(w) = rt.eval("__walker()").unwrap() else {
-            panic!()
-        };
-        let w: Vec<f64> = w.iter().map(|v| v.as_f64().unwrap()).collect();
-        assert!(w[2] > 4.0 && w[2] < 5.2, "walked to z = {}", w[2]);
-        assert!((w[1] - 1.0).abs() < 0.1, "walker y = {}", w[1]);
-        assert_eq!(w[3], 1.0, "grounded");
-
-        // M5-JNT-02: the rope holds the weight about 2 m below its anchor (6 m up, plus the
-        // weight's radius of slack); the motor turned the wheel.
-        let weight = rt.eval("__weight_y()").unwrap().as_f64().unwrap();
-        assert!(weight > 3.5 && weight < 4.3, "weight y = {weight}");
-        let angle = rt.eval("__wheel_angle()").unwrap().as_f64().unwrap();
-        assert!(angle > 10.0, "wheel turned {angle} degrees");
-    }
-
-    fn numbers(rt: &mut QuickJsRuntime, expr: &str) -> Vec<f64> {
-        match rt.eval(expr).unwrap() {
-            Value::Array(v) => v.iter().map(|x| x.as_f64().unwrap()).collect(),
-            Value::Number(n) => vec![n],
-            other => panic!("{expr}: {other:?}"),
-        }
-    }
-
-    // M5-RB2D-01
-    #[test]
-    fn physics_2d_stays_in_the_plane_and_collides_whatever_the_z() {
-        let mut rt = simulate("physics2d.js", PHYSICS_2D, "Scene2D", 180);
-        let Value::String(log) = rt.eval("__log2d()").unwrap() else {
-            panic!()
-        };
-        assert_eq!(log, "trigger zone, box hit ground");
-        // The box (at z = 2, the ground's edge at z = 0) rests on the ground, still at
-        // z = 2 and turned only about z.
-        let b = numbers(&mut rt, "__box()");
-        assert!((b[1] - 0.5).abs() < 0.03, "box y = {}", b[1]);
-        assert!((b[2] - 2.0).abs() < 1e-4, "box z = {}", b[2]);
-        assert!(b[3].abs() < 0.01 && b[4].abs() < 0.01, "box turned {b:?}");
-        // The ball rolled down the slope to the right, spinning clockwise.
-        let ball = numbers(&mut rt, "__ball()");
-        assert!(ball[0] > 6.0, "ball x = {}", ball[0]);
-        // The upright pill (2 m tall) stands on the ground without turning.
-        let pill = numbers(&mut rt, "__pill()");
-        assert!((pill[0] - 1.0).abs() < 0.05, "pill y = {}", pill[0]);
-        assert!(pill[1].abs() < 0.01, "pill turned {}", pill[1]);
-        let tri = numbers(&mut rt, "__tri_y()")[0];
-        assert!(tri > -0.05 && tri < 0.3, "triangle y = {tri}");
-        // The ray from 5 m up hit the trigger zone's top first, 3 m down.
-        assert_eq!(
-            rt.eval("__ray()").unwrap(),
-            Value::String("zone 3.00".into())
-        );
     }
 }

@@ -337,8 +337,7 @@ pub enum WrapKind {
 }
 
 #[platypus_api(
-    namespace = "Texture", quickjs,
-    handles(Texture = TextureRef),
+    namespace = "Texture", handles(Texture = TextureRef),
     values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]),
     enums(
         /// How a texture is sampled between texels.
@@ -634,8 +633,7 @@ fn bone_arrays(bones: &[BoneInfluence]) -> (Vec<f64>, Vec<f64>) {
 }
 
 #[platypus_api(
-    namespace = "Mesh", quickjs,
-    handles(Mesh = MeshRef),
+    namespace = "Mesh", handles(Mesh = MeshRef),
     values(
         Vector3 = V3 [x: f64, y: f64, z: f64],
         Vector2 = V2 [x: f64, y: f64],

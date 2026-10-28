@@ -1,8 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus-build bench <examples>`: every example timed by `platypus-app --bench` (windowless) on the native
-//! backend and, for the examples the base branch has, on the QuickJS original built from it; the
+//! `platypus-build bench <examples>`: every example timed by `platypus-app --bench` (windowless); the
 //! results go to `docs/benchmarks.md` and `docs/benchmarks/results.json` (`docs/platypus-build.md`,
 //! "Benchmarks").
 
@@ -12,11 +11,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-const USAGE: &str = "usage: platypus-build bench <examples folder> [--only a,b,..] [--base main] [--host platypus-app.exe]
-  [--no-host-build] [--no-quickjs] [--frames N] [--out docs-folder] [--timeout seconds]
-Builds the release host (cargo build --release -p platypus_app --bin platypus-app), every example natively, and the base
-branch's QuickJS originals in a temporary folder (deleted afterwards), then runs each with
-`platypus-app <game> --bench` (no window). Scripted input and frame counts: tools/bench/inputs/<name>.json.";
+const USAGE: &str = "usage: platypus-build bench <examples folder> [--only a,b,..] [--host platypus-app.exe]
+  [--no-host-build] [--frames N] [--out docs-folder] [--timeout seconds]
+Builds the release host (cargo build --release -p platypus_app --bin platypus-app) and every example, then runs each
+with `platypus-app <game> --bench` (no window). Scripted input and frame counts: tools/bench/inputs/<name>.json.";
 
 /// One frame step for every run: games see the same time whatever their speed.
 const FIXED_DT: &str = "0.016666666666666666";
@@ -25,10 +23,8 @@ const SIZE: &str = "1280x720";
 struct Options {
     examples: PathBuf,
     only: Option<Vec<String>>,
-    base: String,
     host: Option<PathBuf>,
     build_host: bool,
-    quickjs: bool,
     frames: Option<u32>,
     out: Option<PathBuf>,
     timeout: Option<u64>,
@@ -38,10 +34,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut o = Options {
         examples: PathBuf::new(),
         only: None,
-        base: "main".into(),
         host: None,
         build_host: true,
-        quickjs: true,
         frames: None,
         out: None,
         timeout: None,
@@ -52,7 +46,6 @@ fn parse(args: &[String]) -> Result<Options, String> {
         let mut value = || it.next().cloned().ok_or(format!("{a} needs a value"));
         match a.as_str() {
             "--only" => o.only = Some(value()?.split(',').map(str::to_owned).collect()),
-            "--base" => o.base = value()?,
             "--host" => o.host = Some(value()?.into()),
             "--out" => o.out = Some(value()?.into()),
             "--frames" => o.frames = Some(value()?.parse().map_err(|_| "--frames needs a number")?),
@@ -60,7 +53,6 @@ fn parse(args: &[String]) -> Result<Options, String> {
                 o.timeout = Some(value()?.parse().map_err(|_| "--timeout needs seconds")?)
             }
             "--no-host-build" => o.build_host = false,
-            "--no-quickjs" => o.quickjs = false,
             "--help" | "-h" => return Err(USAGE.into()),
             s if !s.starts_with("--") && examples.is_none() => examples = Some(PathBuf::from(s)),
             _ => return Err(format!("unexpected argument {a}\n{USAGE}")),
@@ -179,19 +171,6 @@ fn run(o: &Options) -> Result<(), String> {
         ));
     }
 
-    // The QuickJS originals: the base branch's tree, outside the repo, bundled by bun as it did.
-    let base_tree = if o.quickjs {
-        match extract_base(&repo, &o.base) {
-            Ok(dir) => Some(dir),
-            Err(e) => {
-                eprintln!("bench: no QuickJS runs: {e}");
-                None
-            }
-        }
-    } else {
-        None
-    };
-    let base_commit = git(&repo, &["rev-parse", "--short", &o.base]).unwrap_or_default();
     let head_commit = git(&repo, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
 
     let mut results = Vec::new();
@@ -213,62 +192,27 @@ fn run(o: &Options) -> Result<(), String> {
                 ..Default::default()
             },
         ) {
-            Ok(_) => bench_one(&host, g, false, input.as_deref(), o),
+            Ok(_) => bench_one(&host, g, input.as_deref(), o),
             Err(e) => Outcome {
                 report: None,
                 error: Some(format!("build failed: {}", tail(&e, 2))),
             },
         };
-        let quickjs = match &base_tree {
-            None => Outcome {
-                report: None,
-                error: Some("not run (--no-quickjs)".into()),
-            },
-            Some(base) => {
-                let original = base.join("examples").join(&name);
-                if !original.join("package.json").is_file() {
-                    Outcome {
-                        report: None,
-                        error: Some(format!("n/a: not on {}", o.base)),
-                    }
-                } else {
-                    eprintln!("bench: {name}: QuickJS build ({})", o.base);
-                    match build_original(&original, g) {
-                        Ok(()) => bench_one(&host, &original, true, input.as_deref(), o),
-                        Err(e) => Outcome {
-                            report: None,
-                            error: Some(e),
-                        },
-                    }
-                }
-            }
-        };
-        for (backend, r) in [("native", &native), ("quickjs", &quickjs)] {
-            match (&r.report, &r.error) {
-                (Some(v), _) => eprintln!(
-                    "bench: {name} {backend}: {} fps, median {} ms",
-                    v["total"]["fps"], v["total"]["medianMs"]
-                ),
-                (None, Some(e)) => eprintln!("bench: {name} {backend}: {e}"),
-                _ => {}
-            }
+        match (&native.report, &native.error) {
+            (Some(v), _) => eprintln!(
+                "bench: {name}: {} fps, median {} ms",
+                v["total"]["fps"], v["total"]["medianMs"]
+            ),
+            (None, Some(e)) => eprintln!("bench: {name}: {e}"),
+            _ => {}
         }
         results.push(json!({
             "game": name,
             "note": spec["note"],
             "native": native.report,
             "nativeError": native.error,
-            "quickjs": quickjs.report,
-            "quickjsError": quickjs.error,
         }));
     }
-    if let Some(dir) = &base_tree {
-        // The temporary tree goes, whatever happened.
-        if let Err(e) = std::fs::remove_dir_all(dir) {
-            eprintln!("bench: could not delete {}: {e}", dir.display());
-        }
-    }
-
     let raw = out_dir.join("benchmarks");
     let json_path = raw.join("results.json");
     // `--only` re-runs some games: the others keep their last results.
@@ -290,7 +234,6 @@ fn run(o: &Options) -> Result<(), String> {
     let machine = machine_info(&results);
     let all = json!({
         "head": head_commit,
-        "base": format!("{} ({base_commit})", o.base),
         "fixedDt": FIXED_DT.parse::<f64>().unwrap_or(0.0),
         "size": SIZE,
         "machine": machine,
@@ -318,138 +261,12 @@ fn exe(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-/// The base branch's files in a fresh folder of the OS temp dir, with its JS packages installed.
-fn extract_base(repo: &Path, base: &str) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join(format!("platypus-bench-{base}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let tar = dir.join("base.tar");
-    git(
-        repo,
-        &[
-            "archive",
-            "--format=tar",
-            "-o",
-            &tar.to_string_lossy(),
-            base,
-        ],
-    )?;
-    run_tool(
-        Command::new("tar").arg("-xf").arg(&tar).current_dir(&dir),
-        "tar -xf",
-    )?;
-    let _ = std::fs::remove_file(&tar);
-    eprintln!("bench: {base} extracted to {}; bun install", dir.display());
-    run_tool(
-        Command::new("bun").arg("install").current_dir(&dir),
-        "bun install",
-    )?;
-    Ok(dir)
-}
-
-/// `bun run build` in the original (its own package.json script), after copying in files the
-/// branch's copy has and git does not (fonts kept out of git, downloaded models).
-fn build_original(original: &Path, current: &Path) -> Result<(), String> {
-    copy_missing(current, original, true).map_err(|e| format!("copying assets: {e}"))?;
-    copy_charm(original, current).map_err(|e| format!("copying the Charm font: {e}"))?;
-    run_tool(
-        Command::new("bun")
-            .args(["run", "build"])
-            .current_dir(original)
-            .stdin(Stdio::null()),
-        "bun run build",
-    )
-}
-
-/// The Charm font is kept out of git (a `Charm/` folder at the top of a checkout, copied into the
-/// examples that use it): an original whose code names it gets it in `assets/fonts`, from the
-/// nearest `Charm/` above the game (a worktree may have no copies of its own).
-fn copy_charm(original: &Path, current: &Path) -> std::io::Result<()> {
-    let uses = |dir: &Path| -> bool {
-        walk(dir)
-            .iter()
-            .any(|f| std::fs::read_to_string(f).is_ok_and(|t| t.contains("Charm-")))
-    };
-    if !uses(&original.join("src")) {
-        return Ok(());
-    }
-    let Some(charm) = current
-        .ancestors()
-        .map(|a| a.join("Charm"))
-        .find(|c| c.is_dir())
-    else {
-        return Ok(());
-    };
-    let fonts = original.join("assets/fonts");
-    std::fs::create_dir_all(&fonts)?;
-    for e in std::fs::read_dir(charm)?.flatten() {
-        let dest = fonts.join(e.file_name());
-        if e.path().is_file() && !dest.exists() {
-            std::fs::copy(e.path(), dest)?;
-        }
-    }
-    Ok(())
-}
-
-fn walk(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            out.extend(walk(&p));
-        } else {
-            out.push(p);
-        }
-    }
-    out
-}
-
-/// Copies files of `from`'s folders that `to` lacks. At the top only folders count, and not the
-/// code or build output (`src`, `build`, ...): the original keeps its own manifest and code.
-fn copy_missing(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
-    for e in std::fs::read_dir(from)? {
-        let e = e?;
-        let is_dir = e.file_type()?.is_dir();
-        let name = e.file_name().to_string_lossy().to_string();
-        if top
-            && (!is_dir
-                || matches!(
-                    name.as_str(),
-                    "src" | "build" | "node_modules" | "types" | ".platypus"
-                ))
-        {
-            continue;
-        }
-        let dest = to.join(&name);
-        if is_dir {
-            std::fs::create_dir_all(&dest)?;
-            copy_missing(&e.path(), &dest, false)?;
-        } else if !dest.exists() {
-            std::fs::copy(e.path(), &dest)?;
-        }
-    }
-    Ok(())
-}
-
 /// One `platypus-app --bench` run, bounded in time.
-fn bench_one(
-    host: &Path,
-    game: &Path,
-    quickjs: bool,
-    input: Option<&Path>,
-    o: &Options,
-) -> Outcome {
-    let out = std::env::temp_dir().join(format!(
-        "platypus-bench-{}-{}.json",
-        std::process::id(),
-        if quickjs { "qjs" } else { "native" }
-    ));
+fn bench_one(host: &Path, game: &Path, input: Option<&Path>, o: &Options) -> Outcome {
+    let out = std::env::temp_dir().join(format!("platypus-bench-{}.json", std::process::id()));
     let _ = std::fs::remove_file(&out);
     let mut cmd = Command::new(host);
     cmd.arg(game);
-    if quickjs {
-        cmd.arg("--force");
-    }
     cmd.args([
         "--bench",
         "--fixed-dt",
@@ -566,11 +383,7 @@ fn machine_info(results: &[Value]) -> Value {
     };
     let gpu = results
         .iter()
-        .find_map(|r| {
-            r["native"]["adapter"]
-                .as_str()
-                .or(r["quickjs"]["adapter"].as_str())
-        })
+        .find_map(|r| r["native"]["adapter"].as_str())
         .unwrap_or("unknown");
     json!({ "cpu": cpu, "ramGb": ram, "os": os, "gpu": gpu })
 }
@@ -583,42 +396,26 @@ fn num(v: &Value, digits: usize) -> String {
     f(v).map_or_else(|| "-".into(), |x| format!("{x:.digits$}"))
 }
 
-fn ratio(a: &Value, b: &Value) -> String {
-    match (f(a), f(b)) {
-        (Some(a), Some(b)) if b > 0.0 => format!("{:.2}x", a / b),
-        _ => "-".into(),
-    }
-}
-
 /// The generated part of `docs/benchmarks.md`.
 pub fn markdown(all: &Value) -> String {
     let m = &all["machine"];
     let mut s = String::new();
     s += &format!(
-        "Machine: {} ({} GB RAM), {}, {}.\n\nCommit {} against {}; every run {} px, a fixed step of 1/60 s \
-         per frame (`--fixed-dt`), no window, no vsync or frame cap, release host.\n\n",
+        "Machine: {} ({} GB RAM), {}, {}.\n\nCommit {}; every run {} px, a fixed step of 1/60 s per frame \
+         (`--fixed-dt`), no window, no vsync or frame cap, release host.\n\n",
         m["cpu"].as_str().unwrap_or("?"),
         m["ramGb"].as_str().unwrap_or("?"),
         m["gpu"].as_str().unwrap_or("?"),
         m["os"].as_str().unwrap_or("?"),
         all["head"].as_str().unwrap_or("?"),
-        all["base"].as_str().unwrap_or("?"),
         all["size"].as_str().unwrap_or("?"),
     );
-    s += "## Summary\n\n| Example | Native fps | QuickJS fps | Speed-up | Native median / p99 ms | QuickJS median / p99 ms | Native script / sync ms | QuickJS script ms |\n|---|---:|---:|---:|---:|---:|---:|---:|\n";
+    s += "## Summary\n\n| Example | fps | median / p99 ms | script / sync ms |\n|---|---:|---:|---:|\n";
     let empty = Value::Null;
     let results = all["results"].as_array().map_or(&[][..], Vec::as_slice);
     for r in results {
         let n = r["native"].get("total").unwrap_or(&empty);
-        let q = r["quickjs"].get("total").unwrap_or(&empty);
-        let qcell = |v: String| {
-            if r["quickjs"].is_null() {
-                short_error(&r["quickjsError"])
-            } else {
-                v
-            }
-        };
-        let ncell = |v: String| {
+        let cell = |v: String| {
             if r["native"].is_null() {
                 short_error(&r["nativeError"])
             } else {
@@ -626,26 +423,18 @@ pub fn markdown(all: &Value) -> String {
             }
         };
         s += &format!(
-            "| [{g}](#{g}) | {} | {} | {} | {} | {} | {} | {} |\n",
-            ncell(num(&n["fps"], 0)),
-            qcell(num(&q["fps"], 0)),
-            ratio(&n["fps"], &q["fps"]),
-            ncell(format!(
+            "| [{g}](#{g}) | {} | {} | {} |\n",
+            cell(num(&n["fps"], 0)),
+            cell(format!(
                 "{} / {}",
                 num(&n["medianMs"], 2),
                 num(&n["p99Ms"], 2)
             )),
-            qcell(format!(
-                "{} / {}",
-                num(&q["medianMs"], 2),
-                num(&q["p99Ms"], 2)
-            )),
-            ncell(format!(
+            cell(format!(
                 "{} / {}",
                 num(&n["scriptMs"], 2),
                 num(&n["syncMs"], 2)
             )),
-            qcell(num(&q["scriptMs"], 2)),
             g = r["game"].as_str().unwrap_or("?"),
         );
     }
@@ -656,63 +445,47 @@ pub fn markdown(all: &Value) -> String {
         if let Some(note) = r["note"].as_str() {
             s += &format!("Input: {note}.\n\n");
         }
-        s += "| Backend | fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n";
-        for (label, key, err) in [
-            ("native", "native", "nativeError"),
-            ("QuickJS", "quickjs", "quickjsError"),
-        ] {
-            let v = &r[key];
-            if v.is_null() {
-                s += &format!("| {label} | {} |||||||||||| \n", short_error(&r[err]));
-                continue;
-            }
-            let t = &v["total"];
+        let v = &r["native"];
+        if v.is_null() {
+            s += &format!("{}\n", short_error(&r["nativeError"]));
+            continue;
+        }
+        s += "| fps | mean | median | p95 | p99 | worst | script | sync | render | other | start-up | peak MB |\n|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n";
+        let t = &v["total"];
+        s += &format!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} ms | {} |\n",
+            num(&t["fps"], 0),
+            num(&t["meanMs"], 2),
+            num(&t["medianMs"], 2),
+            num(&t["p95Ms"], 2),
+            num(&t["p99Ms"], 2),
+            num(&t["worstMs"], 2),
+            num(&t["scriptMs"], 2),
+            num(&t["syncMs"], 2),
+            num(&t["renderMs"], 2),
+            num(&t["otherMs"], 2),
+            num(&v["startupMs"], 0),
+            num(&v["peakMemoryMb"], 0),
+        );
+        if let Some(errs) = v["errors"].as_array() {
+            let list: Vec<&str> = errs.iter().filter_map(Value::as_str).collect();
             s += &format!(
-                "| {label} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} ms | {} |\n",
-                num(&t["fps"], 0),
-                num(&t["meanMs"], 2),
-                num(&t["medianMs"], 2),
-                num(&t["p95Ms"], 2),
-                num(&t["p99Ms"], 2),
-                num(&t["worstMs"], 2),
-                num(&t["scriptMs"], 2),
-                num(&t["syncMs"], 2),
-                num(&t["renderMs"], 2),
-                num(&t["otherMs"], 2),
-                num(&v["startupMs"], 0),
-                num(&v["peakMemoryMb"], 0),
+                "\nLogged errors: `{}`\n",
+                list.join("`; `").replace('|', "/")
             );
         }
-        for (label, key) in [("native", "native"), ("QuickJS", "quickjs")] {
-            if let Some(errs) = r[key]["errors"].as_array() {
-                let list: Vec<&str> = errs.iter().filter_map(Value::as_str).collect();
+        if let Some(segs) = v["segments"].as_array().filter(|a| a.len() > 1) {
+            s +=
+                "\n| Segment | frames | fps | median / p99 | script |\n|---|---:|---:|---:|---:|\n";
+            for n in segs {
                 s += &format!(
-                    "\n{label} logged errors: `{}`\n",
-                    list.join("`; `").replace('|', "/")
-                );
-            }
-        }
-        let segs_n = r["native"]["segments"].as_array();
-        let segs_q = r["quickjs"]["segments"].as_array();
-        let count = segs_n.map_or(0, Vec::len).max(segs_q.map_or(0, Vec::len));
-        if count > 1 {
-            s += "\n| Segment | frames | native fps | QuickJS fps | speed-up | native median / p99 | QuickJS median / p99 | native script | QuickJS script |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n";
-            for i in 0..count {
-                let n = segs_n.and_then(|a| a.get(i)).unwrap_or(&empty);
-                let q = segs_q.and_then(|a| a.get(i)).unwrap_or(&empty);
-                let name = n["name"].as_str().or(q["name"].as_str()).unwrap_or("?");
-                s += &format!(
-                    "| {name} | {} | {} | {} | {} | {} / {} | {} / {} | {} | {} |\n",
-                    num(n.get("frames").or(q.get("frames")).unwrap_or(&empty), 0),
+                    "| {} | {} | {} | {} / {} | {} |\n",
+                    n["name"].as_str().unwrap_or("?"),
+                    num(&n["frames"], 0),
                     num(&n["fps"], 0),
-                    num(&q["fps"], 0),
-                    ratio(&n["fps"], &q["fps"]),
                     num(&n["medianMs"], 2),
                     num(&n["p99Ms"], 2),
-                    num(&q["medianMs"], 2),
-                    num(&q["p99Ms"], 2),
                     num(&n["scriptMs"], 2),
-                    num(&q["scriptMs"], 2),
                 );
             }
         }
@@ -761,25 +534,23 @@ mod tests {
 
     // M9-BEN-02
     #[test]
-    fn the_table_shows_speed_ups_and_marks_games_the_base_lacks() {
+    fn the_table_shows_each_game_and_marks_failed_ones() {
         let all = json!({
             "machine": { "cpu": "CPU", "ramGb": "32", "os": "OS", "gpu": "GPU" },
-            "head": "abc", "base": "main (def)", "size": "1280x720",
+            "head": "abc", "size": "1280x720",
             "results": [
                 { "game": "clock",
-                  "native": { "total": { "fps": 600.0, "medianMs": 1.5, "p99Ms": 3.0 } },
-                  "quickjs": { "total": { "fps": 300.0, "medianMs": 3.0, "p99Ms": 6.0 } } },
-                { "game": "launcher", "native": { "total": { "fps": 900.0 } },
-                  "quickjs": null, "quickjsError": "n/a: not on main" }
+                  "native": { "total": { "fps": 600.0, "medianMs": 1.5, "p99Ms": 3.0 } } },
+                { "game": "launcher", "native": null, "nativeError": "build failed: x" }
             ]
         });
         let md = markdown(&all);
         assert!(
-            md.contains("| [clock](#clock) | 600 | 300 | 2.00x |"),
+            md.contains("| [clock](#clock) | 600 | 1.50 / 3.00 |"),
             "{md}"
         );
         assert!(
-            md.contains("| [launcher](#launcher) | 900 | n/a | - |"),
+            md.contains("| [launcher](#launcher) | failed: build failed: x |"),
             "{md}"
         );
     }

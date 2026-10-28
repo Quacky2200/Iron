@@ -37,8 +37,7 @@ thread_local! {
 }
 
 #[platypus_api(
-    namespace = "Lists", quickjs,
-    handles(Cell = Cell),
+    namespace = "Lists", handles(Cell = Cell),
     records(
         /// A row of tags.
         Row = Row [id: f64, tags: Vec<f64>],
@@ -146,29 +145,11 @@ fn records_hold_lists_of_numbers_and_of_records() {
         .find(|r| r["name"] == "Row")
         .unwrap();
     assert_eq!(row["fields"][1]["type"], "list:f64");
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        lists_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"
-                const t = { name: "t", rows: [{ id: 1, tags: [1, 2] }], spare: [{ id: 10, tags: [] }] };
-                JSON.stringify([Lists.total(t), Lists.echo(t), Lists.total(null)])
-                "#,
-            )
-            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
-        assert_eq!(
-            out,
-            r#"[14,{"name":"t","rows":[{"id":1,"tags":[1,2]}],"spare":[{"id":10,"tags":[]}]},-1]"#
-        );
-    });
 }
 
 // M9-API-1641
 #[test]
-fn a_function_called_with_one_object_declares_it_and_quickjs_reads_the_keys() {
+fn a_function_called_with_one_object_declares_it() {
     let json: serde_json::Value = serde_json::from_str(&lists_api::MANIFEST.to_json()).unwrap();
     let sum = json["functions"]
         .as_array()
@@ -180,18 +161,6 @@ fn a_function_called_with_one_object_declares_it_and_quickjs_reads_the_keys() {
     assert_eq!(sum["optionsName"], "SumOptions");
     // `#[global]`: also a global function of the same name.
     assert_eq!(sum["global"], true);
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        lists_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"JSON.stringify([Lists.sum({ a: 1, b: 2 }), Lists.sum({ a: 1 }), Lists.sum(5, 6), sum({ a: 2, b: 2 })])"#,
-            )
-            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
-        assert_eq!(out, "[3,101,11,4]");
-    });
 }
 
 // M9-API-1642
@@ -233,17 +202,4 @@ fn a_setter_can_have_a_second_version_and_a_class_a_positional_constructor() {
     assert_eq!(setters, ["f64", "f64s"]);
     let ctor = fns.iter().find(|f| f["constructor"] == true).unwrap();
     assert_eq!(ctor["name"], "construct");
-    // QuickJS: the first version of the setter is the script's.
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        lists_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"const c = Cell.create(); c.level = 4; JSON.stringify([c.level, Cell.construct(1, 2) !== null, c.level])"#,
-            )
-            .unwrap_or_else(|_| panic!("{:?}", ctx.catch()));
-        assert_eq!(out, "[4,true,3]");
-    });
 }

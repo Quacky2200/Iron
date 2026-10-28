@@ -8,8 +8,9 @@
 //! window, loads the game's script bundle and runs it, drawn by the renderer `host.rs` picks.
 //!
 //! `[game]` is either a game folder (loads `<game>/build/game.pbundle`, built with
-//! `platypus-build build`; a QuickJS `build/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
-//! `N` frames (default 60) and exits, which is handy for checking output.
+//! `platypus-build build`) or a bundle (or a `.ts` file) directly; without one, the current folder
+//! is the game. `--screenshot` saves the UI after `N` frames (default 60) and exits, which is handy
+//! for checking output.
 
 pub(crate) mod anim_cull;
 pub(crate) mod asset_db;
@@ -23,15 +24,12 @@ mod crash;
 mod crash_dialog;
 mod cursor;
 mod display;
-mod editor;
 mod file_drop;
 mod fps;
 mod frame_target;
 mod game_input;
 mod gles_gfx;
 mod host;
-// `pub(crate)`: `platypus_editor` (bin/platypus_editor.rs) includes this file as a module and
-// re-exports these at its root, for the `crate::` paths between modules.
 pub(crate) mod info;
 mod lazy_world;
 mod licenses;
@@ -50,11 +48,9 @@ mod payload;
 mod physics_sync;
 pub(crate) mod postfx;
 mod prefs;
-mod project;
 pub(crate) mod reload;
 mod render_sync;
 pub(crate) mod sync_profile;
-mod ui_scale;
 mod video_prompt;
 mod windows;
 pub(crate) mod world_view;
@@ -71,10 +67,7 @@ use platypus_platform::{
 };
 use platypus_render::wgpu;
 use platypus_render::{Color, Gpu, OffscreenTarget, RenderTarget, UiRenderer, WorldRenderer};
-use platypus_script::{ComponentHost, QuickJsRuntime, ScriptRuntime};
-use platypus_ui::{
-    Clipboard, Input, Interaction, ScrollAlign, ScrollBehavior, UiEvent, UiTree, events,
-};
+use platypus_ui::{Clipboard, Input, Interaction, UiTree, events};
 
 const TICK: f64 = 1.0 / 60.0;
 /// Stops a slow frame from triggering a long burst of catch-up ticks.
@@ -98,8 +91,6 @@ struct Args {
     data: Option<PathBuf>,
     /// The folder assets are read from when it is not the game folder (a packaged game).
     asset_root: Option<PathBuf>,
-    /// `--force`: run a deprecated QuickJS game anyway.
-    force: bool,
     /// Everything after `--`, for the game's scripts (`Application.args`).
     script_args: Vec<String>,
     /// `--bench`: a windowless timed run (see `bench.rs`).
@@ -124,40 +115,16 @@ impl Args {
     }
 }
 
-/// The deprecation note for the QuickJS backend (logged once per run).
-const QUICKJS_DEPRECATED: &str = "the QuickJS backend is deprecated: build games with `platypus-build build` (platypus_ts, native, writes build/game.pbundle); pass --force to run this QuickJS bundle anyway";
-
-/// What to do with a bundle: native ones always run; QuickJS ones only with `--force` (the
-/// editor, itself QuickJS-based, counts as forced).
-#[derive(Debug, PartialEq, Eq)]
-enum QuickJsGate {
-    Native,
-    Forced,
-    Refused,
-}
-
-fn quickjs_gate(native: bool, force: bool, editor: bool) -> QuickJsGate {
-    if native {
-        QuickJsGate::Native
-    } else if force || editor {
-        QuickJsGate::Forced
-    } else {
-        QuickJsGate::Refused
-    }
-}
+/// Why a JavaScript bundle (the QuickJS backend's `game.js`) is refused.
+const QUICKJS_REMOVED: &str = "is a QuickJS bundle: QuickJS is no longer part of Platypus; rebuild the game with `platypus-build build` (writes build/game.pbundle)";
 
 fn parse_args() -> Result<Args> {
     let mut args = parse_args_from(std::env::args_os().skip(1))?;
-    // The crash dialog and the video-settings prompt run their own folders, not the editor or a
-    // packaged game.
+    // The crash dialog and the video-settings prompt run their own folders, not a packaged game.
     if args.crash_dialog || args.video_dialog {
         return Ok(args);
     }
-    // `platypus_editor [project]`: the editor runs its own UI on the project folder.
-    if editor::ENABLED {
-        editor::set_project(&args.game);
-        args.game = editor::ui_folder();
-    } else if let Some(dir) = payload::embedded_game() {
+    if let Some(dir) = payload::embedded_game() {
         // A packaged single-file game runs its own code (extracted from the exe), whatever the
         // arguments say, and reads its assets from the data folder beside the exe.
         let exe = std::env::current_exe().ok();
@@ -179,10 +146,10 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: platypus-app [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--renderer vulkan|gles|cpu] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [--force] [-- script args]
+    let usage = "usage: platypus-app [game folder | game.pbundle | main.ts] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--renderer vulkan|gles|cpu] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [-- script args]
        platypus-app [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
        platypus-app --licenses (prints the third-party notices built into the program and exits)
---force runs a QuickJS (deprecated) bundle; games built with `platypus-build build` are native; arguments after -- reach scripts as Application.args;
+games are built with `platypus-build build`; arguments after -- reach scripts as Application.args;
 --bench runs without a window as fast as it can and writes timings as JSON (docs/platypus-build.md, \"Benchmarks\")";
     let mut args = args.into_iter();
     let mut game = None;
@@ -194,7 +161,6 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         fps: None,
         data: None,
         asset_root: None,
-        force: false,
         script_args: Vec::new(),
         bench: None,
         crash_dialog: false,
@@ -213,7 +179,6 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
             Some("--data") => parsed.data = Some(args.next().context(usage)?.into()),
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
             Some("--cook") => parsed.cook = true,
-            Some("--force") => parsed.force = true,
             Some(crash_dialog::DIALOG_FLAG) => {
                 parsed.crash_dialog = true;
                 game = Some(args.next().context(usage)?.into());
@@ -278,8 +243,6 @@ pub(crate) fn main() -> Result<()> {
     mem_trace::install();
     crash::install();
     logging::attach_console();
-    // The editor's console shows the log from the start.
-    logging::capture(editor::ENABLED);
     let result = run();
     if let Err(e) = &result {
         // Into the log as well as stderr: a windowed program's stderr may go nowhere.
@@ -364,17 +327,6 @@ fn run() -> Result<()> {
     // The code folder (bundle, `package.json`, icon) and the assets' folder: the same for a game
     // folder, apart for a packaged exe (`--data` also sets it for a folder).
     let (bundle_path, code_root) = resolve_bundle(&args.game)?;
-    match quickjs_gate(native::is_native(&bundle_path), args.force, editor::ENABLED) {
-        QuickJsGate::Native => {}
-        QuickJsGate::Forced => tracing::warn!("{QUICKJS_DEPRECATED}"),
-        QuickJsGate::Refused => {
-            tracing::warn!("{QUICKJS_DEPRECATED}");
-            bail!(
-                "{} is a QuickJS bundle (deprecated); rebuild with `platypus-build build` or pass --force",
-                bundle_path.display()
-            );
-        }
-    }
     let asset_root = asset_root::AssetRoot::new(
         args.asset_root
             .clone()
@@ -393,38 +345,21 @@ fn run() -> Result<()> {
         platypus_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
     }
     lap.mark("log, manifest, asset mount");
-    // A compiled (native) game is JIT-compiled below; there is no JavaScript to read.
-    let native_bundle = if native::is_native(&bundle_path) {
-        Some(native::Bundle::read(&bundle_path)?)
-    } else {
-        None
-    };
+    // The game is JIT-compiled below.
+    let bundle = native::Bundle::read(&bundle_path)?;
     lap.mark("bundle read");
-    let code = if native_bundle.is_some() {
-        String::new()
-    } else {
-        std::fs::read_to_string(&bundle_path)
-            .with_context(|| format!("reading {}", bundle_path.display()))?
-    };
     let name = bundle_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "game.js".into());
+        .unwrap_or_else(|| "game.pbundle".into());
 
     // The game's manifest and the machine, for `Application` and `SystemInfo`, before
     // the bundle's top level runs.
     let manifest = info::Manifest::load(&code_root);
     // The renderer: `--renderer`, then the project's `renderer`, then what the program uses (the
-    // bundle's tier; a QuickJS bundle counts as the 3D world). The editor always has the world.
-    let (tier, uses) = native_bundle.as_ref().map_or_else(
-        || (platypus_ts::renderer::Tier::World3d, Vec::new()),
-        |b| (b.tier, b.uses.clone()),
-    );
-    let choice = if editor::ENABLED {
-        host::Choice::World
-    } else {
-        host::resolve(args.renderer, manifest.renderer, tier)
-    };
+    // bundle's tier).
+    let (tier, uses) = (bundle.tier, bundle.uses.clone());
+    let choice = host::resolve(args.renderer, manifest.renderer, tier);
     host::set(choice);
     tracing::info!(
         "renderer: {} (the program needs {}{})",
@@ -458,8 +393,7 @@ fn run() -> Result<()> {
     let defaults = display::from_json(Some(&manifest.display), Default::default());
     // The startup video-settings prompt, before anything of the game's window exists; its choice
     // goes into the prefs read below.
-    if !editor::ENABLED
-        && !args.video_dialog
+    if !args.video_dialog
         && args.bench.is_none()
         && video_prompt::should_prompt(
             args.video_prompt,
@@ -509,89 +443,36 @@ fn run() -> Result<()> {
     native_pump::seed_asset_index(&info);
     info.set("display", display::state(None, &display_settings));
     lap.mark("prefs, asset index (.meta files)");
-    let mut scripts = QuickJsRuntime::new();
-    // The native API (`Window`, `Shapes`, `Spline`, ...) for bundled (JavaScript) games: the same
-    // functions compiled games call. Compiled games have them natively.
-    if !native::is_native(&bundle_path) {
-        platypus_native::install(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
-    scripts
-        .eval(&info.script())
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    // A dev build (`scripts/dev.ts`) comes as vendor.js plus the game's own code.
-    let vendor = dev_vendor(&bundle_path, &code);
-    if native_bundle.is_none() {
-        load_bundles(&mut scripts, vendor.as_deref(), &name, &code)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
-
-    // One GameObject per starting component class (registered without
-    // `spawn: false`), each with that component; a start scene (`platypus.startScene`)
-    // is loaded by the scripts themselves.
-    let mut components = ComponentHost::new();
-    let mut scene = platypus_scene::ScriptScene::new();
-    if native_bundle.is_none() {
-        let classes =
-            ComponentHost::registered_classes(&mut scripts).map_err(|e| anyhow::anyhow!("{e}"))?;
-        spawn_starting_components(&mut scripts, &mut components, &mut scene, &classes)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        tracing::info!(?classes, "loaded {}", bundle_path.display());
-    }
-    // Set by @platypus/react; games without React UI get no UI events.
-    let ui_events = scripts
-        .eval("typeof __platypus_ui_event === 'function'")
-        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
-    // Set by @platypus/engine's `input` module.
-    let game_input = scripts
-        .eval("typeof __platypus_input === 'function'")
-        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
-    let audio_events = scripts
-        .eval("typeof __platypus_audio === 'function'")
-        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
-    let scene_events = scripts
-        .eval("typeof __platypus_scene === 'function'")
-        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
-    let physics_events = scripts
-        .eval("typeof __platypus_physics === 'function'")
-        .is_ok_and(|v| v == platypus_core::Value::Bool(true));
-
-    lap.mark("QuickJS runtime (info script; JS games: their bundle)");
-    // Bun writes CSS imported by the game next to the bundle (game.js -> game.css).
+    // `platypus-build` writes the game's CSS next to the bundle (game.pbundle -> game.css).
     let mut ui = UiTree::with_system_fonts(1.0, 1.0);
     lap.mark("UI tree and system fonts");
     let css_path = bundle_path.with_extension("css");
-    let game_css = load_game_css(&mut ui, &asset_root, &code_root, &css_path);
+    load_game_css(&mut ui, &asset_root, &code_root, &css_path);
     let game_css_source = game_css_source(&code_root, &css_path);
     lap.mark("game CSS");
-    let native = match native_bundle {
-        Some(bundle) => {
-            native_render::configure_engine(&asset_root);
-            native_pump::seed_prefs(&prefs);
-            let (m, i) = (manifest.clone(), info.clone());
-            let mut n = native::Native::load_with(
-                bundle,
-                &mut scene.scene,
-                &mut ui,
-                Box::new(move || native_pump::configure_engine(&m, &i)),
-            )?;
-            n.set_root(&asset_root);
-            if let Some(start) = &manifest.start_scene {
-                n.start_scene(&mut scene.scene, &mut ui, start);
-            }
-            Some(n)
-        }
-        None => None,
-    };
+    let mut scene = platypus_scene::ScriptScene::new();
+    native_render::configure_engine(&asset_root);
+    native_pump::seed_prefs(&prefs);
+    let (m, i) = (manifest.clone(), info.clone());
+    let mut native = native::Native::load_with(
+        bundle,
+        &mut scene.scene,
+        &mut ui,
+        Box::new(move || native_pump::configure_engine(&m, &i)),
+    )?;
+    native.set_root(&asset_root);
+    if let Some(start) = &manifest.start_scene {
+        native.start_scene(&mut scene.scene, &mut ui, start);
+    }
     let mut lap = platypus_ts::timing::Lap::start();
 
-    // Rebuilds by `bun build --watch` reload the scripts (not for screenshot or bench runs).
+    // Rebuilds by `platypus-build dev` reload the game (not for screenshot or bench runs).
     let watcher = if offline {
         None
     } else {
         reload::BundleWatcher::new(vec![
             bundle_path.clone(),
             css_path.clone(),
-            bundle_path.with_file_name("vendor.js"),
             // `platypus-build dev` writes this after the bundle (or with the error of a failed build).
             bundle_path.with_file_name(".platypus-reload"),
         ])
@@ -612,18 +493,13 @@ fn run() -> Result<()> {
         prefs,
         display: display_settings,
         target_frame_rate: -1,
-        vendor,
         bundle_path,
         bundle_name: name.clone(),
-        game_css,
         watcher,
         asset_watcher,
         sound_files: HashMap::new(),
-        scripts,
-        components,
-        native,
+        native: Some(native),
         scene,
-        scene_events,
         world_view: world_view::WorldViews::with_physical_units(manifest.physical_units),
         panels: panels::Panels::default(),
         windows: windows::AppWindows::new(),
@@ -644,17 +520,12 @@ fn run() -> Result<()> {
         ui,
         sheets: HashMap::new(),
         interaction: Interaction::new(),
-        ui_events,
-        game_input,
         physics: platypus_physics::Physics::new(),
         attachments: physics_sync::Attachments::default(),
         cloth: cloth_sync::ClothSystem::default(),
         audio: None,
-        audio_events,
-        physics_events,
         nav: game_input::GamepadNav::default(),
         cursor: ("default", Vec::new(), 1.0),
-        ui_scale: ui_scale::UiScale::None,
         custom_cursor: None,
         script_cursor: ScriptCursor::default(),
         focused: true,
@@ -677,7 +548,7 @@ fn run() -> Result<()> {
         pipeline_warned: false,
         frames: 0,
         fps_on: fps::enabled(
-            args.fps.or((editor::ENABLED && !offline).then_some(false)),
+            args.fps,
             offline,
             std::env::var("PLATYPUS_FPS").ok().as_deref(),
             manifest.fps,
@@ -690,10 +561,8 @@ fn run() -> Result<()> {
         script_time: Duration::ZERO,
         render_time: Duration::ZERO,
         sync_time: Duration::ZERO,
-        ops_time: Duration::ZERO,
         done: false,
         info,
-        editor: editor::EditorHost::default(),
         file_drag: file_drop::FileDrag::default(),
         manifest: manifest.clone(),
         video_dialog: None,
@@ -746,29 +615,32 @@ fn resolve_bundle(path: &Path) -> Result<(PathBuf, PathBuf)> {
             );
             return Ok((legacy, path.to_path_buf()));
         }
-        let bundle = path.join("build").join("game.js");
-        if !bundle.is_file() {
-            // Games used to build into `dist/`; that folder is not read any more.
-            let old = path.join("dist");
-            if ["game.pbundle", native::LEGACY_BUNDLE, "game.js"]
-                .iter()
-                .any(|name| old.join(name).is_file())
-            {
-                bail!(
-                    "{} has only an old `dist/` build; build output now goes to `build/`: rebuild with `platypus-build build {}`",
-                    path.display(),
-                    path.display()
-                );
-            }
+        let js = path.join("build").join("game.js");
+        if js.is_file() {
+            bail!("{} {QUICKJS_REMOVED}", js.display());
+        }
+        // Games used to build into `dist/`; that folder is not read any more.
+        let old = path.join("dist");
+        if ["game.pbundle", native::LEGACY_BUNDLE, "game.js"]
+            .iter()
+            .any(|name| old.join(name).is_file())
+        {
             bail!(
-                "{} not found; build it first with `platypus-build build {}`",
-                bundle.display(),
+                "{} has only an old `dist/` build; build output now goes to `build/`: rebuild with `platypus-build build {}`",
+                path.display(),
                 path.display()
             );
         }
-        return Ok((bundle, path.to_path_buf()));
+        bail!(
+            "{} not found; build it first with `platypus-build build {}`",
+            native.display(),
+            path.display()
+        );
     }
     if path.is_file() {
+        if !native::is_native(path) {
+            bail!("{} {QUICKJS_REMOVED}", path.display());
+        }
         let root = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         return Ok((path.to_path_buf(), root));
     }
@@ -880,13 +752,8 @@ struct App {
     display: platypus_platform::DisplaySettings,
     /// `Application.targetFrameRate` (-1: no cap); ignored while vsync is on.
     target_frame_rate: i32,
-    /// A dev build's vendor bundle (React, the engine), kept while only the game's code
-    /// changes: then reloads happen in place, with Fast Refresh.
-    vendor: Option<String>,
     /// GameObjects scripts made (and the engine made for them).
     scene: platypus_scene::ScriptScene,
-    /// Whether the game takes engine moves (`__platypus_scene` exists).
-    scene_events: bool,
     /// The screen size in UI pixels and the UI scale, as last told to scripts.
     screen: (f32, f32, f32),
     /// The world renderer's last stats, as last told to scripts (`RenderStats`).
@@ -922,17 +789,12 @@ struct App {
     world_view: world_view::WorldViews,
     bundle_path: PathBuf,
     bundle_name: String,
-    /// The tree's id for the game's bundled stylesheet (`game.css`), if it has one.
-    game_css: Option<u32>,
     watcher: Option<reload::BundleWatcher>,
     asset_watcher: Option<reload::AssetWatcher>,
     /// Sounds loaded from files (by asset key): their `audio.load` arguments, to load
     /// again when the file changes.
     sound_files: HashMap<String, Vec<Vec<platypus_core::Value>>>,
-    scripts: QuickJsRuntime,
-    components: ComponentHost,
-    /// A compiled game, when the folder has a native bundle (then `scripts` and
-    /// `components` stay empty).
+    /// The compiled game (always there once running).
     native: Option<native::Native>,
     ui: UiTree,
     /// Where textures, models, sounds, fonts and scenes are read from.
@@ -960,15 +822,12 @@ struct App {
     offline: bool,
     /// The clock of a `--bench --fixed-dt` run (each frame exactly one step); `None`: real time.
     fake_now: Option<Instant>,
-    /// Time spent in game code this frame (native or QuickJS hooks), and drawing it, for `--bench`.
+    /// Time spent in game code this frame, and drawing it, for `--bench`.
     script_time: Duration,
     render_time: Duration,
     /// A compiled game's per-frame sync of its registries into the renderer
     /// (`sync_native_render`: animation, splines, cameras, `WorldViews` ops).
     sync_time: Duration,
-    /// Applying what scripts queued (React commits, ops: for a QuickJS game the `render.*`,
-    /// `scene.*`, ... ops), for `--bench`.
-    ops_time: Duration,
     /// The FPS counter overlay (drawn last, at window resolution).
     fps_on: bool,
     fps: fps::FpsCounter,
@@ -976,27 +835,17 @@ struct App {
     /// Stylesheets added by scripts: script id -> tree id.
     sheets: HashMap<u32, u32>,
     interaction: Interaction,
-    /// Whether the game handles UI events (`__platypus_ui_event` exists).
-    ui_events: bool,
-    /// Whether the game reads input (`__platypus_input` exists).
-    game_input: bool,
     /// The physics world scripts drive with `physics.*` ops.
     physics: platypus_physics::Physics,
-    /// Whether the game takes physics results (`__platypus_physics` exists).
-    physics_events: bool,
     /// Bodies attached to GameObjects (`physics.attach`).
     attachments: physics_sync::Attachments,
     /// `Cloth` components' simulations.
     cloth: cloth_sync::ClothSystem,
     /// The sound mixer, opened by the first `audio.*` op.
     audio: Option<Box<dyn platypus_audio::Mixer>>,
-    /// Whether the game takes finished-sound events (`__platypus_audio` exists).
-    audio_events: bool,
     nav: game_input::GamepadNav,
     /// The CSS cursor currently shown: keyword, images, and the scale they were for.
     cursor: (&'static str, Vec<platypus_ui::CursorImage>, f64),
-    /// How screen UI is scaled to the window (`setUiScale`).
-    ui_scale: ui_scale::UiScale,
     /// A custom cursor for the platform to show.
     custom_cursor: Option<CustomCursorRequest>,
     /// The game's manifest and the machine, as scripts see them (`__platypus_info`).
@@ -1016,8 +865,6 @@ struct App {
     /// Whether the window currently accepts IME input, and the last candidate area.
     ime_allowed: bool,
     ime_area: Option<platypus_ui::Rect>,
-    /// The editor's log feed and `editor.*` ops (refused outside `platypus_editor`).
-    editor: editor::EditorHost,
     /// Files dragged onto the window from the system.
     file_drag: file_drop::FileDrag,
     /// The game's manifest, for the video-settings dialog `Application.showVideoSettings` opens.
@@ -1071,151 +918,19 @@ impl App {
         let Some((dpi, size)) = self.main_metrics() else {
             return;
         };
-        let scale = ui_factor_for(dpi, size, self.ui_scale);
+        let scale = ui_factor_for(dpi);
         let (width, height) = size;
         self.ui
             .set_size(width as f32 / scale, height as f32 / scale);
         // Scripts' `Screen`: the size in UI pixels (what pointer events use) and the scale.
         let screen = (width as f32 / scale, height as f32 / scale, scale);
-        if self.screen != screen {
-            self.screen = screen;
-            let args =
-                [screen.0, screen.1, screen.2].map(|v| platypus_core::Value::Number(v.into()));
-            // Games without @platypus/engine's Screen don't have the hook.
-            let _ = self.scripts.call_global("__platypus_screen", &args);
-        }
+        self.screen = screen;
     }
 
-    /// Hot reload (DESIGN.md §6.1): loads the rebuilt bundle into a new runtime and
-    /// swaps it in, or keeps the old one running if it fails. For now the world is
-    /// wiped too: UI, script stylesheets, physics and audio start over, and components
-    /// run `onStart` again (state survives once GameObjects exist, TODO.md M5).
+    /// Hot reload (DESIGN.md §6.1): the rebuilt bundle is compiled again and swapped in, or the
+    /// old code keeps running if it fails.
     fn reload_scripts(&mut self) {
-        let started = Instant::now();
-        if self.native.is_some() {
-            self.reload_native(started);
-            return;
-        }
-        let code = match std::fs::read_to_string(&self.bundle_path) {
-            Ok(code) => code,
-            Err(e) => {
-                tracing::error!("reload: reading {}: {e}", self.bundle_path.display());
-                return;
-            }
-        };
-        let vendor = dev_vendor(&self.bundle_path, &code);
-        if vendor.is_some() && vendor == self.vendor {
-            self.reload_in_place(&code, started);
-            return;
-        }
-        // The old code saves its scenes (objects, components, their fields) as JSON;
-        // the new code rebuilds them instead of starting over.
-        // (Bundles without @platypus/engine's scenes have nothing to save.)
-        let can_save = self
-            .scripts
-            .eval("typeof __platypus_save_state === 'function'")
-            .is_ok_and(|v| v == platypus_core::Value::Bool(true));
-        let saved = match can_save.then(|| self.scripts.call_global("__platypus_save_state", &[])) {
-            Some(Ok(platypus_core::Value::String(json))) => Some(json),
-            Some(Err(e)) => {
-                tracing::warn!("reload: saving state failed, starting over: {e}");
-                None
-            }
-            _ => None,
-        };
-        // The old code's window listeners go; windows with a key stay for the new code to claim.
-        let unowned = platypus_engine_api::window::reload_begin();
-        let mut fresh = QuickJsRuntime::new();
-        if let Err(e) = platypus_native::install(&mut fresh) {
-            tracing::error!("reload: {e}");
-        }
-        if let Err(e) = fresh.eval(&self.info.script()) {
-            tracing::error!("reload: {e}");
-        }
-        if saved.is_some() {
-            // Keeps the start scene from loading on top of the restored ones.
-            let _ = fresh.eval("globalThis.__platypus_reloading = true");
-        }
-        let mut scene = platypus_scene::ScriptScene::new();
-        let mut restored = false;
-        let classes = match platypus_script::reload(
-            &mut self.scripts,
-            fresh,
-            &mut self.components,
-            |rt| load_bundles(rt, vendor.as_deref(), &self.bundle_name, &code),
-            |rt, host, classes| {
-                if let Some(json) = saved {
-                    let _ = rt.eval("globalThis.__platypus_reloading = false");
-                    restored = rt.call_global(
-                        "__platypus_restore_state",
-                        &[platypus_core::Value::String(json)],
-                    )? == platypus_core::Value::Bool(true);
-                }
-                if restored {
-                    // The restored objects and components arrive as ops.
-                    Ok(())
-                } else {
-                    spawn_starting_components(rt, host, &mut scene, classes)
-                }
-            },
-        ) {
-            Ok(classes) => classes,
-            Err(e) => {
-                platypus_engine_api::window::reload_abort();
-                tracing::error!("reload failed, keeping the old code: {e}");
-                return;
-            }
-        };
-
-        self.vendor = vendor;
-        // Everything the old scripts built. The new bundle's top level has already
-        // queued its UI and ops; they apply after this.
-        self.ui.clear_script_nodes();
-        for w in self.windows.map.values_mut() {
-            w.tree.clear_script_nodes();
-        }
-        self.reload_windows_closed(unowned.into_iter().map(|w| w.0).collect());
-        for (_, sheet) in self.sheets.drain() {
-            self.ui.remove_stylesheet(sheet);
-        }
-        if let Some(sheet) = self.game_css.take() {
-            self.ui.remove_stylesheet(sheet);
-        }
-        self.reload_game_css();
-        self.font_sources.clear();
-        self.panels = panels::Panels::default();
-        (self.pointer_on, self.keys_on) = (Surface::Screen, Surface::Screen);
-        self.ui_scale = ui_scale::UiScale::None;
-        self.scene = scene;
-        self.world_view = world_view::WorldViews::with_physical_units(self.physical_units);
-        // Tell the new scripts the screen size on the next frame.
-        self.screen = (0.0, 0.0, 0.0);
-        self.physics = platypus_physics::Physics::new();
-        self.attachments = physics_sync::Attachments::default();
-        self.cloth = cloth_sync::ClothSystem::default();
-        // Dropping the mixer stops every sound.
-        self.audio = None;
-        self.handle_ui(Input::Refresh);
-
-        let has = |scripts: &mut QuickJsRuntime, f: &str| {
-            scripts
-                .eval(&format!("typeof {f} === 'function'"))
-                .is_ok_and(|v| v == platypus_core::Value::Bool(true))
-        };
-        self.ui_events = has(&mut self.scripts, "__platypus_ui_event");
-        self.game_input = has(&mut self.scripts, "__platypus_input");
-        self.physics_events = has(&mut self.scripts, "__platypus_physics");
-        self.audio_events = has(&mut self.scripts, "__platypus_audio");
-        self.scene_events = has(&mut self.scripts, "__platypus_scene");
-        self.lifecycle.scripts_restarted();
-        self.sync_lifecycle();
-        tracing::info!(
-            ?classes,
-            restored,
-            "reloaded {} in {:.1} ms",
-            self.bundle_name,
-            started.elapsed().as_secs_f64() * 1000.0
-        );
+        self.reload_native(Instant::now());
     }
 
     /// Hot reload of a compiled game: the bundle is compiled again; a failure keeps the old one.
@@ -1251,39 +966,6 @@ impl App {
         }
     }
 
-    /// A dev build whose vendor bundle didn't change: the game's new code runs in the
-    /// same runtime. React (Fast Refresh) keeps its state, components move onto their new
-    /// classes, and the world, physics and sounds stay as they are.
-    fn reload_in_place(&mut self, code: &str, started: Instant) {
-        if let Err(e) = platypus_script::load_game(&mut self.scripts, &self.bundle_name, code) {
-            // A syntax error stops it before anything ran; a throwing top level may have
-            // run partly.
-            tracing::error!("reload failed: {e}");
-            return;
-        }
-        // New classes may have other lifecycle methods.
-        self.components.refresh_hooks();
-        if let Some(sheet) = self.game_css.take() {
-            self.ui.remove_stylesheet(sheet);
-        }
-        self.reload_game_css();
-        self.handle_ui(Input::Refresh);
-        tracing::info!(
-            "reloaded {} in place in {:.1} ms",
-            self.bundle_name,
-            started.elapsed().as_secs_f64() * 1000.0
-        );
-    }
-
-    /// The CSS Bun wrote next to the bundle, applied again.
-    fn reload_game_css(&mut self) {
-        let css_path = self.bundle_path.with_extension("css");
-        self.game_css = load_game_css(&mut self.ui, &self.asset_root, &self.code_root, &css_path);
-        self.sheet_sources = game_css_source(&self.code_root, &css_path)
-            .into_iter()
-            .collect();
-    }
-
     /// Starts or ends a pause in the background and tells scripts about focus and
     /// pausing (`__platypus_focus(focused, paused)`).
     fn sync_lifecycle(&mut self) {
@@ -1316,20 +998,6 @@ impl App {
                 n.focus_changed(&mut self.scene.scene, &mut self.ui, focused, paused);
                 self.native_after();
             }
-            // Games without @platypus/engine's Application don't have the hook.
-            let has = self
-                .scripts
-                .eval("typeof __platypus_focus === 'function'")
-                .is_ok_and(|v| v == platypus_core::Value::Bool(true));
-            if has
-                && let Err(e) = self
-                    .scripts
-                    .call_global("__platypus_focus", &[focused.into(), paused.into()])
-            {
-                tracing::error!(target: "script", "__platypus_focus: {e}");
-            }
-            // What the hooks asked for (a pause menu, paused sounds) applies now.
-            self.apply_script_output();
         }
     }
 
@@ -1352,21 +1020,14 @@ impl App {
         }
         let (elapsed, ticks) = self.clock.advance(now, TICK, MAX_TICKS_PER_FRAME);
         for _ in 0..ticks {
-            // Script time leaves out applying what scripts asked for (`native_after`,
-            // `apply_script_output`): that is engine work for both backends.
+            // Script time leaves out applying what scripts asked for (`native_after`): that is
+            // engine work.
             if let Some(n) = self.native.as_mut() {
                 let t = Instant::now();
                 n.fixed_tick(&mut self.scene.scene, &mut self.ui, TICK);
                 self.script_time += t.elapsed();
                 self.native_after();
             }
-            let t = Instant::now();
-            let scene = &self.scene;
-            self.components
-                .fixed_update(&mut self.scripts, TICK, &|o| scene.active(o));
-            self.script_time += t.elapsed();
-            // What the components asked for applies before physics steps.
-            self.apply_script_output();
             self.step_physics();
             if !self.cloth.is_empty() {
                 let gravity = platypus_core::glam::Vec3::from(self.physics.gravity());
@@ -1375,19 +1036,12 @@ impl App {
                 self.cloth
                     .step(TICK as f32, gravity, &self.scene, &mut self.world_view);
             }
-            self.send_scene_moves();
+            // The engine's moves are read from the scene by compiled code itself.
+            let _ = self.scene.take_batch();
         }
 
-        // Script time: timers and their microtasks, once per frame.
-        let t = Instant::now();
+        // Per-frame component updates (`onUpdate`, `onLateUpdate`), timers and their microtasks.
         let now_ms = now.duration_since(self.started).as_secs_f64() * 1000.0;
-        for e in self.scripts.tick(now_ms) {
-            tracing::error!(target: "script", "uncaught: {e}");
-        }
-        self.script_time += t.elapsed();
-
-        // Per-frame component updates (`onUpdate`, `onLateUpdate`).
-        self.apply_script_output();
         if let Some(n) = self.native.as_mut() {
             let t = Instant::now();
             n.frame(
@@ -1399,36 +1053,12 @@ impl App {
             self.script_time += t.elapsed();
             self.native_after();
         }
-        let t = Instant::now();
-        let scene = &self.scene;
-        self.components
-            .update_active(&mut self.scripts, elapsed.min(MAX_FRAME_DT), &|o| {
-                scene.active(o)
-            });
-        self.script_time += t.elapsed();
-        self.apply_script_output();
-        let dt = self.components.frame_dt() as f32;
+        let dt = elapsed.min(MAX_FRAME_DT) as f32;
         // Auto exposure adapts by the frame's time.
         self.world_view.grading.delta_time = dt;
         self.world_view.advance_clouds(dt);
         let changed = self.world_view.update_particles(dt, &self.scene);
-        if self.native.is_some() {
-            native_render::report_particles(&changed, &mut self.scene.scene);
-        }
-        // `__platypus_particles([id, count, alive, ...])` for systems that changed.
-        if !changed.is_empty()
-            && let Err(e) = self.scripts.call_global(
-                "__platypus_particles",
-                &[platypus_core::Value::Array(
-                    changed
-                        .into_iter()
-                        .map(platypus_core::Value::Number)
-                        .collect(),
-                )],
-            )
-        {
-            tracing::debug!("__platypus_particles: {e}");
-        }
+        native_render::report_particles(&changed, &mut self.scene.scene);
         self.update_audio(elapsed);
 
         // The trees may have moved under a still pointer, or the focused element gone.
@@ -1439,59 +1069,9 @@ impl App {
         }
     }
 
-    /// Objects the engine moved this tick, to scripts (`__platypus_scene`).
-    fn send_scene_moves(&mut self) {
-        let moved = self.scene.take_batch();
-        if moved.is_empty() || !self.scene_events {
-            return;
-        }
-        if let Err(e) = self
-            .scripts
-            .call_global("__platypus_scene", &[platypus_core::Value::Array(moved)])
-        {
-            tracing::error!(target: "script", "scene moves: {e}");
-        }
-    }
-
-    /// Runs one `scene.*` op and what it asks of components.
-    fn scene_op(&mut self, name: &str, args: &[platypus_core::Value]) {
-        use platypus_scene::SceneEvent;
-        match self.scene.apply(name, args) {
-            Ok(None) => {}
-            Ok(Some(SceneEvent::ComponentAdded {
-                object,
-                component,
-                class,
-            })) => {
-                self.components
-                    .adopt(platypus_core::ComponentId(component), &class, Some(object))
-            }
-            Ok(Some(SceneEvent::ComponentRemoved(id))) => self
-                .components
-                .remove(&mut self.scripts, platypus_core::ComponentId(id)),
-            Ok(Some(SceneEvent::Destroyed(objects))) => {
-                self.components
-                    .remove_on_objects(&mut self.scripts, &objects);
-                self.world_view.forget_objects(&objects);
-                self.panels.forget_objects(&objects);
-            }
-            Err(e) => tracing::warn!("scene.{name}: {e}"),
-        }
-    }
-
-    /// One physics tick, then its results to scripts (`__platypus_physics`).
+    /// One physics tick of the bodies attached to GameObjects.
     fn step_physics(&mut self) {
-        let batch = self.attachments.step(&mut self.physics, &mut self.scene);
-        if !self.physics_events || batch.is_empty() {
-            return;
-        }
-        if let Err(e) = self
-            .scripts
-            .call_global("__platypus_physics", &batch.to_args())
-        {
-            tracing::error!(target: "script", "physics events: {e}");
-        }
-        // Collision handlers may have queued more ops; they apply next tick.
+        let _ = self.attachments.step(&mut self.physics, &mut self.scene);
     }
 
     /// The screen and every world panel.
@@ -1589,18 +1169,8 @@ impl App {
         };
         mixer.advance(elapsed);
         let ended = mixer.poll();
-        if self.native.is_some() {
-            if !ended.is_empty() {
-                self.native_audio_ended(&ended);
-            }
-            return;
-        }
-        if ended.is_empty() || !self.audio_events {
-            return;
-        }
-        let ended = platypus_core::Value::Array(ended.into_iter().map(Into::into).collect());
-        if let Err(e) = self.scripts.call_global("__platypus_audio", &[ended]) {
-            tracing::error!(target: "script", "audio events: {e}");
+        if !ended.is_empty() {
+            self.native_audio_ended(&ended);
         }
     }
 
@@ -1633,323 +1203,6 @@ impl App {
         }
     }
 
-    /// Applies React commits, then the ops scripts queued, in order.
-    fn apply_script_output(&mut self) {
-        let t = Instant::now();
-        self.apply_script_output_now();
-        self.ops_time += t.elapsed();
-    }
-
-    fn apply_script_output_now(&mut self) {
-        for (target, commit) in self.scripts.drain_targeted_commits() {
-            if target >= platypus_core::WINDOW_TARGET {
-                // A secondary window's tree; commits that come before the window opens wait.
-                let key = target - platypus_core::WINDOW_TARGET;
-                match self.windows.map.get_mut(&platypus_platform::WindowKey(key)) {
-                    Some(w) => {
-                        for e in w.tree.apply_commit(&commit) {
-                            tracing::warn!(target: "ui", "{e}");
-                        }
-                    }
-                    None => self
-                        .windows
-                        .pending_commits
-                        .entry(key)
-                        .or_default()
-                        .push(commit),
-                }
-                continue;
-            }
-            let tree = if target == 0 {
-                &mut self.ui
-            } else {
-                let (root, fonts, sheets) =
-                    (&self.asset_root, &self.font_sources, &self.sheet_sources);
-                &mut self
-                    .panels
-                    .get_or_create(target, || new_panel_tree(root, fonts, sheets))
-                    .tree
-            };
-            for e in tree.apply_commit(&commit) {
-                tracing::warn!(target: "ui", "{e}");
-            }
-        }
-        // Textures and models loaded by these ops, for `__platypus_textures` /
-        // `__platypus_models` after them.
-        let mut loaded: Vec<(u32, u32, u32)> = Vec::new();
-        let mut models: Vec<(u32, Option<serde_json::Value>)> = Vec::new();
-        // Text files read for scripts (`asset.readText id path`), for `__platypus_asset_text`.
-        let mut texts: Vec<platypus_core::Value> = Vec::new();
-        for op in self.scripts.drain_ops() {
-            match op.name.as_str() {
-                "loadFont" => self.load_font_op(&op.args),
-                "uiScale" => match ui_scale::UiScale::from_op(&op.args) {
-                    Some(s) => self.ui_scale = s,
-                    None => tracing::warn!("uiScale: invalid arguments {:?}", op.args),
-                },
-                "addStyleSheet" | "removeStyleSheet" => self.stylesheet_op(&op.name, &op.args),
-                "focus" | "blur" | "setPointerCapture" | "releasePointerCapture" => {
-                    let Some(id) = op.args.first().and_then(platypus_core::Value::as_f64) else {
-                        tracing::warn!("{} needs an element id", op.name);
-                        continue;
-                    };
-                    let id = platypus_core::NodeId(id as u32);
-                    let surface = self.surface_of(id);
-                    // Keys go to the window with OS focus; windows route their own.
-                    if op.name == "focus" && !matches!(surface, Surface::Window(_)) {
-                        self.keys_on = surface;
-                    }
-                    self.handle_on(
-                        surface,
-                        match op.name.as_str() {
-                            "focus" => Input::Focus(id),
-                            "blur" => Input::Blur(id),
-                            "setPointerCapture" => Input::SetPointerCapture(id),
-                            _ => Input::ReleasePointerCapture(id),
-                        },
-                    );
-                }
-                "scrollTo" | "scrollBy" | "scrollIntoView" => {
-                    let num = |i: usize| op.args.get(i).and_then(platypus_core::Value::as_f64);
-                    let Some(id) = num(0).map(|n| platypus_core::NodeId(n as u32)) else {
-                        tracing::warn!("{} needs an element id", op.name);
-                        continue;
-                    };
-                    // `scrollTo` keeps an axis it isn't given (NaN); the others default to 0.
-                    let missing = if op.name == "scrollTo" { f64::NAN } else { 0.0 };
-                    let (a, b) = (
-                        num(1).unwrap_or(missing) as f32,
-                        num(2).unwrap_or(missing) as f32,
-                    );
-                    // The last argument: `"auto"`, `"instant"` or `"smooth"`.
-                    let behavior = op
-                        .args
-                        .get(3)
-                        .and_then(platypus_core::Value::as_str)
-                        .and_then(ScrollBehavior::parse)
-                        .unwrap_or_default();
-                    let surface = self.surface_of(id);
-                    self.handle_on(
-                        surface,
-                        match op.name.as_str() {
-                            "scrollTo" => Input::ScrollTo {
-                                id,
-                                x: a,
-                                y: b,
-                                behavior,
-                            },
-                            "scrollBy" => Input::ScrollBy {
-                                id,
-                                dx: a,
-                                dy: b,
-                                behavior,
-                            },
-                            // `scrollIntoView id block inline behavior`; the DOM's defaults otherwise.
-                            _ => {
-                                let align = |i: usize, default| {
-                                    op.args
-                                        .get(i)
-                                        .and_then(platypus_core::Value::as_str)
-                                        .and_then(ScrollAlign::parse)
-                                        .unwrap_or(default)
-                                };
-                                Input::ScrollIntoView {
-                                    id,
-                                    block: align(1, ScrollAlign::Start),
-                                    inline: align(2, ScrollAlign::Nearest),
-                                    behavior,
-                                }
-                            }
-                        },
-                    );
-                }
-                "render.model" => {
-                    let id = op
-                        .args
-                        .first()
-                        .and_then(platypus_core::Value::as_f64)
-                        .unwrap_or(0.0) as u32;
-                    match self.world_view.model_op(&self.asset_root, &op.args) {
-                        Ok(description) => models.push((id, Some(description))),
-                        Err(e) => {
-                            tracing::warn!("render.model: {e}");
-                            models.push((id, None));
-                        }
-                    }
-                }
-                "render.texture" | "render.textureRemove" => {
-                    let name = &op.name["render.".len()..];
-                    match self.world_view.texture_op(name, &self.asset_root, &op.args) {
-                        Ok(Some((id, w, h))) => loaded.push((id, w, h)),
-                        Ok(None) => {}
-                        Err(e) => {
-                            tracing::warn!("render.texture: {e}");
-                            // Scripts hear about failures too (a 0 × 0 size).
-                            if let Some(id) = op.args.first().and_then(platypus_core::Value::as_f64)
-                            {
-                                loaded.push((id as u32, 0, 0));
-                                // Sprites of it show the missing checker.
-                                self.world_view.mark_missing(id as u32);
-                            }
-                        }
-                    }
-                }
-                "render.panel" => {
-                    let (root, fonts, sheets) =
-                        (&self.asset_root, &self.font_sources, &self.sheet_sources);
-                    if let Err(e) = self
-                        .panels
-                        .apply(&op.args, || new_panel_tree(root, fonts, sheets))
-                    {
-                        tracing::warn!("render.panel: {e}");
-                    }
-                }
-                "render.text" => {
-                    let (root, fonts, sheets) =
-                        (&self.asset_root, &self.font_sources, &self.sheet_sources);
-                    if let Err(e) = self
-                        .panels
-                        .apply_text(&op.args, || new_panel_tree(root, fonts, sheets))
-                    {
-                        tracing::warn!("render.text: {e}");
-                    }
-                }
-                name if name.starts_with("render.") => {
-                    if name == "render.remove"
-                        && let Some(id) = op.args.first().and_then(platypus_core::Value::as_f64)
-                    {
-                        self.panels.remove(id as u32);
-                    }
-                    if let Err(e) = self.world_view.apply(&name["render.".len()..], &op.args) {
-                        tracing::warn!("{name}: {e}");
-                    }
-                }
-                "asset.readText" => {
-                    let id = op
-                        .args
-                        .first()
-                        .cloned()
-                        .unwrap_or(platypus_core::Value::Null);
-                    let path = op
-                        .args
-                        .get(1)
-                        .and_then(platypus_core::Value::as_str)
-                        .unwrap_or("");
-                    let text = platypus_core::read_asset_string(&self.asset_root, path)
-                        .map_err(|e| e.to_string());
-                    texts.push(id);
-                    texts.push(match text {
-                        Ok(text) => platypus_core::Value::String(text),
-                        Err(e) => {
-                            tracing::warn!("asset.readText `{path}`: {e}");
-                            platypus_core::Value::Null
-                        }
-                    });
-                }
-                "app.quit" => {
-                    let code = op
-                        .args
-                        .first()
-                        .and_then(platypus_core::Value::as_f64)
-                        .unwrap_or(0.0);
-                    EXIT_CODE.store(code as i32, std::sync::atomic::Ordering::Relaxed);
-                    self.done = true;
-                }
-                "app.targetFrameRate" => {
-                    let rate = op.args.first().and_then(platypus_core::Value::as_f64);
-                    self.target_frame_rate = rate.map_or(-1, |r| r.round() as i32);
-                    self.info
-                        .set_app("targetFrameRate", self.target_frame_rate.into());
-                }
-                "app.runInBackground" => {
-                    let on = op.args.first() == Some(&platypus_core::Value::Bool(true));
-                    self.lifecycle.run_in_background = on;
-                    self.info.set_app("runInBackground", on.into());
-                    self.sync_lifecycle();
-                }
-                name if name.starts_with("prefs.") => {
-                    self.prefs_op(&name["prefs.".len()..], &op.args)
-                }
-                "screen.set" => self.screen_op(&op.args),
-                "dragImage" => self.drag_image_op(&op.args),
-                name if name.starts_with("editor.") => {
-                    self.editor
-                        .op(&name["editor.".len()..], &op.args, &self.asset_root)
-                }
-                name if name.starts_with("cursor.") => {
-                    self.cursor_op(&name["cursor.".len()..], &op.args)
-                }
-                name if name.starts_with("scene.") => {
-                    self.scene_op(&name["scene.".len()..], &op.args)
-                }
-                name if name.starts_with("audio.") => {
-                    self.audio_op(&name["audio.".len()..], &op.args)
-                }
-                name if name.starts_with("cloth.") => {
-                    let name = &name["cloth.".len()..];
-                    if let Err(e) =
-                        self.cloth
-                            .apply(name, &op.args, &self.scene, &mut self.world_view)
-                    {
-                        tracing::warn!("cloth.{name}: {e}");
-                    }
-                }
-                name if name.starts_with("physics.") => {
-                    let name = &name["physics.".len()..];
-                    // Mesh colliders made from render meshes get the mesh's data here.
-                    let mut args = std::borrow::Cow::Borrowed(&op.args);
-                    if name == "collider"
-                        && op.args.get(2).and_then(platypus_core::Value::as_str)
-                            == Some("renderMesh")
-                        && let Err(e) = self.world_view.resolve_mesh_collider(args.to_mut())
-                    {
-                        tracing::warn!("physics.collider: {e}");
-                        continue;
-                    }
-                    // `attach` ties a body to its GameObject (Rigidbody, colliders).
-                    if !self.attachments.op(name, &args)
-                        && let Err(e) = self.physics.apply(name, &args)
-                    {
-                        tracing::warn!("physics.{name}: {e}");
-                    }
-                }
-                other => tracing::warn!("unknown script op `{other}`"),
-            }
-        }
-        // `__platypus_asset_text([id, text | null, ...])`: files scripts asked for.
-        if !texts.is_empty()
-            && let Err(e) = self.scripts.call_global(
-                "__platypus_asset_text",
-                &[platypus_core::Value::Array(texts)],
-            )
-        {
-            tracing::error!("script error in __platypus_asset_text: {e}");
-        }
-        // `__platypus_models([id, json | null, ...])`: what each model holds, for
-        // `Model.instantiate` (null: it failed).
-        if !models.is_empty() {
-            let list = models
-                .into_iter()
-                .flat_map(|(id, d)| {
-                    [
-                        platypus_core::Value::from(id),
-                        d.map_or(platypus_core::Value::Null, |d| {
-                            platypus_core::Value::String(d.to_string())
-                        }),
-                    ]
-                })
-                .collect();
-            if let Err(e) = self
-                .scripts
-                .call_global("__platypus_models", &[platypus_core::Value::Array(list)])
-            {
-                tracing::error!("script error in __platypus_models: {e}");
-            }
-        }
-        self.report_textures(loaded);
-        self.pump_windows();
-    }
-
     /// Asset files changed on disk: textures, models and sounds from them load again
     /// under their ids, then scripts hear which files (`__platypus_assets_changed`).
     fn reload_assets(&mut self, keys: &[String]) {
@@ -1962,13 +1215,9 @@ impl App {
         if keys.iter().any(|k| k.ends_with(".meta")) {
             self.info
                 .set("assets", asset_db::scan_vfs(&self.vfs, &self.asset_root));
-            if let Err(e) = self.scripts.eval(&self.info.script()) {
-                tracing::error!("asset database: {e}");
-            }
         }
         let mut sizes = Vec::new();
-        if self.native.is_some()
-            && keys.iter().any(|k| k.ends_with(".meta"))
+        if keys.iter().any(|k| k.ends_with(".meta"))
             && let Some(list) = self.info.0.get("assets").and_then(|a| a.as_array())
         {
             platypus_engine_api::assets::set_assets(
@@ -1998,52 +1247,6 @@ impl App {
             }
         }
         self.native_assets_changed(keys, &sizes);
-        self.report_textures(sizes);
-        if self
-            .scripts
-            .eval("typeof __platypus_assets_changed === 'function'")
-            .is_ok_and(|v| v == platypus_core::Value::Bool(true))
-        {
-            let list = keys
-                .iter()
-                .map(|k| platypus_core::Value::String(k.clone()))
-                .collect();
-            if let Err(e) = self.scripts.call_global(
-                "__platypus_assets_changed",
-                &[platypus_core::Value::Array(list)],
-            ) {
-                tracing::error!(target: "script", "__platypus_assets_changed: {e}");
-            }
-            self.apply_script_output();
-        }
-    }
-
-    /// Tells scripts textures' sizes: `__platypus_textures([[id, width, height], ...])` (0 × 0
-    /// failed). Ops it queues run with the next batch.
-    fn report_textures(&mut self, loaded: Vec<(u32, u32, u32)>) {
-        if !loaded.is_empty()
-            && self
-                .scripts
-                .eval("typeof __platypus_textures === 'function'")
-                .is_ok_and(|v| v == platypus_core::Value::Bool(true))
-        {
-            let list = loaded
-                .into_iter()
-                .map(|(id, w, h)| {
-                    platypus_core::Value::Array(vec![
-                        platypus_core::Value::from(f64::from(id)),
-                        platypus_core::Value::from(f64::from(w)),
-                        platypus_core::Value::from(f64::from(h)),
-                    ])
-                })
-                .collect();
-            if let Err(e) = self
-                .scripts
-                .call_global("__platypus_textures", &[platypus_core::Value::Array(list)])
-            {
-                tracing::error!("script error in __platypus_textures: {e}");
-            }
-        }
     }
 
     /// Runs one UI input, sending its events to scripts, then updates the OS cursor.
@@ -2054,17 +1257,13 @@ impl App {
     /// Runs one UI input on the screen's UI or a world panel's, sending its events to
     /// scripts, then updates the IME and the OS cursor.
     fn handle_on(&mut self, surface: Surface, input: Input) {
-        let (scripts, ui_events) = (&mut self.scripts, self.ui_events);
         // A compiled game runs its handlers inside the interaction layer's dispatch, so
         // `preventDefault()` reaches the default actions.
         let (native, scene) = (&mut self.native, &mut self.scene.scene);
         let clipboard = match surface {
             Surface::Screen => {
                 self.interaction.handle(&mut self.ui, input, &mut |event| {
-                    if let Some(n) = native.as_mut() {
-                        return n.ui_event(scene, event);
-                    }
-                    dispatch(scripts, ui_events, event)
+                    native.as_mut().is_some_and(|n| n.ui_event(scene, event))
                 });
                 self.interaction.take_clipboard()
             }
@@ -2073,10 +1272,7 @@ impl App {
                     return;
                 };
                 p.interaction.handle(&mut p.tree, input, &mut |event| {
-                    if native.is_some() {
-                        return native_render::panel_event(scene, id, event);
-                    }
-                    dispatch(scripts, ui_events, event)
+                    native.is_some() && native_render::panel_event(scene, id, event)
                 });
                 p.interaction.take_clipboard()
             }
@@ -2088,10 +1284,7 @@ impl App {
                     platypus_engine_api::window::WindowRef(key),
                 );
                 w.interaction.handle(&mut w.tree, input, &mut |event| {
-                    if native.is_some() {
-                        return native_render::window_event(scene, key, event);
-                    }
-                    dispatch(scripts, ui_events, event)
+                    native.is_some() && native_render::window_event(scene, key, event)
                 });
                 w.interaction.take_clipboard()
             }
@@ -2236,23 +1429,6 @@ impl App {
         }
     }
 
-    /// Runs a `cursor.*` op: `visible bool`, `lock none|locked|confined`, `image
-    /// src|null [hotspot x y]`.
-    /// `prefs.set key value`, `prefs.delete key`, `prefs.deleteAll`, `prefs.save`.
-    fn prefs_op(&mut self, name: &str, args: &[platypus_core::Value]) {
-        let key = args.first().and_then(platypus_core::Value::as_str);
-        match (name, key) {
-            ("set", Some(key)) => {
-                let value = args.get(1).map_or(serde_json::Value::Null, prefs::json_of);
-                self.prefs.set(key, value);
-            }
-            ("delete", Some(key)) => self.prefs.delete(key),
-            ("deleteAll", _) => self.prefs.delete_all(),
-            ("save", _) => self.prefs.save(),
-            _ => tracing::warn!("prefs.{name}: bad arguments {args:?}"),
-        }
-    }
-
     /// `screen.set mode width height refreshRate`: changes the window's mode and size,
     /// remembers it for next time and tells scripts what took effect. A size of 0 is the
     /// mode's default: the monitor's resolution (exclusive) or the last window size.
@@ -2284,9 +1460,6 @@ impl App {
         };
         self.info
             .set("display", display::state(window.as_deref(), &self.display));
-        if let Err(e) = self.scripts.eval(&self.info.script()) {
-            tracing::error!("display info: {e}");
-        }
     }
 
     fn cursor_op(&mut self, name: &str, args: &[platypus_core::Value]) {
@@ -2466,13 +1639,6 @@ impl App {
         if let Some(n) = self.native.as_mut() {
             n.game_input(&mut self.scene.scene, &mut self.ui, args);
             self.native_after();
-            return;
-        }
-        if !self.game_input {
-            return;
-        }
-        if let Err(e) = self.scripts.call_global("__platypus_input", args) {
-            tracing::error!(target: "script", "input: {e}");
         }
     }
 
@@ -2487,10 +1653,10 @@ impl App {
         self.clipboard.as_mut()
     }
 
-    /// Physical pixels per UI pixel: the window's DPI scale times the UI scale.
+    /// Physical pixels per UI pixel: the window's DPI scale.
     fn scale(&self) -> f32 {
         self.main_metrics()
-            .map_or(1.0, |(dpi, size)| ui_factor_for(dpi, size, self.ui_scale))
+            .map_or(1.0, |(dpi, _)| ui_factor_for(dpi))
     }
 
     fn now_ms(&self) -> f64 {
@@ -2612,9 +1778,6 @@ impl App {
         }));
         self.info
             .set("display", display::state(window.as_deref(), &self.display));
-        if let Err(e) = self.scripts.eval(&self.info.script()) {
-            tracing::error!("system info: {e}");
-        }
         let mut renderer = UiRenderer::new(&gpu);
         renderer.set_asset_root(&self.asset_root);
         let world = lazy_world::LazyWorld::new(&gpu, self.physical_units);
@@ -2672,7 +1835,7 @@ impl App {
         );
         let views = self.world_view.views(&self.scene, (w, h), &quads);
         let textures: Vec<&wgpu::TextureView> = textures.iter().collect();
-        let scale = ui_factor(gfx, self.ui_scale);
+        let scale = ui_factor(gfx);
         draw_frame(
             &gfx.gpu,
             &mut gfx.renderer,
@@ -3067,27 +2230,19 @@ impl PlatformApp for App {
         self.pump_domains(now_ms);
         platypus_engine_api::window::end_frame();
         self.close_unclaimed_windows();
-        // New log lines and file results for the editor.
-        self.editor.pump(&mut self.scripts);
         self.pump_file_drag();
         // Last-moment changes before drawing (`onPreRender`).
-        if !self.lifecycle.paused() {
-            if let Some(n) = self.native.as_mut() {
-                let t = Instant::now();
-                n.pre_render(&mut self.scene.scene, &mut self.ui);
-                self.script_time += t.elapsed();
-                self.native_after();
-                self.native_audio_commands();
-                let t = Instant::now();
-                self.sync_native_render();
-                self.sync_time += t.elapsed();
-            }
+        if !self.lifecycle.paused()
+            && let Some(n) = self.native.as_mut()
+        {
             let t = Instant::now();
-            let scene = &self.scene;
-            self.components
-                .pre_render(&mut self.scripts, &|o| scene.active(o));
+            n.pre_render(&mut self.scene.scene, &mut self.ui);
             self.script_time += t.elapsed();
-            self.apply_script_output();
+            self.native_after();
+            self.native_audio_commands();
+            let t = Instant::now();
+            self.sync_native_render();
+            self.sync_time += t.elapsed();
         }
         // Caret blinking.
         self.ui.set_time(self.now_ms());
@@ -3109,23 +2264,11 @@ impl PlatformApp for App {
         let Some(gfx) = &mut self.gfx else {
             return;
         };
-        let scale = ui_factor(gfx, self.ui_scale);
+        let scale = ui_factor(gfx);
         // Scripts' `RenderStats`: what the last frame drew and culled, when it changes.
         let stats = gfx.world.built().map(|w| w.stats()).unwrap_or_default();
         if self.render_stats != stats {
             self.render_stats = stats;
-            let args = [
-                stats.meshes,
-                stats.culled_meshes,
-                stats.quads,
-                stats.culled_quads,
-                stats.fog_culled,
-                stats.lights,
-                stats.culled_lights,
-                stats.shadow_maps,
-            ]
-            .map(|v| platypus_core::Value::Number(v as f64));
-            let _ = self.scripts.call_global("__platypus_render_stats", &args);
             // A compiled game reads `RenderStats` from the registry.
             platypus_render_api::set_render_stats(platypus_render_api::Stats {
                 meshes: stats.meshes as f64,
@@ -3152,17 +2295,6 @@ impl PlatformApp for App {
             });
             if moved {
                 self.exposure_sent.insert(id, now);
-                let scene = if now.1.is_nan() {
-                    platypus_core::Value::Null
-                } else {
-                    platypus_core::Value::Number(now.1.into())
-                };
-                let args = [
-                    platypus_core::Value::Number(id.into()),
-                    platypus_core::Value::Number(now.0.into()),
-                    scene,
-                ];
-                let _ = self.scripts.call_global("__platypus_exposure", &args);
                 // A compiled game's cameras (the id is the camera component's).
                 platypus_engine_api::camera::set_exposure(
                     platypus_engine_api::camera::CameraRef(id),
@@ -3313,31 +2445,14 @@ impl Drop for App {
     }
 }
 
-/// Sends one UI event to scripts; returns whether its default action was prevented.
-fn dispatch(scripts: &mut QuickJsRuntime, enabled: bool, event: &UiEvent) -> bool {
-    if !enabled {
-        return false;
-    }
-    match scripts.call_global("__platypus_ui_event", &event.script_args()) {
-        Ok(prevented) => prevented == platypus_core::Value::Bool(true),
-        Err(e) => {
-            tracing::error!(target: "script", "{} handler: {e}", event.kind.name());
-            false
-        }
-    }
+/// Physical pixels per UI pixel for `window`: its DPI scale.
+fn ui_factor(gfx: &Gfx) -> f32 {
+    ui_factor_for(gfx.dpi())
 }
 
-/// Physical pixels per UI pixel for `window`: its DPI scale times `ui_scale`'s factor
-/// for its logical size.
-fn ui_factor(gfx: &Gfx, ui_scale: ui_scale::UiScale) -> f32 {
-    ui_factor_for(gfx.dpi(), gfx.inner_size(), ui_scale)
-}
-
-/// Physical pixels per UI pixel for a window with this DPI scale and physical size.
-fn ui_factor_for(dpi: f64, (width, height): (u32, u32), ui_scale: ui_scale::UiScale) -> f32 {
-    let dpi = dpi as f32;
-    let (w, h) = (width as f32 / dpi, height as f32 / dpi);
-    dpi * ui_scale.factor(w, h)
+/// Physical pixels per UI pixel for a window with this DPI scale.
+fn ui_factor_for(dpi: f64) -> f32 {
+    dpi as f32
 }
 
 /// The DOM's button number: 0 primary, 1 middle, 2 secondary, 3 back, 4 forward.
@@ -3472,50 +2587,6 @@ fn new_panel_tree(
     (tree, ids)
 }
 
-/// The starting components: one GameObject per registered class (not `spawn: false`),
-/// named after it, holding that component.
-fn spawn_starting_components(
-    rt: &mut QuickJsRuntime,
-    host: &mut ComponentHost,
-    scene: &mut platypus_scene::ScriptScene,
-    classes: &[String],
-) -> Result<(), platypus_script::ScriptError> {
-    for class in classes {
-        let object = scene.create_engine_object(class);
-        host.spawn_on(rt, class, Some(object), class)?;
-    }
-    Ok(())
-}
-
-/// Loads the stylesheet Bun writes next to the bundle (game.js -> game.css), if any.
-/// A dev build's vendor bundle: `game.js` starts with `// @platypus-dev` and `vendor.js`
-/// sits next to it (`None` for a normal, self-contained build).
-fn dev_vendor(bundle_path: &Path, code: &str) -> Option<String> {
-    if !code.starts_with("// @platypus-dev") {
-        return None;
-    }
-    let path = bundle_path.with_file_name("vendor.js");
-    std::fs::read_to_string(&path)
-        .inspect_err(|e| tracing::error!("dev build without {}: {e}", path.display()))
-        .ok()
-}
-
-/// Loads a game: its one bundle, or a dev build's vendor bundle and then its code.
-fn load_bundles(
-    rt: &mut QuickJsRuntime,
-    vendor: Option<&str>,
-    name: &str,
-    code: &str,
-) -> Result<(), platypus_script::ScriptError> {
-    match vendor {
-        Some(vendor) => {
-            rt.load_bundle("vendor.js", vendor)?;
-            platypus_script::load_game(rt, name, code)
-        }
-        None => rt.load_bundle(name, code),
-    }
-}
-
 /// `root` is where its `url()`s and `@import`s resolve; the CSS file itself is in `code_root`.
 fn load_game_css(ui: &mut UiTree, root: &Path, code_root: &Path, css_path: &Path) -> Option<u32> {
     let css = std::fs::read_to_string(css_path).ok()?;
@@ -3570,18 +2641,23 @@ mod tests {
 
     // M9-APP-01
     #[test]
-    fn force_flag_parses_and_defaults_off() {
-        assert!(!parse(&[]).unwrap().force);
-        assert!(parse(&["g", "--force"]).unwrap().force);
+    fn force_is_no_longer_an_option() {
+        assert!(parse(&["g", "--force"]).is_err());
     }
 
     // M9-APP-02
     #[test]
-    fn only_native_or_forced_or_editor_runs() {
-        assert_eq!(quickjs_gate(true, false, false), QuickJsGate::Native);
-        assert_eq!(quickjs_gate(false, false, false), QuickJsGate::Refused);
-        assert_eq!(quickjs_gate(false, true, false), QuickJsGate::Forced);
-        assert_eq!(quickjs_gate(false, false, true), QuickJsGate::Forced);
+    fn a_quickjs_bundle_is_refused_with_a_pointer_to_build() {
+        let dir = std::env::temp_dir().join(format!("platypus-qjs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("build")).unwrap();
+        std::fs::write(dir.join("build/game.js"), "").unwrap();
+        for path in [dir.clone(), dir.join("build/game.js")] {
+            let err = resolve_bundle(&path).unwrap_err().to_string();
+            assert!(err.contains("QuickJS"), "{err}");
+            assert!(err.contains("platypus-build build"), "{err}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // M9-APP-06

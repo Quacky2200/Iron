@@ -254,8 +254,7 @@ raw_handle!(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[platypus_api(
-    namespace = "PhysicsContacts", quickjs,
-    handles(
+    namespace = "PhysicsContacts", handles(
         GameObject = ObjectId,
         Rigidbody = RigidbodyRef,
         Rigidbody2D = Rigidbody2DRef,

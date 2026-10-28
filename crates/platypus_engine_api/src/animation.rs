@@ -60,7 +60,7 @@ fn new_curve(c: Curve) -> CurveRef {
     CurveRef(u64::from(with_world(|w| w.add_curve(c)).0))
 }
 
-#[platypus_api(namespace = "Keyframe", quickjs, values(
+#[platypus_api(namespace = "Keyframe", values(
     Keyframe = Keyframe [time: f64, value: f64, inTangent: f64, outTangent: f64]))]
 pub mod keyframe_api {
     use super::{Keyframe, zero_if_nan};
@@ -78,7 +78,7 @@ pub mod keyframe_api {
     }
 }
 
-#[platypus_api(namespace = "AnimationCurve", quickjs, handles(AnimationCurve = CurveRef), values(
+#[platypus_api(namespace = "AnimationCurve", handles(AnimationCurve = CurveRef), values(
     Keyframe = Keyframe [time: f64, value: f64, inTangent: f64, outTangent: f64],
     Vector2 = V2 [x: f64, y: f64]))]
 pub mod animation_curve_api {
@@ -214,7 +214,7 @@ pub mod animation_curve_api {
     }
 }
 
-#[platypus_api(namespace = "AnimationClip", quickjs, handles(
+#[platypus_api(namespace = "AnimationClip", handles(
     AnimationClip = ClipRef, AnimationCurve = CurveRef, GameObject = ObjectId))]
 pub mod animation_clip_api {
     use super::{
@@ -534,7 +534,7 @@ pub fn reset() {
     EVENTS.with(|e| e.borrow_mut().clear());
 }
 
-#[platypus_api(namespace = "Animation", quickjs, handles(
+#[platypus_api(namespace = "Animation", handles(
     Animation = AnimationRef, AnimationState = StateRef, AnimationClip = ClipRef, GameObject = ObjectId),
     enums(
         /// What an `Animation` does while none of its object's renderers was drawn (last frame):
@@ -687,7 +687,7 @@ pub mod animation_component_api {
     }
 }
 
-#[platypus_api(namespace = "AnimationState", quickjs, handles(AnimationState = StateRef, AnimationClip = ClipRef))]
+#[platypus_api(namespace = "AnimationState", handles(AnimationState = StateRef, AnimationClip = ClipRef))]
 pub mod animation_state_api {
     use super::{ClipRef, StateRef, state};
     use platypus_animation::WrapMode;
@@ -772,7 +772,7 @@ pub mod animation_state_api {
     }
 }
 
-#[platypus_api(namespace = "Animations", quickjs)]
+#[platypus_api(namespace = "Animations")]
 pub mod animations_api {
     use super::{EVENTS, update};
 

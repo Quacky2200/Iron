@@ -102,8 +102,7 @@ pub(crate) fn count_rigidbodies_2d() -> u32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[platypus_api(
-    namespace = "Physics2D", quickjs,
-    handles(
+    namespace = "Physics2D", handles(
         GameObject = ObjectId,
         Rigidbody2D = Rigidbody2DRef,
         BoxCollider2D = BoxCollider2DRef,

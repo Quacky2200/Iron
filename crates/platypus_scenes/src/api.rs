@@ -54,7 +54,6 @@ pub enum LoadMode {
 
 #[platypus_api(
     namespace = "SceneManager",
-    quickjs,
     handles(Scene = SceneRef, Prefab = PrefabRef, GameObject = ObjectId),
     enums(
         /// `single` unloads every other scene first and makes the new one active; `additive`

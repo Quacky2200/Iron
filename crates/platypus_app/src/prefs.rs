@@ -118,19 +118,6 @@ impl Prefs {
     }
 }
 
-/// A script value as JSON (prefs hold numbers, strings and the odd list).
-pub fn json_of(v: &platypus_core::Value) -> Value {
-    match v {
-        platypus_core::Value::Null => Value::Null,
-        platypus_core::Value::Bool(b) => Value::Bool(*b),
-        platypus_core::Value::Number(n) => {
-            serde_json::Number::from_f64(*n).map_or(Value::Null, Value::Number)
-        }
-        platypus_core::Value::String(s) => Value::String(s.clone()),
-        platypus_core::Value::Array(items) => Value::Array(items.iter().map(json_of).collect()),
-    }
-}
-
 /// A file-name-safe piece of a path (no separators, dots at the ends or control
 /// characters; "Platypus" if nothing's left).
 fn safe(name: &str) -> String {

@@ -475,14 +475,11 @@ pub enum Primitive {
 }
 
 #[platypus_api(
-    namespace = "Primitives", quickjs,
-    handles(GameObject = ObjectId),
+    namespace = "Primitives", handles(GameObject = ObjectId),
     enums(extern PrimitiveType = Primitive [Cube, Sphere, Capsule, Cylinder, Plane, Quad])
 )]
 pub mod primitives_api {
-    use super::primitive_type_api::{
-        primitive_type_from_index, primitive_type_name, primitive_type_parse,
-    };
+    use super::primitive_type_api::{primitive_type_from_index, primitive_type_name};
     use super::*;
 
     /// A GameObject with a built-in mesh (`cube`, `sphere`, `capsule`, `cylinder`, `plane`,
@@ -497,8 +494,7 @@ pub mod primitives_api {
 /// The names of the built-in meshes: `PrimitiveType.Cube` is `"cube"`, and `PrimitiveType.name(i)`
 /// / `.parse(s)` convert the index.
 #[platypus_api(
-    namespace = "PrimitiveType", quickjs,
-    enums(
+    namespace = "PrimitiveType", enums(
         /// A built-in mesh (Unity's `PrimitiveType`).
         PrimitiveType = Primitive [Cube, Sphere, Capsule, Cylinder, Plane, Quad]
     ),

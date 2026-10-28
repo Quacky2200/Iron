@@ -40,14 +40,6 @@ impl Skins {
         self.version += 1;
     }
 
-    pub(crate) fn retain(&mut self, keep: impl FnMut(&u32, &mut Skin) -> bool) {
-        let before = self.map.len();
-        self.map.retain(keep);
-        if self.map.len() != before {
-            self.version += 1;
-        }
-    }
-
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&u32, &Skin)> {
         self.map.iter()
     }

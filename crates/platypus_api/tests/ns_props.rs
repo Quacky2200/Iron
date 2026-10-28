@@ -10,7 +10,7 @@ thread_local! {
     static LEVEL: Cell<u32> = const { Cell::new(1) };
 }
 
-#[platypus_api(namespace = "Cfg", quickjs)]
+#[platypus_api(namespace = "Cfg")]
 pub mod cfg {
     use super::LEVEL;
 
@@ -69,22 +69,4 @@ fn the_shims_of_namespace_properties_take_no_receiver() {
     assert_eq!(cfg::platypus_Cfg_level(), 1);
     cfg::platypus_Cfg_setLevel(7);
     assert_eq!(cfg::platypus_Cfg_level(), 7);
-}
-
-// M9-API-29
-#[test]
-fn quickjs_gets_accessors_for_namespace_properties() {
-    cfg::platypus_Cfg_reset();
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        cfg::register_quickjs(&ctx).unwrap();
-        let v: u32 = ctx.eval("Cfg.level = 9; Cfg.level + 1").unwrap();
-        assert_eq!(v, 10);
-        let t: String = ctx.eval("Cfg.title").unwrap();
-        assert_eq!(t, "Platypus");
-        ctx.eval::<(), _>("Cfg.reset()").unwrap();
-        let v: u32 = ctx.eval("Cfg.level").unwrap();
-        assert_eq!(v, 1);
-    });
 }

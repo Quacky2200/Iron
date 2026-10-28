@@ -3,39 +3,17 @@
 
 //! `sine_bench [frames]`: one frame of the sine-circle demo is the curve (361 points a degree,
 //! Catmull-Rom smoothed to 1,083 points) flattened to the list `render.stroke` takes. Compared:
-//! QuickJS computing it, QuickJS computing it and sending it to Rust through `__platypus_op`
-//! (the old way), bun, and the native code `platypus_ts` generated (computing it, then Rust reading
-//! the array in place).
+//! bun, and the native code `platypus_ts` generated (computing it, then Rust reading the array in
+//! place).
 //!
 //! The second part runs the demo's own class (`bench/sine_demo.ts`, copied verbatim from the
 //! commit before `LineRenderer2D`: `SineCircle.points()` building `Vector3` objects with a point
-//! every degree) the same three ways: QuickJS with the engine package's `Vector3`, bun, and the
-//! compiled code. One source, so it also shows what a swap-out costs.
-use platypus_core::Value;
-use platypus_script::{QuickJsRuntime, ScriptRuntime};
+//! every degree) both ways: bun, and the compiled code. One source, so it also shows what a
+//! swap-out costs.
 use platypus_ts_rt::{Array, link_anchor};
 use platypus_ts_tests::sine::*;
 use std::process::Command;
 use std::time::Instant;
-
-fn quickjs(frames: usize, bundle: &str, send: bool) -> (f64, f64) {
-    let mut rt = QuickJsRuntime::new();
-    rt.load_bundle("sine", bundle).expect("bundle");
-    let t = Instant::now();
-    let v = rt
-        .call_global("__sine", &[Value::Number(frames as f64), Value::Bool(send)])
-        .expect("run");
-    // The ops are queued per frame; moving them out is part of the crossing.
-    let ops = rt.drain_ops();
-    let ms = t.elapsed().as_secs_f64() * 1000.0;
-    if send {
-        assert_eq!(ops.len(), frames, "one render.stroke op per frame");
-    }
-    let Value::Number(sum) = v else {
-        panic!("{v:?}")
-    };
-    (ms, sum)
-}
 
 fn bun(frames: usize, dir: &std::path::Path) -> Option<(f64, f64)> {
     let out = Command::new("bun")
@@ -84,21 +62,6 @@ fn native(frames: usize, read_in_place: bool) -> (f64, f64) {
     (t.elapsed().as_secs_f64() * 1000.0, sum)
 }
 
-/// The verbatim demo class under QuickJS (`__sineDemo(n)` of the bundle).
-fn quickjs_demo(frames: usize, bundle: &str) -> (f64, f64) {
-    let mut rt = QuickJsRuntime::new();
-    rt.load_bundle("sine_demo", bundle).expect("bundle");
-    let t = Instant::now();
-    let v = rt
-        .call_global("__sineDemo", &[Value::Number(frames as f64)])
-        .expect("run");
-    let ms = t.elapsed().as_secs_f64() * 1000.0;
-    let Value::Number(sum) = v else {
-        panic!("{v:?}")
-    };
-    (ms, sum)
-}
-
 fn bun_demo(frames: usize, dir: &std::path::Path) -> Option<(f64, f64)> {
     let out = Command::new("bun")
         .arg("--preload")
@@ -131,16 +94,6 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(1000);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let bundle_path = std::env::temp_dir().join("platypus_ts_sine_bundle.js");
-    let st = Command::new("bun")
-        .arg("build")
-        .arg(dir.join("bench/sine_bench.ts"))
-        .args(["--format=iife", "--target=browser", "--outfile"])
-        .arg(&bundle_path)
-        .status()
-        .expect("bun build");
-    assert!(st.success());
-    let bundle = std::fs::read_to_string(&bundle_path).unwrap();
     println!(
         "{frames} frames of the sine circle: 361 points a degree, 1,083 after the spline, 2,166 numbers sent"
     );
@@ -155,33 +108,14 @@ fn main() {
             ms / frames as f64
         );
     };
-    best("quickjs, compute", &mut || {
-        Some(quickjs(frames, &bundle, false))
-    });
-    best("quickjs, compute + op", &mut || {
-        Some(quickjs(frames, &bundle, true))
-    });
     best("bun, compute", &mut || bun(frames, dir));
     best("native, compute", &mut || Some(native(frames, false)));
     best("native, compute + copy", &mut || Some(native(frames, true)));
 
     // The demo's own class, verbatim.
     unsafe { platypus_ts_tests::sd::ts_sd_init() };
-    let demo_path = std::env::temp_dir().join("platypus_ts_sine_demo_bundle.js");
-    let st = Command::new("bun")
-        .arg("build")
-        .arg(dir.join("bench/sine_demo_run.ts"))
-        .args(["--format=iife", "--target=browser", "--outfile"])
-        .arg(&demo_path)
-        .status()
-        .expect("bun build");
-    assert!(st.success());
-    let demo_bundle = std::fs::read_to_string(&demo_path).unwrap();
     println!();
     println!("the demo's own SineCircle class, verbatim (a Vector3 per point, 1,084 a frame):");
-    best("quickjs (engine Vector3)", &mut || {
-        Some(quickjs_demo(frames, &demo_bundle))
-    });
     best("bun", &mut || bun_demo(frames, dir));
     best("native", &mut || Some(native_demo(frames)));
 }

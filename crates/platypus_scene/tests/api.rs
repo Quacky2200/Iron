@@ -169,64 +169,6 @@ fn game_object_and_transform_classes_work_through_their_shims() {
     );
 }
 
-// M9-API-26
-//
-// The same Scene API from QuickJS: typed functions on the current scene, values as plain objects.
-// This is what the compiled path replaces, so both must agree.
-#[test]
-fn the_scene_api_works_from_quickjs() {
-    let mut scene = Scene::new();
-    let _scope = enter(&mut scene);
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"
-                const parent = Scene.create();
-                const child = Scene.create();
-                Scene.setLocalPosition(parent, { x: 10, y: 0, z: 0 });
-                Scene.setParent(child, parent, false);
-                Scene.setLocalPosition(child, { x: 1, y: 2, z: 3 });
-                const p = Scene.position(child);
-                const r = Scene.rotation(child);
-                const before = Scene.count();
-                Scene.destroy(parent);
-                JSON.stringify([p.x, p.y, p.z, r.w, before, Scene.count(), Scene.exists(child)]);
-                "#,
-            )
-            .unwrap();
-        assert_eq!(out, "[11,2,3,1,2,0,false]");
-    });
-}
-
-// M9-API-36
-//
-// Value classes are real JS classes in QuickJS: `new Vector3(..)`, methods and getters from the
-// Rust functions, results that are instances.
-#[test]
-fn value_classes_have_constructors_methods_and_getters_in_quickjs() {
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        platypus_math::register_quickjs(&ctx).unwrap();
-        api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"
-                const a = new Vector3(1, 2, 2);
-                const b = a.add(new Vector3(1, 1, 1)).scale(2);
-                const q = new Quaternion(0, 0, 0, 1);
-                const r = q.rotate(new Vector3(0, 1, 0));
-                JSON.stringify([a.magnitude, b.x, b.y, b.z, b instanceof Vector3, r.y, a.dot(a)]);
-                "#,
-            )
-            .unwrap();
-        assert_eq!(out, "[3,4,6,6,true,1,9]");
-    });
-}
-
 // M9-API-211
 //
 // Unity's tags: objects are "Untagged" until tagged; `find_with_tag` lists the active objects with a

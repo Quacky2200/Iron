@@ -1,10 +1,8 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `bench [steps]`: step() on a busy state for QuickJS (the engine's runtime), bun (a JIT
-//! stand-in) and the native code `platypus_ts` generated. All three print a checksum; they should agree.
-use platypus_core::Value;
-use platypus_script::{QuickJsRuntime, ScriptRuntime};
+//! `bench [steps]`: step() on a busy state for bun (a JIT stand-in) and the native code
+//! `platypus_ts` generated. Both print a checksum; they should agree.
 use platypus_ts_rt::link_anchor;
 use platypus_ts_tests::sim::*;
 use platypus_ts_tests::*;
@@ -24,20 +22,6 @@ fn native(steps: usize) -> (f64, f64, usize) {
         busy_checksum(b.state),
         platypus_ts_rt::ts_rt_allocated(),
     )
-}
-
-fn quickjs(steps: usize, bundle: &str) -> (f64, f64) {
-    let mut rt = QuickJsRuntime::new();
-    rt.load_bundle("bench", bundle).expect("bundle");
-    let t = Instant::now();
-    let v = rt
-        .call_global("__bench", &[Value::Number(steps as f64)])
-        .expect("run");
-    let ms = t.elapsed().as_secs_f64() * 1000.0;
-    let Value::Number(sum) = v else {
-        panic!("checksum: {v:?}")
-    };
-    (ms, sum)
 }
 
 fn bun(steps: usize, dir: &std::path::Path) -> Option<(f64, f64)> {
@@ -78,17 +62,6 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(10_000);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let bundle_path = std::env::temp_dir().join("platypus_ts_bench_bundle.js");
-    let st = Command::new("bun")
-        .args(["build"])
-        .arg(dir.join("bench/bench.ts"))
-        .args(["--format=iife", "--target=browser", "--outfile"])
-        .arg(&bundle_path)
-        .status()
-        .expect("bun build");
-    assert!(st.success());
-    let bundle = std::fs::read_to_string(&bundle_path).unwrap();
-
     println!("step() x {steps}, 1 player (MP5 auto-fire), 10 zombies, 50 parked bullets");
     // Best of three: the first run pays for page faults and (for bun) JIT warm-up.
     let best = |name: &str, f: &mut dyn FnMut() -> Option<(f64, f64)>| {
@@ -111,7 +84,6 @@ fn main() {
             ms * 1000.0 / steps as f64
         );
     };
-    best("quickjs", &mut || Some(quickjs(steps, &bundle)));
     best("bun", &mut || bun(steps, dir));
     best("native", &mut || {
         let (ms, sum, _) = native(steps);

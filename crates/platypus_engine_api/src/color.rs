@@ -75,7 +75,7 @@ fn channel_hex(v: f64) -> String {
     format!("{:02x}", (v.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
-#[platypus_api(namespace = "Color", quickjs, values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
+#[platypus_api(namespace = "Color", values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]))]
 pub mod color_api {
     use super::{Rgba, channel_hex, gamma_to_linear, linear_to_gamma, parse_hex, rgba};
 

@@ -506,8 +506,7 @@ const MOUSE_SENSITIVITY: f64 = 0.1;
 /// family whose code is running; main-game components always read the main window's, an isolated window's keys
 /// never reach it (send a message), and focus loss clears held keys. See docs/windows.md.
 #[platypus_api(
-    namespace = "input", quickjs,
-    values(Vector2 = V2 [x: f64, y: f64]),
+    namespace = "input", values(Vector2 = V2 [x: f64, y: f64]),
     enums(
         /// The events `input.on` listens to (`js/engine`'s `keyof InputEvents`).
         InputEventType = InputEventType [

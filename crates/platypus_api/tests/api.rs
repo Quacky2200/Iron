@@ -1,8 +1,8 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `#[platypus_api]`: the manifest, the `.d.ts`, the `extern "C"` shims and the QuickJS bindings all
-//! come from one module of ordinary Rust. IDs are in TESTS.md (M9-API-*).
+//! `#[platypus_api]`: the manifest, the `.d.ts` and the `extern "C"` shims all come from one
+//! module of ordinary Rust. IDs are in TESTS.md (M9-API-*).
 use platypus_api::{Handle, Ty, platypus_api};
 use std::cell::Cell;
 
@@ -24,7 +24,7 @@ thread_local! {
     static LOG: Cell<u32> = const { Cell::new(0) };
 }
 
-#[platypus_api(namespace = "Demo", quickjs, handles(GameObject = ObjectId))]
+#[platypus_api(namespace = "Demo", handles(GameObject = ObjectId))]
 pub mod demo {
     use super::{LOG, ObjectId, SCALE};
 
@@ -156,79 +156,4 @@ fn the_extern_c_shims_call_the_functions_with_the_c_abi() {
     // The symbols have the C ABI and can be taken as plain function pointers.
     let f: extern "C" fn(f64, f64) -> f64 = demo::platypus_Demo_add;
     assert_eq!(f(2.0, 2.0), 4.0);
-}
-
-// M9-API-05
-#[test]
-fn quickjs_gets_typed_functions_under_the_namespace() {
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        demo::register_quickjs(&ctx).unwrap();
-        let sum: f64 = ctx.eval("Demo.add(1, 2.5)").unwrap();
-        assert_eq!(sum, 3.5);
-        let big: bool = ctx.eval("Demo.isBig(1000)").unwrap();
-        assert!(big);
-        // Handles are opaque objects (see handles_quickjs.rs); the host makes one from an id.
-        for (name, raw) in [("o3", 3), ("o3b", 3), ("o4", 4), ("o7", 7)] {
-            let h = platypus_api::qjs::handle_new(&ctx, "GameObject", raw).unwrap();
-            ctx.globals().set(name, h).unwrap();
-        }
-        let parent: String = ctx
-            .eval("JSON.stringify([Demo.parentOf(o7) instanceof GameObject, Demo.parentOf(o7)])")
-            .unwrap();
-        assert_eq!(parent, "[true,{}]");
-        let same: bool = ctx
-            .eval("Demo.sameObject(o3, o3b) && !Demo.sameObject(o3, o4)")
-            .unwrap();
-        assert!(same);
-        ctx.eval::<(), _>("Demo.setTimeScale(0.25)").unwrap();
-        let scale: f64 = ctx.eval("Demo.timeScale()").unwrap();
-        assert_eq!(scale, 0.25);
-        let undef: bool = ctx.eval("Demo.setTimeScale(1) === undefined").unwrap();
-        assert!(undef);
-    });
-}
-
-// M9-API-06
-//
-// What the typed binding saves: the same call through the existing `__platypus_op(name, ...args)` path
-// (a name string, a rest array of values, a queue push) against a typed function. Printed, not
-// asserted, because timing varies; run with `cargo test -p platypus_api --release -- --ignored --nocapture`.
-#[test]
-#[ignore]
-fn typed_calls_against_the_op_queue() {
-    use rquickjs::function::Rest;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        demo::register_quickjs(&ctx).unwrap();
-        let queue = std::rc::Rc::new(std::cell::RefCell::new(Vec::<(String, Vec<f64>)>::new()));
-        let q = queue.clone();
-        let op = rquickjs::Function::new(ctx.clone(), move |name: String, args: Rest<f64>| {
-            q.borrow_mut().push((name, args.0));
-        })
-        .unwrap();
-        ctx.globals().set("__platypus_op", op).unwrap();
-        let n = 1_000_000;
-        let run = |src: &str| {
-            let t = std::time::Instant::now();
-            ctx.eval::<(), _>(src).unwrap();
-            t.elapsed()
-        };
-        let typed = run(&format!(
-            "let s = 0; for (let i = 0; i < {n}; i++) s += Demo.add(i, 1);"
-        ));
-        let ops = run(&format!(
-            "for (let i = 0; i < {n}; i++) __platypus_op('demo.add', i, 1);"
-        ));
-        queue.borrow_mut().clear();
-        println!(
-            "{n} calls: typed {:?} ({:.0} ns each), op queue {:?} ({:.0} ns each)",
-            typed,
-            typed.as_nanos() as f64 / n as f64,
-            ops,
-            ops.as_nanos() as f64 / n as f64
-        );
-    });
 }

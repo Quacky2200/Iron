@@ -495,8 +495,7 @@ fn build(m: ModelRef, root: ObjectId, colliders: &str) {
 }
 
 #[platypus_api(
-    namespace = "Model", quickjs,
-    handles(Model = ModelRef, GameObject = ObjectId, Mesh = MeshRef, Material = MaterialRef,
+    namespace = "Model", handles(Model = ModelRef, GameObject = ObjectId, Mesh = MeshRef, Material = MaterialRef,
         AnimationClip = ClipRef),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
 )]

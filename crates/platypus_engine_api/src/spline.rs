@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Spline` (a path through knots, `platypus_math::spline`) and `SplineAnimate` (a component that moves
-//! its object along one), the script API of `js/engine/src/spline.ts` and the compiled facade made
-//! native. A `Spline` is a handle to a spline kept here per thread, so compiled scripts and
-//! QuickJS call the same code; a scene file saves one inline (`{"$type":"Spline", ..}`) inside the
+//! its object along one). A `Spline` is a handle to a spline kept here per thread, so compiled
+//! scripts and the engine use the same code; a scene file saves one inline (`{"$type":"Spline", ..}`) inside the
 //! `SplineAnimate` that uses it. The host calls [`update`] once a frame next to
 //! `animation::update`; [`reset`] forgets everything (a reload).
 
@@ -236,7 +235,7 @@ pub fn update(dt: f64) {
 }
 
 #[platypus_api(
-    namespace = "Spline", quickjs, like,
+    namespace = "Spline", like,
     handles(Spline = SplineRef),
     values(Vector3 = V3 [x: f64, y: f64, z: f64]),
     enums(
@@ -432,7 +431,7 @@ pub mod spline_api {
 }
 
 #[platypus_api(
-    namespace = "SplineAnimate", quickjs, like,
+    namespace = "SplineAnimate", like,
     handles(
         SplineAnimate = SplineAnimateRef,
         Spline = SplineRef,

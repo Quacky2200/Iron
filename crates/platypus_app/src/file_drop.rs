@@ -9,7 +9,6 @@
 
 use std::path::Path;
 
-use platypus_core::NodeId;
 use platypus_platform::InputEvent;
 use platypus_ui::Input;
 
@@ -111,31 +110,8 @@ impl App {
             .or(self.pointer_px.map(|(x, y)| (f64::from(x), f64::from(y))))
             .map(|(x, y)| ((x / scale) as f32, (y / scale) as f32));
         for input in self.file_drag.inputs(cursor) {
-            if let Input::FileDrop { files } = &input {
-                // The editor may copy what was dropped (and nothing else from outside).
-                self.editor.allow_sources(files);
-            }
             self.handle_on(Surface::Screen, input);
         }
-    }
-
-    /// `dragImage id x y` (`dataTransfer.setDragImage`): id 0 for none.
-    pub(super) fn drag_image_op(&mut self, args: &[platypus_core::Value]) {
-        let num = |i: usize| {
-            args.get(i)
-                .and_then(platypus_core::Value::as_f64)
-                .unwrap_or(0.0)
-        };
-        let id = (num(0) > 0.0).then(|| NodeId(num(0) as u32));
-        let surface = id.map_or(Surface::Screen, |id| self.surface_of(id));
-        self.handle_on(
-            surface,
-            Input::SetDragImage {
-                id,
-                x: num(1) as f32,
-                y: num(2) as f32,
-            },
-        );
     }
 }
 

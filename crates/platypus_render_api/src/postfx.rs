@@ -470,8 +470,7 @@ fn parameter_names(p: PostProcessRef) -> Vec<String> {
 }
 
 #[platypus_api(
-    namespace = "PostProcess", quickjs,
-    handles(PostProcess = PostProcessRef, Camera = CameraRef),
+    namespace = "PostProcess", handles(PostProcess = PostProcessRef, Camera = CameraRef),
     values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]),
     enums(
         /// The built-in post-process effects.

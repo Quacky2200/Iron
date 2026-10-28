@@ -102,7 +102,7 @@ pub fn resolve(src: &str) -> String {
     }
 }
 
-#[platypus_api(namespace = "Assets", quickjs)]
+#[platypus_api(namespace = "Assets")]
 pub mod assets_api {
     use super::{STATE, clean};
     use platypus_api::Callback;

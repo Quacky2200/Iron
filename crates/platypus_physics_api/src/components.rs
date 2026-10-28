@@ -219,8 +219,7 @@ pub(crate) fn count_rigidbodies() -> u32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[platypus_api(
-    namespace = "PhysicsComponents", quickjs,
-    handles(
+    namespace = "PhysicsComponents", handles(
         GameObject = ObjectId,
         PhysicsBody = BodyRef,
         Rigidbody = RigidbodyRef,
@@ -998,7 +997,7 @@ pub mod components_api {
     }
 }
 
-#[platypus_api(namespace = "ForceMode", quickjs)]
+#[platypus_api(namespace = "ForceMode")]
 pub mod force_mode_api {
     /// A force in newtons, over one fixed step (call it from `onFixedUpdate`).
     #[property]
@@ -1029,7 +1028,7 @@ pub mod force_mode_api {
     }
 }
 
-#[platypus_api(namespace = "RigidbodyConstraints", quickjs)]
+#[platypus_api(namespace = "RigidbodyConstraints")]
 pub mod constraints_api {
     #[property]
     #[js_name = "None"]

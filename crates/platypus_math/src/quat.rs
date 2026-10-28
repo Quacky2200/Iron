@@ -187,7 +187,7 @@ impl Q {
     }
 }
 
-#[platypus_api(namespace = "Quaternion", quickjs, values(
+#[platypus_api(namespace = "Quaternion", values(
     Quaternion = Q [x: f64, y: f64, z: f64, w: f64],
     Vector3 = V3 [x: f64, y: f64, z: f64]))]
 pub mod quaternion_api {
@@ -455,7 +455,7 @@ impl M4 {
     }
 }
 
-#[platypus_api(namespace = "Matrix4x4", quickjs, values(
+#[platypus_api(namespace = "Matrix4x4", values(
     Matrix4x4 = M4 [m0: f64, m1: f64, m2: f64, m3: f64, m4: f64, m5: f64, m6: f64, m7: f64,
                     m8: f64, m9: f64, m10: f64, m11: f64, m12: f64, m13: f64, m14: f64, m15: f64],
     Vector3 = V3 [x: f64, y: f64, z: f64],

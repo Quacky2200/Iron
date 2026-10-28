@@ -82,12 +82,6 @@ impl Lifecycle {
         self.paused_at.is_some()
     }
 
-    /// New scripts start out believing they're focused and running; the next
-    /// [`Lifecycle::update`] tells them otherwise.
-    pub fn scripts_restarted(&mut self) {
-        self.reported = (true, false);
-    }
-
     /// Applies the latest state: starts or ends the pause and says what to report.
     pub fn update(&mut self, now: Instant) -> Change {
         let mut change = Change::default();
@@ -228,10 +222,6 @@ mod tests {
         let mut shot = Lifecycle::new(false, true);
         shot.set_focused(false);
         assert!(!shot.update(t0).paused);
-
-        // Reloaded scripts hear the current state again.
-        l.scripts_restarted();
-        assert_eq!(l.update(t0).report, Some((false, true)));
     }
 
     // M9-VSP-14

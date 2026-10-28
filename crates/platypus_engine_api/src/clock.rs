@@ -48,7 +48,7 @@ fn game_time() -> f64 {
     time::state().time
 }
 
-#[platypus_api(namespace = "TimeSince", quickjs, values(TimeSince = Since [at: f64]))]
+#[platypus_api(namespace = "TimeSince", values(TimeSince = Since [at: f64]))]
 pub mod time_since_api {
     use super::{Since, game_time};
 
@@ -77,7 +77,7 @@ pub mod time_since_api {
     }
 }
 
-#[platypus_api(namespace = "TimeUntil", quickjs, values(TimeUntil = Until [at: f64, length: f64]))]
+#[platypus_api(namespace = "TimeUntil", values(TimeUntil = Until [at: f64, length: f64]))]
 pub mod time_until_api {
     use super::{Until, game_time};
 

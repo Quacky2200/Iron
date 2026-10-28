@@ -20,7 +20,7 @@ pub fn process_destroyed() -> Vec<ObjectId> {
     list
 }
 
-#[platypus_api(namespace = "HideFlags", quickjs)]
+#[platypus_api(namespace = "HideFlags")]
 pub mod hide_flags_api {
     #[property]
     #[js_name = "None"]

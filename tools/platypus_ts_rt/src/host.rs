@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The engine side of compiled components: a class table (from the generated bindings'
-//! `classes()`), one rooted instance per component and the lifecycle the QuickJS-based
-//! `ComponentHost` has, with no script engine in the loop.
+//! `classes()`), one rooted instance per component and its lifecycle, with no script engine in the
+//! loop.
 //!
-//! Order and rules match `platypus_script::ComponentHost`: `onAwake` when spawned, `onStart` once
+//! Order and rules (Unity's): `onAwake` when spawned, `onStart` once
 //! before a component's first other hook, `onUpdate` for all and then `onLateUpdate` for all,
 //! disabled or inactive-object components skipped, a component that throws is reported and
 //! disabled. After every hook the microtask queue runs (the event-loop contract of `event.rs`).

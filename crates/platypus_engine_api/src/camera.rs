@@ -196,7 +196,6 @@ fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
 
 #[platypus_api(
     namespace = "Cameras",
-    quickjs,
     handles(GameObject = ObjectId, Camera = CameraRef, Texture = TextureRef),
     values(
         Color = Rgba [r: f64, g: f64, b: f64, a: f64],

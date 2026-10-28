@@ -23,7 +23,6 @@ platypus_engine_api = { path = "../../crates/platypus_engine_api" }
 platypus_animation = { path = "../../crates/platypus_animation" }
 glam = "0.34.1"
 platypus_core = { path = "../../crates/platypus_core" }
-platypus_script = { path = "../../crates/platypus_script" }
 platypus_ts_ui = { path = "../platypus_ts_ui" }
 platypus_ui = { path = "../../crates/platypus_ui" }
 platypus_ui_native = { path = "../../crates/platypus_ui_native" }

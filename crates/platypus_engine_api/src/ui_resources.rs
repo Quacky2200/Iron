@@ -51,7 +51,7 @@ pub fn reset() {
     STATE.with(|s| *s.borrow_mut() = State::default());
 }
 
-#[platypus_api(namespace = "UiResources", quickjs)]
+#[platypus_api(namespace = "UiResources")]
 pub mod ui_resources_api {
     use super::{STATE, UiRequest};
 

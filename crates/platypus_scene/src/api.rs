@@ -157,7 +157,6 @@ fn none() -> ObjectId {
 
 #[platypus_api(
     namespace = "Scene",
-    quickjs,
     handles(GameObject = ObjectId, Transform = TransformRef),
     values(
         Vector3 = V3 [x: f64, y: f64, z: f64],

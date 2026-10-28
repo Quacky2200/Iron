@@ -232,7 +232,7 @@ pub fn strip_json_comments(s: &str) -> String {
 }
 
 /// Every engine manifest the compiler checks calls against, plus the `Ui` namespace: the same lists
-/// as `platypus_native::manifests()` (that crate links QuickJS, which a build tool does not need).
+/// as the host's `native::manifests()`.
 pub fn manifests() -> Vec<String> {
     let mut all = platypus_engine_api::manifests();
     all.push(platypus_scene::api::scene_api::MANIFEST.to_json());

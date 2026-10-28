@@ -4,8 +4,8 @@
 //! The host's build script: the main thread's stack size, and the Platypus icon. The icon
 //! (`resources/icon/icon.png`) becomes the window icon of games without their own (256 x 256
 //! RGBA in `OUT_DIR`, see `info::default_icon`) and, on Windows with the MSVC linker, the file
-//! icon and version info of every binary (`platypus-app.exe` and `platypus_editor.exe`: a `.res`
-//! file the linker reads), so even `cargo run` builds show it.
+//! icon and version info of `platypus-app.exe` (a `.res` file the linker reads), so even
+//! `cargo run` builds show it.
 
 use image::imageops::FilterType;
 use image::{ImageFormat, RgbaImage};

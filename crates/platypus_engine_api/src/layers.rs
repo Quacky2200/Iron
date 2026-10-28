@@ -54,7 +54,7 @@ fn to_u32(x: f64) -> u32 {
     (x.trunc().rem_euclid(4_294_967_296.0)) as u32
 }
 
-#[platypus_api(namespace = "LayerMask", quickjs)]
+#[platypus_api(namespace = "LayerMask")]
 pub mod layer_mask_api {
     use super::{names, to_u32};
 

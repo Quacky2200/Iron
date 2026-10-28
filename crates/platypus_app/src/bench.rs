@@ -390,14 +390,10 @@ pub(crate) struct FrameTimes {
     pub total: f64,
     /// Game code (hooks, timers, the UI it renders).
     pub script: f64,
-    /// A compiled game's registry sync into the renderer (0 for QuickJS).
+    /// A compiled game's registry sync into the renderer.
     pub sync: f64,
     /// Drawing: the UI's layout and draw list, the world, the GPU wait.
     pub render: f64,
-    /// Applying what scripts queued (React commits, a QuickJS game's ops): part of `other`.
-    pub ops: f64,
-    /// QuickJS: copying `__platypus_op` arguments out of JavaScript (part of `script`).
-    pub op_marshal: f64,
 }
 
 /// Summary of a run of frames.
@@ -427,8 +423,6 @@ pub(crate) fn stats(frames: &[FrameTimes]) -> Value {
         "syncMs": round(sync),
         "renderMs": round(render),
         "otherMs": round((sum / n - script - sync - render).max(0.0)),
-        "opsApplyMs": round(mean(|f| f.ops)),
-        "opMarshalMs": round(mean(|f| f.op_marshal)),
     })
 }
 
@@ -499,11 +493,6 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
     let adapter = gpu.adapter_name();
     app.install_gfx(gpu, target, None);
     lap.mark("renderer set-up");
-    let backend = if app.native.is_some() {
-        "native"
-    } else {
-        "quickjs"
-    };
     let game = app
         .code_root
         .canonicalize()
@@ -522,7 +511,6 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
     let mut startup_parts = Vec::new();
     let mut pads = std::collections::HashSet::new();
     crate::sync_profile::enable();
-    platypus_script::time_ops();
     let mut run_frames = |p: &mut FakePlatform<App>, count: u32, input: &[(u32, Step)]| {
         let mut times = Vec::with_capacity(count as usize);
         let mut parts = Vec::with_capacity(count as usize);
@@ -541,8 +529,6 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
             app.script_time = Duration::ZERO;
             app.sync_time = Duration::ZERO;
             app.render_time = Duration::ZERO;
-            app.ops_time = Duration::ZERO;
-            platypus_script::take_op_time();
             let t = Instant::now();
             while let Some((_, step)) = input.get(next).filter(|(at, _)| *at <= f) {
                 next += 1;
@@ -584,8 +570,6 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
                 script: app.script_time.as_secs_f64() * 1000.0,
                 sync: app.sync_time.as_secs_f64() * 1000.0,
                 render: app.render_time.as_secs_f64() * 1000.0,
-                ops: app.ops_time.as_secs_f64() * 1000.0,
-                op_marshal: platypus_script::take_op_time(),
             });
             parts.push(crate::sync_profile::take());
         }
@@ -623,7 +607,7 @@ pub(crate) fn run(mut app: App, args: &BenchArgs, size: (u32, u32), title: &str)
     }
     let report = json!({
         "game": game,
-        "backend": backend,
+        "backend": "native",
         "adapter": adapter,
         "size": [size.0, size.1],
         "fixedDt": spec.fixed_dt,
@@ -733,7 +717,6 @@ mod tests {
                 script: 1.0,
                 sync: 0.5,
                 render: 2.0,
-                ..Default::default()
             })
             .collect();
         let s = stats(&frames);

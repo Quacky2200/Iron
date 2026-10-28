@@ -84,7 +84,7 @@ fn number(key: &str) -> Option<f64> {
     }
 }
 
-#[platypus_api(namespace = "PlayerPrefs", quickjs)]
+#[platypus_api(namespace = "PlayerPrefs")]
 pub mod prefs_api {
     use super::{Change, Pref, STATE, get, number, set};
 

@@ -445,8 +445,7 @@ fn flat(points: &[V3]) -> Vec<f64> {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[platypus_api(
-    namespace = "Physics", quickjs,
-    handles(
+    namespace = "Physics", handles(
         PhysicsBody = BodyRef,
         PhysicsCollider = ColliderRef,
         RaycastHit = HitRef,
@@ -1061,19 +1060,4 @@ pub(crate) fn body_set(body: u32, what: &str, value: Option<Value>) {
     let mut args = vec![num(f64::from(body)), Value::String(what.into())];
     args.extend(value);
     op("set", args);
-}
-
-/// Installs every namespace of this crate in a QuickJS context (after `platypus_engine_api`'s, which
-/// has the math classes and `GameObject`).
-pub fn register_quickjs<'js>(
-    ctx: &platypus_api::rquickjs::Ctx<'js>,
-) -> platypus_api::rquickjs::Result<()> {
-    physics_api::register_quickjs(ctx)?;
-    components::components_api::register_quickjs(ctx)?;
-    components::force_mode_api::register_quickjs(ctx)?;
-    components::constraints_api::register_quickjs(ctx)?;
-    joints::joints_api::register_quickjs(ctx)?;
-    physics2d::physics2d_api::register_quickjs(ctx)?;
-    contacts::contacts_api::register_quickjs(ctx)?;
-    Ok(())
 }

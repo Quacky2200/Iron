@@ -15,7 +15,7 @@ use platypus_engine_api::prefs::{Change, Pref};
 
 impl App {
     /// Applies the audio commands compiled code queued to the mixer. The mixer opens on the first
-    /// command, as for QuickJS games.
+    /// command.
     pub(super) fn native_audio_commands(&mut self) {
         if self.native.is_none() {
             return;

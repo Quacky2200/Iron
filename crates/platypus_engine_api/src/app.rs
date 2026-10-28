@@ -227,7 +227,7 @@ fn sys<R>(f: impl FnOnce(&SystemInfo) -> R) -> R {
     STATE.with(|s| f(&s.borrow().system))
 }
 
-#[platypus_api(namespace = "Application", quickjs)]
+#[platypus_api(namespace = "Application")]
 pub mod application_api {
     use super::{Request, STATE, app, sys};
 
@@ -422,7 +422,7 @@ pub mod application_api {
 }
 
 /// The machine. GPU and screen details arrive once the window opens.
-#[platypus_api(namespace = "SystemInfo", quickjs)]
+#[platypus_api(namespace = "SystemInfo")]
 pub mod system_info_api {
     use super::sys;
 

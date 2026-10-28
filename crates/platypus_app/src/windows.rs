@@ -50,8 +50,6 @@ pub struct AppWindows {
     pub focused: BTreeSet<WindowKey>,
     /// The position each window was opened at (the requests resolved it).
     pub placed: HashMap<WindowKey, Option<(f64, f64)>>,
-    /// React commits for windows that are not open yet (QuickJS games).
-    pub pending_commits: HashMap<u32, Vec<platypus_core::Commit>>,
     /// Titles in use for screenshot file names.
     pub slugs: HashMap<WindowKey, String>,
 }
@@ -450,8 +448,6 @@ impl App {
         if let Some(n) = self.native.as_mut() {
             n.settle(&mut self.scene.scene, &mut self.ui);
             self.native_after();
-        } else {
-            self.apply_script_output();
         }
         r
     }
@@ -535,16 +531,6 @@ impl App {
                 drawn: false,
             },
         );
-        // QuickJS commits that came before the window did.
-        if let Some(commits) = self.windows.pending_commits.remove(&key.0)
-            && let Some(window) = self.windows.map.get_mut(&key)
-        {
-            for commit in commits {
-                for e in window.tree.apply_commit(&commit) {
-                    tracing::warn!(target: "ui", "{e}");
-                }
-            }
-        }
         let opened = win::Opened {
             position,
             size: ui,
@@ -728,7 +714,6 @@ impl App {
         self.windows.map.remove(&key);
         self.windows.focused.remove(&key);
         self.windows.placed.remove(&key);
-        self.windows.pending_commits.remove(&key.0);
         self.windows.slugs.remove(&key);
         if matches!(self.keys_on, Surface::Window(k) if k == key.0) {
             self.keys_on = Surface::Screen;
@@ -874,25 +859,13 @@ impl App {
                 .is_some_and(|x| x.lifecycle.paused());
             self.in_game(|| win::deliver(d, now_ms));
             if !paused {
-                if self.native.is_some() {
-                    self.in_game(|| platypus_ts_rt::ts_rt_timers_advance_domain(now_ms, d.0));
-                } else {
-                    for e in self.scripts.tick_domain(now_ms, d.0) {
-                        tracing::error!(target: "script", "uncaught: {e}");
-                    }
-                    self.apply_script_output();
-                }
+                self.in_game(|| platypus_ts_rt::ts_rt_timers_advance_domain(now_ms, d.0));
             }
             for (key, event) in self.domains.take_queue(d) {
                 self.window_event(key, event);
             }
-            if self.native.is_some() {
-                let _scope = platypus_scene::api::enter(&mut self.scene.scene);
-                platypus_engine_api::input::tick_domain(d);
-            } else {
-                // The domain's input frame (`input.ts`; the main one ends with `Time`'s tick).
-                self.send_game_input_in(d, &["tick".into()]);
-            }
+            let _scope = platypus_scene::api::enter(&mut self.scene.scene);
+            platypus_engine_api::input::tick_domain(d);
         }
     }
 
@@ -907,9 +880,8 @@ impl App {
         }
     }
 
-    /// An input event for the game's `input` of domain `d`. QuickJS games get it with `d` entered,
-    /// so `__platypus_input` (@platypus/engine's `input.ts`) files it under that domain and its listeners
-    /// run in it.
+    /// An input event for the game's `input` of domain `d`, with `d` entered so it is filed under
+    /// that domain and its listeners run in it.
     pub(super) fn send_game_input_in(&mut self, d: win::DomainId, args: &[platypus_core::Value]) {
         if d == win::DomainId::MAIN {
             self.send_game_input(args);
@@ -917,11 +889,6 @@ impl App {
             let _g = win::enter_domain(d);
             n.game_input(&mut self.scene.scene, &mut self.ui, args);
             self.native_after();
-        } else if self.game_input {
-            let _g = win::enter_domain(d);
-            if let Err(e) = self.scripts.call_global("__platypus_input", args) {
-                tracing::error!(target: "script", "input: {e}");
-            }
         }
     }
 }

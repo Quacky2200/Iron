@@ -275,7 +275,7 @@ fn parse_span(text: &str) -> Option<f64> {
     Some(if neg { -ms } else { ms })
 }
 
-#[platypus_api(namespace = "TimeSpan", quickjs, values(TimeSpan = Span [totalMilliseconds: f64]))]
+#[platypus_api(namespace = "TimeSpan", values(TimeSpan = Span [totalMilliseconds: f64]))]
 pub mod time_span_api {
     use super::{
         MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, MS_PER_SECOND, Span, invalid_span, parse_span,
@@ -837,7 +837,7 @@ fn add_months(t: Dt, months: f64) -> Dt {
     }
 }
 
-#[platypus_api(namespace = "DateTime", quickjs, values(
+#[platypus_api(namespace = "DateTime", values(
     DateTime = Dt [epochMilliseconds: f64, utc: f64],
     TimeSpan = Span [totalMilliseconds: f64]))]
 pub mod date_time_api {

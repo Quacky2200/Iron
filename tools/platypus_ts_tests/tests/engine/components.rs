@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Compiled components driven by `platypus_ts_rt::NativeHost` over the real scene
-//! (`bench/components.ts`): `class X extends Component` + `register(X)`, the lifecycle the
-//! QuickJS `ComponentHost` has, no script engine. IDs are in TESTS.md (M9-TS-556..).
+//! (`bench/components.ts`): `class X extends Component` + `register(X)` and the component
+//! lifecycle, no script engine. IDs are in TESTS.md (M9-TS-556..).
 use platypus_api::Handle;
 use platypus_scene::Scene;
 use platypus_scene::api::scene_api as api;

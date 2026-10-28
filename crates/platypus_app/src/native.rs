@@ -1,8 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! The native backend: a game compiled by `platypus_ts` (TypeScript to machine code) and run in this
-//! process, instead of a QuickJS bundle.
+//! The game: compiled by `platypus_ts` (TypeScript to machine code) and run in this process.
 //!
 //! A native game is `build/game.pbundle` (JSON written by `platypus-build`: the bundled TypeScript
 //! source plus the stylesheet and asset list) or a bare `.ts` / `.tsx` file. [`Native::load`]
@@ -11,8 +10,7 @@
 //! top-level `await` keeps the program from starting: until every module has finished evaluating
 //! (`platypus_ts_rt::startup_state`) the registered classes are not spawned, the start scene is not
 //! loaded and no component hook runs, while the timers, microtasks and the UI the top level
-//! mounted keep going. After that the app calls the `Native` methods where it called QuickJS
-//! before:
+//! mounted keep going. After that the app calls the `Native` methods:
 //!
 //! | App event | Native call |
 //! |---|---|
@@ -26,7 +24,7 @@
 //! code reaches the scene through a per-thread pointer, not through an argument.
 //!
 //! UI events run through the handlers while the interaction layer handles the input, so
-//! `preventDefault()` stops default actions as in the QuickJS path.
+//! `preventDefault()` stops default actions.
 
 use anyhow::{Context, Result, anyhow, bail};
 use platypus_scene::Scene;
@@ -116,7 +114,7 @@ impl Bundle {
 /// The bundle name `platypus-build` wrote before the rename to Platypus (still read).
 pub const LEGACY_BUNDLE: &str = "game.irbundle";
 
-/// Is this path a native bundle (rather than a QuickJS `game.js`)? `.irbundle` is the name
+/// Is this path a game the host runs (a bundle, or TypeScript to compile)? `.irbundle` is the name
 /// from before the rename to Platypus.
 pub fn is_native(path: &Path) -> bool {
     path.extension()
@@ -138,7 +136,11 @@ fn parse_reload_note(text: &str) -> Option<String> {
 
 /// The manifests a game is compiled against: every engine namespace and the UI bridge.
 fn manifests() -> Vec<String> {
-    let mut all = platypus_native::manifests();
+    let mut all = platypus_engine_api::manifests();
+    all.push(platypus_scene::api::scene_api::MANIFEST.to_json());
+    all.extend(platypus_scenes::manifests());
+    all.extend(platypus_physics_api::manifests());
+    all.extend(platypus_render_api::manifests());
     all.push(platypus_ts_ui::manifest_json());
     all.push(platypus_ts_ui::root_manifest_json());
     all

@@ -77,7 +77,7 @@ impl App {
     /// This frame's size, scale and draw lists.
     fn cpu_frame(&mut self) -> Option<CpuFrame> {
         let (dpi, size) = self.main_metrics()?;
-        let scale = super::ui_factor_for(dpi, size, self.ui_scale);
+        let scale = super::ui_factor_for(dpi);
         let window = self.cpu.as_ref()?.window.clone();
         self.light_media_env(&window, scale);
         self.load_cpu_images();

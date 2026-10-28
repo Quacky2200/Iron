@@ -421,8 +421,7 @@ fn none_object() -> ObjectId {
 }
 
 #[platypus_api(
-    namespace = "AudioSource", quickjs,
-    handles(
+    namespace = "AudioSource", handles(
         AudioSource = AudioSourceRef,
         GameObject = ObjectId,
         Sound = SoundRef,
@@ -701,8 +700,7 @@ pub(crate) fn finished_temp(ids: &[PlaybackRef]) {
 }
 
 #[platypus_api(
-    namespace = "AudioListener", quickjs,
-    handles(AudioListener = AudioListenerRef, GameObject = ObjectId)
+    namespace = "AudioListener", handles(AudioListener = AudioListenerRef, GameObject = ObjectId)
 )]
 pub mod audio_listener_api {
     use super::*;

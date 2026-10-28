@@ -3,12 +3,11 @@
 
 //! The engine's script API, declared once in Rust.
 //!
-//! A module marked `#[platypus_api(namespace = "Time", quickjs)]` holds ordinary `pub fn`s. The macro
+//! A module marked `#[platypus_api(namespace = "Time")]` holds ordinary `pub fn`s. The macro
 //! keeps them as they are and adds, inside the module:
 //!
 //! - `MANIFEST`: a [`Namespace`] describing every function (name, parameters, result, docs);
-//! - one `extern "C"` shim per function (`platypus_Time_deltaTime`), the symbol compiled scripts link to;
-//! - with `quickjs`, `register_quickjs(ctx)`: the same functions as typed QuickJS globals.
+//! - one `extern "C"` shim per function (`platypus_Time_deltaTime`), the symbol compiled scripts link to.
 //!
 //! From the manifest, [`Namespace::to_dts`] writes the declaration file TypeScript sees and
 //! [`Namespace::to_json`] the table the `platypus_ts` compiler reads. One source, so they cannot drift.
@@ -19,10 +18,6 @@ pub use platypus_api_macros::platypus_api;
 pub use serde_json;
 pub mod callback;
 pub use callback::Callback;
-#[cfg(feature = "quickjs")]
-pub use rquickjs;
-#[cfg(feature = "quickjs")]
-pub mod qjs;
 
 /// A type that can cross the boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -224,8 +219,8 @@ pub struct Function {
     pub constructor: bool,
 }
 
-/// A group of functions under one name (`Time`, `Physics`): a global object in QuickJS, a `declare
-/// namespace` in TypeScript.
+/// A group of functions under one name (`Time`, `Physics`): a `declare namespace` in
+/// TypeScript.
 /// One field of a value class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ValueField {

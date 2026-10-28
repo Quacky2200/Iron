@@ -68,7 +68,7 @@ pub fn reset() {
     STATE.with(|s| s.set(START));
 }
 
-#[platypus_api(namespace = "Time", quickjs)]
+#[platypus_api(namespace = "Time")]
 pub mod time_api {
     use super::{STARTED, STATE};
 

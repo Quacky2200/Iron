@@ -736,10 +736,7 @@ fn gen_component(c: &Component) -> Vec<String> {
     hl.extend(c.extra_handles.iter().map(|s| s.to_string()));
     let mut seen = BTreeSet::new();
     hl.retain(|h| seen.insert(h.clone()));
-    let mut attr = format!(
-        "namespace = \"{name}\", quickjs, handles({})",
-        hl.join(", ")
-    );
+    let mut attr = format!("namespace = \"{name}\", handles({})", hl.join(", "));
     if !values.is_empty() {
         attr += &format!(
             ", values({})",

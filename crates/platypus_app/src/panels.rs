@@ -283,12 +283,6 @@ impl Panels {
         self.map.remove(&id);
     }
 
-    /// Panels on destroyed objects go with them.
-    pub fn forget_objects(&mut self, objects: &[ScriptObject]) {
-        self.map
-            .retain(|_, p| p.object.is_none_or(|o| !objects.contains(&o)));
-    }
-
     /// Lays out and draws every visible panel into its texture. Returns the quads to
     /// put in the world (texture `i` being the `i`th of the returned views).
     pub fn render(

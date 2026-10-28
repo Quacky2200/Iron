@@ -273,8 +273,7 @@ fn the_generated_api_surface_matches_the_blessed_snapshot() {
 
 // M9-TS-3164
 //
-// Declared types match what the QuickJS declarations say, so a game written for either type-checks
-// as written: handle-valued properties and options may be `null`, a property that is one of a few
+// Declared types match what games are written against, so they type-check as written: handle-valued properties and options may be `null`, a property that is one of a few
 // names reads as that union (and still takes any string, as the engine ignores an unknown name),
 // and a namespace property that is one of a few names is the union.
 #[test]

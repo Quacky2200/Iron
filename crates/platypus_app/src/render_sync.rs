@@ -3,7 +3,7 @@
 
 //! Feeds the 3D renderer from what a compiled game left in the `platypus_render_api` registries.
 //!
-//! The QuickJS path hands the renderer `render.*` ops; a native game writes typed data (cameras,
+//! A native game writes typed data (cameras,
 //! lights, mesh renderers, materials, textures, meshes, sprites, ...). Each frame this turns that
 //! data into the same op calls (`WorldViews::apply`, `texture_op`) or, for the many-item kinds
 //! (mesh renderers, 2D lines), typed calls (`set_renderer`, `set_stroke`), so there is one renderer

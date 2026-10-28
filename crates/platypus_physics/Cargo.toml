@@ -14,4 +14,3 @@ rapier3d = "0.36.1"
 tracing = "0.1.44"
 
 [dev-dependencies]
-platypus_script = { path = "../platypus_script" }

@@ -38,7 +38,7 @@ pub fn emit(level: Level, message: &str) {
 }
 
 /// Unity's `Debug`.
-#[platypus_api(namespace = "Debug", quickjs)]
+#[platypus_api(namespace = "Debug")]
 pub mod debug_api {
     use super::{Level, emit};
 
@@ -74,7 +74,7 @@ pub mod debug_api {
 }
 
 /// s&box's `Log`.
-#[platypus_api(namespace = "Log", quickjs)]
+#[platypus_api(namespace = "Log")]
 pub mod log_api {
     use super::{Level, emit};
 
@@ -97,7 +97,7 @@ pub mod log_api {
 }
 
 /// C#'s `Console`, with the JS names too.
-#[platypus_api(namespace = "Console", quickjs)]
+#[platypus_api(namespace = "Console")]
 pub mod console_api {
     use super::{Level, emit};
 

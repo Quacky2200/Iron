@@ -7,18 +7,22 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+/// A one-file game: the host compiles a `.ts` given to it directly.
+const GAME: &str = "console.log(\"hello\");\n";
+
 fn run(name: &str, flag: &str) -> (PathBuf, String) {
     let dir = std::env::temp_dir().join(format!("platypus-fps-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let game = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello.js");
+    let game = dir.join("main.ts");
+    std::fs::write(&game, GAME).unwrap();
     let png = dir.join("out.png");
     let log = dir.join("run.log");
     let status = Command::new(env!("CARGO_BIN_EXE_platypus-app"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)
-        .args(["--frames", "3", flag, "--force"]) // hello.js is a QuickJS bundle
+        .args(["--frames", "3", flag])
         .env("PLATYPUS_LOG_FILE", &log)
         .status()
         .unwrap();

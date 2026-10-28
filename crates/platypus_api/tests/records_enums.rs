@@ -51,7 +51,7 @@ impl Handle for Thing {
 
 /// Things that exist.
 #[platypus_api(
-    namespace = "Rec", quickjs, like,
+    namespace = "Rec", like,
     handles(Thing = Thing),
     values(Point = P2 [x: f64, y: f64]),
     enums(
@@ -267,59 +267,6 @@ fn list_and_record_results_come_back_flat_through_the_result_buffer() {
     assert!(platypus_api::symbol("platypus_api_result").is_some());
 }
 
-// M9-API-1613
-#[test]
-fn quickjs_gets_arrays_objects_strings_rest_arguments_and_options_after_a_parameter() {
-    use platypus_api::rquickjs;
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        rec_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(
-                r#"
-                const s = Rec.spots([{ x: 1, y: 2 }, [3, 4]]);
-                const one = Rec.one(2);
-                const many = Rec.many({ x: 1, y: 1 }, new Point(2, 2));
-                const spread = Rec.many(...[new Point(5, 5)]);
-                let bad = '';
-                try { Rec.next('nope'); } catch (e) { bad = e.name; }
-                JSON.stringify([
-                  s.length, s[1].fill, s[1].hard, s[0].at instanceof Point, s[0].at.y, s[3].at.x,
-                  Object.keys(one), one.fill, one.at.x,
-                  many.length, many[1] instanceof Point, spread.length,
-                  Rec.next('dotted'), Rec.next(''), bad,
-                  FillMode.name(2), FillMode.parse('pingPong'),
-                  Rec.many().length,
-                  new Thing().toString(), new Thing([{ x: 0, y: 0 }]).toString(),
-                ])
-                "#,
-            )
-            .unwrap();
-        assert_eq!(
-            out,
-            r#"[4,"dotted",false,true,2,3,["at","weight","hard","fill"],"solid",2,2,true,1,"solid","pingPong","TypeError","dotted",1,0,"[object Thing]","[object Thing]"]"#
-        );
-        // `new Thing(points, { weight, fill })`: the object after `points` gives the rest.
-        let made: String = ctx
-            .eval(
-                r#"
-                JSON.stringify([
-                  new Thing([{ x: 0, y: 0 }, { x: 1, y: 1 }], { weight: 3, fill: 'dotted' }).code,
-                  new Thing([{ x: 0, y: 0 }]).code,
-                  new Thing([{ x: 0, y: 0 }], { fill: 'pingPong' }).code,
-                  new Thing().code,
-                  new Thing([{ x: 0, y: 0 }], 2, 'dotted').code,
-                ])
-                "#,
-            )
-            .unwrap();
-        // 2 points, 3, dotted: 200 + 30 + 2; 1 point and the defaults: 100 + 15; pingPong: 116;
-        // nothing: 15; positional arguments still work: 100 + 20 + 2.
-        assert_eq!(made, "[232,115,116,15,122]");
-    });
-}
-
 // M9-API-1614
 #[test]
 fn creating_with_an_options_object_reads_the_parameters_after_the_named_one() {
@@ -349,8 +296,7 @@ fn creating_with_an_options_object_reads_the_parameters_after_the_named_one() {
 
 // M9-API-1620
 #[test]
-fn a_vec_of_strings_comes_back_through_the_string_list_and_as_a_quickjs_array() {
-    use platypus_api::rquickjs;
+fn a_vec_of_strings_comes_back_through_the_string_list() {
     // The ABI: the count (a null prefix is an empty one), then the strings one by one.
     let n = unsafe { rec_api::platypus_Rec_words(std::ptr::null()) };
     assert_eq!(n, 3);
@@ -372,16 +318,6 @@ fn a_vec_of_strings_comes_back_through_the_string_list_and_as_a_quickjs_array() 
     let json = rec_api::MANIFEST.to_json();
     assert!(json.contains(r#""returns":"list:string""#), "{json}");
     assert!(platypus_api::symbol("platypus_api_result_str").is_some());
-    // QuickJS: an array of JS strings.
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        rec_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(r#"JSON.stringify([Rec.words("x"), Array.isArray(Rec.words("")), Rec.words("q").length])"#)
-            .unwrap();
-        assert_eq!(out, r#"[["xa","xbb","xccc"],true,3]"#);
-    });
 }
 
 /// A script string object as the compiled code makes them: a 48 byte header, then the bytes.
@@ -398,8 +334,7 @@ fn script_string(text: &str) -> Vec<u8> {
 
 // M9-API-1621
 #[test]
-fn string_arrays_come_in_as_script_arrays_of_strings_and_as_quickjs_arrays() {
-    use platypus_api::rquickjs;
+fn string_arrays_come_in_as_script_arrays_of_strings() {
     // The ABI: a script array is a header, a length, a capacity and a pointer to string pointers.
     let strings: Vec<Vec<u8>> = ["héllo", "", "wörld"]
         .iter()
@@ -439,14 +374,4 @@ fn string_arrays_come_in_as_script_arrays_of_strings_and_as_quickjs_arrays() {
         dts.contains("function countWords(words: string[]): number;"),
         "{dts}"
     );
-    // QuickJS: an array of JS strings.
-    let rt = rquickjs::Runtime::new().unwrap();
-    let ctx = rquickjs::Context::full(&rt).unwrap();
-    ctx.with(|ctx| {
-        rec_api::register_quickjs(&ctx).unwrap();
-        let out: String = ctx
-            .eval(r#"JSON.stringify([Rec.joinWords(["a", "b", "c"], "-"), Rec.countWords(["x", "", "y"]), Rec.countWords([])])"#)
-            .unwrap();
-        assert_eq!(out, r#"["a-b-c",2,0]"#);
-    });
 }

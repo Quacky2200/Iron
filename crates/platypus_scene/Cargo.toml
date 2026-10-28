@@ -10,15 +10,6 @@ license.workspace = true
 
 [dependencies]
 glam = "0.34.1"
-platypus_api = { path = "../platypus_api", default-features = false, features = ["glam", "quickjs"] }
+platypus_api = { path = "../platypus_api", default-features = false, features = ["glam"] }
 platypus_core = { path = "../platypus_core" }
 platypus_math = { path = "../platypus_math" }
-
-[dev-dependencies]
-criterion = "0.8.2"
-rquickjs = "0.14.0"
-platypus_script = { path = "../platypus_script" }
-
-[[bench]]
-name = "reload"
-harness = false
