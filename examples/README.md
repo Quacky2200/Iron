@@ -9,6 +9,9 @@ Each folder is a complete game (`project.json`, `tsconfig.json`, `src/`, optiona
 | [text](./text/README.md) | Text styles, runtime fonts, CJK/emoji fallback |
 | [css](./css/README.md) | Stylesheets: selectors, pseudo-classes, `var()`, `clip-path` |
 | [form](./form/README.md) | Controlled inputs, validation, keyboard and gamepad navigation |
+| [flow](./flow/README.md) | CSS floats: a picture and pull-quote with text wrapping around them |
+| [table](./table/README.md) | A sortable table from a grid of `display: contents` rows |
+| [article](./article/README.md) | Floats and a sortable table in one article |
 | [windows](./windows/README.md) | Several OS windows, each with its own UI, talking by events |
 | [clock](./clock/README.md) | Twelve switchable clock faces in 2D/3D with a React switcher |
 | [shapes](./shapes/README.md) | `LineRenderer2D` and `Shapes.*` 2D vector gallery |
@@ -45,6 +48,12 @@ Each folder is a complete game (`project.json`, `tsconfig.json`, `src/`, optiona
 | [godrays-room](./godrays-room/README.md) | Derelict hall with a day-night sun path |
 | [godrays-shed](./godrays-shed/README.md) | Alien spot beam (pyramid shape), exposure options |
 | [godrays-sunset](./godrays-sunset/README.md) | Flat at sunset with a day cycle and city skyline |
+| [postfx](./postfx/README.md) | Every built-in `PostProcess` effect switchable, a custom WGSL pass |
+| [postfx-look](./postfx-look/README.md) | Stacked looks: noir, dream, comic, old TV, arcade |
+| [postfx-aberration](./postfx-aberration/README.md) | Chromatic aberration |
+| [postfx-focus](./postfx-focus/README.md) | Depth of field, tilt-shift, blur |
+| [postfx-outline](./postfx-outline/README.md) | Ink outlines along silhouettes and creases |
+| [postfx-film](./postfx-film/README.md) | Vignette, film grain, colour grading |
 
 ## Writing your own game
 

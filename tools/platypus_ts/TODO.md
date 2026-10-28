@@ -496,7 +496,9 @@ two examples needed (M9-TS-3361..3382), `b7730d0` the examples as platypus-build
 `platypus_render_cpu` / `platypus_render_gles`, hosts `platypus-game` (games) and `platypus-app` (`"type": "app"`,
 `src/bin/platypus_ui_app.rs`), `PLATYPUS_ANGLE_DIR` / `PLATYPUS_GLES_DUMP`; both hosts carry the icon (`build.rs`
 links the `.res` into every bin). The single `platypus` binary is gone; `cargo build -p platypus_app` builds
-`platypus-game.exe`, `platypus-app.exe` and `platypus_editor.exe`.
+`platypus-game.exe`, `platypus-app.exe` and `platypus_editor.exe`. 2026-10-28: main's next 19 commits (post-processing,
+CSS floats, grid tables, Transform hierarchy, raycast masks and tags, taffy 0.15.1 from crates.io) merged the same way
+("Merge main (post-processing, CSS floats, tables, Transform hierarchy) ...") and renamed.
 
 **Run:** one area `cargo test -p platypus_ts_tests --test <lang|stdlib|engine|engine_api|ui> [filter]`; all of them
 `cargo test -p platypus_ts_tests`. Keep one command shape: `-p platypus_ts_tests` and `--workspace` unify features differently
