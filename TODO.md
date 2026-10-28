@@ -1729,8 +1729,12 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     bytes css 134 -> ~100 (the D3D11 device alone is ~60). `docs/rendering.md` "Memory". Tests `M2-GLES-14..15`.
     - [ ] A glyph mask page that starts at 512 px and grows (~3-5 MB private on GLES; the atlas is shared with wgpu).
     - [ ] Program binaries cached on disk (`glGetProgramBinary`): ~0.7 s less start-up, no memory change measured.
-    - [ ] DirectComposition surface (`EGL_DIRECT_COMPOSITION_ANGLE`): ~4 MB less private; check resizing, alpha and
-      screenshots first.
+    - [ ] DirectComposition surface (`EGL_DIRECT_COMPOSITION_ANGLE`; not important now): ANGLE would build a swap
+      chain for composition and attach it to the window through a DirectComposition visual, so the compositor blends
+      it directly instead of keeping the extra window-sized surface of an HWND-attached swap chain. Measured ~4 MB
+      less private bytes (of ~100), which is why it is parked: the Memory column is already 23-46 MB. Worth doing
+      later for transparent or shaped windows and possibly smoother resizing. Before adopting: check resizing and
+      the first-frame flash by hand, alpha, screenshots, and that mozangle's ANGLE snapshot exposes the extension.
 - [ ] **M9.b2** `platypus_ts`: ahead-of-time TypeScript compiler (oxc → typed Platypus IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/platypus-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.
