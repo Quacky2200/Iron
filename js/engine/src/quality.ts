@@ -63,10 +63,10 @@ export interface QualityLevel {
 export type AnisotropicFiltering = "disable" | "enable" | "forceEnable";
 
 const DEFAULT_LEVELS: QualityLevel[] = [
-  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 0, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true, volumetricFog: false, hdr: true, additionalLights: 8, additionalLightShadows: false },
-  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: 32, additionalLightShadows: false },
-  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 0, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
-  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "medium", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 0, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
+  { name: "Low", antiAliasing: 1, renderScale: 0.75, shadows: "hardOnly", softShadowQuality: "low", shadowResolution: 1024, shadowDistance: 20, shadowCascades: 1, lodBias: 0.4, vSyncCount: 1, anisotropicFiltering: "disable", globalTextureMipmapLimit: 1, autoExposure: true, volumetricFog: false, hdr: true, additionalLights: 8, additionalLightShadows: false },
+  { name: "Medium", antiAliasing: 2, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 25, shadowCascades: 2, lodBias: 0.7, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: 32, additionalLightShadows: false },
+  { name: "High", antiAliasing: 4, renderScale: 1, shadows: "all", softShadowQuality: "low", shadowResolution: 2048, shadowDistance: 30, shadowCascades: 4, lodBias: 1, vSyncCount: 1, anisotropicFiltering: "enable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
+  { name: "Ultra", antiAliasing: 8, renderScale: 1, shadows: "all", softShadowQuality: "medium", shadowResolution: 4096, shadowDistance: 40, shadowCascades: 4, lodBias: 2, vSyncCount: 1, anisotropicFiltering: "forceEnable", globalTextureMipmapLimit: 0, autoExposure: true, volumetricFog: true, hdr: true, additionalLights: -1, additionalLightShadows: true },
 ];
 
 interface ManifestQuality {
@@ -130,7 +130,8 @@ function sendShadows(): void {
 /** The player's choice is saved (`platypus.quality` in PlayerPrefs) and comes back next time. */
 function remember(): void {
   if (restoring) return;
-  _saveJson("platypus.quality", { level: levels[levelIndex]?.name, current });
+  // `playerVSync`: vsync in this save is the player's (older saves' vsync is not).
+  _saveJson("platypus.quality", { level: levels[levelIndex]?.name, current, playerVSync: true });
 }
 let restoring = false;
 
@@ -342,12 +343,14 @@ export function _restoreQuality(state: unknown): void {
 
 /** @internal Applies the player's saved choice, else the default level (done when the engine loads). */
 export function _applyDefaultQuality(): void {
-  const saved = _loadJson("platypus.quality") as { level?: string; current?: Partial<QualityLevel> } | null;
+  const saved = _loadJson("platypus.quality") as { level?: string; current?: Partial<QualityLevel>; playerVSync?: boolean } | null;
   if (saved?.current) {
     const i = levels.findIndex((l) => l.name === saved.level);
     if (i >= 0) levelIndex = i;
-    // An old saved choice must not turn vsync back on: it isn't a player setting.
-    current = { ...levels[levelIndex]!, ...saved.current, vSyncCount: levels[levelIndex]!.vSyncCount, name: levels[levelIndex]!.name };
+    // Saves from before vsync was the player's (no `playerVSync`) take the level's (on).
+    const level = levels[levelIndex]!;
+    const vSyncCount = saved.playerVSync === true ? (saved.current.vSyncCount ?? level.vSyncCount) : level.vSyncCount;
+    current = { ...level, ...saved.current, vSyncCount, name: level.name };
   }
   // The starting state isn't a choice to save.
   restoring = true;

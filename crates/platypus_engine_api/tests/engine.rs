@@ -100,25 +100,26 @@ fn screen_and_quality_settings_are_read_and_set() {
         let s: String = ctx
             .eval("JSON.stringify([Screen.width, Screen.height, Screen.fullScreen, QualitySettings.vSyncCount])")
             .unwrap();
-        assert_eq!(s, "[800,600,false,0]", "vsync is off by default");
-        ctx.eval::<(), _>("Screen.fullScreen = !Screen.fullScreen; QualitySettings.vSyncCount = 1")
+        assert_eq!(s, "[800,600,false,1]", "vsync is on by default");
+        ctx.eval::<(), _>("Screen.fullScreen = !Screen.fullScreen; QualitySettings.vSyncCount = 0")
             .unwrap();
         assert!(screen::state().full_screen);
-        assert_eq!(screen::quality().v_sync_count, 1);
+        assert_eq!(screen::quality().v_sync_count, 0);
     });
 }
 
 // M9-API-914
 //
-// The levels start with vsync off, and a saved choice with vsync on (older saves) doesn't turn it on.
+// The levels start with vsync on; an older save (vsync off then, no `playerVSync`) does not turn it
+// off, and a player's choice (`playerVSync: true`) is kept.
 #[test]
-fn vsync_is_off_by_default_and_a_saved_choice_cannot_turn_it_on() {
+fn vsync_is_on_by_default_and_only_a_players_saved_choice_turns_it_off() {
     use platypus_engine_api::prefs;
     screen::reset();
-    assert_eq!(screen::quality().v_sync_count, 0);
+    assert_eq!(screen::quality().v_sync_count, 1);
     prefs::set_json(
         "platypus.quality",
-        r#"{"level":"High","current":{"renderScale":0.5,"vSyncCount":1}}"#,
+        r#"{"level":"High","current":{"renderScale":0.5,"vSyncCount":0}}"#,
     );
     screen::apply_default_quality();
     let q = screen::quality();
@@ -126,7 +127,15 @@ fn vsync_is_off_by_default_and_a_saved_choice_cannot_turn_it_on() {
         q.render_scale, 0.5,
         "the rest of the saved choice still applies"
     );
-    assert_eq!(q.v_sync_count, 0);
+    assert_eq!(q.v_sync_count, 1);
+    screen::reset();
+    prefs::set_json(
+        "platypus.quality",
+        r#"{"level":"Low","current":{"vSyncCount":0},"playerVSync":true}"#,
+    );
+    screen::apply_default_quality();
+    let q = screen::quality();
+    assert_eq!((q.name.as_str(), q.v_sync_count), ("Low", 0));
     prefs::reset();
 }
 

@@ -109,10 +109,19 @@ describe("display settings", () => {
   });
 
   // M9-API-915
-  test("vsync is off by default and an old saved vsync is ignored", () => {
+  test("vsync is on by default; an old save's vsync is ignored and a player's choice is kept", () => {
     _resetQualityForTests();
-    expect(QualitySettings.vSyncCount).toBe(0);
-    info({ prefs: { "platypus.quality": JSON.stringify({ level: "High", current: { ...QualitySettings.levels[2]!, vSyncCount: 1 } }) } });
+    expect(QualitySettings.vSyncCount).toBe(1);
+    // A save from before vsync was the player's (vsync was off then): the level's (on) wins.
+    info({ prefs: { "platypus.quality": JSON.stringify({ level: "High", current: { ...QualitySettings.levels[2]!, vSyncCount: 0 } }) } });
+    _resetPrefsForTests();
+    _resetQualityForTests();
+    ops = [];
+    _applyDefaultQuality();
+    expect(QualitySettings.vSyncCount).toBe(1);
+    expect(ops.find((o) => o[0] === "render.quality")![7]).toBe(1);
+    // The player turned it off (`playerVSync`): kept.
+    info({ prefs: { "platypus.quality": JSON.stringify({ level: "High", current: { vSyncCount: 0 }, playerVSync: true }) } });
     _resetPrefsForTests();
     _resetQualityForTests();
     ops = [];

@@ -13,7 +13,7 @@
 // The game lives in components (`GameManager`, `Player`, `Pickup`); the HUD is React
 // (`ScoreBoard`, `Timer`, `RoundOver`, `Settings`), fed by `useGame()`. Esc (or the
 // Settings button) pauses and opens the settings: style, window mode, resolution,
-// frame cap and quality, saved for next time (`PlayerPrefs`). Both reload while it runs:
+// vsync, frame cap and quality, saved for next time (`PlayerPrefs`). Both reload while it runs:
 // `bun run dev` and edit a HUD component (it keeps the score on screen) or a component's
 // code (the round, the score and every coin stay where they are).
 
@@ -643,6 +643,19 @@ function Settings(props: { t: Theme; style: Style }) {
           />
         ))}
       </Row>
+      <Row t={t} label="VSync">
+        {[1, 0].map((v) => (
+          <Choice
+            key={v}
+            label={v ? "On" : "Off"}
+            active={QualitySettings.vSyncCount === v}
+            onClick={() => {
+              QualitySettings.vSyncCount = v;
+              refresh();
+            }}
+          />
+        ))}
+      </Row>
       <Row t={t} label="Quality">
         {QualitySettings.names.map((name, i) => (
           <Choice
@@ -656,7 +669,7 @@ function Settings(props: { t: Theme; style: Style }) {
           />
         ))}
       </Row>
-      <text style={{ color: t.label, fontSize: 12 }}>The frame cap keeps the GPU from running flat out.</text>
+      <text style={{ color: t.label, fontSize: 12 }}>VSync paces frames to the display; with it off, the frame cap keeps the GPU from running flat out.</text>
       <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
         <Choice label="Back to the game (Esc)" active onClick={() => GameManager.current?.setPaused(false)} />
       </box>

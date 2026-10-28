@@ -137,7 +137,8 @@ fn level(
         shadow_distance: dist,
         shadow_cascades: cascades,
         lod_bias: lod,
-        v_sync_count: 0,
+        // On: players usually want it (`Application.targetFrameRate` caps frames when it is off).
+        v_sync_count: 1,
         anisotropic_filtering: aniso.into(),
         global_texture_mipmap_limit: mips,
         auto_exposure: true,
@@ -618,13 +619,20 @@ pub fn apply_default_quality() {
             let name = q.levels[q.index].name.clone();
             q.current = q.levels[q.index].clone();
             apply_fields(&mut q.current, cur);
-            // An old saved choice must not turn vsync back on: it isn't a player setting.
-            q.current.v_sync_count = q.levels[q.index].v_sync_count;
+            // Saves from before vsync was the player's (no `playerVSync`, vsync was off by
+            // default then) take the level's.
+            if saved.get(PLAYER_VSYNC).and_then(Value::as_bool) != Some(true) {
+                q.current.v_sync_count = q.levels[q.index].v_sync_count;
+            }
             q.current.name = name;
         }
         q.version += 1;
     });
 }
+
+/// Marks a saved `platypus.quality` whose `vSyncCount` is the player's choice (the startup
+/// video-settings prompt and saves since vsync became on by default write it).
+pub const PLAYER_VSYNC: &str = "playerVSync";
 
 /// The player's choice is saved and comes back next time.
 fn remember(s: &State) {
@@ -634,6 +642,7 @@ fn remember(s: &State) {
     let text = json!({
         "level": s.quality.levels.get(s.quality.index).map(|l| l.name.clone()),
         "current": level_json(&s.quality.current),
+        (PLAYER_VSYNC): true,
     })
     .to_string();
     prefs::set_json("platypus.quality", &text);
