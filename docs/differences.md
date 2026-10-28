@@ -219,9 +219,9 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Floats (`docs/ui-tree.md`, "Floats")
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
-| Container | Only `display: block` / `flow-root` containers lay floats out; boxes are `flex` by default, so set `display: block` on the container | Every `div` is block | Iron's default `display` is Taffy's `flex` |
+| Container | Only `display: block` / `flow-root` containers lay floats out; boxes are `flex` by default, so set `display: block` on the container | Every `div` is block | Platypus's default `display` is Taffy's `flex` |
 | Floats in text | A float is a block child placed before the text that wraps around it (also with bare text in the same block); a float between runs of one `text` element is not supported | Floats anywhere inside inline content | Text children are flattened to runs |
 | Line shortening | Lines are shortened by floats their height touches; a word too wide for the room moves the line below the float | Same | — |
 | `shape-outside`, `float: inline-start/end` in rtl | Not supported; `inline-start/end` mean left/right | Shaped wrap; logical sides | Taffy places rectangles |
@@ -229,7 +229,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 
 ## Tables (`docs/ui-tree.md`, "Tables")
 
-| Area | Iron | Browsers / spec | Why |
+| Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | Elements | None: a grid of `display: contents` rows (`examples/table`) | `table`, `tr`, `td`, `display: table*` | The grid already covers content-sized columns, wrapping, spans and striping |
 | Not available | `display: table*`, `border-collapse` / `border-spacing`, `<col>` widths, `position: sticky` headers, `vertical-align` on cells (use `align-content` on a grid cell), a box for the row (`contents` rows have no rect, background or border) | Yes | — |

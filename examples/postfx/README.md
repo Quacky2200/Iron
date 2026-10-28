@@ -9,7 +9,7 @@ lamps far down the avenue turn into bokeh discs when the depth of field blurs th
   WGSL). Each row has `-` / `+` for its main parameter.
 - `Tab` moves the depth of field's focus to the next ball (the example eases `focus_distance` as a lens does),
   `A` turns everything off, `T` tours the effects one at a time.
-- `iron examples/postfx -- outline vignette` starts with those effects on (names as in `PostEffect`; used for
+- `platypus-game examples/postfx -- outline vignette` starts with those effects on (names as in `PostEffect`; used for
   screenshots).
 
 Engine features exercised: `PostProcess.create`, `createCustom` with typed parameters (`"tint:color"`),
@@ -20,9 +20,9 @@ soft sun shadows, `Texture.create`, React menu. Guide: [docs/postprocessing.md](
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/postfx
-cd .. && cargo run --release -p iron_app -- examples/postfx
+cd tools && cargo run -q -p platypus_build -- build ../examples/postfx
+cd .. && cargo run --release -p platypus_app -- examples/postfx
 ```
 
-Screenshot run: `cargo run --release -p iron_app -- examples/postfx --screenshot out.png --frames 60 -- outline`
+Screenshot run: `cargo run --release -p platypus_app -- examples/postfx --screenshot out.png --frames 60 -- outline`
 (a window opens for a moment).

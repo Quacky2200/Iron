@@ -13,13 +13,13 @@ background, border or `getBoundingClientRect`; style its cells instead).
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/table
+cd tools && cargo run -q -p platypus_build -- build ../examples/table
 ```
 
 Then from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app -- examples/table --screenshot out.png --frames 30
+cargo run -p platypus_app -- examples/table --screenshot out.png --frames 30
 ```
 
 ## Structure
@@ -27,4 +27,4 @@ cargo run -p iron_app -- examples/table --screenshot out.png --frames 30
 | File | What |
 |---|---|
 | `src/main.tsx` | `App`: header row with sorting, data rows, a footer row with a column span |
-| `src/ui.css` | The grid, striping, hover, spans; shared by the golden `M3-TBL-01` and the tests in `crates/iron_ui/tests/table_grid.rs` |
+| `src/ui.css` | The grid, striping, hover, spans; shared by the golden `M3-TBL-01` and the tests in `crates/platypus_ui/tests/table_grid.rs` |

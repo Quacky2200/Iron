@@ -59,7 +59,7 @@ function App() {
       <box className="article">
         <Text className="kicker">Travel</Text>
         <Text className="headline">Six hours up the valley</Text>
-        <Text className="byline">By the Iron desk</Text>
+        <Text className="byline">By the Platypus desk</Text>
 
         <Image className="figure" src={PHOTO} />
         <box className="pull">
@@ -91,7 +91,7 @@ function App() {
             </box>
           ))}
         </box>
-        <Text className="caption">Photographs: the Iron desk.</Text>
+        <Text className="caption">Photographs: the Platypus desk.</Text>
       </box>
     </box>
   );

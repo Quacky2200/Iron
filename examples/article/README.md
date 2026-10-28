@@ -10,11 +10,11 @@ APIs used: `float`, `clear`, `display: grid` with `display: contents` rows, `Ima
 ## Build and run
 
 ```bash
-cd tools && cargo run -q -p iron_build -- build ../examples/article
+cd tools && cargo run -q -p platypus_build -- build ../examples/article
 ```
 
 Then from the repo root (`cd ..`):
 
 ```bash
-cargo run -p iron_app --release -- examples/article --screenshot out.png --frames 30
+cargo run -p platypus_app --release -- examples/article --screenshot out.png --frames 30
 ```

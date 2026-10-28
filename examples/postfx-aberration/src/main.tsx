@@ -4,7 +4,7 @@
 // Look at the bright lamps and the rails near the screen edges for coloured fringes.
 // Space turns it on and off, Up / Down change the amount.
 //
-// `iron examples/postfx-aberration -- 0.03` starts with that amount (for screenshots).
+// `platypus-game examples/postfx-aberration -- 0.03` starts with that amount (for screenshots).
 
 import { buildStage, sway } from "stage";
 

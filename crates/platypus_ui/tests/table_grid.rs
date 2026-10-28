@@ -6,8 +6,8 @@
 mod common;
 
 use common::{Dom, px};
-use iron_core::NodeId;
-use iron_ui::{Rect, UiTree};
+use platypus_core::NodeId;
+use platypus_ui::{Rect, UiTree};
 
 /// The stylesheet of `examples/table`.
 const CSS: &str = include_str!("../../../examples/table/src/ui.css");
@@ -119,7 +119,7 @@ fn numbers_align_to_the_right_edge_of_their_cell() {
     let ends: Vec<f32> = texts
         .iter()
         .filter_map(|c| match c {
-            iron_ui::DrawCmd::Text(t) => Some(
+            platypus_ui::DrawCmd::Text(t) => Some(
                 t.runs
                     .iter()
                     .flat_map(|r| &r.glyphs)
@@ -186,7 +186,7 @@ fn a_display_contents_row_is_hovered_through_its_cells() {
     let (mut tree, _, cells) = table(400.0, &rows, &[]);
     let cell = rect(&tree, cells[1][1]);
     let row = tree.parent(NodeId(cells[1][1])).unwrap();
-    let mut pointer = iron_ui::Pointer::new();
+    let mut pointer = platypus_ui::Pointer::new();
     pointer.move_to(&mut tree, cell.x + 5.0, cell.y + 5.0);
     assert!(tree.state(row).hover, "the row is hovered with its cell");
     // `.row:hover .cell` paints the cells of the row, not those of the other rows.

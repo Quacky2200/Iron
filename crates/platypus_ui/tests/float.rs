@@ -5,9 +5,9 @@
 mod common;
 
 use common::{Dom, n, op, px};
-use iron_core::{Commit, NodeId, Value};
-use iron_ui::opcodes::SET_STYLE;
-use iron_ui::{DrawCmd, Rect, UiTree};
+use platypus_core::{Commit, NodeId, Value};
+use platypus_ui::opcodes::SET_STYLE;
+use platypus_ui::{DrawCmd, Rect, UiTree};
 
 const WORDS: &str = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi \
     omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta";

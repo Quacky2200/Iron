@@ -214,7 +214,7 @@ s&box.
   primitive; [primitives.ts](../js/engine/src/primitives.ts) registers the factory).
 - `Transform`: `position`, `rotation`, `scale` (world) and local versions, `forward`, `right`, `up`,
   `eulerAngles`, `translate`, `rotate`, `lookAt`, `transformPoint`, `inverseTransformPoint`,
-  `transformDirection`. Native games (the `#[iron_api]` `Transform`) also have Unity's hierarchy:
+  `transformDirection`. Native games (the `#[platypus_api]` `Transform`) also have Unity's hierarchy:
   `parent` (`null` at a root, as on `GameObject`), `childCount`, `getChild(i)`, `root`,
   `find("a/b")` (also `..`, `.` and a leading `/` from the roots), `localToWorldMatrix` /
   `worldToLocalMatrix` (position, rotation and world scale, no shear), `isChildOf`, `detachChildren`, `siblingIndex` with `setAsFirstSibling` /

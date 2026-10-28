@@ -4,13 +4,13 @@
 
 use std::sync::Arc;
 
-use iron_core::glam::{Mat4, Vec3};
-use iron_render::testing::{assert_golden, shared_gpu};
-use iron_render::{
+use platypus_core::glam::{Mat4, Vec3};
+use platypus_render::testing::{assert_golden, shared_gpu};
+use platypus_render::{
     ALL_LAYERS, Color, Light, LightKind, MeshInstance, OffscreenTarget, PostEffect, PostParamType,
     PostShader, RenderTarget, Sky, WorldCamera, WorldRenderer, WorldView, primitive_id, wgpu,
 };
-use iron_render_api::{EFFECTS, ParamType, effect_named};
+use platypus_render_api::{EFFECTS, ParamType, effect_named};
 
 const SIZE: (u32, u32) = (160, 120);
 
@@ -59,11 +59,15 @@ fn custom(source: &str) -> PostEffect {
 
 /// Balls receding in a line over a floor, a bright thin bar and a few hard edges.
 fn scene(viewport: [f32; 4]) -> WorldView {
-    let size = iron_render::viewport_size(viewport, SIZE);
+    let size = platypus_render::viewport_size(viewport, SIZE);
     let eye = Vec3::new(0.0, 1.3, 5.0);
     let camera = WorldCamera::perspective(
-        iron_core::glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, 0.5, -2.0), Vec3::Y)
-            .inverse(),
+        platypus_core::glam::camera::rh::view::look_at_mat4(
+            eye,
+            Vec3::new(0.0, 0.5, -2.0),
+            Vec3::Y,
+        )
+        .inverse(),
         50.0,
         0.1,
         100.0,
@@ -117,7 +121,7 @@ struct Rig {
 }
 
 impl Rig {
-    fn new(gpu: &iron_render::Gpu) -> Self {
+    fn new(gpu: &platypus_render::Gpu) -> Self {
         let target =
             OffscreenTarget::with_format(gpu, SIZE.0, SIZE.1, wgpu::TextureFormat::Rgba8UnormSrgb);
         let mut world = WorldRenderer::new(gpu);
@@ -125,7 +129,7 @@ impl Rig {
         Self { target, world }
     }
 
-    fn render(&mut self, gpu: &iron_render::Gpu, views: &[WorldView]) -> Vec<u8> {
+    fn render(&mut self, gpu: &platypus_render::Gpu, views: &[WorldView]) -> Vec<u8> {
         let view = self.target.view().unwrap();
         let rt = RenderTarget {
             view: &view,
@@ -137,7 +141,7 @@ impl Rig {
         self.target.read_pixels(gpu).unwrap()
     }
 
-    fn with(&mut self, gpu: &iron_render::Gpu, effects: Vec<PostEffect>) -> Vec<u8> {
+    fn with(&mut self, gpu: &platypus_render::Gpu, effects: Vec<PostEffect>) -> Vec<u8> {
         let mut v = scene([0.0, 0.0, 1.0, 1.0]);
         v.post = effects;
         self.render(gpu, &[v])
@@ -430,7 +434,7 @@ fn passes_run_in_order_over_their_own_views() {
 // M7-FX-08
 #[test]
 fn depth_effects_work_with_msaa_and_after_tonemapping() {
-    use iron_render::{Grading, Tonemapping};
+    use platypus_render::{Grading, Tonemapping};
     let gpu = shared_gpu();
     let mut rig = Rig::new(&gpu);
     let outline = || vec![builtin("outline", &[])];

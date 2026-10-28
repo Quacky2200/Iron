@@ -258,8 +258,8 @@ fn objects_are_found_by_tag() {
 // scale.
 #[test]
 fn transforms_walk_and_reshape_the_hierarchy_like_unity() {
-    use iron_math::V3;
-    use iron_scene::api::TransformRef as T;
+    use platypus_math::V3;
+    use platypus_scene::api::TransformRef as T;
     let v = |x, y, z| V3 { x, y, z };
     let near = |a: V3, b: V3| (a.x - b.x).abs() + (a.y - b.y).abs() + (a.z - b.z).abs() < 1e-4;
 
@@ -335,7 +335,7 @@ fn transforms_walk_and_reshape_the_hierarchy_like_unity() {
     let at = ring_t.position();
     assert!(near(v(m.m[12], m.m[13], m.m[14]), at));
     let id = ring_t.world_to_local_matrix().mul(m);
-    for (i, want) in iron_math::M4::IDENTITY.m.iter().enumerate() {
+    for (i, want) in platypus_math::M4::IDENTITY.m.iter().enumerate() {
         assert!((id.m[i] - want).abs() < 1e-6, "element {i}: {}", id.m[i]);
     }
 

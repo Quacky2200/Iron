@@ -5,7 +5,7 @@
 // written in WGSL by the game itself (the ripple). Tab moves the depth of field's focus between
 // the three balls; A turns everything off; T tours the effects one at a time.
 //
-// `iron examples/postfx -- outline vignette` starts with those effects on (for screenshots).
+// `platypus-game examples/postfx -- outline vignette` starts with those effects on (for screenshots).
 
 type EffectName = PostEffect | "ripple";
 

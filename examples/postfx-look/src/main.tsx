@@ -4,7 +4,7 @@
 // 1 to 6 (0 is the plain render). Each look is a handful of `PostProcess` passes with their orders
 // and parameters; changing look turns the old ones off and the new ones on.
 //
-// `iron examples/postfx-look -- 3` starts with look 3 (for screenshots).
+// `platypus-game examples/postfx-look -- 3` starts with look 3 (for screenshots).
 
 import { buildStage, sway } from "stage";
 

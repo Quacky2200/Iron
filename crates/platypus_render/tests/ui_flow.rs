@@ -3,11 +3,11 @@
 //! Flow layout drawn by the UI renderer (M3-FLT-20..): floats with text wrapping around
 //! them, checked by golden images (and by eye when they change).
 
-use iron_core::{Commit, Value};
-use iron_render::testing::{assert_golden, shared_gpu};
-use iron_render::{Color, OffscreenTarget, RenderTarget, UiRenderer, wgpu};
-use iron_ui::UiTree;
-use iron_ui::opcodes::*;
+use platypus_core::{Commit, Value};
+use platypus_render::testing::{assert_golden, shared_gpu};
+use platypus_render::{Color, OffscreenTarget, RenderTarget, UiRenderer, wgpu};
+use platypus_ui::UiTree;
+use platypus_ui::opcodes::*;
 
 const TOLERANCE: u8 = 3;
 

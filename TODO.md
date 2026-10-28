@@ -1641,7 +1641,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
     upscale (it's bilinear, so a low render scale looks soft, not like real low-res pixels);
     `examples/fog-raider`'s PS1 look uses it
   - [x] Custom post-process passes (2026-10-27, branch `claude/postfx-9b4c75`): `PostProcess`
-    (`iron_render_api/src/postfx.rs`): `create(effect)`, `createCustom(wgsl, params)`, `enabled`,
+    (`platypus_render_api/src/postfx.rs`): `create(effect)`, `createCustom(wgsl, params)`, `enabled`,
     `order`, `camera`, `setFloat` / `setColor` / `setVector`; a WGSL `effect(uv, color)` with
     helpers (`scene`, `scene_depth`, `scene_normal`, `view_uv`, `post_time`, ..); passes run per
     camera view after bloom, tonemapping and FXAA, compiled once per shader, errors logged and

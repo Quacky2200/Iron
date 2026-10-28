@@ -6,7 +6,7 @@
 //   3  gaussian blur over everything
 // Up / Down change the blur amount (aperture opening, blur size, radius).
 //
-// `iron examples/postfx-focus -- 2` starts in mode 2 (for screenshots).
+// `platypus-game examples/postfx-focus -- 2` starts in mode 2 (for screenshots).
 
 import { buildStage, sway } from "stage";
 

@@ -410,14 +410,14 @@ fn destroying_an_object_removes_its_physics() {
 #[test]
 fn raycasts_filter_by_layer_and_name_the_hit_object() {
     let mut scene = setup();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let _scope = platypus_scene::api::enter(&mut scene);
     let far = make("far");
     place(far, 10.0, 0.0, 0.0);
     comp::col_attach(far, unit_box());
     let near = make("near");
     place(near, 5.0, 0.0, 0.0);
     comp::col_attach(near, unit_box());
-    iron_scene::api::with_scene(|s| s.set_layer(near, 3));
+    platypus_scene::api::with_scene(|s| s.set_layer(near, 3));
     run(1);
     let cast = |x: f64, mask: u32| {
         let n = crate::do_raycast_masked(

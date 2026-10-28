@@ -5,7 +5,7 @@
 //   O  outlines on / off     P  cel bands on / off     C  also ink brightness edges (shadows, texture)
 //   Up / Down  line thickness
 //
-// `iron examples/postfx-outline -- color` starts with brightness edges on (for screenshots).
+// `platypus-game examples/postfx-outline -- color` starts with brightness edges on (for screenshots).
 
 import { buildStage, sway } from "stage";
 

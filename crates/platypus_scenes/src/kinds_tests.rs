@@ -38,13 +38,13 @@ fn scene_and_prefab_files_from_before_the_rename_still_load() {
     let mut scene = platypus_scene::Scene::new();
     let _scope = platypus_scene::api::enter(&mut scene);
     let s = manager::load_scene(
-        r#"{"format":"iron.scene","version":1,"name":"Old","objects":[{"name":"o"}]}"#,
+        r#"{"format":"platypus.scene","version":1,"name":"Old","objects":[{"name":"o"}]}"#,
         false,
     )
     .unwrap();
     named(s, "o");
     let p = manager::prefab_from_data(
-        r#"{"format":"iron.prefab","version":1,"name":"P","root":{"id":1,"name":"Made"}}"#,
+        r#"{"format":"platypus.prefab","version":1,"name":"P","root":{"id":1,"name":"Made"}}"#,
         None,
     );
     assert!(p.is_ok(), "{p:?}");
@@ -153,11 +153,11 @@ fn animation_components_keep_their_settings_through_files_prefabs_and_copies() {
 #[test]
 fn tags_survive_scene_files_and_copies() {
     manager::reset();
-    let mut scene = iron_scene::Scene::new();
-    let _scope = iron_scene::api::enter(&mut scene);
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
     let (boss, plain) =
-        iron_scene::api::with_scene(|s| (s.create("Boss"), s.create("Plain"))).unwrap();
-    iron_scene::api::with_scene(|s| s.set_tag_name(boss, "Enemy"));
+        platypus_scene::api::with_scene(|s| (s.create("Boss"), s.create("Plain"))).unwrap();
+    platypus_scene::api::with_scene(|s| s.set_tag_name(boss, "Enemy"));
     let level = manager::create_scene("tagged");
     manager::move_to_scene(boss, level);
     manager::move_to_scene(plain, level);
@@ -166,7 +166,7 @@ fn tags_survive_scene_files_and_copies() {
     // Untagged objects add nothing to the file.
     assert_eq!(text.matches(r#""tag""#).count(), 1, "{text}");
     let loaded = manager::load_scene(&text, true).unwrap();
-    let tag = |o| iron_scene::api::with_scene(|s| s.tag_name(o).to_owned()).unwrap();
+    let tag = |o| platypus_scene::api::with_scene(|s| s.tag_name(o).to_owned()).unwrap();
     assert_eq!(tag(named(loaded, "Boss")), "Enemy");
     assert_eq!(tag(named(loaded, "Plain")), "Untagged");
     let copy = manager::instantiate(boss, None, None, None).unwrap();

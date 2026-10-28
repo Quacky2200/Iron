@@ -4,7 +4,7 @@
 //   V  vignette (darker corners)    G  film grain (moving noise)    C  colour grading (warm, contrasty)
 //   A  all three off, to compare    Up / Down  strength of all three
 //
-// `iron examples/postfx-film -- 1.5` starts at that strength (for screenshots).
+// `platypus-game examples/postfx-film -- 1.5` starts at that strength (for screenshots).
 
 import { buildStage, sway } from "stage";
 

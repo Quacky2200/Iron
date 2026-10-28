@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Post-process passes from scripts (`PostProcess`, in `iron_render_api`) to the renderer's
+//! Post-process passes from scripts (`PostProcess`, in `platypus_render_api`) to the renderer's
 //! [`PostEffect`]s: the passes are sent when the registry changes and each camera's view gets
 //! the ones aimed at it (or at every camera), in order.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use iron_render::{POST_PARAMS, PostEffect, PostParamType, PostShader};
-use iron_render_api::{MAX_PARAMS, ParamType, PostPass, ShaderDef};
+use platypus_render::{POST_PARAMS, PostEffect, PostParamType, PostShader};
+use platypus_render_api::{MAX_PARAMS, ParamType, PostPass, ShaderDef};
 
 const _: () = assert!(MAX_PARAMS == POST_PARAMS);
 

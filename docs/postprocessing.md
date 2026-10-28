@@ -2,8 +2,8 @@
 
 Passes over a camera's finished picture: chromatic aberration, blur, depth of field, ink outlines, vignette,
 pixelate, film grain, colour grading and more, plus your own WGSL. Scripts use `PostProcess`; the renderer side
-is [post.rs](../crates/iron_render/src/world/post.rs); the built-ins (their WGSL and parameters) are in
-[postfx.rs](../crates/iron_render_api/src/postfx.rs) and `postfx/*.wgsl`. Examples: `examples/postfx` (every effect, a menu) and the small ones, each a copy of one scene (`modules/stage.ts`):
+is [post.rs](../crates/platypus_render/src/world/post.rs); the built-ins (their WGSL and parameters) are in
+[postfx.rs](../crates/platypus_render_api/src/postfx.rs) and `postfx/*.wgsl`. Examples: `examples/postfx` (every effect, a menu) and the small ones, each a copy of one scene (`modules/stage.ts`):
 `postfx-look` (stacked looks), `postfx-aberration`, `postfx-focus`, `postfx-outline`, `postfx-film`. Tests
 `M7-FX-01`..`09`.
 
@@ -68,7 +68,7 @@ wobble.setFloat("strength", 1);
 `source` defines `effect(uv, color) -> vec4<f32>`: `uv` is across the whole target, `color` the picture there.
 `parameters` declares up to 8 values (`"name"` is a float; `"name:float|vec2|vec3|vec4|color"`), each a
 private WGSL variable set before `effect` runs. The renderer adds the bindings and these helpers
-([post.rs](../crates/iron_render/src/world/post.rs) `PRELUDE`):
+([post.rs](../crates/platypus_render/src/world/post.rs) `PRELUDE`):
 
 | Helper | |
 |---|---|
@@ -84,7 +84,7 @@ left out; the other passes still run.
 
 ## How it runs
 
-- **Where.** `render_views_with` ([world/mod.rs](../crates/iron_render/src/world/mod.rs)): if any view has
+- **Where.** `render_views_with` ([world/mod.rs](../crates/platypus_render/src/world/mod.rs)): if any view has
   `WorldView::post`, the frame goes through the post path (the HDR texture, as with bloom or grading), the
   graded (and FXAA'd) picture lands in `PostChain::input`'s texture (target format), `PostChain::encode` runs
   the passes and the last one draws into the target.
@@ -98,8 +98,8 @@ left out; the other passes still run.
   from the neighbour pixels on the nearer side of each axis (so silhouettes do not bend them). Perspective and
   orthographic both work. Normals are of the depth buffer, so they have no normal-map detail.
 - **Pipelines** are cached by `PostShader::id` (a hash of source and parameters) and target format; the app
-  keeps one `Arc<PostShader>` per script shader (`iron_app/src/postfx.rs`) so they stay cached.
-- **Sync.** The registry (`iron_render_api::post_version`, `post_passes`) changes on any pass edit; `render_sync`
+  keeps one `Arc<PostShader>` per script shader (`platypus_app/src/postfx.rs`) so they stay cached.
+- **Sync.** The registry (`platypus_render_api::post_version`, `post_passes`) changes on any pass edit; `render_sync`
   sends the enabled passes to `WorldViews::post`, and `WorldViews::views` gives each camera's view its own.
 
 ## Limits

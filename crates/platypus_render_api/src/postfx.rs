@@ -5,7 +5,7 @@
 //! (`PostProcess.createCustom(source, ["strength", "tint:color"])`), order them, turn them on
 //! and off, aim them at a camera and set their parameters by name. Nothing here draws: the app
 //! reads the enabled passes ([`post_passes`]) when the registry's [`post_version`] changes and
-//! hands them to the renderer (`iron_render::PostEffect`).
+//! hands them to the renderer (`platypus_render::PostEffect`).
 //!
 //! The built-ins are the table [`EFFECTS`]: the WGSL of each (`postfx/*.wgsl`) and its
 //! parameters with their defaults, in slot order. A custom shader gets the renderer's helpers
@@ -13,7 +13,7 @@
 //! Usage: `docs/postprocessing.md`.
 
 use super::*;
-use iron_engine_api::camera::CameraRef;
+use platypus_engine_api::camera::CameraRef;
 use std::sync::Arc;
 
 numbered_handle!(
@@ -343,7 +343,7 @@ pub fn post_passes() -> Vec<PostPass> {
 }
 
 fn warn(message: &str) {
-    iron_engine_api::log::log_api::warning(message);
+    platypus_engine_api::log::log_api::warning(message);
 }
 
 fn add(shader: Arc<ShaderDef>, values: [[f32; 4]; MAX_PARAMS]) -> PostProcessRef {
@@ -466,7 +466,7 @@ fn parameter_names(p: PostProcessRef) -> Vec<String> {
     .unwrap_or_default()
 }
 
-#[iron_api(
+#[platypus_api(
     namespace = "PostProcess", quickjs,
     handles(PostProcess = PostProcessRef, Camera = CameraRef),
     values(Color = Rgba [r: f64, g: f64, b: f64, a: f64]),
