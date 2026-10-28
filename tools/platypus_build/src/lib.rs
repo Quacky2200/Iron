@@ -326,20 +326,22 @@ pub fn read_usage(game: &Path) -> Option<platypus_ts::renderer::Usage> {
 }
 
 /// What the program needs from the renderer: the engine API its compiled code calls (`externs`)
-/// and the component types of the scene and prefab files a packaged build would hold (`plan`).
+/// or uses otherwise (`uses`: components), and the scene and prefab files a packaged build would
+/// hold (`plan`): objects, and their component types.
 fn usage_of(
     externs: &[String],
+    uses: &[String],
     manifests: &[String],
     root: &Path,
     plan: &[String],
 ) -> platypus_ts::renderer::Usage {
-    let mut usage = platypus_ts::renderer::usage_of_symbols(externs, manifests);
+    let mut usage = platypus_ts::renderer::usage_of_symbols(externs, uses, manifests);
     for f in plan
         .iter()
         .filter(|f| f.ends_with(".scene.json") || f.ends_with(".prefab.json"))
     {
         if let Ok(text) = std::fs::read_to_string(root.join(f)) {
-            let types = platypus_ts::renderer::scene_types(&text);
+            let types = platypus_ts::renderer::scene_file_names(&text);
             usage.add(types.iter().map(String::as_str));
         }
     }
@@ -552,7 +554,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
             write_atomic(&out_dir.join("game_bindings.rs"), out.bindings.as_bytes())
                 .map_err(|e| e.to_string())?;
         }
-        Some(out.externs)
+        Some((out.externs, out.uses))
     } else {
         // Not compiled, but the bundle still says what the program needs: lowering alone finds
         // it (a program lowering can't handle leaves it unknown, which the host takes as 3D).
@@ -647,7 +649,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     plan.extend(copied.iter().map(|c| format!("build/{c}")));
     plan.sort();
     plan.dedup();
-    let usage = externs.map(|e| usage_of(&e, &manifests(), root, &plan));
+    let usage = externs.map(|(e, u)| usage_of(&e, &u, &manifests(), root, &plan));
     if let Some(w) = renderer_warning(config.renderer, &usage) {
         warnings.push(w);
     }

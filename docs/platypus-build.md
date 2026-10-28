@@ -204,8 +204,9 @@ builds and is type-checked with the same default (the build writes it into `buil
    and code generation errors show up now. Errors name `file:line` of the original file. `--aot` also writes `build/game.o` and
    `build/game_bindings.rs` (the object file for a release build that links the game into the executable). What the program
    needs from the renderer (its **tier**) comes from the compile: the engine symbols the code calls (unused top-level functions
-   left out), plus the component types of the scene and prefab files the build would pack (`platypus_ts::renderer`;
-   [rendering.md](rendering.md#choosing-the-renderer)). `build` prints it (`renderer: world3d (Camera, Light, ...)`) and `check`
+   left out) and its component classes, plus `GameObject` and the component types of the scene and prefab files the build would
+   pack (`platypus_ts::renderer`; [rendering.md](rendering.md#choosing-the-renderer)). A `GameObject`, a component or a scene
+   file makes a game at least `world2d`; only a program without any (React, CSS, windows, timers, input, audio) is `ui`. `build` prints it (`renderer: world3d (Camera, Light, ...)`) and `check`
    shows it per game. `--no-compile` still lowers the program to find it (no code generation); only a program that fails to lower leaves it unknown (no `renderer` in the bundle, which the host takes as the 3D world).
 5. **Stylesheets.** `import "./x.css"` lines are collected in import order into `build/game.css` (`css.rs`): `@import` is
    inlined; every `url()` is rewritten: a file up to 32 KiB becomes a `data:` URL, a larger one is copied to `build/` as

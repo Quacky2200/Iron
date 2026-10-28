@@ -509,7 +509,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     if src.contains("Intl.DateTimeFormat") {
         head += prelude::INTL_DATETIME;
     }
-    if wants_components {
+    if wants_components.any() {
         head += &components::prelude(has_go);
     }
     if wants_ui {
@@ -623,6 +623,10 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     l.lower_program(&program)?;
     lap.mark("type inference and lowering to IR");
     let mut m = l.m;
+    // A component class is compiled whether or not anything registers it.
+    if wants_components.extends {
+        m.note_use(crate::renderer::COMPONENT);
+    }
     m.value_structs = l.value_structs.values().copied().collect();
     m.value_structs.sort_unstable();
     crate::throws::analyze(&mut m);
@@ -643,7 +647,9 @@ impl<'a> Lowerer<'a> {
     /// A top-level function nothing needs unless the code refers to it.
     fn skippable(&self, name: &str) -> bool {
         let src = &self.fsrc[name];
-        matches!(src.kind, FnKind::Free) && !src.exported && !name.starts_with("__")
+        matches!(src.kind, FnKind::Free)
+            && !src.exported
+            && (!name.starts_with("__") || components::is_scene_helper(name))
     }
 
     pub(crate) fn tag(&mut self, name: &str) -> u32 {

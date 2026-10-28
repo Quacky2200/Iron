@@ -7,7 +7,9 @@
 //! picks its renderer from it (`docs/rendering.md`, "Choosing the renderer").
 //!
 //! The tags live here, in one table keyed on the API's owner names (a class or a namespace of
-//! the `#[platypus_api]` manifests); a name that isn't listed needs nothing beyond the UI.
+//! the `#[platypus_api]` manifests, or the prelude's `Component`); a name that isn't listed needs
+//! nothing beyond the UI. Only code counts: names in strings or comments, and top-level
+//! functions nothing calls, don't.
 //! `platypus_build`'s tests check the table against the real API: every class and namespace of
 //! `platypus_render_api` is listed, and every listed name exists.
 
@@ -44,13 +46,27 @@ impl Tier {
     }
 }
 
+/// The prelude class of components (`class Player extends Component`, `register(..)`): not an
+/// engine class of the manifests, the compiler notes its use itself (`Output::uses`).
+pub const COMPONENT: &str = "Component";
+
+/// Names of the table that are not classes or namespaces of the manifests.
+pub const PRELUDE_NAMES: &[&str] = &[COMPONENT];
+
 /// The engine API that needs the world renderer, by owner name. Cameras are 2D: a 2D game needs
-/// one too, and what makes a world 3D is what it draws.
+/// one too, and what makes a world 3D is what it draws. So is the scene itself: a program with a
+/// `GameObject`, a component class or a scene file runs the world, even if it draws only UI.
 pub const TAGS: &[(&str, Tier)] = &[
     // A 2D world.
     ("Camera", Tier::World2d),
     ("Cameras", Tier::World2d),
     ("CameraFollow", Tier::World2d),
+    (COMPONENT, Tier::World2d),
+    ("GameObject", Tier::World2d),
+    ("Prefab", Tier::World2d),
+    ("Scene", Tier::World2d),
+    ("SceneManager", Tier::World2d),
+    ("Transform", Tier::World2d),
     ("LineRenderer2D", Tier::World2d),
     ("Sprite", Tier::World2d),
     ("SpriteRenderer", Tier::World2d),
@@ -172,16 +188,26 @@ pub fn owner_names(manifests: &[String]) -> BTreeSet<String> {
     names
 }
 
-/// The usage of a compiled program: the owners of the extern symbols it calls.
-pub fn usage_of_symbols(symbols: &[String], manifests: &[String]) -> Usage {
+/// The usage of a compiled program: the owners of the extern symbols it calls, and the names it
+/// uses without a call (`Output::uses`).
+pub fn usage_of_symbols(symbols: &[String], uses: &[String], manifests: &[String]) -> Usage {
     let owners = symbol_owners(manifests);
     let mut usage = Usage::default();
     usage.add(
         symbols
             .iter()
-            .filter_map(|s| owners.get(s).map(String::as_str)),
+            .filter_map(|s| owners.get(s).map(String::as_str))
+            .chain(uses.iter().map(String::as_str)),
     );
     usage
+}
+
+/// The names a scene or prefab file brings: its component and asset types, and `GameObject`,
+/// since loading one makes objects.
+pub fn scene_file_names(json: &str) -> BTreeSet<String> {
+    let mut names = scene_types(json);
+    names.insert("GameObject".to_string());
+    names
 }
 
 /// The component and asset types a scene or prefab file names (`"type": "MeshRenderer"`,
@@ -237,6 +263,19 @@ mod tests {
         assert_eq!(
             t.into_iter().collect::<Vec<_>>(),
             ["Material", "MeshRenderer"]
+        );
+    }
+
+    // M9-HOST-15
+    #[test]
+    fn a_scene_file_is_game_objects() {
+        let t = scene_file_names(r#"{"objects":[{"components":[{"type":"Spinner"}]}]}"#);
+        assert_eq!(t.into_iter().collect::<Vec<_>>(), ["GameObject", "Spinner"]);
+        let mut u = Usage::default();
+        u.add(["Spinner", "GameObject"]);
+        assert_eq!(
+            (u.tier, u.uses.as_slice()),
+            (Tier::World2d, &["GameObject".to_string()][..])
         );
     }
 

@@ -30,6 +30,8 @@ pub struct Output {
     /// The engine symbols the compiled code calls (unused top-level functions left out), for
     /// `renderer::usage_of_symbols`.
     pub externs: Vec<String>,
+    /// Engine names the compiled code uses without an extern call (`renderer::COMPONENT`).
+    pub uses: Vec<String>,
     /// Wall-clock time of each phase.
     pub lower_time: std::time::Duration,
     pub codegen_time: std::time::Duration,
@@ -92,15 +94,20 @@ pub fn compile_with_manifests(
     })
 }
 
-/// The engine symbols the program calls, from lowering alone (no code generation): what
-/// `Output::externs` holds, for a build that skips compiling.
-pub fn extern_symbols(src: &str, manifests: &[String]) -> Result<Vec<String>, String> {
+/// The engine symbols the program calls and the names it uses otherwise, from lowering alone
+/// (no code generation): what `Output::externs` and `Output::uses` hold, for a build that skips
+/// compiling.
+pub fn extern_symbols(
+    src: &str,
+    manifests: &[String],
+) -> Result<(Vec<String>, Vec<String>), String> {
     std::thread::scope(|s| {
         std::thread::Builder::new()
             .stack_size(64 << 20)
             .spawn_scoped(s, || {
                 let module = lower::lower_source_with(src, manifests)?;
-                Ok(module.externs.iter().map(|e| e.symbol.clone()).collect())
+                let externs = module.externs.iter().map(|e| e.symbol.clone()).collect();
+                Ok((externs, module.uses))
             })
             .map_err(|e| e.to_string())?
             .join()
@@ -129,6 +136,7 @@ fn compile_inner(
         bindings: layout::rust_bindings(&module),
         ir: ir::dump(&module),
         externs: module.externs.iter().map(|e| e.symbol.clone()).collect(),
+        uses: module.uses.clone(),
         lower_time,
         codegen_time,
     })

@@ -2063,7 +2063,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-HOST-04 | Unit | Every name of the tier table is a class or namespace of the real engine manifests (no stale tags). |
 | M9-HOST-05 | Unit | Every class and namespace of `platypus_render_api` has a tier above `ui`, and so do `Camera` and `Gizmos`. |
 | M9-HOST-06 | Unit | A compiled program that is only UI (React state, `Debug.log`, `Time`, `Vector3`) needs `ui` with nothing listed. |
-| M9-HOST-07 | Unit | A program that adds a `Camera` needs `world2d` (`uses: ["Camera"]`); with a `MeshRenderer` too it needs `world3d`. |
+| M9-HOST-07 | Unit | A program that adds a `Camera` needs `world2d` (`uses: ["Camera", "GameObject"]`); with a `MeshRenderer` too it needs `world3d`. |
 | M9-HOST-08 | Unit | A program that adds a `TextMesh` needs `world2d`. |
 | M9-HOST-09 | Unit | A `Camera` used only in a top-level function nothing calls does not count (the unused function is not compiled): `ui`. |
 | M9-HOST-10 | Unit | With no renderer set, the host starts a `ui` program on GLES and a `world2d` / `world3d` one on wgpu with the world (`host::resolve`). |
@@ -2071,6 +2071,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-HOST-12 | Unit | A UI-only renderer (`gles`, `cpu`) for a program that uses the world warns naming the renderer, the names it uses and "3D Not Supported"; `vulkan`, or a `ui` program, does not. |
 | M9-HOST-13 | Unit | Engine calls named only inside strings (the md-reader's bundled docs: `Model.load(..).whenLoaded()`, `Light.measureIlluminance`) pull no facade chunk in and do not count: `ui`. |
 | M9-HOST-14 | Unit | `platypus-build package --renderer` writes `renderer` into the exe's embedded `project.json` over the project's (`auto` leaves it out, no argument keeps the project's), warns once for a UI-only renderer of a world bundle, and writes `THIRD-PARTY-NOTICES.md` beside the exe. |
+| M9-HOST-15 | Unit | A scene or prefab file brings `GameObject` with its component types; a script component type (`Spinner`) has no tier of its own, `GameObject` makes it `world2d`. |
+| M9-HOST-16 | Unit | A program with only a registered component (it logs in `onUpdate`, touches no object) needs `world2d` with `Component` in `uses`; so does a class that extends `Component` with no `register`. |
+| M9-HOST-17 | Unit | A program that only creates a `GameObject` (and names it) needs `world2d` (`uses: ["GameObject"]`). |
+| M9-HOST-18 | Unit | `extends Component`, `register({ .. })` and `new GameObject(..)` inside strings and comments do not count, nor does a plain object's `.children` (the scene hierarchy helper is not lowered): `ui`. |
 | M9-TSC-01 | Unit | The default `tsconfig.json` is self-contained (no `extends`): ES2022, strict, `noUncheckedIndexedAccess`, `noImplicitOverride`, `isolatedModules`, `verbatimModuleSyntax`, `moduleResolution: bundler`, `jsx: react-jsx`, `paths` to `src/modules`, `include: ["src"]` and `files: ["types/platypus.d.ts"]`. |
 | M9-TSC-02 | Unit | `init` writes that `tsconfig.json` (keeping an existing one) and `types/platypus.d.ts`, the text `platypus-build types` writes (it declares `Vector3` and `GameObject`), so an editor completes engine names at once. |
 | M9-TSC-03 | Unit | `init --editor-files` rewrites only `tsconfig.json` and `types/platypus.d.ts` (a stale declarations file is replaced) of one game or of every game in a folder; the other files stay byte-identical; a folder without games is an error. |

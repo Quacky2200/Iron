@@ -717,6 +717,7 @@ impl<'a> Lowerer<'a> {
                     };
                     let names = self.str_expr(names)?;
                     let spawn = self.num_arg(spawn)?;
+                    self.m.note_use(crate::renderer::COMPONENT);
                     self.rt_str("ts_rt_register_class", vec![names, spawn], Ty::Void)
                 } else {
                     let [kind, module, msg] = args.as_slice() else {

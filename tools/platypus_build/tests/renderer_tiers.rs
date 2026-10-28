@@ -5,7 +5,7 @@
 //! finds a program needs.
 
 use platypus_build::manifests;
-use platypus_ts::renderer::{TAGS, Tier, Usage, owner_names, usage_of_symbols};
+use platypus_ts::renderer::{PRELUDE_NAMES, TAGS, Tier, Usage, owner_names, usage_of_symbols};
 use std::collections::BTreeSet;
 
 /// The classes and namespaces (not enums) of some manifests.
@@ -24,7 +24,11 @@ fn owners(ms: &[String]) -> BTreeSet<String> {
 fn usage(src: &str) -> Usage {
     let ms = manifests();
     let out = platypus_ts::compile_with_manifests(src, "speed", "t_", 0, &ms).unwrap();
-    usage_of_symbols(&out.externs, &ms)
+    usage_of_symbols(&out.externs, &out.uses, &ms)
+}
+
+fn names(u: &Usage) -> Vec<&str> {
+    u.uses.iter().map(String::as_str).collect()
 }
 
 // M9-HOST-04
@@ -34,7 +38,7 @@ fn every_tagged_name_is_a_class_or_namespace_of_the_engine_api() {
     let stale: Vec<&str> = TAGS
         .iter()
         .map(|(n, _)| *n)
-        .filter(|n| !all.contains(*n))
+        .filter(|n| !all.contains(*n) && !PRELUDE_NAMES.contains(n))
         .collect();
     assert!(stale.is_empty(), "tagged but not in the API: {stale:?}");
 }
@@ -77,8 +81,8 @@ fn a_camera_is_the_2d_world_and_a_mesh_the_3d_one() {
            go.addComponent(Camera, { orthographic: true });"#,
     );
     assert_eq!(
-        (cam.tier, cam.uses.as_slice()),
-        (Tier::World2d, &["Camera".to_string()][..])
+        (cam.tier, names(&cam)),
+        (Tier::World2d, vec!["Camera", "GameObject"])
     );
     let mesh = usage(
         r#"const go = new GameObject("cam");
@@ -110,6 +114,51 @@ fn engine_calls_named_only_in_strings_do_not_count() {
     let u = usage(
         r#"const DOC = "const m = Model.load('a.glb'); await m.whenLoaded(); Light.measureIlluminance(p);";
            Debug.log(DOC);"#,
+    );
+    assert_eq!(u.tier, Tier::Ui, "{:?}", u.uses);
+}
+
+// M9-HOST-16
+#[test]
+fn a_registered_component_alone_is_the_2d_world() {
+    // It touches no object, but the host runs the scene for it (the base class's `transform`
+    // getter may name `GameObject` too).
+    let u = usage(
+        r#"class Ticker extends Component {
+             override onUpdate(_dt: number) { console.log("tick"); }
+           }
+           register({ Ticker });"#,
+    );
+    assert_eq!(u.tier, Tier::World2d, "{:?}", u.uses);
+    assert!(names(&u).contains(&"Component"), "{:?}", u.uses);
+    // A class that extends Component counts even if nothing registers it here.
+    let u = usage(r#"class Idle extends Component {} console.log("x");"#);
+    assert_eq!(u.tier, Tier::World2d, "{:?}", u.uses);
+    assert!(names(&u).contains(&"Component"), "{:?}", u.uses);
+}
+
+// M9-HOST-17
+#[test]
+fn a_game_object_alone_is_the_2d_world() {
+    let u = usage(r#"const go = new GameObject("empty"); go.name = "still empty";"#);
+    assert_eq!((u.tier, names(&u)), (Tier::World2d, vec!["GameObject"]));
+}
+
+// M9-HOST-18
+#[test]
+fn components_named_only_in_strings_and_comments_do_not_count() {
+    let u = usage(
+        r#"// class Old extends Component {} and register({ Old })
+           const DOC = "class Player extends Component { onUpdate() {} }\nregister({ Player });";
+           const go = "new GameObject('x')";
+           console.log(DOC + go);"#,
+    );
+    assert_eq!(u.tier, Tier::Ui, "{:?}", u.uses);
+    // A `.children` of plain data (a markdown tree) is not the scene's.
+    let u = usage(
+        r#"type Node = { children: string[] };
+           const n: Node = { children: ["a"] };
+           console.log(`${n.children.length}`);"#,
     );
     assert_eq!(u.tier, Tier::Ui, "{:?}", u.uses);
 }

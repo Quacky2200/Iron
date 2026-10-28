@@ -567,6 +567,18 @@ pub struct Module {
     pub struct_base: u32,
     /// The structs of the engine's value classes (`Vector3`, ...): all `number` fields.
     pub value_structs: Vec<StructId>,
+    /// Engine names the compiled code uses without an extern call (`renderer::COMPONENT`), for
+    /// the renderer tier.
+    pub uses: Vec<String>,
+}
+
+impl Module {
+    /// Records that the compiled code uses `name` (once).
+    pub fn note_use(&mut self, name: &str) {
+        if !self.uses.iter().any(|u| u == name) {
+            self.uses.push(name.to_string());
+        }
+    }
 }
 
 // ---- A readable dump (for `platypus_ts --dump-ir` and the doc) ----

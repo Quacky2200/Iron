@@ -1718,6 +1718,10 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] Remove the root `tsconfig.base.json` together with the QuickJS packages that still extend it (`js/engine`,
     `js/react`, `js/editor-ui`, `editor/`, `tests/fixtures`); the examples and `tools/bench/crowd` no longer use it.
   - ANGLE no longer needs scoping to one binary (the old `ui_app_only` idea): there is one host.
+  - [x] The scene counts (2026-10-28): a `GameObject`, `Transform`, scene or prefab (file or API), or a component class
+    (`extends Component`, a lowered `register(..)`, found in the parsed code) makes a program `world2d`; the hierarchy
+    helpers are lowered only when called. `hello` now logs from a timer (stays `ui`); `physics` became `world2d` (rapier
+    bodies live on GameObjects). Tests `M9-HOST-15..18`.
 - [ ] **M9.b2** `platypus_ts`: ahead-of-time TypeScript compiler (oxc → typed Platypus IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/platypus-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.

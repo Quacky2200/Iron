@@ -3,15 +3,9 @@
 
 import { greeting } from "greet";
 
+// Plain code and a timer, no scene: the game stays on the light UI renderer.
+console.log(greeting("world", 1));
 
-class Hello extends Component {
-  override onStart() {
-    console.log(greeting("world", 1));
-  }
-
-  override onUpdate(_dt: number) {
-    console.log("tick");
-  }
-}
-
-register({ Hello });
+setInterval(() => {
+  console.log("tick");
+}, 16);

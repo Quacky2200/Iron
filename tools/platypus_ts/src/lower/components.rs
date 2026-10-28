@@ -130,6 +130,13 @@ pub fn children_helpers(src: &str, has_game_object: bool) -> Option<String> {
     (!out.is_empty()).then(|| format!("\n{out}"))
 }
 
+/// Is `name` one of the hierarchy helpers below? They are appended when the text names them (a
+/// React `node.children` is enough), and lowered only once code calls them (`call_helper`), so a
+/// program that never walks the scene doesn't call the `GameObject` API (and gets no tier from it).
+pub fn is_scene_helper(name: &str) -> bool {
+    name.starts_with("__go_") || HIERARCHY_SEARCHES.iter().any(|(_, p)| name.starts_with(p))
+}
+
 /// Helpers for the `GameObject` properties that are arrays (`children`, `GameObject.roots`), written
 /// in TypeScript over the engine's count/index functions and appended when the program names them.
 pub fn tree_helpers(src: &str, has_game_object: bool) -> Option<String> {
@@ -146,9 +153,65 @@ pub fn tree_helpers(src: &str, has_game_object: bool) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
-/// Does the program use components? (`register(` is checked after parsing.)
-pub fn wanted(src: &str) -> bool {
-    src.contains("extends Component") || src.contains("register(")
+/// What the program's code (not its strings or comments) does with components.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Wanted {
+    /// A class extends `Component`.
+    pub extends: bool,
+    /// Something calls `register(..)`.
+    pub registers: bool,
+}
+
+impl Wanted {
+    /// Does the program need the `Component` prelude class?
+    pub fn any(self) -> bool {
+        self.extends || self.registers
+    }
+}
+
+/// Finds `class X extends Component` and `register(..)` calls in the code.
+#[derive(Default)]
+struct UseFinder(Wanted);
+
+impl<'a> Visit<'a> for UseFinder {
+    fn visit_class(&mut self, c: &Class<'a>) {
+        if let Some(Expression::Identifier(p)) = c.heritage.as_ref().map(|h| &h.expression)
+            && p.name == "Component"
+        {
+            self.0.extends = true;
+        }
+        walk::walk_class(self, c);
+    }
+
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if let Expression::Identifier(f) = &call.callee
+            && f.name == "register"
+        {
+            self.0.registers = true;
+        }
+        walk::walk_call_expression(self, call);
+    }
+}
+
+/// Does the program use components? Only code counts: a program whose strings or comments show
+/// `extends Component` (the md-reader's bundled docs) gets no prelude class, and so no tier from it
+/// (`renderer.rs`).
+pub fn wanted(src: &str) -> Wanted {
+    if !(src.contains("extends Component") || src.contains("register(")) {
+        return Wanted::default();
+    }
+    let alloc = Allocator::default();
+    let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
+    if !ret.diagnostics.is_empty() {
+        // The real parse reports it; until then, assume the text means it.
+        return Wanted {
+            extends: src.contains("extends Component"),
+            registers: src.contains("register("),
+        };
+    }
+    let mut f = UseFinder::default();
+    f.visit_program(&ret.program);
+    f.0
 }
 
 /// One `register(..)` call: where it is, the classes it names and its `spawn` option as source text.

@@ -60,23 +60,30 @@ world (a camera or a mesh or texture upload: `WorldViews::needs_world`), the saf
 light paths' wgpu fallback builds the world renderer on first use instead (`lazy_world.rs`), so there the world draws.
 
 **The tiers** (`tools/platypus_ts/src/renderer.rs`) are one table keyed on the API's class and namespace names:
-`world2d` for cameras (`Camera`, `Cameras`, `CameraFollow`), sprites (`Sprite`, `SpriteRenderer`, `Texture`), 2D lines
-and shapes (`LineRenderer2D`, the TypeScript `Shapes` helpers draw through it) and world text (`TextMesh`);
-`world3d` for meshes, materials, lights, primitives, models, particles, cloth and rope, mirrors and reflection
-probes, fog volumes, render and graphics settings, post-processing, gizmos, `LODGroup`, `CameraOrbit` and world
-panels. Everything else is `ui`. A camera is 2D because a 2D game needs one too; what makes a world 3D is what
-it draws. The compiler reports the engine symbols its code calls after the unused top-level functions were left
-out (`Output::externs`; facade chunks named only in strings or comments are not added); `platypus-build` maps them to
-their owner, adds the component types of the scene and prefab files the build would pack (`"type": "MeshRenderer"`,
-`"$type": "Material"`), and writes the highest tier with the names that set it into `build/game.pbundle`
-(`"renderer": "world3d", "uses": ["Camera", "Light", ...]`; `platypus-build build` prints it, `check` has a column).
-`platypus_build/tests/renderer_tiers.rs` checks the table against the real API: every tagged name exists, and
-every class and namespace of `platypus_render_api` is tagged. The examples:
+`world2d` for the scene itself (`GameObject`, `Transform`, `Scene`, `SceneManager`, `Prefab`, and the prelude class
+`Component`: a component class, registered or not, or a `register(..)` call that runs), cameras (`Camera`,
+`Cameras`, `CameraFollow`), sprites (`Sprite`, `SpriteRenderer`, `Texture`), 2D lines and shapes (`LineRenderer2D`,
+the TypeScript `Shapes` helpers draw through it) and world text (`TextMesh`); `world3d` for meshes, materials,
+lights, primitives, models, particles, cloth and rope, mirrors and reflection probes, fog volumes, render and
+graphics settings, post-processing, gizmos, `LODGroup`, `CameraOrbit` and world panels. Everything else (React and
+CSS, windows, timers, input, audio, files, maths, `Time`, `Debug`) is `ui`. A program with a scene object or a
+component runs the world even if it draws only UI, so it is at least `world2d`; a camera is 2D because a 2D game
+needs one too; what makes a world 3D is what it draws. Only code counts: the compiler reports the engine symbols
+its code calls after the unused top-level functions were left out (`Output::externs`; facade chunks named only in
+strings or comments are not added) and the names it uses without a call (`Output::uses`: `Component`, from
+`class X extends Component` or a lowered `register(..)`, found in the parsed program, not its text). The
+`GameObject` hierarchy helpers the compiler appends when the text says `.children` (a React or markdown tree is
+enough) are lowered only when code calls them. `platypus-build` maps the symbols to their owner, adds `GameObject`
+and the component types of the scene and prefab files the build would pack (`"type": "MeshRenderer"`, `"$type":
+"Material"`), and writes the highest tier with the names that set it into `build/game.pbundle` (`"renderer":
+"world3d", "uses": ["Camera", "Light", ...]`; `platypus-build build` prints it, `check` has a column).
+`platypus_build/tests/renderer_tiers.rs` checks the table against the real API: every tagged name exists (or is
+the prelude's `Component`), and every class and namespace of `platypus_render_api` is tagged. The examples:
 
 | Tier | Examples |
 |---|---|
-| `ui` | article, boxes, css, flow, form, hello, launcher, md-reader, physics (UI boxes over rapier), table, text, windows |
-| `world2d` | raindrop-demo, shapes, sine-circle-demo, splines |
+| `ui` | article, boxes, css, flow, form, hello (a timer, no component), launcher, md-reader, table, text, windows |
+| `world2d` | physics (UI boxes over rapier bodies on GameObjects), raindrop-demo, shapes, sine-circle-demo, splines |
 | `world3d` | every other example (38), among them clock (its 3D faces), emoji (`WorldPanel`), fishtank (`RenderSettings` fog), platformer (`ParticleSystem`) |
 
 Until 2D content draws on GLES (TODO.md), `world2d` starts on wgpu like `world3d`.
