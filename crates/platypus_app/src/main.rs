@@ -34,6 +34,7 @@ mod host;
 // re-exports these at its root, for the `crate::` paths between modules.
 pub(crate) mod info;
 mod lazy_world;
+mod licenses;
 mod lifecycle;
 mod logging;
 mod main_window;
@@ -180,6 +181,7 @@ fn parse_args() -> Result<Args> {
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
     let usage = "usage: platypus-app [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--renderer vulkan|gles|cpu] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [--force] [-- script args]
        platypus-app [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
+       platypus-app --licenses (prints the third-party notices built into the program and exits)
 --force runs a QuickJS (deprecated) bundle; games built with `platypus-build build` are native; arguments after -- reach scripts as Application.args;
 --bench runs without a window as fast as it can and writes timings as JSON (docs/platypus-build.md, \"Benchmarks\")";
     let mut args = args.into_iter();
@@ -266,6 +268,11 @@ pub(crate) fn main() -> Result<()> {
     // Started by a game that crashed: show its crash dialog, nothing else.
     if let Some(code) = crash_dialog::main_if_asked() {
         std::process::exit(code);
+    }
+    // `--licenses`: the notices, nothing else (no window, log or unpacked payload).
+    if licenses::asked(std::env::args_os().skip(1)) {
+        licenses::print();
+        return Ok(());
     }
     bench::mark_start();
     mem_trace::install();
