@@ -11,7 +11,9 @@ use taffy::{Dimension, Display, Position, Size, Style};
 use crate::Rgba;
 use crate::attrs::{Attrs, ElementState};
 use crate::cascade::{Deps, Key, RuleIndex, Target, matched_declarations};
-use crate::css::{FontFace, PseudoElement, Stylesheet, parse_stylesheet, substitute_vars};
+use crate::css::{
+    FontFace, PseudoElement, Stylesheet, css_escape, parse_stylesheet, substitute_vars,
+};
 use crate::draw::{ClipShape, DrawCmd, ImageFill, LayerShadow, Quad, Radii, Rect, ShadowShape};
 use crate::editor::{Editor, KeyOutcome, PointerSelect, TEXTAREA_ROWS, is_editor_kind};
 use crate::events::Modifiers;
@@ -5031,12 +5033,13 @@ fn parse_content(value: &str, attrs: Option<&Attrs>) -> Option<String> {
         match c {
             '"' | '\'' => {
                 let quote = c;
-                while let Some((_, c)) = chars.next() {
+                while let Some((j, c)) = chars.next() {
                     match c {
                         '\\' => {
-                            if let Some((_, escaped)) = chars.next() {
-                                out.push(escaped);
-                            }
+                            let (escaped, used) = css_escape(&value[j + 1..]);
+                            out.extend(escaped);
+                            let end = j + 1 + used;
+                            while chars.next_if(|(k, _)| *k < end).is_some() {}
                         }
                         c if c == quote => break,
                         c => out.push(c),

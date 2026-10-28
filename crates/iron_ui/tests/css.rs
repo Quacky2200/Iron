@@ -616,6 +616,25 @@ fn generated_content_follows_the_stylesheets() {
     assert_eq!(tree.children(NodeId(label)).len(), 1);
 }
 
+// M3-CSS-15: `content` strings decode CSS escapes: hex code points (with the closing space),
+// escaped quotes, line continuations.
+#[test]
+fn generated_content_decodes_css_escapes() {
+    let mut d = Dom::new();
+    let label = d.el(0, "text", &[("className", "q".into())]);
+    d.text(label, "x");
+    let mut tree = d.build("");
+    tree.add_stylesheet(
+        r#".q::before { content: "\201C" } .q::after { content: "\201D \"a\" \1F600 b\
+c" }"#,
+    );
+    tree.layout_if_needed();
+    assert_eq!(
+        tree.text_content(NodeId(label)),
+        "\u{201C}x\u{201D}\"a\" \u{1F600}bc"
+    );
+}
+
 fn set_class(tree: &mut UiTree, id: u32, class: &str) {
     let errors = tree.apply_commit(&Commit {
         ops: vec![op(SET_ATTRS, &[n(id), "className".into(), class.into()])],
