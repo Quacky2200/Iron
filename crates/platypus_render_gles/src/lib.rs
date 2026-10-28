@@ -62,24 +62,88 @@ struct Canvas {
     framebuffer: glow::Framebuffer,
 }
 
-struct Program {
-    program: glow::Program,
+/// The renderer's GL programs. Each is compiled the first time a frame needs it: through ANGLE
+/// every one is HLSL compiled by `d3dcompiler` and the driver, and a page of text or boxes needs
+/// only `Quad` and `Blit` (the others cost memory the driver keeps).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProgramKind {
+    Quad,
+    Image,
+    Blur,
+    Composite,
+    CompositeBlend,
+    Blit,
+}
+
+impl ProgramKind {
+    pub const ALL: [ProgramKind; 6] = [
+        ProgramKind::Quad,
+        ProgramKind::Image,
+        ProgramKind::Blur,
+        ProgramKind::Composite,
+        ProgramKind::CompositeBlend,
+        ProgramKind::Blit,
+    ];
+
+    /// The shaders' sources: (vertex, fragment).
+    fn sources(self) -> (String, String) {
+        match self {
+            ProgramKind::Quad => (shaders::quad_vertex(), shaders::quad_fragment()),
+            ProgramKind::Image => (shaders::quad_vertex(), shaders::image_fragment()),
+            ProgramKind::Blur => (shaders::BLIT_VERTEX.into(), effects::BLUR_FRAGMENT.into()),
+            ProgramKind::Composite => (shaders::BLIT_VERTEX.into(), effects::composite_fragment()),
+            ProgramKind::CompositeBlend => (
+                shaders::BLIT_VERTEX.into(),
+                effects::composite_blend_fragment(),
+            ),
+            ProgramKind::Blit => (shaders::BLIT_VERTEX.into(), shaders::BLIT_FRAGMENT.into()),
+        }
+    }
+}
+
+/// The programs compiled so far, by kind (compiled once, on first use).
+#[derive(Default)]
+struct Programs {
+    slots: [Option<glow::Program>; ProgramKind::ALL.len()],
+    /// Kinds whose compile failed (logged once; their steps are skipped).
+    failed: [bool; ProgramKind::ALL.len()],
+}
+
+impl Programs {
+    fn get(&mut self, gl: &glow::Context, kind: ProgramKind) -> Option<glow::Program> {
+        let i = kind as usize;
+        if self.slots[i].is_none() && !self.failed[i] {
+            let (v, f) = kind.sources();
+            match compile(gl, &v, &f) {
+                Ok(p) => self.slots[i] = Some(p),
+                Err(e) => {
+                    tracing::error!("GLES renderer: the {kind:?} program: {e}");
+                    self.failed[i] = true;
+                }
+            }
+        }
+        self.slots[i]
+    }
+
+    fn compiled(&self) -> Vec<ProgramKind> {
+        ProgramKind::ALL
+            .into_iter()
+            .filter(|k| self.slots[*k as usize].is_some())
+            .collect()
+    }
 }
 
 pub struct GlesRenderer {
     gl: glow::Context,
-    quad: Program,
-    image: Program,
-    blur: Program,
-    composite: Program,
-    composite_blend: Program,
-    blit: Program,
+    programs: Programs,
     vao: glow::VertexArray,
     instances: glow::Buffer,
     clip_table: glow::Texture,
     gradient_table: glow::Texture,
     glyph_mask: glow::Texture,
+    /// The colour glyph page (emoji): 1x1 until the first colour glyph arrives.
     glyph_color: glow::Texture,
+    glyph_color_sized: bool,
     canvases: Vec<Canvas>,
     canvas_size: (u32, u32),
     glyphs: GlyphCache,
@@ -190,38 +254,29 @@ impl GlesRenderer {
     /// A renderer on the current GL context (`gl`, from [`egl::EglContext::gl`]).
     pub fn new(gl: glow::Context) -> Result<Self, String> {
         unsafe {
-            let quad = compile(&gl, &shaders::quad_vertex(), &shaders::quad_fragment())?;
-            let image = compile(&gl, &shaders::quad_vertex(), &shaders::image_fragment())?;
-            let blur = compile(&gl, shaders::BLIT_VERTEX, effects::BLUR_FRAGMENT)?;
-            let composite = compile(&gl, shaders::BLIT_VERTEX, &effects::composite_fragment())?;
-            let composite_blend = compile(
-                &gl,
-                shaders::BLIT_VERTEX,
-                &effects::composite_blend_fragment(),
-            )?;
-            let blit = compile(&gl, shaders::BLIT_VERTEX, shaders::BLIT_FRAGMENT)?;
+            // The two programs every frame needs, now: a context that can't build them is no
+            // renderer (the host falls back). The others wait for a frame that uses them.
+            let mut programs = Programs::default();
+            for kind in [ProgramKind::Quad, ProgramKind::Blit] {
+                let (v, f) = kind.sources();
+                programs.slots[kind as usize] = Some(compile(&gl, &v, &f)?);
+            }
             let vao = gl.create_vertex_array()?;
             let instances = gl.create_buffer()?;
             let clip_table = table(&gl)?;
             let gradient_table = table(&gl)?;
             let glyph_mask = page(&gl, MASK_SIZE, glow::R8)?;
-            let glyph_color = page(&gl, COLOR_SIZE, glow::SRGB8_ALPHA8)?;
+            let glyph_color = page(&gl, 1, glow::SRGB8_ALPHA8)?;
             Ok(Self {
                 gl,
-                quad: Program { program: quad },
-                image: Program { program: image },
-                blur: Program { program: blur },
-                composite: Program { program: composite },
-                composite_blend: Program {
-                    program: composite_blend,
-                },
-                blit: Program { program: blit },
+                programs,
                 vao,
                 instances,
                 clip_table,
                 gradient_table,
                 glyph_mask,
                 glyph_color,
+                glyph_color_sized: false,
                 canvases: Vec::new(),
                 canvas_size: (0, 0),
                 glyphs: GlyphCache::new(),
@@ -229,6 +284,16 @@ impl GlesRenderer {
                 image_textures: HashMap::new(),
             })
         }
+    }
+
+    /// The programs compiled so far (they compile on first use).
+    pub fn compiled_programs(&self) -> Vec<ProgramKind> {
+        self.programs.compiled()
+    }
+
+    /// Whether the colour glyph page has its full size (it does once a colour glyph was drawn).
+    pub fn has_color_page(&self) -> bool {
+        self.glyph_color_sized
     }
 
     /// Draws `cmds` over `clear` into `target`.
@@ -351,10 +416,25 @@ impl GlesRenderer {
 
     /// Writes the glyph pixels placed since the last frame into the page textures.
     fn upload_glyphs(&mut self) {
+        let uploads = self.glyphs.take_uploads();
+        if !self.glyph_color_sized && uploads.iter().any(|u| u.color) {
+            // The first colour glyph: the page gets its real size.
+            match unsafe { page(&self.gl, COLOR_SIZE, glow::SRGB8_ALPHA8) } {
+                Ok(t) => {
+                    unsafe { self.gl.delete_texture(self.glyph_color) };
+                    self.glyph_color = t;
+                    self.glyph_color_sized = true;
+                }
+                Err(e) => tracing::error!("GLES renderer: the colour glyph page: {e}"),
+            }
+        }
         let gl = &self.gl;
         unsafe {
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
-            for u in self.glyphs.take_uploads() {
+            for u in uploads {
+                if u.color && !self.glyph_color_sized {
+                    continue;
+                }
                 let (texture, format) = if u.color {
                     (self.glyph_color, glow::RGBA)
                 } else {
@@ -593,7 +673,6 @@ impl GlesRenderer {
                 glow::ONE,
                 glow::ONE_MINUS_SRC_ALPHA,
             );
-            self.bind_quad_uniforms(self.quad.program, size, target.scale);
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instances));
         }
@@ -608,12 +687,15 @@ impl GlesRenderer {
                     range,
                     image,
                 } => {
-                    let (program, texture, pixelated) = match image {
+                    let (kind, texture, pixelated) = match image {
                         Some((key, pixelated)) => match self.image_textures.get(key) {
-                            Some(t) => (self.image.program, Some(*t), *pixelated),
+                            Some(t) => (ProgramKind::Image, Some(*t), *pixelated),
                             None => continue,
                         },
-                        None => (self.quad.program, None, false),
+                        None => (ProgramKind::Quad, None, false),
+                    };
+                    let Some(program) = self.programs.get(&self.gl, kind) else {
+                        continue;
                     };
                     let gl = &self.gl;
                     unsafe {
@@ -712,6 +794,9 @@ impl GlesRenderer {
                     area,
                     sigma,
                 } => unsafe {
+                    let Some(program) = self.programs.get(&self.gl, ProgramKind::Blur) else {
+                        continue;
+                    };
                     self.settle(&mut pending_clear, *tex, &mut stats);
                     pending_clear[*temp] = None;
                     let radius = (3.0 * sigma).ceil().min(MAX_BLUR_RADIUS);
@@ -725,7 +810,6 @@ impl GlesRenderer {
                         w: area.w,
                         h: (area.y + area.h + r).min(size.1) - top,
                     };
-                    let program = self.blur.program;
                     for (from, to, dir, rect, clear) in [
                         (*tex, *temp, [1.0, 0.0], tall, Some(Color::TRANSPARENT)),
                         (*temp, *tex, [0.0, 1.0], *area, None),
@@ -756,6 +840,14 @@ impl GlesRenderer {
                     shift,
                     mask,
                 } => unsafe {
+                    let kind = if blend.is_some() {
+                        ProgramKind::CompositeBlend
+                    } else {
+                        ProgramKind::Composite
+                    };
+                    let Some(program) = self.programs.get(&self.gl, kind) else {
+                        continue;
+                    };
                     self.settle(&mut pending_clear, *src, &mut stats);
                     if let Some((m, _)) = mask {
                         self.settle(&mut pending_clear, *m, &mut stats);
@@ -764,11 +856,6 @@ impl GlesRenderer {
                         self.settle(&mut pending_clear, *backdrop, &mut stats);
                     }
                     let backdrop = blend.map_or(*src, |(_, b)| b);
-                    let program = if blend.is_some() {
-                        self.composite_blend.program
-                    } else {
-                        self.composite.program
-                    };
                     let clear = pending_clear[*dst].take();
                     self.begin_pass(program, *dst, area, clear, blend.is_none(), size);
                     self.bind_quad_uniforms(program, size, scale);
@@ -809,6 +896,9 @@ impl GlesRenderer {
                 },
             }
         }
+        let Some(blit) = self.programs.get(&self.gl, ProgramKind::Blit) else {
+            return stats;
+        };
         let gl = &self.gl;
         unsafe {
             // A canvas nothing drew into still shows its clear.
@@ -823,16 +913,12 @@ impl GlesRenderer {
             } else {
                 gl.disable(glow::BLEND);
             }
-            gl.use_program(Some(self.blit.program));
+            gl.use_program(Some(blit));
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(self.canvases[0].texture));
-            gl.uniform_1_i32(
-                gl.get_uniform_location(self.blit.program, "u_src").as_ref(),
-                0,
-            );
+            gl.uniform_1_i32(gl.get_uniform_location(blit, "u_src").as_ref(), 0);
             gl.uniform_1_f32(
-                gl.get_uniform_location(self.blit.program, "u_encode")
-                    .as_ref(),
+                gl.get_uniform_location(blit, "u_encode").as_ref(),
                 if target.srgb { 0.0 } else { 1.0 },
             );
             gl.draw_arrays(glow::TRIANGLES, 0, 3);

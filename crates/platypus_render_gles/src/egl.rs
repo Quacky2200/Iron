@@ -70,7 +70,7 @@ impl EglContext {
             _ => return Err("EGL: this windowing system isn't supported".into()),
         };
         let egl = load(angle_dir)?;
-        let display = unsafe { egl.get_display(native_display) }.ok_or("EGL: no display")?;
+        let display = unsafe { display_for(&egl, native_display) }.ok_or("EGL: no display")?;
         let config = choose_config(&egl, display, egl::WINDOW_BIT)?;
         let context = create_context(&egl, display, config)?;
         // A plain surface: ANGLE's sRGB one would encode on write, but reading it back
@@ -119,6 +119,53 @@ impl EglContext {
         (q(egl::WIDTH), q(egl::HEIGHT))
     }
 
+    /// Asks the Direct3D 11 driver under ANGLE to give back the memory it keeps for itself after
+    /// the first draws (`IDXGIDevice3::Trim`, what ANGLE calls when a UWP app is suspended; on
+    /// `css`, NVIDIA, ~14 MB of private bytes that stay free while frames go on). Returns whether
+    /// it could: `false` without ANGLE's D3D11 device (another EGL, not Windows).
+    pub fn trim_device(&self) -> bool {
+        #[cfg(windows)]
+        {
+            let Some(device) = self.d3d11_device() else {
+                return false;
+            };
+            // SAFETY: `device` is ANGLE's live ID3D11Device (a COM object).
+            unsafe { trim_dxgi(device) }
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+
+    /// ANGLE's `ID3D11Device` (EGL_EXT_device_query + EGL_ANGLE_device_d3d), not AddRef'd.
+    #[cfg(windows)]
+    fn d3d11_device(&self) -> Option<*mut c_void> {
+        type QueryDisplay = unsafe extern "system" fn(egl::EGLDisplay, egl::Int, *mut isize) -> u32;
+        type QueryDevice = unsafe extern "system" fn(*mut c_void, egl::Int, *mut isize) -> u32;
+        const DEVICE_EXT: egl::Int = 0x322C;
+        const D3D11_DEVICE_ANGLE: egl::Int = 0x33A1;
+        let qd = self.egl.get_proc_address("eglQueryDisplayAttribEXT")?;
+        let qv = self.egl.get_proc_address("eglQueryDeviceAttribEXT")?;
+        // SAFETY: the EGL_EXT_device_query entry points, with their signatures.
+        type Proc = extern "system" fn();
+        let (qd, qv) = unsafe {
+            (
+                std::mem::transmute::<Proc, QueryDisplay>(qd),
+                std::mem::transmute::<Proc, QueryDevice>(qv),
+            )
+        };
+        let mut dev: isize = 0;
+        if unsafe { qd(self.display.as_ptr(), DEVICE_EXT, &mut dev) } == 0 || dev == 0 {
+            return None;
+        }
+        let mut d3d: isize = 0;
+        if unsafe { qv(dev as *mut c_void, D3D11_DEVICE_ANGLE, &mut d3d) } == 0 || d3d == 0 {
+            return None;
+        }
+        Some(d3d as *mut c_void)
+    }
+
     /// The GL entry points of the current context.
     pub fn gl(&self) -> glow::Context {
         let egl = self.egl.clone();
@@ -140,10 +187,102 @@ impl Drop for EglContext {
     }
 }
 
+/// `IDXGIDevice3::Trim` on the DXGI device of `device` (an `ID3D11Device`).
+///
+/// # Safety
+/// `device` is a live COM object.
+#[cfg(windows)]
+unsafe fn trim_dxgi(device: *mut c_void) -> bool {
+    #[repr(C)]
+    struct Guid(u32, u16, u16, [u8; 8]);
+    // IID_IDXGIDevice3 {6007896c-3244-4afd-bf18-a6d3beda5023}
+    const IID: Guid = Guid(
+        0x6007_896c,
+        0x3244,
+        0x4afd,
+        [0xbf, 0x18, 0xa6, 0xd3, 0xbe, 0xda, 0x50, 0x23],
+    );
+    type QueryInterface =
+        unsafe extern "system" fn(*mut c_void, *const Guid, *mut *mut c_void) -> i32;
+    type Release = unsafe extern "system" fn(*mut c_void) -> u32;
+    type Trim = unsafe extern "system" fn(*mut c_void);
+    // Vtable slots: IUnknown 0..3 (Release is 2), IDXGIObject 3..7, IDXGIDevice 7..12,
+    // IDXGIDevice1 12..14, IDXGIDevice2 14..17, IDXGIDevice3 17 (Trim).
+    unsafe {
+        let vtable = *(device as *const *const usize);
+        let qi: QueryInterface = std::mem::transmute(*vtable);
+        let mut dxgi: *mut c_void = std::ptr::null_mut();
+        if qi(device, &IID, &mut dxgi) < 0 || dxgi.is_null() {
+            return false;
+        }
+        let dv = *(dxgi as *const *const usize);
+        let trim: Trim = std::mem::transmute(*dv.add(17));
+        trim(dxgi);
+        let release: Release = std::mem::transmute(*dv.add(2));
+        release(dxgi);
+        true
+    }
+}
+
 fn default_display(egl: &Instance) -> Result<egl::Display, String> {
-    let display =
-        unsafe { egl.get_display(egl::DEFAULT_DISPLAY) }.ok_or("EGL: no default display")?;
-    Ok(display)
+    unsafe { display_for(egl, egl::DEFAULT_DISPLAY) }
+        .ok_or_else(|| "EGL: no default display".into())
+}
+
+// ANGLE's `EGL_ANGLE_platform_angle` attributes (`eglext_angle.h`).
+const PLATFORM_ANGLE_ANGLE: u32 = 0x3202;
+const PLATFORM_ANGLE_TYPE_ANGLE: egl::Int = 0x3203;
+const PLATFORM_ANGLE_TYPE_D3D11_ANGLE: egl::Int = 0x3208;
+const PLATFORM_ANGLE_DEVICE_TYPE_ANGLE: egl::Int = 0x3209;
+const PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE: egl::Int = 0x320A;
+const PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE: egl::Int = 0x3451;
+
+/// The attributes of ANGLE's display: Direct3D 11 on the hardware device, without the D3D debug
+/// layer. ANGLE turns that layer on whenever its asserts are compiled in, and the `cc` build of
+/// mozangle defines no `NDEBUG`, so a release program got a debug device where the Graphics Tools
+/// are installed (`D3D11_3SDKLayers.dll`, every resource zeroed and tracked: on `css` ~12 MB more
+/// private bytes and ~10 MB more private working set). `PLATYPUS_ANGLE_DEBUG=1` leaves the choice
+/// to ANGLE (the layer is on where it is installed).
+pub fn angle_display_attribs(debug: bool) -> Vec<egl::Int> {
+    let mut a = vec![
+        PLATFORM_ANGLE_TYPE_ANGLE,
+        PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
+        PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
+        PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE,
+    ];
+    if !debug {
+        a.extend([
+            PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE,
+            egl::FALSE as egl::Int,
+        ]);
+    }
+    a.push(egl::NONE);
+    a
+}
+
+/// The display for `native`: on Windows ANGLE's, through `eglGetPlatformDisplayEXT` with
+/// [`angle_display_attribs`] (plain `eglGetDisplay` when that entry point is missing), elsewhere
+/// the plain one.
+///
+/// # Safety
+/// `native` is `EGL_DEFAULT_DISPLAY` or a live native display.
+unsafe fn display_for(egl: &Instance, native: egl::NativeDisplayType) -> Option<egl::Display> {
+    #[cfg(windows)]
+    {
+        type GetPlatformDisplayExt =
+            unsafe extern "system" fn(u32, *mut c_void, *const egl::Int) -> egl::EGLDisplay;
+        if let Some(f) = egl.get_proc_address("eglGetPlatformDisplayEXT") {
+            let debug = std::env::var("PLATYPUS_ANGLE_DEBUG").is_ok_and(|v| v == "1");
+            let attribs = angle_display_attribs(debug);
+            // SAFETY: the entry point of EGL_EXT_platform_base, with its signature.
+            let f: GetPlatformDisplayExt = unsafe { std::mem::transmute(f) };
+            let d = unsafe { f(PLATFORM_ANGLE_ANGLE, native, attribs.as_ptr()) };
+            if !d.is_null() {
+                return Some(unsafe { egl::Display::from_ptr(d) });
+            }
+        }
+    }
+    unsafe { egl.get_display(native) }
 }
 
 fn choose_config(
@@ -155,26 +294,44 @@ fn choose_config(
         .map_err(|e| format!("EGL initialize: {e}"))?;
     egl.bind_api(egl::OPENGL_ES_API)
         .map_err(|e| format!("EGL bind_api: {e}"))?;
-    egl.choose_first_config(
-        display,
-        &[
-            egl::SURFACE_TYPE,
-            surface_type,
-            egl::RENDERABLE_TYPE,
-            OPENGL_ES3_BIT,
-            egl::RED_SIZE,
-            8,
-            egl::GREEN_SIZE,
-            8,
-            egl::BLUE_SIZE,
-            8,
-            egl::ALPHA_SIZE,
-            8,
-            egl::NONE,
-        ],
-    )
-    .map_err(|e| format!("EGL choose_config: {e}"))?
-    .ok_or_else(|| "EGL: no GLES 3 config".to_string())
+    let config = egl
+        .choose_first_config(
+            display,
+            &[
+                egl::SURFACE_TYPE,
+                surface_type,
+                egl::RENDERABLE_TYPE,
+                OPENGL_ES3_BIT,
+                egl::RED_SIZE,
+                8,
+                egl::GREEN_SIZE,
+                8,
+                egl::BLUE_SIZE,
+                8,
+                egl::ALPHA_SIZE,
+                8,
+                // The UI draws into its own canvases and only blits to the surface: no depth,
+                // stencil or multisampled buffers behind it.
+                egl::DEPTH_SIZE,
+                0,
+                egl::STENCIL_SIZE,
+                0,
+                egl::SAMPLE_BUFFERS,
+                0,
+                egl::NONE,
+            ],
+        )
+        .map_err(|e| format!("EGL choose_config: {e}"))?
+        .ok_or_else(|| "EGL: no GLES 3 config".to_string())?;
+    let q = |a| egl.get_config_attrib(display, config, a).unwrap_or(-1);
+    tracing::info!(
+        "EGL config: {} bits, depth {}, stencil {}, {} samples",
+        q(egl::BUFFER_SIZE),
+        q(egl::DEPTH_SIZE),
+        q(egl::STENCIL_SIZE),
+        q(egl::SAMPLES)
+    );
+    Ok(config)
 }
 
 fn create_context(

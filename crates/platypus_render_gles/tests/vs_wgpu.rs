@@ -879,3 +879,45 @@ fn masks_and_layers_inside_clips_match_wgpu() {
     );
     same("masks + clipped layer", s, (240, 70), 1.0, 8, 0.01);
 }
+
+// M2-GLES-14
+#[test]
+fn programs_and_the_colour_glyph_page_are_made_on_first_use() {
+    use platypus_render_gles::ProgramKind::*;
+    let Some(mut g) = gles() else { return };
+    assert_eq!(g.renderer.compiled_programs(), [Quad, Blit]);
+    // Boxes and plain text need nothing more.
+    let mut s = Scene::new();
+    let b = s.at(
+        0,
+        "box",
+        [0.0, 0.0, 120.0, 40.0],
+        &[("backgroundColor", "#204060"), ("color", "white")],
+    );
+    s.text(b, "plain text");
+    let cmds = s.cmds((120.0, 40.0), |_| None);
+    gles_pixels(&mut g, &cmds, (120, 40), 1.0);
+    assert_eq!(g.renderer.compiled_programs(), [Quad, Blit]);
+    assert!(!g.renderer.has_color_page());
+    // A blurred group compiles the blur and the composite, once.
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [10.0, 10.0, 40.0, 20.0],
+        &[("backgroundColor", "orange"), ("filter", "blur(2px)")],
+    );
+    let cmds = s.cmds((120.0, 40.0), |_| None);
+    gles_pixels(&mut g, &cmds, (120, 40), 1.0);
+    let before = gles_pixels(&mut g, &cmds, (120, 40), 1.0);
+    assert_eq!(
+        g.renderer.compiled_programs(),
+        [Quad, Blur, Composite, Blit]
+    );
+    // The device under ANGLE can be trimmed (another EGL has none to trim), and draws the
+    // same afterwards.
+    if platypus_render_gles::STATIC_ANGLE {
+        assert!(g._cx.trim_device());
+        assert!(gles_pixels(&mut g, &cmds, (120, 40), 1.0) == before);
+    }
+}
