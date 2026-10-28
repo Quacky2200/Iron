@@ -30,7 +30,7 @@ interface InfoApp {
   targetFrameRate?: number;
   /** True in `platypus_editor`. */
   isEditor?: boolean;
-  /** The command line's arguments after `--` (`platypus-game game -- --level 2`). */
+  /** The command line's arguments after `--` (`platypus-app game -- --level 2`). */
   args?: string[];
 }
 
@@ -111,12 +111,12 @@ export const Application = {
   },
   /**
    * The command line's arguments for the game: everything after `--`
-   * (`platypus-game examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`.
+   * (`platypus-app examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`.
    */
   get args(): string[] {
     return [...(app().args ?? [])];
   },
-  /** Whether this runs in the editor (`platypus_editor`) rather than the player (`platypus-game`). */
+  /** Whether this runs in the editor (`platypus_editor`) rather than the player (`platypus-app`). */
   get isEditor(): boolean {
     return app().isEditor === true;
   },
@@ -162,7 +162,7 @@ export const Application = {
       focusListeners.delete(f);
     };
   },
-  /** Closes the game after this frame; `platypus-game` exits with `exitCode` (0, success, by default). */
+  /** Closes the game after this frame; `platypus-app` exits with `exitCode` (0, success, by default). */
   quit(exitCode = 0): void {
     __platypus_op("app.quit", Math.trunc(exitCode));
   },

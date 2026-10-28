@@ -40,9 +40,9 @@ const PNG = new Set(["hello", "boxes", "text", "css", "form", "windows", "launch
 /** Showpieces get 800 px; the rest 640. */
 const WIDE = new Set(["crowd", "fog-park", "fog-world", "godrays-forest", "godrays-sunset", "godrays-clouds"]);
 
-const host = join(root, "target", "release", process.platform === "win32" ? "platypus-game.exe" : "platypus-game");
+const host = join(root, "target", "release", process.platform === "win32" ? "platypus-app.exe" : "platypus-app");
 if (!existsSync(host)) {
-  console.error(`no ${host}: cargo build --release -p platypus_app --bin platypus-game`);
+  console.error(`no ${host}: cargo build --release -p platypus_app --bin platypus-app`);
   process.exit(1);
 }
 

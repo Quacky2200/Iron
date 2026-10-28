@@ -1,7 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus-game <game> --bench`: a windowless, uncapped frame loop that times every frame and writes
+//! `platypus-app <game> --bench`: a windowless, uncapped frame loop that times every frame and writes
 //! the result as JSON (`docs/platypus-build.md`, "Benchmarks").
 //!
 //! No OS window is made: the main window is an offscreen texture, the platform is the fake one

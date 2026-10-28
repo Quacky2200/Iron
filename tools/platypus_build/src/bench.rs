@@ -1,7 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus-build bench <examples>`: every example timed by `platypus-game --bench` (windowless) on the native
+//! `platypus-build bench <examples>`: every example timed by `platypus-app --bench` (windowless) on the native
 //! backend and, for the examples the base branch has, on the QuickJS original built from it; the
 //! results go to `docs/benchmarks.md` and `docs/benchmarks/results.json` (`docs/platypus-build.md`,
 //! "Benchmarks").
@@ -12,11 +12,11 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-const USAGE: &str = "usage: platypus-build bench <examples folder> [--only a,b,..] [--base main] [--host platypus-game.exe]
+const USAGE: &str = "usage: platypus-build bench <examples folder> [--only a,b,..] [--base main] [--host platypus-app.exe]
   [--no-host-build] [--no-quickjs] [--frames N] [--out docs-folder] [--timeout seconds]
-Builds the release host (cargo build --release -p platypus_app --bin platypus-game), every example natively, and the base
+Builds the release host (cargo build --release -p platypus_app --bin platypus-app), every example natively, and the base
 branch's QuickJS originals in a temporary folder (deleted afterwards), then runs each with
-`platypus-game <game> --bench` (no window). Scripted input and frame counts: tools/bench/inputs/<name>.json.";
+`platypus-app <game> --bench` (no window). Scripted input and frame counts: tools/bench/inputs/<name>.json.";
 
 /// One frame step for every run: games see the same time whatever their speed.
 const FIXED_DT: &str = "0.016666666666666666";
@@ -152,7 +152,7 @@ fn run(o: &Options) -> Result<(), String> {
 
     // The host, release only.
     if o.build_host {
-        eprintln!("bench: cargo build --release -p platypus_app --bin platypus-game");
+        eprintln!("bench: cargo build --release -p platypus_app --bin platypus-app");
         run_tool(
             Command::new("cargo")
                 .args([
@@ -161,17 +161,17 @@ fn run(o: &Options) -> Result<(), String> {
                     "-p",
                     "platypus_app",
                     "--bin",
-                    "platypus-game",
+                    "platypus-app",
                 ])
                 .env("CARGO_INCREMENTAL", "0")
                 .current_dir(&repo),
-            "cargo build --release -p platypus_app --bin platypus-game",
+            "cargo build --release -p platypus_app --bin platypus-app",
         )?;
     }
     let host = o
         .host
         .clone()
-        .unwrap_or_else(|| repo.join("target/release").join(exe("platypus-game")));
+        .unwrap_or_else(|| repo.join("target/release").join(exe("platypus-app")));
     if !host.is_file() {
         return Err(format!(
             "{} not found (build it, or pass --host)",
@@ -431,7 +431,7 @@ fn copy_missing(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
     Ok(())
 }
 
-/// One `platypus-game --bench` run, bounded in time.
+/// One `platypus-app --bench` run, bounded in time.
 fn bench_one(
     host: &Path,
     game: &Path,

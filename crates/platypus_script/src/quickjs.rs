@@ -23,7 +23,7 @@ thread_local! {
     static OP_TIME: std::cell::Cell<(bool, f64)> = const { std::cell::Cell::new((false, 0.0)) };
 }
 
-/// Times the `__platypus_op` calls from now on (`platypus-game --bench`: the part of script time spent
+/// Times the `__platypus_op` calls from now on (`platypus-app --bench`: the part of script time spent
 /// copying op arguments out of JavaScript).
 pub fn time_ops() {
     OP_TIME.with(|o| o.set((true, o.get().1)));

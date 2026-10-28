@@ -1,7 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Where the engine's log goes. `platypus-game` is a windowed (GUI) program, so there's no
+//! Where the engine's log goes. `platypus-app` is a windowed (GUI) program, so there's no
 //! console of its own: the log is written to `Player.log` in the game's settings folder
 //! (next to `prefs.json`; the last run's is kept as `Player-prev.log`, like Unity's),
 //! with the same ANSI colours a terminal shows (`less -R`, or `cat` in a terminal, shows

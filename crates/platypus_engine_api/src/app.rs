@@ -36,7 +36,7 @@ pub struct AppInfo {
     pub run_in_background: bool,
     /// The manifest's frame rate, or -1.
     pub target_frame_rate: i32,
-    /// The command line's arguments after `--` (`platypus-game game -- --level 2`).
+    /// The command line's arguments after `--` (`platypus-app game -- --level 2`).
     pub args: Vec<String>,
 }
 
@@ -284,7 +284,7 @@ pub mod application_api {
         sys(|s| s.language.clone())
     }
 
-    /// Whether this runs in the editor (`platypus_editor`) rather than the player (`platypus-game`).
+    /// Whether this runs in the editor (`platypus_editor`) rather than the player (`platypus-app`).
     #[property]
     pub fn is_editor() -> bool {
         app(|a| a.is_editor)
@@ -388,14 +388,14 @@ pub mod application_api {
     }
 
     /// The command line's arguments for the game: everything after `--`
-    /// (`platypus-game examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`. A copy
+    /// (`platypus-app examples/md-reader -- --goto docs/css.md`). Unity's `GetCommandLineArgs`. A copy
     /// each read.
     #[property]
     pub fn args() -> Vec<String> {
         app(|a| a.args.clone())
     }
 
-    /// Closes the game after this frame; `platypus-game` exits with `exit_code` (0, success, by default;
+    /// Closes the game after this frame; `platypus-app` exits with `exit_code` (0, success, by default;
     /// a fraction is cut off, as `Math.trunc`).
     #[optional(exit_code = 0.0)]
     pub fn quit(exit_code: f64) {

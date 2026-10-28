@@ -3,7 +3,7 @@
 
 //! What only the editor (`platypus_editor`) does: where its UI lives, the project folder,
 //! feeding the log to its console (`__platypus_log`) and the `editor.*` ops (opening code,
-//! project files). In `platypus-game` the ops are refused, so games can't use them.
+//! project files). In `platypus-app` the ops are refused, so games can't use them.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -388,7 +388,7 @@ mod tests {
     // M5-EDT-17
     #[test]
     fn editor_ops_are_refused_outside_the_editor() {
-        // Tests run as the `platypus-game` binary, where `ENABLED` is false.
+        // Tests run as the `platypus-app` binary, where `ENABLED` is false.
         let mut host = EditorHost::default();
         host.op("logHistory", &[], Path::new("."));
         assert_eq!(host.subscribed, ENABLED);

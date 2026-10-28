@@ -9,7 +9,7 @@
 // It writes two bundles to build/: `vendor.js` (React, the reconciler, the refresh
 // runtime, @platypus/engine and @platypus/react; built once) and `game.js` (the game's own code,
 // CommonJS with those left external, with Fast Refresh registrations, marked
-// `// @platypus-dev`). A running `platypus-game` window then reloads game.js in place: React keeps
+// `// @platypus-dev`). A running `platypus-app` window then reloads game.js in place: React keeps
 // its state and the world stays as it is. A production `bun run build` makes one
 // self-contained game.js instead.
 import { existsSync, rmSync } from "node:fs";
