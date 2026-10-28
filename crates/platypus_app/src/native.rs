@@ -259,7 +259,8 @@ impl Native {
         );
         register_kinds();
         gc_mode_from_env();
-        let game = Self::compile(&bundle, generation)?;
+        let mut bundle = bundle;
+        let game = Self::compile(&mut bundle, generation)?;
         let mut lap = platypus_ts::timing::Lap::start();
         let mut rt = Runtime::new(FIRST_NODE);
         let screen_root = rt.create_root(platypus_ui::ROOT);
@@ -301,7 +302,9 @@ impl Native {
         Ok(n)
     }
 
-    fn compile(bundle: &Bundle, generation: u32) -> Result<Game> {
+    /// Compiles the bundle's program, then lets its source text go: nothing reads it again, and
+    /// a game that bundles documents holds megabytes of it (md-reader: 2.4 MB).
+    fn compile(bundle: &mut Bundle, generation: u32) -> Result<Game> {
         let mut lap = platypus_ts::timing::Lap::start();
         let manifests = manifests();
         lap.mark("engine manifests (JSON)");
@@ -317,6 +320,7 @@ impl Native {
             },
         )
         .map_err(|e| anyhow!("compiling the game: {e}"))?;
+        bundle.source = String::new();
         // So a crash in the compiled code can be named (`crash.rs`).
         super::crash::note_jit_functions(
             game.function_names()
@@ -778,7 +782,8 @@ impl Native {
     pub fn reload(&mut self, bundle: Bundle, scene: &mut Scene, ui: &mut UiTree) -> Result<()> {
         let generation = self.generation + 1;
         // Nothing is touched until this works.
-        let game = Self::compile(&bundle, generation)?;
+        let mut bundle = bundle;
+        let game = Self::compile(&mut bundle, generation)?;
         let old_sigs = parse_signatures(&signatures_of(&self.game));
         let old_classes: Vec<&'static str> = self
             .host

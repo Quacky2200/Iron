@@ -32,6 +32,23 @@ pub(crate) struct GlesGfx {
     report: (u32, Duration, Instant),
     /// What the window shows now, so an unchanged frame isn't redrawn.
     shown: Option<Shown>,
+    /// When the first frame was shown, and whether the driver was trimmed since (`trim_due`).
+    first_frame: Option<Instant>,
+    trimmed: bool,
+}
+
+/// How long after the first frame the Direct3D driver under ANGLE is trimmed: its shader
+/// compiles for the first draws are done by then.
+const TRIM_AFTER: Duration = Duration::from_secs(1);
+
+/// Is the one trim of the driver's start-up memory due? `env` is `PLATYPUS_GLES_TRIM` (`0`
+/// turns it off).
+pub(crate) fn trim_due(
+    trimmed: bool,
+    since_first_frame: Option<Duration>,
+    env: Option<&str>,
+) -> bool {
+    !trimmed && env != Some("0") && since_first_frame.is_some_and(|d| d >= TRIM_AFTER)
 }
 
 /// What a light path's window shows (size, scale, draw lists), to skip unchanged frames.
@@ -58,17 +75,37 @@ impl GlesGfx {
     /// A context and renderer on `window`, or why there isn't one.
     fn new(window: Arc<Window>, asset_root: &Path) -> Result<Self, String> {
         let dir = angle_dir();
+        super::mem_trace::mark("window");
         let context = EglContext::window(dir.as_deref(), &*window)?;
         context.set_vsync(true);
+        super::mem_trace::mark("EGL context (ANGLE: Direct3D 11 device, swap chain)");
         let mut renderer = GlesRenderer::new(context.gl())?;
         renderer.set_asset_root(asset_root.to_path_buf());
+        super::mem_trace::mark("GLES renderer (programs, tables)");
         Ok(Self {
             window,
             renderer,
             context,
             report: (0, Duration::ZERO, Instant::now()),
             shown: None,
+            first_frame: None,
+            trimmed: false,
         })
+    }
+
+    /// Trims the driver once, a second after the first frame (`trim_due`).
+    fn trim_if_due(&mut self) {
+        let env = std::env::var("PLATYPUS_GLES_TRIM").ok();
+        if trim_due(
+            self.trimmed,
+            self.first_frame.map(|t| t.elapsed()),
+            env.as_deref(),
+        ) {
+            self.trimmed = true;
+            let ok = self.context.trim_device();
+            tracing::debug!("GLES: trimmed the driver's start-up memory ({ok})");
+            super::mem_trace::mark("the driver trimmed");
+        }
     }
 
     fn target(&self, size: (u32, u32), scale: f32) -> Target {
@@ -242,9 +279,10 @@ impl App {
         let cmds = self.light_ui_commands(size, scale);
         self.scene.scene.update_world();
         let fps_cmds = self.light_fps_commands(size, dpi);
-        let Some(gles) = &self.gles else {
+        let Some(gles) = &mut self.gles else {
             return;
         };
+        gles.trim_if_due();
         // Nothing changed since the last frame: nothing to draw or swap.
         if unchanged(gles.shown.as_ref(), size, scale, &cmds, fps_cmds.as_deref()) {
             // The counter still counts the frame: it shows the loop's pace, not the redraws.
@@ -262,11 +300,17 @@ impl App {
             tracing::error!("{e}");
         }
         gles.shown = Some((size, scale.to_bits(), cmds, fps_cmds));
+        gles.first_frame.get_or_insert_with(Instant::now);
         self.render_time += started.elapsed();
         gles.report.0 += 1;
         gles.report.1 += started.elapsed();
         let secs = gles.report.2.elapsed().as_secs_f64();
+        if self.frames < 3 {
+            super::mem_trace::mark("a frame drawn");
+        }
         if secs >= 1.0 {
+            super::mem_trace::mark("a second of frames");
+            super::mem_trace::regions_once();
             tracing::debug!(
                 "GLES renderer: {:.1} fps, {:.2} ms per frame (draw + swap)",
                 f64::from(gles.report.0) / secs,
@@ -275,5 +319,24 @@ impl App {
             gles.report = (0, Duration::ZERO, Instant::now());
         }
         self.tick_fps();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // M2-GLES-15
+    #[test]
+    fn the_driver_is_trimmed_once_a_second_after_the_first_frame() {
+        let s = |ms| Some(Duration::from_millis(ms));
+        // No frame shown yet, or too soon after it.
+        assert!(!trim_due(false, None, None));
+        assert!(!trim_due(false, s(500), None));
+        assert!(trim_due(false, s(1000), None));
+        // Once only, and `PLATYPUS_GLES_TRIM=0` turns it off.
+        assert!(!trim_due(true, s(5000), None));
+        assert!(!trim_due(false, s(5000), Some("0")));
+        assert!(trim_due(false, s(5000), Some("1")));
     }
 }

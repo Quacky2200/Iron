@@ -37,6 +37,7 @@ mod lazy_world;
 mod lifecycle;
 mod logging;
 mod main_window;
+mod mem_trace;
 pub(crate) mod models;
 mod native;
 mod native_pump;
@@ -267,6 +268,7 @@ pub(crate) fn main() -> Result<()> {
         std::process::exit(code);
     }
     bench::mark_start();
+    mem_trace::install();
     crash::install();
     logging::attach_console();
     // The editor's console shows the log from the start.

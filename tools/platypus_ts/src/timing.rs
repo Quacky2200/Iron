@@ -38,6 +38,14 @@ pub fn add(phase: &'static str, ms: f64) {
     }
 }
 
+/// Called with every mark's phase once set (the host's memory trace, `PLATYPUS_MEM_TRACE`).
+static HOOK: std::sync::OnceLock<fn(&'static str)> = std::sync::OnceLock::new();
+
+/// Calls `f` at every [`Lap::mark`] from now on, timers on or not (set once).
+pub fn set_mark_hook(f: fn(&'static str)) {
+    let _ = HOOK.set(f);
+}
+
 /// Times the stretches between marks.
 pub struct Lap(Option<Instant>);
 
@@ -48,6 +56,9 @@ impl Lap {
 
     /// Adds the time since the last mark to `phase`.
     pub fn mark(&mut self, phase: &'static str) {
+        if let Some(f) = HOOK.get() {
+            f(phase);
+        }
         let Some(t) = self.0 else {
             return;
         };
