@@ -13,7 +13,7 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 
 | Path | What |
 |---|---|
-| `crates/platypus_core` | `project.rs`: `project.json` (the game's metadata, template variables like `${firstName}`, platform sections, `license`, only `name` is required, other fields default; empty strings warn in build/package; deprecated fallback to `package.json`'s `platypus` section; games need no `package.json`; `platypus-build init` writes one). Shared types: `Value` (crosses the JS boundary), `NodeId`, `Commit`, ops, asset path safety (`resolve_asset`, `decode_data_url`) |
+| `crates/platypus_core` | `project.rs`: `project.json` (the game's metadata, template variables like `${firstName}`, platform sections, `license`, `renderer` (`vulkan`/`gles`/`cpu`, left out: chosen from the build-time tier; the old `type` warns and is ignored), only `name` is required, other fields default; empty strings warn in build/package; deprecated fallback to `package.json`'s `platypus` section; games need no `package.json`; `platypus-build init` writes one). Shared types: `Value` (crosses the JS boundary), `NodeId`, `Commit`, ops, asset path safety (`resolve_asset`, `decode_data_url`) |
 | `crates/platypus_platform` | winit window + event loop (`Platform`, `PlatformApp`), `InputEvent` conversion, gilrs gamepads |
 | `crates/platypus_script` | `ScriptRuntime` trait + QuickJS backend (rquickjs 0.14), timers prelude, `ComponentHost` (component lifecycle) |
 | `crates/platypus_ui` | UI tree built from React commits (opcodes in `opcodes.rs`), styles (`style.rs`, `text_style.rs`, `paint.rs`), Taffy layout (`layout.rs`), Parley text (`text.rs`), CSS (`css.rs` parser, `cascade.rs` matching/cascade/invalidation), draw list (`draw.rs`), hit testing (`tree.rs`), pointer events + `:hover`/`:active` (`events.rs`), focus/keys/default actions (`interaction.rs`), drag and drop (`interaction/dnd.rs`) |
@@ -35,17 +35,17 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 | `crates/platypus_app` (windows.rs) | Secondary windows (`Window.create`): a UI tree, interaction and surface (or offscreen target in screenshot runs) per window, event routing, per-domain dispatch of isolated families, `--screenshot` writing `out-<slug>.png`; the platform side is `platypus_platform/src/windows.rs` + the runner, the API `platypus_engine_api::window`; guide `docs/windows.md` |
 | `crates/platypus_app` (video_prompt.rs) | The optional startup video-settings prompt (`videoSettingsPrompt`, `--video-settings-prompt`): `video_prompt.tsx` run once in a UI-only child process of the same exe (`--video-settings-dialog`, `host::ui_only()`), its answer written to `platypus.display` / `platypus.quality`; see `docs/platform.md`. Vsync is on by default |
 | `crates/platypus_native` | `register_quickjs` / `install`: every native `#[platypus_api]` namespace (math, scene, engine services, scenes, physics, rendering data) installed in a QuickJS context |
-| `crates/platypus_render_gles` | GLES 3 executor of `platypus_render`'s `FramePlan` (`glow`; context through EGL, ANGLE on Windows): the planned renderer for `platypus-app`. Quad pass, glyph atlas, images and layers (blur, opacity groups, filters, masks, blend modes, backdrop filters) done and pixel-identical to wgpu in the tests; `EglContext::window` + `render_overlay`; `platypus-app` draws with it (`gles_gfx.rs`), wgpu fallback. Tests need `PLATYPUS_ANGLE_DIR` (a folder with ANGLE's `libEGL.dll` and `libGLESv2.dll`) and skip without an EGL driver (`docs/rendering.md`) |
-| `crates/platypus_render_cpu` | CPU renderer for the UI draw list (`vello_cpu` + `softbuffer`, images decoded lazily at drawn size). Not used by the hosts (UI apps are to use a GLES renderer through ANGLE); kept as a reference renderer and for the shared-draw-list work (`docs/rendering.md`) |
+| `crates/platypus_render_gles` | GLES 3 executor of `platypus_render`'s `FramePlan` (`glow`; context through EGL): the light renderer of `platypus-app` for games that are only UI. ANGLE is linked in on Windows (feature `static-angle`, on by default: Mozilla's `mozangle`, EGL + GLES over D3D11, +7 MB per exe; building it needs libclang, see Commands); without the feature EGL is loaded at run time (`PLATYPUS_ANGLE_DIR`, Mesa elsewhere). Quad pass, glyph atlas, images and layers (blur, opacity groups, filters, masks, blend modes, backdrop filters) done and pixel-identical to wgpu in the tests (`M2-GLES-01..13`, which run without any DLL when ANGLE is linked in); `EglContext::window` + `render_overlay`; `platypus-app` draws with it (`gles_gfx.rs`), wgpu fallback (`docs/rendering.md`) |
+| `crates/platypus_render_cpu` | CPU renderer for the UI draw list (`vello_cpu` + `softbuffer`, images decoded lazily at drawn size). An opt-in UI-only renderer of `platypus-app` (`renderer: "cpu"` or `--renderer cpu`, `cpu_gfx.rs`; never chosen automatically); its gaps are in `docs/rendering.md` |
 | `crates/platypus_pack` | Asset packs (`.ppk`): `PackWriter`, `Pack`, `Vfs` over loose folders and packs; design `docs/research/platypus-asset-packs.md` |
-| `crates/platypus_app` | The engine host, three binaries of one source told apart by name (`host.rs`): `platypus-game` (games, the default of `cargo run -p platypus_app`), `platypus-app` (projects with `"type": "app"` in `project.json`: UI only, the 3D world renderer is never built, small GPU allocations; to move to a GLES renderer through ANGLE) and `platypus_editor`. `platypus-game [game folder] [--screenshot out.png] [--frames N] [--fps|--no-fps]` (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `PLATYPUS_FPS=0` or `"fps": false` in `project.json`). Loads `build/game.js` + `build/game.css` and wires scripts → UI → renderer. `platypus_editor` is a second binary of the same code that runs `editor/` |
+| `crates/platypus_app` | The engine host `platypus-app` (the default of `cargo run -p platypus_app`), the one program for every game. It picks its renderer per run (`host.rs`): `--renderer vulkan\|gles\|cpu`, else `project.json` `renderer`, else the bundle's tier found at build time (`platypus_ts::renderer`: a program that is only UI starts on GLES through the linked-in ANGLE, `gles_gfx.rs`, with no world renderer; one that uses the 2D or 3D world on wgpu with the world renderer; `cpu` is opt-in, `cpu_gfx.rs`). A UI-only start asked for the world shows "3D Not Supported" (`notice.rs`). `platypus-app [game folder] [--screenshot out.png] [--frames N] [--fps\|--no-fps] [--renderer r]` (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `PLATYPUS_FPS=0` or `"fps": false` in `project.json`). Loads `build/game.pbundle` + `build/game.css` and wires scripts → UI → renderer. `platypus_editor` is a second binary of the same code that runs `editor/` (always with the world) |
 | `js/engine` | `@platypus/engine`: `Component`, `register`, `op`, `loadFont`, `addStyleSheet`/`removeStyleSheet`, `input` (keys, gamepads), `physics` (`RigidBody`, `Collider`, raycasts, character controller), `audio` (`Sound`, `Bus`, `Emitter`), `GameObject`/`Transform`/`Component` (scene.ts), Unity-style math (math.ts), `DateTime`/`TimeSpan` (time.ts), `Time`/`TimeSince`/`Task` (clock.ts), `Debug`/`Log`/`Console`, `Random`; 2D shapes: `LineRenderer2D` (SDF strokes, fills, `sortingOrder`) and `Shapes` (lines.ts), `TextMesh`, `Spline`/`SplineAnimate` (spline.ts), `Gizmos` (gizmos.ts). Transforms reach Rust batched (`flushTransforms` → one `scene.locals` op per script turn) |
 | `js/editor-ui` | `@platypus/editor-ui`: editor components drawn by Platypus's UI (`MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`), logic in plain modules (`menu.ts`, `dock.ts`, `virtual.ts`, `tree.ts`, `console.ts`) |
 | `editor/` | The editor's UI, run by `platypus_editor` (`crates/platypus_app/src/bin/platypus_editor.rs`, `editor.rs`); see `docs/editor.md` |
 | `js/react` | `@platypus/react`: reconciler (`host.ts`), UI event dispatch (`events.ts`), style/attr diffing, `createRoot`, `Text`/`Span` |
 | `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth`, `sine-circle-demo` and `raindrop-demo` (MiniGameEngine ports), `shapes`, `splines`, `clock` (twelve faces), `fishtank`, `fog` (distance, height fog and light shafts in a misty clearing), `fog-teapots` (the classic distance-fog picture: teapots on a mirrored checkerboard), `fog-raider` (a PS1 tomb with fog a few metres away, its distance on keys), `fog-blocks` (a Minecraft-like hill in sky-blue fog under a cloud deck), `fog-park` (a Victorian London park: pond mist by morning, gas lanterns glowing in the fog by night), `fog-world` (an endless streamed block world: the fog is the render distance, fog culling skips the spare ring), `godrays-forest` (god rays through a forest canopy), `godrays-cell` (god rays through a barred prison window, with dust), `godrays-room` (god rays through a broken roof, a window and shutters into a dusty room, a day passing), `godrays-sunset` (a 25th-floor flat over a city as the sun sets: beams through mullions and blinds, the city's windows lighting up), `godrays-shed` (a craft's green or red scanning beam sweeping a dusty garden shed through its window and plank gaps), `godrays-lift` (a dark hotel corridor: the lift's doors open and its light floods out), `godrays-clouds` (crepuscular rays: the sun through gaps in a high cloud layer over patchwork fields), `light-units` (real-world light units: a 100000 lux courtyard and a lamplit hall, light meter and physical camera), `tunnel` (auto exposure: a road tunnel, dark inside, the exit a white blaze, dazzling on the way out), `dark-room` (eye adaptation: louvred shutters open on a dim bedroom, blinding, then settling, and close again), `emoji` (a spinner wheel picks one of 50 Noto SVG emoji, each with its own show: entrance, signature pose with sprite particles and props, scene, crowd reaction and exit; sounds synthesised by `tools/make_sfx.py`) `postfx` (post-processing: a colonnade with every built-in `PostProcess` effect switchable, depth of field, ink outlines, a custom WGSL pass; `docs/postprocessing.md`), `postfx-look` (stacked looks: noir, dream, comic, old TV, arcade), `postfx-aberration`, `postfx-focus` (depth of field, tilt-shift, blur), `postfx-outline`, `postfx-film` (vignette, grain, grading: one effect or combination each) `flow` (floats: an article with a floated picture and pull-quote, text wrapping around them), `table` (a table from a grid of `display: contents` rows), `article` (floats and a sortable table in one article) `windows` (extra OS windows: owned tools, an isolated Inspector over messages) games (built with `platypus-build build`; each is just a `project.json`, `tsconfig.json` and `src/`, no `package.json`; the `main` ones await porting) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md`. `docs/upstream/` holds reports for upstream projects (the rapier friction issue and PR) |
-| `tools/platypus_build` | `platypus-build` (build/types/assets/dev/check/package): module graph (`platypus_ts::modules`) -> `build/game.pbundle` + `game.css` + assets for a game compiled by platypus_ts, no bun; see `docs/platypus-build.md` |
+| `tools/platypus_build` | `platypus-build` (build/types/assets/dev/check/package/init): module graph (`platypus_ts::modules`) -> `build/game.pbundle` (with the renderer tier, `platypus_ts::renderer`) + `game.css` + assets for a game compiled by platypus_ts, no bun; `init` writes `project.json`, a self-contained `tsconfig.json` and `types/platypus.d.ts`, `init --editor-files <game or folder>` refreshes the last two; see `docs/platypus-build.md` |
 | `tests/fixtures` | JS fixtures for Rust integration tests; `tests/layout` JSON layout fixtures; `tests/golden` PNG goldens |
 
 ### UI model
@@ -57,7 +57,10 @@ way. Full design: `DESIGN.md`. Plan and progress: `TODO.md`. Test IDs (e.g. `M3-
 
 ## Commands
 
-On Windows the shell needs `export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"`.
+On Windows the shell needs `export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"`, and building `platypus_app` needs
+libclang for the linked-in ANGLE (mozangle's bindgen): set `LIBCLANG_PATH` to an LLVM 20 or newer `bin` folder per command
+(this machine: `export LIBCLANG_PATH='C:\llvm-23.1.4\bin'`; never in a committed file). Without libclang,
+`cargo build -p platypus_app --no-default-features` leaves ANGLE out (GLES then needs `PLATYPUS_ANGLE_DIR`, else wgpu).
 
 ```bash
 cargo fmt --all
@@ -92,8 +95,9 @@ cargo run -p platypus_app -- examples/world --cook
 ```bash
 cd tools && cargo run -p platypus_build -- package ../examples/boxes --icon icon.png
 ```
-`platypus-build package <game>` writes `<game>/build/<name>.exe`: one file holding the host (`platypus-game`, or `platypus-app` for `"type": "app"`, from `target/{release,debug}` or `--host`),
-the game's bundle, CSS and assets, and the icon and version info from `project.json` (`docs/platypus-build.md`).
+`platypus-build package <game>` writes `<game>/build/<name>.exe`: one file holding the host (`platypus-app`, from `target/{release,debug}` or `--host`),
+the game's bundle, CSS and assets, and the icon and version info from `project.json`, with `THIRD-PARTY-NOTICES.md` (ANGLE's licences) beside it
+(`docs/platypus-build.md`). `--renderer vulkan|gles|cpu` writes the exe's `renderer`.
 
 - Examples are games compiled by `platypus-build` (no bun, no `node_modules`; engine and UI names are the globals of the generated,
   git-ignored `types/platypus.d.ts`), so plain `tsc` in an example folder fails with "Cannot find name". `bun run typecheck` checks
@@ -103,7 +107,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
 - `bun run build` builds the editor (`editor/`, still bundled by Bun for QuickJS); `bun run build:fixtures` is the same for
   `tests/fixtures`.
 - `bun run build:fixtures` rebuilds `tests/fixtures`. Run it after changing js/.
-- Examples: `platypus-build dev <game>` rebuilds on every edit and signals the running `platypus-game` window. `bun run dev` in `editor/`
+- Examples: `platypus-build dev <game>` rebuilds on every edit and signals the running `platypus-app` window. `bun run dev` in `editor/`
   (`scripts/dev.ts`) is the Bun dev build (vendor.js + game.js, React Fast Refresh) that remains for the editor and QuickJS
   bundles. Other reloads keep state through scene serialization.
 - The `cargo run` line renders a screenshot and exits; check it by eye. `--cook` prepares a
@@ -143,10 +147,10 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
 - **Modules:** a bare import (`from "foo"`) is a file of `src/modules/` (next to the entry); there is no `node_modules` resolution, so a TypeScript package is used by copying its `.ts` source in (`docs/platypus-build.md`, "Modules and packages"). A module may not capture engine global names (it is renamed internally); unreferenced top-level functions are not compiled.
 - **Shell edits:** never create or change files with bash heredocs, `echo`/`cat` redirects or `python -c` strings, even though the tools are installed: they mangle apostrophes and backslashes on this machine. Always use the Edit/Write tools, or a Python script saved as a file (written with Write, then run).
 - **Interrupted builds:** if cargo was killed mid-build, delete the corrupt `.pdb` files under `target/` before rebuilding.
-- **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/platypus-game.exe` (and `platypus-app.exe`).
+- **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/platypus-app.exe`.
   Run `cargo build -p platypus_app` before any manual check in the window. A running window locks the
   exe, so close it before rebuilding.
-- **Logs:** `platypus-game` / `platypus-app` are GUI-subsystem programs. Its log goes to `Player.log` (last run:
+- **Logs:** `platypus-app` is a GUI-subsystem program. Its log goes to `Player.log` (last run:
   `Player-prev.log`) next to the game's `prefs.json`, with ANSI colours, and to stderr when
   started from a terminal or piped. Screenshot runs write no file unless `PLATYPUS_LOG_FILE` is set.
 - **Graphics backend:** Vulkan by default on Windows; `WGPU_BACKEND=dx12` switches.
@@ -239,7 +243,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
   - `examples/arcade` (2026-10-17): a coin collector with a React HUD, FPS counter and
     settings menu; Classic and Deluxe arenas as separate scenes (Style button), the round
     and positions kept across the switch.
-  - App (2026-10-17): `platypus-game` with no folder runs the current one; a GUI-subsystem program
+  - App (2026-10-17): `platypus-app` with no folder runs the current one; a GUI-subsystem program
     logging to `Player.log`; exclusive fullscreen at the monitor's resolution;
     `Application.runInBackground`, focus events and pause hooks (`lifecycle.rs`).
   - M5.c done (2026-10-17): material maps (normal, metallic, occlusion, emission,
@@ -250,7 +254,7 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
   - M5.d done (2026-10-17): animation (`animation.ts`: curves, clips, `Animation`,
     `Animator` with blend trees and transitions), skinned meshes and glTF animations
     (GPU skinning), prefabs, asset hot reload, GUID `.meta` files (`scripts/assets.ts`,
-    `asset_db.rs`), cooking (`platypus-game --cook`, BC1/BC3), cloth (`platypus_physics::cloth`);
+    `asset_db.rs`), cooking (`platypus-app --cook`, BC1/BC3), cloth (`platypus_physics::cloth`);
     `examples/animation`, `examples/cloth`.
   - M5.e started (2026-10-17, built by a background agent, cherry-picked here: work from
     agents' worktrees comes in as linear commits, no merges): `platypus_editor` (a second
@@ -282,6 +286,9 @@ the game's bundle, CSS and assets, and the icon and version info from `project.j
     `Camera.fog`), exponential height fog (`heightFog`, also over the background) and volumetric
     light shafts (`volumetricFog`, `Light.volumetricIntensity`: a jittered march per fogged pixel
     through hard shadow maps). `examples/fishtank` uses linear fog. Tests `M7-FOG-01`..`05`.
+  - One host (2026-10-28): `platypus-app` runs every game, its renderer chosen from the build-time tier
+    (`ui` -> GLES through statically linked ANGLE, `world2d`/`world3d` -> wgpu with the world) or `renderer` /
+    `--renderer` (`vulkan`, `gles`, `cpu`); `type` is gone; `init` writes tsconfig.json + types (TODO.md).
   - platypus_ts (another session, branch `claude/recursing-wright-856ffa`, ~106 commits ahead):
     an AOT compiler from TypeScript to native code (oxc → Platypus IR → Cranelift) with a precise
     GC and closures; the zombie sim and the whole SineDemo compile and run natively (M9.b2).

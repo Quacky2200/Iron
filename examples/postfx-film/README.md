@@ -4,7 +4,7 @@ Vignette, film grain and colour grading: the subtle effects that make a render f
 corners, shimmering noise in the midtones and a warm tint. `V` vignette, `G` grain, `C` grading (each on / off),
 `A` all on / off to compare, `Up` / `Down` strength of all three.
 
-`platypus-game examples/postfx-film -- 1.5` starts at that strength (used for screenshots).
+`platypus-app examples/postfx-film -- 1.5` starts at that strength (used for screenshots).
 Guide: [docs/postprocessing.md](../../docs/postprocessing.md).
 
 ```bash

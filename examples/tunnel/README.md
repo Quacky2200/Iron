@@ -23,7 +23,7 @@ cd tools && cargo run -q -p platypus_build -- build ../examples/tunnel
 cd .. && cargo run -p platypus_app -- examples/tunnel
 ```
 
-Packaged: `platypus-build package ../examples/tunnel`. Screenshot run: `platypus-game examples/tunnel --screenshot out.png --frames 200`
+Packaged: `platypus-build package ../examples/tunnel`. Screenshot run: `platypus-app examples/tunnel --screenshot out.png --frames 200`
 (the interactive window has crashed some GPUs; the screenshot run is safest). The car starts 45 m before the entrance at
 11 m/s, so a longer `--frames` count shows the inside.
 

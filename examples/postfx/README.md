@@ -9,7 +9,7 @@ lamps far down the avenue turn into bokeh discs when the depth of field blurs th
   WGSL). Each row has `-` / `+` for its main parameter.
 - `Tab` moves the depth of field's focus to the next ball (the example eases `focus_distance` as a lens does),
   `A` turns everything off, `T` tours the effects one at a time.
-- `platypus-game examples/postfx -- outline vignette` starts with those effects on (names as in `PostEffect`; used for
+- `platypus-app examples/postfx -- outline vignette` starts with those effects on (names as in `PostEffect`; used for
   screenshots).
 
 Engine features exercised: `PostProcess.create`, `createCustom` with typed parameters (`"tint:color"`),

@@ -2,7 +2,7 @@
 
 Frame times of every example on the native backend (platypus_ts, JIT-compiled `game.pbundle`) against the QuickJS original
 of the same example on `main` (its own `bun run build`), measured before this branch is merged back. Both run in the
-same release host, without a window (`platypus-game --bench`: an offscreen target, no vsync, no frame cap; each frame waits for
+same release host, without a window (`platypus-app --bench`: an offscreen target, no vsync, no frame cap; each frame waits for
 the GPU work of the frame before it), at 1280x720 and a fixed step of 1/60 s, with the same scripted input
 (`tools/bench/inputs/<name>.json`). How it works and the flags: `docs/platypus-build.md`, "Benchmarks". Raw numbers:
 `docs/benchmarks/results.json`.
@@ -596,7 +596,7 @@ Unity's animation culling. Measured with the release host (`cargo build --releas
 machine above (AMD Ryzen 9 5900X, NVIDIA GeForce RTX 5080 on Vulkan, Windows 11 Pro 22631):
 
 ```bash
-target/release/platypus-game.exe examples/fog-white-room --bench --bench-input tools/bench/inputs/fog-white-room.json \
+target/release/platypus-app.exe examples/fog-white-room --bench --bench-input tools/bench/inputs/fog-white-room.json \
   --fixed-dt 0.0166667 --bench-out out.json
 ```
 

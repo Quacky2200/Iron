@@ -23,7 +23,7 @@ cd .. && cargo run -p platypus_app -- examples/fog
 ```
 
 Or make one executable with `platypus-build package ../examples/fog` (see `docs/platypus-build.md`). To check it without
-opening the interactive window, render a screenshot: `platypus-game examples/fog --screenshot out.png --frames 60`.
+opening the interactive window, render a screenshot: `platypus-app examples/fog --screenshot out.png --frames 60`.
 The interactive window has crashed some GPUs; the screenshot run is the safest check.
 
 ## Structure

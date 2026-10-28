@@ -25,7 +25,7 @@ cargo run -p platypus_app -- examples/platformer
 
 A single-file executable can be made with `platypus-build package ../examples/platformer` (it uses `icon` from
 `project.json`; see `docs/platypus-build.md`). A screenshot run is
-`platypus-game examples/platformer --screenshot out.png --frames N`. It is the safest way to check the result: the
+`platypus-app examples/platformer --screenshot out.png --frames N`. It is the safest way to check the result: the
 interactive window has crashed some GPUs.
 
 ## Structure

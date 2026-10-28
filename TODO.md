@@ -14,7 +14,7 @@ Legend: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] **First script backend:** QuickJS (`rquickjs` 0.14). `deno_core` follows as a second backend.
 - [x] Rust edition 2024, latest stable (1.99 at time of writing)
 - [x] Licence: Apache-2.0 (see `LICENSE` and the README; it lets people modify anywhere and keep their changes with less friction). It was private until a working demo. Done with it: `license = "Apache-2.0"` in the Cargo manifests and package.json files, an `SPDX-License-Identifier: Apache-2.0` header on our source files, checked by `M9-LIC-01`. The holder line came with the rename: `Copyright 2026 The Platypus Authors` above it, and `NOTICE`
-- [x] Name: **Platypus** (2026-10-27, was Iron): crates `platypus_*`, binaries `platypus-game` / `platypus-app` (the two hosts, picked by `project.json` `type`; until main's two-host work it was one `platypus`) / `platypus_editor` / `platypus-build`, the renderer crates `platypus_render_cpu` / `platypus_render_gles`, `PLATYPUS_*` variables, `@platypus/*` packages, `game.pbundle`, `.ppk`; files of the old names are still read (`M9-REN-01..04`). The icon `resources/icon/icon.png` is the default for every game without one (`M9-ICO-01..06`)
+- [x] Name: **Platypus** (2026-10-27, was Iron): crates `platypus_*`, binaries `platypus-app` (the one host since 2026-10-28; between main's two-host work and then the hosts were `platypus-game` and `platypus-app`, picked by `project.json` `type`, and before that one `platypus`) / `platypus_editor` / `platypus-build`, the renderer crates `platypus_render_cpu` / `platypus_render_gles`, `PLATYPUS_*` variables, `@platypus/*` packages, `game.pbundle`, `.ppk`; files of the old names are still read (`M9-REN-01..04`). The icon `resources/icon/icon.png` is the default for every game without one (`M9-ICO-01..06`)
 
 ---
 
@@ -31,7 +31,7 @@ Platypus/
 │  ├─ platypus_render/         # wgpu device, surfaces, offscreen targets
 │  ├─ platypus_script/         # ScriptRuntime trait + QuickJS backend + shared test suite
 │  ├─ platypus_ui/             # (M2) UI tree, LayoutEngine trait, Taffy backend, UI renderer
-│  └─ platypus_app/            # the `platypus-game` / `platypus-app` binaries: main loop wiring everything together
+│  └─ platypus_app/            # the `platypus-app` host (and `platypus_editor`): main loop wiring everything together
 ├─ js/
 │  ├─ engine/              # @platypus/engine: Component base class, engine API, .d.ts
 │  └─ react/               # (M2) @platypus/react: custom reconciler
@@ -1697,12 +1697,27 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   optional leftovers: embedded `child` style, modal dialogs, `Camera.targetWindow`, transparent windows, `Application.wantsToQuit`,
   domains on their own thread / process, and a manual check of the winit runner on a real display (never run there yet).
 - [x] **Startup video settings** (2026-10-28): an optional prompt shown once before the game's window (`videoSettingsPrompt` in
-  `project.json`, `platypus-build package --video-settings-prompt`, `platypus-game --video-settings-prompt` / `--no-...`):
+  `project.json`, `platypus-build package --video-settings-prompt`, `platypus-app --video-settings-prompt` / `--no-...`):
   window mode, a resolution list box, vsync, quality level, Play / Quit; a UI-only child process (`video_prompt.rs`,
   `video_prompt.tsx`); the choice goes into `platypus.display` / `platypus.quality`. Vsync is now on by default (a saved
   choice keeps it only with `playerVSync`). The main window opens centred on the primary monitor when windowed. The d-pad
-  reaches the focused element as arrow keys first. Tests `M9-VSP-01`..`11`, `M5-DSP-05`. Open: ANGLE is not shipped beside
-  packaged exes, so the dialog uses the wgpu fallback there; port to `main` (Iron names).
+  reaches the focused element as arrow keys first. Tests `M9-VSP-01`..`11`, `M5-DSP-05`. ANGLE is linked into the host now
+  (one host, below), so the dialog draws with GLES in packaged exes too.
+- [x] **One host, the renderer chosen from what the game uses** (2026-10-28): `platypus-app` and the UI-only `platypus-app`
+  are one `platypus-app` (`platypus_editor` stays); `project.json` `type` is replaced by `renderer` (`vulkan` / `gles` /
+  `cpu`, left out: automatic; the old `type` warns and is ignored); the compiler finds the program's tier at build time
+  (`ui` / `world2d` / `world3d`, `platypus_ts::renderer`, written into `game.pbundle`) and a `ui` program starts on GLES through
+  ANGLE linked in statically (`static-angle`, default on Windows; needs libclang to build), the rest on wgpu with the world;
+  "3D Not Supported" stays as the safety net; `cpu` is an opt-in third path (`platypus_render_cpu`); `--renderer` on
+  `platypus-app` and `platypus-build package`; `THIRD-PARTY-NOTICES.md` beside packaged exes; `init` writes a self-contained
+  `tsconfig.json` and `types/platypus.d.ts`, `init --editor-files` refreshes them (all examples regenerated, no more
+  `extends` of `tsconfig.base.json` there). Tests `M9-HOST-01..14`, `M9-TSC-01..03`, `M9-API-1330..1332`. Follow-ups:
+  - [ ] 2D-world content on the GLES path: shapes, sprites, text meshes and the camera's clear drawn through the UI draw list
+    (or a small GLES 2D pass), so `world2d` programs start on GLES too (today they go to wgpu like `world3d`).
+  - [ ] wgpu failing at start (no Vulkan / DX12 device) falls back to the GLES path for `ui` games, and says so.
+  - [ ] Remove the root `tsconfig.base.json` together with the QuickJS packages that still extend it (`js/engine`,
+    `js/react`, `js/editor-ui`, `editor/`, `tests/fixtures`); the examples and `tools/bench/crowd` no longer use it.
+  - ANGLE no longer needs scoping to one binary (the old `ui_app_only` idea): there is one host.
 - [ ] **M9.b2** `platypus_ts`: ahead-of-time TypeScript compiler (oxc → typed Platypus IR → Cranelift → object
   linked into the game exe). Spike done (`tools/`, `docs/research/platypus-ts-spike.md`): the zombie
   game's `sim.ts` compiles, 13/13 ported tests pass, ~50x QuickJS, a precise GC and closures work.

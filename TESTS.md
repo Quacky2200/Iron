@@ -158,7 +158,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 |---|---|---|
 | M2-INT-01 | Integration | The `boxes` fixture bundle runs in `QuickJsRuntime`; applying its commits to `UiTree` gives the expected tree and layout rects. |
 | M2-INT-02 | Integration | A `setTimeout`-driven state change produces only incremental ops (no recreation of unchanged nodes). |
-| M2-MAN-01 | Manual | `platypus-game examples/boxes`: resizing the window relayouts smoothly; the counter adds and removes boxes. |
+| M2-MAN-01 | Manual | `platypus-app examples/boxes`: resizing the window relayouts smoothly; the counter adds and removes boxes. |
 
 ### Performance
 Benches: `cargo bench -p platypus_ui` (layout) and `cargo bench -p platypus_script` (commits). The tree is an
@@ -301,7 +301,7 @@ layout pass):
 | M3-INP-02 | Integration | Text-field shortcuts (Ctrl/Cmd+A/C/X/V) follow the physical key `code` when the layout's `key` isn't a Latin letter (Russian layout: `key` "ф", `code` "KeyA" selects all); AltGr (Ctrl+Alt) still types. |
 | M3-PAD-01 | Integration | Gamepad button events from `gilrs` reach scripts (using a simulated device where possible). |
 | M3-PAD-02 | Unit | Each pad connection reaches scripts once: pads already plugged in are announced on the first poll, a repeated `Connected` for a known pad is dropped, and one that disconnects and comes back is announced again. |
-| M3-MAN-01 | Manual | `platypus-game examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
+| M3-MAN-01 | Manual | `platypus-app examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
 
 ### M3d — Floats and tables
 
@@ -441,9 +441,9 @@ layout pass):
 | M5-APP-01 | Unit | The game's manifest comes from its `package.json` (`name`, `version`, `author`, and `platypus.title` / `company` / `identifier` / `icon`), with the folder name and defaults when missing; `__platypus_info` carries the app and system sections and later GPU / screen additions. |
 | M5-APP-02 | JS unit | `Application` and `SystemInfo` read `__platypus_info` (defaults before it exists); `Application.quit()` is an op. |
 | M5-APP-04 | Unit | The log goes to `Player.log` in the game's settings folder (or `PLATYPUS_LOG_FILE`); the last run's is kept as `Player-prev.log`. |
-| M5-APP-11 | Unit + JS unit | Arguments after `--` on `platypus-game`'s command line go to scripts as `Application.args` (Platypus's own options before it still apply); a copy each read. |
-| M5-APP-12 | JS unit + Manual | `Application.quit(code)` sends `app.quit` with a whole exit code (0 by default) and `platypus-game` exits with it (checked by hand: the md-reader's `--root` exits with 2). |
-| M5-APP-03 | Unit | `platypus-game` without a game argument runs the current folder; the game folder may come before or after the options, and a second folder or an unknown option is an error. |
+| M5-APP-11 | Unit + JS unit | Arguments after `--` on `platypus-app`'s command line go to scripts as `Application.args` (Platypus's own options before it still apply); a copy each read. |
+| M5-APP-12 | JS unit + Manual | `Application.quit(code)` sends `app.quit` with a whole exit code (0 by default) and `platypus-app` exits with it (checked by hand: the md-reader's `--root` exits with 2). |
+| M5-APP-03 | Unit | `platypus-app` without a game argument runs the current folder; the game folder may come before or after the options, and a second folder or an unknown option is an error. |
 | M5-APP-05 | Unit | winit's `Focused` and `Occluded` window events become `InputEvent::Focused` / `Occluded`. |
 | M5-APP-06 | Integration | Muting the mixer for the background silences everything and fades back to the scripts' master volume, including a master set while muted. |
 | M5-APP-07 | Unit | Losing focus or minimising (0 × 0 or occluded) pauses unless `runInBackground` (or a screenshot run); pause and focus changes are reported once each, and again to reloaded scripts; the fixed clock caps catch-up at five ticks and restarts after a pause with a single tick. |
@@ -1470,7 +1470,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2550 | Unit | Globs (`platypus_core::glob`): `*` stays inside one path part, `**` crosses parts, `?`, case-sensitive; a plain path in `include` means the folder below it. |
 | M9-TS-2551 | Unit | Dynamic path inference (`platypus_ts::assetpaths`): templates and `+` chains become globs, one `*` per hole (nested holes too); prefix-less paths, paths without a file name, URLs and text with spaces are refused; whole literals and lines are reported. |
 | M9-TS-2552 | Unit | `include` / `exclude` selection (`platypus_build::include`) and `collect_files`: globs work, a pattern's matches are copied under a narrowed `include`, `exclude` removes files, an unmatched `include` is a warning not a silent drop. |
-| M9-TS-2553 | Manual | `platypus-build package examples/emoji --host target/debug/platypus-game.exe --out <dir>/emoji.exe`, then `emoji.exe --screenshot out.png --frames 150` from that folder with `PLATYPUS_LOG_FILE`: no `not found`, the sounds decode and the SVG emoji are drawn (checked 2026-10-22). |
+| M9-TS-2553 | Manual | `platypus-build package examples/emoji --host target/debug/platypus-app.exe --out <dir>/emoji.exe`, then `emoji.exe --screenshot out.png --frames 150` from that folder with `PLATYPUS_LOG_FILE`: no `not found`, the sounds decode and the SVG emoji are drawn (checked 2026-10-22). |
 | M9-TS-2554 | Unit | Pack placement (`platypus_build::packs`): an asset only one scene names goes to that scene's pack, one two scenes name, or the code, a dynamic path or `include` takes goes to `assets.dat`; prefabs are followed; the scene file is the first entry of its own pack; scene slugs stay distinct. |
 | M9-TS-2556 | Unit | Two builds of the same files write identical bytes and remove an old pack; two keys that differ only in case are an error. |
 | M9-TS-2558 | Unit | A pack written by the build reads back byte-identical through `platypus_pack::Pack` and `Vfs` (GUIDs and importer text from `.meta`, LZ4 for text, mp3 stored, `verify`), and `pack-info` lists it. |
@@ -1503,12 +1503,14 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1318 | Unit | `license` defaults to `private`, is validated case-insensitively against the list, `custom` takes `licenseFile`, the npm mapping. |
 | M9-API-1321 | Unit | `name` is the only required field: missing or empty is an error naming `project.json`; a command-line override counts. |
 | M9-API-1322 | Unit | An explicitly empty string field stays empty (no default), is listed in `empty_fields` with a warning text, and round-trips through the resolved project. |
-| M9-API-1330 | Unit | `type` in `project.json`: `game` by default, `app` runs on the `platypus-app` host (`ProjectType::host`), is a known key (not in `extra`) and round-trips through `to_json` (the default is not written); any other value is an error naming `type`. |
+| M9-API-1330 | Unit | `renderer` in `project.json`: left out it is `auto` (not written back by `to_json`); `vulkan`, `gles` and `cpu` are kept and round-trip, a known key (not in `extra`); `gles` and `cpu` are UI-only; an unknown value warns naming `renderer` and counts as `auto`. |
+| M9-API-1331 | Unit | The old `type` (`app`, `game`) gets the one-line warning (`type` is replaced by `renderer`) and is ignored: not mapped to a renderer, not kept in `extra`, not written back. |
+| M9-API-1332 | Unit | `Renderer::first_set` picks the first renderer that is set (command line, then build argument, then project), `auto` when none is; every value parses back from its name. |
 | M9-API-1320 | Unit | `platypus_app` `Manifest::load` of a folder uses `project.json` (title, identifier, startScene, layers, platform fps); a broken template leaves the defaults. |
-| M9-TS-2700 | Unit | `init` writes the default templates, `src/main.ts`, and the resolved preview for a given user; the result builds. |
+| M9-TS-2700 | Unit | `init` writes the default templates, a self-contained `tsconfig.json` and `types/platypus.d.ts` (M9-TSC-02), `src/main.ts`, and the resolved preview for a given user; the result builds. |
 | M9-TS-2701 | Unit | `init` flags replace only their own fields. |
 | M9-TS-2702 | Unit | `init` refuses to overwrite `project.json` without `--force`. |
-| M9-TS-2703 | Unit | `init --icon` copies the icon; `.gitignore` gets `build/` and `*.meta` once and only if it exists; a bad icon writes nothing. |
+| M9-TS-2703 | Unit | `init --icon` copies the icon; `.gitignore` gets `build/`, `types/` and `*.meta` once and only if it exists; a bad icon writes nothing. |
 | M9-TS-2704 | Unit | A user without a full name gets the account name for first name and company. |
 | M9-TS-2705 | Unit | `init --license` sets and validates the license, shown in the preview. |
 | M9-TS-2710 | Integration | `package` resolves templates and the platform section into the payload's `project.json` (and the PE version info), the payload has a `package.json` with `UNLICENSED`; the app side reads it back without the user's information. |
@@ -1527,7 +1529,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-ICO-01 | Unit | The Platypus icon (`resources/icon/icon.png`, built into `platypus_core::icon::DEFAULT_PNG`) is a 1254 x 1254 PNG. |
 | M9-ICO-02 | Unit | `write_ico` lists its sizes; `windows_res` writes a `.res` file of aligned entries: an empty first entry, 7 icons, the `MAINICON` group and a version block with `ProductName`. |
 | M9-ICO-03 | Unit | The host's default window icon is 256 x 256 RGBA with transparent corners and an opaque middle. |
-| M9-ICO-04 | Integration | `platypus-game.exe` and `platypus-app.exe` (built by cargo, Windows MSVC) each carry the `MAINICON` group, PNG icon images and `ProductName` = `Platypus`. |
+| M9-ICO-04 | Integration | `platypus-app.exe` (built by cargo, Windows MSVC) carries the `MAINICON` group, PNG icon images and `ProductName` = `Platypus`. |
 | M9-ICO-05 | Unit | The default icon decodes and converts to an `.ico` with all seven sizes. |
 | M9-ICO-06 | Unit | `package` of a game without an icon and with empty title and description gives the exe the Platypus icon (all seven sizes, the same 16 px image) and `ProductName` / `FileDescription` = `Platypus`; a game with its own icon keeps it (`M9-TS-2412`). |
 | M9-API-900 | Unit | `format_fps` gives the integer rate as `N FPS` (36 frames in 0.25 s is `144 FPS`, zero time is `0 FPS`). |
@@ -1541,7 +1543,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-908 | Unit | `FpsOverlay` draws commands for its text (and fewer for no text). |
 | M9-API-909 | Unit | `--fps` and `--no-fps` parse. |
 | M9-API-910 | Unit | `platypus.fps` is read from the manifest. |
-| M9-API-911 | Integration | `platypus-game <fixture> --screenshot --frames 3 --fps` saves the file and the log has no errors (needs a GPU). |
+| M9-API-911 | Integration | `platypus-app <fixture> --screenshot --frames 3 --fps` saves the file and the log has no errors (needs a GPU). |
 | M9-API-912 | Integration | The same with `--no-fps`. |
 | M9-API-913 | Unit | `Quality::default()` has vsync on; the `render.quality` op turns it off with a vSyncCount of 0 and leaving the argument out means the default (on). |
 | M9-API-914 | Integration | Quality levels start with `vSyncCount` 1; a saved `platypus.quality` without `playerVSync` (older saves) is applied with the level's vsync, one with `playerVSync: true` keeps its `vSyncCount: 0`. |
@@ -1557,7 +1559,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-VSP-06 | Unit | `platypus.videoSettingsPrompt` is read from the manifest (`Manifest`), unset by default; `project.json` keeps it through `to_json`. |
 | M9-VSP-07 | Unit | `--video-settings-prompt`, `--no-video-settings-prompt` and `--video-settings-dialog <folder>` parse. |
 | M9-VSP-08 | Unit | `platypus-build package --video-settings-prompt` / `--no-video-settings-prompt` set `videoSettingsPrompt` in the exe's embedded `project.json` over the project's; without the argument the project's value (or none) is kept. |
-| M9-VSP-09 | Integration | `platypus-game <game> --screenshot out.png --video-settings-prompt` saves the dialog's picture (its own UI-only window, 600 x 500 logical pixels), not the game's (needs a GPU). |
+| M9-VSP-09 | Integration | `platypus-app <game> --screenshot out.png --video-settings-prompt` saves the dialog's picture (its own UI-only window, 600 x 500 logical pixels), not the game's (needs a GPU). |
 | M9-VSP-10 | Unit | The d-pad (`Input::Navigate`) reaches the focused element as an arrow key's `keydown` first; preventing it keeps focus (a list box moves its selection), else focus moves as before (`platypus_ui` tests/navigation.rs). |
 | M9-VSP-11 | Bun | The prompt's resolution list: the monitor's modes de-duplicated and sorted largest first (rates only for exclusive fullscreen, windows only below the monitor's size); the saved size is selected, else the nearest (`video_prompt_sizes.test.ts`). |
 | M9-VSP-12 | Unit | Windows show the game's title and icon: `Manifest::window_title` is the title, else the name, else "Platypus"; `window_icon` is the project's icon, else Platypus's (the main window and the prompt share them). The prompt's folder names its window after the game, carries its icon (`icon.png`: the title bar and taskbar only, no image in its UI) and is a fixed 600 x 500 (`resizable: false`: no resize edges or maximize button). |
@@ -1571,7 +1573,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-APP-04 | Integration | The same with `--force` runs, saves the screenshot and logs the deprecation note exactly once. |
 | M9-APP-05 | Integration | A native game (a bare `.ts` source) runs without `--force` and logs no deprecation note. |
 | M9-APP-06 | Unit | A game folder with only an old `dist/` build is refused with an error naming `dist/`, `build/` and `platypus-build build`; with `build/game.pbundle` it resolves to that bundle. |
-| M9-BEN-01 | Unit | `platypus-game --bench`: a bench file becomes segments of timed platform events (keys held, clicks, `clickText`, `count`/`every` repeats, unknown kinds refused), and frame stats give fps, median, p99, worst and the script share (`crates/platypus_app/src/bench.rs`). |
+| M9-BEN-01 | Unit | `platypus-app --bench`: a bench file becomes segments of timed platform events (keys held, clicks, `clickText`, `count`/`every` repeats, unknown kinds refused), and frame stats give fps, median, p99, worst and the script share (`crates/platypus_app/src/bench.rs`). |
 | M9-BEN-02 | Unit | `platypus-build bench` writes the summary table with speed-ups, marks games the base branch lacks as n/a, and keeps hand-written text around the generated part of `docs/benchmarks.md`. |
 | M9-BEN-03 | Integration | `platypus_app game.ts --bench --bench-input spec.json` runs a native game with no window (offscreen target, fake platform), the scripted keys reach it, and the JSON report has the segments, frame counts, fps and start-up time (needs a GPU; `crates/platypus_app/tests/bench_smoke.rs`). |
 | M9-API-1100 | Unit | Asset pack hashes are fixed functions of the bytes (SipHash-1-3 128 content hash, FNV-1a path hash, CRC-32 vectors) and game paths normalize like `resolve_asset` (`crates/platypus_pack/src/hash.rs`). |
@@ -1588,7 +1590,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-API-1148 | Unit | `load_sound` loads a WAV whole and streamed from a pack-only `Vfs` (offline mixer, no GPU) and a miss says `not found in assets.dat` (`platypus_app/src/main.rs`). |
 | M9-API-1149 | Unit | A UI SVG image loads from the installed asset file system, not the folder (`platypus_render::ui::images`). |
 | M9-API-1205 | Unit | `asset_root::mount`: loose folder, packs from `index.json` in any manifest order (scene packs above `assets.dat`), packs found by name without a manifest, a manifest path outside the folder or a missing pack is an error. |
-| M9-API-1150 | Manual | `platypus-build package examples/emoji --packs --host target/debug/platypus-game.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
+| M9-API-1150 | Manual | `platypus-build package examples/emoji --packs --host target/debug/platypus-app.exe` (and `examples/scenes`), the exe run from its own folder with `--screenshot --frames 120`: assets load from `assets.dat` / scene packs, no `not found` in the log, the picture matches the loose build. |
 | M9-API-1151 | Unit | `Assets.exists` / `list` / `packOf` in QuickJS answer from the host's index: sorted keys, the `project.json` glob rules, `guid:` and `data:` sources, the pack of each path, nothing without an index (`platypus_engine_api/tests/batch1.rs`). |
 | M9-API-1107 | Unit | Stored, LZ4 and deflate packs read back the same bytes; compressed text shrinks over 4x. |
 | M9-API-1108 | Unit | A pack inside a larger file (an APK asset) opens at its offset, mapped and read. |
@@ -1786,7 +1788,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2917 | Integration | A rejection handled in the same drain is not reported; a `then` chain reports only its last promise. |
 | M9-TS-2918 | Integration | An exception escaping a `setTimeout` or `queueMicrotask` callback is reported and the other timers still run. |
 | M9-TS-2919 | Integration | Clear compile errors: `Promise.all` of promises of different types, top-level `await`, `Promise<Promise<T>>`, async generators, a generic promise of a type no `Promise<..>` names (alias). |
-| M9-TS-2600 | Unit | `platypus-build package` reads the project's `type` before choosing the host: `game` (default, also when `project.json` can't be read) or `app`; a missing explicit host is an error. |
+| M9-TS-2600 | Unit | There is one host, `platypus-app` (`package::HOST`); a missing explicit `--host` is an error. |
 | M9-TS-3000 | Integration | `let mode: M = "a"; if (o.mode !== undefined) mode = o.mode;` (a union local assigned from an optional field; formerly a Cranelift panic) equals bun's (`platypus_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |
 | M9-TS-3001 | Integration | The same with `as M`, a `const` copy and `o.mode as M` equals bun's (`platypus_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |
 | M9-TS-3002 | Integration | `??` over optional and nullable union members equals bun's (`platypus_ts_tests/tests/lang/unions.rs`, `bench/unions_cases.ts`, normal, GC stress, GC off). |
@@ -2050,3 +2052,25 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3385 | Integration | `find` and `reduce` over arrays of engine handles (a miss is `undefined`), `getComponent(Animation)?.destroy()` (then `undefined`), and `Model.materials` / `Model.animations` lists, empty before the model loads (`bench/facade.ts` `whiteRoomShapes`). |
 | M9-TS-3386 | Integration | `reduce` / `reduceRight` with no initial value start from the first (last) element, over numbers, strings and objects; an empty array throws a `TypeError` (`bench/leftovers_cases.ts`, compared with bun). |
 | M9-TS-3387 | Integration | Compiled code with every GC mode: `MeshRenderer.isVisible` and `SkinnedMeshRenderer.isVisible` are false until the host reports a frame, asking starts the watch (`watched_renderers`), the report (`set_seen_renderers`) answers each apart; `RenderStats.shadowCasters` reads the host's count (`bench/render_native.ts`). |
+
+## M9 — One host: the renderer chosen from what the game uses
+
+| ID | Kind | What |
+|---|---|---|
+| M9-HOST-01 | Unit | The tier of a set of engine names is the highest among them (`ui` < `world2d` < `world3d`); only names above `ui` are listed in `uses`, sorted and once (`platypus_ts::renderer`). |
+| M9-HOST-02 | Unit | A scene or prefab file names its component and asset types (`"type"` and `"$type"` at any depth). |
+| M9-HOST-03 | Unit | Each tier parses back from its name (`ui`, `world2d`, `world3d`); anything else is none. |
+| M9-HOST-04 | Unit | Every name of the tier table is a class or namespace of the real engine manifests (no stale tags). |
+| M9-HOST-05 | Unit | Every class and namespace of `platypus_render_api` has a tier above `ui`, and so do `Camera` and `Gizmos`. |
+| M9-HOST-06 | Unit | A compiled program that is only UI (React state, `Debug.log`, `Time`, `Vector3`) needs `ui` with nothing listed. |
+| M9-HOST-07 | Unit | A program that adds a `Camera` needs `world2d` (`uses: ["Camera"]`); with a `MeshRenderer` too it needs `world3d`. |
+| M9-HOST-08 | Unit | A program that adds a `TextMesh` needs `world2d`. |
+| M9-HOST-09 | Unit | A `Camera` used only in a top-level function nothing calls does not count (the unused function is not compiled): `ui`. |
+| M9-HOST-10 | Unit | With no renderer set, the host starts a `ui` program on GLES and a `world2d` / `world3d` one on wgpu with the world (`host::resolve`). |
+| M9-HOST-11 | Unit | The command line's `--renderer` beats the project's `renderer`, which beats the tier (`vulkan`, `gles`, `cpu` each way). |
+| M9-HOST-12 | Unit | A UI-only renderer (`gles`, `cpu`) for a program that uses the world warns naming the renderer, the names it uses and "3D Not Supported"; `vulkan`, or a `ui` program, does not. |
+| M9-HOST-13 | Unit | Engine calls named only inside strings (the md-reader's bundled docs: `Model.load(..).whenLoaded()`, `Light.measureIlluminance`) pull no facade chunk in and do not count: `ui`. |
+| M9-HOST-14 | Unit | `platypus-build package --renderer` writes `renderer` into the exe's embedded `project.json` over the project's (`auto` leaves it out, no argument keeps the project's), warns once for a UI-only renderer of a world bundle, and writes `THIRD-PARTY-NOTICES.md` beside the exe. |
+| M9-TSC-01 | Unit | The default `tsconfig.json` is self-contained (no `extends`): ES2022, strict, `noUncheckedIndexedAccess`, `noImplicitOverride`, `isolatedModules`, `verbatimModuleSyntax`, `moduleResolution: bundler`, `jsx: react-jsx`, `paths` to `src/modules`, `include: ["src"]` and `files: ["types/platypus.d.ts"]`. |
+| M9-TSC-02 | Unit | `init` writes that `tsconfig.json` (keeping an existing one) and `types/platypus.d.ts`, the text `platypus-build types` writes (it declares `Vector3` and `GameObject`), so an editor completes engine names at once. |
+| M9-TSC-03 | Unit | `init --editor-files` rewrites only `tsconfig.json` and `types/platypus.d.ts` (a stale declarations file is replaced) of one game or of every game in a folder; the other files stay byte-identical; a folder without games is an error. |

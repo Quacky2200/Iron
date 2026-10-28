@@ -29,11 +29,11 @@ cd tools && cargo run -q -p platypus_build -- build ../examples/crowd
 cd .. && cargo run --release -p platypus_app -- examples/crowd
 ```
 
-Screenshot run: `platypus-game examples/crowd --screenshot out.png --frames 150` (the interactive window has crashed some
+Screenshot run: `platypus-app examples/crowd --screenshot out.png --frames 150` (the interactive window has crashed some
 GPUs; the screenshot run is safest). A windowless benchmark of every view, count and mode:
 
 ```bash
-target/release/platypus-game.exe examples/crowd --bench --bench-input tools/bench/inputs/crowd.json \
+target/release/platypus-app.exe examples/crowd --bench --bench-input tools/bench/inputs/crowd.json \
   --fixed-dt 0.0166667 --size 1280x720 --bench-out out.json
 ```
 

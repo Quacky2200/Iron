@@ -22,7 +22,7 @@ cd tools && cargo run -q -p platypus_build -- build ../examples/fog-park
 cd .. && cargo run -p platypus_app -- examples/fog-park
 ```
 
-Packaged: `platypus-build package ../examples/fog-park`. Screenshot run: `platypus-game examples/fog-park --screenshot out.png --frames 60`
+Packaged: `platypus-build package ../examples/fog-park`. Screenshot run: `platypus-app examples/fog-park --screenshot out.png --frames 60`
 (the interactive window has crashed some GPUs; the screenshot run is safest). The scene creates many objects; the start-up log
 prints `fog-park: N mesh renderers`.
 

@@ -15,13 +15,19 @@ cargo run -p platypus_build -- build ../examples/hello
 | `assets <folder>... [--prune]` | Writes `.meta` GUID files (the port of `scripts/assets.ts`). |
 | `dev <game> [--no-tsc]` | Rebuilds on every change and signals the running app. |
 | `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/platypus.d.ts` (`bun run typecheck:examples`). |
-| `init [<dir>] [flags]` | Writes a default `project.json` (see "`project.json`"). |
+| `init [<dir>] [flags]` | Writes a default `project.json`, a self-contained `tsconfig.json` and `types/platypus.d.ts` (see "`project.json`"). |
+| `init --editor-files [<dir>...]` | Rewrites only `tsconfig.json` and `types/platypus.d.ts` of a game, or of every game in a folder (see "Editor files"). |
 | `package <game> [flags]` | One executable for the game: `build/<exe>.exe` (see "Packaging a single executable"). |
+
+**Building the host.** `platypus-build` itself needs only Rust. The engine host it packages (`cargo build --release -p
+platypus_app`) links ANGLE on Windows, whose build runs bindgen and so needs libclang: set `LIBCLANG_PATH` to the `bin` folder of
+an LLVM 20 or newer install for that command (for example `LIBCLANG_PATH='C:\llvm-23.1.4\bin'`), or build with
+`--no-default-features` to leave ANGLE out ([rendering.md](rendering.md), "Static ANGLE").
 
 ## The output folder: `build/`
 
 A game builds into `<game>/build/` (the editor's UI into `editor/build/`). Games used to build into `dist/`; that folder is not
-read any more (no fallback): `platypus-game` on a folder with only `dist/game.pbundle`, `dist/game.irbundle` or `dist/game.js` exits with an error that
+read any more (no fallback): `platypus-app` on a folder with only `dist/game.pbundle`, `dist/game.irbundle` or `dist/game.js` exits with an error that
 says to rebuild with `platypus-build build` (`M9-APP-06`). A stale `dist/` can be deleted; `.gitignore` still ignores it.
 
 ## QuickJS is deprecated (`--force`)
@@ -49,7 +55,17 @@ A leading `//` comment line is allowed; otherwise plain JSON.
   one warning per empty metadata field (`title`, `company`, `identifier`, `version`, `description`, `copyright`, `license`), e.g.
   `warning: C:\Games\fox\project.json: "company" is empty (the exe's version info will have no company)`. `platypus-build check` never does.
   `package` also warns (it never blocks) when `company`, `copyright` or `license` were left out and so still hold their defaults.
-- **`type`: `game` (default) or `app`.** Which host runs and packages the project (`platypus_core::project::ProjectType`). A **game** runs on `platypus-game`: the full engine (Vulkan, DX12 or Metal through wgpu, the 3D world). An **app** runs on `platypus-app`: only UI, so the 3D world renderer is never built and the GPU allocates small blocks (the clock went from ~306 MB to ~135 MB private); it is the light host, whose renderer is planned to be GLES through ANGLE. The three programs are one source, told apart by their name at compile time (`platypus_app/src/host.rs`, as `platypus_editor` is). `platypus-build package` reads `type` first and embeds the matching host (`--host` and `$PLATYPUS_HOST` still override); `platypus-game` and `platypus-app` warn or note at start when a project's type is not theirs but run it anyway. Any other value of `type` is an error naming it.
+- **`renderer`: left out (the default), `"vulkan"`, `"gles"` or `"cpu"`.** Which renderer `platypus-app`, the one host of
+  every game, draws with (`platypus_core::project::Renderer`). Left out, it follows what the program uses, found at build
+  time (the bundle's `renderer` tier, below): a program that is only UI starts on GLES (ANGLE linked into the Windows host,
+  no world renderer, the lightest), one that uses the 2D or 3D world on wgpu with the world renderer. `"vulkan"` forces wgpu
+  with the world renderer (Vulkan by default on Windows and Linux, DX12 with `WGPU_BACKEND=dx12`, Metal on macOS); `"gles"`
+  forces the light UI-only path; `"cpu"` the CPU renderer (no GPU API; UI only, opt-in). For `gles` or `cpu` with a program
+  that uses the world, `build` and `package` warn (`renderer is gles but this game uses the world (Camera, Light): it will
+  show 3D Not Supported`), and the window shows "3D Not Supported" when the game asks for the world. Any other value warns
+  and counts as left out. The command line's `platypus-app --renderer` and `package --renderer` come first. The old
+  **`type`** (`game` / `app`) gets a one-line warning (`` `type` is replaced by `renderer`; "app" = "gles", "game" =
+  "vulkan" ``) and is ignored. `init` leaves `renderer` out. Details: [rendering.md](rendering.md#choosing-the-renderer).
 - **Deprecated fallback:** a folder with no `project.json` but a `package.json` with a `platypus` section still works: the loader reads that
   section (without templates) plus the file's `name`, `version`, `author` and `description` (and the old defaults: title `${name}`, empty
   company, version `0.0.0`). It is found as a game by `check` too. With a `project.json`, `package.json` is not read at all.
@@ -129,12 +145,17 @@ sets the metadata.
 
 `platypus-build init [<dir>] [--name n] [--title t] [--company c] [--description d] [--icon file.png|ico] [--version v]
 [--identifier id] [--license private|MIT|...] [--force]` writes the default `project.json` of the example above (the values you give
-replace only their own line), refuses to overwrite one without `--force`, creates a minimal `src/main.ts` (a `Hello` component
-logging `hello`) when the folder has no `src/`, adds `build/` and `*.meta` to a `.gitignore` that already exists, copies `--icon`
+replace only their own line), refuses to overwrite one without `--force`, writes the default `tsconfig.json` (when there is
+none) and the engine's declarations `types/platypus.d.ts` (what `platypus-build types` writes), so an editor opened on the
+folder completes `Vector3`, `GameObject` or `useState` at once, creates a minimal `src/main.ts` (a `Hello` component
+logging `hello`) when the folder has no `src/`, adds `build/`, `types/` and `*.meta` to a `.gitignore` that already exists
+(the declarations are generated, as the repository ignores the examples' `types/`), copies `--icon`
 next to `project.json` as `icon.png` / `icon.ico`, and prints what the templates evaluate to now:
 
 ```
 wrote C:\Games\fox\project.json
+wrote tsconfig.json
+wrote types/platypus.d.ts (the engine's declarations, for editors)
 wrote src/main.ts
 as the templates resolve now:
   name         fox
@@ -144,18 +165,48 @@ as the templates resolve now:
   ...
 ```
 
+### Editor files: `tsconfig.json` and `types/platypus.d.ts`
+
+The compiler reads neither file; editors and the optional `tsc` check do. The default `tsconfig.json`
+(`tools/platypus_build/src/tsconfig.rs`) is self-contained, with no `extends` outside the game:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2022"], "types": [], "module": "ESNext", "moduleResolution": "bundler",
+    "moduleDetection": "force", "allowImportingTsExtensions": true, "noEmit": true, "strict": true,
+    "noUncheckedIndexedAccess": true, "noImplicitOverride": true, "isolatedModules": true,
+    "verbatimModuleSyntax": true, "skipLibCheck": true, "jsx": "react-jsx",
+    "paths": { "*": ["./src/modules/*"] }
+  },
+  "include": ["src"],
+  "files": ["types/platypus.d.ts"]
+}
+```
+
+Both go stale (an edited file, an engine API that changed), so **`platypus-build init --editor-files [<dir>...]`** rewrites just
+those two files of a game, or of every game directly inside a folder (`platypus-build init --editor-files ../examples`), and
+touches nothing else (`project.json`, `src/`, `.gitignore`, the icon). Every example's `tsconfig.json` is this default (none had
+anything else worth keeping: some lacked `jsx` or `paths`, which are harmless where unused). A game without a `tsconfig.json`
+builds and is type-checked with the same default (the build writes it into `build/.tsc/tsconfig.json`).
+
 ## What a build does
 
 1. **Config.** `project.json` (deprecated fallback: `package.json` `platypus`, see "`project.json`") -> `title`, `company`, `identifier`, `main`; `tsconfig.json` (comments and trailing commas allowed)
    -> `include` (default `src`) and `compilerOptions.jsx`. The entry is `main`, else the first of `src/main.tsx`, `src/main.ts`,
    `src/index.tsx`, `src/index.ts`, `main.tsx`, `main.ts`.
 2. **Module graph** (`platypus_ts::modules`, below): the entry and every file it imports become one source text.
-3. **`tsc --noEmit`** with the generated config of "Type declarations" below, when a `tsconfig.json` exists and `tsc` is found
+3. **`tsc --noEmit`** with the generated config of "Type declarations" below (over the game's `tsconfig.json`, or the default
+   one for a game without it), when `tsc` is found
    (`node_modules/.bin/tsc` in the game folder or any parent, else on the `PATH`). A missing `tsc` is only a note; a failing one
    stops the build. `--no-tsc` skips it (`check` skips it unless `--tsc`; `check --full` prints every error).
 4. **Compile.** The bundle is compiled with all engine manifests (the lists of `platypus_native::manifests()` plus `Ui`), so lowering
    and code generation errors show up now. Errors name `file:line` of the original file. `--aot` also writes `build/game.o` and
-   `build/game_bindings.rs` (the object file for a release build that links the game into the executable).
+   `build/game_bindings.rs` (the object file for a release build that links the game into the executable). What the program
+   needs from the renderer (its **tier**) comes from the compile: the engine symbols the code calls (unused top-level functions
+   left out), plus the component types of the scene and prefab files the build would pack (`platypus_ts::renderer`;
+   [rendering.md](rendering.md#choosing-the-renderer)). `build` prints it (`renderer: world3d (Camera, Light, ...)`) and `check`
+   shows it per game. `--no-compile` still lowers the program to find it (no code generation); only a program that fails to lower leaves it unknown (no `renderer` in the bundle, which the host takes as the 3D world).
 5. **Stylesheets.** `import "./x.css"` lines are collected in import order into `build/game.css` (`css.rs`): `@import` is
    inlined; every `url()` is rewritten: a file up to 32 KiB becomes a `data:` URL, a larger one is copied to `build/` as
    `name-<hash>.ext` and the URL is relative to `game.css`. A `url()` that does not exist stays as written, with a warning (the
@@ -164,7 +215,7 @@ as the templates resolve now:
    GUID when the move is unambiguous). Every string literal of the program that names an existing asset file under the game folder
    (`Texture.load("assets/x.png")`, `Model.load`, `loadFont`, `scenes/*.scene.json`, sounds) is copied with its `.meta` to the same
    relative path in `build/`. Paths follow `platypus_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then
-   runs `platypus-game <game> --cook` (the engine's cooker) when `target/{release,debug}/platypus-game` is found.
+   runs `platypus-app <game> --cook` (the engine's cooker) when `target/{release,debug}/platypus-app` is found.
 7. **`build/game.pbundle`**, written atomically (temporary file and rename).
 
 ## Dynamic asset paths and `build/assets.plan`
@@ -190,11 +241,14 @@ JSON, `format` 1:
 { "format": 1, "title": "...", "company": "...", "identifier": "...", "entry": "src/main.tsx",
   "source": "<one TypeScript/TSX text>", "files": ["src/tween.ts", "src/main.tsx"],
   "css": "game.css", "assets": ["assets/coin.png"],
-  "patterns": [{ "glob": "assets/sfx/*.*", "at": "src/sfx.ts:60", "matches": ["assets/sfx/a.wav"] }] }
+  "patterns": [{ "glob": "assets/sfx/*.*", "at": "src/sfx.ts:60", "matches": ["assets/sfx/a.wav"] }],
+  "renderer": "world3d", "uses": ["Camera", "Light", "MeshRenderer"] }
 ```
 
 `source` has no `@platypus/*` or `react` imports: the host compiles it with the engine manifests and the `Ui` manifest. A host reads
-`format`, `entry`, `source`, `title`, `company`, `identifier`, `css` (relative to `build/`, or `null`) and `assets`.
+`format`, `entry`, `source`, `title`, `company`, `identifier`, `css` (relative to `build/`, or `null`), `assets` and `renderer`
+(`ui`, `world2d` or `world3d`: what the program needs from the renderer; missing means `world3d`) with `uses` (the engine names
+that set it, for the log).
 
 ## Module graph (`tools/platypus_ts/src/modules.rs`)
 
@@ -320,12 +374,12 @@ The file (`platypus_ts::types_dts`, one deterministic file, about 3000 lines) is
 4. **The three modules** (`@platypus/engine`, `@platypus/react`, `react`) as re-exports.
 
 `platypus-build build` passes the file to `tsc` itself: it writes `build/.tsc/platypus.d.ts` and `build/.tsc/tsconfig.json` (which extends the
-game's `tsconfig.json`, keeps its `include`, lists the declarations in `files`, and sets `moduleDetection: force` so top-level names of
+game's `tsconfig.json`, or holds the default options when the game has none, keeps its `include`, lists the declarations in `files`, and sets `moduleDetection: force` so top-level names of
 a file never merge with the engine globals, and `jsx: preserve` so no `react/jsx-runtime` is needed) and runs `tsc -p` on it. A game
 folder therefore needs **no `node_modules`, no `@platypus/*` or `react` packages and no `types` entry in its `tsconfig.json`**; `tsc` is
-found in `node_modules/.bin` of the game folder or a parent, in the checkout the tool was built from, or on the `PATH`. For an editor
-(which reads `tsconfig.json`, not our generated one) run `platypus-build types` and add `"types"` to `include` and
-`"moduleDetection": "force"` to `compilerOptions`. A top-level name of a game that is also an engine name (`class Scene`) shadows the
+found in `node_modules/.bin` of the game folder or a parent, in the checkout the tool was built from, or on the `PATH`. Editors
+read the game's own `tsconfig.json`, whose `files` names `types/platypus.d.ts` (`init` writes both; `init --editor-files`
+refreshes them). A top-level name of a game that is also an engine name (`class Scene`) shadows the
 engine's inside that file; the compiler lowers one program, so such a name is renamed or avoided (the examples do).
 
 ## The dev loop (`platypus-build dev`)
@@ -345,19 +399,23 @@ bundle is untouched). Hot reload keeps state the way the QuickJS reload does (sc
 ## Packaging a single executable (`platypus-build package`)
 
 ```
-platypus-build package <game> [--host platypus-game.exe] [--out file] [--no-build] [--no-tsc]
+platypus-build package <game> [--host platypus-app.exe] [--out file] [--no-build] [--no-tsc]
     [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d]
     [--icon file.png|.ico] [--sign-cmd "signtool sign /fd sha256 ... {exe}"] [--data-dir name] [--no-data]
-    [--packs [--report]] [--video-settings-prompt | --no-video-settings-prompt]
+    [--packs [--report]] [--video-settings-prompt | --no-video-settings-prompt] [--renderer vulkan|gles|cpu|auto]
 ```
 
 `--video-settings-prompt` / `--no-video-settings-prompt` set `videoSettingsPrompt` in the exe's own `project.json`, over the game's
-([platform.md](platform.md#startup-video-settings-prompt)).
+([platform.md](platform.md#startup-video-settings-prompt)). `--renderer` sets the exe's `renderer` the same way (`auto` removes
+it); a UI-only one for a game that uses the world is warned about with the build's tier.
+
+**Third-party notices.** The Windows host links ANGLE (BSD-3-Clause) and the code it bundles, so every packaged exe gets
+`THIRD-PARTY-NOTICES.md` (the repository root's, built into `platypus-build`) written beside it; ship it with the exe.
 
 It builds the game (unless `--no-build`), then writes `<game>/build/<exe>.exe` (no extension on other systems): a copy of the
 engine host (`platypus_app`) with the game's **icon and version info** written into its PE resources (Windows hosts only) and the game's
 **code appended as a payload**, and copies the **assets into a `data/` folder beside it**. Assets are never embedded: games have
-gigabytes of them. The result runs from any folder as long as `data/` is next to it; `platypus-game <game folder>` is unchanged.
+gigabytes of them. The result runs from any folder as long as `data/` is next to it; `platypus-app <game folder>` is unchanged.
 
 ```
 build/                     (or the folder of --out)
@@ -403,7 +461,7 @@ codec, GUID, path).
 default stays loose; flipping it is a TODO (`tools/platypus_ts/TODO.md`, asset packs). `emoji` with `--packs`: one `assets.dat`, 157
 entries, 6.41 MB raw, 5.93 MB on disk.
 
-**The host** is `--host`, else `$PLATYPUS_HOST`, else the newest of the project type's host (`platypus-game`, or `platypus-app` for `"type": "app"`) next to `platypus-build` and in `target/{release,debug}/`
+**The host** is `--host`, else `$PLATYPUS_HOST`, else the newest `platypus-app` next to `platypus-build` and in `target/{release,debug}/`
 found going up from the game folder and the current folder, by modified time (a stale release build no longer wins over a fresh
 debug one; it lacked payload support and died with a missing `game.js`). `package` prints `host: <path>` first. A host that already carries a payload is stripped first, so
 a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much smaller: ship release.
@@ -434,7 +492,7 @@ section is parsed and rebuilt; no `rc.exe`, no other tool). The version info is 
 (replacing the host's), and the host's build script (`crates/platypus_app/build.rs`) turns it into a 256 x 256 window icon that
 both hosts set for a game without `icon`, and, on Windows with the MSVC linker, into a `.res` file (`platypus_core::icon::windows_res`:
 the seven sizes as the `MAINICON` group and version info with `ProductName` / `FileDescription` `Platypus`) linked into
-`platypus-game.exe`, `platypus-app.exe` and `platypus_editor.exe`, so plain `cargo build` binaries show it too. Tests `M9-ICO-01..06`.
+`platypus-app.exe` and `platypus_editor.exe`, so plain `cargo build` binaries show it too. Tests `M9-ICO-01..06`.
 
 **The payload** (`platypus_core::payload`, format version 1) is appended after the host (and after the resource edit):
 
@@ -541,9 +599,9 @@ Nothing here is built yet. The inputs are the same: `game.pbundle` (or the `--ao
 - Both need the `--aot` path to cover all of the engine API first (today the examples run through the JIT) and a mobile windowing and
   input layer in `platypus_platform`.
 
-## Benchmarks (`platypus-game --bench`, `platypus-build bench`)
+## Benchmarks (`platypus-app --bench`, `platypus-build bench`)
 
-`platypus-game <game> --bench` runs a game with **no OS window**: the main window is an offscreen texture
+`platypus-app <game> --bench` runs a game with **no OS window**: the main window is an offscreen texture
 (`platypus_app/src/frame_target.rs`), the platform is `platypus_platform::FakePlatform` (secondary windows virtual, as in screenshot
 runs), and there is no vsync or frame cap. Each frame waits for the GPU work of the frame before it (like a swapchain queueing one
 frame), so GPU time counts. It warms up, measures, and writes JSON (`--bench-out file`, else stdout): fps, mean / median / p95 /

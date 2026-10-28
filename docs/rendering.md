@@ -34,21 +34,66 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 resolution limits. `WindowSurface` prefers an sRGB format, starts with `AutoNoVsync` (the app sets it per frame from `vSyncCount`), tolerates 0x0 sizes
 (minimized: frames are skipped) and reconfigures on `Outdated`/`Lost`/`Suboptimal`.
 
-`platypus-app` (`project.json` `"type": "app"`, `docs/platypus-build.md`) is the host for apps that are only UI. It asks the GPU allocator
-for `MemoryHints::MemoryUsage` (small allocation blocks, `platypus_render::set_low_memory`) instead of the default `Performance`, and its
-3D `WorldRenderer` is built only if something asks for it (`lazy_world.rs`; `platypus-game` builds it at once). For a clock that took private
-bytes from ~306 MB to ~135 MB on Vulkan (NVIDIA, Windows); the working set stays ~122 MB. What remains is mostly the driver (wgpu's
-own allocator holds ~28 MB, the Rust heap ~4 MB). The renderer for apps is planned to be GLES through ANGLE (a bare ANGLE/D3D11 context
-measured ~61 MB private against ~138 MB for NVIDIA's OpenGL driver and ~135 MB for wgpu on Vulkan); wgpu cannot use ANGLE on Windows
-(its Windows GL backend is WGL only), so that is a native GLES renderer behind the same draw list (`platypus_ui::DrawCmd`).
+### Choosing the renderer
+
+`platypus-app` is the one host of every game; it picks its renderer per run (`crates/platypus_app/src/host.rs`):
+
+1. `--renderer vulkan|gles|cpu` on the command line (`auto` is the default);
+2. else `renderer` in `project.json` (`platypus-build package --renderer` writes it into a packaged exe's copy);
+3. else the bundle's **tier**, what the compiled program needs from the renderer, found at build time:
+   `ui` starts on GLES, `world2d` and `world3d` on wgpu with the world renderer. A bundle without the field
+   (older, a bare `.ts` file, a QuickJS bundle) counts as `world3d`. The editor always has the world.
+
+| `renderer` | Path | World renderer |
+|---|---|---|
+| left out | from the tier, as above | when the tier is not `ui` |
+| `"vulkan"` | wgpu: Vulkan by default on Windows and Linux, DX12 with `WGPU_BACKEND=dx12`, Metal on macOS | built at once |
+| `"gles"` | GLES through EGL (ANGLE linked in on Windows), else wgpu with small GPU allocations | never on GLES ("3D Not Supported") |
+| `"cpu"` | `platypus_render_cpu` through softbuffer (no GPU API), else as `gles` | never on the CPU ("3D Not Supported") |
+
+Any other value is a warning (at build and at start) and counts as left out; the old `type` (`game` / `app`)
+gets a one-line warning and is ignored. The log says what was chosen and why
+(`renderer: gles (the program needs ui)`). A `gles` or `cpu` renderer for a program whose tier is not `ui` is a warning
+at build, package and start (`renderer is gles but this game uses the world (Camera, Light): it will show 3D Not
+Supported`); at run time such a window shows a black screen with red "3D Not Supported" once the game asks for the
+world (a camera or a mesh or texture upload: `WorldViews::needs_world`), the safety net for a wrong choice. The
+light paths' wgpu fallback builds the world renderer on first use instead (`lazy_world.rs`), so there the world draws.
+
+**The tiers** (`tools/platypus_ts/src/renderer.rs`) are one table keyed on the API's class and namespace names:
+`world2d` for cameras (`Camera`, `Cameras`, `CameraFollow`), sprites (`Sprite`, `SpriteRenderer`, `Texture`), 2D lines
+and shapes (`LineRenderer2D`, the TypeScript `Shapes` helpers draw through it) and world text (`TextMesh`);
+`world3d` for meshes, materials, lights, primitives, models, particles, cloth and rope, mirrors and reflection
+probes, fog volumes, render and graphics settings, post-processing, gizmos, `LODGroup`, `CameraOrbit` and world
+panels. Everything else is `ui`. A camera is 2D because a 2D game needs one too; what makes a world 3D is what
+it draws. The compiler reports the engine symbols its code calls after the unused top-level functions were left
+out (`Output::externs`; facade chunks named only in strings or comments are not added); `platypus-build` maps them to
+their owner, adds the component types of the scene and prefab files the build would pack (`"type": "MeshRenderer"`,
+`"$type": "Material"`), and writes the highest tier with the names that set it into `build/game.pbundle`
+(`"renderer": "world3d", "uses": ["Camera", "Light", ...]`; `platypus-build build` prints it, `check` has a column).
+`platypus_build/tests/renderer_tiers.rs` checks the table against the real API: every tagged name exists, and
+every class and namespace of `platypus_render_api` is tagged. The examples:
+
+| Tier | Examples |
+|---|---|
+| `ui` | article, boxes, css, flow, form, hello, launcher, md-reader, physics (UI boxes over rapier), table, text, windows |
+| `world2d` | raindrop-demo, shapes, sine-circle-demo, splines |
+| `world3d` | every other example (42), among them clock (its 3D faces), emoji (`WorldPanel`), fishtank (`RenderSettings` fog), platformer (`ParticleSystem`) |
+
+Until 2D content draws on GLES (TODO.md), `world2d` starts on wgpu like `world3d`.
+
+**The light wgpu path** (the GLES or CPU path's fallback) asks the GPU allocator for `MemoryHints::MemoryUsage`
+(small allocation blocks, `platypus_render::set_low_memory`) instead of the default `Performance`, and builds its 3D
+`WorldRenderer` only if something asks for it (`lazy_world.rs`). For a clock that took private bytes from ~306 MB to
+~135 MB on Vulkan (NVIDIA, Windows). wgpu cannot use ANGLE on Windows (its Windows GL backend is WGL only), so GLES is a
+native renderer behind the same draw list (`platypus_ui::DrawCmd`).
 
 ### The GLES executor (`crates/platypus_render_gles`)
 
-`GlesRenderer` executes the same `FramePlan` with GLES 3 (`glow`), for `platypus-app`. Its context comes
-from EGL (`egl.rs`, `khronos-egl` loaded at run time): ANGLE's `libEGL.dll` on Windows, which draws
-through Direct3D 11 (a bare context measured ~61 MB private against ~138 MB for NVIDIA's OpenGL
-driver); Mesa's EGL elsewhere. `EglContext::headless(Some(dir))` loads ANGLE from `dir`
-(`SetDllDirectoryW`), else the usual search (next to the program).
+`GlesRenderer` executes the same `FramePlan` with GLES 3 (`glow`), for `platypus-app`'s light path. Its context
+comes from EGL (`egl.rs`): on Windows ANGLE, which draws through Direct3D 11 (a bare context measured ~61 MB private
+against ~138 MB for NVIDIA's OpenGL driver), linked into the program (below); without that feature, and elsewhere,
+`khronos-egl` loads the library at run time (ANGLE's `libEGL.dll`, Mesa's EGL): `EglContext::headless(Some(dir))`
+loads it from `dir` (`SetDllDirectoryW`), else the usual search (next to the program).
 
 What differs from the wgpu executor (`shaders.rs` is a GLSL ES 3.00 port of `quad.wgsl`):
 
@@ -76,33 +121,40 @@ does; canvases filter linearly (a shifted drop shadow samples between texels). `
 the canvas transparent and blends it onto what the target holds (premultiplied, `ONE`/`ONE_MINUS_SRC_ALPHA`).
 `EglContext::window` makes a context on a winit window (Win32 HWND, Xlib; anything else is an error). Its
 surface is plain, not ANGLE's sRGB one (reading that back returned unencoded bytes, so colours were off), so
-`Target::srgb` is false and the blit encodes itself. `platypus-app` (`gles_gfx.rs`) draws its one window this way
+`Target::srgb` is false and the blit encodes itself. `platypus-app`'s light path (`gles_gfx.rs`) draws its one window this way
 (no 3D world, world panels or secondary windows), swaps with vsync, skips a frame whose draw lists equal the
 last one's, and falls back to wgpu when EGL is missing (`PLATYPUS_ANGLE_DIR` names ANGLE's folder; `PLATYPUS_GLES=0`
 forces wgpu). `tests/vs_wgpu.rs` draws scenes through both executors and compares pixels
 (`M2-GLES-02..13`: identical so far, 0 to 1 in 255); it and `tests/context.rs` need an EGL driver
-(`PLATYPUS_ANGLE_DIR` on Windows) and skip without one.
+(the linked-in ANGLE, or `PLATYPUS_ANGLE_DIR` without it) and skip without one.
 
-**Static ANGLE (spike, feature `static-angle`, Windows).** `cargo build -p platypus_app --features static-angle`
-compiles ANGLE (Mozilla's fork, the `mozangle` crate, `egl` feature: EGL + GLES over Direct3D 11) into the
-program, and `egl.rs` calls `egl*` directly (`khronos-egl`'s `static` + `no-pkg-config`); `PLATYPUS_ANGLE_DIR`
-is then ignored. Without the feature nothing changes. Building it needs MSVC and libclang for mozangle's
-bindgen (`LIBCLANG_PATH`); a clang older than 20 against Visual Studio 18's STL also needs
-`BINDGEN_EXTRA_CLANG_ARGS="-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH -D_MSVC_STL_USE_ABORT_AS_DOOM_FUNCTION"`.
-ANGLE's C++ takes ~72 s cold (cached afterwards, once per profile) and adds ~7.0 MB to each exe:
-mozangle links `libEGL`/`libGLESv2` whole-archive, so every binary of `platypus_app` built with the feature
-carries it, `platypus-game` too (whose UI-only video-settings prompt then draws with GLES). The linker
-prints `LNK4217` warnings (ANGLE's EGL entry points marked dllimport but defined locally; harmless). With it,
-`M2-GLES-01..13` run on Windows without any DLL (identical to wgpu, max diff 1 in 255). Measured on the
-`css` example (RTX 5080, release, after 6 s): GLES ~134 MB private / ~107 MB working set against ~161 / ~142 MB
-for wgpu on Vulkan; the video-settings prompt ~99 / ~94 MB against ~137 / ~121 MB. A packaged exe built this
-way must carry ANGLE's BSD-3-Clause notice (and those of the third-party code ANGLE bundles).
+**Static ANGLE (feature `static-angle`, on by default; Windows).** `platypus_app` and `platypus_render_gles` compile
+ANGLE (Mozilla's fork, the `mozangle` crate, `egl` feature: EGL + GLES over Direct3D 11) into the program, and `egl.rs`
+calls `egl*` directly (`khronos-egl`'s `static` + `no-pkg-config`, declared as a Windows-only dependency so the
+features never reach other platforms); `PLATYPUS_ANGLE_DIR` is then ignored. **Building it needs MSVC and libclang**
+for mozangle's bindgen: set `LIBCLANG_PATH` to the `bin` folder of an LLVM 20 or newer install for the command
+(for example `LIBCLANG_PATH='C:\llvm-23.1.4\bin' cargo build --release -p platypus_app`; it is not set in any
+committed file). LLVM 23.1.4 builds it with nothing else (a clang older than 20 against Visual Studio 18's STL would
+also need `BINDGEN_EXTRA_CLANG_ARGS="-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH -D_MSVC_STL_USE_ABORT_AS_DOOM_FUNCTION"`).
+Without libclang, `cargo build -p platypus_app --no-default-features` leaves ANGLE out: GLES then loads `libEGL.dll`
+(`PLATYPUS_ANGLE_DIR`) and falls back to wgpu without it. ANGLE's C++ takes about a minute and a half cold (cached
+afterwards, once per profile) and adds ~7 MB to each exe: mozangle links `libEGL`/`libGLESv2` whole-archive, so
+`platypus_editor` carries it too. The linker prints `LNK4217` warnings (ANGLE's EGL entry points marked dllimport but
+defined locally; harmless). `M2-GLES-01..13` run on Windows without any DLL (identical to wgpu, max diff 1 in 255).
+ANGLE is BSD-3-Clause and bundles more third-party code: `THIRD-PARTY-NOTICES.md` (repository root) has their notices,
+and `platypus-build package` writes it beside every packaged exe.
 
-`crates/platypus_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all (the clock: ~16 MB
-private). It draws boxes, borders (also per side), gradients, images and SVGs (decoded lazily, downscaled to the size drawn,
-dropped when unused), shadows, text, clips, layers, blur and backdrop blur, and affine and perspective transforms (a perspective
-subtree is drawn flat, cached and warped); not `border-image`, masks, layer colour matrices and drop shadows, nor the 3D world. It is
-not wired into either host: apps are meant to be accelerated.
+`crates/platypus_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all. It
+draws boxes, borders (also per side), gradients, images and SVGs (decoded lazily, downscaled to the size drawn,
+dropped when unused), shadows, text, clips, layers, blur and backdrop blur, and affine and perspective transforms (a
+perspective subtree is drawn flat, cached and warped). **`renderer: "cpu"`** (or `--renderer cpu`; never chosen
+automatically) makes it `platypus-app`'s third UI-only path (`cpu_gfx.rs`): the window through softbuffer (resized with
+each present), the UI and the FPS counter as two layers of one render, an unchanged frame neither drawn nor presented,
+the loop capped at 60 Hz (softbuffer has no vsync), "3D Not Supported" when the game asks for the world, wgpu's light
+path when softbuffer can't make a surface. `--screenshot` writes the pixels the CPU drew (no GPU involved). What it
+does not draw (each logged once): `border-image`, `mask`s (the layer is drawn unmasked), drop shadows and colour
+matrices on layers (`filter: drop-shadow()`, `grayscale()`, `sepia()`, ...), border styles other than solid (drawn
+solid), the 3D world, world panels and secondary windows. Measured on `css` (RTX 5080, release, Windows, after 8 s): `cpu` ~20 MB private / ~50 MB working set, `gles` ~133 / ~93 MB, `vulkan` (wgpu with the world renderer) ~331 / ~136 MB. Next to the GLES picture of `css` the CPU one differs only where the list above says: its dashed borders (the `:empty` slot and the filled slot) are drawn solid.
 
 Frame latency (`desired_maximum_frame_latency`) is 1 by default and 2 on DX12, where 1 made live
 resizing jitter. `PLATYPUS_FRAME_LATENCY` (1 or 2 only; more just adds input lag) overrides it. On

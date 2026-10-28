@@ -21,7 +21,7 @@ cd .. && cargo run -p platypus_app -- examples/fog-blocks
 ```
 
 Packaged executable: `platypus-build package ../examples/fog-blocks`. Screenshot run (safest on GPUs that crash with the
-window): `platypus-game examples/fog-blocks --screenshot out.png --frames 60`.
+window): `platypus-app examples/fog-blocks --screenshot out.png --frames 60`.
 
 ## Structure
 

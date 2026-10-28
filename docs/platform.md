@@ -74,7 +74,7 @@ physical size from `__platypus_info.display`.
 
 ## Log file
 
-`platypus-game` is a Windows GUI-subsystem program, so it has no console of its own. `logging::init` sends the log
+`platypus-app` is a Windows GUI-subsystem program, so it has no console of its own. `logging::init` sends the log
 (`tracing`, default filter `info,wgpu_core=warn,wgpu_hal=error`, `RUST_LOG` overrides it) to `Player.log`
 in the game's settings folder, next to `prefs.json`, with the same ANSI colours a terminal shows. The
 previous run's file is kept as `Player-prev.log`. `PLATYPUS_LOG_FILE` names another file. Started from a
@@ -158,7 +158,7 @@ A game can ask the player once, before its window opens, for the window mode, re
 [video_prompt_sizes.ts](../crates/platypus_app/src/video_prompt_sizes.ts).
 
 **When it shows.** It is opt-in. The sources, strongest first:
-1. The command line: `platypus-game --video-settings-prompt` forces it (also after a choice, and in a screenshot run, where the
+1. The command line: `platypus-app --video-settings-prompt` forces it (also after a choice, and in a screenshot run, where the
    PNG is the dialog's and the game does not start); `--no-video-settings-prompt` turns it off.
 2. The build argument `platypus-build package --video-settings-prompt` / `--no-video-settings-prompt`, which writes
    `videoSettingsPrompt` into the exe's embedded `project.json` over the game's own.
@@ -171,8 +171,9 @@ It shows once: the game's prefs hold `platypus.videoSettings.chosen` after Play.
 **How it is hosted.** `main` runs the prompt before anything of the game's window exists, as a child process of the same exe:
 `<exe> --video-settings-dialog <folder>`, with a small game folder written to the temp folder (like the crash dialog above).
 A child is needed because winit allows one event loop per process, and the dialog's window and GPU context are gone before the
-game's are made. The child is UI only (`host::ui_only()`, set by `set_ui_only()`): `platypus-app`'s light path, GLES through
-ANGLE when found, else wgpu with small allocations; the world renderer is never built. The folder's source is constants
+game's are made. The child is UI only: its bundle says `"renderer": "ui"`, so the host takes its light path (GLES through
+the linked-in ANGLE, else wgpu with small allocations; [rendering.md](rendering.md#choosing-the-renderer)); the world renderer
+is never built. The crash dialog's bundle says the same. The folder's source is constants
 prepended by `video_prompt.rs` followed by `video_prompt.tsx`.
 
 **The dialog.** A fixed 600 x 500 window (300 tall without the mode and resolution rows; `resizable: false`, so no resize

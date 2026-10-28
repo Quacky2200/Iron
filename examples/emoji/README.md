@@ -25,7 +25,7 @@ cargo run -p platypus_app -- examples/emoji
 ```
 
 Package with `platypus-build package ../examples/emoji`. A screenshot run is
-`platypus-game examples/emoji --screenshot out.png --frames N` (the show is random; a screenshot catches a random
+`platypus-app examples/emoji --screenshot out.png --frames N` (the show is random; a screenshot catches a random
 moment). It is the safest check, since the interactive window has crashed some GPUs.
 
 ## Structure
