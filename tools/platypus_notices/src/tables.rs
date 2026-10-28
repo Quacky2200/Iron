@@ -173,11 +173,6 @@ const ALLOW: &[Allow] = &[
         reason: "aclysma/profiling: MIT OR Apache-2.0 in Cargo.toml",
     },
     Allow {
-        krate: "rquickjs-*",
-        rule: NO_FILE,
-        reason: "DelSkayn/rquickjs: MIT in Cargo.toml",
-    },
-    Allow {
         krate: "rstar",
         rule: NO_FILE,
         reason: "georust/rstar: MIT OR Apache-2.0 in Cargo.toml",
@@ -246,16 +241,6 @@ const NESTED: &[Nested] = &[
         krate: "regex-syntax",
         path: "src/unicode_tables/LICENSE-UNICODE",
         what: NestedUse::Include("The Unicode data tables regex-syntax is generated from"),
-    },
-    Nested {
-        krate: "rquickjs-sys",
-        path: "quickjs/LICENSE",
-        what: NestedUse::Include("QuickJS, the JavaScript engine rquickjs-sys compiles in"),
-    },
-    Nested {
-        krate: "rquickjs-sys",
-        path: "vendor/wasi-libc/NOTICE.md",
-        what: NestedUse::Skip("wasi-libc, built only for WebAssembly targets"),
     },
     Nested {
         krate: "tracing-core",
