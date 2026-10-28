@@ -1096,7 +1096,7 @@ export function lerp(a: number, b: number, t: number): number { return a + (b - 
             assert_eq!(proj.license, "private");
             assert!(!proj.title.is_empty());
         }
-        assert_eq!(games, 45);
+        assert_eq!(games, 54);
     }
 
     // M9-TS-2307
