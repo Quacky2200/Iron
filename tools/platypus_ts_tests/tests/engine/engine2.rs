@@ -59,7 +59,7 @@ fn time_input_and_display_properties_work_in_compiled_code() {
         assert_eq!(unsafe { ts_en2_keys() }, 2111.0);
 
         screen::set_size(800, 600);
-        assert_eq!(screen::quality().v_sync_count, 0, "off by default");
+        assert_eq!(screen::quality().v_sync_count, 1, "on by default");
         screen::quality_api::platypus_QualitySettings_setVSyncCount(1);
         let before = screen::state().full_screen;
         let v = unsafe { ts_en2_display() };

@@ -410,7 +410,7 @@ fn run() -> Result<()> {
         tracing::info!("this project's type is `app`: platypus-app is its lighter host");
     }
     // `Window.main` starts with the manifest's title; the real size and scale come with the window.
-    platypus_engine_api::window::set_main(&manifest.title, (1280.0, 720.0), 1.0);
+    platypus_engine_api::window::set_main(manifest.window_title(), (1280.0, 720.0), 1.0);
     platypus_engine_api::window::set_supported(platypus_platform::Os::current().supports_windows());
     let mut info = info::Info::new(&manifest);
     info.set_app("args", serde_json::json!(args.script_args));
@@ -444,7 +444,9 @@ fn run() -> Result<()> {
             defaults
         };
         let current = video_prompt::Current::new(&manifest, &prefs, current, resizable);
-        let icon = video_prompt::icon_path(&code_root, &manifest);
+        // The game's own icon (a packaged game's is in its extracted payload), else Platypus's:
+        // the same as its window's.
+        let icon = manifest.window_icon(&code_root);
         let shot = args
             .screenshot
             .as_deref()
@@ -452,7 +454,7 @@ fn run() -> Result<()> {
                 path,
                 frames: args.frames,
             });
-        match video_prompt::run(&current, icon.as_deref(), shot) {
+        match video_prompt::run(&current, &icon, shot) {
             video_prompt::Outcome::Play(choice) => {
                 choice.apply(&mut prefs, current.display, resizable);
                 prefs.save();
@@ -663,11 +665,7 @@ fn run() -> Result<()> {
         file_drag: file_drop::FileDrag::default(),
     };
     // The game's own icon, else Platypus's.
-    let icon = manifest
-        .icon
-        .as_deref()
-        .and_then(|path| info::load_icon(&code_root, path))
-        .or_else(|| Some(info::default_icon()));
+    let icon = Some(manifest.window_icon(&code_root));
     // A window opens at the saved window size (a fixed one at its own); fullscreen modes are
     // applied once it exists.
     let (width, height) = (
@@ -678,13 +676,13 @@ fn run() -> Result<()> {
     // A bench run makes no OS window at all: it draws offscreen, its own loop drives the frames.
     if let Some(bench) = args.bench {
         let size = bench.size.unwrap_or((width, height));
-        return bench::run(app, &bench, size, &manifest.title);
+        return bench::run(app, &bench, size, manifest.window_title());
     }
     // Screenshot runs make no OS windows for secondary windows: they draw offscreen.
     let virtual_windows = app.screenshot.is_some();
     Platform::new().run(
         WindowConfig {
-            title: manifest.title.clone(),
+            title: manifest.window_title().to_owned(),
             icon,
             width,
             height,

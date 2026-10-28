@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The startup video-settings prompt: a small UI-only window the game's process opens before its
-// own window (`video_prompt.rs`). The host puts `GAME`, `RESIZABLE`, `MODE`, `WIDTH`, `HEIGHT`,
+// own window (`video_prompt.rs`). The host puts `GAME`, `SUBTITLE`, `RESIZABLE`, `MODE`, `WIDTH`, `HEIGHT`,
 // `REFRESH`, `VSYNC` and `LEVEL` (constants: the game's current choice) and the resolution
 // list's helpers (`video_prompt_sizes.ts`) in front of this text. Play saves the choice in this
 // window's PlayerPrefs (`mode`, `width`, `height`, `refreshRate`, `vsync`, `level`) and exits
@@ -30,7 +30,7 @@ const CSS = `
 .row { padding: 4px 10px; border-radius: 4px; cursor: pointer; flex-shrink: 0; }
 .row:hover { background-color: rgba(255,255,255,0.08); }
 .row.selected { background-color: #4d8dff; }
-.button { height: 34px; padding-left: 20px; padding-right: 20px; margin-left: 10px; border-radius: 8px;
+.button { height: 34px; padding-left: 24px; padding-right: 24px; margin-left: 5px; margin-right: 5px; border-radius: 8px;
   align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
   background-color: #30333b; border-width: 1px; border-color: #41454f; }
 .button.primary { background-color: #3d7bf0; border-color: #6a9bff; }
@@ -61,7 +61,7 @@ function Choice(props: { label: string; active?: boolean; onClick: () => void })
 function Row(props: { label: string; children: ReactNode }) {
   return (
     <box style={{ flexDirection: "row", alignItems: "flex-start", marginTop: 12 }}>
-      <text style={{ color: "#a9b3c3", fontSize: 13, width: 110, flexShrink: 0, marginTop: 6 }}>{props.label}</text>
+      <text style={{ color: "#a9b3c3", fontSize: 13, width: 100, flexShrink: 0, marginTop: 6 }}>{props.label}</text>
       <box style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{props.children}</box>
     </box>
   );
@@ -177,17 +177,27 @@ function Dialog() {
   };
 
   return (
-    <box style={{ width: "100%", height: "100%", flexDirection: "column", padding: 24, backgroundColor: "#1b1c21" }}>
-      <text style={{ color: "#ffffff", fontSize: 20 }}>{GAME}</text>
-      <text style={{ color: "#b6bac4", fontSize: 14, marginTop: 6 }}>Choose how the game looks. You can change it later in the game's settings.</text>
-      {RESIZABLE ? (
+    <box style={{ width: "100%", height: "100%", flexDirection: "column", alignItems: "center", padding: 24, backgroundColor: "#1b1c21" }}>
+      {/* The game's own icon and name (the host writes the icon beside this source). */}
+      <box style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <Image src="icon.png" style={{ width: 48, height: 48, flexShrink: 0 }} />
+        <box style={{ flexDirection: "column" }}>
+          {headerLines(GAME, SUBTITLE).map((line, i) => (
+            <text key={i} style={i === 0 ? { color: "#ffffff", fontSize: 22 } : { color: "#8d93a0", fontSize: 14, marginTop: 2 }}>
+              {line}
+            </text>
+          ))}
+        </box>
+      </box>
+      <text style={{ color: "#b6bac4", fontSize: 14, marginTop: 8, textAlign: "center" }}>Choose how the game looks. You can change it later in its settings.</text>
+      <box style={{ flexDirection: "column", width: "100%", maxWidth: 400, marginTop: 6 }}>
+      {/* A fixed-size game has no mode or resolution to choose: the rows are not displayed. */}
+      <box style={{ flexDirection: "column", display: RESIZABLE ? "flex" : "none" }}>
         <Row label="Window">
           {MODES.map(([m, name]) => (
             <Choice key={m} label={name} active={m === mode} onClick={() => setMode(m)} />
           ))}
         </Row>
-      ) : null}
-      {RESIZABLE ? (
         <Row label="Resolution">
           {mode === "FullScreenWindow" ? (
             <text style={{ color: "#f0f3f8", fontSize: 13, marginTop: 6 }}>
@@ -197,7 +207,7 @@ function Dialog() {
             <SizeList sizes={sizes} at={at} onPick={(i) => setPicked(sizes[i]!)} />
           )}
         </Row>
-      ) : null}
+      </box>
       <Row label="VSync">
         <Choice label="On" active={vsync} onClick={() => setVsync(true)} />
         <Choice label="Off" active={!vsync} onClick={() => setVsync(false)} />
@@ -207,12 +217,13 @@ function Dialog() {
           <Choice key={name} label={name} active={name === level} onClick={() => setLevel(name)} />
         ))}
       </Row>
+      </box>
       <box style={{ flexGrow: 1 }} />
-      <box style={{ flexDirection: "row", alignItems: "center", marginTop: 16 }}>
-        <text style={{ color: "#6f7480", fontSize: 11, flexGrow: 1, flexShrink: 1 }}>VSync keeps frames in step with the display.</text>
+      <box style={{ flexDirection: "row", justifyContent: "center", marginTop: 16 }}>
         <Button label="Quit" primary={false} onPress={() => Application.quit(0)} />
         <Button label="Play" primary={true} onPress={start} focusRef={play} />
       </box>
+      <text style={{ color: "#6f7480", fontSize: 11, marginTop: 10, textAlign: "center" }}>VSync keeps frames in step with the display.</text>
     </box>
   );
 }

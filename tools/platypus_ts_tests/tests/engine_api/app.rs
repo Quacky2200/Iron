@@ -16,6 +16,7 @@ fn reset() {
     app::set_app(AppInfo {
         name: "demo".into(),
         product_name: "Demo Game".into(),
+        subtitle: String::new(),
         version: "1.2.3".into(),
         company_name: "Acme".into(),
         identifier: "com.acme.demo".into(),

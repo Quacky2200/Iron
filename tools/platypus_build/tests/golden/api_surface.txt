@@ -2217,6 +2217,7 @@ declare namespace Application :: const isPaused: boolean;
 declare namespace Application :: const name: string;
 declare namespace Application :: const platform: string;
 declare namespace Application :: const productName: string;
+declare namespace Application :: const subtitle: string;
 declare namespace Application :: const systemLanguage: string;
 declare namespace Application :: const version: string;
 declare namespace Application :: function crash(message?: string, plain?: boolean): void;

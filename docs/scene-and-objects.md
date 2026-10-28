@@ -275,7 +275,7 @@ Press sets roll over in an `onTick` listener, so they follow `Time`.
 pointer events use), `scale` and `aspect`, set by `__platypus_screen`. Window mode, resolutions and `setResolution` are in [platform.md](platform.md).
 
 **Application and system** ([app.ts](../js/engine/src/app.ts)). `Application` (`name`, `productName`,
-`version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
+`subtitle` (the manifest's `subtitle`, empty when unset), `version`, `companyName`, `identifier`, `engineVersion`, `platform`, `systemLanguage`, `isEditor`,
 `args` (the command line's arguments after `--`, `platypus-game game -- --level 2`, from `__platypus_info.app.args`), `isMobilePlatform`, `fps` (the measured frame rate: the number the `--fps` counter shows, counted by the host whether or not it is drawn; games should read it rather than time frames themselves), `targetFrameRate`, `runInBackground`, `isFocused`, `isPaused`, `onFocusChanged(fn)`,
 `quit(exitCode)`, which `platypus-game` exits with; the last four are in [platform.md](platform.md#focus-and-pausing). `crash(message?, plain?)` ends the game as a crash: it saves a crash report beside `Player.log`, shows the crash dialog (with `plain`, the system's message box) and exits with code 3. It is for errors a game can't recover from and for trying the dialog, see [platform.md](platform.md#crash-report-file-and-dialog)) and `SystemInfo` (OS, CPU, memory, architecture, GPU name, vendor, backend
 and driver, `screen` size, refresh rate and DPI). The app builds `globalThis.__platypus_info` from the

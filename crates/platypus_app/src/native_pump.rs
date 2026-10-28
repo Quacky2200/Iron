@@ -128,6 +128,7 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
     platypus_engine_api::app::set_app(AppInfo {
         name: manifest.name.clone(),
         product_name: manifest.title.clone(),
+        subtitle: manifest.subtitle.clone(),
         version: manifest.version.clone(),
         company_name: manifest.company.clone(),
         identifier: manifest.identifier.clone(),

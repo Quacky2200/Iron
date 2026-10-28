@@ -304,6 +304,9 @@ pub struct Project {
     /// `type`: `game` (default) or `app`, which host program runs and packages it.
     pub project_type: ProjectType,
     pub title: String,
+    /// `subtitle`: an optional second line under the title (a series' episode, say), shown by the
+    /// video-settings prompt and `Application.subtitle`; `None` when unset or empty.
+    pub subtitle: Option<String>,
     pub company: String,
     pub identifier: String,
     pub version: String,
@@ -374,6 +377,7 @@ impl<'a> LoadOptions<'a> {
 const TEXT_KEYS: &[&str] = &[
     "name",
     "title",
+    "subtitle",
     "company",
     "identifier",
     "version",
@@ -393,6 +397,7 @@ const KNOWN_KEYS: &[&str] = &[
     "name",
     "type",
     "title",
+    "subtitle",
     "company",
     "identifier",
     "version",
@@ -944,6 +949,7 @@ impl Project {
             m.insert(k.into(), v.clone().into());
         }
         for (k, v) in [
+            ("subtitle", &self.subtitle),
             ("icon", &self.icon),
             ("licenseFile", &self.license_file),
             ("startScene", &self.start_scene),
@@ -1134,6 +1140,7 @@ fn build(
     };
     let license_file = optional(&mut r, "licenseFile")?;
     let start_scene = optional(&mut r, "startScene")?;
+    let subtitle = optional(&mut r, "subtitle")?;
     let main = optional(&mut r, "main")?;
     let data_dir = optional(&mut r, "dataDir")?;
 
@@ -1178,6 +1185,7 @@ fn build(
         name: project_name,
         project_type,
         title,
+        subtitle,
         company,
         identifier,
         version,
@@ -1267,6 +1275,27 @@ mod tests {
         assert_eq!(
             p.description,
             "fox|Matthew's Brown game mattb 2026 2026-10-21|Matthew Brown|1.2.3|zx81"
+        );
+    }
+
+    // M9-VSP-13
+    #[test]
+    fn the_subtitle_is_optional_takes_templates_and_an_empty_one_is_none() {
+        let p = load_ok(
+            "subtitle",
+            r#"{ "name": "g", "title": "Game Title", "subtitle": "${name}: Series 2" }"#,
+        );
+        assert_eq!(p.subtitle.as_deref(), Some("g: Series 2"));
+        assert_eq!(p.to_json()["subtitle"], "g: Series 2");
+        let none = load_ok("subtitle_none", r#"{ "name": "g" }"#);
+        assert_eq!(none.subtitle, None);
+        assert!(none.to_json().get("subtitle").is_none());
+        assert!(!none.defaulted.contains(&"subtitle".to_string()));
+        let empty = load_ok("subtitle_empty", r#"{ "name": "g", "subtitle": "" }"#);
+        assert_eq!(empty.subtitle, None);
+        assert!(
+            empty.empty_field_warnings().is_empty(),
+            "no warning: it is optional"
         );
     }
 

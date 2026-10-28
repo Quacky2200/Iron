@@ -175,7 +175,12 @@ game's are made. The child is UI only (`host::ui_only()`, set by `set_ui_only()`
 ANGLE when found, else wgpu with small allocations; the world renderer is never built. The folder's source is constants
 prepended by `video_prompt.rs` followed by `video_prompt.tsx`.
 
-**The dialog.**
+**The dialog.** A fixed 600 x 500 window (300 tall without the mode and resolution rows; `resizable: false`, so no resize
+edges or maximize button), centred on the screen like the game's, its content a centred column:
+- A header with the game's icon and title, and its `subtitle` in smaller, dimmer text under the title when it has one. The
+  window's title and taskbar icon are the game's too: `Manifest::window_title` (title, else name, else "Platypus") and
+  `Manifest::window_icon` (the project's icon, else Platypus's), the same values the game's own window uses. The host writes
+  the icon as `icon.png` into the dialog's folder; the title and subtitle come as constants.
 - Window mode: Windowed, Borderless or Fullscreen.
 - A resolution list box. The modes are the monitor's, from winit through `Screen.resolutions`, de-duplicated and largest first
   by area. Refresh rates show only for exclusive fullscreen. Windowed lists only sizes smaller than the monitor. The saved size

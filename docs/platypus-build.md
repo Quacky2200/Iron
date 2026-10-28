@@ -80,6 +80,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
 |---|---|---|
 | `name` | **required** (in the deprecated `package.json` fallback: its `name`, else the folder name) | project name (`${name}`); not shown to players |
 | `title` | `${firstName}'s Game` | window title (the initial value; the game can change it at run time), `ProductName`, settings folder |
+| `subtitle` | none | an optional second line under the title (a series' episode): the video-settings prompt's header and `Application.subtitle`; not in the window title or version info; an empty string is none |
 | `company` | `${firstName}'s Company` | `CompanyName`, settings folder |
 | `identifier` | `dev.platypus.${name}` | reverse-DNS id (`Application.identifier`); sanitised: each dot part keeps letters, digits, `-`, `_`, empty parts go, a part starting with a digit gets `_` |
 | `version` | `0.1.0` | `FileVersion`, `ProductVersion` |

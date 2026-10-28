@@ -17,7 +17,7 @@
 //! keys the engine already reads (`platypus.display`, `platypus.quality`), so the game starts
 //! through its normal path, and a game's own settings menu still changes it later.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use platypus_platform::display::{DisplaySettings, FullScreenMode};
@@ -40,11 +40,16 @@ const EXIT_PLAY: i32 = 10;
 const DIALOG_SOURCE: &str = include_str!("video_prompt.tsx");
 /// The resolution list's helpers (tested with `bun test`), put in front of the dialog.
 const SIZES_SOURCE: &str = include_str!("video_prompt_sizes.ts");
-/// The dialog's window in logical pixels (shorter without the mode and resolution rows).
+/// The dialog's window in logical pixels, fixed (not resizable, no maximize button): sized to
+/// its content, shorter without the mode and resolution rows (a subtitle fits beside the icon).
 const DIALOG_SIZE: (u32, u32) = (600, 500);
 
-fn dialog_height(resizable: bool) -> u32 {
-    if resizable { DIALOG_SIZE.1 } else { 300 }
+fn dialog_height(current: &Current) -> u32 {
+    if current.resizable {
+        DIALOG_SIZE.1
+    } else {
+        300
+    }
 }
 
 /// Whether to show the prompt: the command line first (on: always, even after a choice or in a
@@ -73,6 +78,8 @@ pub fn chosen(prefs: &Prefs) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Current {
     pub title: String,
+    /// The game's subtitle, empty when it has none.
+    pub subtitle: String,
     /// False for a fixed-size game: no mode or resolution choice.
     pub resizable: bool,
     pub display: DisplaySettings,
@@ -108,7 +115,8 @@ impl Current {
             .and_then(|q| q["current"]["vSyncCount"].as_f64())
             .is_none_or(|v| v >= 1.0);
         Self {
-            title: manifest.title.clone(),
+            title: manifest.window_title().to_owned(),
+            subtitle: manifest.subtitle.clone(),
             resizable,
             display,
             vsync,
@@ -126,8 +134,10 @@ impl Current {
             (d.width, d.height)
         };
         format!(
-            "const GAME = {};\nconst RESIZABLE = {};\nconst MODE = {};\nconst WIDTH = {w};\nconst HEIGHT = {h};\nconst REFRESH = {};\nconst VSYNC = {};\nconst LEVEL = {};\n",
+            // Typed: a literal `false` would make `RESIZABLE ? <Row/> : null` only ever null.
+            "const GAME: string = {};\nconst SUBTITLE: string = {};\nconst RESIZABLE: boolean = {};\nconst MODE: string = {};\nconst WIDTH: number = {w};\nconst HEIGHT: number = {h};\nconst REFRESH: number = {};\nconst VSYNC: boolean = {};\nconst LEVEL: string = {};\n",
             s(&self.title),
+            s(&self.subtitle),
             self.resizable,
             s(d.mode.name()),
             d.refresh_rate,
@@ -225,7 +235,9 @@ pub struct Screenshot<'a> {
 }
 
 /// Runs the dialog in a child process and waits for it.
-pub fn run(current: &Current, icon: Option<&Path>, screenshot: Option<Screenshot<'_>>) -> Outcome {
+/// `icon`: the game's window icon as RGBA (its own, else Platypus's), for the dialog's window
+/// and header.
+pub fn run(current: &Current, icon: &Icon, screenshot: Option<Screenshot<'_>>) -> Outcome {
     let Ok(exe) = std::env::current_exe() else {
         return Outcome::Failed;
     };
@@ -265,52 +277,41 @@ pub fn run(current: &Current, icon: Option<&Path>, screenshot: Option<Screenshot
     outcome
 }
 
-/// The dialog's folder: `project.json` (a fixed-size UI app with the game's title and icon) and
+/// An icon as RGBA pixels, width and height (`info::load_icon`, `info::default_icon`).
+pub type Icon = (Vec<u8>, u32, u32);
+
+/// The dialog's folder: `project.json` (a fixed-size UI app named after the game, with its icon,
+/// so the window and taskbar show the game), `icon.png` (also its header's image) and
 /// `build/game.pbundle`, its source the dialog's TSX after the constants.
-fn write_dialog_game(dir: &Path, current: &Current, icon: Option<&Path>) -> std::io::Result<()> {
+fn write_dialog_game(dir: &Path, current: &Current, icon: &Icon) -> std::io::Result<()> {
     std::fs::create_dir_all(dir.join("build"))?;
-    let icon_name = icon.and_then(|p| {
-        let name = format!(
-            "icon.{}",
-            p.extension().and_then(|e| e.to_str()).unwrap_or("png")
-        );
-        std::fs::copy(p, dir.join(&name)).ok().map(|_| name)
-    });
-    let title = format!("{} - Video settings", current.title);
-    let mut project = json!({
+    let (rgba, w, h) = icon;
+    image::save_buffer(dir.join("icon.png"), rgba, *w, *h, image::ColorType::Rgba8)
+        .map_err(std::io::Error::other)?;
+    let project = json!({
         "name": "video-settings",
         "type": "app",
-        "title": title,
+        "title": current.title,
         "company": "Platypus",
         "identifier": "dev.platypus.video-settings",
-        "display": { "mode": "Windowed", "width": DIALOG_SIZE.0, "height": dialog_height(current.resizable), "resizable": false },
+        "icon": "icon.png",
+        "display": { "mode": "Windowed", "width": DIALOG_SIZE.0, "height": dialog_height(current), "resizable": false },
         "fps": false,
     });
-    if let Some(name) = icon_name {
-        project["icon"] = json!(name);
-    }
     let bundle = json!({
         "format": 1,
-        "title": title,
+        "title": current.title,
         "company": "Platypus",
         "identifier": "dev.platypus.video-settings",
         "entry": "video_prompt.tsx",
         "source": format!("{}{SIZES_SOURCE}{DIALOG_SOURCE}", current.constants()),
         "files": [],
         "css": null,
-        "assets": [],
+        "assets": ["icon.png"],
         "patterns": [],
     });
     std::fs::write(dir.join("project.json"), project.to_string())?;
     std::fs::write(dir.join("build").join("game.pbundle"), bundle.to_string())
-}
-
-/// The game's icon file, when it has one.
-pub fn icon_path(code_root: &Path, manifest: &Manifest) -> Option<PathBuf> {
-    manifest
-        .icon
-        .as_deref()
-        .and_then(|i| platypus_core::resolve_asset(code_root, i))
 }
 
 #[cfg(test)]
@@ -428,11 +429,14 @@ mod tests {
         let p = Prefs::in_memory();
         let current = Current::new(&manifest, &p, DisplaySettings::default(), false);
         let constants = current.constants();
-        assert!(constants.contains("const RESIZABLE = false;"));
-        assert!(constants.contains("const LEVEL = \"Low\";"));
-        assert!(constants.contains("const VSYNC = true;"), "vsync starts on");
+        assert!(constants.contains("const RESIZABLE: boolean = false;"));
+        assert!(constants.contains("const LEVEL: string = \"Low\";"));
+        assert!(
+            constants.contains("const VSYNC: boolean = true;"),
+            "vsync starts on"
+        );
         // The dialog hides both rows without RESIZABLE, and its choice leaves the display alone.
-        assert!(DIALOG_SOURCE.contains("{RESIZABLE ? ("));
+        assert!(DIALOG_SOURCE.contains(r#"display: RESIZABLE ? "flex" : "none""#));
         let mut p = Prefs::in_memory();
         let choice = Choice::from_prefs(&values(json!({
             "mode": "Windowed", "width": 640.0, "height": 480.0, "vsync": 1.0, "level": "Low",
@@ -460,5 +464,39 @@ mod tests {
             json!(r#"{"level":"Ultra","current":{"vSyncCount":0}}"#),
         );
         assert!(Current::new(&manifest, &p, DisplaySettings::default(), true).vsync);
+    }
+
+    // M9-VSP-12
+    #[test]
+    fn the_dialog_window_is_named_after_the_game_and_has_its_icon() {
+        let manifest = Manifest::from_json(&json!({ "platypus": { "title": "Fox Run" } }), "fox");
+        let current = Current::new(
+            &manifest,
+            &Prefs::in_memory(),
+            DisplaySettings::default(),
+            true,
+        );
+        let dir = std::env::temp_dir().join(format!("platypus-vsp-folder-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_dialog_game(&dir, &current, &(vec![0, 255, 0, 255], 1, 1)).unwrap();
+        let dialog = Manifest::load(&dir);
+        assert_eq!(dialog.window_title(), "Fox Run");
+        assert_eq!(dialog.window_icon(&dir), (vec![0, 255, 0, 255], 1, 1));
+        // A fixed size (no resize edges, no maximize button: the `resizable: false` path).
+        assert_eq!(dialog.display["resizable"], false);
+        assert_eq!(
+            (
+                dialog.display["width"].as_u64(),
+                dialog.display["height"].as_u64()
+            ),
+            (Some(600), Some(500))
+        );
+        let bundle = std::fs::read_to_string(dir.join("build/game.pbundle")).unwrap();
+        assert!(
+            bundle.contains("const GAME: string = \\\"Fox Run\\\";"),
+            "{bundle}"
+        );
+        assert!(!bundle.contains("const GAME: string = \\\"Platypus"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, test } from "bun:test";
-import { nearestIndex, sizeLabel, sizeList } from "./video_prompt_sizes";
+import { headerLines, nearestIndex, sizeLabel, sizeList } from "./video_prompt_sizes";
 
 const monitor = { width: 2560, height: 1440 };
 const modes = [
@@ -33,6 +33,13 @@ describe("video settings prompt: resolution list", () => {
     ]);
     // The monitor isn't known yet: nothing is left out.
     expect(sizeList(modes, { width: 0, height: 0 }, "Windowed")).toHaveLength(4);
+  });
+
+  // M9-VSP-13
+  test("the header shows the subtitle under the title only when there is one", () => {
+    expect(headerLines("Game Title", "Shadow of the Realm / Series 2")).toEqual(["Game Title", "Shadow of the Realm / Series 2"]);
+    expect(headerLines("Game Title", "")).toEqual(["Game Title"]);
+    expect(headerLines("Game Title", "  ")).toEqual(["Game Title"]);
   });
 
   // M9-VSP-11

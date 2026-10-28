@@ -1,8 +1,8 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// The video-settings prompt's resolution list (pure, tested by `video_prompt_sizes.test.ts`). The
-// host puts this text in front of `video_prompt.tsx`.
+// The video-settings prompt's pure helpers: its resolution list and header (tested by
+// `video_prompt_sizes.test.ts`). The host puts this text in front of `video_prompt.tsx`.
 
 export type Size = { w: number; h: number; hz: number };
 
@@ -39,6 +39,11 @@ export function nearestIndex(list: readonly Size[], want: Size): number {
     }
   }
   return best;
+}
+
+/** The header's lines: the title, then the subtitle when there is one. */
+export function headerLines(title: string, subtitle: string): string[] {
+  return subtitle.trim() === "" ? [title] : [title, subtitle];
 }
 
 export function sizeLabel(s: Size): string {

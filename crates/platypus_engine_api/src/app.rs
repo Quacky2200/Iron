@@ -24,6 +24,8 @@ pub fn set_crash_hook(hook: fn(&str, bool)) {
 pub struct AppInfo {
     pub name: String,
     pub product_name: String,
+    /// The manifest's `subtitle` (empty when unset).
+    pub subtitle: String,
     pub version: String,
     pub company_name: String,
     pub identifier: String,
@@ -43,6 +45,7 @@ impl Default for AppInfo {
         AppInfo {
             name: String::new(),
             product_name: String::new(),
+            subtitle: String::new(),
             version: "0.0.0".into(),
             company_name: String::new(),
             identifier: String::new(),
@@ -226,6 +229,13 @@ pub mod application_api {
     #[property]
     pub fn product_name() -> String {
         app(|a| a.product_name.clone())
+    }
+
+    /// A second line under the title (`subtitle` in `project.json`, say a series' episode);
+    /// empty when the game has none.
+    #[property]
+    pub fn subtitle() -> String {
+        app(|a| a.subtitle.clone())
     }
 
     #[property]

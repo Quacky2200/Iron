@@ -17,6 +17,8 @@ pub struct Manifest {
     pub name: String,
     /// Shown in the window's title bar; the name if not given.
     pub title: String,
+    /// `subtitle`: a second line under the title (empty when unset).
+    pub subtitle: String,
     pub version: String,
     pub company: String,
     /// Reverse-DNS id (`com.example.game`).
@@ -75,11 +77,29 @@ impl Manifest {
         Self::from_project(Project::from_package_json(json, folder))
     }
 
+    /// The window's title (the game's window and its video-settings prompt): the title, else
+    /// the name, else "Platypus".
+    pub fn window_title(&self) -> &str {
+        [self.title.as_str(), self.name.as_str()]
+            .into_iter()
+            .find(|s| !s.trim().is_empty())
+            .unwrap_or("Platypus")
+    }
+
+    /// The window and taskbar icon as RGBA: the project's `icon`, else Platypus's.
+    pub fn window_icon(&self, root: &Path) -> (Vec<u8>, u32, u32) {
+        self.icon
+            .as_deref()
+            .and_then(|path| load_icon(root, path))
+            .unwrap_or_else(default_icon)
+    }
+
     pub fn from_project(p: Project) -> Self {
         let physical_units = light_units(&p.extra);
         Self {
             name: p.name,
             title: p.title,
+            subtitle: p.subtitle.unwrap_or_default(),
             version: p.version,
             company: p.company,
             identifier: p.identifier,
@@ -153,6 +173,7 @@ impl Info {
             json!({
                 "name": manifest.name,
                 "productName": manifest.title,
+                "subtitle": manifest.subtitle,
                 "version": manifest.version,
                 "companyName": manifest.company,
                 "identifier": manifest.identifier,
@@ -332,6 +353,48 @@ mod tests {
             Some(false)
         );
         assert_eq!(Manifest::from_json(&Value::Null, "g").fps, None);
+    }
+
+    // M9-VSP-12
+    #[test]
+    fn the_window_shows_the_games_title_and_icon_else_platypus_ones() {
+        let mut m = Manifest::from_json(&json!({ "platypus": { "title": "Fox Run" } }), "fox");
+        assert_eq!(m.window_title(), "Fox Run");
+        // M9-VSP-13: the subtitle, empty when unset.
+        assert_eq!(m.subtitle, "");
+        let sub = Manifest::from_json(
+            &json!({ "platypus": { "title": "Game Title", "subtitle": "Shadow of the Realm" } }),
+            "g",
+        );
+        assert_eq!(sub.subtitle, "Shadow of the Realm");
+        assert!(
+            Info::new(&sub)
+                .script()
+                .contains("\"subtitle\":\"Shadow of the Realm\"")
+        );
+        m.title = String::new();
+        m.name = "fox".into();
+        assert_eq!(m.window_title(), "fox");
+        m.name = " ".into();
+        assert_eq!(m.window_title(), "Platypus");
+        // No icon, or one that can't be read: Platypus's.
+        let root = std::env::temp_dir();
+        assert_eq!(m.window_icon(&root), default_icon());
+        m.icon = Some("no-such-icon-9131.png".into());
+        assert_eq!(m.window_icon(&root), default_icon());
+        let d = root.join(format!("platypus_app_icon_{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        image::save_buffer(
+            d.join("i.png"),
+            &[255, 0, 0, 255],
+            1,
+            1,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+        m.icon = Some("i.png".into());
+        assert_eq!(m.window_icon(&d), (vec![255, 0, 0, 255], 1, 1));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     // M9-VSP-06

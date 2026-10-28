@@ -250,8 +250,11 @@ fn application_reads_the_manifest_and_returns_script_writes() {
     app::set_app(app::AppInfo {
         name: "demo".into(),
         target_frame_rate: 144,
+        subtitle: "Series 2".into(),
         ..app::AppInfo::default()
     });
+    // M9-VSP-13: `Application.subtitle` reads the manifest's.
+    assert_eq!(app::application_api::subtitle(), "Series 2");
     app::set_system(app::SystemInfo {
         operating_system_family: "Linux".into(),
         device_type: "Handheld".into(),
