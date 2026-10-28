@@ -148,3 +148,27 @@ fn animation_components_keep_their_settings_through_files_prefabs_and_copies() {
     platypus_engine_api::animation::reset();
     manager::reset();
 }
+
+// M9-API-212
+#[test]
+fn tags_survive_scene_files_and_copies() {
+    manager::reset();
+    let mut scene = iron_scene::Scene::new();
+    let _scope = iron_scene::api::enter(&mut scene);
+    let (boss, plain) =
+        iron_scene::api::with_scene(|s| (s.create("Boss"), s.create("Plain"))).unwrap();
+    iron_scene::api::with_scene(|s| s.set_tag_name(boss, "Enemy"));
+    let level = manager::create_scene("tagged");
+    manager::move_to_scene(boss, level);
+    manager::move_to_scene(plain, level);
+    let text = manager::serialize(level).unwrap();
+    assert!(text.contains(r#""tag":"Enemy""#), "{text}");
+    // Untagged objects add nothing to the file.
+    assert_eq!(text.matches(r#""tag""#).count(), 1, "{text}");
+    let loaded = manager::load_scene(&text, true).unwrap();
+    let tag = |o| iron_scene::api::with_scene(|s| s.tag_name(o).to_owned()).unwrap();
+    assert_eq!(tag(named(loaded, "Boss")), "Enemy");
+    assert_eq!(tag(named(loaded, "Plain")), "Untagged");
+    let copy = manager::instantiate(boss, None, None, None).unwrap();
+    assert_eq!(tag(copy), "Enemy");
+}

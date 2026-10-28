@@ -361,12 +361,15 @@ impl Physics {
 
     /// Casts a ray at once: the first collider hit within `max` metres (its id, the distance and
     /// the surface normal). Colliders added since the last step are not in the world's query
-    /// structures yet, so then every collider is tested directly.
+    /// structures yet, so then every collider is tested directly. `accept` says which colliders
+    /// count (by script id, e.g. a layer mask); a collider the origin is inside is skipped, as
+    /// in Unity.
     pub fn raycast_now(
         &self,
         origin: [f32; 3],
         direction: [f32; 3],
         max: f32,
+        accept: &dyn Fn(ScriptId) -> bool,
     ) -> Option<(ScriptId, f32, [f32; 3])> {
         let dir = Vector::from_array(direction);
         if dir.length_squared() == 0.0 {
@@ -374,16 +377,24 @@ impl Physics {
         }
         let ray = Ray::new(Vector::from_array(origin), dir.normalize());
         let id_of = |h: ColliderHandle| self.world.colliders.get(h).map(|c| c.user_data as u32);
+        let usable = |c: &Collider| {
+            accept(c.user_data as u32) && !c.shape().contains_point(c.position(), ray.origin)
+        };
         if !self.dirty {
-            let (h, hit) =
-                self.world
-                    .cast_ray_and_get_normal(&ray, max, true, QueryFilter::default())?;
+            let accepted = |_: ColliderHandle, c: &Collider| usable(c);
+            let filter = QueryFilter::default().predicate(&accepted);
+            let (h, hit) = self
+                .world
+                .cast_ray_and_get_normal(&ray, max, true, filter)?;
             return Some((id_of(h)?, hit.time_of_impact, hit.normal.to_array()));
         }
         self.colliders
             .values()
             .filter_map(|&h| {
                 let c = self.world.colliders.get(h)?;
+                if !usable(c) {
+                    return None;
+                }
                 let hit = c
                     .shape()
                     .cast_ray_and_get_normal(c.position(), &ray, max, true)?;

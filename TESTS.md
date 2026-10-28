@@ -301,6 +301,33 @@ layout pass):
 | M3-PAD-02 | Unit | Each pad connection reaches scripts once: pads already plugged in are announced on the first poll, a repeated `Connected` for a known pad is dropped, and one that disconnects and comes back is announced again. |
 | M3-MAN-01 | Manual | `platypus-game examples/form` on Windows: hover/active styles, typing with a Japanese or Chinese IME, scrolling a long list. |
 
+### M3d — Floats and tables
+
+| ID | Kind | What |
+|---|---|---|
+| M3-FLT-01 | Integration | A text block beside a left float starts its lines after the float while they touch it, and returns to the edge below it; its box keeps the full width. |
+| M3-FLT-02 | Integration | A right float sits at the right edge and the lines end before it. |
+| M3-FLT-03 | Integration | Floats on both sides leave the middle for the lines. |
+| M3-FLT-04 | Integration | Floats of one side sit next to each other, then wrap below the first. |
+| M3-FLT-05 | Integration | `clear` moves a block below the floats; a block without it keeps its place. |
+| M3-FLT-06 | Integration | A float sticks out of a plain block; a `flow-root` (and a formatting context root) contains it. |
+| M3-FLT-07 | Integration | A word wider than the room beside a float moves the line below the float. |
+| M3-FLT-08 | Integration | `text-align` aligns each line within the room beside a float. |
+| M3-FLT-09 | Integration | `float` is ignored on flex and grid items. |
+| M3-FLT-10 | Integration | Removing, changing or resizing a float relayouts the text beside it (no stale cache). |
+| M3-FLT-11 | Integration | A float's margins keep text away from it. |
+| M3-FLT-12 | Integration | Text with padding and a background wraps around a float inside its padding box. |
+| M3-FLT-13 | Integration | An `image` floated in a block of bare text: the paragraph wraps around it. |
+| M3-FLT-14 | Integration | A later paragraph stays clear of an auto-height float's bottom margin. |
+| M3-FLT-15 | Integration | The taller of two floats keeps narrowing lines after the shorter one ends (needs taffy 0.15.1: 0.15.0 lost the tail of the taller float). |
+| M3-TBL-01 | Golden | The table of `examples/table`: content-sized columns, header, striping, a wrapping note, right-aligned numbers, a column-span footer. |
+| M3-TBL-02 | Integration | In a grid of `display: contents` rows the columns line up across rows and are sized from every row's content; the `1fr` column takes the rest. |
+| M3-TBL-03 | Integration | A long cell wraps and every cell of its row grows to the row's height. |
+| M3-TBL-04 | Integration | `text-align: right` aligns numbers to the cell's edge. |
+| M3-TBL-05 | Integration | `grid-column` / `grid-row` spans act as colspan and rowspan and following rows' cells skip the spanned column. |
+| M3-TBL-06 | Integration | A `display: contents` row is hovered through its cells, and `.row:hover .cell` styles only that row's cells. |
+| M3-FLT-20 | Golden | A page with a left picture, a right pull-quote, a paragraph flowing between and under them, and a `clear: both` bar. |
+
 ---
 
 ## M4 — Hot reload
@@ -1123,6 +1150,15 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M7-RP-03 | Integration + JS unit | The asset's other settings: with HDR off a bright view clips at white instead of being tonemapped; without additional light shadows a shadowed spot light gets no shadow map. Each quality level carries them (`QualitySettings.volumetricFog`, `hdr`, `additionalLights`, `additionalLightShadows`; Low, the phones' tier, has no light shafts and 8 additional lights without shadows), sent with `render.quality`; the manifest's default level can go by platform (`platypus.quality.default: { Android: "Low", default: "High" }`). |
 | M7-HD-01 | Integration + Unit | Real-world light units (`platypus.lightUnits: "physical"`, `WorldRenderer::physical_units`): directional lights' intensity is read as lux (renderer units lux / pi), spot and point lights' as lumens (/ 4 pi²); everything drawn is pre-exposed by the camera's last exposure and the post pass divides it out, so a view at 200000 nits (past fp16's 65504) settles to the same grey as one at 2 nits (the histogram reaching +32 stops). |
 | M7-HD-02 | JS unit | A physical camera (`Camera.aperture`, `shutterSpeed`, `iso`, HDRP's defaults f/16, 1/200 s, ISO 200) gives `physicalExposure` = log2(N²/t) - log2(ISO/100); `Light.illuminanceAt(point, normal)` sums lux from every light (lumens to candela over 4 pi, inverse square, cosine); `Light.measureIlluminance` also counts shadows by physics rays (checked by eye in `examples/light-units`: 8 lux in the hall, 81438 in the sun). |
+| M7-FX-01 | Unit | `PostProcess`'s built-in table (`EFFECTS`): the script's `PostEffect` names equal the table's, every effect has an `effect` function, at most eight parameters and valid WGSL names. |
+| M7-FX-02 | Unit | Passes come out enabled only, ordered by `order` then creation, with their camera; a parameter change bumps `post_version`. |
+| M7-FX-03 | Unit | `PostProcess.createCustom` parameters (`"name"`, `"name:vec3"`, `"name:color"`): bad, repeated and extra ones are left out; values land in their slots; a source using `scene_depth` / `scene_normal` is marked as reading depth. |
+| M7-FX-04 | Golden + GPU | Every built-in effect on a scene of receding balls: vignette darkens the corners and not the middle; chromatic aberration leaves the middle and fringes the edges; blur softens; pixelate makes constant blocks; film grain moves pixels; grading with saturation 0 is grey and a warm balance is warmer; outline inks silhouettes; CRT cuts the corners; posterize bands; tilt-shift softens off its band; depth of field softens the near ball and leaves the focused one. Contact sheet golden. |
+| M7-FX-05 | Golden + GPU | `scene_depth` (metres along the view, background far) and `scene_normal` (world space, rebuilt from depth, zero on the background) reach a custom shader. |
+| M7-FX-06 | GPU | A custom WGSL pass runs (inverted light); a source with no `effect`, a type error or a syntax error is logged and skipped, the picture unchanged and later passes still running. |
+| M7-FX-07 | GPU | Passes run in order (pixelate then blur differs from blur then pixelate); with two cameras side by side an effect on the left camera stays in its half and the right half is untouched. |
+| M7-FX-09 | Integration | A script's `PostProcess.create` / `createCustom` passes reach each camera's `WorldView.post`: disabled ones left out, ordered by `order`, one aimed at a camera only on that camera's view, parameters in their slots, and the renderer's shader is the same one next frame (its pipeline stays cached). |
+| M7-FX-08 | GPU | Depth-reading passes work with 4x MSAA (multisampled depth) and behind exposure / tonemapping (the HDR path). |
 
 ---
 
@@ -1254,6 +1290,10 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-1006 | Integration | The concrete 2D colliders (`BoxCollider2D`, `CircleCollider2D`, ...) name their body `attachedRigidbody`, as the `Collider2D` base and Unity do (it was `attachedRigidbody2d`): a ball's own Rigidbody2D, none for a floor's BoxCollider2D (`bench/contacts.ts`). |
 | M9-TS-1010..1013 | Integration | The component / GameObject surface of scene.ts in compiled code (`bench/comp_api.ts`): `children`, `root`, `parent`, null tests of handles; `components`; `GameObject.roots`, `find`, `byId`; `go.scene`. |
 | M9-API-200..209 | Unit | Physics components (`crates/platypus_physics_api/src/tests.rs`): Rigidbody + BoxCollider rest on a floor; a kinematic object moved by script carries its body; colliders remade at the object's scale; centers, triggers and `collider_info` for contacts; fixed and rope joints; a Rope hangs; a CharacterController lands and is grounded; 2D bodies keep z and a 2D ray names its object; kinds save/load/copy/destroy; destroyed objects lose their physics. |
+| M9-API-210 | Unit | Raycasts (`crates/platypus_physics_api/src/tests.rs`): a layer mask keeps only the colliders on its layers, a hit names its GameObject, a collider the origin starts inside is skipped (Unity's rule), and an infinite or default distance reaches far targets. |
+| M9-API-211 | Unit | Tags: objects are "Untagged" until tagged, `find_with_tag` lists the active objects with a tag in scene order (`crates/platypus_scene/tests/api.rs`); `M9-API-212` (`crates/platypus_scenes/src/kinds_tests.rs`): tags save to and load from scene files and survive copies. |
+| M9-API-213 | Unit | Transform hierarchy like Unity (`crates/platypus_scene/tests/api.rs`): `getChild`, `find("a/b")`, `root`, `isChildOf`, sibling order, vectors through a scaled parent, `rotateAround`, `setParent` keeping the world scale, `detachChildren`. |
+| M9-TS-707 | Integration | `getComponentsInChildren`, `getComponentInParent` and `getComponentsInParent` against `scene.ts` in bun (`bench/comp_query.ts` `hierarchy`); three GC modes. |
 | M9-TS-1100..1105 | Integration | Physics components from compiled code (`bench/physics_comp.ts`): the component world matches the same ops through `platypus_physics::Physics`; options round-trip through `getComponent`; `ForceMode.Impulse`; FixedJoint and Rope; CharacterController; 2D components, `Physics2D.raycast` and gravity. |
 | M9-TS-1200..1207 | Integration | Closures given to the engine (`bench/callbacks.ts`): `input.onKeyDown/onKeyUp/onGamepad*` get codes, flags, ids and values and are removed by `input.off(token)`; a listener keeps captured variables; a Rust listener may unsubscribe inside an event; `Assets.onChanged`, `Application.onFocusChanged` (only on a change) and `SceneManager.onSceneLoaded/Unloaded/ActiveSceneChanged` (scene handles, mode text); all in the normal, stress and no-GC modes. |
 | M9-API-300..302 | Unit | `Callback<(..)>` parameters: manifest `fn(f64,string):void` and the declaration `(a: number, b: string) => void`; listener tokens unique and ordered; a script callback without a runtime bridge is ignored. |

@@ -6,20 +6,30 @@ use rustc_hash::FxHashMap as HashMap;
 use platypus_core::NodeId;
 use taffy::detailed_info::DetailedGridInfo;
 use taffy::{
-    AvailableSpace, BlockContext, Cache, CacheTree, ClearState, DetailedLayoutInfo, Display,
+    AvailableSpace, BlockContext, Cache, CacheTree, Clear, ClearState, DetailedLayoutInfo, Display,
     Layout, LayoutBlockContainer, LayoutContainingBlock, LayoutFlexboxContainer,
-    LayoutGridContainer, LayoutInput, LayoutOutput, LayoutPartialTree, RoundTree, RunMode, Size,
-    Style, TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
-    compute_flexbox_layout, compute_grid_layout, compute_hidden_layout, compute_leaf_layout,
-    compute_oof_layout, compute_root_layout, round_layout,
+    LayoutGridContainer, LayoutInput, LayoutOutput, LayoutPartialTree, ResolveOrZero, RoundTree,
+    RunMode, Size, Style, TraversePartialTree, TraverseTree, compute_block_layout,
+    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_hidden_layout,
+    compute_leaf_layout, compute_oof_layout, compute_root_layout, round_layout,
 };
 
-use crate::text::AvailableWidth;
+use crate::text::{AvailableWidth, Band};
+
+/// What floats beside a measured leaf: lines of text avoid them.
+#[derive(Clone, Copy, Debug)]
+pub struct Around<'a> {
+    /// The room left in the content box (empty: all of it).
+    pub bands: &'a [Band],
+    /// Whether this is the final layout of the leaf, not a sizing query.
+    pub layout_pass: bool,
+}
 
 /// Sizes a measured leaf (text, fields, images): given the known content width and
-/// height, if any, and the available width, returns its content size (width, height).
+/// height, if any, the available width and the floats beside it, returns its content
+/// size (width, height).
 pub type Measure<'a> =
-    dyn FnMut(NodeId, (Option<f32>, Option<f32>), AvailableWidth) -> (f32, f32) + 'a;
+    dyn FnMut(NodeId, (Option<f32>, Option<f32>), AvailableWidth, Around<'_>) -> (f32, f32) + 'a;
 
 /// A node's computed layout, relative to its parent's border box.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -48,6 +58,9 @@ pub trait LayoutEngine {
     fn set_children(&mut self, parent: NodeId, children: &[NodeId]);
     /// Marks a leaf whose size comes from `compute`'s `measure` callback (text).
     fn set_measured(&mut self, id: NodeId, measured: bool);
+    /// Marks a measured leaf as a block of text: in a block container it lays out as a
+    /// block (beside floats) whatever its own `display`.
+    fn set_text_block(&mut self, id: NodeId, text_block: bool);
     /// Marks a node for relayout without a style change (e.g. its text changed).
     fn mark_dirty(&mut self, id: NodeId);
     /// Lays out the tree under `root` within `width` × `height` logical pixels,
@@ -65,6 +78,25 @@ pub trait LayoutEngine {
 /// recomputed.
 pub struct TaffyLayout {
     nodes: HashMap<u64, NodeData>,
+    /// How many nodes set `float` or `clear`. While any does, a block's layout depends on
+    /// the floats before it, which Taffy's per-node cache doesn't see, so blocks inside a
+    /// formatting context skip the cache.
+    floats: usize,
+}
+
+/// `style` as a block container sees a text block: flex and grid (the default `display`
+/// of every element) mean nothing to a leaf, and would make it avoid floats like a new
+/// formatting context instead of wrapping its lines around them.
+fn as_block(style: &Style) -> Style {
+    let mut block = style.clone();
+    if matches!(block.display, Display::Flex | Display::Grid) {
+        block.display = Display::Block;
+    }
+    block
+}
+
+fn uses_floats(style: &Style) -> bool {
+    style.float != taffy::Float::None || style.clear != taffy::Clear::None
 }
 
 struct NodeData {
@@ -73,6 +105,9 @@ struct NodeData {
     parent: Option<taffy::NodeId>,
     /// A leaf sized by the `measure` callback (text, text fields).
     measured: bool,
+    /// The style a text block shows its block container: its own with `display: block`.
+    /// `None` for other nodes.
+    block_style: Option<Style>,
     unrounded: Layout,
     final_layout: Layout,
     /// Out-of-flow boxes whose containing block is this node.
@@ -123,6 +158,7 @@ impl NodeData {
             children: Vec::new(),
             parent: None,
             measured: false,
+            block_style: None,
             unrounded: Layout::new(),
             final_layout: Layout::new(),
             hoisted: Vec::new(),
@@ -142,6 +178,7 @@ impl TaffyLayout {
     pub fn new() -> Self {
         Self {
             nodes: HashMap::default(),
+            floats: 0,
         }
     }
 
@@ -178,6 +215,7 @@ impl Default for TaffyLayout {
 impl LayoutEngine for TaffyLayout {
     fn create_node(&mut self, id: NodeId, style: &Style) {
         self.remove_node(id);
+        self.floats += usize::from(uses_floats(style));
         self.nodes
             .insert(u64::from(id.0), NodeData::new(style.clone()));
     }
@@ -186,6 +224,7 @@ impl LayoutEngine for TaffyLayout {
         let Some(node) = self.nodes.remove(&u64::from(id.0)) else {
             return;
         };
+        self.floats -= usize::from(uses_floats(&node.style));
         let k = key(id);
         if let Some(parent) = node.parent
             && let Some(p) = self.nodes.get_mut(&u64::from(parent))
@@ -219,7 +258,12 @@ impl LayoutEngine for TaffyLayout {
     fn set_style(&mut self, id: NodeId, style: &Style) {
         let k = key(id);
         if let Some(node) = self.nodes.get_mut(&u64::from(k)) {
+            let before = uses_floats(&node.style);
             node.style = style.clone();
+            if node.block_style.is_some() {
+                node.block_style = Some(as_block(style));
+            }
+            self.floats = self.floats + usize::from(uses_floats(style)) - usize::from(before);
             self.mark_dirty_up(k);
         }
     }
@@ -262,6 +306,16 @@ impl LayoutEngine for TaffyLayout {
             && node.measured != measured
         {
             node.measured = measured;
+            self.mark_dirty_up(k);
+        }
+    }
+
+    fn set_text_block(&mut self, id: NodeId, text_block: bool) {
+        let k = key(id);
+        if let Some(node) = self.nodes.get_mut(&u64::from(k))
+            && node.block_style.is_some() != text_block
+        {
+            node.block_style = text_block.then(|| as_block(&node.style));
             self.mark_dirty_up(k);
         }
     }
@@ -327,7 +381,10 @@ impl View<'_, '_> {
         if inputs.run_mode == RunMode::PerformHiddenLayout {
             return compute_hidden_layout(self, node_id);
         }
-        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
+        // A block in a formatting context lays out against the floats placed before it,
+        // which the cache's key doesn't include.
+        let uncached = self.layout.floats > 0 && block_ctx.is_some();
+        let compute = |tree: &mut Self, node_id: taffy::NodeId, inputs: LayoutInput| {
             let display = tree.style(node_id).display;
             let has_children = tree.child_count(node_id) > 0;
             let mut output = match (display, has_children) {
@@ -336,20 +393,110 @@ impl View<'_, '_> {
                 (Display::FlowRoot, true) => compute_block_layout(tree, node_id, inputs, None),
                 (Display::Flex, true) => compute_flexbox_layout(tree, node_id, inputs),
                 (Display::Grid, true) => compute_grid_layout(tree, node_id, inputs),
-                (_, false) => tree.measure_leaf(node_id, inputs),
+                (_, false) => {
+                    let bands = block_ctx
+                        .as_deref()
+                        .map(|ctx| tree.float_bands(node_id, inputs, ctx))
+                        .unwrap_or_default();
+                    tree.measure_leaf(node_id, inputs, &bands)
+                }
             };
             if inputs.run_mode == RunMode::PerformLayout {
                 compute_oof_layout(tree, node_id, &mut output);
             }
             output
-        })
+        };
+        if uncached {
+            compute(self, node_id, inputs)
+        } else {
+            compute_cached_layout(self, node_id, inputs, compute)
+        }
+    }
+
+    /// The room floats leave in the content box of the leaf `node_id` (a text block
+    /// laid out in the formatting context `ctx`), as bands from its top; empty when
+    /// nothing is beside it.
+    fn float_bands(
+        &self,
+        node_id: taffy::NodeId,
+        inputs: LayoutInput,
+        ctx: &BlockContext<'_>,
+    ) -> Vec<Band> {
+        if !self.layout.node(node_id).measured || !ctx.has_floats() {
+            return Vec::new();
+        }
+        let style = self.style(node_id);
+        let basis = inputs.parent_size.width;
+        let pad = style.padding.resolve_or_zero(basis, crate::calc::resolve);
+        let border = style.border.resolve_or_zero(basis, crate::calc::resolve);
+        let (left, top) = (pad.left + border.left, pad.top + border.top);
+        // Far below every float: the whole width.
+        let full = ctx.find_content_slot(1.0e9, Clear::None, None);
+        let content_width = (full.width - left - pad.right - border.right).max(0.0);
+        let mut bands: Vec<Band> = Vec::new();
+        let (mut after, mut at) = (None, 0.0);
+        // Each float segment is a band down to the next one.
+        loop {
+            let slot = ctx.find_content_slot(at, Clear::None, after);
+            let Some(segment) = slot.segment_id else {
+                break;
+            };
+            let x = (slot.x - left).max(0.0);
+            let right = (slot.x + slot.width - left).min(content_width);
+            let y = (slot.y - top).max(0.0);
+            let band = Band {
+                y,
+                x,
+                width: (right - x).max(0.0),
+            };
+            match bands.last_mut() {
+                Some(last) if last.y >= y => *last = band,
+                _ => bands.push(band),
+            }
+            (after, at) = (Some(segment), slot.y);
+        }
+        // Below the lowest float the width is free again.
+        if let Some(end) = ctx.cleared_threshold(Clear::Both) {
+            let y = (end - top).max(0.0);
+            if bands.last().is_some_and(|b| b.y < y) {
+                bands.push(Band {
+                    y,
+                    x: 0.0,
+                    width: content_width,
+                });
+            }
+        }
+        if bands.first().is_some_and(|b| b.y > 0.0) {
+            bands.insert(
+                0,
+                Band {
+                    y: 0.0,
+                    x: 0.0,
+                    width: content_width,
+                },
+            );
+        }
+        let free = |b: &Band| b.x < 0.01 && b.width > content_width - 0.01;
+        if bands.iter().all(free) {
+            bands.clear();
+        }
+        bands
     }
 
     /// A leaf: Taffy handles padding and borders; `measure` sizes the content of
-    /// measured leaves (text), others have none.
-    fn measure_leaf(&mut self, node_id: taffy::NodeId, inputs: LayoutInput) -> LayoutOutput {
+    /// measured leaves (text), others have none. `bands` are the floats beside it.
+    fn measure_leaf(
+        &mut self,
+        node_id: taffy::NodeId,
+        inputs: LayoutInput,
+        bands: &[Band],
+    ) -> LayoutOutput {
         let node = self.layout.node(node_id);
         let measured = node.measured.then_some(NodeId(u64::from(node_id) as u32));
+        let around = Around {
+            bands,
+            layout_pass: inputs.run_mode == RunMode::PerformLayout,
+        };
         let measure = &mut *self.measure;
         compute_leaf_layout(
             inputs,
@@ -364,7 +511,7 @@ impl View<'_, '_> {
                     AvailableSpace::MinContent => AvailableWidth::MinContent,
                     AvailableSpace::MaxContent => AvailableWidth::MaxContent,
                 };
-                let (w, h) = measure(id, (known.width, known.height), width);
+                let (w, h) = measure(id, (known.width, known.height), width, around);
                 Size {
                     width: known.width.unwrap_or(w),
                     height: known.height.unwrap_or(h),
@@ -490,7 +637,8 @@ impl LayoutBlockContainer for View<'_, '_> {
     }
 
     fn get_block_child_style(&self, child: taffy::NodeId) -> Self::BlockItemStyle<'_> {
-        self.style(child)
+        let node = self.layout.node(child);
+        node.block_style.as_ref().unwrap_or(&node.style)
     }
 
     fn compute_block_child_layout(

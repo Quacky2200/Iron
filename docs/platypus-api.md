@@ -398,7 +398,10 @@ loaded yet.
 `crates/platypus_physics_api` declares physics for compiled scripts: the low-level `Physics` namespace (`createBody`,
 world colliders, `raycast` that answers at once, `createJoint`, `step`) and the components of `physics-components.ts` and
 `physics2d.ts` as handle classes over the GameObject (`go.addComponent(Rigidbody, { mass: 2 })`,
-`go.getComponent(BoxCollider)` through the static `findOn`). Layout: `comp.rs` (component data, the one body per
+`go.getComponent(BoxCollider)` through the static `findOn`). `Physics.raycast(origin, direction, maxDistance?, layerMask?)`
+answers a `RaycastHit` (`gameObject`, `transform`, `rigidbody`, `collider`, `point`, `normal`, `distance`) or `null` on a miss; the
+mask keeps the colliders whose GameObject is on those layers, and a collider the origin starts inside is not hit (as in Unity).
+`maxDistance` is unlimited by default. Differences: no `out` parameter or bool, and no `raycastAll`. Layout: `comp.rs` (component data, the one body per
 GameObject shared by its Rigidbody and colliders, joints, rope, per-step sync), `components.rs`, `joints.rs`,
 `physics2d.rs` (the generated-looking class impls: same members repeated per class), `kinds.rs` (`register_kinds()`
 puts the 18 classes into `platypus_kinds` for scene files and `instantiate`).
@@ -461,6 +464,10 @@ draws, the app reads per-thread registries and a command queue. **No change to `
   `SpriteRenderer`, `LineRenderer2D`. The host reads them with `platypus_render_api::lights()`, `mesh_renderers()`, ... (`Vec<(Ref, Data)>`)
   and removes the components of destroyed objects with `platypus_render_api::destroyed(&objects)`. `Camera` gains `clearFlags`, `rect`,
   `cullingMask`, `layerCullDistances`, `layerCullSpherical`, `antialiasing`, `targetTexture`, `sceneGrid`.
+- **`PostProcess`** (`postfx.rs`, a handle class over a registry, not a component): `PostProcess.create(effect)` with the enum
+  `PostEffect` (the built-in effects; their table and WGSL are `EFFECTS` / `postfx/*.wgsl`), `createCustom(source, parameters?)`,
+  `enabled`, `order`, `camera` (`Camera | null`), `setFloat` / `setColor` / `setVector` and their getters. The host reads the enabled
+  passes with `post_passes()` when `post_version()` changes. See [postprocessing.md](postprocessing.md). Tests `M7-FX-01`..`03`, `09`.
 - **Assets** (handles with asset kinds): `Texture` (`Texture.load(src, { filterMode, wrapMode, mipmaps, anisoLevel, linear })`,
   `Texture.create(w, h, colors)`, `Texture.createRenderTexture(w, h)`), `Mesh` (`Mesh.create({ vertices, triangles, normals?, uv? })`,
   built-in meshes by name), `Material` (`new Material({ color, metallic, ... })` or `Material.create({ .. })`, `copy()`, `withColor(c)`),

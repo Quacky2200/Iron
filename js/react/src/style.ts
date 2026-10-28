@@ -42,6 +42,10 @@ export interface PlatypusStyle {
   display?: "flex" | "grid" | "block" | "none" | "contents";
   /** `fixed` places the element against the window and paints it above the tree. */
   position?: "relative" | "absolute" | "fixed";
+  /** Takes the box out of the line flow to the left or right of a block container; the text that follows wraps around it. Only blocks (`display: block` / `flow-root`) lay floats out; flex and grid items ignore it. */
+  float?: "none" | "left" | "right" | "inline-start" | "inline-end";
+  /** Moves the box below the floats on that side. */
+  clear?: "none" | "left" | "right" | "both" | "inline-start" | "inline-end";
   /** Platypus defaults to `border-box` (sizes include padding and border), unlike CSS. */
   boxSizing?: "border-box" | "content-box";
   width?: Length;

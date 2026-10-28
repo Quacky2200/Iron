@@ -170,6 +170,21 @@ pub const BUILTINS: &[Builtin] = &[
     ),
     member(
         "GameObject",
+        "getComponentsInChildren<T>(cls: ClassOf<T>): T[];",
+        "Every component of a class on the object and below it.",
+    ),
+    member(
+        "GameObject",
+        "getComponentInParent<T>(cls: ClassOf<T>): T | undefined;",
+        "The first component of a class on the object or above it.",
+    ),
+    member(
+        "GameObject",
+        "getComponentsInParent<T>(cls: ClassOf<T>): T[];",
+        "Every component of a class on the object and above it.",
+    ),
+    member(
+        "GameObject",
         "removeComponent(component: Component): void;",
         "Removes a component of this program from the object.",
     ),

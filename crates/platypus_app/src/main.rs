@@ -43,6 +43,7 @@ mod panels;
 pub(crate) mod particles;
 mod payload;
 mod physics_sync;
+pub(crate) mod postfx;
 mod prefs;
 mod project;
 pub(crate) mod reload;

@@ -14,7 +14,7 @@ use parley::fontique::{
 use parley::{
     Alignment, AlignmentOptions, BaseDirection, FontContext, FontFamily, FontStyle, FontWeight,
     Layout, LayoutContext, LineHeight as PLineHeight, PositionedLayoutItem, TextStyle,
-    TextWrapMode, WhiteSpaceCollapse,
+    TextWrapMode, WhiteSpaceCollapse, YieldData,
 };
 
 use crate::Rgba;
@@ -243,12 +243,24 @@ pub fn decode_web_font(data: Vec<u8>) -> Result<Vec<u8>, String> {
     }
 }
 
+/// A strip of a text block's content box where floats leave room: lines whose top is at
+/// or below `y` (and above the next band's `y`) start at `x` and are at most `width` wide.
+/// The first band starts at 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Band {
+    pub y: f32,
+    pub x: f32,
+    pub width: f32,
+}
+
 /// Measures `layout` for a width constraint, returning (width, height). Also
-/// leaves the layout broken into lines for that width.
+/// leaves the layout broken into lines for that width. `bands` (see [`Band`]) make the
+/// lines avoid floats; they only apply to a definite width.
 pub fn measure(
     layout: &mut Layout<Brush>,
     known_width: Option<f32>,
     available: AvailableWidth,
+    bands: &[Band],
 ) -> (f32, f32) {
     let max_width = match (known_width, available) {
         (Some(w), _) => Some(w),
@@ -256,20 +268,94 @@ pub fn measure(
         (None, AvailableWidth::MinContent) => Some(0.0),
         (None, AvailableWidth::MaxContent) => None,
     };
-    layout.break_all_lines(max_width);
+    let around_floats = !bands.is_empty() && matches!(available, AvailableWidth::Definite(_));
+    match max_width {
+        Some(w) if around_floats => break_in_bands(layout, w, bands),
+        _ => layout.break_all_lines(max_width),
+    }
     let width = match known_width {
         Some(w) => w,
         // Shrink-to-fit: never wider than the constraint, never narrower than the
         // longest word.
         None => layout.width().ceil(),
     };
-    (width, layout.height().ceil())
+    (width, text_height(layout).ceil())
 }
 
-/// Breaks lines at the block's final content width and aligns them.
-pub fn finish(layout: &mut Layout<Brush>, content_width: f32, align: TextAlign) {
-    layout.break_all_lines(Some(content_width));
+/// Breaks lines at the block's final content width, around the floats `bands` describe,
+/// and aligns them (each line within its own band).
+pub fn finish(layout: &mut Layout<Brush>, content_width: f32, align: TextAlign, bands: &[Band]) {
+    if bands.is_empty() {
+        layout.break_all_lines(Some(content_width));
+    } else {
+        break_in_bands(layout, content_width, bands);
+    }
     layout.align(alignment(align), AlignmentOptions::default());
+}
+
+/// The bottom of the last line. Lines pushed below a float leave a gap Parley's own
+/// height (the sum of the line heights) doesn't count.
+fn text_height(layout: &Layout<Brush>) -> f32 {
+    let last = layout
+        .lines()
+        .last()
+        .map_or(0.0, |l| l.metrics().block_max_coord);
+    layout.height().max(last)
+}
+
+/// What the bands leave of the width for a line spanning `y..y + height`: its left edge and
+/// width, the part every band the line touches has room in (a float anywhere in the line's
+/// height pushes the whole line, as in CSS).
+fn room(bands: &[Band], y: f32, height: f32) -> (f32, f32) {
+    let bottom = y + height.max(0.1);
+    let (mut left, mut right) = (0.0_f32, f32::MAX);
+    for (i, band) in bands.iter().enumerate() {
+        let end = bands.get(i + 1).map_or(f32::MAX, |next| next.y);
+        if end > y + 0.01 && band.y < bottom - 0.01 {
+            left = left.max(band.x);
+            right = right.min(band.x + band.width);
+        }
+    }
+    (left, (right - left).max(0.0))
+}
+
+/// Line breaking with a different start and width for each line, from the room `bands`
+/// leave at its height. A line whose word is wider than the room moves down to the next
+/// band, as in CSS, unless the room is as wide as the whole block.
+fn break_in_bands(layout: &mut Layout<Brush>, width: f32, bands: &[Band]) {
+    let mut lines = layout.break_lines();
+    lines.state_mut().set_layout_max_advance(width);
+    'lines: while !lines.is_done() {
+        let y = lines.committed_y() as f32;
+        let below = bands.iter().map(|b| b.y).find(|by| *by > y + 0.01);
+        // A first guess from the line's top; its height (known once it is broken) can
+        // reach into a narrower band, so break it again with that room.
+        let (mut x, mut w) = room(bands, y, 0.0);
+        let mut saved = None;
+        let (data, w) = loop {
+            let state = lines.state_mut();
+            state.set_line_x(x);
+            state.set_line_max_advance(w.min(width));
+            let before = saved.get_or_insert_with(|| state.clone()).clone();
+            let Some(YieldData::LineBreak(data)) = lines.break_next() else {
+                break 'lines;
+            };
+            let (nx, nw) = room(bands, y, data.metrics.line_height);
+            if (nx > x + 0.5 || nw < w - 0.5) && (nx, nw) != (x, w) {
+                lines.revert_to(before);
+                (x, w) = (nx, nw);
+                continue;
+            }
+            break (data, w);
+        };
+        let used = data.metrics.advance - data.metrics.hanging_advance;
+        if let (true, Some(below), Some(saved)) = (used > w + 0.5 && w + 0.5 < width, below, saved)
+        {
+            lines.revert_to(saved);
+            lines.state_mut().set_line_y(f64::from(below));
+        }
+    }
+    lines.finish();
 }
 
 /// Parley's alignment for `text-align`; `start` / `end` follow the layout's base direction.

@@ -67,32 +67,67 @@ pub fn prelude(has_game_object: bool) -> String {
     format!("class Component {{\n  id: number = 0;\n{go}}}\n")
 }
 
-/// Helper functions for `getComponentInChildren(Class)` calls: one per class named, appended to
-/// the program (a class value is not a runtime value here, so the walk is written per class).
+/// The searches up and down the hierarchy and the prefix of the TypeScript helper that does each
+/// (`children_helpers`): Unity's `GetComponent[s]In{Children,Parent}`.
+const HIERARCHY_SEARCHES: [(&str, &str); 4] = [
+    ("getComponentInChildren", "__cic_"),
+    ("getComponentsInChildren", "__cac_"),
+    ("getComponentInParent", "__cip_"),
+    ("getComponentsInParent", "__cap_"),
+];
+
+/// Is `method` one of the hierarchy searches?
+pub fn is_hierarchy_search(method: &str) -> bool {
+    HIERARCHY_SEARCHES.iter().any(|(m, _)| *m == method)
+}
+
+/// The name of the helper for `method(Class)`.
+pub fn hierarchy_helper(method: &str, class: &str) -> Option<String> {
+    let (_, prefix) = HIERARCHY_SEARCHES.iter().find(|(m, _)| *m == method)?;
+    Some(format!("{prefix}{class}"))
+}
+
+/// Helper functions for the hierarchy searches (`getComponentInChildren(Class)` and the others):
+/// one per method and class named, appended to the program (a class value is not a runtime value
+/// here, so the walk is written per class).
 pub fn children_helpers(src: &str, has_game_object: bool) -> Option<String> {
-    if !has_game_object || !src.contains("getComponentInChildren(") {
+    if !has_game_object {
         return None;
     }
-    let mut names: Vec<String> = Vec::new();
-    let mut rest = src;
-    while let Some(i) = rest.find("getComponentInChildren(") {
-        rest = &rest[i + "getComponentInChildren(".len()..];
-        let name: String = rest
-            .trim_start()
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if !name.is_empty() && !names.contains(&name) {
-            names.push(name);
+    let mut out = String::new();
+    for (method, prefix) in HIERARCHY_SEARCHES {
+        let call = format!("{method}(");
+        let mut names: Vec<String> = Vec::new();
+        let mut rest = src;
+        while let Some(i) = rest.find(&call) {
+            rest = &rest[i + call.len()..];
+            let name: String = rest
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() && !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        for n in names {
+            out += &match prefix {
+                "__cic_" => format!(
+                    "function __cic_{n}(go: GameObject): {n} | undefined {{\n  const own = go.getComponent({n});\n  if (own) return own;\n  for (let i = 0; i < go.childCount; i++) {{\n    const found = __cic_{n}(go.childAt(i));\n    if (found) return found;\n  }}\n  return undefined;\n}}\n"
+                ),
+                "__cac_" => format!(
+                    "function __cac_{n}(go: GameObject): {n}[] {{\n  const out: {n}[] = [];\n  const own = go.getComponents({n});\n  for (let i = 0; i < own.length; i++) out.push(own[i]);\n  for (let i = 0; i < go.childCount; i++) {{\n    const sub = __cac_{n}(go.childAt(i));\n    for (let j = 0; j < sub.length; j++) out.push(sub[j]);\n  }}\n  return out;\n}}\n"
+                ),
+                "__cip_" => format!(
+                    "function __cip_{n}(go: GameObject): {n} | undefined {{\n  let at: GameObject | null = go;\n  while (at) {{\n    const own = at.getComponent({n});\n    if (own) return own;\n    at = at.parent;\n  }}\n  return undefined;\n}}\n"
+                ),
+                _ => format!(
+                    "function __cap_{n}(go: GameObject): {n}[] {{\n  const out: {n}[] = [];\n  let at: GameObject | null = go;\n  while (at) {{\n    const own = at.getComponents({n});\n    for (let i = 0; i < own.length; i++) out.push(own[i]);\n    at = at.parent;\n  }}\n  return out;\n}}\n"
+                ),
+            };
         }
     }
-    let mut out = String::from("\n");
-    for n in names {
-        out += &format!(
-            "function __cic_{n}(go: GameObject): {n} | undefined {{\n  const own = go.getComponent({n});\n  if (own) return own;\n  for (let i = 0; i < go.childCount; i++) {{\n    const found = __cic_{n}(go.childAt(i));\n    if (found) return found;\n  }}\n  return undefined;\n}}\n"
-        );
-    }
-    Some(out)
+    (!out.is_empty()).then(|| format!("\n{out}"))
 }
 
 /// Helpers for the `GameObject` properties that are arrays (`children`, `GameObject.roots`), written

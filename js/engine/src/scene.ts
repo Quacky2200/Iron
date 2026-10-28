@@ -642,6 +642,21 @@ export class GameObject {
     return this.getComponent(cls) ?? this.children.map((c) => c.getComponentInChildren(cls)).find((c) => c);
   }
 
+  /** Every matching component here and on all children, depth-first. */
+  getComponentsInChildren<T extends Component>(cls: ComponentClass<T>): T[] {
+    return [...this.getComponents(cls), ...this.children.flatMap((c) => c.getComponentsInChildren(cls))];
+  }
+
+  /** The first matching component here or on a parent, nearest first. */
+  getComponentInParent<T extends Component>(cls: ComponentClass<T>): T | undefined {
+    return this.getComponent(cls) ?? this.parent?.getComponentInParent(cls);
+  }
+
+  /** Every matching component here and on all parents, nearest first. */
+  getComponentsInParent<T extends Component>(cls: ComponentClass<T>): T[] {
+    return [...this.getComponents(cls), ...(this.parent?.getComponentsInParent(cls) ?? [])];
+  }
+
   /** Removes a component (its `onDestroy` runs on the engine's next pass). */
   removeComponent(component: Component): void {
     const i = this.components.indexOf(component);

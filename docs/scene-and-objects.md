@@ -112,7 +112,7 @@ same module (see [platypus-api.md](platypus-api.md#handle-classes)):
 
 | Class | Rust type | Members |
 |---|---|---|
-| `GameObject` | `ObjectId` | static `create()`, `find(name)` (the first object with that name, or null); methods `destroy()`, `exists()`; properties `transform` (read-only), `name`, `enabled`, `activeInHierarchy` (read-only), `layer` |
+| `GameObject` | `ObjectId` | static `create()`, `find(name)` (the first object with that name, or null); static `findWithTag(tag)` (the first active object with the tag, or null), `findGameObjectsWithTag(tag)`; methods `destroy()`, `exists()`, `compareTag(tag)`; properties `transform` (read-only), `name`, `enabled`, `activeInHierarchy` (read-only), `layer`, `tag` (Unity's tag, "Untagged" by default; saved as `tag` in scene files and copied by `instantiate`) |
 | `Transform` | `TransformRef(ObjectId)` | `gameObject` (read-only), `position`, `rotation` (world), `localPosition`, `localRotation`, `localScale`, `parent` (read-only, a `Transform`, 0 for a root), method `setParent(parent, keepWorld)` |
 
 `TransformRef` shares the object's raw handle, so `go.transform` is the same number as `go` seen as
@@ -214,7 +214,16 @@ s&box.
   primitive; [primitives.ts](../js/engine/src/primitives.ts) registers the factory).
 - `Transform`: `position`, `rotation`, `scale` (world) and local versions, `forward`, `right`, `up`,
   `eulerAngles`, `translate`, `rotate`, `lookAt`, `transformPoint`, `inverseTransformPoint`,
-  `transformDirection`.
+  `transformDirection`. Native games (the `#[iron_api]` `Transform`) also have Unity's hierarchy:
+  `parent` (`null` at a root, as on `GameObject`), `childCount`, `getChild(i)`, `root`,
+  `find("a/b")` (also `..`, `.` and a leading `/` from the roots), `localToWorldMatrix` /
+  `worldToLocalMatrix` (position, rotation and world scale, no shear), `isChildOf`, `detachChildren`, `siblingIndex` with `setAsFirstSibling` /
+  `setAsLastSibling`, `setParent(parent, keepWorld = true)` (keeps the world scale too),
+  `transformVector` / `inverseTransformVector` / `inverseTransformDirection`,
+  `setPositionAndRotation`, `setLocalPositionAndRotation` and `rotateAround`. `transform.parent = x`
+  is not an assignment: call `setParent`. `getComponentInChildren`, `getComponentsInChildren`,
+  `getComponentInParent` and `getComponentsInParent` take a class of the game (the walk is a
+  generated helper per class).
 - `Component`: `id`, `gameObject`, `transform`, `getComponent`, `destroy`, and the optional hooks
   `onStart`, `onUpdate(dt)`, `onLateUpdate(dt)`, `onFixedUpdate(dt)`, `onPreRender()`, `onDestroy()`.
 - Optional hooks `onAwake()` and `onReload()` (above) too.

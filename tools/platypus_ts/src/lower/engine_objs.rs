@@ -196,9 +196,9 @@ impl<'a> Lowerer<'a> {
             let call = ExprKind::Rt(RtFn::Str("ts_rt_component_all_gc"), vec![go.clone(), which]);
             return Ok(Some(mk(call, Ty::Arr(Box::new(Ty::Obj(sid))))));
         }
-        if m == "getComponentInChildren" {
-            // A function of TypeScript that walks the children (`children_helpers`).
-            let e = self.call_helper(&format!("__cic_{name}"), vec![go.clone()])?;
+        if let Some(helper) = super::components::hierarchy_helper(m, &name) {
+            // A function of TypeScript that walks the hierarchy (`children_helpers`).
+            let e = self.call_helper(&helper, vec![go.clone()])?;
             return Ok(Some(e));
         }
         let ty = Ty::Obj(sid);

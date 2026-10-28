@@ -217,6 +217,24 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | UI scale | `setUiScale` zooms all screen UI (layout in UI pixels) | CSS `zoom` per element | One switch for the whole HUD, like s&box's ScreenPanel |
 | `background-image-tint`, `border-image-tint` | s&box properties, no CSS equivalent; multiply image pixels by a colour; gradients and masks aren't tinted | — | Common in game UI (one white icon, many colours) |
 
+## Floats (`docs/ui-tree.md`, "Floats")
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Container | Only `display: block` / `flow-root` containers lay floats out; boxes are `flex` by default, so set `display: block` on the container | Every `div` is block | Iron's default `display` is Taffy's `flex` |
+| Floats in text | A float is a block child placed before the text that wraps around it (also with bare text in the same block); a float between runs of one `text` element is not supported | Floats anywhere inside inline content | Text children are flattened to runs |
+| Line shortening | Lines are shortened by floats their height touches; a word too wide for the room moves the line below the float | Same | — |
+| `shape-outside`, `float: inline-start/end` in rtl | Not supported; `inline-start/end` mean left/right | Shaped wrap; logical sides | Taffy places rectangles |
+| Minimum content width | Sizing a container by its text (`min-content`) ignores floats beside it | Counts floats | Intrinsic sizes are measured without a formatting context |
+
+## Tables (`docs/ui-tree.md`, "Tables")
+
+| Area | Iron | Browsers / spec | Why |
+|---|---|---|---|
+| Elements | None: a grid of `display: contents` rows (`examples/table`) | `table`, `tr`, `td`, `display: table*` | The grid already covers content-sized columns, wrapping, spans and striping |
+| Not available | `display: table*`, `border-collapse` / `border-spacing`, `<col>` widths, `position: sticky` headers, `vertical-align` on cells (use `align-content` on a grid cell), a box for the row (`contents` rows have no rect, background or border) | Yes | — |
+| Spare width | Auto columns grow equally up to their content size | In proportion to their max-content widths | Grid track sizing |
+
 ## Scrolling extras (M3d group 8)
 
 | Area | Platypus | Browsers / spec | Why |

@@ -25,3 +25,5 @@ lyon_tessellation = "1.0.22"
 
 [dev-dependencies]
 platypus_core = { path = "../platypus_core" }
+# The built-in post-process effects (their WGSL and parameters) live there.
+platypus_render_api = { path = "../platypus_render_api" }

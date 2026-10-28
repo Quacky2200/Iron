@@ -434,6 +434,23 @@ fn apply_property(
                 parse_kw::<Position>(k).ok_or_else(invalid)?
             };
         }
+        "float" => {
+            style.float = match kw()?.trim() {
+                "none" => taffy::Float::None,
+                "left" | "inline-start" => taffy::Float::Left,
+                "right" | "inline-end" => taffy::Float::Right,
+                _ => return Err(invalid()),
+            }
+        }
+        "clear" => {
+            style.clear = match kw()?.trim() {
+                "none" => taffy::Clear::None,
+                "left" | "inline-start" => taffy::Clear::Left,
+                "right" | "inline-end" => taffy::Clear::Right,
+                "both" => taffy::Clear::Both,
+                _ => return Err(invalid()),
+            }
+        }
         // Platypus (like Taffy and s&box) defaults to border-box; CSS's default is content-box.
         "boxSizing" => {
             style.box_sizing = match kw()?.trim() {
@@ -1269,6 +1286,8 @@ pub(crate) fn copy_prop(
             style.position = d.position;
             visual.fixed = v.fixed;
         }
+        "float" => style.float = d.float,
+        "clear" => style.clear = d.clear,
         "boxSizing" => style.box_sizing = d.box_sizing,
         "width" => style.size.width = d.size.width,
         "height" => style.size.height = d.size.height,

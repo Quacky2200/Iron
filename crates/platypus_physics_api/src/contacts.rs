@@ -154,7 +154,7 @@ fn xy(v: V3) -> V2 {
 }
 
 /// The Rigidbody (or Rigidbody2D) on the object of a collider component, else on `object`.
-fn rigidbody_of(collider: u32, object: ObjectId, two_d: bool) -> u32 {
+pub(crate) fn rigidbody_of(collider: u32, object: ObjectId, two_d: bool) -> u32 {
     if collider != 0 {
         return comp::attached_rigidbody(collider, two_d);
     }

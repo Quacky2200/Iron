@@ -61,6 +61,28 @@ export function children(): string {
   return s;
 }
 
+export function hierarchy(): string {
+  const root = new GameObject("Root");
+  const mid = new GameObject("Mid");
+  const leaf = new GameObject("Leaf");
+  const twig = new GameObject("Twig");
+  mid.setParent(root, false);
+  leaf.setParent(mid, false);
+  twig.setParent(mid, false);
+  const r = root.addComponent(Other, { tag: 1 });
+  const m = mid.addComponent(Other, { tag: 2 });
+  const l = leaf.addComponent(Derived, { hp: 30 });
+  const t = twig.addComponent(Other, { tag: 4 });
+  const all = root.getComponentsInChildren(Other);
+  let s = `${all.length},${all[0] === r},${all[1] === m},${all[2] === t};`;
+  s += `${root.getComponentsInChildren(Base).length},${leaf.getComponentsInChildren(Other).length};`;
+  const up = leaf.getComponentsInParent(Other);
+  s += `${up.length},${up[0] === m},${up[1] === r};`;
+  s += `${leaf.getComponentInParent(Other) === m},${twig.getComponentInParent(Other) === t},${root.getComponentInParent(Other) === r};`;
+  s += `${hp(leaf.getComponentInParent(Base))},${hp(root.getComponentInParent(Base))},${l.gameObject === leaf}`;
+  return s;
+}
+
 export function finding(): string {
   const none = GameObject.findObjectOfType(Derived);
   const first = new GameObject("First");

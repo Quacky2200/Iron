@@ -116,7 +116,7 @@ fn the_manifest_declares_the_handle_and_both_value_classes() {
     assert_eq!(m.name, "Scene");
     assert_eq!(m.handles, &["GameObject", "Transform"]);
     let names: Vec<&str> = m.values.iter().map(|v| v.name).collect();
-    assert_eq!(names, ["Vector3", "Quaternion"]);
+    assert_eq!(names, ["Vector3", "Quaternion", "Matrix4x4"]);
     let d = m.to_dts();
     assert!(d.contains("function create(): GameObject;"), "{d}");
     assert!(
@@ -225,4 +225,134 @@ fn value_classes_have_constructors_methods_and_getters_in_quickjs() {
             .unwrap();
         assert_eq!(out, "[3,4,6,6,true,1,9]");
     });
+}
+
+// M9-API-211
+//
+// Unity's tags: objects are "Untagged" until tagged; `find_with_tag` lists the active objects with a
+// tag in scene order, and tagging "Untagged" clears the tag.
+#[test]
+fn objects_are_found_by_tag() {
+    let mut scene = Scene::new();
+    let a = scene.create("a");
+    let b = scene.create("b");
+    let c = scene.create("c");
+    assert_eq!(scene.tag_name(a), "Untagged");
+    scene.set_tag_name(a, "Enemy");
+    scene.set_tag_name(c, "Enemy");
+    scene.set_tag_name(b, "Player");
+    assert_eq!(scene.find_with_tag("Enemy"), vec![a, c]);
+    assert_eq!(scene.find_with_tag("Player"), vec![b]);
+    // An inactive object is not found (Unity's FindGameObjectsWithTag).
+    scene.set_enabled(a, false);
+    assert_eq!(scene.find_with_tag("Enemy"), vec![c]);
+    scene.set_tag_name(c, "Untagged");
+    assert!(scene.find_with_tag("Enemy").is_empty());
+    assert_eq!(scene.tag_name(c), "Untagged");
+}
+
+// M9-API-213
+//
+// Unity's Transform hierarchy: children by index and path, the root, sibling order, `isChildOf`,
+// detaching, vectors through a scaled parent, `rotateAround`, and `setParent` keeping the world
+// scale.
+#[test]
+fn transforms_walk_and_reshape_the_hierarchy_like_unity() {
+    use iron_math::V3;
+    use iron_scene::api::TransformRef as T;
+    let v = |x, y, z| V3 { x, y, z };
+    let near = |a: V3, b: V3| (a.x - b.x).abs() + (a.y - b.y).abs() + (a.z - b.z).abs() < 1e-4;
+
+    let mut scene = Scene::new();
+    let (arm, hand, ring, other) = (
+        scene.create("arm"),
+        scene.create("hand"),
+        scene.create("ring"),
+        scene.create("other"),
+    );
+    let _scope = enter(&mut scene);
+    let (arm_t, hand_t, ring_t) = (T(arm), T(hand), T(ring));
+    hand_t.set_parent(arm_t, false);
+    ring_t.set_parent(hand_t, false);
+
+    assert_eq!(arm_t.child_count(), 1.0);
+    assert_eq!(arm_t.get_child(0.0), hand_t);
+    assert_eq!(ring_t.root(), arm_t);
+    assert_eq!(arm_t.find("hand/ring"), ring_t);
+    assert_eq!(arm_t.find("hand/nope").0, ObjectId::from_raw(0));
+    assert!(ring_t.is_child_of(arm_t) && !arm_t.is_child_of(ring_t));
+    assert!(
+        ring_t.is_child_of(ring_t),
+        "a transform is a child of itself, like Unity"
+    );
+
+    // Sibling order.
+    T(other).set_parent(arm_t, false);
+    assert_eq!(T(other).sibling_index(), 1.0);
+    T(other).set_as_first_sibling();
+    assert_eq!(arm_t.get_child(0.0), T(other));
+    assert_eq!(hand_t.sibling_index(), 1.0);
+    hand_t.set_sibling_index(0.0);
+    assert_eq!(arm_t.get_child(0.0), hand_t);
+    T(other).set_as_last_sibling();
+    assert_eq!(T(other).sibling_index(), 1.0);
+
+    // Vectors go through the scale, directions do not.
+    arm_t.set_local_scale(v(2.0, 2.0, 2.0));
+    hand_t.set_local_position(v(1.0, 0.0, 0.0));
+    assert!(near(hand_t.position(), v(2.0, 0.0, 0.0)));
+    assert!(near(
+        hand_t.transform_vector(v(1.0, 0.0, 0.0)),
+        v(2.0, 0.0, 0.0)
+    ));
+    assert!(near(
+        hand_t.inverse_transform_vector(v(2.0, 0.0, 0.0)),
+        v(1.0, 0.0, 0.0)
+    ));
+    assert!(near(
+        hand_t.inverse_transform_direction(v(0.0, 1.0, 0.0)),
+        v(0.0, 1.0, 0.0)
+    ));
+
+    // `rotateAround` orbits a point and turns with it.
+    arm_t.set_local_scale(v(1.0, 1.0, 1.0));
+    ring_t.set_local_position(v(0.0, 0.0, 0.0));
+    hand_t.set_local_position(v(1.0, 0.0, 0.0));
+    hand_t.rotate_around(v(0.0, 0.0, 0.0), v(0.0, 1.0, 0.0), 90.0);
+    assert!(near(hand_t.position(), v(0.0, 0.0, -1.0)));
+
+    // Re-parenting with keepWorld keeps the world scale as well as the pose.
+    arm_t.set_local_scale(v(2.0, 2.0, 2.0));
+    ring_t.set_parent(T(other), true);
+    assert!(near(ring_t.lossy_scale(), v(2.0, 2.0, 2.0)));
+    ring_t.set_parent(T(ObjectId::from_raw(0)), true);
+    assert!(near(ring_t.lossy_scale(), v(2.0, 2.0, 2.0)));
+    assert!(near(ring_t.local_scale(), v(2.0, 2.0, 2.0)));
+    // Matrices: the translation column is the world position, and the two undo each other.
+    ring_t.set_parent(hand_t, false);
+    ring_t.set_local_position(v(0.0, 3.0, 0.0));
+    let m = ring_t.local_to_world_matrix();
+    let at = ring_t.position();
+    assert!(near(v(m.m[12], m.m[13], m.m[14]), at));
+    let id = ring_t.world_to_local_matrix().mul(m);
+    for (i, want) in iron_math::M4::IDENTITY.m.iter().enumerate() {
+        assert!((id.m[i] - want).abs() < 1e-6, "element {i}: {}", id.m[i]);
+    }
+
+    // `find`: `..` goes up, `.` stays, and a leading `/` starts at the roots.
+    assert_eq!(ring_t.find("..").0, hand);
+    assert_eq!(ring_t.find("../../other"), T(other));
+    assert_eq!(arm_t.find("./hand/ring"), ring_t);
+    assert_eq!(hand_t.find("/arm/hand"), hand_t);
+    assert_eq!(arm_t.find("/nope").0, ObjectId::from_raw(0));
+    assert_eq!(
+        arm_t.find("..").0,
+        ObjectId::from_raw(0),
+        "a root has no parent"
+    );
+
+    ring_t.detach_children();
+    arm_t.detach_children();
+    assert_eq!(arm_t.child_count(), 0.0);
+    assert_eq!(hand_t.root(), hand_t);
 }

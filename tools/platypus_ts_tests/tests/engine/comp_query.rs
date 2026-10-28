@@ -75,6 +75,14 @@ fn children_matches_the_original() {
     });
 }
 
+// M9-TS-707
+#[test]
+fn hierarchy_searches_match_the_original() {
+    in_every_gc_mode(|| unsafe {
+        check_str("hierarchy", ts_cqy_hierarchy());
+    });
+}
+
 // M9-TS-705
 #[test]
 fn finding_matches_the_original() {

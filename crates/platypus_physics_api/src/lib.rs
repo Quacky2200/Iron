@@ -14,6 +14,7 @@ use platypus_core::Value;
 use platypus_math::{Q, V3};
 use platypus_physics::{Contact, Physics};
 use platypus_scene::ObjectId;
+use platypus_scene::api::TransformRef;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -73,6 +74,7 @@ number_handle!(
 
 pub(crate) struct HitData {
     pub collider: u32,
+    pub object: Option<ObjectId>,
     pub distance: f64,
     pub point: V3,
     pub normal: V3,
@@ -181,35 +183,56 @@ fn from3(a: [f32; 3]) -> V3 {
     }
 }
 
-/// Casts a ray at once; the number is the hit (0: none), read through the `RaycastHit` handle.
+/// Casts a ray at once, on every layer; the number is the hit (0: none), read through the
+/// `RaycastHit` handle.
 pub(crate) fn do_raycast(origin: V3, direction: V3, max_distance: f64) -> u32 {
-    let hit = st(|s| {
-        s.physics.raycast_now(
-            [origin.x as f32, origin.y as f32, origin.z as f32],
-            [direction.x as f32, direction.y as f32, direction.z as f32],
-            max_distance as f32,
-        )
-    });
-    let Some((collider, distance, normal)) = hit else {
-        return 0;
-    };
+    do_raycast_masked(origin, direction, max_distance, u32::MAX)
+}
+
+/// `do_raycast` for the colliders whose GameObject's layer is in `layer_mask` (a bit per layer).
+pub(crate) fn do_raycast_masked(
+    origin: V3,
+    direction: V3,
+    max_distance: f64,
+    layer_mask: u32,
+) -> u32 {
     let len =
         (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
-    let d = f64::from(distance);
-    let point = V3 {
-        x: origin.x + direction.x / len * d,
-        y: origin.y + direction.y / len * d,
-        z: origin.z + direction.z / len * d,
-    };
     st(|s| {
+        let accept = |collider: u32| {
+            let layer = object_in(s, collider).map_or(0, layer_of);
+            layer_mask & (1 << layer) != 0
+        };
+        let hit = s.physics.raycast_now(
+            [origin.x as f32, origin.y as f32, origin.z as f32],
+            [direction.x as f32, direction.y as f32, direction.z as f32],
+            max_distance.min(f64::from(f32::MAX)) as f32,
+            &accept,
+        );
+        let Some((collider, distance, normal)) = hit else {
+            return 0;
+        };
+        let d = f64::from(distance);
+        let point = V3 {
+            x: origin.x + direction.x / len * d,
+            y: origin.y + direction.y / len * d,
+            z: origin.z + direction.z / len * d,
+        };
+        let object = object_in(s, collider);
         s.hits.push(HitData {
             collider,
+            object,
             distance: d,
             point,
             normal: from3(normal),
         });
         s.hits.len() as u32
     })
+}
+
+/// The layer (0 to 31) of a GameObject; 0 (Default) when there is no scene.
+fn layer_of(object: ObjectId) -> u32 {
+    platypus_scene::api::with_scene(|sc| sc.layer(object)).map_or(0, u32::from)
 }
 
 /// A `force` op on a body: `"force"`, `"impulse"`, `"torque"`, `"torqueImpulse"` or `"impulseAt"`
@@ -286,10 +309,21 @@ pub fn take_contacts() -> Vec<Contact> {
 
 /// The GameObject a collider's body moves, if it is attached to one.
 pub fn object_of_collider(collider: u32) -> Option<ObjectId> {
-    st(|s| {
-        let body = s.physics.collider_body(collider)?;
-        s.attached.get(&body).copied()
-    })
+    st(|s| object_in(s, collider))
+}
+
+/// `object_of_collider` on a state already borrowed: the object of the collider component, or
+/// else of the body the collider is on.
+fn object_in(s: &State, collider: u32) -> Option<ObjectId> {
+    if let Some(&comp) = s.col_owner.get(&collider) {
+        return s
+            .comps
+            .get((comp as usize).checked_sub(1)?)?
+            .as_ref()
+            .map(|c| c.object);
+    }
+    let body = s.physics.collider_body(collider)?;
+    s.attached.get(&body).copied()
 }
 
 fn add_collider(
@@ -366,7 +400,15 @@ fn flat(points: &[V3]) -> Vec<f64> {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[platypus_api(
     namespace = "Physics", quickjs,
-    handles(PhysicsBody = BodyRef, PhysicsCollider = ColliderRef, RaycastHit = HitRef, PhysicsJoint = JointRef, GameObject = ObjectId),
+    handles(
+        PhysicsBody = BodyRef,
+        PhysicsCollider = ColliderRef,
+        RaycastHit = HitRef,
+        PhysicsJoint = JointRef,
+        Rigidbody = RigidbodyRef,
+        GameObject = ObjectId,
+        Transform = TransformRef
+    ),
     values(Vector3 = V3 [x: f64, y: f64, z: f64], Quaternion = Q [x: f64, y: f64, z: f64, w: f64])
 )]
 pub mod physics_api {
@@ -402,10 +444,19 @@ pub mod physics_api {
         add_collider(0, "mesh", flat(points), Some(indices.to_vec()))
     }
 
-    /// Casts a ray at once and answers the first collider hit within `maxDistance`, or no hit.
-    #[optional(max_distance = 1000)]
-    pub fn raycast(origin: V3, direction: V3, max_distance: f64) -> HitRef {
-        HitRef(do_raycast(origin, direction, max_distance))
+    /// Casts a ray at once and answers the first collider hit within `maxDistance` (unlimited by
+    /// default, as in Unity), or no hit.
+    /// `layerMask` (a bit per layer, `LayerMask.getMask`) keeps the colliders whose GameObject
+    /// is on those layers; a collider the origin is inside is not hit (as in Unity).
+    #[optional(max_distance = 1e30, layer_mask = 4294967295)]
+    #[nullable]
+    pub fn raycast(origin: V3, direction: V3, max_distance: f64, layer_mask: u32) -> HitRef {
+        HitRef(do_raycast_masked(
+            origin,
+            direction,
+            max_distance,
+            layer_mask,
+        ))
     }
 
     /// Joins two bodies (`b` 0: to the world). Kinds and `params`: `"fixed"`; `"ball"` (turns
@@ -805,6 +856,20 @@ pub mod physics_api {
             BodyRef(st(|s| s.owner.get(&self.0).copied()).unwrap_or(0))
         }
 
+        /// The GameObject the collider belongs to (none for world geometry without one).
+        #[property]
+        #[nullable]
+        pub fn game_object(self) -> ObjectId {
+            object_of_collider(self.0).unwrap_or_else(none_object)
+        }
+
+        /// The Transform of the collider's GameObject.
+        #[property]
+        #[nullable]
+        pub fn transform(self) -> TransformRef {
+            TransformRef(object_of_collider(self.0).unwrap_or_else(none_object))
+        }
+
         pub fn remove(self) {
             comp::remove_collider_id(self.0);
         }
@@ -861,7 +926,49 @@ pub mod physics_api {
             })
             .unwrap_or_default()
         }
+
+        /// The GameObject hit (none for a collider made without one, such as world geometry).
+        #[property]
+        #[nullable]
+        pub fn game_object(self) -> ObjectId {
+            hit_object(self).unwrap_or_else(none_object)
+        }
+
+        /// The hit GameObject's Transform.
+        #[property]
+        #[nullable]
+        pub fn transform(self) -> TransformRef {
+            TransformRef(hit_object(self).unwrap_or_else(none_object))
+        }
+
+        /// The Rigidbody the hit collider is on (none without one).
+        #[property]
+        #[nullable]
+        pub fn rigidbody(self) -> RigidbodyRef {
+            let (collider, object) = st(|s| {
+                s.hits
+                    .get((self.0 as usize).wrapping_sub(1))
+                    .map_or((0, None), |h| (h.collider, h.object))
+            });
+            RigidbodyRef(crate::contacts::rigidbody_of(
+                collider,
+                object.unwrap_or_else(none_object),
+                false,
+            ))
+        }
     }
+}
+
+fn hit_object(hit: HitRef) -> Option<ObjectId> {
+    st(|s| {
+        s.hits
+            .get((hit.0 as usize).wrapping_sub(1))
+            .and_then(|h| h.object)
+    })
+}
+
+fn none_object() -> ObjectId {
+    ObjectId::from_raw(0)
 }
 
 /// The manifests of this crate's script API.

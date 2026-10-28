@@ -24,7 +24,7 @@ use crate::paint::{
     inner_corners, resolve_radii,
 };
 use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
-use crate::text::{self, Brush, TextEngine};
+use crate::text::{self, Band, Brush, TextEngine};
 use crate::text_style::{
     ComputedText, Direction, TextOverflow, TextProps, UserSelect, is_text_prop,
 };
@@ -404,6 +404,8 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// relayout that leaves it unchanged (a scroll, say) skips breaking them again.
     /// Measuring or re-shaping a block forgets it.
     finished: HashMap<NodeId, f32>,
+    /// The room floats leave in each text block, from its last layout (see [`Band`]).
+    text_bands: HashMap<NodeId, Vec<Band>>,
     /// What each node and its descendants may paint over, as of the last layout (see
     /// [`Self::compute_ink`]); drawing skips subtrees outside the clips around them.
     ink: HashMap<NodeId, Rect>,
@@ -516,6 +518,7 @@ impl<L: LayoutEngine> UiTree<L> {
             text: TextEngine::new(false),
             text_layouts: HashMap::default(),
             finished: HashMap::default(),
+            text_bands: HashMap::default(),
             ink: HashMap::default(),
             layout_texts: HashMap::default(),
             text_selection: None,
@@ -1399,6 +1402,7 @@ impl<L: LayoutEngine> UiTree<L> {
         self.sync_children(parent);
         let is_root = self.is_text_root(span);
         self.layout.set_measured(span, is_root);
+        self.layout.set_text_block(span, is_root);
         if let Some(root) = self.text_root_of(span) {
             self.dirty_text.insert(root);
         }
@@ -2480,8 +2484,10 @@ impl<L: LayoutEngine> UiTree<L> {
                     .get(&id)
                     .is_some_and(|n| n.kind == IMAGE || n.kind == SVG);
             self.layout.set_measured(id, is_root);
+            self.layout.set_text_block(id, self.is_text_root(id));
             if !is_root {
                 self.text_layouts.remove(&id);
+                self.text_bands.remove(&id);
                 self.ellipses.remove(&id);
             }
             if let Some(root) = self.text_root_of(id) {
@@ -2915,6 +2921,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 self.layout.remove_node(id);
                 self.rects.remove(&id);
                 self.text_layouts.remove(&id);
+                self.text_bands.remove(&id);
                 self.layout_texts.remove(&id);
                 self.pseudo_styles.remove(&(id, PseudoElement::Selection));
                 self.pseudo_styles.remove(&(id, PseudoElement::Placeholder));
@@ -2963,17 +2970,26 @@ impl<L: LayoutEngine> UiTree<L> {
             size,
             text_measures,
             finished,
+            text_bands,
             ..
         } = self;
         layout.compute(
             ROOT,
             size.0,
             size.1,
-            &mut |id, known, available| match text_layouts.get_mut(&id) {
+            &mut |id, known, available, around| match text_layouts.get_mut(&id) {
                 Some(l) => {
                     *text_measures += 1;
                     finished.remove(&id);
-                    text::measure(l, known.0, available)
+                    // The final layout decides which floats the lines avoid when drawn.
+                    if around.layout_pass {
+                        if around.bands.is_empty() {
+                            text_bands.remove(&id);
+                        } else {
+                            text_bands.insert(id, around.bands.to_vec());
+                        }
+                    }
+                    text::measure(l, known.0, available, around.bands)
                 }
                 None => match editors.get(&id) {
                     Some(e) => e.intrinsic_size(known.0),
@@ -3016,7 +3032,8 @@ impl<L: LayoutEngine> UiTree<L> {
                 if self.finished.get(&id) != Some(&content_width) {
                     let align = self.computed_text(id).text_align;
                     if let Some(layout) = self.text_layouts.get_mut(&id) {
-                        text::finish(layout, content_width, align);
+                        let bands = self.text_bands.get(&id).map_or(&[][..], |b| b);
+                        text::finish(layout, content_width, align, bands);
                     }
                     self.finished.insert(id, content_width);
                 }
