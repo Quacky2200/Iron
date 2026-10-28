@@ -4,6 +4,10 @@
 //! A GLES 3 context through EGL: ANGLE on Windows (`libEGL.dll`, which draws through Direct3D
 //! 11), the system's EGL (Mesa) elsewhere. The library is loaded here, not linked, so a program
 //! that never asks for it needs no EGL, and ANGLE can come from a folder of the caller's choice.
+//!
+//! With the `static-angle` feature (Windows) ANGLE is compiled into the program instead
+//! (`mozangle`) and `angle_dir` is ignored. mozangle links ANGLE whole-archive, so every binary
+//! of a crate built with the feature carries it (~7 MB), whether it draws with GLES or not.
 
 use std::ffi::c_void;
 use std::path::Path;
@@ -12,7 +16,15 @@ use std::sync::Arc;
 use khronos_egl as egl;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
 
+// With `static-angle` the `egl*` calls go straight to the linked ANGLE.
+#[cfg(all(windows, feature = "static-angle"))]
+type Instance = egl::Instance<egl::Static>;
+#[cfg(not(all(windows, feature = "static-angle")))]
 type Instance = egl::DynamicInstance<egl::EGL1_4>;
+
+// Nothing names mozangle's items; this keeps its static libraries on the link line.
+#[cfg(all(windows, feature = "static-angle"))]
+use mozangle as _;
 
 /// `EGL_OPENGL_ES3_BIT` (EGL_KHR_create_context; not in EGL 1.4's constants).
 const OPENGL_ES3_BIT: egl::Int = 0x0040;
@@ -179,6 +191,12 @@ fn create_context(
     .map_err(|e| format!("EGL create_context: {e}"))
 }
 
+#[cfg(all(windows, feature = "static-angle"))]
+fn load(_angle_dir: Option<&Path>) -> Result<Instance, String> {
+    Ok(egl::Instance::new(egl::Static))
+}
+
+#[cfg(not(all(windows, feature = "static-angle")))]
 fn load(angle_dir: Option<&Path>) -> Result<Instance, String> {
     #[cfg(windows)]
     {

@@ -48,6 +48,10 @@ serde_json = "1.0.154"
 platypus_pack = { path = "../platypus_pack" }
 gltf = { version = "1.4.1", default-features = false, features = ["utils", "names", "KHR_materials_unlit", "KHR_materials_emissive_strength"] }
 
+[features]
+# ANGLE linked into the program (Windows), not loaded from libEGL.dll: see platypus_render_gles.
+static-angle = ["platypus_render_gles/static-angle"]
+
 # The build script turns resources/icon/icon.png into the window icon and the exe's icon.
 [build-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] }

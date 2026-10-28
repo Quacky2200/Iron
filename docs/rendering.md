@@ -83,6 +83,21 @@ forces wgpu). `tests/vs_wgpu.rs` draws scenes through both executors and compare
 (`M2-GLES-02..13`: identical so far, 0 to 1 in 255); it and `tests/context.rs` need an EGL driver
 (`PLATYPUS_ANGLE_DIR` on Windows) and skip without one.
 
+**Static ANGLE (spike, feature `static-angle`, Windows).** `cargo build -p platypus_app --features static-angle`
+compiles ANGLE (Mozilla's fork, the `mozangle` crate, `egl` feature: EGL + GLES over Direct3D 11) into the
+program, and `egl.rs` calls `egl*` directly (`khronos-egl`'s `static` + `no-pkg-config`); `PLATYPUS_ANGLE_DIR`
+is then ignored. Without the feature nothing changes. Building it needs MSVC and libclang for mozangle's
+bindgen (`LIBCLANG_PATH`); a clang older than 20 against Visual Studio 18's STL also needs
+`BINDGEN_EXTRA_CLANG_ARGS="-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH -D_MSVC_STL_USE_ABORT_AS_DOOM_FUNCTION"`.
+ANGLE's C++ takes ~72 s cold (cached afterwards, once per profile) and adds ~7.0 MB to each exe:
+mozangle links `libEGL`/`libGLESv2` whole-archive, so every binary of `platypus_app` built with the feature
+carries it, `platypus-game` too (whose UI-only video-settings prompt then draws with GLES). The linker
+prints `LNK4217` warnings (ANGLE's EGL entry points marked dllimport but defined locally; harmless). With it,
+`M2-GLES-01..13` run on Windows without any DLL (identical to wgpu, max diff 1 in 255). Measured on the
+`css` example (RTX 5080, release, after 6 s): GLES ~134 MB private / ~107 MB working set against ~161 / ~142 MB
+for wgpu on Vulkan; the video-settings prompt ~99 / ~94 MB against ~137 / ~121 MB. A packaged exe built this
+way must carry ANGLE's BSD-3-Clause notice (and those of the third-party code ANGLE bundles).
+
 `crates/platypus_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all (the clock: ~16 MB
 private). It draws boxes, borders (also per side), gradients, images and SVGs (decoded lazily, downscaled to the size drawn,
 dropped when unused), shadows, text, clips, layers, blur and backdrop blur, and affine and perspective transforms (a perspective

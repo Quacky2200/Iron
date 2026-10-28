@@ -19,6 +19,14 @@ tracing = "0.1.44"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_LibraryLoader"] }
+# `static-angle`: ANGLE's EGL + GLES (Direct3D 11) compiled into the program instead of loaded
+# from libEGL.dll. Its build needs libclang (bindgen) and MSVC.
+mozangle = { version = "0.5.5", default-features = false, features = ["egl"], optional = true }
+
+[features]
+# khronos-egl's `static` calls `egl*` symbols directly; `no-pkg-config` stops it asking
+# pkg-config for a system libEGL, so mozangle's static libraries provide them.
+static-angle = ["dep:mozangle", "khronos-egl/static", "khronos-egl/no-pkg-config"]
 
 [dev-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] }
