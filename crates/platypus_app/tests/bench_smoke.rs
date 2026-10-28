@@ -1,7 +1,7 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus-game <game> --bench` runs a native game without a window, sends its scripted input and
+//! `platypus-app <game> --bench` runs a native game without a window, sends its scripted input and
 //! writes the timings (needs a GPU, like the other rendering tests; no window opens).
 
 use std::path::PathBuf;
@@ -36,7 +36,7 @@ fn a_bench_run_times_a_native_game_without_a_window() {
     std::fs::write(&spec, SPEC).unwrap();
     let out = dir.join("out.json");
     let log = dir.join("run.log");
-    let status = Command::new(env!("CARGO_BIN_EXE_platypus-game"))
+    let status = Command::new(env!("CARGO_BIN_EXE_platypus-app"))
         .arg(&game)
         .args(["--bench", "--fixed-dt", "0.02", "--size", "320x200"])
         .arg("--bench-input")

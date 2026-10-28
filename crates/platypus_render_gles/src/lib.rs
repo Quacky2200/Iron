@@ -18,6 +18,10 @@ mod effects;
 pub mod egl;
 mod shaders;
 
+/// Whether ANGLE is linked into this program (the `static-angle` feature, Windows) rather than
+/// loaded from `libEGL.dll` at run time.
+pub const STATIC_ANGLE: bool = cfg!(all(windows, feature = "static-angle"));
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

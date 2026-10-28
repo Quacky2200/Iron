@@ -9,8 +9,9 @@
 //! "shown once" memory, so a player can reopen it).
 //!
 //! The dialog (`video_prompt.tsx`) runs in a child process of this same program
-//! (`--video-settings-dialog <folder>`, as the crash dialog does) and only as UI: no world
-//! renderer, the GLES executor (wgpu with small GPU allocations when it is missing). A child,
+//! (`--video-settings-dialog <folder>`, as the crash dialog does) and only as UI: its bundle says
+//! `"renderer": "ui"`, so it takes the light path (the GLES executor, wgpu with small GPU
+//! allocations when it is missing) and has no world renderer. A child,
 //! not a phase of this process, because winit makes one event loop per process, and so the
 //! dialog's window and GPU context are gone before the game's are made. Its answer comes back as
 //! its exit code and its own prefs file; the choice is written into the game's prefs under the
@@ -351,7 +352,6 @@ fn write_dialog_game(dir: &Path, current: &Current, icon: &Icon) -> std::io::Res
         .map_err(std::io::Error::other)?;
     let project = json!({
         "name": "video-settings",
-        "type": "app",
         "title": current.title,
         "company": "Platypus",
         "identifier": "dev.platypus.video-settings",
@@ -370,6 +370,8 @@ fn write_dialog_game(dir: &Path, current: &Current, icon: &Icon) -> std::io::Res
         "css": null,
         "assets": [],
         "patterns": [],
+        // Only UI: the light renderer (its tier, as `platypus-build` would find it).
+        "renderer": "ui",
     });
     std::fs::write(dir.join("project.json"), project.to_string())?;
     std::fs::write(dir.join("build").join("game.pbundle"), bundle.to_string())

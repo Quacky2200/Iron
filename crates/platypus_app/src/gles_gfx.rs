@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The main window drawn by the GLES executor (`platypus_render_gles`) through EGL: ANGLE on
-//! Windows, Mesa and friends elsewhere. This is `platypus-app`'s renderer, so a UI-only program
-//! loads no Vulkan or wgpu. There is no 3D world, world panels or secondary windows on this
-//! path; if EGL (or the windowing system) is unavailable `platypus-app` falls back to wgpu.
+//! Windows (linked in with the `static-angle` feature, else `libEGL.dll`), Mesa and friends
+//! elsewhere. This is the light path for programs that are only UI (`host::Choice::Gles`), so
+//! they load no Vulkan or wgpu. There is no 3D world, world panels or secondary windows on this
+//! path; if EGL (or the windowing system) is unavailable the host falls back to wgpu.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -29,23 +30,29 @@ pub(crate) struct GlesGfx {
     context: EglContext,
     /// Frames and render time since the last report.
     report: (u32, Duration, Instant),
-    /// What the window shows now (size, scale, draw lists), so an unchanged frame isn't redrawn.
+    /// What the window shows now, so an unchanged frame isn't redrawn.
     shown: Option<Shown>,
-    /// Shown instead of the UI once the game asks for the 3D world (built on first use).
-    notice: Option<super::notice::Notice>,
 }
 
-type Shown = (
+/// What a light path's window shows (size, scale, draw lists), to skip unchanged frames.
+pub(crate) type Shown = (
     (u32, u32),
     u32,
     Vec<platypus_ui::DrawCmd>,
     Option<Vec<platypus_ui::DrawCmd>>,
 );
 
-/// Where ANGLE's DLLs are looked for first (`PLATYPUS_ANGLE_DIR`).
+/// Where ANGLE's DLLs are looked for first (`PLATYPUS_ANGLE_DIR`; ignored when ANGLE is linked in).
 fn angle_dir() -> Option<PathBuf> {
     std::env::var_os("PLATYPUS_ANGLE_DIR").map(PathBuf::from)
 }
+
+/// How the EGL library is found, for the log.
+const EGL_SOURCE: &str = if platypus_render_gles::STATIC_ANGLE {
+    "ANGLE linked in"
+} else {
+    "EGL loaded at run time"
+};
 
 impl GlesGfx {
     /// A context and renderer on `window`, or why there isn't one.
@@ -61,7 +68,6 @@ impl GlesGfx {
             context,
             report: (0, Duration::ZERO, Instant::now()),
             shown: None,
-            notice: None,
         })
     }
 
@@ -75,24 +81,44 @@ impl GlesGfx {
     }
 }
 
+/// Whether `shown` is exactly this frame.
+pub(crate) fn unchanged(
+    shown: Option<&Shown>,
+    size: (u32, u32),
+    scale: f32,
+    cmds: &[platypus_ui::DrawCmd],
+    fps_cmds: Option<&[platypus_ui::DrawCmd]>,
+) -> bool {
+    shown.is_some_and(|(sz, sc, c, f)| {
+        *sz == size && *sc == scale.to_bits() && c.as_slice() == cmds && f.as_deref() == fps_cmds
+    })
+}
+
 impl App {
     /// Starts drawing `window` with the GLES executor. `false`: it can't (the caller falls back).
     pub(crate) fn install_gles(&mut self, window: Arc<Window>) -> bool {
-        use platypus_script::ScriptRuntime as _;
         let gles = match GlesGfx::new(window.clone(), &self.asset_root) {
             Ok(g) => g,
             Err(e) => {
-                tracing::warn!("GLES renderer unavailable: {e}");
+                tracing::warn!("GLES renderer unavailable ({EGL_SOURCE}): {e}");
                 return false;
             }
         };
-        tracing::info!("renderer ready (GLES through EGL)");
+        tracing::info!("renderer ready (GLES through EGL, {EGL_SOURCE})");
+        self.light_system_info(&window, "GLES (EGL)", "Gles");
+        self.gles = Some(gles);
+        true
+    }
+
+    /// `SystemInfo` and `Window.main` for a light (UI-only) renderer on `window`.
+    pub(crate) fn light_system_info(&mut self, window: &Window, device: &str, kind: &str) {
+        use platypus_script::ScriptRuntime as _;
         let size = window.inner_size();
         let dpi = window.scale_factor();
         self.info.set_system(serde_json::json!({
-            "graphicsDeviceName": "GLES (EGL)",
-            "graphicsDeviceType": "Gles",
-            "graphicsDeviceKind": "Gles",
+            "graphicsDeviceName": device,
+            "graphicsDeviceType": kind,
+            "graphicsDeviceKind": kind,
             "screenWidth": size.width,
             "screenHeight": size.height,
             "screenRefreshRate": 0.0,
@@ -100,7 +126,7 @@ impl App {
         }));
         self.info.set(
             "display",
-            super::display::state(Some(&window), &self.display),
+            super::display::state(Some(window), &self.display),
         );
         if let Err(e) = self.scripts.eval(&self.info.script()) {
             tracing::error!("system info: {e}");
@@ -115,8 +141,6 @@ impl App {
         if title != window.title() {
             window.set_title(&title);
         }
-        self.gles = Some(gles);
-        true
     }
 
     /// Tells the UI the size of every image it asked for (layout needs it).
@@ -131,7 +155,7 @@ impl App {
     }
 
     /// The FPS counter's commands: at window resolution and scale, over the UI.
-    fn gles_fps_commands(
+    pub(crate) fn light_fps_commands(
         &mut self,
         size: (u32, u32),
         dpi: f64,
@@ -143,17 +167,30 @@ impl App {
         })
     }
 
-    /// The UI's draw list, or the "3D not supported" screen when the game uses the world.
-    fn gles_ui_commands(&mut self, size: (u32, u32), scale: f32) -> Vec<platypus_ui::DrawCmd> {
-        if self.world_view.needs_world()
-            && let Some(gles) = &mut self.gles
-        {
-            return gles
+    /// The UI's draw list, or the "3D Not Supported" screen when the game uses the world, which
+    /// the light renderers don't draw.
+    pub(crate) fn light_ui_commands(
+        &mut self,
+        size: (u32, u32),
+        scale: f32,
+    ) -> Vec<platypus_ui::DrawCmd> {
+        if self.world_view.needs_world() {
+            return self
                 .notice
                 .get_or_insert_with(|| super::notice::Notice::new("3D Not Supported"))
                 .draw_list(size.0, size.1, scale);
         }
         self.ui.draw_list()
+    }
+
+    /// Sets the UI's media environment (resolution, the window's theme) before a light frame.
+    pub(crate) fn light_media_env(&mut self, window: &Window, scale: f32) {
+        let dark = window.theme() == Some(platypus_platform::Theme::Dark);
+        self.ui.set_media_env(platypus_ui::media::MediaEnv {
+            resolution: scale,
+            dark,
+            ..self.ui.media_env()
+        });
     }
 
     /// Draws the UI (and the FPS counter over it) into the window's back buffer.
@@ -180,8 +217,8 @@ impl App {
         let (dpi, size) = self.main_metrics().context("no window")?;
         let scale = super::ui_factor_for(dpi, size, self.ui_scale);
         self.load_gles_images();
-        let cmds = self.gles_ui_commands(size, scale);
-        let fps_cmds = self.gles_fps_commands(size, dpi);
+        let cmds = self.light_ui_commands(size, scale);
+        let fps_cmds = self.light_fps_commands(size, dpi);
         self.draw_gles(size, scale, dpi, &cmds, fps_cmds.as_deref())?;
         let gles = self.gles.as_ref().context("no renderer")?;
         let (w, h) = size;
@@ -197,26 +234,19 @@ impl App {
             return;
         };
         let scale = super::ui_factor_for(dpi, size, self.ui_scale);
-        let Some(gles) = &self.gles else {
+        let Some(window) = self.gles.as_ref().map(|g| g.window.clone()) else {
             return;
         };
-        let dark = gles.window.theme() == Some(platypus_platform::Theme::Dark);
-        self.ui.set_media_env(platypus_ui::media::MediaEnv {
-            resolution: scale,
-            dark,
-            ..self.ui.media_env()
-        });
+        self.light_media_env(&window, scale);
         self.load_gles_images();
-        let cmds = self.gles_ui_commands(size, scale);
+        let cmds = self.light_ui_commands(size, scale);
         self.scene.scene.update_world();
-        let fps_cmds = self.gles_fps_commands(size, dpi);
+        let fps_cmds = self.light_fps_commands(size, dpi);
         let Some(gles) = &self.gles else {
             return;
         };
         // Nothing changed since the last frame: nothing to draw or swap.
-        if gles.shown.as_ref().is_some_and(|(sz, sc, c, f)| {
-            *sz == size && *sc == scale.to_bits() && *c == cmds && *f == fps_cmds
-        }) {
+        if unchanged(gles.shown.as_ref(), size, scale, &cmds, fps_cmds.as_deref()) {
             // The counter still counts the frame: it shows the loop's pace, not the redraws.
             self.tick_fps();
             return;

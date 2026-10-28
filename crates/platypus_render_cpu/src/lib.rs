@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A CPU renderer for the UI draw list (`vello_cpu`), shown through `softbuffer`: no GPU API, no
-//! GPU driver. Used by the `ui_app_only` build of `platypus_app` (EXPERIMENTAL).
+//! GPU driver. `platypus-app` draws with it when a project asks for `renderer: "cpu"`
+//! (`cpu_gfx.rs`; never chosen automatically).
 //!
 //! It draws what the UI draw list holds, except `border-image`, `mask`s (their layer is drawn
 //! unmasked), drop shadows and colour matrices on layers, perspective (the affine part is used) and
@@ -20,9 +21,11 @@ use platypus_ui::transform::Homography;
 use platypus_ui::{BackgroundImage, BlendMode, DrawCmd, ImageFill, Quad, Rgba};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use vello_common::filter_effects::{Filter, FilterFunction};
+/// The pixels a frame was drawn into (premultiplied RGBA8).
+pub use vello_cpu::Pixmap;
 use vello_cpu::kurbo::{Affine, BezPath, Rect, RoundedRect, RoundedRectRadii, Shape};
 use vello_cpu::peniko::{self, Color, Extend, Fill, ImageQuality, ImageSampler};
-use vello_cpu::{Glyph, Image, ImageSource, Pixmap, RenderContext, RenderSettings, Resources};
+use vello_cpu::{Glyph, Image, ImageSource, RenderContext, RenderSettings, Resources};
 
 fn color(c: Rgba) -> Color {
     Color::new([c.r, c.g, c.b, c.a])

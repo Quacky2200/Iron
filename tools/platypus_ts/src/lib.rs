@@ -15,6 +15,7 @@ pub mod layout;
 pub mod lower;
 pub mod manifest;
 pub mod modules;
+pub mod renderer;
 pub mod sroa;
 pub mod throws;
 pub mod timing;
@@ -26,6 +27,9 @@ pub struct Output {
     pub object: Vec<u8>,
     pub bindings: String,
     pub ir: String,
+    /// The engine symbols the compiled code calls (unused top-level functions left out), for
+    /// `renderer::usage_of_symbols`.
+    pub externs: Vec<String>,
     /// Wall-clock time of each phase.
     pub lower_time: std::time::Duration,
     pub codegen_time: std::time::Duration,
@@ -88,6 +92,22 @@ pub fn compile_with_manifests(
     })
 }
 
+/// The engine symbols the program calls, from lowering alone (no code generation): what
+/// `Output::externs` holds, for a build that skips compiling.
+pub fn extern_symbols(src: &str, manifests: &[String]) -> Result<Vec<String>, String> {
+    std::thread::scope(|s| {
+        std::thread::Builder::new()
+            .stack_size(64 << 20)
+            .spawn_scoped(s, || {
+                let module = lower::lower_source_with(src, manifests)?;
+                Ok(module.externs.iter().map(|e| e.symbol.clone()).collect())
+            })
+            .map_err(|e| e.to_string())?
+            .join()
+            .map_err(|_| "compiler panicked".to_string())?
+    })
+}
+
 fn compile_inner(
     src: &str,
     opt: &str,
@@ -108,6 +128,7 @@ fn compile_inner(
         object: compiled.object,
         bindings: layout::rust_bindings(&module),
         ir: ir::dump(&module),
+        externs: module.externs.iter().map(|e| e.symbol.clone()).collect(),
         lower_time,
         codegen_time,
     })

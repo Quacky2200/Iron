@@ -125,6 +125,8 @@ fn write_dialog_game(dir: &Path, report: &Report, path: &Path) -> std::io::Resul
         "css": null,
         "assets": [],
         "patterns": [],
+        // Only UI: the light renderer.
+        "renderer": "ui",
     });
     std::fs::create_dir_all(dir.join("build"))?;
     std::fs::write(dir.join("project.json"), project.to_string())?;

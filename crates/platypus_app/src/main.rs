@@ -4,8 +4,8 @@
 // A windowed program: no console window of its own (the log goes to a file, see
 // `logging`); tests keep the console harness.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
-//! `platypus-game [game] [--screenshot out.png] [--frames N]`: opens a window, loads the
-//! game's script bundle and runs it.
+//! `platypus-app [game] [--screenshot out.png] [--frames N] [--renderer vulkan|gles|cpu]`: opens a
+//! window, loads the game's script bundle and runs it, drawn by the renderer `host.rs` picks.
 //!
 //! `[game]` is either a game folder (loads `<game>/build/game.pbundle`, built with
 //! `platypus-build build`; a QuickJS `build/game.js` is deprecated and needs `--force`) or a bundle directly; without one, the current folder is the game. `--screenshot` saves the UI after
@@ -18,6 +18,7 @@ mod bench;
 pub(crate) mod bone_cache;
 mod cloth_sync;
 pub(crate) mod cook;
+mod cpu_gfx;
 mod crash;
 mod crash_dialog;
 mod cursor;
@@ -109,6 +110,9 @@ struct Args {
     video_prompt: Option<bool>,
     /// `--video-settings-dialog <folder>`: the prompt's own run, UI only.
     video_dialog: bool,
+    /// `--renderer vulkan|gles|cpu|auto`: the renderer, over the project's `renderer` and the
+    /// bundle's tier (`host.rs`).
+    renderer: platypus_core::project::Renderer,
 }
 
 impl Args {
@@ -173,8 +177,8 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: platypus [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [--force] [-- script args]
-       platypus [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
+    let usage = "usage: platypus-app [game folder | bundle.js] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--renderer vulkan|gles|cpu] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [--force] [-- script args]
+       platypus-app [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
 --force runs a QuickJS (deprecated) bundle; games built with `platypus-build build` are native; arguments after -- reach scripts as Application.args;
 --bench runs without a window as fast as it can and writes timings as JSON (docs/platypus-build.md, \"Benchmarks\")";
     let mut args = args.into_iter();
@@ -193,6 +197,7 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
         crash_dialog: false,
         video_prompt: None,
         video_dialog: false,
+        renderer: platypus_core::project::Renderer::Auto,
     };
     let mut frames_given = false;
     while let Some(arg) = args.next() {
@@ -216,6 +221,13 @@ fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result
             }
             Some(video_prompt::PROMPT_FLAG) => parsed.video_prompt = Some(true),
             Some(video_prompt::NO_PROMPT_FLAG) => parsed.video_prompt = Some(false),
+            Some("--renderer") => {
+                let v = args.next().context(usage)?;
+                parsed.renderer = v
+                    .to_str()
+                    .and_then(platypus_core::project::Renderer::parse)
+                    .with_context(|| format!("--renderer {v:?}: expected vulkan, gles or cpu"))?;
+            }
             Some("--fps") => parsed.fps = Some(true),
             Some("--no-fps") => parsed.fps = Some(false),
             Some("--") => {
@@ -288,10 +300,6 @@ fn run() -> Result<()> {
             return Err(e);
         }
     };
-    // The video-settings prompt's window is only UI.
-    if args.video_dialog {
-        host::set_ui_only();
-    }
     // `--bench` reports where start-up goes (`startupParts`).
     if args.bench.is_some() {
         platypus_ts::timing::enable();
@@ -397,17 +405,30 @@ fn run() -> Result<()> {
     // The game's manifest and the machine, for `Application` and `SystemInfo`, before
     // the bundle's top level runs.
     let manifest = info::Manifest::load(&code_root);
-    // The host is whichever program was started; `type` says which one the project is for.
-    let wanted = manifest.project_type;
-    if host::IS_UI_APP && wanted != platypus_core::project::ProjectType::App {
-        tracing::warn!(
-            "this project's type is `game`: platypus-app draws only its UI (no 3D world); run it with platypus-game"
-        );
-    } else if !host::ui_only()
-        && !editor::ENABLED
-        && wanted == platypus_core::project::ProjectType::App
-    {
-        tracing::info!("this project's type is `app`: platypus-app is its lighter host");
+    // The renderer: `--renderer`, then the project's `renderer`, then what the program uses (the
+    // bundle's tier; a QuickJS bundle counts as the 3D world). The editor always has the world.
+    let (tier, uses) = native_bundle.as_ref().map_or_else(
+        || (platypus_ts::renderer::Tier::World3d, Vec::new()),
+        |b| (b.tier, b.uses.clone()),
+    );
+    let choice = if editor::ENABLED {
+        host::Choice::World
+    } else {
+        host::resolve(args.renderer, manifest.renderer, tier)
+    };
+    host::set(choice);
+    tracing::info!(
+        "renderer: {} (the program needs {}{})",
+        choice.name(),
+        tier.as_str(),
+        if uses.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", uses.join(", "))
+        }
+    );
+    if let Some(w) = host::world_warning(choice, tier, &uses) {
+        tracing::warn!("{w}");
     }
     // `Window.main` starts with the manifest's title; the real size and scale come with the window.
     platypus_engine_api::window::set_main(manifest.window_title(), (1280.0, 720.0), 1.0);
@@ -638,6 +659,8 @@ fn run() -> Result<()> {
         code_root: code_root.clone(),
         gfx: None,
         gles: None,
+        cpu: None,
+        notice: None,
         started: Instant::now(),
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, offline),
@@ -910,8 +933,13 @@ struct App {
     /// Where the game's code, `package.json` and CSS are (the asset root, except in a packaged exe).
     code_root: PathBuf,
     gfx: Option<Gfx>,
-    /// The main window drawn by the GLES executor (`platypus-app`), instead of `gfx`.
+    /// The main window drawn by the GLES executor (the light path, `host::Choice::Gles`),
+    /// instead of `gfx`.
     gles: Option<gles_gfx::GlesGfx>,
+    /// The main window drawn on the CPU (`host::Choice::Cpu`), instead of `gfx`.
+    cpu: Option<cpu_gfx::CpuGfx>,
+    /// "3D Not Supported", shown by a light path once the game asks for the world.
+    notice: Option<notice::Notice>,
     started: Instant,
     clock: lifecycle::FixedClock,
     /// Focus, and pausing in the background (`Application.runInBackground`).
@@ -2603,6 +2631,9 @@ impl App {
         if self.gles.is_some() {
             return self.save_screenshot_gles(path);
         }
+        if self.cpu.is_some() {
+            return self.save_screenshot_cpu(path);
+        }
         let gfx = self.gfx.as_mut().context("no renderer")?;
         let (w, h) = gfx.surface.size();
         let target =
@@ -2725,15 +2756,24 @@ impl PlatformApp for App {
         if !self.offline && self.display.mode != platypus_platform::FullScreenMode::Windowed {
             self.display = platypus_platform::display::apply(&window, &self.display);
         }
-        if host::ui_only() {
-            // GLES through EGL (ANGLE) first; wgpu with small GPU blocks (the world renderer is
-            // built only if something asks for it) when that isn't available.
-            if std::env::var_os("PLATYPUS_GLES").is_none_or(|v| v != "0")
-                && self.install_gles(window.clone())
-            {
-                return;
+        match host::choice() {
+            host::Choice::World => {}
+            choice => {
+                // The light path: GLES through EGL (ANGLE) or the CPU renderer; wgpu with small
+                // GPU blocks (the world renderer built only if something asks for it) when that
+                // isn't available.
+                let light = if choice == host::Choice::Cpu {
+                    self.install_cpu(window.clone())
+                } else {
+                    std::env::var_os("PLATYPUS_GLES").is_none_or(|v| v != "0")
+                        && self.install_gles(window.clone())
+                };
+                if light {
+                    return;
+                }
+                tracing::warn!("falling back to wgpu with small GPU allocations");
+                platypus_render::set_low_memory(true);
             }
-            platypus_render::set_low_memory(true);
         }
         let size = window.inner_size();
         match Gpu::with_surface(window.clone(), size.width, size.height) {
@@ -3052,6 +3092,11 @@ impl PlatformApp for App {
             self.count_frame();
             return;
         }
+        if self.cpu.is_some() {
+            self.render_cpu(render_started);
+            self.count_frame();
+            return;
+        }
         let Some(gfx) = &mut self.gfx else {
             return;
         };
@@ -3222,7 +3267,7 @@ impl PlatformApp for App {
         );
         // A frame that changed nothing isn't swapped, so nothing waits for the display: 60 Hz
         // unless the game sets a rate.
-        if self.gles.is_some() && !self.offline {
+        if (self.gles.is_some() || self.cpu.is_some()) && !self.offline {
             return Some(cap.unwrap_or(gles_gfx::FRAME_CAP));
         }
         cap

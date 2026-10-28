@@ -2,14 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus-build package <game>`: one executable for a game. A copy of the engine host
-//! (`platypus-game`, or `platypus-app` for a project of type `app`) gets the game's icon and version info (Windows PE resources, `pe.rs`) and the
+//! (`platypus-app`) gets the game's icon and version info (Windows PE resources, `pe.rs`) and the
 //! game's code (bundle, CSS, metadata, icon) as a payload at its end (`platypus_core::payload`). The
-//! assets are copied to a `data/` folder beside it, never embedded. See `docs/platypus-build.md`.
+//! assets are copied to a `data/` folder beside it, never embedded, and the third-party notices
+//! (`THIRD-PARTY-NOTICES.md`: ANGLE and the code it bundles) are written beside it. See
+//! `docs/platypus-build.md`.
 
 use crate::{Options, build, icon, include, packs, pe};
 use platypus_core::payload::{self, Archive};
 use platypus_core::project::{
-    FixedUser, LoadOptions, Platform, Project, ProjectType, SystemUser, UserInfo,
+    FixedUser, LoadOptions, Platform, Project, Renderer, SystemUser, UserInfo,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -449,7 +451,7 @@ pub fn collect_files(
 /// How to package.
 #[derive(Debug, Clone, Default)]
 pub struct PackageOptions {
-    /// The engine host to copy (default: `find_host`, by the project's `type`).
+    /// The engine host to copy (default: `find_host`).
     pub host: Option<PathBuf>,
     /// Where to write (default `<game>/build/<exe>.exe`).
     pub out: Option<PathBuf>,
@@ -475,7 +477,15 @@ pub struct PackageOptions {
     /// `--video-settings-prompt` / `--no-video-settings-prompt`: the exe's `videoSettingsPrompt`,
     /// over the project's.
     pub video_settings_prompt: Option<bool>,
+    /// `--renderer vulkan|gles|cpu|auto`: the exe's `renderer`, over the project's.
+    pub renderer: Option<Renderer>,
 }
+
+/// The notices of the third-party code in the host (ANGLE and what it bundles), written beside
+/// every packaged exe.
+pub const NOTICES: &str = include_str!("../../../THIRD-PARTY-NOTICES.md");
+/// Their file name beside the exe.
+pub const NOTICES_FILE: &str = "THIRD-PARTY-NOTICES.md";
 
 #[derive(Debug)]
 pub struct Packaged {
@@ -497,6 +507,8 @@ pub struct Packaged {
     pub meta: Metadata,
     /// License files copied next to the exe (and into the data folder).
     pub license_files: Vec<PathBuf>,
+    /// `THIRD-PARTY-NOTICES.md` beside the exe.
+    pub notices: PathBuf,
     /// Windows resources were written (the host is a PE file).
     pub resources: bool,
     /// Warnings of the build, empty metadata fields and fields still at their defaults.
@@ -507,14 +519,13 @@ fn exe_name(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-/// The engine host for a project of type `kind` (`platypus-game` for games, `platypus-app` for apps):
-/// `--host`, `$PLATYPUS_HOST`, the host next to this program, or the newest
-/// `target/{release,debug}/<host>` found going up from the game folder and the current folder.
-pub fn find_host(
-    game: &Path,
-    explicit: Option<&Path>,
-    kind: ProjectType,
-) -> Result<PathBuf, String> {
+/// The engine host's name, without extension.
+pub const HOST: &str = "platypus-app";
+
+/// The engine host (`platypus-app`): `--host`, `$PLATYPUS_HOST`, the host next to this program,
+/// or the newest `target/{release,debug}/platypus-app` found going up from the game folder and
+/// the current folder.
+pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String> {
     if let Some(p) = explicit {
         return if p.is_file() {
             Ok(p.to_path_buf())
@@ -534,7 +545,7 @@ pub fn find_host(
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
     {
-        found.push(dir.join(exe_name(kind.host())));
+        found.push(dir.join(exe_name(HOST)));
     }
     let mut starts = vec![game.to_path_buf()];
     starts.extend(std::env::current_dir().ok());
@@ -542,25 +553,15 @@ pub fn find_host(
         let s = s.canonicalize().unwrap_or(s);
         for a in s.ancestors() {
             for profile in ["release", "debug"] {
-                found.push(a.join("target").join(profile).join(exe_name(kind.host())));
+                found.push(a.join("target").join(profile).join(exe_name(HOST)));
             }
         }
     }
     newest_host(found).ok_or_else(|| {
         format!(
-            "no {} host found (cargo build -p platypus_app --bin {}, or pass --host <path>)",
-            kind.host(),
-            kind.host()
+            "no {HOST} host found (cargo build --release -p platypus_app, or pass --host <path>)"
         )
     })
-}
-
-/// The `type` of the project in `game` (a game when it can't be read: `resolve` reports the
-/// real error later). Read before the host is known, so with the platform this program runs on.
-fn project_type(game: &Path, overrides: &Overrides) -> ProjectType {
-    resolve(game, overrides, Platform::current(), &SystemUser)
-        .map(|(_, p)| p.project_type)
-        .unwrap_or_default()
 }
 
 /// The most recently built of the candidate hosts. Not "release first": a stale release build
@@ -618,8 +619,7 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         warnings = report.warnings;
     }
     // The host without any payload of its own (read first: its kind picks the platform section).
-    let kind = project_type(game, &opts.overrides);
-    let host_path = find_host(game, opts.host.as_deref(), kind)?;
+    let host_path = find_host(game, opts.host.as_deref())?;
     let host_len = payload::host_len(&host_path)?;
     let mut host = std::fs::read(&host_path).map_err(|e| io(&host_path, e))?;
     host.truncate(host_len as usize);
@@ -643,6 +643,14 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
     // The build argument goes into the exe's own `project.json`, so it wins over the game's.
     if let Some(on) = opts.video_settings_prompt {
         project.video_settings_prompt = Some(on);
+    }
+    if let Some(r) = opts.renderer {
+        project.renderer = r;
+        // The build warned for the project's renderer; this one is the exe's.
+        warnings.retain(|w| !w.starts_with(crate::RENDERER_WARNING));
+        if let Some(w) = crate::renderer_warning(r, &crate::read_usage(game)) {
+            warnings.push(w);
+        }
     }
     // Never blocks: the exe is made, the person is told what its version info lacks.
     for w in project
@@ -770,6 +778,12 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
             license_files.push(d);
         }
     }
+    let notices = out
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default()
+        .join(NOTICES_FILE);
+    std::fs::write(&notices, NOTICES).map_err(|e| io(&notices, e))?;
     if let Some(cmd) = &opts.sign_cmd {
         run_sign(cmd, &out)?;
     }
@@ -794,15 +808,16 @@ pub fn package(game: &Path, opts: &PackageOptions) -> Result<Packaged, String> {
         embedded: check.entries.iter().map(|e| e.path.clone()).collect(),
         meta,
         license_files,
+        notices,
         resources: is_pe,
         warnings,
     })
 }
 
-const USAGE: &str = "usage: platypus-build package <game> [--host platypus-game.exe] [--out file] [--no-build] [--no-tsc]
+const USAGE: &str = "usage: platypus-build package <game> [--host platypus-app.exe] [--out file] [--no-build] [--no-tsc]
        [--exe name] [--title t] [--company c] [--version v] [--copyright c] [--description d] [--icon file.png|ico]
        [--sign-cmd \"signtool sign ... {exe}\"] [--data-dir name] [--no-data] [--packs [--codec lz4|zstd] [--report]]
-       [--video-settings-prompt | --no-video-settings-prompt]";
+       [--video-settings-prompt | --no-video-settings-prompt] [--renderer vulkan|gles|cpu|auto]";
 
 /// The `package` command: `args` are the ones after the word `package`. Returns the exit code.
 pub fn run_cli(args: &[String]) -> i32 {
@@ -841,6 +856,13 @@ pub fn run_cli(args: &[String]) -> i32 {
             "--report" => opts.report = true,
             "--video-settings-prompt" => opts.video_settings_prompt = Some(true),
             "--no-video-settings-prompt" => opts.video_settings_prompt = Some(false),
+            "--renderer" => match value(&mut it).as_deref().and_then(Renderer::parse) {
+                Some(r) => opts.renderer = Some(r),
+                None => {
+                    eprintln!("error: --renderer takes vulkan, gles, cpu or auto\n{USAGE}");
+                    return 2;
+                }
+            },
             s if !s.starts_with("--") && game.is_none() => game = Some(PathBuf::from(s)),
             _ => {
                 eprintln!("{USAGE}");
@@ -1362,6 +1384,51 @@ mod tests {
         );
     }
 
+    // M9-HOST-14
+    #[test]
+    fn the_renderer_argument_goes_into_the_exe_and_warns_for_a_world_game() {
+        let packaged = |tag: &str, project: &str, arg: Option<Renderer>| -> (Value, Packaged) {
+            let d = game_folder(tag);
+            std::fs::write(
+                d.join("build/game.pbundle"),
+                r#"{"format":1,"assets":[],"renderer":"world3d","uses":["Camera","Light"]}"#,
+            )
+            .unwrap();
+            std::fs::write(d.join(platypus_core::project::PROJECT_FILE), project).unwrap();
+            let opts = PackageOptions {
+                host: Some(std::env::current_exe().unwrap()),
+                out: Some(d.join("out/ren.exe")),
+                no_build: true,
+                renderer: arg,
+                ..Default::default()
+            };
+            let p = package(&d, &opts).unwrap();
+            let mut a = Archive::open(&p.path).unwrap().unwrap();
+            let j: Value = serde_json::from_slice(&a.read("project.json").unwrap()).unwrap();
+            assert!(p.notices.is_file(), "the notices are beside the exe");
+            let _ = std::fs::remove_dir_all(&d);
+            (j, p)
+        };
+        let vulkan = r#"{ "name": "ren", "renderer": "vulkan" }"#;
+        let (j, p) = packaged("ren_gles", vulkan, Some(Renderer::Gles));
+        assert_eq!(j["renderer"], "gles");
+        let w: Vec<&String> = p
+            .warnings
+            .iter()
+            .filter(|w| w.starts_with(crate::RENDERER_WARNING))
+            .collect();
+        assert_eq!(w.len(), 1, "{:?}", p.warnings);
+        assert!(w[0].contains("Camera, Light") && w[0].contains("3D Not Supported"));
+        let (j, p) = packaged("ren_cpu", vulkan, Some(Renderer::Cpu));
+        assert_eq!(j["renderer"], "cpu");
+        assert!(p.warnings.iter().any(|w| w.starts_with("renderer is cpu")));
+        // Without the argument the project's own value is kept; `auto` leaves it out.
+        let (j, _) = packaged("ren_keep", vulkan, None);
+        assert_eq!(j["renderer"], "vulkan");
+        let (j, _) = packaged("ren_auto", vulkan, Some(Renderer::Auto));
+        assert!(j.get("renderer").is_none());
+    }
+
     // M9-ICO-06
     #[test]
     fn a_game_without_an_icon_or_names_gets_platypus_ones() {
@@ -1737,7 +1804,7 @@ mod tests {
     }
 
     // M9-TS-2440: needs the engine host and a GPU, so it runs on request:
-    // `cargo test -p platypus_build -- --ignored standalone` (PLATYPUS_HOST or a built target/debug/platypus-game).
+    // `cargo test -p platypus_build -- --ignored standalone` (PLATYPUS_HOST or a built target/debug/platypus-app).
     #[test]
     #[ignore = "needs platypus_app built and a GPU"]
     fn standalone_exe_runs_from_another_folder_without_the_game_folder() {
@@ -1866,23 +1933,15 @@ mod tests {
     }
     // M9-TS-2600
     #[test]
-    fn the_project_type_picks_the_host() {
+    fn there_is_one_host_and_a_missing_explicit_one_is_an_error() {
         let d = std::env::temp_dir().join(format!("platypus_build_type_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        let ov = Overrides::default();
-        std::fs::write(d.join("project.json"), r#"{ "name": "x" }"#).unwrap();
-        assert_eq!(project_type(&d, &ov), ProjectType::Game);
-        std::fs::write(d.join("project.json"), r#"{ "name": "x", "type": "app" }"#).unwrap();
-        assert_eq!(project_type(&d, &ov), ProjectType::App);
-        // Unreadable: a game (resolve reports the real error later).
-        std::fs::write(d.join("project.json"), "{ nope").unwrap();
-        assert_eq!(project_type(&d, &ov), ProjectType::Game);
         // An explicit host that is missing is an error (`$PLATYPUS_HOST` is not consulted then).
         let missing = d.join("none");
-        let e = find_host(&missing, Some(&missing), ProjectType::App).unwrap_err();
+        let e = find_host(&missing, Some(&missing)).unwrap_err();
         assert!(e.contains("not found"), "{e}");
-        assert_eq!(ProjectType::App.host(), "platypus-app");
+        assert_eq!(HOST, "platypus-app");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

@@ -12,7 +12,8 @@ const USAGE: &str = "usage:
   platypus-build assets <folder>... [--prune]               write .meta files
   platypus-build dev <game> [--no-tsc]                      rebuild on change, signal the app (build/.platypus-reload)
   platypus-build pack-info <file.dat>                       list a pack: header, codecs, entries
-  platypus-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json (see: platypus-build init --help)
+  platypus-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json, tsconfig.json, types/ (see: platypus-build init --help)
+  platypus-build init --editor-files [<dir>...]             refresh tsconfig.json + types/platypus.d.ts of a game or a folder of games
   platypus-build package <game> [--host exe] [--out f] ...   one executable (see: platypus-build package --help)
   platypus-build check <examples folder> [--tsc] [--full]   build every game in it and print a table
   platypus-build bench <examples folder> [--only a,b] ...   time every game, native vs QuickJS (see: platypus-build bench --help)";
@@ -64,6 +65,17 @@ fn main() {
                         r.object_bytes,
                         r.time
                     );
+                    if let Some(u) = &r.usage {
+                        println!(
+                            "renderer: {}{}",
+                            u.tier.as_str(),
+                            if u.uses.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" ({})", u.uses.join(", "))
+                            }
+                        );
+                    }
                     match r.tsc {
                         Tsc::Missing => eprintln!(
                             "note: tsc not found; the type check was skipped (install TypeScript to check types)"
@@ -209,8 +221,8 @@ fn check(dir: &Path, opts: &Options) -> i32 {
         return 2;
     }
     println!(
-        "{:<20} {:<6} {:>5} {:>4} {:>6}  first error",
-        "game", "result", "files", "css", "assets"
+        "{:<20} {:<6} {:>5} {:>4} {:>6}  {:<8} first error / what sets the renderer",
+        "game", "result", "files", "css", "assets", "renderer"
     );
     let (mut ok, mut failed) = (0, 0);
     for g in games {
@@ -221,12 +233,16 @@ fn check(dir: &Path, opts: &Options) -> i32 {
         match build(&g, opts) {
             Ok(r) => {
                 ok += 1;
+                let (tier, uses) = r.usage.as_ref().map_or(("-", String::new()), |u| {
+                    (u.tier.as_str(), u.uses.join(", "))
+                });
                 println!(
-                    "{name:<20} {:<6} {:>5} {:>4} {:>6}",
+                    "{name:<20} {:<6} {:>5} {:>4} {:>6}  {tier:<8} {}",
                     "ok",
                     r.files.len(),
                     r.css_files.len(),
-                    r.assets.len()
+                    r.assets.len(),
+                    uses.chars().take(90).collect::<String>()
                 );
             }
             Err(e) => {
@@ -239,8 +255,8 @@ fn check(dir: &Path, opts: &Options) -> i32 {
                     .take(110)
                     .collect::<String>();
                 println!(
-                    "{name:<20} {:<6} {:>5} {:>4} {:>6}  {first}",
-                    "FAIL", "-", "-", "-"
+                    "{name:<20} {:<6} {:>5} {:>4} {:>6}  {:<8} {first}",
+                    "FAIL", "-", "-", "-", "-"
                 );
                 if std::env::args().any(|a| a == "--full") {
                     for l in e.lines().skip(1) {

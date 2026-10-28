@@ -3959,6 +3959,7 @@ dependencies = [
  "platypus_platform",
  "platypus_render",
  "platypus_render_api",
+ "platypus_render_cpu",
  "platypus_render_gles",
  "platypus_scene",
  "platypus_scenes",

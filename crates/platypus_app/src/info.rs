@@ -46,8 +46,8 @@ pub struct Manifest {
     /// `platypus.lightUnits`: `physical` for real-world units (the sun in lux, lamps in lumens,
     /// glowing surfaces in nits, as Unity 7 and HDRP), or `legacy` (the default: Platypus's own).
     pub physical_units: bool,
-    /// `type`: `game` or `app` (which host is meant to run it).
-    pub project_type: platypus_core::project::ProjectType,
+    /// `renderer`: `vulkan`, `gles`, `cpu` or (left out) chosen from the bundle's tier.
+    pub renderer: platypus_core::project::Renderer,
 }
 
 impl Manifest {
@@ -96,6 +96,9 @@ impl Manifest {
 
     pub fn from_project(p: Project) -> Self {
         let physical_units = light_units(&p.extra);
+        for w in &p.warnings {
+            tracing::warn!("project.json: {w}");
+        }
         Self {
             name: p.name,
             title: p.title,
@@ -112,7 +115,7 @@ impl Manifest {
             fps: p.fps,
             video_settings_prompt: p.video_settings_prompt,
             physical_units,
-            project_type: p.project_type,
+            renderer: p.renderer,
         }
     }
 }

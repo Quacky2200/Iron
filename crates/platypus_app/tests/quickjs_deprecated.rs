@@ -20,7 +20,7 @@ fn run(name: &str, game: PathBuf, extra: &[&str]) -> Run {
     std::fs::create_dir_all(&dir).unwrap();
     let png = dir.join("out.png");
     let log = dir.join("run.log");
-    let output = Command::new(env!("CARGO_BIN_EXE_platypus-game"))
+    let output = Command::new(env!("CARGO_BIN_EXE_platypus-app"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)

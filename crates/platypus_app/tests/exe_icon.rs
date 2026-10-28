@@ -1,17 +1,15 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! The host executables carry the Platypus icon and version info (linked in by `build.rs`).
+//! The host executable carries the Platypus icon and version info (linked in by `build.rs`).
 
 // M9-ICO-04
 #[cfg(all(windows, target_env = "msvc"))]
 #[test]
-fn both_host_exes_have_the_platypus_icon_and_product_name() {
+fn the_host_exe_has_the_platypus_icon_and_product_name() {
     let utf16 = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(u16::to_le_bytes).collect() };
-    for path in [
-        env!("CARGO_BIN_EXE_platypus-game"),
-        env!("CARGO_BIN_EXE_platypus-app"),
-    ] {
+    {
+        let path = env!("CARGO_BIN_EXE_platypus-app");
         let exe = std::fs::read(path).unwrap();
         let has = |needle: &[u8]| exe.windows(needle.len()).any(|w| w == needle);
         assert!(has(&utf16("MAINICON")), "no icon group in {path}");

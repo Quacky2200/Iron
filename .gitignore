@@ -14,8 +14,9 @@ tests/output/
 .platypus/
 # The same, from before the rename to Platypus.
 .iron/
-# Generated type declarations (`platypus-build types`).
+# Generated type declarations (`platypus-build types`, `init --editor-files`).
 examples/*/types/
+tools/bench/*/types/
 # Asset import settings and GUIDs (`platypus-build assets`/`dev`): a build-host detail, rebuilt on demand.
 *.meta
 # The local list of unsafe code for review passes; kept out of the repository.

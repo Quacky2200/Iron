@@ -261,21 +261,31 @@ pub enum Source {
     Defaults,
 }
 
-/// What a project is (`type` in `project.json`): the host program that runs it.
+/// Which renderer `platypus-app` draws a project with (`renderer` in `project.json`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ProjectType {
-    /// A game (the default): the full engine, with the 3D world (`platypus-game`).
+pub enum Renderer {
+    /// Left out: chosen from what the compiled program uses (the bundle's tier): GLES for a
+    /// program that is only UI, wgpu with the world renderer otherwise.
     #[default]
-    Game,
-    /// An application that is only UI, on a lighter renderer (`platypus-app`).
-    App,
+    Auto,
+    /// wgpu with the world renderer, even for a program that is only UI (Vulkan by default on
+    /// Windows and Linux, DX12 through `WGPU_BACKEND`, Metal on macOS).
+    Vulkan,
+    /// The light UI-only path: GLES through EGL (ANGLE linked in on Windows), else wgpu with
+    /// small GPU allocations. No 3D world: "3D Not Supported" when the game asks for it.
+    Gles,
+    /// The UI drawn on the CPU (`platypus_render_cpu`, softbuffer), no GPU API. UI only, as `gles`.
+    Cpu,
 }
 
-impl ProjectType {
-    pub fn parse(s: &str) -> Option<ProjectType> {
+impl Renderer {
+    /// A value of `renderer` (`auto` is the default, also accepted on the command line).
+    pub fn parse(s: &str) -> Option<Renderer> {
         match s {
-            "game" => Some(ProjectType::Game),
-            "app" => Some(ProjectType::App),
+            "auto" => Some(Renderer::Auto),
+            "vulkan" => Some(Renderer::Vulkan),
+            "gles" => Some(Renderer::Gles),
+            "cpu" => Some(Renderer::Cpu),
             _ => None,
         }
     }
@@ -283,26 +293,37 @@ impl ProjectType {
     /// The value written in `project.json`.
     pub fn as_str(self) -> &'static str {
         match self {
-            ProjectType::Game => "game",
-            ProjectType::App => "app",
+            Renderer::Auto => "auto",
+            Renderer::Vulkan => "vulkan",
+            Renderer::Gles => "gles",
+            Renderer::Cpu => "cpu",
         }
     }
 
-    /// The host program's name, without extension (`platypus-game`, `platypus-app`).
-    pub fn host(self) -> &'static str {
-        match self {
-            ProjectType::Game => "platypus-game",
-            ProjectType::App => "platypus-app",
-        }
+    /// Whether this renderer draws only the UI (no world renderer).
+    pub fn ui_only(self) -> bool {
+        matches!(self, Renderer::Gles | Renderer::Cpu)
+    }
+
+    /// The first renderer that is set (not `Auto`), in order of precedence.
+    pub fn first_set(choices: impl IntoIterator<Item = Renderer>) -> Renderer {
+        choices
+            .into_iter()
+            .find(|r| *r != Renderer::Auto)
+            .unwrap_or_default()
     }
 }
+
+/// The note for a `project.json` that still has the old `type`.
+pub const TYPE_REPLACED: &str =
+    "`type` is replaced by `renderer`; \"app\" = \"gles\", \"game\" = \"vulkan\"";
 
 /// A project with every template resolved and the platform section merged.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Project {
     pub name: String,
-    /// `type`: `game` (default) or `app`, which host program runs and packages it.
-    pub project_type: ProjectType,
+    /// `renderer`: `vulkan`, `gles` or `cpu`; left out (or unknown), chosen from what the program uses.
+    pub renderer: Renderer,
     pub title: String,
     /// `subtitle`: an optional second line under the title (a series' episode, say), shown by the
     /// video-settings prompt and `Application.subtitle`; `None` when unset or empty.
@@ -347,6 +368,9 @@ pub struct Project {
     pub extra: Map<String, Value>,
     /// Metadata fields (`title`, `company`, ...) the file sets to an empty string on purpose.
     pub empty_fields: Vec<String>,
+    /// Warnings about fields that are no longer used or have an unknown value (`type`,
+    /// `renderer`); `platypus-build` prints them, the host logs them.
+    pub warnings: Vec<String>,
     /// Fields the file leaves out that took their default (`project.json` only).
     pub defaulted: Vec<String>,
     pub source: Source,
@@ -396,6 +420,7 @@ const TEXT_KEYS: &[&str] = &[
 const KNOWN_KEYS: &[&str] = &[
     "name",
     "type",
+    "renderer",
     "title",
     "subtitle",
     "company",
@@ -961,8 +986,8 @@ impl Project {
                 m.insert(k.into(), v.clone().into());
             }
         }
-        if self.project_type != ProjectType::Game {
-            m.insert("type".into(), self.project_type.as_str().into());
+        if self.renderer != Renderer::Auto {
+            m.insert("renderer".into(), self.renderer.as_str().into());
         }
         if let Some(r) = self.data_required {
             m.insert("dataRequired".into(), r.into());
@@ -1161,17 +1186,21 @@ fn build(
         ),
         _ => None,
     };
-    let project_type = match doc.get("type") {
-        None => ProjectType::Game,
-        Some(v) => v.as_str().and_then(ProjectType::parse).ok_or_else(|| {
-            let (line, col) = locate(file_text, "\"type\"");
-            ProjectError {
-                file: name.clone(),
-                line,
-                col,
-                message: format!("`type`: expected `game` or `app`, not {v}"),
+    let mut warnings = Vec::new();
+    if doc.contains_key("type") {
+        warnings.push(TYPE_REPLACED.to_string());
+    }
+    let renderer = match doc.get("renderer") {
+        None => Renderer::Auto,
+        Some(v) => match v.as_str().and_then(Renderer::parse) {
+            Some(r) => r,
+            None => {
+                warnings.push(format!(
+                    "`renderer`: expected \"vulkan\", \"gles\" or \"cpu\", not {v} (chosen automatically)"
+                ));
+                Renderer::Auto
             }
-        })?,
+        },
     };
     let include = strings(passthrough(&mut r, "include")?);
     let exclude = strings(passthrough(&mut r, "exclude")?);
@@ -1183,7 +1212,7 @@ fn build(
     }
     Ok(Project {
         name: project_name,
-        project_type,
+        renderer,
         title,
         subtitle,
         company,
@@ -1217,6 +1246,7 @@ fn build(
         display,
         extra,
         empty_fields,
+        warnings,
         defaulted,
         source,
         file,
@@ -1782,34 +1812,62 @@ mod tests {
 
     // M9-API-1330
     #[test]
-    fn type_is_game_by_default_and_app_runs_on_the_app_host() {
-        let game = load_ok("type-default", r#"{ "name": "x" }"#);
-        assert_eq!(game.project_type, ProjectType::Game);
-        assert_eq!(game.project_type.host(), "platypus-game");
+    fn the_renderer_is_automatic_by_default_and_each_value_is_kept() {
+        let auto = load_ok("renderer-default", r#"{ "name": "x" }"#);
+        assert_eq!(auto.renderer, Renderer::Auto);
+        assert!(auto.warnings.is_empty());
         assert!(
-            game.to_json().get("type").is_none(),
+            auto.to_json().get("renderer").is_none(),
             "the default isn't written"
         );
-        let app = load_ok("type-app", r#"{ "name": "x", "type": "app" }"#);
-        assert_eq!(app.project_type, ProjectType::App);
-        assert_eq!(app.project_type.host(), "platypus-app");
-        assert_eq!(app.to_json()["type"], "app");
-        assert!(app.extra.is_empty(), "`type` is a known key");
+        for (text, r) in [
+            ("vulkan", Renderer::Vulkan),
+            ("gles", Renderer::Gles),
+            ("cpu", Renderer::Cpu),
+        ] {
+            let p = load_ok(
+                "renderer-set",
+                &format!(r#"{{ "name": "x", "renderer": "{text}" }}"#),
+            );
+            assert_eq!(p.renderer, r);
+            assert_eq!(p.to_json()["renderer"], text);
+            assert!(p.extra.is_empty() && p.warnings.is_empty());
+        }
+        assert!(Renderer::Gles.ui_only() && Renderer::Cpu.ui_only());
+        assert!(!Renderer::Vulkan.ui_only() && !Renderer::Auto.ui_only());
     }
 
     // M9-API-1330
     #[test]
-    fn an_unknown_type_is_an_error_naming_the_field() {
-        let e = load_text(
-            "type-bad",
-            r#"{ "name": "x", "type": "tool" }"#,
-            &user(),
-            Platform::Windows,
-        )
-        .unwrap_err();
-        assert!(
-            e.message.contains("`type`") && e.message.contains("game"),
-            "{e}"
-        );
+    fn an_unknown_renderer_warns_and_counts_as_automatic() {
+        let p = load_ok("renderer-bad", r#"{ "name": "x", "renderer": "metal" }"#);
+        assert_eq!(p.renderer, Renderer::Auto);
+        assert_eq!(p.warnings.len(), 1);
+        assert!(p.warnings[0].contains("`renderer`") && p.warnings[0].contains("metal"));
+    }
+
+    // M9-API-1331
+    #[test]
+    fn the_old_type_warns_and_is_ignored() {
+        for t in ["app", "game"] {
+            let p = load_ok("type-old", &format!(r#"{{ "name": "x", "type": "{t}" }}"#));
+            assert_eq!(p.renderer, Renderer::Auto, "`type` is not mapped");
+            assert_eq!(p.warnings, [TYPE_REPLACED]);
+            assert!(p.extra.is_empty(), "`type` is not kept as an extra key");
+            assert!(p.to_json().get("type").is_none());
+        }
+    }
+
+    // M9-API-1332
+    #[test]
+    fn the_first_renderer_set_wins() {
+        use Renderer::*;
+        assert_eq!(Renderer::first_set([Auto, Gles, Vulkan]), Gles);
+        assert_eq!(Renderer::first_set([Cpu, Gles]), Cpu);
+        assert_eq!(Renderer::first_set([Auto, Auto]), Auto);
+        for r in [Auto, Vulkan, Gles, Cpu] {
+            assert_eq!(Renderer::parse(r.as_str()), Some(r));
+        }
+        assert_eq!(Renderer::parse("game"), None);
     }
 }

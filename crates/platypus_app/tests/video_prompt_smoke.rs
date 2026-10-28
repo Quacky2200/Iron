@@ -16,7 +16,7 @@ fn a_forced_prompt_in_a_screenshot_run_saves_the_dialogs_picture() {
     let game = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello.js");
     let png = dir.join("out.png");
     let log = dir.join("run.log");
-    let status = Command::new(env!("CARGO_BIN_EXE_platypus-game"))
+    let status = Command::new(env!("CARGO_BIN_EXE_platypus-app"))
         .arg(&game)
         .arg("--screenshot")
         .arg(&png)

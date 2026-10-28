@@ -1,12 +1,12 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! The 3D world renderer, built on first use in `platypus-app`.
+//! The 3D world renderer, built on first use on the light path's wgpu fallback.
 //!
 //! `WorldRenderer::new` compiles the world shaders and pipelines, which costs the GPU driver
 //! tens of MB even when a game is only UI. A UI-only game never has a camera or a mesh upload,
-//! so it never asks for the renderer. In `platypus-game` the renderer is built at once, as before.
-//! To undo the experiment: make `Gfx.world` a `WorldRenderer` again (see `git log` for this file).
+//! so it never asks for the renderer. When the host chose the world (`host::Choice::World`) the
+//! renderer is built at once.
 
 use platypus_render::{Gpu, WorldRenderer};
 

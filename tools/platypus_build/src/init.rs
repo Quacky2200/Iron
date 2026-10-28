@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `platypus-build init [<dir>]`: writes a default `project.json` whose templates take their values
-//! from the person running it (`"title": "${firstName}'s Game"`), a minimal `src/main.ts` when the
-//! folder has no `src/`, and prints what the templates evaluate to right now. See
-//! `docs/platypus-build.md`.
+//! from the person running it (`"title": "${firstName}'s Game"`), a self-contained `tsconfig.json`
+//! (`tsconfig.rs`) and the engine's declarations (`types/platypus.d.ts`, for editors) when there
+//! are none, a minimal `src/main.ts` when the folder has no `src/`, and prints what the templates
+//! evaluate to right now. See `docs/platypus-build.md`.
 
 use crate::icon;
 use platypus_core::project::{
@@ -38,6 +39,8 @@ pub struct InitReport {
     /// The project as the templates resolve now.
     pub resolved: Project,
     pub wrote_main: bool,
+    /// `tsconfig.json` was written (an existing one is kept).
+    pub wrote_tsconfig: bool,
     pub icon: Option<PathBuf>,
     pub gitignore_updated: bool,
 }
@@ -153,11 +156,21 @@ pub fn init(
         wrote_main = true;
     }
 
+    let mut wrote_tsconfig = false;
+    let ts = dir.join("tsconfig.json");
+    if !ts.exists() {
+        std::fs::write(&ts, crate::tsconfig::default_text()).map_err(|e| io(&ts, e))?;
+        wrote_tsconfig = true;
+    }
+    // The engine's declarations, for editors (the build writes its own copy for `tsc`).
+    let dts = dir.join("types/platypus.d.ts");
+    crate::write_atomic(&dts, crate::types_dts()?.as_bytes()).map_err(|e| io(&dts, e))?;
+
     let mut gitignore_updated = false;
     let gi = dir.join(".gitignore");
     if let Ok(text) = std::fs::read_to_string(&gi) {
         let has = |p: &str| text.lines().any(|l| l.trim().trim_start_matches('/') == p);
-        let missing: Vec<&str> = ["build/", "*.meta"]
+        let missing: Vec<&str> = ["build/", "types/", "*.meta"]
             .into_iter()
             .filter(|p| !has(p))
             .collect();
@@ -185,6 +198,7 @@ pub fn init(
         project_file,
         resolved,
         wrote_main,
+        wrote_tsconfig,
         icon: icon_name.map(|n| dir.join(n)),
         gitignore_updated,
     })
@@ -192,10 +206,69 @@ pub fn init(
 
 const USAGE: &str =
     "usage: platypus-build init [<dir>] [--name n] [--title t] [--company c] [--description d]
-       [--icon file.png|ico] [--version v] [--identifier id] [--license private|MIT|...] [--force]";
+       [--icon file.png|ico] [--version v] [--identifier id] [--license private|MIT|...] [--force]
+       platypus-build init --editor-files [<game or folder of games>...]
+           rewrite only the editor files: tsconfig.json and types/platypus.d.ts";
+
+/// `init --editor-files`: writes the default `tsconfig.json` (`tsconfig.rs`) and the engine's
+/// declarations (`types/platypus.d.ts`, what `platypus-build types` writes) into each game of
+/// `dirs`, overwriting what is there and touching nothing else. A folder that is not a game
+/// stands for the games directly inside it (as `check` takes them). Returns the files written.
+pub fn regenerate_editor_files(dirs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+    let dts = crate::types_dts()?;
+    let mut written = Vec::new();
+    for d in dirs {
+        let games = if crate::is_game(d) {
+            vec![d.clone()]
+        } else {
+            crate::find_games(d)
+        };
+        if games.is_empty() {
+            return Err(format!("{}: no game (project.json) here", d.display()));
+        }
+        for g in games {
+            let f = g.join("tsconfig.json");
+            std::fs::write(&f, crate::tsconfig::default_text()).map_err(|e| io(&f, e))?;
+            written.push(f);
+            let t = g.join("types/platypus.d.ts");
+            crate::write_atomic(&t, dts.as_bytes()).map_err(|e| io(&t, e))?;
+            written.push(t);
+        }
+    }
+    Ok(written)
+}
 
 /// The `init` command; `args` follow the word `init`. Returns the exit code.
 pub fn run_cli(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "--editor-files") {
+        let mut dirs: Vec<PathBuf> = args
+            .iter()
+            .filter(|a| !a.starts_with("--"))
+            .map(PathBuf::from)
+            .collect();
+        if args
+            .iter()
+            .any(|a| a.starts_with("--") && a != "--editor-files")
+        {
+            eprintln!("{USAGE}");
+            return 2;
+        }
+        if dirs.is_empty() {
+            dirs.push(PathBuf::from("."));
+        }
+        return match regenerate_editor_files(&dirs) {
+            Ok(files) => {
+                for f in &files {
+                    println!("wrote {}", f.display());
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                1
+            }
+        };
+    }
     let mut o = InitOptions::default();
     let mut dir = None;
     let mut it = args.iter();
@@ -235,6 +308,10 @@ pub fn run_cli(args: &[String]) -> i32 {
 pub fn preview(r: &InitReport) -> String {
     let p = &r.resolved;
     let mut out = format!("wrote {}\n", r.project_file.display());
+    if r.wrote_tsconfig {
+        out.push_str("wrote tsconfig.json\n");
+    }
+    out.push_str("wrote types/platypus.d.ts (the engine's declarations, for editors)\n");
     if r.wrote_main {
         out.push_str("wrote src/main.ts\n");
     }
@@ -242,7 +319,7 @@ pub fn preview(r: &InitReport) -> String {
         out.push_str(&format!("copied the icon to {}\n", i.display()));
     }
     if r.gitignore_updated {
-        out.push_str("added build/ and *.meta to .gitignore\n");
+        out.push_str("added build/, types/ and *.meta to .gitignore\n");
     }
     out.push_str("as the templates resolve now:\n");
     for (k, v) in [
@@ -308,8 +385,14 @@ mod tests {
         assert_eq!(p.copyright, "Copyright (c) 2026 Matthew's Company");
         assert_eq!(p.exe, "Matthews Game");
         assert_eq!(p.version, "0.1.0");
-        // Only project.json: no package.json.
+        // project.json, no package.json.
         assert!(d.join("project.json").is_file() && !d.join("package.json").exists());
+        // M9-TSC-02: a self-contained tsconfig.json and the engine's declarations for editors.
+        let ts = std::fs::read_to_string(d.join("tsconfig.json")).unwrap();
+        assert_eq!(ts, crate::tsconfig::default_text());
+        assert!(!ts.contains("extends"), "{ts}");
+        let dts = std::fs::read_to_string(d.join("types/platypus.d.ts")).unwrap();
+        assert!(dts.contains("declare class Vector3") && dts.contains("declare class GameObject"));
         let main = std::fs::read_to_string(d.join("src/main.ts")).unwrap();
         assert!(main.contains("register({ Hello })") && main.contains("\"hello\""));
         let shown = preview(&r);
@@ -329,6 +412,70 @@ mod tests {
         )
         .unwrap();
         let _ = std::fs::remove_dir_all(d.parent().unwrap());
+    }
+
+    // M9-TSC-03
+    #[test]
+    fn regenerating_rewrites_only_the_editor_files_of_a_game_or_of_every_game_in_a_folder() {
+        let d = temp("regen");
+        let games = [d.join("a"), d.join("b")];
+        let others = ["project.json", "src/main.ts", ".gitignore", "icon.png"];
+        for g in &games {
+            std::fs::create_dir_all(g.join("src")).unwrap();
+            std::fs::write(g.join("project.json"), r#"{ "name": "x" }"#).unwrap();
+            std::fs::write(g.join("src/main.ts"), MAIN_TS).unwrap();
+            std::fs::write(g.join(".gitignore"), "node_modules\n").unwrap();
+            std::fs::write(g.join("icon.png"), png()).unwrap();
+            std::fs::write(
+                g.join("tsconfig.json"),
+                r#"{ "extends": "../../tsconfig.base.json" }"#,
+            )
+            .unwrap();
+            // Stale declarations.
+            std::fs::create_dir_all(g.join("types")).unwrap();
+            std::fs::write(g.join("types/platypus.d.ts"), "declare class Old {}").unwrap();
+        }
+        // Not a game: skipped in folder mode.
+        std::fs::create_dir_all(d.join("notes")).unwrap();
+        let before: Vec<Vec<u8>> = games
+            .iter()
+            .flat_map(|g| others.map(|f| std::fs::read(g.join(f)).unwrap()))
+            .collect();
+        // One game.
+        let w = regenerate_editor_files(std::slice::from_ref(&games[0])).unwrap();
+        assert_eq!(
+            w,
+            [
+                games[0].join("tsconfig.json"),
+                games[0].join("types/platypus.d.ts")
+            ]
+        );
+        assert!(
+            std::fs::read_to_string(games[1].join("tsconfig.json"))
+                .unwrap()
+                .contains("extends")
+        );
+        // A folder of games.
+        let w = regenerate_editor_files(std::slice::from_ref(&d)).unwrap();
+        assert_eq!(w.len(), 4);
+        let dts = crate::types_dts().unwrap();
+        for g in &games {
+            let ts = std::fs::read_to_string(g.join("tsconfig.json")).unwrap();
+            assert_eq!(ts, crate::tsconfig::default_text());
+            let t = std::fs::read_to_string(g.join("types/platypus.d.ts")).unwrap();
+            assert!(
+                t == dts && t.contains("declare class Vector3"),
+                "the stale file is replaced"
+            );
+        }
+        let after: Vec<Vec<u8>> = games
+            .iter()
+            .flat_map(|g| others.map(|f| std::fs::read(g.join(f)).unwrap()))
+            .collect();
+        assert_eq!(before, after, "nothing else changes");
+        assert!(!d.join("notes/tsconfig.json").exists());
+        assert!(regenerate_editor_files(&[d.join("notes")]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     // M9-TS-2701
@@ -403,7 +550,7 @@ mod tests {
         assert!(!init(&d, &o, &matthew()).unwrap().gitignore_updated);
         assert_eq!(
             std::fs::read_to_string(d.join(".gitignore")).unwrap(),
-            "node_modules\nbuild/\n*.meta\n"
+            "node_modules\nbuild/\ntypes/\n*.meta\n"
         );
         // A bad icon writes nothing new.
         std::fs::write(&src, b"not an image").unwrap();

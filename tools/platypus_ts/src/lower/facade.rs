@@ -83,6 +83,11 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
     }
     // The typed window messages over the JSON natives.
     let mut extra = super::messages::glue(src);
+    // Only code names a function: a string or comment that mentions `Model.load(` or
+    // `.whenLoaded(` (the md-reader's bundled docs) pulls no chunk in.
+    let original = src;
+    let code = super::literals::code_only(src);
+    let src = code.as_str();
     // `#[subscription(off = ..)]` functions: the call returns a function that stops the listener,
     // written over the token-returning native (`Screen.onChange$n`) and the stopping function.
     let mut subs: Vec<(&(String, String), &String)> = manifest.subscriptions.iter().collect();
@@ -340,7 +345,7 @@ pub fn extend_source(src: &str, manifest: &crate::manifest::Manifest) -> Option<
         out.push('\n');
         out.push_str(&extra);
     }
-    (out != src).then_some(out)
+    (out != original).then_some(out)
 }
 
 // The facade: members of the TypeScript `@platypus/engine` that the native API has in another shape

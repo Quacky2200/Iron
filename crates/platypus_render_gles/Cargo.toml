@@ -20,13 +20,18 @@ tracing = "0.1.44"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_LibraryLoader"] }
 # `static-angle`: ANGLE's EGL + GLES (Direct3D 11) compiled into the program instead of loaded
-# from libEGL.dll. Its build needs libclang (bindgen) and MSVC.
+# from libEGL.dll. Its build needs libclang (bindgen, `LIBCLANG_PATH`) and MSVC.
 mozangle = { version = "0.5.5", default-features = false, features = ["egl"], optional = true }
+# The same khronos-egl with `static` (call `egl*` directly) and `no-pkg-config` (don't ask for a
+# system libEGL: mozangle's static libraries provide the symbols). A Windows-only entry, so the
+# features never reach other platforms, which keep loading EGL at run time.
+khronos-egl = { version = "6", features = ["dynamic", "static", "no-pkg-config"], optional = true }
 
 [features]
-# khronos-egl's `static` calls `egl*` symbols directly; `no-pkg-config` stops it asking
-# pkg-config for a system libEGL, so mozangle's static libraries provide them.
-static-angle = ["dep:mozangle", "khronos-egl/static", "khronos-egl/no-pkg-config"]
+# On by default; `--no-default-features` builds without libclang (EGL then comes from
+# `PLATYPUS_ANGLE_DIR` / libEGL.dll, else the host falls back to wgpu). Does nothing off Windows.
+default = ["static-angle"]
+static-angle = ["dep:mozangle", "dep:khronos-egl"]
 
 [dev-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] }

@@ -1,14 +1,14 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `platypus-build`: builds a game written in TypeScript into `build/` for the engine hosts (`platypus-game`, `platypus-app`), with no bun and no
+//! `platypus-build`: builds a game written in TypeScript into `build/` for the engine host (`platypus-app`), with no bun and no
 //! `node_modules` (see `docs/platypus-build.md`).
 //!
 //! A build reads `project.json` (deprecated fallback: the `platypus` section of `package.json`) and `tsconfig.json`, resolves the module graph from the
 //! entry file (`platypus_ts::modules`), runs `tsc --noEmit -p .` when `tsc` can be found, compiles the
 //! bundle with all engine manifests (so errors are found now, not when the game starts), and writes
-//! `build/game.pbundle` (the resolved source, the CSS and asset lists), `build/game.css`, and the assets
-//! the program names.
+//! `build/game.pbundle` (the resolved source, the CSS and asset lists, and what the program needs
+//! from the renderer: `platypus_ts::renderer`), `build/game.css`, and the assets the program names.
 
 pub mod assets;
 pub mod bench;
@@ -20,6 +20,7 @@ pub mod init;
 pub mod package;
 pub mod packs;
 pub mod pe;
+pub mod tsconfig;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -47,6 +48,10 @@ pub struct GameConfig {
     /// One warning per metadata field `project.json` leaves empty on purpose (`build` and
     /// `package` print them, `check` does not).
     pub empty_field_warnings: Vec<String>,
+    /// `project.json` `renderer` (`Auto` when left out).
+    pub renderer: platypus_core::project::Renderer,
+    /// Warnings about `project.json` fields that are no longer used or have an unknown value.
+    pub project_warnings: Vec<String>,
 }
 
 /// Runs `project.json`'s `prebuild` command in the game folder (through `cmd /C` on Windows,
@@ -165,6 +170,8 @@ impl GameConfig {
             start_scene: project.start_scene.clone(),
             prebuild: project.prebuild.clone(),
             empty_field_warnings,
+            renderer: project.renderer,
+            project_warnings: project.warnings.clone(),
         })
     }
 }
@@ -251,7 +258,7 @@ pub struct Options {
     pub no_tsc: bool,
     /// Also write the AOT object `build/game.o` (release builds).
     pub aot: bool,
-    /// Run `platypus-game <game> --cook` afterwards (needs the `platypus-game` binary; see `find_platypus`).
+    /// Run `platypus-app <game> --cook` afterwards (needs the `platypus-app` binary; see `find_platypus`).
     pub cook: bool,
     /// Skip compiling the bundle (module graph, CSS and assets only).
     pub no_compile: bool,
@@ -279,7 +286,64 @@ pub struct Report {
     pub tsc: Tsc,
     pub warnings: Vec<String>,
     pub object_bytes: usize,
+    /// What the program needs from the renderer (`None` when lowering failed under `no_compile`:
+    /// the bundle then says nothing, which the host takes as the 3D world).
+    pub usage: Option<platypus_ts::renderer::Usage>,
     pub time: Duration,
+}
+
+/// How the warning about a UI-only renderer for a world game starts.
+pub const RENDERER_WARNING: &str = "renderer is ";
+
+/// The warning for `renderer` (`gles`, `cpu`) chosen for a program that uses the world.
+pub fn renderer_warning(
+    renderer: platypus_core::project::Renderer,
+    usage: &Option<platypus_ts::renderer::Usage>,
+) -> Option<String> {
+    let u = usage.as_ref()?;
+    if !renderer.ui_only() {
+        return None;
+    }
+    platypus_ts::renderer::world_warning(renderer.as_str(), u.tier, &u.uses)
+}
+
+/// What `build/game.pbundle` of `game` says the program needs (`None` without one, or for a
+/// bundle without the field).
+pub fn read_usage(game: &Path) -> Option<platypus_ts::renderer::Usage> {
+    let text = std::fs::read_to_string(game.join("build/game.pbundle")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    Some(platypus_ts::renderer::Usage {
+        tier: platypus_ts::renderer::Tier::parse(v["renderer"].as_str()?)?,
+        uses: v["uses"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
+}
+
+/// What the program needs from the renderer: the engine API its compiled code calls (`externs`)
+/// and the component types of the scene and prefab files a packaged build would hold (`plan`).
+fn usage_of(
+    externs: &[String],
+    manifests: &[String],
+    root: &Path,
+    plan: &[String],
+) -> platypus_ts::renderer::Usage {
+    let mut usage = platypus_ts::renderer::usage_of_symbols(externs, manifests);
+    for f in plan
+        .iter()
+        .filter(|f| f.ends_with(".scene.json") || f.ends_with(".prefab.json"))
+    {
+        if let Ok(text) = std::fs::read_to_string(root.join(f)) {
+            let types = platypus_ts::renderer::scene_types(&text);
+            usage.add(types.iter().map(String::as_str));
+        }
+    }
+    usage
 }
 
 fn find_tsc(root: &Path) -> Option<PathBuf> {
@@ -337,7 +401,7 @@ pub fn tsc_config(config: &GameConfig) -> String {
     } else {
         format!("../../{entry_dir}/modules/*")
     };
-    serde_json::to_string_pretty(&serde_json::json!({
+    let mut v = serde_json::json!({
         "extends": "../../tsconfig.json",
         "compilerOptions": {
             "paths": { "*": [modules] },
@@ -349,8 +413,22 @@ pub fn tsc_config(config: &GameConfig) -> String {
         "include": include,
         "files": ["platypus.d.ts"],
         "exclude": ["../../node_modules"],
-    }))
-    .unwrap_or_default()
+    });
+    // A game without a `tsconfig.json` is checked with the default one (`tsconfig.rs`).
+    if !config.has_tsconfig {
+        let mut options = tsconfig::compiler_options();
+        if let (Some(o), Some(over)) = (
+            options.as_object_mut(),
+            v["compilerOptions"].as_object().cloned(),
+        ) {
+            o.extend(over);
+        }
+        v["compilerOptions"] = options;
+        if let Some(o) = v.as_object_mut() {
+            o.remove("extends");
+        }
+    }
+    serde_json::to_string_pretty(&v).unwrap_or_default()
 }
 
 /// Writes `build/.tsc/{tsconfig.json,platypus.d.ts}` and returns the config path.
@@ -452,8 +530,9 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     let reserved = platypus_ts::modules::global_names(&types_dts()?);
     let bundle = platypus_ts::modules::bundle_reserving(&entry, &reserved)?;
     let mut warnings = config.empty_field_warnings.clone();
+    warnings.extend(config.project_warnings.iter().cloned());
 
-    let tsc = if opts.no_tsc || !config.has_tsconfig {
+    let tsc = if opts.no_tsc {
         Tsc::Skipped
     } else {
         run_tsc(root, &config)
@@ -463,7 +542,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     }
 
     let mut object_bytes = 0;
-    if !opts.no_compile {
+    let externs = if !opts.no_compile {
         let out =
             platypus_ts::compile_with_manifests(&bundle.source, "speed", "game_", 0, &manifests())
                 .map_err(|e| format!("{}: {}", config.name, bundle.locate_in(&e)))?;
@@ -473,7 +552,12 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
             write_atomic(&out_dir.join("game_bindings.rs"), out.bindings.as_bytes())
                 .map_err(|e| e.to_string())?;
         }
-    }
+        Some(out.externs)
+    } else {
+        // Not compiled, but the bundle still says what the program needs: lowering alone finds
+        // it (a program lowering can't handle leaves it unknown, which the host takes as 3D).
+        platypus_ts::extern_symbols(&bundle.source, &manifests()).ok()
+    };
 
     // Stylesheets, in import order.
     let css_paths: Vec<PathBuf> = bundle.css.iter().map(PathBuf::from).collect();
@@ -563,6 +647,10 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     plan.extend(copied.iter().map(|c| format!("build/{c}")));
     plan.sort();
     plan.dedup();
+    let usage = externs.map(|e| usage_of(&e, &manifests(), root, &plan));
+    if let Some(w) = renderer_warning(config.renderer, &usage) {
+        warnings.push(w);
+    }
     write_atomic(
         &out_dir.join("assets.plan"),
         plan.join(
@@ -573,7 +661,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     )
     .map_err(|e| e.to_string())?;
 
-    let pbundle = serde_json::json!({
+    let mut pbundle = serde_json::json!({
         "format": 1,
         "title": config.title,
         "company": config.company,
@@ -587,6 +675,12 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
             "glob": p.glob, "at": p.at, "matches": p.matches,
         })).collect::<Vec<_>>(),
     });
+    // What the host chooses its renderer by (`platypus_ts::renderer`); left out when it is not
+    // known, which the host takes as the 3D world.
+    if let Some(u) = &usage {
+        pbundle["renderer"] = u.tier.as_str().into();
+        pbundle["uses"] = u.uses.clone().into();
+    }
     let text = serde_json::to_string_pretty(&pbundle).map_err(|e| e.to_string())?;
     write_atomic(&out_dir.join("game.pbundle"), text.as_bytes()).map_err(|e| e.to_string())?;
 
@@ -602,7 +696,7 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
                 }
             }
             None => warnings
-                .push("--cook: the `platypus-game` binary was not found (cargo build -p platypus_app --bin platypus-game)".into()),
+                .push("--cook: the `platypus-app` binary was not found (cargo build --release -p platypus_app)".into()),
         }
     }
     Ok(Report {
@@ -614,19 +708,20 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
         tsc,
         warnings,
         object_bytes,
+        usage,
         time: t0.elapsed(),
     })
 }
 
-/// The `platypus-game` binary, for `--cook`: next to the repo's `target/`, or on the PATH.
+/// The `platypus-app` binary, for `--cook`: next to the repo's `target/`, or on the PATH.
 pub fn find_platypus(root: &Path) -> Option<PathBuf> {
     let mut p = root.canonicalize().ok()?;
     while p.pop() {
         for rel in [
-            "target/release/platypus-game.exe",
-            "target/debug/platypus-game.exe",
-            "target/release/platypus-game",
-            "target/debug/platypus-game",
+            "target/release/platypus-app.exe",
+            "target/debug/platypus-app.exe",
+            "target/release/platypus-app",
+            "target/debug/platypus-app",
         ] {
             let c = p.join(rel);
             if c.exists() {

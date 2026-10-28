@@ -16,6 +16,7 @@ impl App {
             .as_ref()
             .and_then(|g| g.window.clone())
             .or_else(|| self.gles.as_ref().map(|g| g.window.clone()))
+            .or_else(|| self.cpu.as_ref().map(|c| c.window.clone()))
     }
 
     /// The main window's DPI scale and client size in physical pixels, once it exists.
@@ -23,7 +24,11 @@ impl App {
         if let Some(gfx) = &self.gfx {
             return Some((gfx.dpi(), gfx.inner_size()));
         }
-        let window = &self.gles.as_ref()?.window;
+        let window = self
+            .gles
+            .as_ref()
+            .map(|g| &g.window)
+            .or_else(|| self.cpu.as_ref().map(|c| &c.window))?;
         let size = window.inner_size();
         Some((window.scale_factor(), (size.width, size.height)))
     }

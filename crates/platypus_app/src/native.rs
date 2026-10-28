@@ -31,6 +31,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use platypus_scene::Scene;
 use platypus_ts::jit::{Game, JitOptions, compile_and_load};
+use platypus_ts::renderer::Tier;
 use platypus_ts_rt::{
     NativeHost, StartupState, startup_state, ts_rt_microtasks_run, ts_rt_timers_advance,
 };
@@ -52,6 +53,11 @@ pub struct Bundle {
     /// Assets the game names, relative to the game folder.
     pub assets: Vec<String>,
     pub title: Option<String>,
+    /// What the program needs from the renderer (`renderer`, found at build time); a bundle
+    /// without it (older, or a bare source file) counts as using the 3D world.
+    pub tier: Tier,
+    /// The engine names that set the tier (`uses`, for the log).
+    pub uses: Vec<String>,
 }
 
 impl Bundle {
@@ -66,6 +72,7 @@ impl Bundle {
         } else {
             Ok(Bundle {
                 source: text,
+                tier: Tier::World3d,
                 ..Default::default()
             })
         }
@@ -90,6 +97,18 @@ impl Bundle {
                 })
                 .unwrap_or_default(),
             title: text("title"),
+            tier: v["renderer"]
+                .as_str()
+                .and_then(Tier::parse)
+                .unwrap_or(Tier::World3d),
+            uses: v["uses"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 }
@@ -931,6 +950,14 @@ mod tests {
         assert_eq!(b.source, "let a = 1;");
         assert_eq!(b.css.as_deref(), Some("game.css"));
         assert_eq!(b.assets, ["assets/x.png"]);
+        assert_eq!(b.tier, Tier::World3d, "no `renderer`: the 3D world");
+        let b =
+            Bundle::parse(r#"{"format":1,"source":"","renderer":"world2d","uses":["TextMesh"]}"#)
+                .unwrap();
+        assert_eq!(
+            (b.tier, b.uses.as_slice()),
+            (Tier::World2d, &["TextMesh".to_string()][..])
+        );
         assert!(Bundle::parse(r#"{"format":2,"source":""}"#).is_err());
         assert!(Bundle::parse(r#"{"format":1}"#).is_err());
         assert!(Bundle::parse("not json").is_err());
