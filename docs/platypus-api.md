@@ -278,6 +278,12 @@ the former `js/engine` (deleted). Each keeps its state per thread and has plain 
 `platypus_engine_api` also has `audio` (`load(path, stream)`, `Sound.play(loop)`, `Playback.pause/resume/stop`, recorded as
 `AudioCommand`s for the host). A Rust parameter written `r#loop` is the script's `loop`. Tests `M9-TS-593..597`.
 
+### UI scale (`UiScale`)
+
+`platypus_engine_api::ui_scale` declares `UiScale` (`none()`, `fixed(factor)`, `height(pixels)`, `fit(width, height)`):
+how screen UI is scaled to the window. The host reads `ui_scale::current()` when it sizes the screen on every renderer
+and resets it on a hot reload ([input-and-events.md](input-and-events.md#ui-scale)).
+
 ## Optional parameters and renamed members
 
 - `#[optional(a, b)]` on a function marks trailing parameters a call may leave out. The manifest says

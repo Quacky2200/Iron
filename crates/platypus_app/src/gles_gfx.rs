@@ -248,7 +248,7 @@ impl App {
     /// `--screenshot`: draws the UI once and writes it as a PNG.
     pub(crate) fn save_screenshot_gles(&mut self, path: &Path) -> Result<()> {
         let (dpi, size) = self.main_metrics().context("no window")?;
-        let scale = super::ui_factor_for(dpi);
+        let scale = super::ui_factor_for(dpi, size);
         self.load_gles_images();
         let cmds = self.light_ui_commands(size, scale);
         let fps_cmds = self.light_fps_commands(size, dpi);
@@ -266,7 +266,7 @@ impl App {
         let Some((dpi, size)) = self.main_metrics() else {
             return;
         };
-        let scale = super::ui_factor_for(dpi);
+        let scale = super::ui_factor_for(dpi, size);
         let Some(window) = self.gles.as_ref().map(|g| g.window.clone()) else {
             return;
         };

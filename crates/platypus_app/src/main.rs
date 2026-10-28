@@ -918,7 +918,7 @@ impl App {
         let Some((dpi, size)) = self.main_metrics() else {
             return;
         };
-        let scale = ui_factor_for(dpi);
+        let scale = ui_factor_for(dpi, size);
         let (width, height) = size;
         self.ui
             .set_size(width as f32 / scale, height as f32 / scale);
@@ -950,7 +950,14 @@ impl App {
         let Some(n) = self.native.as_mut() else {
             return;
         };
+        // The new code starts unscaled (its top level may set `UiScale` again); a failed reload
+        // keeps the old code's.
+        let ui_scale = platypus_engine_api::ui_scale::current();
+        platypus_engine_api::ui_scale::reset();
         let result = n.reload(bundle, &mut self.scene.scene, &mut self.ui);
+        if result.is_err() {
+            platypus_engine_api::ui_scale::set_current(ui_scale);
+        }
         // The scene was replaced: the renderer's script ids pointed into the old one.
         self.scene.clear_ids();
         self.reset_native_render();
@@ -1653,10 +1660,10 @@ impl App {
         self.clipboard.as_mut()
     }
 
-    /// Physical pixels per UI pixel: the window's DPI scale.
+    /// Physical pixels per UI pixel: the window's DPI scale times the UI scale.
     fn scale(&self) -> f32 {
         self.main_metrics()
-            .map_or(1.0, |(dpi, _)| ui_factor_for(dpi))
+            .map_or(1.0, |(dpi, size)| ui_factor_for(dpi, size))
     }
 
     fn now_ms(&self) -> f64 {
@@ -2445,14 +2452,17 @@ impl Drop for App {
     }
 }
 
-/// Physical pixels per UI pixel for `window`: its DPI scale.
+/// Physical pixels per UI pixel for `window`: its DPI scale times the scripts' `UiScale` factor
+/// for its logical size.
 fn ui_factor(gfx: &Gfx) -> f32 {
-    ui_factor_for(gfx.dpi())
+    ui_factor_for(gfx.dpi(), gfx.inner_size())
 }
 
-/// Physical pixels per UI pixel for a window with this DPI scale.
-fn ui_factor_for(dpi: f64) -> f32 {
-    dpi as f32
+/// Physical pixels per UI pixel for a window with this DPI scale and physical size.
+fn ui_factor_for(dpi: f64, (width, height): (u32, u32)) -> f32 {
+    let dpi = dpi as f32;
+    let (w, h) = (width as f32 / dpi, height as f32 / dpi);
+    dpi * platypus_engine_api::ui_scale::current().factor(w, h)
 }
 
 /// The DOM's button number: 0 primary, 1 middle, 2 secondary, 3 back, 4 forward.

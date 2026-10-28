@@ -65,7 +65,7 @@ need no `image`. A rejected image is logged and skipped.
 
 `App::input` maps `InputEvent` to `platypus_ui::Input` and calls `handle_ui`:
 
-- Positions are divided by `App::scale()`, the window DPI factor (UI pixels are logical pixels; there is no UI scale). `Lines` wheel deltas are
+- Positions are divided by `App::scale()`, the window DPI factor times the UI scale ([UI scale](#ui-scale)). `Lines` wheel deltas are
   multiplied by `WHEEL_LINE` (40 px), touchpad pixels are divided by scale.
 - Buttons become DOM numbers via `dom_button` (0 left, 1 middle, 2 right, 3/4 back/forward).
   `PointerDown` carries `time_ms` (engine clock) for double-click detection.
@@ -474,9 +474,16 @@ Games read the fields from the prelude class `UiDataTransfer` (see
 [ui-native.md](ui-native.md)); `PlatypusDragEvent` is in the generated declarations with `PlatypusDataTransfer`
 and `PlatypusDroppedFile`.
 
-## UI scale (removed)
+## UI scale
 
-The QuickJS-only `setUiScale` (`ui_scale.rs`, the `uiScale` op) is gone. UI pixels are logical pixels: the window
-DPI factor is the only scale (`App::scale()`), used for the layout size, the render target's `scale`, pointer and wheel
-positions and the IME cursor area. A game that wants a resolution-independent HUD sizes it in CSS (`vh`, `zoom`).
-`M3-GAME-02` was removed with it.
+Screen UI is laid out in UI pixels and drawn bigger or smaller (s&box's ScreenPanel scaling), so a design for one
+size fills any window the same. Games pick a mode with `UiScale` (`platypus_engine_api::ui_scale`, a
+`#[platypus_api]` namespace): `UiScale.none()` (the default: one UI pixel per logical pixel), `UiScale.fixed(f)`,
+`UiScale.height(1080)` (the window is that many UI pixels high) or `UiScale.fit(1920, 1080)` (that design fits inside
+the window). A zero, negative or NaN size is ignored. The factor is clamped to 0.25..8 and is 1 for a minimised window.
+
+The host reads the mode each time it sizes the screen (`ui_factor_for` in `main.rs`: the DPI scale times
+`UiScale::factor` of the logical window size) on all three renderers (wgpu, GLES `gles_gfx.rs`, CPU `cpu_gfx.rs`);
+`App::scale()` uses it for the layout size, the render target's `scale`, pointer and wheel positions and the IME
+cursor area, and `Screen.width` / `height` are in UI pixels. A hot reload starts the new code unscaled (its top level
+may set it again); a failed reload keeps the old code's. Tests `M3-GAME-02`, `M9-TS-3388`.

@@ -214,7 +214,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | Area | Platypus | Browsers / spec | Why |
 |---|---|---|---|
 | `sound-in` / `sound-out` | Not supported | s&box only (not CSS) | CSS stays about display; play UI sounds from event handlers |
-| UI scale | None: UI pixels are logical pixels (the QuickJS-only `setUiScale` is gone); use CSS `zoom` on a root element | CSS `zoom` per element | |
+| UI scale | `UiScale.height(1080)` / `fit` / `fixed` zooms all screen UI (layout in UI pixels) | CSS `zoom` per element | One switch for the whole HUD, like s&box's ScreenPanel |
 | `background-image-tint`, `border-image-tint` | s&box properties, no CSS equivalent; multiply image pixels by a colour; gradients and masks aren't tinted | — | Common in game UI (one white icon, many colours) |
 
 ## Floats (`docs/ui-tree.md`, "Floats")

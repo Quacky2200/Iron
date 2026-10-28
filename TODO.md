@@ -2135,7 +2135,7 @@ Left over after the UI events and attributes work (`b116ac6`, `docs/ui-native.md
 
 QuickJS is gone from Platypus: `platypus_app` runs only compiled games and refuses a QuickJS bundle with a pointer to
 `platypus-build build` (`--force` no longer exists, `M9-APP-01`, `-02`). Done:
-- [x] Delete `crates/platypus_script` (the QuickJS backend, `ComponentHost`) and the QuickJS paths of `platypus_app` (`load_bundles`, `dev_vendor`, bundle reload, `__platypus_*` pumps, `setUiScale`).
+- [x] Delete `crates/platypus_script` (the QuickJS backend, `ComponentHost`) and the QuickJS paths of `platypus_app` (`load_bundles`, `dev_vendor`, bundle reload, `__platypus_*` pumps; `setUiScale` came back natively as `UiScale`, 2026-10-28).
 - [x] Delete `crates/platypus_native` (`register_quickjs`, `install`) and the `quickjs` flag and `qjs.rs` of `platypus_api`.
 - [x] Delete `js/engine`, `js/react`, the JS fixtures of `tests/fixtures` and the `bun run build*` / `scripts/dev.ts` / `scripts/assets.ts` bun paths (root `package.json` keeps only `typecheck` and `screenshots`).
 - [x] Rust integration tests that used ScriptRuntime/QuickJS as a library: deleted with their crates (the removed test IDs are marked in TESTS.md).

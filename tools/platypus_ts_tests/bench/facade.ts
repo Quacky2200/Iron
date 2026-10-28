@@ -98,6 +98,14 @@ export function uiResources(): string {
   return `${a}|${input.gamepads().length}`;
 }
 
+export function uiScale(): string {
+  UiScale.height(1080);
+  UiScale.fit(1920, 1080);
+  UiScale.fixed(0);
+  UiScale.fixed(1.5);
+  return "set";
+}
+
 export function particlesAndPoints(): string {
   const go = new GameObject("p");
   const ps = go.addComponent(ParticleSystem, {

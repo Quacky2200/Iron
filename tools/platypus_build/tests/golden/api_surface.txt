@@ -2130,6 +2130,7 @@ declare module "@platypus/engine" :: export import TimeUntil = globalThis.TimeUn
 declare module "@platypus/engine" :: export import Transform = globalThis.Transform;
 declare module "@platypus/engine" :: export import TransitionSpec = globalThis.TransitionSpec;
 declare module "@platypus/engine" :: export import UiResources = globalThis.UiResources;
+declare module "@platypus/engine" :: export import UiScale = globalThis.UiScale;
 declare module "@platypus/engine" :: export import Vector2 = globalThis.Vector2;
 declare module "@platypus/engine" :: export import Vector2Int = globalThis.Vector2Int;
 declare module "@platypus/engine" :: export import Vector2Like = globalThis.Vector2Like;
@@ -2755,6 +2756,11 @@ declare namespace UiResources
 declare namespace UiResources :: function addStyleSheet(css: string): number;
 declare namespace UiResources :: function loadFont(data: FontFace): void;
 declare namespace UiResources :: function removeStyleSheet(id: number): void;
+declare namespace UiScale
+declare namespace UiScale :: function fit(width: number, height: number): void;
+declare namespace UiScale :: function fixed(factor: number): void;
+declare namespace UiScale :: function height(pixels: number): void;
+declare namespace UiScale :: function none(): void;
 declare namespace Vector2
 declare namespace Vector2 :: const down: Vector2;
 declare namespace Vector2 :: const left: Vector2;

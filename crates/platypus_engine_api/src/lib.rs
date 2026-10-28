@@ -34,6 +34,7 @@ pub mod screen;
 pub mod spline;
 pub mod time;
 pub mod ui_resources;
+pub mod ui_scale;
 pub mod window;
 
 /// The manifests (JSON) of every namespace this crate declares, for the compiler to check calls
@@ -83,6 +84,7 @@ pub fn manifests() -> Vec<String> {
         app::application_api::MANIFEST.to_json(),
         app::system_info_api::MANIFEST.to_json(),
         ui_resources::ui_resources_api::MANIFEST.to_json(),
+        ui_scale::ui_scale_api::MANIFEST.to_json(),
         window::window_api::MANIFEST.to_json(),
         spline::spline_api::MANIFEST.to_json(),
         spline::spline_animate_api::MANIFEST.to_json(),

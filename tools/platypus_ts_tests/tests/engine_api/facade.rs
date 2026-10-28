@@ -494,6 +494,21 @@ fn a_scene_serializes_to_a_record_and_to_text() {
     });
 }
 
+// M9-TS-3388
+//
+// `UiScale` from compiled code sets the mode the host scales screen UI by; a zero factor is ignored.
+#[test]
+fn ui_scale_modes_reach_the_host() {
+    use platypus_engine_api::ui_scale::{UiScale, current, reset};
+    in_every_gc_mode(|| unsafe {
+        reset();
+        assert_eq!(text(ts_fac_uiScale()), "set");
+        assert_eq!(current(), UiScale::Fixed(1.5));
+        assert_eq!(current().factor(1280.0, 720.0), 1.5);
+        reset();
+    });
+}
+
 // M9-TS-3384, M9-TS-3385
 //
 // What `examples/fog-white-room` needed: a plain `{ x, y }` for a Vector2 key of an options
