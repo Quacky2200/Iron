@@ -1,3 +1,4 @@
+// Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // The crash dialog: Platypus's own window for a game that crashed, run as a small game of its own by

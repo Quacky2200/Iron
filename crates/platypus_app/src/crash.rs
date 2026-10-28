@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! A crash that is not a Rust panic (an access violation in compiled game code, the runtime or a
 //! driver, or heap corruption) otherwise ends the process with an exit code and no log line. On
 //! Windows this logs what it can first: the exception, where it happened (and the compiled game

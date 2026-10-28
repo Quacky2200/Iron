@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! The crash dialog's process: `<exe> --crash-report <file> [--plain]`, started by a game that
 //! crashed (`crash.rs`), so the dialog never runs in the broken process. It shows Platypus's own
 //! dialog (`crash_dialog.tsx`, run as a small game by this same program with `--crash-dialog
