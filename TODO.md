@@ -740,6 +740,19 @@ Accessibility and drag and drop moved to M5.e, as UI requirements before the edi
   `display: table*` on arbitrary elements, `border-collapse`, `<col>` widths, `position: sticky` headers,
   a rect for the row itself
 
+#### Unity compatibility: raycasts and transforms (2026-10-27)
+
+- [x] Raycasts like Unity (Angry Bots needed them): layer masks, the hit's GameObject, a ray that
+  starts inside a collider skips it, unlimited distance by default, `Physics.raycastAll`,
+  `Physics.overlapSphere`; `GameObject` tags (`M9-API-214`)
+- [x] Transform hierarchy like Unity: `children`, `root`, `find` (`..`, `.`, leading `/`),
+  sibling order, `rotateAround`, direction/vector transforms, `localToWorldMatrix` /
+  `worldToLocalMatrix`, `setParent` keeping world scale, nullable `parent`;
+  `getComponent(s)InChildren/InParent` (`M9-API-213`, `M9-TS-707`)
+- [ ] `transform.parent = x` assignment; `overlapBox` / `overlapCapsule` / `sphereCast`; the dirty-collider
+  fallback of `raycastAll` / `overlapSphere` is untested
+- [ ] Angry Bots (readiness): rebuild and check it after the tags and nullable `parent` changes
+
 ## M4 — Hot reload, physics and audio
 
 Physics and audio come ahead of the scene work (M5), so its object model is designed with them in
