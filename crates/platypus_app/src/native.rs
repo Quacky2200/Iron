@@ -941,7 +941,7 @@ mod tests {
     // M9-REN-01
     #[test]
     fn a_bundle_from_before_the_rename_is_still_native() {
-        assert!(is_native(Path::new("dist/game.irbundle")));
+        assert!(is_native(Path::new("build/game.irbundle")));
         let d = std::env::temp_dir().join(format!("platypus_legacy_bundle_{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let p = d.join(LEGACY_BUNDLE);

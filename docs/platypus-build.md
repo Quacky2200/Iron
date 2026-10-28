@@ -21,7 +21,7 @@ cargo run -p platypus_build -- build ../examples/hello
 ## The output folder: `build/`
 
 A game builds into `<game>/build/` (the editor's UI into `editor/build/`). Games used to build into `dist/`; that folder is not
-read any more (no fallback): `platypus_app` on a folder with only `dist/game.pbundle` or `dist/game.js` exits with an error that
+read any more (no fallback): `platypus-game` on a folder with only `dist/game.pbundle`, `dist/game.irbundle` or `dist/game.js` exits with an error that
 says to rebuild with `platypus-build build` (`M9-APP-06`). A stale `dist/` can be deleted; `.gitignore` still ignores it.
 
 ## QuickJS is deprecated (`--force`)
@@ -54,7 +54,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
   section (without templates) plus the file's `name`, `version`, `author` and `description` (and the old defaults: title `${name}`, empty
   company, version `0.0.0`). It is found as a game by `check` too. With a `project.json`, `package.json` is not read at all.
 - **Names from before the rename to Platypus** (the engine was called Iron) are still read: a `package.json` section called `iron`
-  (`platypus` wins when both exist), `dist/game.irbundle` when there is no `game.pbundle` (the host logs a deprecation note),
+  (`platypus` wins when both exist), `build/game.irbundle` when there is no `game.pbundle` (the host logs a deprecation note),
   scene and prefab files with `"format": "iron.scene"` / `"iron.prefab"`, `import .. from "@iron/engine"` (erased like
   `@platypus/*`; `tsc` only knows the new names), the saved quality choice under PlayerPrefs `iron.quality`, and the settings
   folder `Iron/<title>` of a game without a company when no `Platypus/<title>` exists yet. The binary magics of packaged

@@ -365,7 +365,7 @@ pub mod application_api {
 
     /// Ends the game at once as a crash: a crash report is saved beside the log and the crash
     /// dialog shows, as for an unexpected error. `message` says why. `plain` shows the system's
-    /// plain dialog instead of Iron's own (the one used when Iron's can't run). A game should end
+    /// plain dialog instead of Platypus's own (the one used when Platypus's can't run). A game should end
     /// with `quit`; this is for errors it can't recover from, and for trying the dialog.
     #[optional(message, plain)]
     pub fn crash(message: &str, plain: bool) {

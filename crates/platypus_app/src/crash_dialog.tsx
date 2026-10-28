@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The crash dialog: Iron's own window for a game that crashed, run as a small game of its own by
+// The crash dialog: Platypus's own window for a game that crashed, run as a small game of its own by
 // the crash supervisor (`crash_dialog.rs`). The supervisor puts `GAME`, `REASON`, `DETAILS` and
 // `REPORT_PATH` (string constants) in front of this text. The answer is the exit code: 0 closes,
 // 10 also opens the report's folder.

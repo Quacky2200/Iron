@@ -1518,7 +1518,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-2724 | Integration | The `platypus-build` program: `build` and `package` print the empty-field warnings, `check` does not (`tools/platypus_build/tests/cli.rs`). |
 | M9-TS-2725 | Unit | Games are found by `project.json` (or a `package.json` with a `platypus` section, the deprecated fallback), not by any `package.json`. |
 | M9-LIC-01 | Integration | Every tracked source file (`.rs`, `.ts`, `.tsx`, `.js`, `.mts`, `.wgsl`, `.css`, `.py`, `.toml`, `.sh`) has `Copyright 2026 The Platypus Authors` and, on the next line, `SPDX-License-Identifier: Apache-2.0` within its first 4 lines (a check of that rule too), except the commented list of generated files, built fixtures and third-party ports; skipped without git (`tools/platypus_build/tests/spdx_headers.rs`). |
-| M9-REN-01 | Unit | A game built before the rename to Platypus still runs: `dist/game.irbundle` is a native bundle and reads like `game.pbundle` (the host logs a deprecation note when it falls back to it). |
+| M9-REN-01 | Unit | A game built before the rename to Platypus still runs: `build/game.irbundle` is a native bundle and reads like `game.pbundle` (the host logs a deprecation note when it falls back to it). |
 | M9-REN-02 | Unit | The deprecated `package.json` fallback reads an `iron` section as well as `platypus` (`platypus` wins when both are there). |
 | M9-REN-03 | Unit | Scene and prefab files saved with `"format": "iron.scene"` / `"iron.prefab"` still load. |
 | M9-REN-04 | Unit | `import { .. } from "@iron/engine"` is erased like `@platypus/engine`. |

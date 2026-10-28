@@ -1295,7 +1295,7 @@ mod tests {
     /// as the host; the exe's bytes.
     fn packaged_without_icon(tag: &str) -> Vec<u8> {
         let d = game_folder(tag);
-        std::fs::write(d.join("dist/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
+        std::fs::write(d.join("build/game.pbundle"), r#"{"format":1,"assets":[]}"#).unwrap();
         std::fs::write(
             d.join(platypus_core::project::PROJECT_FILE),
             r#"{ "name": "tiny", "title": "", "description": "" }"#,

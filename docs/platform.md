@@ -80,7 +80,7 @@ panic to the log (`M5-APP-04`).
 ### Crash report (Windows)
 
 A crash that is not a Rust panic (an access violation in compiled game code, the runtime or a driver) used to end the
-process with only an exit code. `crash::install` (`crates/iron_app/src/crash.rs`, called first in `main`) adds a vectored
+process with only an exit code. `crash::install` (`crates/platypus_app/src/crash.rs`, called first in `main`) adds a vectored
 exception handler that logs an access violation (`0xC0000005`) or heap corruption (`0xC0000374`) before the process dies.
 Other exceptions are ignored. The report goes to stderr and `Player.log` and has:
 
@@ -94,7 +94,7 @@ Other exceptions are ignored. The report goes to stderr and `Player.log` and has
 - a Rust backtrace.
 
 A release build names frames well only with line tables: build with `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only`. Pair it
-with `IRON_TS_GC=stress` ([iron-ts.md](iron-ts.md#running-a-compiled-game-in-the-process-jit)) to make a missing GC root
+with `PLATYPUS_TS_GC=stress` ([platypus-ts.md](platypus-ts.md#running-a-compiled-game-in-the-process-jit)) to make a missing GC root
 crash at once. On other platforms the exception handler is not installed (`Application.crash` still works).
 
 #### Crash report file and dialog
@@ -113,10 +113,10 @@ way and then exits with code 3.
    a process is saved. Screenshot and bench runs save reports but show no dialog.
 3. The process starts `<exe> --crash-report <file> [--plain]` with no stdio and dies. The dialog never runs in the broken
    process (`crash_dialog.rs`).
-4. That supervisor process writes a small game folder to the temp folder: `project.json` and `build/game.irbundle`, whose
+4. That supervisor process writes a small game folder to the temp folder: `project.json` and `build/game.pbundle`, whose
    source is the constants `GAME`, `REASON`, `DETAILS` and `REPORT_PATH` followed by `crash_dialog.tsx`. It runs the folder
-   with `<exe> --crash-dialog <folder>`, with `IRON_CRASH_DIALOG=1` (so a crash inside it opens no dialog) and
-   `IRON_LOG_FILE` in that folder. `--crash-dialog` runs the folder even from a packaged exe or the editor.
+   with `<exe> --crash-dialog <folder>`, with `PLATYPUS_CRASH_DIALOG=1` (so a crash inside it opens no dialog) and
+   `PLATYPUS_LOG_FILE` in that folder. `--crash-dialog` runs the folder even from a packaged exe or the editor.
 5. The dialog's exit code decides: 0 closes, 10 opens the report's folder (`explorer /select`). Any other ending (it
    crashed, there is no GPU) or `--plain` shows the system's message box instead: `MessageBoxW` on Windows (Yes opens the
    folder), stderr elsewhere. The folder is removed afterwards.

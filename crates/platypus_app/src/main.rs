@@ -3471,7 +3471,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("platypus-old-dist-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("dist")).unwrap();
-        std::fs::write(dir.join("dist/game.pbundle"), "{}").unwrap();
+        // A game built before the rename and the move to `build/`.
+        std::fs::write(dir.join("dist").join(native::LEGACY_BUNDLE), "{}").unwrap();
         let err = resolve_bundle(&dir).unwrap_err().to_string();
         assert!(err.contains("`dist/`") && err.contains("`build/`"), "{err}");
         assert!(err.contains("platypus-build build"), "{err}");

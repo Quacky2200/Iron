@@ -82,7 +82,7 @@ fn save_and_show(reason: &str, details: &str, plain: bool) {
         .map(|l| format!("Log: {}\n", l.display()))
         .unwrap_or_default();
     let text = format!(
-        "Iron crash report\nGame: {}\nReason: {reason}\nTime: {secs} (Unix seconds)\n{log}\n{details}\n",
+        "Platypus crash report\nGame: {}\nReason: {reason}\nTime: {secs} (Unix seconds)\n{log}\n{details}\n",
         r.game
     );
     if let Err(e) = std::fs::write(&path, text) {
@@ -129,7 +129,7 @@ fn script_crash(message: &str, plain: bool) {
 
 /// Installs the reporter (once) and `Application.crash`'s handler.
 pub fn install() {
-    iron_engine_api::app::set_crash_hook(script_crash);
+    platypus_engine_api::app::set_crash_hook(script_crash);
     #[cfg(windows)]
     {
         use std::sync::Once;
