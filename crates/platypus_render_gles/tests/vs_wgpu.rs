@@ -232,8 +232,8 @@ fn same(
     scale: f32,
     tolerance: u8,
     allowed_off: f32,
-) {
-    same_with(name, scene, None, logical, scale, tolerance, allowed_off);
+) -> Option<Vec<u8>> {
+    same_with(name, scene, None, logical, scale, tolerance, allowed_off)
 }
 
 /// [`same`] with a folder `url(...)` images are read from.
@@ -245,8 +245,8 @@ fn same_with(
     scale: f32,
     tolerance: u8,
     allowed_off: f32,
-) {
-    let Some(mut g) = gles() else { return };
+) -> Option<Vec<u8>> {
+    let mut g = gles()?;
     let gpu = shared_gpu();
     let mut ui = UiRenderer::new(&gpu);
     if let Some(dir) = assets {
@@ -289,6 +289,7 @@ fn same_with(
         d.pixels,
         d.max
     );
+    Some(b)
 }
 
 // M2-GLES-02
@@ -808,6 +809,50 @@ fn backdrop_filters_match_wgpu() {
         &[("backdropFilter", "grayscale(1)")],
     );
     same("backdrop filters", s, (200, 80), 1.0, 8, 0.01);
+}
+
+// M2-GLES-16
+#[test]
+fn backdrop_blur_reads_only_inside_the_box_like_wgpu() {
+    // Blue behind the top glass, orange behind the bottom one (Fluid's stacked menu glass).
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 120.0, 28.0],
+        &[("backgroundColor", "#2060ff")],
+    );
+    s.at(
+        0,
+        "box",
+        [0.0, 28.0, 120.0, 52.0],
+        &[("backgroundColor", "#ff8020")],
+    );
+    for (rect, color) in [
+        ([0.0, 0.0, 120.0, 28.0], "rgba(246,246,250,0.35)"),
+        ([0.0, 28.0, 120.0, 52.0], "rgba(246,246,250,0.62)"),
+    ] {
+        s.at(
+            0,
+            "box",
+            rect,
+            &[
+                ("backdropFilter", "blur(10px) saturate(1.6)"),
+                ("backgroundColor", color),
+            ],
+        );
+    }
+    let Some(px) = same("stacked backdrop glass", s, (120, 80), 1.0, 8, 0.01) else {
+        return;
+    };
+    let at = |x: usize, y: usize| &px[(y * 120 + x) * 4..(y * 120 + x) * 4 + 3];
+    // The bottom glass's top row is as orange as its middle: no blue from the box above.
+    for (edge, middle) in [(at(60, 28), at(60, 54)), (at(60, 27), at(60, 14))] {
+        assert!(
+            edge.iter().zip(middle).all(|(a, b)| a.abs_diff(*b) <= 2),
+            "edge {edge:?} vs middle {middle:?}"
+        );
+    }
 }
 
 // M2-GLES-13

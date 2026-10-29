@@ -328,6 +328,7 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `mask-clip` / `mask-origin` | Always the border box | Configurable | Not implemented |
 | Soft fades and translucency | Compositing (layers, masks, opacity, blending of translucent colours) happens in **linear light** | Browsers blend in sRGB | The whole renderer works in linear light; gradients and blend modes are interpolated in sRGB as CSS says. Visible effect: the faint end of a fade (alpha 0.025 over black) is about 42/255 grey instead of a browser's ~6 |
 | Filter colour space | Colour filters work on sRGB values (like browsers) | Spec default is linearRGB (`color-interpolation-filters`) | Matches what browsers actually do |
+| `backdrop-filter: blur()` edges | Only the backdrop inside the element's box is blurred (like browsers); at the box's edges the blur repeats the edge pixels | Chrome mirrors the backdrop at the edges | Clamping is one `clamp` in each executor's blur pass (and the CPU renderer's box blur); the difference shows only as a slightly flatter fade near the edges |
 
 ## Backgrounds and borders (M3d group 3)
 

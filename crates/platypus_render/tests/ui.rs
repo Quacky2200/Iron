@@ -2155,6 +2155,68 @@ fn backdrop_blur_blurs_only_behind_the_box() {
     assert_golden("M2-DRW-08", 120, 80, &f.pixels, TOLERANCE);
 }
 
+// M2-DRW-10
+#[test]
+fn backdrop_blur_reads_only_inside_the_box() {
+    let mut s = Scene::new();
+    // Blue behind the top glass, orange behind the bottom one (Fluid's stacked menu glass).
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            120.0,
+            28.0,
+            &[("backgroundColor", "#2060ff".into())],
+        ),
+    );
+    s.add(
+        0,
+        &at(
+            0.0,
+            28.0,
+            120.0,
+            52.0,
+            &[("backgroundColor", "#ff8020".into())],
+        ),
+    );
+    for (top, height, alpha) in [(0.0, 28.0, 0.35), (28.0, 52.0, 0.62)] {
+        s.add(
+            0,
+            &at(
+                0.0,
+                top,
+                120.0,
+                height,
+                &[
+                    ("backdropFilter", "blur(10px) saturate(1.6)".into()),
+                    (
+                        "backgroundColor",
+                        format!("rgba(246,246,250,{alpha})").as_str().into(),
+                    ),
+                ],
+            ),
+        );
+    }
+    let f = render(s, (120, 80), 1.0, BLACK);
+    // The bottom glass is as orange at its top edge as in its middle: no blue from above.
+    let (edge, middle) = (f.px(60, 28), f.px(60, 54));
+    for c in 0..3 {
+        assert!(
+            edge[c].abs_diff(middle[c]) <= 2,
+            "top row {edge:?} vs middle {middle:?}"
+        );
+    }
+    // And the top glass stays blue down to its bottom edge.
+    let (edge, middle) = (f.px(60, 27), f.px(60, 14));
+    for c in 0..3 {
+        assert!(
+            edge[c].abs_diff(middle[c]) <= 2,
+            "bottom row {edge:?} vs middle {middle:?}"
+        );
+    }
+}
+
 // M2-VIS-08 on the GPU: group opacity composites the group once.
 #[test]
 fn group_opacity_blends_the_group_as_a_whole() {

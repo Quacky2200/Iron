@@ -120,6 +120,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-DRW-07 | Golden | `filter: blur` blurs a box and its children; nothing outside the layer bounds changes. |
 | M2-DRW-08 | Golden | `backdropFilter: blur` blurs only what's behind the box, clipped to its rounded shape. |
 | M2-DRW-09 | Integration | Drawing skips subtrees scrolled out of a clipping container (beyond a margin), also below intermediate boxes; scrolling brings them back; a far-off box with a shadow is still drawn. |
+| M2-DRW-10 | Integration | `backdropFilter: blur` reads only the backdrop inside the element's box: of two stacked glass boxes over a blue/orange split, each stays one even colour up to the shared edge (no colour bleeds in from the neighbour's side). |
 | M2-PLN-01 | Unit | The frame plan of two boxes: two instances in one `Draw` step after a `Clear` of the canvas, one texture, no layers or clips (no GPU). |
 | M2-PLN-02 | Unit | A plan for a canvas seeded with the world has no `Clear` step. |
 | M2-PLN-03 | Unit | A blurred, translucent layer: three textures (canvas, layer, blur scratch), a `Blur` step at the scaled sigma and a `Composite` onto the canvas at its opacity. |
@@ -142,6 +143,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-GLES-13 | Integration | Alpha, luminance and repeated-dot `mask-image`s and a translucent layer inside a rounded `overflow: hidden` clip match between the two executors. |
 | M2-GLES-14 | Integration | A new GLES renderer has compiled only the quad and blit programs; boxes and plain text add none and leave the colour glyph page unsized; a blurred box compiles the blur and composite programs once; with ANGLE linked in, the driver trim succeeds and the next frame's pixels are the same. |
 | M2-GLES-15 | Unit | The GLES path trims the driver once, no sooner than a second after the first frame shown, and not with `PLATYPUS_GLES_TRIM=0`. |
+| M2-GLES-16 | Integration | Two stacked `backdrop-filter: blur(10px) saturate(1.6)` glass boxes over a blue/orange split: the GLES executor reads only inside each box (even colour up to the shared edge) and matches the wgpu one. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

@@ -793,6 +793,7 @@ impl GlesRenderer {
                     temp,
                     area,
                     sigma,
+                    contained,
                 } => unsafe {
                     let Some(program) = self.programs.get(&self.gl, ProgramKind::Blur) else {
                         continue;
@@ -800,16 +801,11 @@ impl GlesRenderer {
                     self.settle(&mut pending_clear, *tex, &mut stats);
                     pending_clear[*temp] = None;
                     let radius = (3.0 * sigma).ceil().min(MAX_BLUR_RADIUS);
-                    // Horizontal into `temp` (taller than `area`, so the vertical pass has valid
-                    // rows to read), then vertical back into `tex`.
-                    let r = radius as u32;
-                    let top = area.y.saturating_sub(r);
-                    let tall = PxRect {
-                        x: area.x,
-                        y: top,
-                        w: area.w,
-                        h: (area.y + area.h + r).min(size.1) - top,
-                    };
+                    // Horizontal into `temp`, then vertical back into `tex`.
+                    let (tall, b) = plan::blur_reach(area, radius, *contained, size);
+                    // The bounds are y down; the canvases are read bottom up.
+                    let bottom = size.1 as f32 - 1.0;
+                    let bounds = [b[0], bottom - b[3], b[2], bottom - b[1]];
                     for (from, to, dir, rect, clear) in [
                         (*tex, *temp, [1.0, 0.0], tall, Some(Color::TRANSPARENT)),
                         (*temp, *tex, [0.0, 1.0], *area, None),
@@ -823,6 +819,10 @@ impl GlesRenderer {
                             dir[1],
                             sigma.max(0.01),
                             radius,
+                        );
+                        gl.uniform_4_f32_slice(
+                            gl.get_uniform_location(program, "u_bounds").as_ref(),
+                            &bounds,
                         );
                         gl.draw_arrays(glow::TRIANGLES, 0, 3);
                         stats.passes += 1;

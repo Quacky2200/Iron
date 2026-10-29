@@ -184,6 +184,38 @@ pub struct PxRect {
     pub h: u32,
 }
 
+/// For a `Step::Blur` of `area` with `radius` taps either side on a canvas of `size`: the
+/// rows the horizontal pass must write (`area` grown by the radius vertically, so the
+/// vertical pass has valid rows to read, unless `contained`), and the pixels reads clamp
+/// to (first x, first y, last x, last y; y down).
+pub fn blur_reach(
+    area: &PxRect,
+    radius: f32,
+    contained: bool,
+    size: (u32, u32),
+) -> (PxRect, [f32; 4]) {
+    if contained {
+        let last = [area.x + area.w - 1, area.y + area.h - 1];
+        return (
+            *area,
+            [area.x as f32, area.y as f32, last[0] as f32, last[1] as f32],
+        );
+    }
+    let r = radius as u32;
+    let top = area.y.saturating_sub(r);
+    let rows = PxRect {
+        x: area.x,
+        y: top,
+        w: area.w,
+        h: (area.y + area.h + r).min(size.1) - top,
+    };
+    let last = [
+        size.0.saturating_sub(1) as f32,
+        size.1.saturating_sub(1) as f32,
+    ];
+    (rows, [0.0, 0.0, last[0], last[1]])
+}
+
 /// Whether UI drawn over the world needs to read it: backdrop filters, and layers with
 /// a blend mode (both read what's behind them).
 pub fn needs_backdrop(cmds: &[DrawCmd]) -> bool {
@@ -211,11 +243,15 @@ pub enum Step {
         src: usize,
         dst: usize,
     },
+    /// Blurs `area` of `tex` (through `temp`). With `contained`, reads stay inside `area`,
+    /// repeating its edge pixels (`backdrop-filter`: only the element's own box is
+    /// blurred, so neighbouring glass doesn't bleed in); otherwise they reach outside it.
     Blur {
         tex: usize,
         temp: usize,
         area: PxRect,
         sigma: f32,
+        contained: bool,
     },
     Composite {
         src: usize,
@@ -869,6 +905,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                             temp,
                             area,
                             sigma: blur * scale,
+                            contained: false,
                         });
                     }
                     // Drop shadows: blurred, tinted, shifted copies of the layer,
@@ -888,6 +925,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                                 temp,
                                 area,
                                 sigma: s.sigma * scale,
+                                contained: false,
                             });
                         }
                         if let Some(shadow_area) = to_px(visible) {
@@ -941,9 +979,8 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                 let own_clip =
                     clips.push(&ClipShape::rounded(*rect, *radii), clip, xf_stack.last());
                 let visible = clips.bounds(own_clip).unwrap_or(world(*rect));
-                let (Some(area), Some(blur_area)) =
-                    (to_px(visible), to_px(world(rect.expand(3.0 * blur))))
-                else {
+                // Like browsers, only the backdrop inside the element's box is blurred.
+                let (Some(area), Some(blur_area)) = (to_px(visible), to_px(world(*rect))) else {
                     continue;
                 };
                 let copy = textures;
@@ -960,6 +997,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                         temp,
                         area: blur_area,
                         sigma: blur * scale,
+                        contained: true,
                     });
                 }
                 steps.push(Step::Composite {

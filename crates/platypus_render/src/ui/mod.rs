@@ -32,7 +32,7 @@ use glyphs::GlyphEntry;
 use gradient::GpuGradient;
 use image_cache::ImageCache;
 pub use plan::needs_backdrop;
-use plan::{GpuClip, Instance, PxRect, Step};
+use plan::{GpuClip, Instance, Step, blur_reach};
 
 /// Format of the canvas and layer textures. sRGB storage, linear blending.
 pub const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -77,6 +77,8 @@ struct BlurParams {
     dir: [f32; 2],
     sigma: f32,
     radius: f32,
+    /// Reads clamp to these pixels: first x, first y, last x, last y.
+    bounds: [f32; 4],
 }
 
 #[repr(C)]
@@ -785,18 +787,11 @@ impl UiRenderer {
                     temp,
                     area,
                     sigma,
+                    contained,
                 } => {
                     settle(&mut encoder, &mut pending_clear, &mut stats, *tex);
                     let radius = (3.0 * sigma).ceil().min(MAX_BLUR_RADIUS);
-                    // Horizontal into `temp` (taller than `area`, so the vertical pass has
-                    // valid rows to read), then vertical back into `tex`.
-                    let r = radius as u32;
-                    let tall = PxRect {
-                        x: area.x,
-                        y: area.y.saturating_sub(r),
-                        w: area.w,
-                        h: (area.y + area.h + r).min(size.1) - area.y.saturating_sub(r),
-                    };
+                    let (tall, bounds) = blur_reach(area, radius, *contained, size);
                     for (src, dst, dir, scissor, load) in [
                         (
                             *tex,
@@ -813,6 +808,7 @@ impl UiRenderer {
                                 dir,
                                 sigma: sigma.max(0.01),
                                 radius,
+                                bounds,
                             }),
                             usage: wgpu::BufferUsages::UNIFORM,
                         });

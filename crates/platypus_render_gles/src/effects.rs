@@ -12,17 +12,20 @@
 use crate::shaders::{GEOMETRY, QUAD_COMMON};
 
 /// One pass of the separable Gaussian: `u_blur` is (dir.x, dir.y, sigma in px, taps either
-/// side). Reads clamp at the edges, as wgpu's clamp-to-edge sampler does.
+/// side). Reads clamp to `u_bounds` (first x, first y, last x, last y, in the canvas's own
+/// orientation): the whole canvas, or a `backdrop-filter`'s box.
 pub const BLUR_FRAGMENT: &str = r#"#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 uniform sampler2D u_src;
 uniform vec4 u_blur;
+uniform vec4 u_bounds;
 layout(location = 0) out vec4 o_color;
 
 void main() {
-    ivec2 size = textureSize(u_src, 0);
+    ivec2 low = ivec2(u_bounds.xy);
+    ivec2 high = ivec2(u_bounds.zw);
     ivec2 at = ivec2(gl_FragCoord.xy);
     int r = int(u_blur.w);
     vec4 sum = vec4(0.0);
@@ -30,7 +33,7 @@ void main() {
     for (int i = -r; i <= r; i++) {
         float x = float(i);
         float w = exp(-(x * x) / (2.0 * u_blur.z * u_blur.z));
-        ivec2 q = clamp(at + ivec2(u_blur.xy * x), ivec2(0), size - 1);
+        ivec2 q = clamp(at + ivec2(u_blur.xy * x), low, high);
         sum += texelFetch(u_src, q, 0) * w;
         weights += w;
     }

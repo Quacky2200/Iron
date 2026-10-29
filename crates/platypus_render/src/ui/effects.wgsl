@@ -30,20 +30,23 @@ struct BlurParams {
     dir: vec2<f32>, // (1, 0) or (0, 1)
     sigma: f32,     // physical pixels
     radius: f32,    // taps either side
+    bounds: vec4<f32>, // reads clamp to these pixels (first x, first y, last x, last y)
 };
 @group(0) @binding(2) var<uniform> blur: BlurParams;
 
 @fragment
 fn fs_blur(in: VsOut) -> @location(0) vec4<f32> {
-    let texel = 1.0 / vec2<f32>(textureDimensions(src));
-    let uv = uv_at(in.pos);
+    let at = vec2<i32>(in.pos.xy);
+    let low = vec2<i32>(blur.bounds.xy);
+    let high = vec2<i32>(blur.bounds.zw);
+    let dir = vec2<i32>(blur.dir);
     let r = i32(blur.radius);
     var sum = vec4(0.0);
     var weights = 0.0;
     for (var i = -r; i <= r; i++) {
         let x = f32(i);
         let w = exp(-(x * x) / (2.0 * blur.sigma * blur.sigma));
-        sum += textureSampleLevel(src, samp, uv + blur.dir * x * texel, 0.0) * w;
+        sum += textureLoad(src, clamp(at + dir * i, low, high), 0) * w;
         weights += w;
     }
     return sum / weights;
