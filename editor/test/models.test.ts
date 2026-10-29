@@ -14,6 +14,8 @@ import {
   dropTarget,
   group,
   groupOf,
+  hasTab,
+  openTab,
   parseLayout,
   removeTab,
   resize,
@@ -409,6 +411,19 @@ test("repeats collapse with counts, and filters count and search", () => {
     [3, 1, 1, 1],
     "collapsed counts",
   );
+});
+
+// M5-EDT-42
+test("a closed panel opens again in the first group, an open one is made active", () => {
+  const layout = split("root", "row", [group("a", ["hierarchy", "scene"]), group("b", ["console"])], [0.5, 0.5]);
+  yes(hasTab(layout, "scene") && !hasTab(layout, "project"), "has");
+  const closed = removeTab(layout, "console");
+  yes(!hasTab(closed, "console"), "closed");
+  const back = openTab(closed, "console");
+  eq(groupOf(back, "console")?.active ?? "", "console", "opened and active");
+  eq(groupOf(back, "console")?.id ?? "", "a", "in the first group");
+  const active = openTab(layout, "hierarchy");
+  eq(groupOf(active, "hierarchy")?.active ?? "", "hierarchy", "made active where it is");
 });
 
 export function run(): string {

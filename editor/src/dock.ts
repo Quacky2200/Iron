@@ -124,6 +124,17 @@ export function activate(layout: DockNode, tab: string): DockNode {
   );
 }
 
+/** Whether a tab is in the layout. */
+export const hasTab = (layout: DockNode, tab: string): boolean => groupOf(layout, tab) !== null;
+
+/** Shows a tab: made active where it is, else added to the first group (View > Panels). */
+export function openTab(layout: DockNode, tab: string): DockNode {
+  if (hasTab(layout, tab)) return activate(layout, tab);
+  const first = groups(layout)[0];
+  if (!first) return group("main", [tab]);
+  return dockTab(layout, tab, first.id, "center");
+}
+
 /** Takes a tab out; empty groups go and their space goes to their neighbours. The last group stays, empty. */
 export function removeTab(layout: DockNode, tab: string): DockNode {
   const out = rebuild(layout, (n) => {

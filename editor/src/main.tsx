@@ -12,7 +12,19 @@ import { Console } from "./Console.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { projectSettings } from "./ProjectSettings.tsx";
 import { Dock, type DockPanel } from "./Dock.tsx";
-import { type DockNode, group, parseLayout, type Rect as DockRect, serializeLayout, split } from "./dock.ts";
+import {
+  type DockNode,
+  group,
+  groupOf,
+  hasTab,
+  openTab,
+  parseLayout,
+  type Rect as DockRect,
+  removeTab,
+  serializeLayout,
+  split,
+} from "./dock.ts";
+import { getPref, preferencesDialog, setPref } from "./Preferences.tsx";
 import { ALL_FILES, SCENE_FILTER, stemOf } from "./file-dialog.ts";
 import { fileDialog } from "./FileDialog.tsx";
 import { onEditorFrame } from "./frame.ts";
@@ -152,6 +164,9 @@ function useSceneTree(): TreeNode<Thing>[] {
 
 const ICONS: Record<Thing["kind"], string> = { object: "■", light: "☀", camera: "◉", mesh: "▲", audio: "♪", probe: "◍" };
 
+// The "Save changes?" check the window's close box goes through (the App's, set each render).
+let closeGuard = (then: () => void): void => then();
+
 // Where `Camera.main` draws (fractions of the window): the Game panel's box while it's shown.
 let gameRect: Rect | null = null;
 
@@ -178,8 +193,8 @@ function App() {
     expanded: new Set(roots.filter((r) => r.children).map((r) => r.id)),
   }));
   const [status, setStatus] = useState("Ready");
-  const [showGrid, setShowGrid] = useState(true);
-  const [showGizmos, setShowGizmos] = useState(true);
+  const [showGrid, setShowGrid] = useState(() => getPref("grid", true));
+  const [showGizmos, setShowGizmos] = useState(() => getPref("gizmos", true));
   // Where the pointer was last pressed: "scene" (Hierarchy, Scene view) or "project".
   const area = useRef<string>("scene");
 
@@ -199,12 +214,19 @@ function App() {
     const title = windowTitle(sceneLabel(), isDirty(history), baseName(Editor.project));
     Window.main.title = title;
   });
+  // The window's close box asks about unsaved changes too.
+  useEffect(() => {
+    Window.main.onCloseRequested(() => {
+      if (!isDirty(history)) return;
+      Window.main.cancelClose();
+      closeGuard(() => Window.main.close());
+    });
+  }, []);
   const saveLayout = () => {
     PlayerPrefs.setString(LAYOUT_KEY, serializeLayout(layout));
     PlayerPrefs.save();
     say("Layout saved");
   };
-  const todo = (what: string) => () => say(`${what}: not implemented yet (see TODO.md M5.e)`);
   // Re-renders when the history changes (menu labels, the title's "*").
   const [, setHistoryVersion] = useState(0);
   const historyChanged = (): void => setHistoryVersion(history.version);
@@ -284,6 +306,7 @@ function App() {
       else if (answer === "Don't Save") then();
     });
   };
+  closeGuard = guardUnsaved;
   /** Places a model or prefab file under `parent` (none: the root), at `point` when given; undoable. */
   const placeFile = (path: string, parent: GameObject | null, point: Vector3 | null): void => {
     const kind = assetKind(path);
@@ -434,7 +457,14 @@ function App() {
     },
     { separator: true },
     { label: "Project Settings...", action: projectSettings },
-    { label: "Preferences...", action: todo("Preferences") },
+    {
+      label: "Preferences...",
+      action: () =>
+        preferencesDialog((name, value) => {
+          if (name === "grid") setShowGrid(value);
+          else if (name === "gizmos") setShowGizmos(value);
+        }),
+    },
   ];
   const select = (go: GameObject | null, additive: boolean) => {
     if (!go) {
@@ -535,11 +565,35 @@ function App() {
       items: [
         {
           label: "Panels",
-          submenu: PANELS.map((id) => ({ label: TITLES[id], action: () => say(`${TITLES[id]} panel`) })),
+          // Checked: in the layout. Choosing one shows it, or closes it when it is the active tab.
+          submenu: PANELS.map(
+            (id): MenuItem => ({
+              label: TITLES[id],
+              checked: hasTab(layout, id),
+              action: () => {
+                const open = hasTab(layout, id);
+                setLayout(open && groupOf(layout, id)?.active === id ? removeTab(layout, id) : openTab(layout, id));
+              },
+            }),
+          ),
         },
         { separator: true },
-        { label: "Show Grid", checked: showGrid, action: () => setShowGrid((v) => !v) },
-        { label: "Show Gizmos", checked: showGizmos, action: () => setShowGizmos((v) => !v) },
+        {
+          label: "Show Grid",
+          checked: showGrid,
+          action: () => {
+            setPref("grid", !showGrid);
+            setShowGrid(!showGrid);
+          },
+        },
+        {
+          label: "Show Gizmos",
+          checked: showGizmos,
+          action: () => {
+            setPref("gizmos", !showGizmos);
+            setShowGizmos(!showGizmos);
+          },
+        },
       ],
     },
     {
@@ -567,8 +621,25 @@ function App() {
     {
       label: "Help",
       items: [
-        { label: "Documentation", accelerator: "F1", action: () => say("Docs: docs/editor.md:1") },
-        { label: "About Platypus", action: () => say(`${Application.productName} ${Application.version}`) },
+        {
+          label: "Documentation",
+          accelerator: "F1",
+          action: () => {
+            // The editor's guide, in the code editor (`Editor.openFile` looks in the source tree).
+            Editor.openFile("docs/editor.md", 1, 1);
+            say("Opened docs/editor.md");
+          },
+        },
+        {
+          label: "About Platypus",
+          action: () =>
+            void confirmDialog({
+              title: "About Platypus",
+              message: `${Application.productName} ${Application.version}\nAn engine with a Rust core and TypeScript gameplay compiled to native code.\nProject: ${Editor.project}`,
+              buttons: ["Close"],
+              cancel: "Close",
+            }),
+        },
       ],
     },
   ];
@@ -711,7 +782,7 @@ const TITLES: Record<string, string> = {
 };
 
 // The scene this project had open last, else its start scene, else a demo to look at.
-const first = Editor.isAvailable ? startScene(Editor.startScene) : "";
+const first = Editor.isAvailable ? startScene(Editor.startScene, getPref("reopenLastScene", true)) : "";
 if (!first || !openScene(first)) buildDemoScene();
 createRoot().render(<App />);
 console.log("Platypus editor started (UI: editor/src/main.tsx:1)");

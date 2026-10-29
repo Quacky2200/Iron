@@ -312,6 +312,55 @@ fn models_and_prefabs_are_placed_by_drag_and_drop_and_prefabs_saved() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
+/// The Console tab's close box closes it (Project shows instead); View > Panels > Console opens
+/// it again; Edit > Preferences and Help > About open and close with Escape.
+const MENUS_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "start", "frames": 10, "input": [] },
+  { "name": "closed", "frames": 20, "input": [
+    { "frame": 0, "kind": "click", "x": 75, "y": 637 }
+  ] },
+  { "name": "reopened", "frames": 80, "input": [
+    { "frame": 0, "kind": "clickText", "text": "View" },
+    { "frame": 5, "kind": "clickText", "text": "Panels" },
+    { "frame": 10, "kind": "clickText", "text": "Console" },
+    { "frame": 18, "kind": "moveToText", "text": "Collapse" },
+    { "frame": 20, "kind": "clickText", "text": "Edit" },
+    { "frame": 25, "kind": "clickText", "text": "Preferences..." },
+    { "frame": 32, "kind": "moveToText", "text": "Show the grid in the Scene view" },
+    { "frame": 34, "kind": "key", "code": "Escape" },
+    { "frame": 40, "kind": "clickText", "text": "Help" },
+    { "frame": 45, "kind": "clickText", "text": "About Platypus" },
+    { "frame": 52, "kind": "moveToText", "text": "Close" },
+    { "frame": 54, "kind": "key", "code": "Escape" }
+  ] }
+] }"#;
+
+// M5-EDT-41
+#[test]
+fn panels_close_and_open_again_and_the_other_menus_work() {
+    let run = run_editor("menus", MENUS_SPEC, true);
+    let shot = |name: &str| run.join("shots").join(name);
+    let bottom = |a: &str, b: &str| {
+        let a = image::open(shot(a)).unwrap().to_rgb8();
+        let b = image::open(shot(b)).unwrap().to_rgb8();
+        let mut n = 0;
+        for y in 680..860 {
+            for x in 0..1600 {
+                let (p, q) = (a.get_pixel(x, y), b.get_pixel(x, y));
+                if p.0.iter().zip(q.0).any(|(s, t)| s.abs_diff(t) > 24) {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    assert!(
+        bottom("01-start.png", "02-closed.png") > 2000,
+        "closing Console changed nothing"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+}
+
 /// Edit > Project Settings: "7" typed into company, then Undo.
 const SETTINGS_SPEC: &str = r#"{ "warmup": 30, "segments": [
   { "name": "typed", "frames": 40, "input": [

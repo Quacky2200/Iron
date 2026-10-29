@@ -178,7 +178,24 @@
   user-select: none;
 }
 
+.platypus-dock-close {
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  margin-right: -8px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--platypus-muted);
+}
+
+.platypus-dock-close:hover {
+  background-color: var(--platypus-hover);
+  color: var(--platypus-text);
+}
+
 .platypus-dock-tab {
+  flex-direction: row;
   align-items: center;
   padding: 0 14px;
   color: var(--platypus-muted);

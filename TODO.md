@@ -1482,7 +1482,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       - [ ] Then: an Inspector bound to the same scene (the Hierarchy is live already).
     - [ ] Inspector (`@property` fields), live Hierarchy from the scene, undo/redo
       (`M5-EDT-01..03`); the 10,000-row scroll benchmark (`M5-EDT-04`); the manual docking
-      check in the window (`M5-EDT-05`)
+      check in the window (`M5-EDT-05`). Inspector, live Hierarchy and undo/redo are done (E3, E5 below; script
+      `@property` fields wait for E11); the benchmark and the manual checks are open
     - [ ] **A usable editor** (2026-10-29, milestones E1..E10 of the editor roadmap):
       - [x] E1: the editor's world loads assets from `--project` (its own UI still from `editor/`);
         components of kinds the editor doesn't register (the game's scripts) are kept as data and
@@ -1544,11 +1545,22 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         the node tree, skins (bones, ≤4 normalised weights, inverse bind matrices) and the takes baked to keys;
         `.fbx` counts as a model for `.meta` files, packs and `--cook`. Test files are made by
         `tests/fixtures/assets/make_fbx.py` (no downloads) (`M5-FBX-01..05`)
-        - [ ] Later: `.meta` importer options (scale factor, import animation / materials, colliders); blend shapes;
+        - [ ] Later (FBX): `.meta` importer options (scale factor, import animation / materials, colliders); blend shapes;
           cameras and lights in the file; vertex colours; UV1; a golden of a posed FBX character; real exporter files
           (Maya, Blender, 3ds Max) as fixtures once their licences are checked
+      - [x] E10: the remaining menus: View > Panels (checked when open; closes the active tab or opens it again,
+        tabs have a close box), Show Grid / Gizmos kept as preferences, Edit > Preferences (`Preferences.tsx`:
+        grid, gizmos, reopening the last scene, in PlayerPrefs), Help > Documentation (opens `docs/editor.md` in the
+        code editor) and About; the window's close box asks to save unsaved changes like File > Exit
+        (`Window.main.onCloseRequested`) (`M5-EDT-41`, `-42`)
+        - [ ] Later: accelerators while a text field has focus; a code-editor command setting (it is
+          `PLATYPUS_EDITOR_OPEN` today); a manual check of the close-box prompt in the window
+      - [ ] E11 (not started, decided 2026-10-29: later): the project's own code in the editor (its component kinds
+        registered, so script `@property` fields are edited like the built-ins instead of as data) and play mode
+        (Play / Pause / Stop in the Game view, the scene restored on Stop). Needs a design doc first: a second
+        bundle JIT-loaded into the editor process with its hooks held back in edit mode
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
-      the tab strip; closing and reopening panels (View > Panels); floating panels in
+      the tab strip; floating panels in
       their own windows; accelerators while a text field has focus (keys typed into
       fields don't reach `input`); a golden image for the editor (needs a fixed font, the
       editor uses system fonts)

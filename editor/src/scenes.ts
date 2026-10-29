@@ -139,8 +139,8 @@ export function saveScene(path: string): boolean {
   return true;
 }
 
-/** The scene to open at start: the last one this project had open, else its start scene; "" for none. */
-export function startScene(startFromProject: string): string {
-  for (const path of recentScenes()) if (Editor.exists(path)) return path;
+/** The scene to open at start: the last one this project had open (if `reopenLast`), else its start scene; "" for none. */
+export function startScene(startFromProject: string, reopenLast: boolean): string {
+  if (reopenLast) for (const path of recentScenes()) if (Editor.exists(path)) return path;
   return startFromProject !== "" && Editor.exists(startFromProject) ? startFromProject : "";
 }

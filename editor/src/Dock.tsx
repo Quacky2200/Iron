@@ -17,6 +17,7 @@ import {
   dockTab,
   dropTarget,
   type Rect,
+  removeTab,
   resize,
   SPLITTER,
   TAB_BAR,
@@ -143,6 +144,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
                 }
                 setDrag(null);
               }}
+              onClose={() => onLayoutChange(removeTab(layout, tab))}
             />
           ))}
         </box>
@@ -221,6 +223,7 @@ function DockTab({
   onPress,
   onMove,
   onRelease,
+  onClose,
 }: {
   title: string;
   active: boolean;
@@ -228,6 +231,8 @@ function DockTab({
   onPress: (x: number, y: number) => void;
   onMove: (x: number, y: number) => void;
   onRelease: () => void;
+  /** The tab's close box (View > Panels opens it again). */
+  onClose: () => void;
 }) {
   const el = useRef<PlatypusElement>(null);
   const pressed = useRef(false);
@@ -254,6 +259,18 @@ function DockTab({
       }}
     >
       <Text>{title}</Text>
+      {active ? (
+        <box
+          className="platypus-dock-close"
+          onPointerDown={(e: PlatypusPointerEvent) => e.stopPropagation()}
+          onClick={(e: PlatypusPointerEvent) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <Text>×</Text>
+        </box>
+      ) : null}
     </box>
   );
 }
