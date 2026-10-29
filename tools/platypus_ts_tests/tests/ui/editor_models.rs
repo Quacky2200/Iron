@@ -111,6 +111,13 @@ fn the_editor_history_passes() {
     assert!(failures.is_empty(), "\n{failures}");
 }
 
+// M5-DND-21
+#[test]
+fn the_editor_placement_passes() {
+    let failures = run_editor_test("placement.test.ts", "edpl_", 969_000);
+    assert!(failures.is_empty(), "\n{failures}");
+}
+
 // M5-EDT-37
 #[test]
 fn the_editor_inspector_model_passes() {

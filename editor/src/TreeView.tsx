@@ -33,6 +33,10 @@ export interface TreeViewProps<T> {
   dragType?: string;
   /** A row's id dropped onto another row (`onto`). */
   onDropNode?: (dragged: string, onto: string) => void;
+  /** Other drags a row takes (files, say). */
+  acceptsDrop?: (e: PlatypusDragEvent) => boolean;
+  /** One of those dropped onto a row. */
+  onDropOn?: (e: PlatypusDragEvent, onto: string) => void;
 }
 
 /** The default rename field: Enter or leaving it renames, Escape cancels. */
@@ -77,6 +81,8 @@ export function TreeView<T>({
   className,
   dragType,
   onDropNode,
+  acceptsDrop,
+  onDropOn,
 }: TreeViewProps<T>) {
   const rows = useMemo(() => flatten(roots, state.expanded), [roots, state.expanded]);
   const list = useRef<VirtualListHandle>(null);
@@ -114,16 +120,22 @@ export function TreeView<T>({
         }}
         onDragOver={(e: PlatypusDragEvent) => {
           const from = dragging(e);
-          if (!from || from === node.id) return;
+          const other = !from && acceptsDrop !== undefined && acceptsDrop(e);
+          if ((!from || from === node.id) && !other) return;
           e.preventDefault();
           e.stopPropagation();
-          e.dataTransfer.dropEffect = "move";
+          e.dataTransfer.dropEffect = other ? "copy" : "move";
           setOver(node.id);
         }}
         onDragLeave={() => setOver(null)}
         onDrop={(e: PlatypusDragEvent) => {
           const from = dragging(e);
           setOver(null);
+          if (!from && acceptsDrop && acceptsDrop(e)) {
+            e.stopPropagation();
+            onDropOn?.(e, node.id);
+            return;
+          }
           if (!from) return;
           // Onto itself: nothing happens (not a drop on the list behind it either).
           e.stopPropagation();

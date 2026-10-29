@@ -156,6 +156,27 @@ export function makeCommand(label: string, make: () => GameObject): Command {
   };
 }
 
+/**
+ * Makes a new object under `parent` (none: at the root) with `make` (again on redo); undo destroys
+ * it. For things placed from files: a model, a prefab.
+ */
+export function placeCommand(label: string, parent: GameObject | null, make: (parent: GameObject | null) => GameObject): Command {
+  const parentLoc = parent ? locate(parent) : null;
+  let loc: Loc = [];
+  return {
+    label,
+    run: () => {
+      const p = parentLoc ? find(parentLoc) : null;
+      if (parentLoc && !p) return;
+      const go = make(p);
+      if (go.exists()) loc = locate(go);
+    },
+    undo: () => {
+      find(loc)?.destroy();
+    },
+  };
+}
+
 /** Objects with none of their ancestors in the list (deleting a parent deletes its children). */
 export function topmost(objects: readonly GameObject[]): GameObject[] {
   const ids = new Set(objects.map((o) => o.id));

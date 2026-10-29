@@ -1525,6 +1525,18 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         with it: `cond && f()` with a void `f` dropped the call (`M9-TS-3524`)
         - [ ] Later: `layers`, `quality`, `display` and the platform sections in the form; a file picker for path
           settings; showing a template's resolved value as a hint
+      - [x] E7: prefab files: a Hierarchy object dragged onto a Project folder is saved as `<name>.prefab.json` (with
+        its `.meta`; `EditorScene.savePrefab`, `manager::prefab_file_json`: assets in the file's table); a prefab file
+        dragged onto the Hierarchy (a row: under it) or the Scene view, or double-clicked, is placed
+        (`EditorScene.placePrefab`), undoably; prefab files keep their `assets` table (`M5-PRF-10`, `-11`)
+        - [ ] Later (decided 2026-10-29: unlinked copies first): linked prefab instances (a scene saves `prefab: path`
+          plus overrides; apply / revert), nested prefabs and variants, a prefab editing mode
+      - [x] E8: models placed by drag and drop: a `.glb` / `.gltf` / `.fbx` from the Project browser or from the system
+        (copied into `assets/models` with its `.meta` first) onto the Scene view lands on the ground under the
+        pointer, onto the Hierarchy under the row (or at the root); double-clicking places it too; the new object is
+        selected; undoable (`placement.ts`, `M5-DND-20`, `-21`)
+        - [ ] Later: a preview while dragging over the view; dropping onto meshes (a physics ray); dropping between
+          Hierarchy rows
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into

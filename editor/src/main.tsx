@@ -32,7 +32,8 @@ import {
   undoLabel,
 } from "./history.ts";
 import { confirmDialog, ModalHost } from "./Modal.tsx";
-import { baseName, parentPath } from "./project.ts";
+import { assetKind, importFolder, placeable } from "./placement.ts";
+import { baseName, joinPath, OBJECT_TYPE, parentPath, PROJECT_PATH_TYPE } from "./project.ts";
 import {
   clearRecent,
   forgetScene,
@@ -46,6 +47,8 @@ import {
 } from "./scenes.ts";
 import {
   makeCommand,
+  noObject,
+  placeCommand,
   copyObjects,
   deleteCommand,
   duplicateCommand,
@@ -68,8 +71,6 @@ const MENUBAR = 26;
 const STATUS = 22;
 const PANELS = ["hierarchy", "scene", "game", "inspector", "console", "project"];
 const LAYOUT_KEY = "editor.layout";
-/** The data type a Hierarchy row carries while dragged (its object's id). */
-const HIERARCHY_TYPE = "application/x-platypus-object";
 
 // The scene's undo history and the objects copied (snapshots).
 const history = createHistory();
@@ -282,6 +283,68 @@ function App() {
       if (answer === "Save") save(then);
       else if (answer === "Don't Save") then();
     });
+  };
+  /** Places a model or prefab file under `parent` (none: the root), at `point` when given; undoable. */
+  const placeFile = (path: string, parent: GameObject | null, point: Vector3 | null): void => {
+    const kind = assetKind(path);
+    if (kind !== "model" && kind !== "prefab") return;
+    exec(
+      placeCommand(`Place ${baseName(path)}`, parent, (p) => {
+        const go =
+          kind === "prefab"
+            ? EditorScene.placePrefab(path, p ?? noObject())
+            : p
+              ? Model.load(path).instantiate({ parent: p })
+              : Model.load(path).instantiate();
+        if (point && go.exists()) go.transform.position = point;
+        return go;
+      }),
+    );
+    if (Editor.lastError !== "") warn(`Can't place ${path}: ${Editor.lastError}`);
+    // The new object is the last under its parent: select it, as Unity does.
+    const kids = shownChildren(parent);
+    const made = kids[kids.length - 1];
+    if (made) select(made, false);
+  };
+  /** Whether a drag carries something to place: a project model or prefab, or such files from the system. */
+  const acceptsFiles = (e: PlatypusDragEvent): boolean => {
+    const path = e.dataTransfer.getData(PROJECT_PATH_TYPE);
+    if (path) return placeable(path);
+    return e.dataTransfer.files.some((f) => placeable(f.path));
+  };
+  /** Places what a drag carries; files from the system are copied into the project first (with their `.meta`). */
+  const dropFiles = (e: PlatypusDragEvent, parent: GameObject | null, point: Vector3 | null): void => {
+    const path = e.dataTransfer.getData(PROJECT_PATH_TYPE);
+    if (path) {
+      placeFile(path, parent, point);
+      return;
+    }
+    for (const f of e.dataTransfer.files) {
+      if (!placeable(f.path)) continue;
+      const dir = importFolder(f.path);
+      if (!Editor.exists(dir)) Editor.createDir(dir);
+      const made = Editor.copyIn([f.path], dir);
+      if (made.length === 0) warn(`Can't import ${f.path}: ${Editor.lastError}`);
+      for (const p of made) {
+        say(`Imported ${p}`);
+        placeFile(p, parent, point);
+      }
+    }
+  };
+  /** Saves an object as `<dir>/<name>.prefab.json` (a free name); the file's path, "" when it failed. */
+  const savePrefabOf = (go: GameObject, dir: string): string => {
+    if (!go.exists()) return "";
+    const path = Editor.freeName(dir, `${go.name}.prefab.json`);
+    if (!path || !EditorScene.savePrefab(go, path)) return "";
+    Editor.ensureMeta(path);
+    return path;
+  };
+  /** A project file opened from the Project browser: a scene opens, a model or prefab is placed, others open in the code editor. */
+  const openFile = (path: string): void => {
+    const kind = assetKind(path);
+    if (kind === "scene") guardUnsaved(() => openPath(path));
+    else if (kind === "model" || kind === "prefab") placeFile(path, null, null);
+    else Editor.openFile(joinPath(Editor.project, path), 1, 1);
   };
   /** A new object at the root, made by `make` (and again on redo), selected. */
   const create = (label: string, make: () => GameObject): void => {
@@ -521,13 +584,18 @@ function App() {
               area.current = "scene";
             }}
             onDragOver={(e: PlatypusDragEvent) => {
-              // Below the rows: back to the root.
-              if (!e.dataTransfer.getData(HIERARCHY_TYPE)) return;
+              // Below the rows: back to the root (an object), or placed at the root (a file).
+              const files = acceptsFiles(e);
+              if (!e.dataTransfer.getData(OBJECT_TYPE) && !files) return;
               e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
+              e.dataTransfer.dropEffect = files ? "copy" : "move";
             }}
             onDrop={(e: PlatypusDragEvent) => {
-              const go = GameObject.byId(Number(e.dataTransfer.getData(HIERARCHY_TYPE)));
+              if (acceptsFiles(e)) {
+                dropFiles(e, null, null);
+                return;
+              }
+              const go = GameObject.byId(Number(e.dataTransfer.getData(OBJECT_TYPE)));
               if (go.exists()) exec(reparentCommand(go, null, shownChildren(null).length));
             }}
           >
@@ -536,11 +604,16 @@ function App() {
               state={tree}
               onStateChange={setTree}
               height={height}
-              dragType={HIERARCHY_TYPE}
+              dragType={OBJECT_TYPE}
               onDropNode={(dragged, onto) => {
                 const go = GameObject.byId(Number(dragged));
                 const parent = GameObject.byId(Number(onto));
                 if (go.exists() && parent.exists()) exec(reparentCommand(go, parent, shownChildren(parent).length));
+              }}
+              acceptsDrop={acceptsFiles}
+              onDropOn={(e, onto) => {
+                const parent = GameObject.byId(Number(onto));
+                dropFiles(e, parent.exists() ? parent : null, null);
               }}
               renderIcon={(node) => <Text className={`icon ${node.data?.kind ?? ""}`}>{ICONS[node.data?.kind ?? "object"]}</Text>}
               onRename={(node, name) => {
@@ -574,6 +647,8 @@ function App() {
                   },
                 });
               }}
+              onDropObject={(id, dir) => savePrefabOf(GameObject.byId(Number(id)), dir)}
+              onOpenFile={openFile}
             />
           </box>
         ),
@@ -595,6 +670,8 @@ function App() {
               grid={showGrid}
               gizmos={showGizmos}
               onTransformed={(go, before, after) => keep(poseCommand(go, before, after))}
+              acceptsDrop={acceptsFiles}
+              onDropAt={(e, point) => dropFiles(e, null, point)}
             />
           </box>
         ),

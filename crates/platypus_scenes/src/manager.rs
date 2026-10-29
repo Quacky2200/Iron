@@ -9,7 +9,7 @@ use crate::data::{Saver, load_objects, sc, warn};
 use platypus_api::Handle;
 use platypus_api::callback::{HandleArg, Listeners, emit};
 use platypus_scene::ObjectId;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::cell::RefCell;
 
 /// The tag of objects kept across scene loads (`dontDestroyOnLoad`).
@@ -81,6 +81,8 @@ struct Prefab {
     name: String,
     root: Value,
     src: Option<String>,
+    /// The file's `assets` table (shared textures, meshes) its `$asset` ids name.
+    assets: Option<Map<String, Value>>,
 }
 
 struct State {
@@ -728,9 +730,33 @@ pub fn prefab_from_object(object: ObjectId) -> u32 {
             name,
             root,
             src: None,
+            assets: None,
         });
         s.prefabs.len() as u32
     })
+}
+
+/// An object and everything under it as a prefab file (`.prefab.json`): assets go to the file's
+/// `assets` table like a scene's, references outside it are dropped, and its placement starts
+/// at the origin. `None` for a part of a model.
+pub fn prefab_file_json(object: ObjectId) -> Option<Value> {
+    crate::ensure_kinds();
+    sync();
+    let mut saver = Saver::new(false);
+    saver.number(&[object]);
+    let mut root = saver.save_object(object)?;
+    if let Some(o) = root.as_object_mut() {
+        o.remove("position");
+        o.remove("rotation");
+        o.remove("prefab");
+    }
+    let name = sc(|s| s.name(object).unwrap_or_default().to_owned()).unwrap_or_default();
+    let mut data = json!({ "format": "platypus.prefab", "version": 1, "name": name, "root": root });
+    let assets = saver.take_assets();
+    if !assets.is_empty() {
+        data["assets"] = Value::Object(assets);
+    }
+    Some(data)
 }
 
 /// A prefab from saved data (`prefab_json`'s output).
@@ -750,6 +776,7 @@ pub fn prefab_from_data(text: &str, src: Option<&str>) -> Result<u32, String> {
             name,
             root: d["root"].clone(),
             src: src.map(str::to_owned),
+            assets: d.get("assets").and_then(Value::as_object).cloned(),
         });
         s.prefabs.len() as u32
     }))
@@ -770,8 +797,11 @@ pub fn prefab_json(prefab: u32) -> String {
         s.prefabs
             .get((prefab as usize).wrapping_sub(1))
             .map(|p| {
-                json!({ "format": "platypus.prefab", "version": 1, "name": p.name, "root": p.root })
-                    .to_string()
+                let mut d = json!({ "format": "platypus.prefab", "version": 1, "name": p.name, "root": p.root });
+                if let Some(a) = &p.assets {
+                    d["assets"] = Value::Object(a.clone());
+                }
+                d.to_string()
             })
             .unwrap_or_default()
     })
@@ -785,17 +815,17 @@ pub fn instantiate_prefab(
     parent: Option<ObjectId>,
 ) -> Option<ObjectId> {
     sync();
-    let mut root = st(|s| {
+    let (mut root, assets) = st(|s| {
         s.prefabs.get((prefab as usize).wrapping_sub(1)).map(|p| {
             let mut r = p.root.clone();
             if let (Some(src), Some(o)) = (&p.src, r.as_object_mut()) {
                 o.insert("prefab".into(), json!(src));
             }
-            r
+            (r, p.assets.clone())
         })
     })?;
     place(&mut root, position, rotation);
-    load_objects(&[root], parent, active(), None)
+    load_objects(&[root], parent, active(), assets.as_ref())
         .into_iter()
         .next()
 }

@@ -12,6 +12,7 @@
 
 import type { Rect as DockRect } from "./dock.ts";
 import { onEditorFrame } from "./frame.ts";
+import { groundPoint } from "./placement.ts";
 import {
   beginDrag,
   dragTo,
@@ -55,6 +56,10 @@ export interface SceneViewProps {
   initial?: SceneCameraState;
   /** After a handle drag: the object, and its transform before and after (for undo). */
   onTransformed?: (object: GameObject, before: ObjectPose, after: ObjectPose) => void;
+  /** Whether a drag over the view can be dropped here (it gets `copy`). */
+  acceptsDrop?: (e: PlatypusDragEvent) => boolean;
+  /** A drop, with the ground point under the pointer (else a point in front of the camera). */
+  onDropAt?: (e: PlatypusDragEvent, point: Vector3) => void;
 }
 
 /** An object's world position and rotation and its local scale. */
@@ -165,7 +170,7 @@ export function visibleObjects(): GameObject[] {
   return out;
 }
 
-export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true, initial, onTransformed }: SceneViewProps) {
+export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true, initial, onTransformed, acceptsDrop, onDropAt }: SceneViewProps) {
   const [cameraObject] = useState(() => {
     const go = new GameObject("Scene Camera");
     go.hideFlags = HideFlags.HideAndDontSave;
@@ -322,6 +327,17 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
       onWheel={onWheel}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
+      onDragOver={(e: PlatypusDragEvent) => {
+        if (!acceptsDrop || !acceptsDrop(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(e: PlatypusDragEvent) => {
+        if (!onDropAt || !acceptsDrop || !acceptsDrop(e)) return;
+        e.stopPropagation();
+        const ray = camera.screenPointToRay({ x: e.clientX, y: e.clientY });
+        onDropAt(e, groundPoint(ray.origin, ray.direction));
+      }}
     >
       {view.icons.map((icon) => (
         <box

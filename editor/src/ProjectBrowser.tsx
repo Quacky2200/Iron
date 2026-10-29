@@ -17,6 +17,7 @@ import {
   joinPath,
   listDir,
   moveInto,
+  OBJECT_TYPE,
   PROJECT_PATH_TYPE,
   parentPath,
   projectFolder,
@@ -31,18 +32,21 @@ export interface ProjectBrowserProps {
   onOpenFile?: (path: string) => void;
   /** An item went to the trash (`id` for `Editor.restore`), so the editor can undo it. */
   onTrashed?: (path: string, id: string) => void;
+  /** A scene object (its id) dropped on a folder: save it there as a prefab; the new file's path ("" when it failed). */
+  onDropObject?: (objectId: string, dir: string) => string;
 }
 
 const TOOLBAR = 28;
 
-/** What a drag over a folder would do there, if anything. */
-function dropAction(e: PlatypusDragEvent, dir: string): "copy" | "move" | null {
+/** What a drag over a folder would do there, if anything (`prefab`: a scene object saved as one). */
+function dropAction(e: PlatypusDragEvent, dir: string): "copy" | "move" | "prefab" | null {
   if (e.dataTransfer.files.length) return "copy";
+  if (e.dataTransfer.getData(OBJECT_TYPE)) return "prefab";
   const from = e.dataTransfer.getData(PROJECT_PATH_TYPE);
   return from && canMoveInto(from, dir) ? "move" : null;
 }
 
-export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTrashed }: ProjectBrowserProps) {
+export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTrashed, onDropObject }: ProjectBrowserProps) {
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<ProjectEntry[]>([]);
   const [selected, setSelected] = useState(-1);
@@ -126,11 +130,11 @@ export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTr
   const target = (dir: string) => ({
     onDragOver: (e: PlatypusDragEvent) => {
       const action = dropAction(e, dir);
-      if (!action) return;
+      if (!action || (action === "prefab" && !onDropObject)) return;
       e.preventDefault();
       // The innermost folder wins over the list behind it.
       e.stopPropagation();
-      e.dataTransfer.dropEffect = action;
+      e.dataTransfer.dropEffect = action === "prefab" ? "copy" : action;
       setOver(dir);
     },
     onDrop: (e: PlatypusDragEvent) => {
@@ -138,6 +142,11 @@ export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTr
       if (!action) return;
       e.stopPropagation();
       setOver(null);
+      if (action === "prefab") {
+        const made = onDropObject ? onDropObject(e.dataTransfer.getData(OBJECT_TYPE), dir) : "";
+        report(made ? `Saved prefab ${made}` : `Prefab not saved: ${Editor.lastError}`, made !== "");
+        return;
+      }
       const done =
         action === "copy"
           ? copyIn(

@@ -2381,8 +2381,10 @@ declare namespace EditorScene :: function components(object: GameObject): Compon
 declare namespace EditorScene :: function fields(object: GameObject, kind: string, handle: number): FieldInfo[];
 declare namespace EditorScene :: function newScene(name: string): boolean;
 declare namespace EditorScene :: function openScene(path: string): boolean;
+declare namespace EditorScene :: function placePrefab(path: string, parent: GameObject): GameObject;
 declare namespace EditorScene :: function removeComponent(object: GameObject, kind: string, handle: number): boolean;
 declare namespace EditorScene :: function restore(data: string, parent: GameObject, index: number): GameObject;
+declare namespace EditorScene :: function savePrefab(object: GameObject, path: string): boolean;
 declare namespace EditorScene :: function saveScene(path: string): boolean;
 declare namespace EditorScene :: function setField(object: GameObject, kind: string, handle: number, name: string, json: string): boolean;
 declare namespace EditorScene :: function snapshot(object: GameObject): string;

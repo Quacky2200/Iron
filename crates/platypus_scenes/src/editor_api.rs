@@ -168,6 +168,32 @@ pub mod editor_scene_api {
         })
     }
 
+    /// Saves an object and everything under it as a prefab file (`.prefab.json`): assets in the
+    /// file's table, references outside it dropped. (`Editor.ensureMeta` gives it its GUID.)
+    pub fn save_prefab(object: ObjectId, path: &str) -> bool {
+        project_op("savePrefab", |root| {
+            let data = manager::prefab_file_json(object)
+                .ok_or("a part of a model can't be a prefab on its own; use the model's root")?;
+            let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+            files::write_text(root, path, &format!("{text}\n"))?;
+            Ok(true)
+        })
+    }
+
+    /// Places a copy of a prefab file under `parent` (no object: at the root of the active
+    /// scene), last; it remembers the file it came from. No object when the file isn't a prefab.
+    pub fn place_prefab(path: &str, parent: ObjectId) -> ObjectId {
+        project_op("placePrefab", |root| {
+            let text = files::read_text(root, path)?;
+            let prefab = manager::prefab_from_data(&text, Some(path))?;
+            let parent = (parent.to_raw() != 0).then_some(parent);
+            manager::instantiate_prefab(prefab, None, None, parent)
+                .map(Some)
+                .ok_or_else(|| format!("{path}: nothing was made"))
+        })
+        .unwrap_or_else(none)
+    }
+
     /// The active scene's file ("" for a scene that was never saved).
     #[property]
     pub fn scene_path() -> String {

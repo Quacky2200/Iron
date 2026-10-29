@@ -14,6 +14,9 @@ export interface Listing {
 /** The data type a project item carries while dragged inside the editor. */
 export const PROJECT_PATH_TYPE = "application/x-platypus-project-path";
 
+/** The data type a Hierarchy row carries while dragged (its object's id). */
+export const OBJECT_TYPE = "application/x-platypus-object";
+
 /** Why the last call failed, as an error (null when it worked). */
 function failure(): Error | null {
   const error = Editor.lastError;

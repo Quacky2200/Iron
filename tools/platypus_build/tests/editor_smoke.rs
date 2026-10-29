@@ -248,6 +248,70 @@ fn inspector_edits_set_fields_and_undo() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// In a project with `assets/house.glb`: the model dragged from the Project browser onto the
+/// Scene view is placed; Cube dragged from the Hierarchy onto the Project list is saved as
+/// `assets/Cube.prefab.json`; that file dragged onto the Hierarchy is placed, and Ctrl+Z takes it
+/// away again. Each step is checked by its status line.
+const PLACE_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "place", "frames": 200, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Project" },
+    { "frame": 6, "kind": "clickText", "text": "assets" },
+    { "frame": 10, "kind": "key", "code": "Enter" },
+    { "frame": 18, "kind": "moveToText", "text": "house.glb" },
+    { "frame": 20, "kind": "mouseDown" },
+    { "frame": 24, "kind": "mouseMove", "x": 300, "y": 600 },
+    { "frame": 28, "kind": "mouseMove", "x": 600, "y": 450 },
+    { "frame": 32, "kind": "mouseMove", "x": 780, "y": 350 },
+    { "frame": 36, "kind": "mouseUp" },
+    { "frame": 44, "kind": "moveToText", "text": "Place house.glb" },
+    { "frame": 50, "kind": "moveToText", "text": "Cube" },
+    { "frame": 52, "kind": "mouseDown" },
+    { "frame": 56, "kind": "mouseMove", "x": 200, "y": 300 },
+    { "frame": 60, "kind": "mouseMove", "x": 600, "y": 700 },
+    { "frame": 64, "kind": "mouseMove", "x": 800, "y": 820 },
+    { "frame": 68, "kind": "mouseUp" },
+    { "frame": 80, "kind": "moveToText", "text": "Cube.prefab.json" },
+    { "frame": 82, "kind": "mouseDown" },
+    { "frame": 86, "kind": "mouseMove", "x": 400, "y": 600 },
+    { "frame": 90, "kind": "mouseMove", "x": 200, "y": 520 },
+    { "frame": 94, "kind": "mouseMove", "x": 150, "y": 500 },
+    { "frame": 98, "kind": "mouseUp" },
+    { "frame": 106, "kind": "moveToText", "text": "Place Cube.prefab.json" },
+    { "frame": 108, "kind": "clickText", "text": "Floor" },
+    { "frame": 112, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 113, "kind": "key", "code": "KeyZ" },
+    { "frame": 114, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 120, "kind": "moveToText", "text": "Undid Place Cube.prefab.json" }
+  ] }
+] }"#;
+
+// M5-PRF-11, M5-DND-20
+#[test]
+fn models_and_prefabs_are_placed_by_drag_and_drop_and_prefabs_saved() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let project = std::env::temp_dir().join(format!(
+        "platypus-editor-place-project-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&project);
+    std::fs::create_dir_all(project.join("assets")).unwrap();
+    std::fs::write(project.join("project.json"), "{ \"name\": \"fixture\" }\n").unwrap();
+    std::fs::copy(
+        repo.join("tests/fixtures/assets/house.glb"),
+        project.join("assets/house.glb"),
+    )
+    .unwrap();
+    let run = run_editor_on("place", PLACE_SPEC, false, &project);
+    let prefab = std::fs::read_to_string(project.join("assets/Cube.prefab.json")).unwrap();
+    assert!(
+        prefab.contains("\"platypus.prefab\"") && prefab.contains("MeshRenderer"),
+        "{prefab}"
+    );
+    assert!(project.join("assets/Cube.prefab.json.meta").is_file());
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 /// Edit > Project Settings: "7" typed into company, then Undo.
 const SETTINGS_SPEC: &str = r#"{ "warmup": 30, "segments": [
   { "name": "typed", "frames": 40, "input": [

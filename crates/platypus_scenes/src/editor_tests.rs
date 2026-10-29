@@ -197,6 +197,57 @@ fn the_inspector_reads_and_sets_fields_of_built_in_and_kept_components() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// M5-PRF-10
+#[test]
+fn objects_save_as_prefab_files_and_place_again() {
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    manager::reset();
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let dir = project("prefab");
+    let s = manager::load_scene(SCENE, false).unwrap();
+    let lamp = manager::roots(s)[1];
+    assert!(api::save_prefab(lamp, "prefabs/Lamp.prefab.json"));
+    let text = std::fs::read_to_string(dir.join("prefabs/Lamp.prefab.json")).unwrap();
+    let data: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(data["format"], "platypus.prefab");
+    assert_eq!(data["name"], "Lamp");
+    assert!(
+        data["root"].get("position").is_none(),
+        "placed at the origin"
+    );
+    assert_eq!(
+        data["root"]["children"][0]["components"][0]["type"],
+        "Camera"
+    );
+
+    let a = api::place_prefab("prefabs/Lamp.prefab.json", ObjectId::from_raw(0));
+    let first = manager::roots(s)[0];
+    let b = api::place_prefab("prefabs/Lamp.prefab.json", first);
+    assert!(a.to_raw() != 0 && b.to_raw() != 0);
+    assert_eq!(names(&manager::roots(s)), ["A", "Lamp", "C", "Lamp"]);
+    let under = with_scene(|sc| sc.children(first).to_vec()).unwrap();
+    assert_eq!(names(&under), ["Lamp"]);
+    // Copies remember their file (saved as `prefab`), whole.
+    let saved: Value = serde_json::from_str(&manager::serialize(s).unwrap()).unwrap();
+    assert_eq!(saved["objects"][3]["prefab"], "prefabs/Lamp.prefab.json");
+    assert_eq!(saved["objects"][3]["children"][0]["name"], "Bulb");
+    assert_eq!(
+        api::place_prefab("missing.prefab.json", ObjectId::from_raw(0)).to_raw(),
+        0
+    );
+
+    // A file's `assets` table reaches the copy's loader (an inline-only prefab has none).
+    let p = manager::prefab_from_data(
+        r#"{"format":"platypus.prefab","version":1,"name":"P","root":{"id":1,"name":"P"},"assets":{"t1":{"type":"Nope"}}}"#,
+        None,
+    )
+    .unwrap();
+    assert!(manager::prefab_json(p).contains("\"assets\""));
+    platypus_engine_api::editor::reset();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn scene_names_come_from_their_files() {
     assert_eq!(scene_name_of("scenes/level.scene.json"), "level");
