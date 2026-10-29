@@ -10,6 +10,7 @@ import "./editor.css";
 
 import { Console } from "./Console.tsx";
 import { Inspector } from "./Inspector.tsx";
+import { projectSettings } from "./ProjectSettings.tsx";
 import { Dock, type DockPanel } from "./Dock.tsx";
 import { type DockNode, group, parseLayout, type Rect as DockRect, serializeLayout, split } from "./dock.ts";
 import { ALL_FILES, SCENE_FILTER, stemOf } from "./file-dialog.ts";
@@ -368,6 +369,8 @@ function App() {
         setTree((t) => ({ ...t, selected: new Set(all) }));
       },
     },
+    { separator: true },
+    { label: "Project Settings...", action: projectSettings },
     { label: "Preferences...", action: todo("Preferences") },
   ];
   const select = (go: GameObject | null, additive: boolean) => {

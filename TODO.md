@@ -1518,6 +1518,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
           the hand-written kinds (physics, audio, animation) and for script `@property` fields (needs the project's
           code in the editor, E11); scrubbing numbers by dragging the label; the startup compile went from ~0.5 s to
           ~2 s with the editor's growth (lowering), worth a look
+      - [x] E6: Edit > Project Settings (`ProjectSettings.tsx`): `project.json`'s settings grouped (Identity, Game,
+        Build) from `platypus_core::project_edit::FIELDS`; each change rewrites only that key's text
+        (`Editor.projectFields` / `setProjectField` / `removeProjectField`), keeping unknown keys, key order and
+        `${templates}`; values are checked; the dialog has its own Undo / Redo (`M5-PRJ-01..05`). A compiler fix came
+        with it: `cond && f()` with a void `f` dropped the call (`M9-TS-3524`)
+        - [ ] Later: `layers`, `quality`, `display` and the platform sections in the form; a file picker for path
+          settings; showing a template's resolved value as a hint
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into

@@ -248,6 +248,58 @@ fn inspector_edits_set_fields_and_undo() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// Edit > Project Settings: "7" typed into company, then Undo.
+const SETTINGS_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "typed", "frames": 40, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Edit" },
+    { "frame": 5, "kind": "clickText", "text": "Project Settings..." },
+    { "frame": 12, "kind": "click", "x": 900, "y": 271 },
+    { "frame": 16, "kind": "key", "code": "Digit7", "key": "7" },
+    { "frame": 18, "kind": "key", "code": "Enter" }
+  ] },
+  { "name": "undone", "frames": 20, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Undo" }
+  ] }
+] }"#;
+
+// M5-PRJ-05
+#[test]
+fn project_settings_write_project_json_and_undo() {
+    let project = std::env::temp_dir().join(format!(
+        "platypus-editor-settings-project-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&project);
+    std::fs::create_dir_all(&project).unwrap();
+    let file = "{\n  \"name\": \"fixture\",\n  \"title\": \"${name} game\",\n  \"mine\": { \"a\": 1 }\n}\n";
+    std::fs::write(project.join("project.json"), file).unwrap();
+    // The shots are taken at each segment's end: compare the file after the run's two steps by
+    // running them as two runs.
+    let typed = SETTINGS_SPEC.replace(
+        r#",
+  { "name": "undone", "frames": 20, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Undo" }
+  ] }"#,
+        "",
+    );
+    let run = run_editor_on("settings", &typed, false, &project);
+    let after = std::fs::read_to_string(project.join("project.json")).unwrap();
+    assert_eq!(
+        after,
+        "{\n  \"name\": \"fixture\",\n  \"title\": \"${name} game\",\n  \"mine\": { \"a\": 1 },\n  \"company\": \"7\"\n}\n"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+    std::fs::write(project.join("project.json"), file).unwrap();
+    let run = run_editor_on("settings-undo", SETTINGS_SPEC, false, &project);
+    assert_eq!(
+        std::fs::read_to_string(project.join("project.json")).unwrap(),
+        file,
+        "undone"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 /// A new scene with a cube, saved with Ctrl+S (the dialog's name field starts as "Untitled";
 /// Enter saves).
 const SAVE_SPEC: &str = r#"{ "warmup": 30, "segments": [

@@ -1905,6 +1905,14 @@ declare interface ProjectEntry
 declare interface ProjectEntry :: dir: boolean;
 declare interface ProjectEntry :: name: string;
 declare interface ProjectEntry :: size: number;
+declare interface ProjectField
+declare interface ProjectField :: doc: string;
+declare interface ProjectField :: group: string;
+declare interface ProjectField :: key: string;
+declare interface ProjectField :: options: string;
+declare interface ProjectField :: set: boolean;
+declare interface ProjectField :: ty: string;
+declare interface ProjectField :: value: string;
 declare interface Resolution
 declare interface Resolution :: height: number;
 declare interface Resolution :: refreshRate: number;
@@ -2116,6 +2124,7 @@ declare module "@platypus/engine" :: export import PrimitiveType = globalThis.Pr
 declare module "@platypus/engine" :: export import Primitives = globalThis.Primitives;
 declare module "@platypus/engine" :: export import ProceduralSky = globalThis.ProceduralSky;
 declare module "@platypus/engine" :: export import ProjectEntry = globalThis.ProjectEntry;
+declare module "@platypus/engine" :: export import ProjectField = globalThis.ProjectField;
 declare module "@platypus/engine" :: export import QualitySettings = globalThis.QualitySettings;
 declare module "@platypus/engine" :: export import Quaternion = globalThis.Quaternion;
 declare module "@platypus/engine" :: export import QuaternionLike = globalThis.QuaternionLike;
@@ -2354,9 +2363,12 @@ declare namespace Editor :: function logSince(after: number): LogRecord[];
 declare namespace Editor :: function move(path: string, dir: string): string;
 declare namespace Editor :: function openFile(path: string, line?: number, col?: number): void;
 declare namespace Editor :: function openFile(path: string, options?: { line?: number; col?: number }): void;
+declare namespace Editor :: function projectFields(): ProjectField[];
 declare namespace Editor :: function readText(path: string): string;
+declare namespace Editor :: function removeProjectField(key: string): boolean;
 declare namespace Editor :: function rename(path: string, name: string): string;
 declare namespace Editor :: function restore(id: string): string;
+declare namespace Editor :: function setProjectField(key: string, json: string): boolean;
 declare namespace Editor :: function stat(path: string): FileStat;
 declare namespace Editor :: function trash(path: string): string;
 declare namespace Editor :: function writeText(path: string, text: string): boolean;

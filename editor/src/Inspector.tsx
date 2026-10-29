@@ -35,7 +35,7 @@ export interface InspectorProps {
 }
 
 /** A number field: typing changes nothing until Enter or leaving it; Escape puts the value back. */
-function NumberInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
+export function NumberInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
   const [text, setText] = useState(formatNumber(value));
   const editing = useRef(false);
   useEffect(() => {
@@ -68,7 +68,7 @@ function NumberInput({ value, onCommit }: { value: number; onCommit: (n: number)
 }
 
 /** A text field, committed like the number field. */
-function TextInput({ value, onCommit }: { value: string; onCommit: (s: string) => void }) {
+export function TextInput({ value, onCommit }: { value: string; onCommit: (s: string) => void }) {
   const [text, setText] = useState(value);
   const editing = useRef(false);
   useEffect(() => {
@@ -98,7 +98,7 @@ function TextInput({ value, onCommit }: { value: string; onCommit: (s: string) =
   );
 }
 
-function Checkbox({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+export function Checkbox({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <box className={value ? "platypus-check on" : "platypus-check"} onClick={() => onChange(!value)}>
       <Text>{value ? "✓" : ""}</Text>
@@ -107,7 +107,7 @@ function Checkbox({ value, onChange }: { value: boolean; onChange: (v: boolean) 
 }
 
 /** A choice among `options`: the value, and the list while open. */
-function Choice({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
+export function Choice({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <box className="platypus-choice" onClick={() => setOpen(!open)}>

@@ -855,6 +855,13 @@
   margin: 2px 6px 4px;
 }
 
+.platypus-settings {
+  flex-direction: column;
+  max-height: 560px;
+  overflow-y: auto;
+  border: 1px solid var(--platypus-line);
+}
+
 /* Modal dialogs */
 .platypus-modal-layer {
   position: absolute;

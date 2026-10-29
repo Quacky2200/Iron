@@ -37,6 +37,43 @@ pub struct LogRecord {
     pub time_ms: f64,
 }
 
+/// A key of the project's `project.json` as Project Settings shows it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ProjectField {
+    pub key: String,
+    /// `string`, `bool`, `enum` or `path`.
+    pub ty: String,
+    pub group: String,
+    /// An enum's choices, `|` between them ("" is "left out").
+    pub options: String,
+    pub doc: String,
+    /// The value as written (a string's text with its `${templates}`; `true` / `false`); "" when unset.
+    pub value: String,
+    /// Whether the file has the key.
+    pub set: bool,
+}
+
+/// Checks a value for a settings field; the value to write (`None`: remove the key).
+fn project_value(key: &str, json: &str) -> Result<Option<serde_json::Value>, String> {
+    use serde_json::Value;
+    let f = platypus_core::project_edit::FIELDS
+        .iter()
+        .find(|f| f.key == key)
+        .ok_or_else(|| format!("{key} isn't a project setting"))?;
+    let v: Value = serde_json::from_str(json).map_err(|e| format!("{key}: {e}"))?;
+    match (f.ty, &v) {
+        ("bool", Value::Bool(_)) => Ok(Some(v)),
+        ("enum", Value::String(s)) if s.is_empty() => Ok(None),
+        ("enum", Value::String(s)) if f.options.contains(&s.as_str()) => Ok(Some(v)),
+        ("enum", _) => Err(format!("{key} is one of {}", f.options[1..].join(", "))),
+        ("string" | "path", Value::String(s)) if key == "name" && s.trim().is_empty() => {
+            Err("a project needs a name".into())
+        }
+        ("string" | "path", Value::String(_)) => Ok(Some(v)),
+        _ => Err(format!("{key} takes a {}", f.ty)),
+    }
+}
+
 /// What a project path is.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FileStat {
@@ -194,7 +231,9 @@ fn warn(text: &str) {
         /// A file or folder of the project.
         ProjectEntry = ProjectEntry [name: string, dir: bool, size: f64],
         /// What a project path is (`Editor.stat`).
-        FileStat = FileStat [exists: bool, dir: bool, size: f64, modified_ms: f64]
+        FileStat = FileStat [exists: bool, dir: bool, size: f64, modified_ms: f64],
+        /// A key of `project.json` as Project Settings shows it.
+        ProjectField = ProjectField [key: string, ty: string, group: string, options: string, doc: string, value: string, set: bool]
     )
 )]
 pub mod editor_api {
@@ -336,6 +375,63 @@ pub mod editor_api {
             .unwrap_or_default()
     }
 
+    /// The settings of the project's `project.json`, as written (templates unexpanded).
+    pub fn project_fields() -> Vec<ProjectField> {
+        file_op("projectFields", |root, _| {
+            let text = files::read_text(root, "project.json")?;
+            platypus_core::project_edit::FIELDS
+                .iter()
+                .map(|f| {
+                    let raw = platypus_core::project_edit::get_key(&text, f.key)?;
+                    let value = match raw
+                        .as_deref()
+                        .map(serde_json::from_str::<serde_json::Value>)
+                    {
+                        Some(Ok(serde_json::Value::String(s))) => s,
+                        Some(Ok(v)) => v.to_string(),
+                        _ => String::new(),
+                    };
+                    Ok(ProjectField {
+                        key: f.key.into(),
+                        ty: f.ty.into(),
+                        group: f.group.into(),
+                        options: f.options.join("|"),
+                        doc: f.doc.into(),
+                        value,
+                        set: raw.is_some(),
+                    })
+                })
+                .collect()
+        })
+    }
+
+    /// Sets a project setting to a value (JSON text), changing only that key's text in
+    /// `project.json` (an empty choice removes the key). False with a reason in `lastError`.
+    pub fn set_project_field(key: &str, json: &str) -> bool {
+        file_op("setProjectField", |root, _| {
+            let text = files::read_text(root, "project.json")?;
+            let out = match project_value(key, json)? {
+                Some(v) => platypus_core::project_edit::set_key(&text, key, &v)?,
+                None => platypus_core::project_edit::remove_key(&text, key)?,
+            };
+            serde_json::from_str::<serde_json::Value>(&out)
+                .map_err(|e| format!("the edit would break project.json: {e}"))?;
+            files::write_text(root, "project.json", &out).map(|()| true)
+        })
+    }
+
+    /// Removes a project setting from `project.json` (its default applies); not `name`.
+    pub fn remove_project_field(key: &str) -> bool {
+        file_op("removeProjectField", |root, _| {
+            if key == "name" {
+                return Err("a project needs a name".into());
+            }
+            let text = files::read_text(root, "project.json")?;
+            let out = platypus_core::project_edit::remove_key(&text, key)?;
+            files::write_text(root, "project.json", &out).map(|()| true)
+        })
+    }
+
     /// Gives a project asset a `.meta` file (its GUID and importer settings) if it has none;
     /// returns the GUID ("" for a file that isn't an asset).
     pub fn ensure_meta(path: &str) -> String {
@@ -356,9 +452,61 @@ pub mod editor_api {
 mod tests {
     use super::*;
 
+    /// The editor's state is one for the process: these tests take turns.
+    static ONE: Mutex<()> = Mutex::new(());
+
+    // M5-PRJ-04
+    #[test]
+    fn project_settings_edit_only_their_keys() {
+        let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let dir = std::env::temp_dir().join(format!("platypus-editor-prj-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file =
+            "{\n  \"name\": \"${firstName}'s\",\n  \"custom\": [1],\n  \"renderer\": \"gles\"\n}\n";
+        std::fs::write(dir.join("project.json"), file).unwrap();
+        enable(&dir, &dir);
+        let fields = editor_api::project_fields();
+        let get = |k: &str| fields.iter().find(|f| f.key == k).unwrap().clone();
+        assert_eq!(
+            (get("name").value.as_str(), get("name").set),
+            ("${firstName}'s", true)
+        );
+        assert!(!get("title").set);
+        assert_eq!(get("renderer").options, "|vulkan|gles|cpu");
+
+        assert!(editor_api::set_project_field("title", "\"Hello\""));
+        assert!(editor_api::set_project_field("fps", "false"));
+        // An empty choice removes the key.
+        assert!(editor_api::set_project_field("renderer", "\"\""));
+        let text = std::fs::read_to_string(dir.join("project.json")).unwrap();
+        assert_eq!(
+            text,
+            "{\n  \"name\": \"${firstName}'s\",\n  \"custom\": [1],\n  \"title\": \"Hello\",\n  \"fps\": false\n}\n"
+        );
+        // Refused, with a reason; the file is unchanged.
+        assert!(!editor_api::set_project_field("renderer", "\"metal\""));
+        assert!(editor_api::last_error().contains("renderer"));
+        assert!(!editor_api::set_project_field("name", "\"  \""));
+        assert!(!editor_api::set_project_field("fps", "\"yes\""));
+        assert!(
+            !editor_api::set_project_field("custom", "1"),
+            "not a setting"
+        );
+        assert!(!editor_api::remove_project_field("name"));
+        assert!(editor_api::remove_project_field("title"));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("project.json")).unwrap(),
+            "{\n  \"name\": \"${firstName}'s\",\n  \"custom\": [1],\n  \"fps\": false\n}\n"
+        );
+        reset();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // M5-EDT-27
     #[test]
     fn editor_calls_fail_without_a_project_and_work_with_one() {
+        let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
         reset();
         assert!(!editor_api::is_available());
         push_log(2, "script", "not kept".into());
