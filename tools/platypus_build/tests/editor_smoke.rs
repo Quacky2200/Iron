@@ -105,6 +105,52 @@ fn selecting_an_object_in_the_hierarchy_shows_its_handles() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// File > Open Scene shows the file dialog (its filter label), Escape closes it; New Folder in
+/// the Project browser asks for a name; the Rename dialog goes the same way.
+const DIALOG_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "open", "frames": 30, "input": [
+    { "frame": 0, "kind": "clickText", "text": "File" },
+    { "frame": 5, "kind": "clickText", "text": "Open Scene..." },
+    { "frame": 12, "kind": "moveToText", "text": "Scenes (*.scene.json)" }
+  ] },
+  { "name": "closed", "frames": 30, "input": [
+    { "frame": 0, "kind": "key", "code": "Escape" },
+    { "frame": 6, "kind": "clickText", "text": "Project" },
+    { "frame": 14, "kind": "clickText", "text": "New Folder" },
+    { "frame": 22, "kind": "moveToText", "text": "Folder name" }
+  ] },
+  { "name": "after", "frames": 20, "input": [
+    { "frame": 0, "kind": "key", "code": "Escape" }
+  ] }
+] }"#;
+
+/// Pixels of `a` and `b` in the middle of the window that differ by more than a little.
+fn middle_pixels_changed(a: &Path, b: &Path) -> usize {
+    let a = image::open(a).unwrap().to_rgb8();
+    let b = image::open(b).unwrap().to_rgb8();
+    let mut n = 0;
+    for y in 300..600 {
+        for x in 600..1000 {
+            let (p, q) = (a.get_pixel(x, y), b.get_pixel(x, y));
+            if p.0.iter().zip(q.0).any(|(s, t)| s.abs_diff(t) > 24) {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+// M5-EDT-34
+#[test]
+fn the_file_dialog_and_prompts_open_and_close() {
+    let run = run_editor("dialogs", DIALOG_SPEC, true);
+    let shot = |name: &str| run.join("shots").join(name);
+    // The dialog covered the middle of the window; Escape took it away again.
+    let open = middle_pixels_changed(&shot("01-open.png"), &shot("03-after.png"));
+    assert!(open > 2000, "no dialog was drawn ({open} pixels)");
+    let _ = std::fs::remove_dir_all(&run);
+}
+
 /// Builds the editor and runs `platypus-app editor --project examples/arcade --bench` with the
 /// input `spec` (and `--bench-shots <dir>/shots` with `shots`), checking it ended cleanly.
 /// Returns the run's folder.

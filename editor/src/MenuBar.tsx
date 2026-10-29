@@ -17,6 +17,7 @@ import {
   nextIndex,
   selectable,
 } from "./menu.ts";
+import { modalOpen } from "./modal.ts";
 
 export interface MenuBarProps {
   menus: Menu[];
@@ -66,6 +67,8 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
   // Accelerators and Alt+letter / F10 from anywhere (keys typed into text fields stay theirs).
   useEffect(() => {
     return input.on("keydown", (e) => {
+      // A modal dialog has the keys.
+      if (modalOpen()) return;
       const { menus, state } = latest.current;
       const mods = modifiers();
       if (e.code === "F10" && !mods.ctrl && !mods.alt) {

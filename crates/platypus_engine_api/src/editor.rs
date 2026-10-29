@@ -11,6 +11,7 @@
 //! feeds the log ([`push_log`] from its tracing layer while [`capturing`]) and says which outside
 //! paths were dropped on the window ([`allow_sources`]), the only ones `copyIn` copies.
 
+pub mod files;
 mod open;
 pub mod project;
 
@@ -34,6 +35,16 @@ pub struct LogRecord {
     pub message: String,
     /// Milliseconds since the log started.
     pub time_ms: f64,
+}
+
+/// What a project path is.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FileStat {
+    pub exists: bool,
+    pub dir: bool,
+    pub size: f64,
+    /// Last modified, milliseconds since 1970 (0 when unknown).
+    pub modified_ms: f64,
 }
 
 /// One entry of a folder listing.
@@ -134,6 +145,17 @@ pub fn reset() {
     });
 }
 
+/// Runs an editor operation on the project folder (other crates' editor calls too), keeping its
+/// error for `Editor.lastError` and warning with it; `T::default()` when it failed.
+pub fn project_op<T: Default>(name: &str, f: impl FnOnce(&Path) -> Result<T, String>) -> T {
+    file_op(name, |root, _| f(root))
+}
+
+/// The project folder, when the editor runs.
+pub fn project_root() -> Option<PathBuf> {
+    st(|s| s.project.clone())
+}
+
 /// Runs a file operation on the project folder, keeping its error for `lastError`.
 fn file_op<T: Default>(
     name: &str,
@@ -162,13 +184,17 @@ fn warn(text: &str) {
     crate::log::emit(crate::log::Level::Warn, text);
 }
 
+// The shim of a call returning one record (`stat`) writes through the caller's pointer.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[platypus_api(
     namespace = "Editor",
     records(
         /// One record of the engine's log: engine lines and the scripts' `console.*` (target `script`) in order.
         LogRecord = LogRecord [seq: f64, level: f64, target: string, message: string, time_ms: f64],
         /// A file or folder of the project.
-        ProjectEntry = ProjectEntry [name: string, dir: bool, size: f64]
+        ProjectEntry = ProjectEntry [name: string, dir: bool, size: f64],
+        /// What a project path is (`Editor.stat`).
+        FileStat = FileStat [exists: bool, dir: bool, size: f64, modified_ms: f64]
     )
 )]
 pub mod editor_api {
@@ -243,7 +269,64 @@ pub mod editor_api {
         file_op("move", |root, _| project::move_into(root, path, dir))
     }
 
-    /// Why the last `listDir`, `copyIn` or `move` failed ("" when it worked).
+    /// A project file's text ("" when it can't be read: see `lastError`).
+    pub fn read_text(path: &str) -> String {
+        file_op("readText", |root, _| files::read_text(root, path))
+    }
+
+    /// Writes a project file, making its folders; the old file is replaced in one step (the text
+    /// goes to a temporary file first). False when it failed.
+    pub fn write_text(path: &str, text: &str) -> bool {
+        file_op("writeText", |root, _| {
+            files::write_text(root, path, text).map(|()| true)
+        })
+    }
+
+    /// Whether a project path exists.
+    pub fn exists(path: &str) -> bool {
+        project_root().is_some_and(|r| files::exists(&r, path))
+    }
+
+    /// Whether a project path exists, is a folder, its size and when it last changed.
+    pub fn stat(path: &str) -> FileStat {
+        file_op("stat", |root, _| {
+            let s = files::stat(root, path)?;
+            Ok(FileStat {
+                exists: s.exists,
+                dir: s.dir,
+                size: s.size as f64,
+                modified_ms: s.modified_ms,
+            })
+        })
+    }
+
+    /// A path in project folder `dir` that isn't taken: `dir/name`, else `dir/name (2).ext`, ...
+    pub fn free_name(dir: &str, name: &str) -> String {
+        file_op("freeName", |root, _| files::free_name(root, dir, name))
+    }
+
+    /// Makes a project folder (and those above it); returns its path ("" if it exists or failed).
+    pub fn create_dir(path: &str) -> String {
+        file_op("createDir", |root, _| files::create_dir(root, path))
+    }
+
+    /// Renames a project file or folder in its folder (its `.meta` too); returns the new path.
+    pub fn rename(path: &str, name: &str) -> String {
+        file_op("rename", |root, _| files::rename(root, path, name))
+    }
+
+    /// Moves a project file or folder (and its `.meta`) into the project's trash
+    /// (`.platypus/trash`); returns the id `restore` puts it back with.
+    pub fn trash(path: &str) -> String {
+        file_op("trash", |root, _| files::trash(root, path))
+    }
+
+    /// Puts an item back from the trash where it was; returns its path.
+    pub fn restore(id: &str) -> String {
+        file_op("restore", |root, _| files::restore(root, id))
+    }
+
+    /// Why the last file operation failed ("" when it worked).
     #[property]
     pub fn last_error() -> String {
         st(|s| s.error.clone())

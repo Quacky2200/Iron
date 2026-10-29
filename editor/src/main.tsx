@@ -11,7 +11,10 @@ import "./editor.css";
 import { Console } from "./Console.tsx";
 import { Dock, type DockPanel } from "./Dock.tsx";
 import { type DockNode, group, parseLayout, type Rect as DockRect, serializeLayout, split } from "./dock.ts";
+import { ALL_FILES, SCENE_FILTER } from "./file-dialog.ts";
+import { fileDialog } from "./FileDialog.tsx";
 import { onEditorFrame } from "./frame.ts";
+import { ModalHost } from "./Modal.tsx";
 import { type Menu } from "./menu.ts";
 import { MenuBar } from "./MenuBar.tsx";
 import { ProjectBrowser } from "./ProjectBrowser.tsx";
@@ -154,7 +157,14 @@ function App() {
       label: "File",
       items: [
         { label: "New Scene", accelerator: "Ctrl+N", action: todo("New Scene") },
-        { label: "Open Scene...", accelerator: "Ctrl+O", action: todo("Open Scene") },
+        {
+          label: "Open Scene...",
+          accelerator: "Ctrl+O",
+          action: () =>
+            void fileDialog({ mode: "open", title: "Open Scene", filters: [SCENE_FILTER, ALL_FILES], dir: "scenes" }).then((path) => {
+              if (path) say(`Open ${path}: not implemented yet (see TODO.md M5.e)`);
+            }),
+        },
         {
           label: "Open Recent",
           submenu: [
@@ -286,6 +296,7 @@ function App() {
         <box style={{ flexGrow: 1 }} />
         <Text>{`${tree.selected.size} selected`}</Text>
       </box>
+      <ModalHost />
     </box>
   );
 }

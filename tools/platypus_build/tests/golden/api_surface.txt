@@ -1820,6 +1820,11 @@ declare interface ConditionSpec
 declare interface ConditionSpec :: mode: string;
 declare interface ConditionSpec :: parameter: string;
 declare interface ConditionSpec :: threshold?: number;
+declare interface FileStat
+declare interface FileStat :: dir: boolean;
+declare interface FileStat :: exists: boolean;
+declare interface FileStat :: modifiedMs: number;
+declare interface FileStat :: size: number;
 declare interface FlatMeshData
 declare interface FlatMeshData :: normals?: NumberList;
 declare interface FlatMeshData :: positions: NumberList;
@@ -2029,6 +2034,7 @@ declare module "@platypus/engine" :: export import EdgeCollider2D = globalThis.E
 declare module "@platypus/engine" :: export import Editor = globalThis.Editor;
 declare module "@platypus/engine" :: export import Emitter = globalThis.Emitter;
 declare module "@platypus/engine" :: export import ExposureMetering = globalThis.ExposureMetering;
+declare module "@platypus/engine" :: export import FileStat = globalThis.FileStat;
 declare module "@platypus/engine" :: export import FilterMode = globalThis.FilterMode;
 declare module "@platypus/engine" :: export import FixedJoint = globalThis.FixedJoint;
 declare module "@platypus/engine" :: export import FlatMeshData = globalThis.FlatMeshData;
@@ -2320,11 +2326,20 @@ declare namespace Editor :: const isAvailable: boolean;
 declare namespace Editor :: const lastError: string;
 declare namespace Editor :: const project: string;
 declare namespace Editor :: function copyIn(sources: readonly string[], dir: string): string[];
+declare namespace Editor :: function createDir(path: string): string;
+declare namespace Editor :: function exists(path: string): boolean;
+declare namespace Editor :: function freeName(dir: string, name: string): string;
 declare namespace Editor :: function listDir(path: string): ProjectEntry[];
 declare namespace Editor :: function logSince(after: number): LogRecord[];
 declare namespace Editor :: function move(path: string, dir: string): string;
 declare namespace Editor :: function openFile(path: string, line?: number, col?: number): void;
 declare namespace Editor :: function openFile(path: string, options?: { line?: number; col?: number }): void;
+declare namespace Editor :: function readText(path: string): string;
+declare namespace Editor :: function rename(path: string, name: string): string;
+declare namespace Editor :: function restore(id: string): string;
+declare namespace Editor :: function stat(path: string): FileStat;
+declare namespace Editor :: function trash(path: string): string;
+declare namespace Editor :: function writeText(path: string, text: string): boolean;
 declare namespace ExposureMetering
 declare namespace ExposureMetering :: function name(index: number): ExposureMetering;
 declare namespace ExposureMetering :: function parse(name: string): number;

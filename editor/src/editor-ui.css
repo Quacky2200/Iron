@@ -622,3 +622,171 @@
   color: #ffffff;
   background-color: var(--platypus-accent-dim);
 }
+
+/* Modal dialogs */
+.platypus-modal-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 100;
+}
+
+.platypus-modal-slot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+.platypus-modal-backdrop {
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--platypus-font);
+  font-size: 13px;
+  color: var(--platypus-text);
+}
+
+.platypus-modal {
+  flex-direction: column;
+  max-height: 90%;
+  background-color: var(--platypus-panel);
+  border: 1px solid var(--platypus-line);
+  border-radius: 6px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.platypus-modal-title {
+  flex-direction: row;
+  align-items: center;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  background-color: var(--platypus-bg);
+  border-bottom: 1px solid var(--platypus-line);
+  font-weight: 600;
+  user-select: none;
+}
+
+.platypus-modal-close {
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--platypus-muted);
+}
+
+.platypus-modal-close:hover {
+  background-color: var(--platypus-hover);
+  color: var(--platypus-text);
+}
+
+.platypus-modal-body {
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.platypus-modal-message {
+  white-space: pre-wrap;
+}
+
+.platypus-modal-label {
+  color: var(--platypus-muted);
+  font-size: 12px;
+}
+
+.platypus-modal-problem {
+  min-height: 16px;
+  color: var(--platypus-error);
+  font-size: 12px;
+}
+
+.platypus-modal-buttons {
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.platypus-button {
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 3px;
+  background-color: var(--platypus-raised);
+  border: 1px solid var(--platypus-line);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.platypus-button:hover {
+  background-color: #404248;
+}
+
+.platypus-button.primary {
+  background-color: var(--platypus-accent);
+  color: #ffffff;
+}
+
+.platypus-button.primary:hover {
+  background-color: #5aa0f4;
+}
+
+.platypus-button.disabled {
+  color: var(--platypus-muted);
+  background-color: var(--platypus-panel-alt);
+}
+
+.platypus-field {
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background-color: var(--platypus-bg);
+  border: 1px solid var(--platypus-line);
+  color: var(--platypus-text);
+}
+
+.platypus-field:focus {
+  border-color: var(--platypus-accent);
+}
+
+.platypus-file-crumbs {
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.platypus-file-list {
+  background-color: var(--platypus-panel-alt);
+  border: 1px solid var(--platypus-line);
+}
+
+.platypus-file-fields {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.platypus-file-filters {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.platypus-file-filter {
+  padding: 2px 8px;
+  border-radius: 3px;
+  color: var(--platypus-muted);
+  font-size: 12px;
+}
+
+.platypus-file-filter.on {
+  color: #ffffff;
+  background-color: var(--platypus-accent-dim);
+}

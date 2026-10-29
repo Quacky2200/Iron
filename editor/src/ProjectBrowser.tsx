@@ -3,9 +3,11 @@
 
 // The project browser: the project folder's files, navigable by folder. Files dragged
 // in from the system are copied into the folder they're dropped on (or the one shown);
-// items dragged inside it move into a folder (a row, a breadcrumb, or `..`).
+// items dragged inside it move into a folder (a row, a breadcrumb, or `..`). New Folder,
+// Rename (F2) and Delete (Del, into the project's trash) work on the selected item.
 
 import { cx } from "./classes.ts";
+import { confirmDialog, textDialog } from "./Modal.tsx";
 import {
   baseName,
   canMoveInto,
@@ -25,6 +27,10 @@ export interface ProjectBrowserProps {
   width: number;
   height: number;
   rowHeight?: number;
+  /** A file double-clicked or opened with Enter (folders open in the browser). */
+  onOpenFile?: (path: string) => void;
+  /** An item went to the trash (`id` for `Editor.restore`), so the editor can undo it. */
+  onTrashed?: (path: string, id: string) => void;
 }
 
 const TOOLBAR = 28;
@@ -36,7 +42,7 @@ function dropAction(e: PlatypusDragEvent, dir: string): "copy" | "move" | null {
   return from && canMoveInto(from, dir) ? "move" : null;
 }
 
-export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowserProps) {
+export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTrashed }: ProjectBrowserProps) {
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<ProjectEntry[]>([]);
   const [selected, setSelected] = useState(-1);
@@ -45,6 +51,9 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
   const [over, setOver] = useState<string | null>(null);
   const root = projectFolder();
   const rootName = root ? baseName(root) : "Project";
+  // `..` first when inside a folder.
+  const rows: ProjectEntry[] = path ? [{ name: "..", dir: true, size: 0 }, ...entries] : entries;
+  const isUp = (i: number) => path !== "" && i === 0;
 
   const refresh = useCallback(
     (dir = path) =>
@@ -59,12 +68,58 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
   );
   useEffect(() => {
     if (root) void refresh(path);
-    else setStatus("No project folder (run platypus_editor <folder>)");
+    else setStatus("No project folder (run platypus-app editor --project <folder>)");
   }, [path, root]);
 
   const open = (dir: string) => {
     setSelected(-1);
     setPath(dir);
+  };
+  const report = (message: string, ok: boolean): void => {
+    setStatus(message);
+    if (ok) console.log(message);
+    else console.warn(`Project: ${message}`);
+    void refresh();
+  };
+  const newFolder = (): void => {
+    void textDialog({ title: "New Folder", label: "Folder name", initial: "New Folder", ok: "Create" }).then((name) => {
+      if (name === "") return;
+      const made = Editor.createDir(joinPath(path, name));
+      report(made ? `Made ${made}` : Editor.lastError, made !== "");
+    });
+  };
+  /** The selected item's project path ("" for none or `..`). */
+  const selectedPath = (): string => {
+    const row = rows[selected];
+    return row && !isUp(selected) ? joinPath(path, row.name) : "";
+  };
+  const rename = (): void => {
+    const from = selectedPath();
+    if (!from) return;
+    const old = baseName(from);
+    void textDialog({ title: "Rename", label: `New name for ${old}`, initial: old, ok: "Rename" }).then((name) => {
+      if (name === "" || name === old) return;
+      const to = Editor.rename(from, name);
+      report(to ? `Renamed to ${to}` : Editor.lastError, to !== "");
+    });
+  };
+  const remove = (): void => {
+    const target = selectedPath();
+    if (!target) return;
+    void confirmDialog({
+      title: "Delete",
+      message: `Delete ${target}? It goes to the project's trash (.platypus/trash); Undo puts it back.`,
+      buttons: ["Delete", "Cancel"],
+      cancel: "Cancel",
+    }).then((answer) => {
+      if (answer !== "Delete") return;
+      const id = Editor.trash(target);
+      if (id) {
+        setSelected(-1);
+        onTrashed?.(target, id);
+      }
+      report(id ? `Deleted ${target}` : Editor.lastError, id !== "");
+    });
   };
 
   /** Drag handlers that make `dir` a drop target. */
@@ -104,9 +159,6 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
     },
   });
 
-  // `..` first when inside a folder.
-  const rows: ProjectEntry[] = path ? [{ name: "..", dir: true, size: 0 }, ...entries] : entries;
-  const isUp = (i: number) => path !== "" && i === 0;
   const listHeight = Math.max(0, height - TOOLBAR);
 
   return (
@@ -125,6 +177,15 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
         ))}
         <box style={{ flexGrow: 1 }} />
         <Text className="platypus-project-status">{status}</Text>
+        <box className="platypus-project-button" onClick={newFolder}>
+          <Text>New Folder</Text>
+        </box>
+        <box className="platypus-project-button" onClick={rename}>
+          <Text>Rename</Text>
+        </box>
+        <box className="platypus-project-button" onClick={remove}>
+          <Text>Delete</Text>
+        </box>
         <box className="platypus-project-button" onClick={() => void refresh()}>
           <Text>Refresh</Text>
         </box>
@@ -140,7 +201,10 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
         onKeyDown={(e) => {
           const row = rows[selected];
           if (e.key === "Enter" && row?.dir) open(isUp(selected) ? parentPath(path) : joinPath(path, row.name));
+          else if (e.key === "Enter" && row) onOpenFile?.(joinPath(path, row.name));
           else if (e.key === "Backspace" && path) open(parentPath(path));
+          else if (e.key === "F2") rename();
+          else if (e.key === "Delete") remove();
           else return;
           e.preventDefault();
         }}
@@ -159,7 +223,7 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
                 e.dataTransfer.setData("text/plain", full);
                 e.dataTransfer.effectAllowed = "move";
               }}
-              onDoubleClick={() => row.dir && open(full)}
+              onDoubleClick={() => (row.dir ? open(full) : onOpenFile?.(full))}
               onDragOver={row.dir ? drop.onDragOver : undefined}
               onDrop={row.dir ? drop.onDrop : undefined}
             >

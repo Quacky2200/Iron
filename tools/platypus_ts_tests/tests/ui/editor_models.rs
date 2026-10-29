@@ -103,3 +103,10 @@ fn the_editor_transform_handles_pass() {
     let failures = run_editor_test("handles.test.ts", "edh_", 965_000);
     assert!(failures.is_empty(), "\n{failures}");
 }
+
+// M5-EDT-31..33
+#[test]
+fn the_editor_file_dialog_passes() {
+    let failures = run_editor_test("file-dialog.test.ts", "edf_", 966_000);
+    assert!(failures.is_empty(), "\n{failures}");
+}

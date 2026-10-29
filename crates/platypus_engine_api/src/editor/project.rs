@@ -59,7 +59,8 @@ pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, String> {
         .filter_map(Result::ok)
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
+            // Dot files, and `.meta` files: they go with their asset (moves, renames, deletes).
+            if name.starts_with('.') || name.ends_with(".meta") {
                 return None;
             }
             let meta = e.metadata().ok()?;
@@ -79,7 +80,7 @@ pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, String> {
 }
 
 /// A name in `dir` that isn't taken: `name`, else `stem (2).ext`, `stem (3).ext`, ...
-fn free_name(dir: &Path, name: &str) -> PathBuf {
+pub(super) fn free_name(dir: &Path, name: &str) -> PathBuf {
     let first = dir.join(name);
     if !first.exists() {
         return first;
@@ -164,7 +165,7 @@ pub fn move_into(root: &Path, rel_from: &str, rel_dir: &str) -> Result<String, S
     if to.exists() {
         return Err(format!("{} already exists", relative(root, &to)));
     }
-    std::fs::rename(&from, &to).map_err(|e| format!("moving {rel_from:?}: {e}"))?;
+    super::files::move_with_meta(&from, &to).map_err(|e| format!("moving {rel_from:?}: {e}"))?;
     Ok(relative(root, &to))
 }
 
@@ -205,6 +206,7 @@ mod tests {
         std::fs::write(root.join("A.txt"), "hello").unwrap();
         std::fs::write(root.join("c.png"), "").unwrap();
         std::fs::write(root.join(".hidden"), "").unwrap();
+        std::fs::write(root.join("c.png.meta"), "").unwrap();
         let names: Vec<_> = list(&root, "")
             .unwrap()
             .into_iter()
@@ -255,6 +257,17 @@ mod tests {
             "a (2).png"
         );
         assert!(root.join("a (2).png").is_file());
+        // An asset's `.meta` moves with it.
+        std::fs::write(root.join("a (2).png.meta"), "guid").unwrap();
+        assert_eq!(
+            move_into(&root, "a (2).png", "assets").unwrap(),
+            "assets/a (2).png"
+        );
+        assert!(root.join("assets/a (2).png.meta").is_file());
+        assert_eq!(
+            move_into(&root, "assets/a (2).png", "").unwrap(),
+            "a (2).png"
+        );
         assert!(
             move_into(&root, "assets", "assets/pack").is_err(),
             "into itself"

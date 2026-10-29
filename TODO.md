@@ -1487,6 +1487,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
       - [x] E1: the editor's world loads assets from `--project` (its own UI still from `editor/`);
         components of kinds the editor doesn't register (the game's scripts) are kept as data and
         saved back (`Opaque` in `platypus_scenes`, `M5-SCN-10`)
+      - [x] E2: `Editor.readText` / `writeText` (atomic) / `exists` / `stat` / `freeName` / `createDir` / `rename` /
+        `trash` / `restore` (the project's own `.platypus/trash`; `.meta` files go along and are hidden in listings);
+        in-editor `Modal`, `confirmDialog`, `textDialog` and `FileDialog` (open / save / folder, filters, typed paths,
+        New Folder, overwrite check); New Folder, Rename (F2) and Delete (Del) in the Project browser
+        (`M5-EFS-02..05`, `M5-EDT-31..34`)
+        - [ ] The modal backdrop doesn't dim what is under it (its translucent background isn't drawn); Tab isn't
+          kept inside a dialog; no context menu in the Project browser yet
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into
