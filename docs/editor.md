@@ -17,6 +17,8 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [modal.ts](../editor/src/modal.ts), [Modal.tsx](../editor/src/Modal.tsx) | The stack of open dialogs, `ModalHost`, `Modal`, `confirmDialog`, `textDialog` |
 | [file-dialog.ts](../editor/src/file-dialog.ts), [FileDialog.tsx](../editor/src/FileDialog.tsx) | The open / save / folder dialog: its logic (filters, names, typed paths) and the component |
 | [SceneView.tsx](../editor/src/SceneView.tsx), [scene-camera.ts](../editor/src/scene-camera.ts), [handles.ts](../editor/src/handles.ts), [frame.ts](../editor/src/frame.ts) | The Scene view, its camera model, transform handles, `onEditorFrame` |
+| [history.ts](../editor/src/history.ts), [scene-edit.ts](../editor/src/scene-edit.ts) | Undo and redo: the command list, and scene edits as commands |
+| [editor_api.rs](../crates/platypus_scenes/src/editor_api.rs) | The `EditorScene` namespace |
 | [screen.ts](../editor/src/screen.ts), [classes.ts](../editor/src/classes.ts), [demo-scene.ts](../editor/src/demo-scene.ts) | `useScreenSize`, `cx()` class lists, the demo scene |
 | [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
 | [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
@@ -92,6 +94,42 @@ program was built from, taking the first where it exists. The command comes from
 on spaces (double quotes group), with `{file}`, `{line}` and `{col}` filled in, e.g. `subl "{file}:{line}:{col}"`.
 Otherwise it is `code -g file:line:col` when `code` is on PATH (`which` tries PATHEXT's extensions on Windows, where it
 is `code.cmd`, and the process gets `CREATE_NO_WINDOW`). With neither, it logs how to set one up.
+
+## The `EditorScene` namespace
+
+Declared in [editor_api.rs](../crates/platypus_scenes/src/editor_api.rs) with `#[platypus_api]`. Like `Editor` it works
+only with `--project`: each call goes through `Editor`'s `project_op`, so a failure warns and leaves its reason in
+`Editor.lastError`. Paths are project paths.
+
+| Member | Does |
+|---|---|
+| `EditorScene.snapshot(object)` | An object and everything under it as JSON text (components, children, references between them inside it; references outside and assets stay live). "" for an object that can't be copied alone (a part of a model) |
+| `EditorScene.restore(data, parent, index)` | Builds a snapshot again under `parent` (no object: a root of the active scene) at sibling `index`, with its local transform; returns the new object (none for bad text) |
+| `EditorScene.newScene(name)` | Replaces the loaded scenes with an empty one; it has no file until saved |
+| `EditorScene.openScene(path)` | Loads a project scene file in place of the loaded scenes, keeping its path |
+| `EditorScene.saveScene(path)` | Writes the active scene as pretty JSON (folders made, old file replaced in one step); the scene takes the file's path and name (`scene_name_of`: without `.scene.json`) |
+| `EditorScene.scenePath` / `sceneName` | The active scene's file ("" if never saved) and name |
+
+It uses `SceneManager` helpers in `manager.rs`: `scene_value` (a scene as JSON), `rename_scene` and `load_scene_file`.
+
+## Undo and redo ([history.ts](../editor/src/history.ts), [scene-edit.ts](../editor/src/scene-edit.ts))
+
+`history.ts` is plain functions over a `History` record: `done` and `undone` lists of `Command`s (`label`, `run`,
+`undo`, optional `merge`), a `saved` position, a `limit` (200 entries, the oldest drop off) and a `version` that listeners
+watch. `perform` runs a command and records it; `record` keeps one that already happened (a finished handle drag).
+Recording drops what was undone. A command with the same `merge` key as the last one folds into it (the first's undo,
+the new one's run), so a drag or scrub is one entry; it never folds into the saved entry. `undo` / `redo` return the
+label, or "" when empty. `isDirty` compares `saved` with the length of `done`; `markSaved` sets it, `clearHistory`
+resets (a new or opened scene), and when the cap drops the saved entry the history stays dirty. `group` makes several
+commands one entry, run in order and undone in reverse.
+
+`scene-edit.ts` makes scene edits commands: pose (handle drags), rename, enable, create, delete, duplicate, paste and
+reparent. Undoing a delete builds the objects again from a snapshot, with new ids, so a command can't keep a
+`GameObject`: it keeps where the object is, a `Loc` (the index among the shown siblings at each level, from the root;
+`locate`, `find`). Run and undo then find the right object by its place whatever its id is now. Only objects shown in
+the Hierarchy count (`shown`: not destroyed, not `HideInHierarchy`), and `restoreAt` turns a shown index into the
+sibling index that `EditorScene.restore` takes. `topmost` drops objects whose ancestor is also selected, and deletes go
+last place first so earlier places stay valid. `copyObjects` / `pasteCommand` use the same snapshots.
 
 ## The editor's components
 
@@ -169,7 +207,10 @@ the parent, Right expands or goes to the first child, Shift extends, Ctrl moves 
 Ctrl+Space toggles). Slots: `renderIcon`, `renderLabel`, and renaming with F2 (or a double-click
 without `onActivate`): `renderRename(node, done)` or a default text field that commits on Enter or
 blur and cancels on Escape, then `onRename(node, name)`. Expanded nodes show a CSS chevron (a
-rotated square with two borders), since system fonts may lack the triangle glyphs.
+rotated square with two borders), since system fonts may lack the triangle glyphs. With `dragType` set, rows are
+draggable (they carry their id under that data type, not while renamed) and a row dropped onto another calls
+`onDropNode(dragged, onto)`; the row under the drag gets the `over` class. A drop on itself does nothing, and the
+drop doesn't reach the list behind.
 
 ### Console ([console.ts](../editor/src/console.ts), [log.ts](../editor/src/log.ts), [Console.tsx](../editor/src/Console.tsx))
 
@@ -315,6 +356,12 @@ see-through panels show the world.
   component (`kindOf`). `useSceneTree` computes a key of `id:parentId:name` per object in `onEditorFrame`
   and rebuilds the tree only when it changes, so adding, moving or renaming objects shows at once.
   Renaming sets `GameObject.name`.
+  Dragging a row onto another reparents it (last child; undoable; not into itself or its own children).
+- **Edit menu.** Undo / Redo (Ctrl+Z, Ctrl+Y; the labels name the command, "Undo Move"), Cut, Copy, Paste, Duplicate
+  (Ctrl+D), Delete and Select All. A focus area (`scene` or `project`, set by pressing in the Hierarchy / Scene view or the
+  Project browser) says what they act on: in `project` Delete trashes the selected file (`Editor.trash`, undone with
+  `Editor.restore`). Handle drags, renames, deletes and Hierarchy drags are commands; the status bar says what was undone
+  or redone, and the title shows `*` while the history is dirty.
 - **Selection** is the tree's selected ids, shared with the Scene view: selecting in either updates the
   other (`select`), and the Inspector (a placeholder) names the selected objects.
 - **Game.** `GameView` sets `Camera.main`'s `rect` to the panel's box while it is shown and to an empty
@@ -345,6 +392,9 @@ see-through panels show the world.
   is unchanged (its own camera, grid and icons; `M5-EDT-29`), and selecting Cube in the Hierarchy names it in the
   Inspector and draws its handles (`M5-EDT-30`), and File > Open Scene shows the file dialog, Escape closes it, and New Folder in the
   Project browser asks for a name (`M5-EDT-34`, compared by pixels in the middle of the window).
+- Undo: the history (`M5-UNDO-02` to `-05`, `editor/test/history.test.ts`), `EditorScene` snapshots and restore in
+  `editor_tests.rs` (`M5-UNDO-01`), scene save / new / open (`M5-SCN-11`), and the smoke test `M5-UNDO-06` (Delete on
+  Cube, Ctrl+Z, Ctrl+Y, Ctrl+D, a Hierarchy drag and its undo, each in the status bar).
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
 - `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor
@@ -360,6 +410,8 @@ see-through panels show the world.
 - Fixed row heights only; no tab reordering by position in the strip (a drop in a strip appends).
 - The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;
   gizmos and handles are drawn for the selection only.
+- Hierarchy drags only drop onto a row (it becomes the last child); there is no dropping between rows to reorder.
+- Undoing a delete doesn't restore references to the object from others (they stay empty). Duplicates keep the same name.
 - Panels can't be closed or reopened yet, nor float in windows of their own.
 - The modal backdrop does not dim what is under it yet, and Tab is not kept inside a dialog (focus can leave it).
 - The Project browser has no context menu; New Folder, Rename and Delete are on its toolbar and keys.
