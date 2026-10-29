@@ -25,7 +25,8 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
 | [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
 | [editor.rs](../crates/platypus_engine_api/src/editor.rs), [editor/open.rs](../crates/platypus_engine_api/src/editor/open.rs), [editor/project.rs](../crates/platypus_engine_api/src/editor/project.rs), [editor/files.rs](../crates/platypus_engine_api/src/editor/files.rs) | The `Editor` namespace |
-| [scenes.ts](../editor/src/scenes.ts) | The open scene: recent files per project (PlayerPrefs), window title, game cameras, the start scene |
+| [scenes.ts](../editor/src/scenes.ts) | The open scene: recent files per project (PlayerPrefs), window title, game cameras, the start scene (`startScene(fromProject, reopenLast)`) |
+| [Preferences.tsx](../editor/src/Preferences.tsx) | Edit > Preferences: true/false editor settings in PlayerPrefs (`getPref`, `setPref`, the `PREFS` list) |
 | [ProjectSettings.tsx](../editor/src/ProjectSettings.tsx), [project_edit.rs](../crates/platypus_core/src/project_edit.rs) | Edit > Project Settings, and the text edits of one `project.json` key (`get_key`, `set_key`, `remove_key`, the `FIELDS` table) |
 | [meta.rs](../crates/platypus_core/src/meta.rs) | `.meta` helpers (GUIDs, importer settings, `ensure`), shared with `platypus-build` |
 | [logging.rs](../crates/platypus_app/src/logging.rs) | The capture layer that feeds the log |
@@ -183,7 +184,8 @@ them normalized.
 
 A layout is a tree of `DockSplit { direction: "row" | "column", children, sizes }` (sizes are
 fractions adding to 1) with `DockGroup { tabs, active }` leaves. Every operation returns a new
-layout: `activate`, `removeTab`, `dockTab(layout, tab, group, zone, index?)` and `resize`.
+layout: `activate`, `removeTab`, `dockTab(layout, tab, group, zone, index?)`, `openTab` and `resize`. `hasTab` says
+whether a tab is in the layout; `openTab` makes a tab active where it is, or adds a missing one to the first group.
 After each change, empty groups are dropped, single-child splits are replaced by the child, and a
 child split in the same direction as its parent merges into it, so docking left of a group in a
 row adds a column instead of nesting a new row. `serializeLayout` / `parseLayout` save and load
@@ -201,6 +203,8 @@ pixels, for a camera drawing into it), and drags use it:
   camera's view of the world) shows in the panel's box. Other groups keep the panel colour.
 - **Splitters** take pointer capture on press and resize from the layout as it was when the drag
   started (pixels moved divided by the split's free space).
+- **Close box.** The active tab shows a `×` that calls `removeTab` (it stops the press, so it starts no drag). View >
+  Panels opens the tab again.
 - **Tabs** take pointer capture on press. Past 5 pixels the press becomes a drag: `dropTarget`
   finds the group under the pointer and the zone (tab strip or middle: `center`; within a quarter
   of an edge: that side), a translucent box previews the zone (`zoneRect`) and a ghost of the tab
@@ -392,7 +396,8 @@ see-through panels show the world.
   (Ctrl+D), Delete and Select All. A focus area (`scene` or `project`, set by pressing in the Hierarchy / Scene view or the
   Project browser) says what they act on: in `project` Delete trashes the selected file (`Editor.trash`, undone with
   `Editor.restore`). Handle drags, renames, deletes and Hierarchy drags are commands; the status bar says what was undone
-  or redone, and the title shows `*` while the history is dirty.
+  or redone, and the title shows `*` while the history is dirty. The menu ends with Project Settings (see Project
+  Settings) and Preferences (see below).
 - **Selection** is the tree's selected ids, shared with the Scene view: selecting in either updates the
   other (`select`), and the Inspector shows the selected object (see Inspector below).
 - **Game.** `GameView` sets `Camera.main`'s `rect` to the panel's box while it is shown and to an empty
@@ -414,9 +419,18 @@ see-through panels show the world.
   shown and an empty rect for every other game camera, so they draw nowhere else. Each camera's own `rect` is kept
   (`authored`; a zero rect means the whole view) and `withAuthoredCameras` puts it back while saving, so a saved scene
   holds the cameras' real rects, not the editor's.
-- **View > Show Grid / Show Gizmos** toggle the Scene view's `grid` and `gizmos` props.
-- Window > Save / Load / Reset Layout keeps the layout in PlayerPrefs (`editor.layout`), and the saved
-  layout loads at start. Unimplemented menu items log what they would do.
+- **View menu.** Panels lists the panels, checked when in the layout; choosing one opens it, or closes it when it is the
+  active tab of its group (`hasTab`, `openTab`, `removeTab`). Show Grid / Show Gizmos toggle the Scene view's `grid` and
+  `gizmos` props and are kept as preferences.
+- **Preferences.** Edit > Preferences ([Preferences.tsx](../editor/src/Preferences.tsx)) is a dialog of checkboxes kept in
+  PlayerPrefs as `editor.pref.<name>` (apart from any project; a change applies at once): the grid, the gizmos, and
+  whether the last scene opens at start (`reopenLastScene`; off: only the project's `startScene`, else the demo scene).
+- **Window menu.** Save / Load / Reset Layout keeps the layout in PlayerPrefs (`editor.layout`), and the saved
+  layout loads at start.
+- **Help menu.** Documentation (F1) calls `Editor.openFile("docs/editor.md", 1, 1)`, which looks in the source tree. About
+  shows a dialog with the product name, version and project folder.
+- **Closing the window.** `Window.main.onCloseRequested` cancels the close when the history is dirty and asks the same
+  "Save changes?" question as Exit (`closeGuard`); the window closes after Save or Don't Save.
 
 ### Prefabs and placing models
 
@@ -504,6 +518,8 @@ command's undo writes the old value back, or removes the key when the file had n
 - Project Settings: `project_edit` units (`M5-PRJ-01` to `-03`: replace in place, add last, remove with its comma),
   the `Editor` project calls in `editor.rs` (`M5-PRJ-04`) and the smoke test `M5-PRJ-05` (company typed, the file gains
   one key, Undo restores it exactly). `cond && f()` with a void `f` (the dialog buttons use it) is `M9-TS-3524`.
+- Panels and menus: the smoke test `M5-EDT-41` (the Console tab's close box, View > Panels > Console, Edit >
+  Preferences and Help > About open and close) and the dock model `M5-EDT-42` (`hasTab`, `openTab`, in `models.test.ts`).
 - Prefabs and placing: `savePrefab` / `placePrefab` and a prefab's `assets` table reaching its copies in
   `editor_tests.rs` (`M5-PRF-10`); the smoke test `M5-PRF-11` (Cube dragged onto the Project list is saved as
   `assets/Cube.prefab.json` with its `.meta`, the file dragged onto the Hierarchy is placed, Ctrl+Z removes it) and
@@ -536,7 +552,9 @@ command's undo writes the old value back, or removes the key when the file had n
   are not in the form (edit them in the file; they are kept). Path settings (`licenseFile`, `icon`, ...) are text fields,
   with no file picker.
 - Only one scene is edited at a time (Open replaces the loaded scenes); there is no prefab editing and no scene tabs.
-- Panels can't be closed or reopened yet, nor float in windows of their own.
+- Panels can't float in windows of their own.
+- The project's own code and play mode are not in the editor yet (TODO.md E11): scripts of a scene stay opaque
+  components, and the Game panel shows the scene without running it.
 - The modal backdrop does not dim what is under it yet, and Tab is not kept inside a dialog (focus can leave it).
 - The Project browser has no context menu; New Folder, Rename and Delete are on its toolbar and keys.
 - Accelerators don't run while a text field has focus (its keys don't reach `input`).
