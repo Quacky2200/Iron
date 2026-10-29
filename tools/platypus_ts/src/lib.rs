@@ -97,6 +97,21 @@ pub fn compile_with_manifests(
 /// The engine symbols the program calls and the names it uses otherwise, from lowering alone
 /// (no code generation): what `Output::externs` and `Output::uses` hold, for a build that skips
 /// compiling.
+/// Lowers `src` with every function, also those nothing calls (a build skips them, so a construct
+/// the compiler lacks in one would only show once it is called): the first error, if any.
+pub fn check_unused(src: &str, manifests: &[String]) -> Result<(), String> {
+    std::thread::scope(|s| {
+        std::thread::Builder::new()
+            .stack_size(64 << 20)
+            .spawn_scoped(s, || {
+                lower::lower_source_opts(src, manifests, true).map(|_| ())
+            })
+            .map_err(|e| e.to_string())?
+            .join()
+            .map_err(|_| "compiler panicked".to_string())?
+    })
+}
+
 pub fn extern_symbols(
     src: &str,
     manifests: &[String],
@@ -172,7 +187,7 @@ mod tests {
         let e = lower::lower_source("export function g(x: any): number { return 1; }")
             .err()
             .unwrap();
-        assert!(e.contains("unsupported type"), "{e}");
+        assert!(e.contains("line 1: `any` is not supported yet"), "{e}");
     }
 
     // M9-TS-2892

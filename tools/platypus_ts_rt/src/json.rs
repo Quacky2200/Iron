@@ -19,6 +19,8 @@
 //!        | 9 engine handle: the 64-bit id as a number (only in the records the engine API takes and gives)
 //!        | 8 value class: count u8, struct header u64, (len u8, name)*   (stringifies as [x,y,z];
 //!          parses that or {"x":..,"y":..,"z":..}, left-out fields are 0, alpha 1)
+//!        | 11 tagged union: count u8, desc*                  (`{$tag, $0, $1, ..}`: stringifies as the member
+//!          the tag names; cannot be parsed)
 //! body  := n u32, field*                                     (offset is from the blob start)
 //! field := slot u32, omit-if-null u8, name len u32, name, desc
 //! blob  := total length u32, root desc offset u32, ...      (so a blob is passed as one pointer)
@@ -43,6 +45,7 @@ const D_OBJ: u8 = 6;
 const D_VALUE: u8 = 8;
 const D_ID: u8 = 9;
 const D_DICT: u8 = 10;
+const D_UNION: u8 = 11;
 
 /// The whole blob behind a pointer to it (its first word is its length).
 ///
@@ -77,6 +80,13 @@ fn desc_len(b: &[u8], o: usize) -> usize {
         }
         D_ARR | D_DICT => 2 + desc_len(b, o + 2),
         D_NULLABLE => 1 + desc_len(b, o + 1),
+        D_UNION => {
+            let mut p = o + 2;
+            for _ in 0..b[o + 1] {
+                p += desc_len(b, p);
+            }
+            p - o
+        }
         D_OBJ => 5 + 12 * u32_at(b, o + 1) as usize,
         D_VALUE => {
             let mut p = o + 10;
@@ -329,6 +339,26 @@ impl<'a> Out<'a> {
                     self.newline();
                 }
                 self.s.push(b'}');
+            }
+            D_UNION => {
+                if bits == 0 {
+                    self.s.extend_from_slice(b"null");
+                    return;
+                }
+                // SAFETY: a union object holds its tag (a number) in slot 0 and member i in slot
+                // 1 + i, after the header.
+                let tag = f64::from_bits(unsafe { *((bits as *const u64).add(1)) }) as usize;
+                let mut p = d + 2;
+                for _ in 0..tag.min(b[d + 1] as usize) {
+                    p += desc_len(b, p);
+                }
+                if tag >= b[d + 1] as usize {
+                    self.s.extend_from_slice(b"null");
+                    return;
+                }
+                // SAFETY: as above.
+                let v = unsafe { *((bits as *const u64).add(2 + tag)) };
+                self.value(p, v);
             }
             _ => self.s.extend_from_slice(b"{}"),
         }

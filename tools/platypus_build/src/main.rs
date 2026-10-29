@@ -7,7 +7,7 @@ use platypus_build::{Options, Tsc, assets, build, dev, package, types_dts};
 use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage:
-  platypus-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild]   build <game>/build
+  platypus-build build <game> [--no-tsc] [--aot] [--cook] [--no-prebuild] [--check-unused]   build <game>/build
   platypus-build types [<game>] [--out file]                write types/platypus.d.ts (default <game>/types/platypus.d.ts)
   platypus-build assets <folder>... [--prune]               write .meta files
   platypus-build dev <game> [--no-tsc]                      rebuild on change, signal the app (build/.platypus-reload)
@@ -15,7 +15,7 @@ const USAGE: &str = "usage:
   platypus-build init [<dir>] [--name n] [--title t] [--company c] ...   write project.json, tsconfig.json, types/ (see: platypus-build init --help)
   platypus-build init --editor-files [<dir>...]             refresh tsconfig.json + types/platypus.d.ts of a game or a folder of games
   platypus-build package <game> [--host exe] [--out f] ...   one executable (see: platypus-build package --help)
-  platypus-build check <examples folder> [--tsc] [--full]   build every game in it and print a table
+  platypus-build check <examples folder> [--tsc] [--full] [--check-unused]   build every game in it and print a table
   platypus-build bench <examples folder> [--only a,b] ...   time every game (see: platypus-build bench --help)";
 
 fn options(args: &[String]) -> Options {
@@ -26,6 +26,7 @@ fn options(args: &[String]) -> Options {
         cook: args.iter().any(|a| a == "--cook"),
         no_compile: args.iter().any(|a| a == "--no-compile"),
         no_prebuild: args.iter().any(|a| a == "--no-prebuild"),
+        check_unused: args.iter().any(|a| a == "--check-unused"),
     }
 }
 

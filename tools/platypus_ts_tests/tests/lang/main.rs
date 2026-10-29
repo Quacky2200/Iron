@@ -17,6 +17,7 @@ mod classes;
 mod closures;
 mod collections;
 mod destructure;
+mod editor_gaps;
 mod errors;
 mod errors2;
 mod generators;

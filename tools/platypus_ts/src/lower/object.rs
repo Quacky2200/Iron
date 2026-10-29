@@ -438,10 +438,16 @@ impl<'a> Lowerer<'a> {
             ));
         }
         // An optional property is there while it is set.
+        // A field only some variants of a union of object types have (an object or a string) is
+        // there while it is set too.
+        let variant_only = |s: &Self, i: usize| {
+            let f = &s.m.structs[sid].fields[i];
+            f.optional && f.ty.is_ptr()
+        };
         if let Some(i) = self.m.structs[sid].field(name)
-            && self.absent_able(sid, i)
+            && (self.absent_able(sid, i) || variant_only(self, i))
         {
-            let fty = self.m.structs[sid].fields[i].ty.clone();
+            let fty = self.m.structs[sid].fields[i].ty.clone().nullable();
             let tmp = self.new_local(obj.ty.clone());
             let read = mk(ExprKind::Field(Box::new(self.var_expr(tmp)), sid, i), fty);
             let present = mk(

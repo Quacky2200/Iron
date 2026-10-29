@@ -264,6 +264,8 @@ pub struct Options {
     pub no_compile: bool,
     /// Skip `project.json`'s `prebuild` command (its output is already there).
     pub no_prebuild: bool,
+    /// Also lower the functions nothing calls (they are skipped otherwise), so their errors show.
+    pub check_unused: bool,
 }
 
 /// How `tsc` went.
@@ -543,6 +545,10 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
         return Err(format!("tsc failed:\n{text}"));
     }
 
+    if opts.check_unused {
+        platypus_ts::check_unused(&bundle.source, &manifests())
+            .map_err(|e| format!("{}: {}", config.name, bundle.locate_in(&e)))?;
+    }
     let mut object_bytes = 0;
     let externs = if !opts.no_compile {
         let out =

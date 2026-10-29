@@ -108,6 +108,29 @@ impl<'a> Lowerer<'a> {
             TSType::TSVoidKeyword(_) | TSType::TSUndefinedKeyword(_) => Ty::Void,
             TSType::TSNullKeyword(_) => Ty::Null,
             TSType::TSParenthesizedType(p) => self.ty(&p.type_annotation, hint)?,
+            // A type guard returns a boolean (`x is T`, `this is T`); an assertion function
+            // (`asserts x`, `asserts x is T`) returns nothing.
+            TSType::TSTypePredicate(p) if p.asserts => Ty::Void,
+            TSType::TSTypePredicate(_) => Ty::Bool,
+            // Not built yet (`docs/research/platypus-dynamic-values.md`): said plainly, with the
+            // place (a bare `TreeRow` whose `T = unknown` default is used lands here too).
+            TSType::TSAnyKeyword(_) | TSType::TSUnknownKeyword(_) | TSType::TSNeverKeyword(_) => {
+                let (name, span) = match t {
+                    TSType::TSAnyKeyword(k) => ("any", k.span),
+                    TSType::TSUnknownKeyword(k) => ("unknown", k.span),
+                    TSType::TSNeverKeyword(k) => ("never", k.span),
+                    _ => unreachable!(),
+                };
+                bail!(
+                    "{}: `{name}` is not supported yet (dynamic values are planned, docs/research/platypus-dynamic-values.md); write a concrete type{}",
+                    self.loc(span.start),
+                    if hint.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (in {hint})")
+                    }
+                )
+            }
             TSType::TSTypeOperatorType(o) => {
                 // `keyof typeof TABLE`, `keyof Iface`: the union of the property names.
                 if o.operator == TSTypeOperatorOperator::Keyof
@@ -320,7 +343,9 @@ impl<'a> Lowerer<'a> {
                 {
                     return Ok(t.clone());
                 }
-                if !args.is_empty()
+                // `TreeRow` for `interface TreeRow<T = unknown>`: the defaults stand for the
+                // arguments left out.
+                if (!args.is_empty() || self.all_defaulted(id.name.as_str()))
                     && (self.generic_classes.contains_key(id.name.as_str())
                         || self
                             .ifaces
@@ -456,7 +481,13 @@ impl<'a> Lowerer<'a> {
                         };
                         Ty::Arr(Box::new(self.ty(e, hint)?))
                     }
-                    n => self.named_type(n)?,
+                    n => self.named_type(n).map_err(|e| {
+                        if e.starts_with("unknown type") {
+                            format!("{}: {e}", self.loc(r.span.start))
+                        } else {
+                            e
+                        }
+                    })?,
                 }
             }
             other => {
@@ -688,8 +719,37 @@ impl<'a> Lowerer<'a> {
                 {
                     return Some(e.values.clone());
                 }
+                // `Exclude<Part, "center">`, `Extract<Part, "x" | "y">`: the members left or kept.
+                if matches!(id.name.as_str(), "Exclude" | "Extract")
+                    && !self.aliases.contains_key(id.name.as_str())
+                    && let Some(a) = &r.type_arguments
+                    && let [from, by] = a.params.as_slice()
+                {
+                    let by = self.lit_members(by)?;
+                    let keep = id.name == "Extract";
+                    let mut out = self.lit_members(from)?;
+                    out.retain(|m| by.contains(m) == keep);
+                    return Some(out);
+                }
                 let a = self.aliases.get(id.name.as_str())?;
                 self.lit_members(&a.type_annotation)
+            }
+            // `Thing["kind"]`: the type of an interface's property.
+            TSType::TSIndexedAccessType(i)
+                if let TSType::TSLiteralType(l) = &i.index_type
+                    && let TSLiteral::StringLiteral(key) = &l.literal
+                    && let TSType::TSTypeReference(r) = &i.object_type
+                    && let TSTypeName::IdentifierReference(id) = &r.type_name =>
+            {
+                let iface = self.ifaces.get(id.name.as_str())?;
+                iface.body.body.iter().find_map(|m| match m {
+                    TSSignature::TSPropertySignature(p)
+                        if p.key.static_name().is_some_and(|n| n == key.value.as_str()) =>
+                    {
+                        self.lit_members(&p.type_annotation.as_ref()?.type_annotation)
+                    }
+                    _ => None,
+                })
             }
             // `(typeof NAMES)[number]` where `NAMES = ["a", "b"] as const`.
             TSType::TSIndexedAccessType(i)
@@ -730,6 +790,17 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// Whether a generic interface or alias has a default for every type parameter, so its bare
+    /// name is a type (`TreeRow` for `TreeRow<T = unknown>`).
+    fn all_defaulted(&self, name: &str) -> bool {
+        let params = match (self.ifaces.get(name), self.aliases.get(name)) {
+            (Some(i), _) => i.type_parameters.as_deref(),
+            (None, Some(a)) => a.type_parameters.as_deref(),
+            _ => None,
+        };
+        params.is_some_and(|p| p.params.iter().all(|t| t.default.is_some()))
+    }
+
     /// `Box<number>`, `Pair<A, B>`, `Opt<T>`: the specialisation of a generic class, interface or
     /// alias, made once per list of type arguments.
     pub(crate) fn generic_type(&mut self, base: &str, targs: Vec<Ty>) -> R<Ty> {
@@ -767,7 +838,8 @@ impl<'a> Lowerer<'a> {
             }
             let id = self.new_struct(&name, vec![]);
             self.named.insert(name.clone(), Ty::Obj(id));
-            self.targs_of_struct.insert(id, (base.to_string(), targs));
+            self.targs_of_struct
+                .insert(id, (base.to_string(), targs.clone()));
             self.members(&i.body.body, &name).map(|fields| {
                 self.m.structs[id].fields = fields;
                 Ty::Obj(id)
@@ -778,6 +850,12 @@ impl<'a> Lowerer<'a> {
         };
         self.tenv = saved;
         let t = r?;
+        // What it was made from, for inference (`RefObject<T>` matched against a value of it).
+        if let Ty::Obj(sid) = t.strip() {
+            self.targs_of_struct
+                .entry(*sid)
+                .or_insert_with(|| (base.to_string(), targs.clone()));
+        }
         self.named.insert(name, t.clone());
         Ok(t)
     }
@@ -1016,6 +1094,15 @@ impl<'a> Lowerer<'a> {
                     {
                         d.2[v] = d.1.iter().position(|t| *t == f.ty);
                     }
+                }
+            }
+            // A field some variant lacks may be missing (`"file" in segment` tells).
+            for f in &mut fields {
+                if variants
+                    .iter()
+                    .any(|vf| !vf.iter().any(|g| g.name == f.name))
+                {
+                    f.optional = true;
                 }
             }
             let mut disc = None;
@@ -1550,7 +1637,11 @@ impl<'a> Lowerer<'a> {
                 }
             }
             (a, Ty::Void) => bail!("cannot use {a} as void"),
-            (a, b) => bail!("type mismatch: {a} where {b} is expected"),
+            (a, b) => bail!(
+                "type mismatch: {} where {} is expected",
+                self.ty_key(a),
+                self.ty_key(b)
+            ),
         }
     }
 

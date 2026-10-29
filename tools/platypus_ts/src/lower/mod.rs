@@ -258,6 +258,9 @@ pub(crate) struct FnCtx {
     /// Parameters written as a union of string literals (`key: "fog" | "lowRes"`): the members,
     /// so `state[key]` knows which fields the key can name.
     pub lit_sets: HashMap<String, Vec<String>>,
+    /// Closures whose cells were made at the top of their block (`prebind_arrows`): the cell and
+    /// the closure's type, for the declaration to fill.
+    pub prebound: HashMap<String, (VarId, Ty)>,
     /// Generic arrow functions declared in this function (`const more = <T>(a: T) => ..`): the
     /// name and the key of the generic function in `generic_fns`.
     pub local_generics: HashMap<String, String>,
@@ -333,6 +336,10 @@ pub struct Lowerer<'a> {
     /// The expected type is an array of string-literal members: the next `.map` keeps its
     /// callback's literals instead of making strings.
     pub(crate) map_keeps_lit: bool,
+    /// Lower the plain functions nothing calls too (`lower_source_opts`).
+    pub(crate) check_unused: bool,
+    /// The next object literal leaves out its computed properties (`lower_object` sets them after).
+    pub(crate) skip_computed: bool,
     /// The type expected of the call being lowered (`lower_call`), and of a method call on an
     /// array (`xs.map(..)` where a `ReactNode[]` is expected: the callback's result type).
     pub(crate) call_exp: Option<Ty>,
@@ -396,6 +403,12 @@ pub fn lower_source(src: &str) -> R<Module> {
 
 /// Like `lower_source`, with engine API manifests (JSON, one per namespace).
 pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
+    lower_source_opts(src, manifests, false)
+}
+
+/// Like `lower_source_with`; `check_unused` also lowers the plain functions nothing calls, which
+/// are otherwise skipped (`platypus-build build --check-unused`).
+pub fn lower_source_opts(src: &str, manifests: &[String], check_unused: bool) -> R<Module> {
     let mut lap = crate::timing::Lap::start();
     let mut manifest = crate::manifest::Manifest::default();
     for m in manifests {
@@ -561,6 +574,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
     }
     let program = ret.program;
     let mut l = Lowerer {
+        check_unused,
         src,
         m: Module::default(),
         aliases: HashMap::new(),
@@ -594,6 +608,7 @@ pub fn lower_source_with(src: &str, manifests: &[String]) -> R<Module> {
         const_inits: HashMap::new(),
         cb_skip: 0,
         map_keeps_lit: false,
+        skip_computed: false,
         call_exp: None,
         method_exp: None,
         tenv: Default::default(),
@@ -642,6 +657,14 @@ impl<'a> Lowerer<'a> {
             + 1)
         .saturating_sub(self.prelude_lines)
         .max(1)
+    }
+
+    /// Whether a byte offset of the source is in the prelude written in front of the program.
+    fn in_prelude(&self, offset: u32) -> bool {
+        self.src[..(offset as usize).min(self.src.len())]
+            .matches('\n')
+            .count()
+            < self.prelude_lines
     }
 
     /// A top-level function nothing needs unless the code refers to it.
@@ -894,7 +917,23 @@ impl<'a> Lowerer<'a> {
                     if self.finish_ifaces()? {
                         continue;
                     }
-                    break;
+                    // `--check-unused`: the program's own functions nothing calls, so their errors
+                    // show now (the prelude's helpers stay skipped).
+                    if self.check_unused {
+                        names = self
+                            .fids
+                            .iter()
+                            .filter(|(n, id)| {
+                                self.fstate[**id] == 0
+                                    && self.skippable(n)
+                                    && !self.in_prelude(self.fsrc[n.as_str()].params.span.start)
+                            })
+                            .map(|(n, _)| n.clone())
+                            .collect();
+                    }
+                    if names.is_empty() {
+                        break;
+                    }
                 }
             }
             names.sort_by_key(|n| self.fids[n]);

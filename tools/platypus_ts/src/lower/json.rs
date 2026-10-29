@@ -20,6 +20,8 @@ struct Builder {
     patches: Vec<(usize, StructId)>,
     /// Offsets of the struct header words (the module's base is added at code generation).
     headers: Vec<usize>,
+    /// For `JSON.parse` (a union can be written but not read back).
+    parse: bool,
 }
 
 impl Builder {
@@ -80,9 +82,16 @@ impl<'a> Lowerer<'a> {
                 }
             }
             Ty::Obj(sid) if self.unions.contains_key(sid) => {
-                bail!(
-                    "JSON.stringify / JSON.parse of a union value (a tagged `A | B`) is not supported"
-                )
+                if b.parse {
+                    bail!("JSON.parse into a union (a tagged `A | B`) is not supported")
+                }
+                // Stringified as the member its tag names.
+                let members = self.unions[sid].clone();
+                b.out.push(11);
+                b.out.push(members.len() as u8);
+                for m in &members {
+                    self.json_desc(b, m)?;
+                }
             }
             Ty::Obj(sid) => {
                 // The class and every class that extends it: an object may be a subclass.
@@ -131,6 +140,11 @@ impl<'a> Lowerer<'a> {
 
     /// [`Self::json_blob`]; with `ids` an engine handle is its id.
     pub(crate) fn json_blob_with(&mut self, ty: &Ty, ids: bool) -> R<u32> {
+        self.json_blob_for(ty, ids, false)
+    }
+
+    /// [`Self::json_blob_with`]; `parse` for a blob `JSON.parse` reads by.
+    fn json_blob_for(&mut self, ty: &Ty, ids: bool, parse: bool) -> R<u32> {
         let mut b = Builder {
             ids,
             out: vec![0; 8],
@@ -138,6 +152,7 @@ impl<'a> Lowerer<'a> {
             body_at: Map::new(),
             patches: Vec::new(),
             headers: Vec::new(),
+            parse,
         };
         let root = b.out.len() as u32;
         b.out[4..8].copy_from_slice(&root.to_le_bytes());
@@ -301,7 +316,7 @@ impl<'a> Lowerer<'a> {
     /// [`Self::json_value_of`]; with `ids` an engine handle is read from its id.
     pub(crate) fn json_value_with(&mut self, text: Expr, ty: Ty, ids: bool) -> R<Expr> {
         use super::expr::mk;
-        let blob = self.json_blob_with(&ty, ids)?;
+        let blob = self.json_blob_for(&ty, ids, true)?;
         // The text goes into a local first: the parser allocates while it reads it.
         let held = self.new_local(Ty::Str);
         let raw = mk(

@@ -542,6 +542,25 @@ impl<'a> Lowerer<'a> {
         table.get(name).cloned()
     }
 
+    /// The type of a field every member of a union of objects has with that one type (`None`
+    /// when a member lacks it, is not an object, or has it with another type).
+    fn common_field(&self, members: &[Ty], prop: &str) -> Option<Ty> {
+        let mut ty: Option<Ty> = None;
+        for m in members {
+            let Ty::Obj(s) = m.strip() else {
+                return None;
+            };
+            let d = &self.m.structs[*s];
+            let f = &d.fields[d.field(prop)?];
+            match &ty {
+                None => ty = Some(f.ty.clone()),
+                Some(t) if *t == f.ty => {}
+                Some(_) => return None,
+            }
+        }
+        ty
+    }
+
     /// `obj.prop` on an already-lowered object.
     pub(crate) fn member_of(&mut self, obj: Expr, prop: &str) -> R<Expr> {
         // A string literal (or a constant of one) used as a `string`: `"abc".length`.
@@ -584,6 +603,13 @@ impl<'a> Lowerer<'a> {
                         && let Some(e) = self.union_length(obj.clone())
                     {
                         return Ok(e);
+                    }
+                    // `node.id` of a `DockGroup | DockSplit`: a field every member has, of one
+                    // type, read from whichever member it is.
+                    if let Some(members) = self.unions.get(&sid).cloned()
+                        && let Some(ty) = self.common_field(&members, prop)
+                    {
+                        return self.union_map(obj, ty, |s, m| s.member_of(m, prop));
                     }
                     bail!("{} has no field `{prop}`", self.m.structs[sid].name)
                 };
@@ -1279,6 +1305,12 @@ impl<'a> Lowerer<'a> {
         if ns == "Ui" && name == "load" {
             return self.lower_ui_load(c);
         }
+        if ns == "Ui"
+            && matches!(name, "store" | "stateNew" | "dep")
+            && let Some(e) = self.lower_ui_handle_slot(name, c)?
+        {
+            return Ok(e);
+        }
         if ns == "Ui" && name == "runEffect" {
             return self.lower_ui_run_effect(c);
         }
@@ -1515,6 +1547,82 @@ impl<'a> Lowerer<'a> {
         bail!("{at}: {ns}.{name} has no version for ({})", have.join(", "))
     }
 
+    /// `Ui.stateNew(v)`, `Ui.store(slot, v)` and `Ui.dep(v)` for an engine handle (`useState(camera)`):
+    /// its id, kept untraced. `None` when the value is not a handle.
+    fn lower_ui_handle_slot(&mut self, name: &str, c: &'a CallExpression<'a>) -> R<Option<Expr>> {
+        let Some(last) = c.arguments.last().and_then(|a| a.as_expression()) else {
+            return Ok(None);
+        };
+        let mark = self.cur.locals.len();
+        let probe = self.lower_expr(last, None);
+        self.cur.locals.truncate(mark);
+        let probe = probe.map(|p| p.ty);
+        // `useState<Part | null>(null)`: a tag that may be missing is kept as its text, or null.
+        if matches!(&probe, Ok(Ty::Nullable(t)) if **t == Ty::Lit) && name != "dep" {
+            let mut args = Vec::new();
+            for a in &c.arguments {
+                let Some(e) = a.as_expression() else {
+                    return Ok(None);
+                };
+                let v = self.lower_expr(e, None)?;
+                args.push(if v.ty == Ty::Lit.nullable() {
+                    self.coerce(v, &Ty::Str.nullable())?
+                } else {
+                    self.coerce(v, &Ty::Num)?
+                });
+            }
+            let (symbol, params, ret) = if name == "stateNew" {
+                ("ts_ui_state_ptr", vec![("init", ExtTy::Ptr)], ExtTy::F64)
+            } else {
+                (
+                    "ts_ui_store_ptr",
+                    vec![("slot", ExtTy::F64), ("v", ExtTy::Ptr)],
+                    ExtTy::Void,
+                )
+            };
+            let f = ExternFn {
+                rest: false,
+                optional_from: usize::MAX,
+                defaults: Vec::new(),
+                symbol: symbol.into(),
+                params: params.into_iter().map(|(n, t)| (n.into(), t)).collect(),
+                ret,
+            };
+            return Ok(Some(self.emit_extern(&f, args)));
+        }
+        let Ok(Ty::Handle(class)) = probe.map(|p| p.strip().clone()) else {
+            return Ok(None);
+        };
+        let handle = ExtTy::Handle(class.clone());
+        let (symbol, params, ret) = match name {
+            "stateNew" => ("ts_ui_state_handle", vec![("init", handle)], ExtTy::F64),
+            "store" => (
+                "ts_ui_store_handle",
+                vec![("slot", ExtTy::F64), ("v", handle)],
+                ExtTy::Void,
+            ),
+            _ => ("ts_ui_dep_ptr", vec![("v", handle)], ExtTy::Void),
+        };
+        let mut args = Vec::new();
+        for (a, (_, t)) in c.arguments.iter().zip(&params) {
+            let Some(e) = a.as_expression() else {
+                return Ok(None);
+            };
+            let want = self.ext_ir(t);
+            let v = self.lower_expr(e, Some(&want))?;
+            args.push(self.coerce(v, &want)?);
+        }
+        let f = ExternFn {
+            rest: false,
+            optional_from: usize::MAX,
+            defaults: Vec::new(),
+            symbol: symbol.into(),
+            params: params.into_iter().map(|(n, t)| (n.into(), t)).collect(),
+            ret,
+        };
+        Ok(Some(self.emit_extern(&f, args)))
+    }
+
     /// `Ui.load<T>(slot)`: reads a hook slot as a `T` (a number, a boolean or a script pointer).
     fn lower_ui_load(&mut self, c: &'a CallExpression<'a>) -> R<Expr> {
         let at = self.loc(c.span.start);
@@ -1527,10 +1635,40 @@ impl<'a> Lowerer<'a> {
         let t = self.ty(targ, "Ui.load")?;
         let slot = self.lower_expr(arg, Some(&Ty::Num))?;
         let slot = self.coerce(slot, &Ty::Num)?;
+        // A tag that may be missing is kept as its text, or null (`lower_ui_handle_slot`).
+        if t == Ty::Lit.nullable() {
+            let f = ExternFn {
+                rest: false,
+                optional_from: usize::MAX,
+                defaults: Vec::new(),
+                symbol: "ts_ui_load_ptr".into(),
+                params: vec![("slot".into(), ExtTy::F64)],
+                ret: ExtTy::Ptr,
+            };
+            let mut s = self.emit_extern(&f, vec![slot]);
+            s.ty = Ty::Str.nullable();
+            let tmp = self.new_local(s.ty.clone());
+            let tv = self.var_expr(tmp);
+            let is_null = mk(ExprKind::IsNull(Box::new(tv.clone())), Ty::Bool);
+            let text = mk(ExprKind::Cast(Box::new(tv)), Ty::Str);
+            let tag = mk(
+                ExprKind::Cast(Box::new(mk(ExprKind::StrTag(Box::new(text)), Ty::Lit))),
+                t.clone(),
+            );
+            let none = mk(ExprKind::Null, t.clone());
+            let pick = mk(
+                ExprKind::Cond(Box::new(is_null), Box::new(none), Box::new(tag)),
+                t.clone(),
+            );
+            return Ok(mk(
+                ExprKind::Seq(vec![Stmt::Assign(tmp, s)], Box::new(pick)),
+                t,
+            ));
+        }
         let (symbol, ret) = match t.strip() {
             Ty::Num => ("ts_ui_load_num", ExtTy::F64),
             Ty::Bool => ("ts_ui_load_bool", ExtTy::Bool),
-            Ty::Handle(n) => ("ts_ui_load_num", ExtTy::Handle(n.clone())),
+            Ty::Handle(n) => ("ts_ui_load_handle", ExtTy::Handle(n.clone())),
             other if other.is_ptr() => ("ts_ui_load_ptr", ExtTy::Ptr),
             // A string-literal union is stored as its text (`Ui.stateNew` widens it).
             Ty::Lit => ("ts_ui_load_ptr", ExtTy::Ptr),
@@ -1640,6 +1778,23 @@ impl<'a> Lowerer<'a> {
             ],
             ret: element(),
         };
+        // `{...handlers}` where `handlers.onDrop` is a function: the element listens to the event
+        // (a missing handler is skipped by `__handler`).
+        if attr && super::jsx::is_handler_prop(key) && matches!(field.ty.strip(), Ty::Fn(_)) {
+            let Some(on) = self
+                .manifest
+                .namespaces
+                .get("Ui")
+                .and_then(|ns| ns.get("on"))
+                .cloned()
+            else {
+                bail!("{at}: {what}: `{key}` needs the UI")
+            };
+            let f = self.call_helper("__handler", vec![field])?;
+            let kind = self.str_lit(&super::jsx::handler_kind(key));
+            let hv = self.var_expr(th);
+            return Ok(vec![Stmt::Eval(self.emit_extern(&on, vec![hv, kind, f]))]);
+        }
         let mut plain = mk(
             ExprKind::Cast(Box::new(field.clone())),
             field.ty.strip().clone(),
@@ -3260,12 +3415,133 @@ impl<'a> Lowerer<'a> {
         })
     }
 
+    /// The computed properties `[key]: value` of an object literal set on `base` (the object made
+    /// without them): `key` is a name whose union of string literals names fields of one type.
+    fn set_computed_keys(&mut self, base: Expr, props: &'a [ObjectPropertyKind<'a>]) -> R<Expr> {
+        let Ty::Obj(sid) = base.ty.strip().clone() else {
+            bail!("computed keys on {}", base.ty)
+        };
+        let ty = base.ty.clone();
+        let obj = self.new_local(ty.clone());
+        let mut stmts = vec![Stmt::Assign(obj, base)];
+        for p in props {
+            let ObjectPropertyKind::ObjectProperty(p) = p else {
+                unreachable!("only computed properties")
+            };
+            let at = self.loc(p.span.start);
+            let (PropertyKey::Identifier(id), Some(key_expr)) = (&p.key, p.key.as_expression())
+            else {
+                bail!("{at}: computed key")
+            };
+            let Some(names) = self.cur.lit_sets.get(id.name.as_str()).cloned() else {
+                bail!(
+                    "{at}: a computed key in an object literal must be a union of the object's field names"
+                )
+            };
+            let fields = self.m.structs[sid].fields.clone();
+            let picked: Vec<usize> = (0..fields.len())
+                .filter(|i| names.contains(&fields[*i].name))
+                .collect();
+            let Some(&first) = picked.first() else {
+                bail!("{at}: `{}` names none of the fields", id.name)
+            };
+            let fty = fields[first].ty.clone();
+            if picked.iter().any(|i| fields[*i].ty != fty) {
+                bail!(
+                    "{at}: the fields `{}` can name have different types",
+                    id.name
+                )
+            }
+            let key = self.lower_expr(key_expr, None)?;
+            let kv = self.new_local(key.ty.clone());
+            stmts.push(Stmt::Assign(kv, key));
+            let v = self.lower_expr(&p.value, Some(&fty))?;
+            let v = self.coerce(v, &fty)?;
+            let vv = self.new_local(fty.clone());
+            stmts.push(Stmt::Assign(vv, v));
+            for i in picked {
+                let tag = self.tag(&fields[i].name);
+                let is = mk(
+                    ExprKind::Cmp(
+                        CmpOp::Eq,
+                        Box::new(self.var_expr(kv)),
+                        Box::new(mk(ExprKind::Tag(tag), Ty::Lit)),
+                    ),
+                    Ty::Bool,
+                );
+                let set = Stmt::StoreField(self.var_expr(obj), sid, i, self.var_expr(vv));
+                stmts.push(Stmt::If(is, vec![set], vec![]));
+            }
+        }
+        Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(obj))), ty))
+    }
+
     pub(crate) fn lower_object(
         &mut self,
         o: &'a ObjectExpression<'a>,
         exp: Option<&Ty>,
         record: Option<&Ty>,
     ) -> R<Expr> {
+        // `{ ...f, [key]: !f[key] }` with `key` a union of field names: the object without the
+        // computed properties, then the field the key names set from each.
+        let skip = std::mem::take(&mut self.skip_computed);
+        // `{ ...split, children }` where a `DockGroup | DockSplit` goes: the object is the member
+        // its spread is (the caller wraps it in the union).
+        if let Some(members) = exp.and_then(|t| self.union_members(t)) {
+            // Else the member whose fields are the keys written (`{ text, file, line, col }` is
+            // the link segment, not `{ text }`).
+            let keys: Option<Vec<String>> = o
+                .properties
+                .iter()
+                .map(|p| match p {
+                    ObjectPropertyKind::ObjectProperty(p) if !p.computed => {
+                        p.key.static_name().map(|n| n.to_string())
+                    }
+                    _ => None,
+                })
+                .collect();
+            let mut member = keys.and_then(|keys| {
+                members
+                    .iter()
+                    .find(|m| match m.strip() {
+                        Ty::Obj(s) => {
+                            let fs = &self.m.structs[*s].fields;
+                            keys.iter().all(|k| fs.iter().any(|f| f.name == *k))
+                                && fs.iter().all(|f| f.optional || keys.contains(&f.name))
+                        }
+                        _ => false,
+                    })
+                    .map(|m| m.strip().clone())
+            });
+            for p in &o.properties {
+                if let ObjectPropertyKind::SpreadProperty(s) = p {
+                    let mark = self.cur.locals.len();
+                    let probe = self.lower_expr(&s.argument, None);
+                    self.cur.locals.truncate(mark);
+                    if let Ok(v) = probe
+                        && let Some(m) = members.iter().find(|m| m.strip() == v.ty.strip())
+                    {
+                        member = Some(m.strip().clone());
+                    }
+                }
+            }
+            self.skip_computed = skip;
+            return self.lower_object(o, member.as_ref(), record);
+        }
+        let computed = |p: &ObjectPropertyKind<'_>| {
+            matches!(p, ObjectPropertyKind::ObjectProperty(p)
+                if p.computed && p.kind == PropertyKind::Init
+                    && matches!(&p.key, PropertyKey::Identifier(_)))
+        };
+        if !skip
+            && let Some(first) = o.properties.iter().position(computed)
+            && o.properties[first..].iter().all(computed)
+            && let Some(Ty::Obj(_)) = exp.map(|t| t.strip())
+        {
+            self.skip_computed = true;
+            let base = self.lower_object(o, exp, record);
+            return self.set_computed_keys(base?, &o.properties[first..]);
+        }
         let exp_sid = match exp.map(|t| t.strip()) {
             Some(Ty::Obj(s)) => Some(*s),
             _ => None,
@@ -3335,6 +3611,9 @@ impl<'a> Lowerer<'a> {
                     items.push(Item::Spread(e));
                 }
                 ObjectPropertyKind::ObjectProperty(p) => {
+                    if skip && p.computed {
+                        continue;
+                    }
                     if self.uses_this(p) {
                         items.push(Item::Pending(p));
                         continue;
@@ -5510,10 +5789,10 @@ impl<'a> Lowerer<'a> {
                 if self.lookup(name).is_none()
                     && let Some(key) = self.cur.local_generics.get(name).cloned()
                 {
-                    return self.lower_generic_call(&key, c, None);
+                    return self.lower_generic_call(&key, c, call_exp.as_ref());
                 }
                 if self.lookup(name).is_none() && self.generic_fns.contains_key(name) {
-                    return self.lower_generic_call(name, c, None);
+                    return self.lower_generic_call(name, c, call_exp.as_ref());
                 }
                 if !self.fids.contains_key(name)
                     && let Some(e) = self.lower_string_global(name, c)?
@@ -5576,7 +5855,7 @@ impl<'a> Lowerer<'a> {
                     && id.name == "Promise"
                     && self.lookup("Promise").is_none()
                 {
-                    return self.lower_promise_static(method, c);
+                    return self.lower_promise_static(method, c, call_exp.as_ref());
                 }
                 if let Expression::Identifier(id) = &m.object
                     && id.name == "Symbol"
@@ -5746,6 +6025,16 @@ impl<'a> Lowerer<'a> {
                         t => t,
                     };
                     recv_hint = Some(Ty::Arr(Box::new(el)));
+                }
+                // `xs.map(..).sort(..)` where an `Item[]` is expected: the array sorted is one.
+                if recv_hint.is_none()
+                    && matches!(
+                        method,
+                        "sort" | "reverse" | "slice" | "toSorted" | "toReversed"
+                    )
+                    && let Some(t @ Ty::Arr(_)) = call_exp.as_ref().map(|t| t.strip())
+                {
+                    recv_hint = Some(t.clone());
                 }
                 let mut recv = self.lower_expr(&m.object, recv_hint.as_ref())?;
                 if m.optional {

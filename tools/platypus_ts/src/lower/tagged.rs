@@ -540,6 +540,48 @@ impl<'a> Lowerer<'a> {
                 let lit = s.value.to_string();
                 self.disc_narrowings(&m.object, m.property.name.as_str(), &[lit], positive == eq)
             }
+            // `node.type === "split"` on a union of interfaces (`DockGroup | DockSplit`) whose
+            // members declare that property as string literals.
+            Expression::BinaryExpression(b)
+                if matches!(
+                    b.operator,
+                    BinaryOperator::StrictEquality
+                        | BinaryOperator::StrictInequality
+                        | BinaryOperator::Equality
+                        | BinaryOperator::Inequality
+                ) && let Some((m, s)) = match (&b.left, &b.right) {
+                    (Expression::StaticMemberExpression(m), Expression::StringLiteral(s))
+                    | (Expression::StringLiteral(s), Expression::StaticMemberExpression(m)) => {
+                        Some((m, s))
+                    }
+                    _ => None,
+                } && let Some(tags) = self.member_tags(&m.object, m.property.name.as_str()) =>
+            {
+                let eq = matches!(
+                    b.operator,
+                    BinaryOperator::StrictEquality | BinaryOperator::Equality
+                );
+                let lit = s.value.to_string();
+                let matched = positive == eq;
+                // When it matched, the members that may have that tag; when not, those that may
+                // have another.
+                let keep: Vec<StructId> = tags
+                    .into_iter()
+                    .filter(|(_, vals)| {
+                        if matched {
+                            vals.contains(&lit)
+                        } else {
+                            vals.iter().any(|v| *v != lit)
+                        }
+                    })
+                    .map(|(sid, _)| sid)
+                    .collect();
+                self.narrow_by(
+                    &m.object,
+                    true,
+                    move |t| matches!(t.strip(), Ty::Obj(s) if keep.contains(s)),
+                )
+            }
             // `typeof P === "number"`
             Expression::BinaryExpression(b)
                 if matches!(
@@ -649,6 +691,42 @@ impl<'a> Lowerer<'a> {
     }
 
     /// The discriminated union `obj` is, when `tag` is its tag field.
+    /// For `obj` a tagged union of interfaces: each member's struct and the string literals its
+    /// interface declares for `tag`. `None` when a member is not such an interface.
+    fn member_tags(
+        &mut self,
+        obj: &'a Expression<'a>,
+        tag: &str,
+    ) -> Option<Vec<(StructId, Vec<String>)>> {
+        self.path_text(obj)?;
+        let mark = self.cur.locals.len();
+        let saved = std::mem::take(&mut self.cur.narrowed);
+        let v = self.lower_expr(obj, None);
+        self.cur.narrowed = saved;
+        self.cur.locals.truncate(mark);
+        let members = self.union_members(&v.ok()?.ty)?;
+        let mut out = Vec::new();
+        for m in members {
+            let Ty::Obj(sid) = m.strip().clone() else {
+                return None;
+            };
+            let iface = self
+                .ifaces
+                .get(self.m.structs[sid].name.as_str())
+                .copied()?;
+            let vals = iface.body.body.iter().find_map(|s| match s {
+                TSSignature::TSPropertySignature(p)
+                    if p.key.static_name().is_some_and(|n| n == tag) =>
+                {
+                    self.lit_members_opt(&p.type_annotation.as_ref()?.type_annotation)
+                }
+                _ => None,
+            })?;
+            out.push((sid, vals));
+        }
+        Some(out)
+    }
+
     pub(crate) fn disc_of(&mut self, obj: &'a Expression<'a>, tag: &str) -> Option<super::Disc> {
         self.path_text(obj)?;
         let mark = self.cur.locals.len();

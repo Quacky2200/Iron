@@ -30,7 +30,8 @@ fn fnv(bytes: &[u8]) -> u64 {
 fn the_object_writer_output_is_unchanged_by_the_generic_codegen() {
     for (file, len, hash) in [
         ("sine.ts", 5887, 0x5410_9d5b_d8e5_4895),
-        ("strings.ts", 30442, 0xe206_6cfd_4937_c53c),
+        // strings.ts grew with the prelude's `Error.stack` getter (2026-10-29).
+        ("strings.ts", 30620, 0x4758_1889_d9e7_0b39),
         ("classes.ts", 16581, 0x80d1_77d9_ba9b_c258),
     ] {
         let out = platypus_ts::compile_source(&bench(file), "speed").unwrap();

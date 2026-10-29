@@ -33,6 +33,17 @@ pub(crate) fn tparam_list<'a>(d: Option<&'a TSTypeParameterDeclaration<'a>>) -> 
     .unwrap_or_default()
 }
 
+/// What [`Lowerer::closure_ret_from_context`] reads of the call being inferred.
+pub(crate) struct ContextRet<'c, 'a> {
+    /// The callee's declared result.
+    pub ret: Option<&'a TSType<'a>>,
+    /// The call's expected type.
+    pub expected: Option<&'c Ty>,
+    pub names: &'c [String],
+    /// The type parameters the arguments fixed so far.
+    pub found: &'c HashMap<String, Ty>,
+}
+
 #[derive(Clone)]
 pub(crate) struct GenericFn<'a> {
     pub tparams: TParams<'a>,
@@ -159,6 +170,10 @@ impl<'a> Lowerer<'a> {
             TSType::TSParenthesizedType(p) => {
                 self.unify_ann(&p.type_annotation, actual, tps, out, what)
             }
+            // `readonly T[]` is matched as `T[]`.
+            TSType::TSTypeOperatorType(o) if o.operator == TSTypeOperatorOperator::Readonly => {
+                self.unify_ann(&o.type_annotation, actual, tps, out, what)
+            }
             TSType::TSArrayType(a) => match actual.strip() {
                 Ty::Arr(e) => self.unify_ann(&a.element_type, e, tps, out, what),
                 _ => Ok(()),
@@ -235,6 +250,27 @@ impl<'a> Lowerer<'a> {
                             self.ty_key(old),
                             self.ty_key(&t)
                         ),
+                    }
+                    return Ok(());
+                }
+                // A generic alias (`type Ref<T> = RefObject<T | null>`): its body is matched with
+                // its own parameters, and what they come to with the arguments written here.
+                let made_from_n = match actual.strip() {
+                    Ty::Obj(sid) => self.targs_of_struct.get(sid).is_some_and(|(b, _)| b == n),
+                    _ => false,
+                };
+                if !made_from_n
+                    && let Some(alias) = self.aliases.get(n).copied()
+                    && let Some(params) = alias.type_parameters.as_deref()
+                {
+                    let own: Vec<String> =
+                        params.params.iter().map(|p| p.name.to_string()).collect();
+                    let mut inner = HashMap::new();
+                    self.unify_ann(&alias.type_annotation, actual, &own, &mut inner, what)?;
+                    for (p, a) in own.iter().zip(&args) {
+                        if let Some(t) = inner.get(p) {
+                            self.unify_ann(a, t, tps, out, what)?;
+                        }
                     }
                     return Ok(());
                 }
@@ -350,6 +386,13 @@ impl<'a> Lowerer<'a> {
             if is_closure(e) {
                 continue;
             }
+            // `List({ roots, label: (n) => .. })` for `List<T>(props: ListProps<T>)`: the
+            // properties that are not closures fix `T` (the closures get their types after).
+            if let Expression::ObjectExpression(o) = e.get_inner_expression()
+                && self.unify_object_arg(o, ann, &names, &mut found, what)?
+            {
+                continue;
+            }
             let mark = self.cur.locals.len();
             let v = self.lower_expr(e, None);
             self.cur.locals.truncate(mark);
@@ -416,12 +459,26 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             let Some(params_ty) = want else { continue };
+            // A result type only the call's context gives (`const p: Panels = useMemo(() =>
+            // ({ .. }))`): the closure's body is lowered as it, so closures inside get their
+            // parameter types (TypeScript's return-type inference, used when the arguments
+            // fix nothing).
+            let body_ty = self.closure_ret_from_context(
+                ann,
+                ContextRet {
+                    ret,
+                    expected,
+                    names: &names,
+                    found: &found,
+                },
+                what,
+            );
             let expect = Ty::Fn(Box::new(FnTy {
                 params: params_ty,
-                ret: Ty::Void,
+                ret: body_ty.clone().unwrap_or(Ty::Void),
             }));
             let mark = self.cur.locals.len();
-            let saved_infer = std::mem::replace(&mut self.infer_ret, true);
+            let saved_infer = std::mem::replace(&mut self.infer_ret, body_ty.is_none());
             let v = self.lower_expr(e, Some(&expect));
             self.infer_ret = saved_infer;
             self.cur.locals.truncate(mark);
@@ -488,6 +545,110 @@ impl<'a> Lowerer<'a> {
             self.unify_ann(&d.type_annotation, &actual, tps, out, what)?;
         }
         Ok(())
+    }
+
+    /// An object literal argument against a generic interface annotation (`ListProps<T>`): each
+    /// property that is not a closure is matched against the interface's member, and what that
+    /// fixes of the interface's own type parameters is matched against the annotation's type
+    /// arguments. False when `ann` is not such an interface.
+    fn unify_object_arg(
+        &mut self,
+        o: &'a ObjectExpression<'a>,
+        ann: &'a TSType<'a>,
+        tps: &[String],
+        out: &mut HashMap<String, Ty>,
+        what: &str,
+    ) -> R<bool> {
+        let TSType::TSTypeReference(r) = ann else {
+            return Ok(false);
+        };
+        let (TSTypeName::IdentifierReference(id), Some(targs)) = (&r.type_name, &r.type_arguments)
+        else {
+            return Ok(false);
+        };
+        let Some(iface) = self.ifaces.get(id.name.as_str()).copied() else {
+            return Ok(false);
+        };
+        let own: Vec<String> = tparam_list(iface.type_parameters.as_deref())
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        if own.is_empty() || !iface.extends.is_empty() {
+            return Ok(false);
+        }
+        let mut inner = HashMap::new();
+        for p in &o.properties {
+            let ObjectPropertyKind::ObjectProperty(p) = p else {
+                continue;
+            };
+            if matches!(
+                p.value.get_inner_expression(),
+                Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+            ) {
+                continue;
+            }
+            let Some(key) = p.key.static_name() else {
+                continue;
+            };
+            let member = iface.body.body.iter().find_map(|m| match m {
+                TSSignature::TSPropertySignature(s)
+                    if s.key.static_name().is_some_and(|n| n == key) =>
+                {
+                    s.type_annotation.as_ref().map(|a| &a.type_annotation)
+                }
+                _ => None,
+            });
+            let Some(member) = member else { continue };
+            let mark = self.cur.locals.len();
+            let v = self.lower_expr(&p.value, None);
+            self.cur.locals.truncate(mark);
+            self.unify_ann(member, &v?.ty, &own, &mut inner, what)?;
+        }
+        for (name, arg) in own.iter().zip(&targs.params) {
+            if let Some(t) = inner.get(name) {
+                self.unify_ann(arg, t, tps, out, what)?;
+            }
+        }
+        Ok(true)
+    }
+
+    /// The result type of a closure argument (annotated `ann`, a function type) when the call's
+    /// expected type fixes it and the arguments so far do not: the type parameters the callee's
+    /// result names are matched against `expected`, then `ann`'s result is resolved with them.
+    fn closure_ret_from_context(
+        &mut self,
+        ann: &'a TSType<'a>,
+        cx: ContextRet<'_, 'a>,
+        what: &str,
+    ) -> Option<Ty> {
+        let mut ann = ann;
+        while let TSType::TSParenthesizedType(p) = ann {
+            ann = &p.type_annotation;
+        }
+        let TSType::TSFunctionType(f) = ann else {
+            return None;
+        };
+        // Only a result that is one type parameter the arguments have not fixed.
+        let TSType::TSTypeReference(rr) = &f.return_type.type_annotation else {
+            return None;
+        };
+        let TSTypeName::IdentifierReference(id) = &rr.type_name else {
+            return None;
+        };
+        let name = id.name.as_str();
+        if rr.type_arguments.is_some() || !cx.names.iter().any(|n| n == name) {
+            return None;
+        }
+        // Fixed by an argument already (`useImperativeHandle(ref, () => ({ .. }))`).
+        if let Some(t) = cx.found.get(name) {
+            return Some(t.clone()).filter(|t| *t != Ty::Void);
+        }
+        let (Some(r), Some(exp)) = (cx.ret, cx.expected) else {
+            return None;
+        };
+        let mut from_exp = HashMap::new();
+        self.unify_ann(r, exp, cx.names, &mut from_exp, what).ok()?;
+        from_exp.get(name).filter(|t| **t != Ty::Void).cloned()
     }
 
     /// The parameter types of a function-typed annotation, if every one can be resolved now.

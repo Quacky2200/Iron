@@ -286,7 +286,7 @@ impl<'a> Lowerer<'a> {
                 push(self, lit, &mut acc)?;
             }
             if let Some(x) = t.expressions.get(i) {
-                let v = self.lower_expr(x, None)?;
+                let v = self.template_part(x)?;
                 push(self, v, &mut acc)?;
             }
         }
@@ -294,6 +294,31 @@ impl<'a> Lowerer<'a> {
             Some(a) => Ok(a),
             None => Ok(self.str_lit("")),
         }
+    }
+
+    /// One `${..}` of a template as text. A conditional is the text of the arm taken, so its
+    /// arms may have different types (`${n > 999 ? "999+" : n}`).
+    fn template_part(&mut self, x: &'a Expression<'a>) -> R<Expr> {
+        let Expression::ConditionalExpression(c) = x.get_inner_expression() else {
+            return self.lower_expr(x, None);
+        };
+        let test = self.lower_cond(&c.test)?;
+        let (yes, no) = if self.unions.is_empty() {
+            (vec![], vec![])
+        } else {
+            (
+                self.narrowings(&c.test, true),
+                self.narrowings(&c.test, false),
+            )
+        };
+        let a = self.with_narrowed(yes, |s| s.template_part(&c.consequent))?;
+        let a = self.stringify(a)?;
+        let b = self.with_narrowed(no, |s| s.template_part(&c.alternate))?;
+        let b = self.stringify(b)?;
+        Ok(mk(
+            ExprKind::Cond(Box::new(test), Box::new(a), Box::new(b)),
+            Ty::Str,
+        ))
     }
 
     pub(crate) fn str_arg(&mut self, e: &'a Expression<'a>) -> R<Expr> {

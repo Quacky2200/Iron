@@ -163,7 +163,14 @@ impl<'a> Lowerer<'a> {
     }
 
     /// `Promise.resolve`, `Promise.reject`, `Promise.all`, `Promise.race`.
-    pub(crate) fn lower_promise_static(&mut self, m: &str, c: &'a CallExpression<'a>) -> R<Expr> {
+    pub(crate) fn lower_promise_static(
+        &mut self,
+        m: &str,
+        c: &'a CallExpression<'a>,
+        exp: Option<&Ty>,
+    ) -> R<Expr> {
+        // The promise the context expects (`const p: Promise<Listing> = Promise.resolve({ .. })`).
+        let wanted = exp.and_then(|t| self.promise_of(t));
         let at = self.loc(c.span.start);
         let Some(arg) = c.arguments.first().and_then(|a| a.as_expression()) else {
             // `Promise.resolve()`: a promise of nothing.
@@ -196,7 +203,16 @@ impl<'a> Lowerer<'a> {
                 )
             }
         }
-        let mut v = self.lower_expr(arg, None)?;
+        let value_exp = match (m, &wanted) {
+            ("resolve", Some((_, t))) => Some(t.clone()),
+            _ => None,
+        };
+        let mut v = self.lower_expr(arg, value_exp.as_ref())?;
+        if let Some(t) = &value_exp
+            && self.promise_of(&v.ty).is_none()
+        {
+            v = self.coerce(v, t)?;
+        }
         // `Promise.resolve("c")`: a string literal is a string.
         if v.ty == Ty::Lit {
             v = self.coerce(v, &Ty::Str)?;
@@ -218,7 +234,10 @@ impl<'a> Lowerer<'a> {
                         self.promise_key_for(&t)
                             .ok_or_else(|| format!("{at}: no `Promise<{t}>` in the program"))?
                     }
-                    None => "number".to_string(),
+                    None => match &wanted {
+                        Some((k, _)) => k.clone(),
+                        None => "number".to_string(),
+                    },
                 };
                 self.call_helper(&format!("__rejected${k}"), vec![v])
             }

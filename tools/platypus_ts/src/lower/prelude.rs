@@ -21,6 +21,10 @@ class Error {
   toString(): string {
     return this.message === "" ? this.name : this.name + ": " + this.message;
   }
+  // The engines' stack starts with this line; compiled code keeps no call frames to add.
+  get stack(): string {
+    return this.toString();
+  }
 }
 class EvalError extends Error {
   constructor(message: string = "", options: ErrorOptions | null = null) {

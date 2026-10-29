@@ -59,6 +59,31 @@ pub fn wanted(src: &str) -> bool {
         .any(|h| src.contains(&format!("{h}(")) || src.contains(&format!("{h}<")))
 }
 
+/// Whether a prop name is an event handler's (`onClick`, `onPointerDownCapture`).
+pub(crate) fn is_handler_prop(n: &str) -> bool {
+    n.len() > 2 && n.starts_with("on") && n.as_bytes()[2].is_ascii_uppercase()
+}
+
+/// The event type a handler prop listens to, `:capture` added for the capture phase. It comes from
+/// the table (`onChange` is `input`, `onFocus` is `focusin`); a name it lacks listens to its
+/// lower-cased name.
+pub(crate) fn handler_kind(n: &str) -> String {
+    let (mut kind, capture) = match platypus_ui::tables::events::kind_of_prop(n) {
+        Some((k, c)) => (k.to_string(), c),
+        None => {
+            let k = n[2..].to_lowercase();
+            match k.strip_suffix("capture") {
+                Some(k) => (k.to_string(), true),
+                None => (k, false),
+            }
+        }
+    };
+    if capture {
+        kind.push_str(":capture");
+    }
+    kind
+}
+
 /// Is this expression an element already (a JSX element, or a conditional of those)?
 fn is_element_expr(e: &Expression<'_>) -> bool {
     matches!(
@@ -302,23 +327,9 @@ impl<'s> Finder<'s> {
                         out = format!("Ui.style({out}, {key}, {v})");
                     }
                 }
-                n if n.len() > 2 && n.starts_with("on") && n.as_bytes()[2].is_ascii_uppercase() => {
+                n if is_handler_prop(n) => {
                     let v = self.attr_value(&a.value, at);
-                    // The event type of the prop comes from the table (`onChange` is `input`, `onFocus`
-                    // is `focusin`); a name it lacks listens to its lower-cased name.
-                    let (mut kind, capture) = match platypus_ui::tables::events::kind_of_prop(n) {
-                        Some((k, c)) => (k.to_string(), c),
-                        None => {
-                            let k = n[2..].to_lowercase();
-                            match k.strip_suffix("capture") {
-                                Some(k) => (k.to_string(), true),
-                                None => (k, false),
-                            }
-                        }
-                    };
-                    if capture {
-                        kind.push_str(":capture");
-                    }
+                    let kind = handler_kind(n);
                     out = format!("Ui.on({out}, {}, __handler({v}))", js_string(&kind));
                 }
                 n => {

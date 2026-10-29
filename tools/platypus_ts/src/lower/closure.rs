@@ -97,8 +97,8 @@ impl<'a> Lowerer<'a> {
                 },
             };
             // A parameter with a default may be left out: it is null, and the body replaces it.
-            let defaulted =
-                p.initializer.is_some() && (ty.is_ptr() || ty == Ty::Num || ty == Ty::Bool);
+            let defaulted = p.initializer.is_some()
+                && (ty.is_ptr() || matches!(ty, Ty::Num | Ty::Bool | Ty::Lit));
             ptys.push(if (p.optional && p.initializer.is_none()) || defaulted {
                 ty.nullable()
             } else {
@@ -196,6 +196,13 @@ impl<'a> Lowerer<'a> {
             .filter(|(p, _)| free.contains(p) && !self.assigned.contains(p))
             .cloned()
             .collect();
+        // The names a captured literal-union value can hold (`[key]: ..` of an outer parameter).
+        self.cur.lit_sets = saved
+            .lit_sets
+            .iter()
+            .filter(|(n, _)| free.contains(*n) && !self.assigned.contains(*n))
+            .map(|(n, m)| (n.clone(), m.clone()))
+            .collect();
         // No written or expected return type: the returns decide it (`return null` and then a
         // string is `string | null`), as for a function declaration.
         self.cur.ret_inferred = ret_exp.is_none();
@@ -259,6 +266,13 @@ impl<'a> Lowerer<'a> {
         let mut pvars = Vec::new();
         let mut ptys = ptys.iter();
         for (p, ty) in params.items.iter().zip(ptys.by_ref()) {
+            if let BindingPattern::BindingIdentifier(id) = &p.pattern
+                && ty.strip() == &Ty::Lit
+                && let Some(a) = &p.type_annotation
+                && let Some(ms) = self.lit_members_opt(&a.type_annotation)
+            {
+                self.cur.lit_sets.insert(id.name.to_string(), ms);
+            }
             let v = self.new_local(ty.clone());
             pvars.push(v);
             match &p.initializer {

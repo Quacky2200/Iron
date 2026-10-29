@@ -377,7 +377,7 @@ Every item is something an example had to be rewritten for (or still avoids) bec
 - [x] Defaulted closure parameters of type `boolean` may be left out (`M9-TS-3154`).
 - [ ] `register(Class)` inside a top-level `if` is not seen by the component scanner. Kept as a clear compile error (decided 2026-10-22): the host starts registered classes before any code runs, so a registration that depends on a run-time condition cannot be made lazily without changing that contract.
 - [x] Arrays: an indexed write at `arr.length` (`arr[arr.length] = x`) has no bounds check and crashed a game with a segfault. Fixed 2026-10-22: it appends like JavaScript; a write further out (or negative / NaN) throws a `RangeError`.
-- [ ] A skipped (unreachable) function is only checked by `tsc`, never by our compiler: add an optional `--check-unused` that lowers everything.
+- [x] A skipped (unreachable) function is only checked by `tsc`, never by our compiler: `platypus-build build --check-unused` (and `check --check-unused`) lowers the program's own functions too (2026-10-29, M9-TS-3509). All 54 examples and the editor pass it.
 - [x] `Texture | null` vs `Texture | undefined` and `string | undefined` from indexing: handle properties are `T | null`, name-valued properties read as the union (`#[nullable]`, `#[ts_type]`, `M9-TS-3164`).
 
 **Library / API gaps that forced rewrites**

@@ -49,6 +49,7 @@ impl<'a> Lowerer<'a> {
                 hoisted.push((at, f));
             }
         }
+        self.prebind_arrows(stmts, out)?;
         for (j, s) in stmts.iter().enumerate() {
             for (_, f) in hoisted.iter().filter(|(at, _)| *at == j) {
                 self.lower_fn_decl_here(f, out)?;
@@ -68,6 +69,50 @@ impl<'a> Lowerer<'a> {
         }
         for (_, f) in hoisted.iter().filter(|(at, _)| *at == stmts.len()) {
             self.lower_fn_decl_here(f, out)?;
+        }
+        Ok(())
+    }
+
+    /// `const a = (n: Node): T => b(n); const b = (n: Node): T => a(n)`: closures of a block that a
+    /// closure uses (so one may call another declared after it) get their cells at the top of the
+    /// block when their types are written; the declarations fill them.
+    fn prebind_arrows(&mut self, stmts: &'a [Statement<'a>], out: &mut Vec<Stmt>) -> R<()> {
+        for s in stmts {
+            let Statement::VariableDeclaration(v) = s else {
+                continue;
+            };
+            if v.kind != VariableDeclarationKind::Const {
+                continue;
+            }
+            for d in &v.declarations {
+                let (
+                    BindingPattern::BindingIdentifier(id),
+                    None,
+                    Some(Expression::ArrowFunctionExpression(a)),
+                ) = (&d.id, &d.type_annotation, &d.init)
+                else {
+                    continue;
+                };
+                if !self.captured.contains(id.name.as_str()) || a.type_parameters.is_some() {
+                    continue;
+                }
+                let Some(t) = self.self_ref_arrow_ty(a)? else {
+                    continue;
+                };
+                let cell = self.new_local(Ty::Cell(Box::new(t.clone())));
+                let cell_ty = self.cur.locals[cell as usize].clone();
+                let zero = self.default_value(&t);
+                out.push(Stmt::Assign(
+                    cell,
+                    Expr {
+                        kind: ExprKind::NewCell(Box::new(zero)),
+                        ty: cell_ty,
+                    },
+                ));
+                let scope = self.cur.scopes.len() - 1;
+                self.cur.scopes[scope].insert(id.name.to_string(), Binding::Boxed(cell, t.clone()));
+                self.cur.prebound.insert(id.name.to_string(), (cell, t));
+            }
         }
         Ok(())
     }
@@ -1064,9 +1109,16 @@ impl<'a> Lowerer<'a> {
                 }
                 _ => ann,
             };
-            // A closure that refers to its own name: the cell exists before the closure.
+            // A closure that refers to its own name: the cell exists before the closure (made at
+            // the top of the block by `prebind_arrows`, or here).
             let mut prebound = None;
-            if self.captured.contains(id.name.as_str())
+            let (ann, early) = match self.cur.prebound.remove(id.name.as_str()) {
+                Some((cell, t)) => (Some(t), Some(cell)),
+                None => (ann, None),
+            };
+            if let Some(cell) = early {
+                prebound = Some(cell);
+            } else if self.captured.contains(id.name.as_str())
                 && let Some(t @ Ty::Fn(_)) = &ann
             {
                 let cell = self.new_local(Ty::Cell(Box::new(t.clone())));
@@ -1116,6 +1168,15 @@ impl<'a> Lowerer<'a> {
                 out.push(Stmt::CellSet(c, v));
                 continue;
             }
+            // `const level = e.level === "debug" ? "info" : e.level`: the names it can hold, so
+            // `filter[level]` reads only the fields named so.
+            if ty == Ty::Lit
+                && ann.is_none()
+                && let Some(init) = &d.init
+                && let Some(ms) = self.expr_lits(init)
+            {
+                self.cur.lit_sets.insert(id.name.to_string(), ms);
+            }
             let var = self.new_local(ty.clone());
             out.push(Stmt::Assign(var, v));
             self.note_regex(id.name.as_str(), d.init.as_ref());
@@ -1128,6 +1189,47 @@ impl<'a> Lowerer<'a> {
             self.bind_var(id.name.as_str(), var, out);
         }
         Ok(())
+    }
+
+    /// The string literals an expression of a literal-union type can be: a literal, either arm of
+    /// a conditional, a name with a known set, or a field an interface declares as a union.
+    fn expr_lits(&mut self, e: &'a Expression<'a>) -> Option<Vec<String>> {
+        match e.get_inner_expression() {
+            Expression::StringLiteral(s) => Some(vec![s.value.to_string()]),
+            Expression::ConditionalExpression(c) => {
+                let mut a = self.expr_lits(&c.consequent)?;
+                for m in self.expr_lits(&c.alternate)? {
+                    if !a.contains(&m) {
+                        a.push(m);
+                    }
+                }
+                Some(a)
+            }
+            Expression::Identifier(id) => self.cur.lit_sets.get(id.name.as_str()).cloned(),
+            Expression::StaticMemberExpression(m) => {
+                let mark = self.cur.locals.len();
+                let obj = self.lower_expr(&m.object, None);
+                self.cur.locals.truncate(mark);
+                let Ty::Obj(sid) = obj.ok()?.ty.strip().clone() else {
+                    return None;
+                };
+                let iface = self
+                    .ifaces
+                    .get(self.m.structs[sid].name.as_str())
+                    .copied()?;
+                iface.body.body.iter().find_map(|s| match s {
+                    TSSignature::TSPropertySignature(p)
+                        if p.key
+                            .static_name()
+                            .is_some_and(|n| n == m.property.name.as_str()) =>
+                    {
+                        self.lit_members_opt(&p.type_annotation.as_ref()?.type_annotation)
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        }
     }
 
     /// The type of an arrow function a program names and calls from inside itself, when its

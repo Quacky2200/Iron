@@ -22,6 +22,31 @@ pub(crate) struct Iter {
 }
 
 impl<'a> Lowerer<'a> {
+    /// The `T` of a callback that is a type guard on its first parameter (`(x): x is T => ..`).
+    pub(crate) fn guarded_type(&mut self, cb: &'a Expression<'a>) -> R<Option<Ty>> {
+        let (params, ret) = match cb.get_inner_expression() {
+            Expression::ArrowFunctionExpression(f) => (&f.params, &f.return_type),
+            Expression::FunctionExpression(f) => (&f.params, &f.return_type),
+            _ => return Ok(None),
+        };
+        let Some(TSType::TSTypePredicate(p)) = ret.as_ref().map(|r| &r.type_annotation) else {
+            return Ok(None);
+        };
+        let (false, Some(t), TSTypePredicateName::Identifier(name)) =
+            (p.asserts, &p.type_annotation, &p.parameter_name)
+        else {
+            return Ok(None);
+        };
+        let first = params
+            .items
+            .first()
+            .and_then(|p| p.pattern.get_identifier_name());
+        if first.as_ref().map(|a| a.as_str()) != Some(name.name.as_str()) {
+            return Ok(None);
+        }
+        Ok(Some(self.ty(&t.type_annotation, "")?))
+    }
+
     /// A string as the array of its code points (each a string); anything else as it is.
     pub(crate) fn string_chars(&mut self, v: Expr) -> Expr {
         let v = self.widen_lit(v);
@@ -276,6 +301,14 @@ impl<'a> Lowerer<'a> {
             let t = self.ty(&rt.type_annotation, "callback")?;
             self.cur.locals[var as usize] = t.clone();
             declared = Some(t);
+        }
+        // A result type the context already gave (`const xs: Item[] = names.map((n) => ({ .. }))`)
+        // is what the body's expression is lowered as.
+        if declared.is_none()
+            && let (RetKind::Val, Some(var)) = (&kind, res)
+            && self.cur.locals[var as usize] != Ty::Void
+        {
+            declared = Some(self.cur.locals[var as usize].clone());
         }
         let label = self.new_label();
         let saved_loops = std::mem::take(&mut self.cur.loops);
@@ -952,6 +985,13 @@ impl<'a> Lowerer<'a> {
                         let e = self.var_expr(ev);
                         match m {
                             "filter" => {
+                                // `filter((x): x is T => ..)` keeps `T`s, as TypeScript types it.
+                                let (el, e) = match self.guarded_type(cb)? {
+                                    Some(t) if t != el => {
+                                        (t.clone(), mk(ExprKind::Cast(Box::new(e)), t))
+                                    }
+                                    _ => (el, e),
+                                };
                                 let ty = Ty::Arr(Box::new(el));
                                 let out = self.new_local(ty.clone());
                                 let ov = self.var_expr(out);

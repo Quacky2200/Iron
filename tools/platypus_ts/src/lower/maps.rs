@@ -80,6 +80,72 @@ impl<'a> Lowerer<'a> {
         Ok(self.rt_map("ts_rt_map_new_gc", vec![num(kk), num(vp)], ty.clone()))
     }
 
+    /// The key and value types of an array of pairs: `[K, V][]` (a tuple), or `T[][]` when both
+    /// are one type.
+    fn pair_types(&self, t: &Ty) -> Option<(Ty, Ty)> {
+        let Ty::Arr(el) = t.strip() else {
+            return None;
+        };
+        match el.strip() {
+            Ty::Obj(sid) if self.is_tuple(*sid) && self.m.structs[*sid].fields.len() == 2 => {
+                let f = &self.m.structs[*sid].fields;
+                Some((f[0].ty.clone(), f[1].ty.clone()))
+            }
+            Ty::Arr(x) if x.is_ptr() || **x == Ty::Num => Some(((**x).clone(), (**x).clone())),
+            _ => None,
+        }
+    }
+
+    /// A map filled from an array of pairs (`pairs` is lowered; `ty` the map type if one was
+    /// given, else `Map<K, V>` of the pairs).
+    fn map_from_pairs(&mut self, pairs: Expr, ty: Option<Ty>, k: Ty, v: Ty) -> R<Expr> {
+        let ty = ty.unwrap_or_else(|| Ty::Map(Box::new(map_key_ty(k)), Box::new(v)));
+        let (mk_, mv, _) = Self::parts(&ty).expect("a map type");
+        let m = self.new_local(ty.clone());
+        let mut stmts = vec![Stmt::Assign(m, self.new_collection(&ty)?)];
+        let it = self.begin_iter(pairs)?;
+        stmts.extend(it.pre.clone());
+        let mut body = it.head.clone();
+        let pair = self.var_expr(it.elem);
+        let (key, val) = match pair.ty.strip().clone() {
+            Ty::Obj(sid) => {
+                let f = &self.m.structs[sid].fields;
+                let (kt, vt) = (f[0].ty.clone(), f[1].ty.clone());
+                (
+                    mk(ExprKind::Field(Box::new(pair.clone()), sid, 0), kt),
+                    mk(ExprKind::Field(Box::new(pair), sid, 1), vt),
+                )
+            }
+            Ty::Arr(x) => {
+                let x = (*x).clone();
+                let at = |i: f64| {
+                    let raw = mk(
+                        ExprKind::Index(Box::new(pair.clone()), Box::new(num(i))),
+                        x.clone().nullable(),
+                    );
+                    mk(ExprKind::Cast(Box::new(raw)), x.clone())
+                };
+                (at(0.0), at(1.0))
+            }
+            t => bail!("new Map(..): pairs of {t}"),
+        };
+        let kw = self.key_word(key, &mk_)?;
+        let vw = self.val_word(val, &mv)?;
+        let (kt, vt) = (
+            self.new_local(Ty::Handle("bits".into())),
+            self.new_local(Ty::Handle("bits".into())),
+        );
+        body.push(Stmt::Assign(kt, kw));
+        body.push(Stmt::Assign(vt, vw));
+        body.push(Stmt::Eval(self.rt_map(
+            "ts_rt_map_set",
+            vec![self.var_expr(m), self.var_expr(kt), self.var_expr(vt)],
+            Ty::Void,
+        )));
+        stmts.push(Stmt::Loop(it.label, body));
+        Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(m))), ty))
+    }
+
     /// `new Map(..)`, `new Set(..)`, `new WeakMap()`, `new WeakSet()`.
     pub(crate) fn lower_new_collection(
         &mut self,
@@ -125,6 +191,21 @@ impl<'a> Lowerer<'a> {
             if let Ty::Arr(el) = a.ty.strip().clone() {
                 ty = Some(Ty::Set(Box::new(map_key_ty(*el))));
                 source = Some(a);
+            }
+        }
+        // `new Map(items.map((x) => [key, value]))`: an array of pairs that is not a literal.
+        if !is_set
+            && let Some(e) = arg
+            && !matches!(e, Expression::ArrayExpression(_))
+        {
+            let mark = self.cur.locals.len();
+            let probe = self.lower_expr(e, None);
+            self.cur.locals.truncate(mark);
+            if let Ok(p) = probe
+                && let Some((k, v)) = self.pair_types(&p.ty)
+            {
+                let a = self.lower_expr(e, None)?;
+                return self.map_from_pairs(a, ty, k, v);
             }
         }
         // `new Set(other)` / `new Map(other)`: a copy of a collection of the same kind.
