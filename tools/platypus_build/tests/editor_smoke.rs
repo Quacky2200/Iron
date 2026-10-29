@@ -81,13 +81,13 @@ fn the_scene_view_keeps_its_camera_after_the_game_tab() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
-/// Before and after selecting Cube in the Hierarchy; `moveToText` finds the Inspector naming
-/// it (else `bench: no text` fails the run).
+/// Before and after selecting Cube in the Hierarchy; `moveToText` finds the Inspector showing
+/// its MeshRenderer (else `bench: no text` fails the run).
 const SELECT_SPEC: &str = r#"{ "warmup": 30, "segments": [
   { "name": "start", "frames": 20, "input": [] },
   { "name": "cube", "frames": 30, "input": [
     { "frame": 0, "kind": "clickText", "text": "Cube" },
-    { "frame": 10, "kind": "moveToText", "text": "1 selected: Cube" }
+    { "frame": 10, "kind": "moveToText", "text": "MeshRenderer" }
   ] }
 ] }"#;
 
@@ -193,6 +193,58 @@ const UNDO_SPEC: &str = r#"{ "warmup": 30, "segments": [
 #[test]
 fn deletes_duplicates_and_moves_in_the_hierarchy_undo_and_redo() {
     let run = run_editor("undo", UNDO_SPEC, false);
+    let _ = std::fs::remove_dir_all(&run);
+}
+
+/// The Inspector: Point Light's intensity typed as 5 (Backspace, 5, Enter), then undone; a
+/// component added (Add Component > AudioSource) and the add undone.
+const INSPECT_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "light", "frames": 20, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Point Light" }
+  ] },
+  { "name": "typed", "frames": 40, "input": [
+    { "frame": 0, "kind": "click", "x": 1540, "y": 343 },
+    { "frame": 5, "kind": "key", "code": "Backspace" },
+    { "frame": 8, "kind": "key", "code": "Digit5", "key": "5" },
+    { "frame": 10, "kind": "key", "code": "Enter" },
+    { "frame": 16, "kind": "moveToText", "text": "Set Light.intensity" }
+  ] },
+  { "name": "undone", "frames": 60, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Point Light" },
+    { "frame": 4, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 5, "kind": "key", "code": "KeyZ" },
+    { "frame": 6, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 12, "kind": "moveToText", "text": "Undid Set Light.intensity" },
+    { "frame": 14, "kind": "clickText", "text": "Cube" },
+    { "frame": 20, "kind": "clickText", "text": "Add Component" },
+    { "frame": 26, "kind": "clickText", "text": "AudioSource" },
+    { "frame": 32, "kind": "moveToText", "text": "Add AudioSource" }
+  ] }
+] }"#;
+
+// M5-EDT-36
+#[test]
+fn inspector_edits_set_fields_and_undo() {
+    let run = run_editor("inspect", INSPECT_SPEC, true);
+    let shot = |name: &str| run.join("shots").join(name);
+    // The intensity field showed 5, then 2 again after the undo: the panel's pixels changed back.
+    let a = image::open(shot("01-light.png")).unwrap().to_rgb8();
+    let b = image::open(shot("02-typed.png")).unwrap().to_rgb8();
+    let differ = |p: &image::Rgb<u8>, q: &image::Rgb<u8>| {
+        p.0.iter().zip(q.0).any(|(s, t)| s.abs_diff(t) > 24)
+    };
+    let mut typed = 0;
+    for y in 333..354 {
+        for x in 1395..1590 {
+            if differ(a.get_pixel(x, y), b.get_pixel(x, y)) {
+                typed += 1;
+            }
+        }
+    }
+    assert!(
+        typed > 10,
+        "the intensity field didn't change ({typed} pixels)"
+    );
     let _ = std::fs::remove_dir_all(&run);
 }
 

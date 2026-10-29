@@ -110,6 +110,93 @@ fn scenes_save_to_project_files_and_open_again() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// M5-EDT-35
+#[test]
+fn the_inspector_reads_and_sets_fields_of_built_in_and_kept_components() {
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    manager::reset();
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let dir = project("inspect");
+    let s = manager::load_scene(
+        r#"{"format":"platypus.scene","version":1,"name":"I","objects":[{"id":1,"name":"Lamp","components":[
+          {"id":2,"type":"Light","properties":{"type":"spot","intensity":2}},
+          {"id":3,"type":"Spinner","properties":{"speed":3}}]}]}"#,
+        false,
+    )
+    .unwrap();
+    let lamp = manager::roots(s)[0];
+    let comps = api::components(lamp);
+    let kinds: Vec<_> = comps.iter().map(|c| (c.kind.as_str(), c.opaque)).collect();
+    assert_eq!(kinds, [("Light", false), ("Spinner", true)]);
+    let light = &comps[0];
+    let fields = api::fields(lamp, "Light", light.handle);
+    let ty = fields.iter().find(|f| f.name == "type").unwrap();
+    assert_eq!((ty.ty.as_str(), ty.text.as_str()), ("enum", "spot"));
+    assert_eq!(ty.options, "directional|point|spot");
+    let color = fields.iter().find(|f| f.name == "color").unwrap();
+    assert_eq!(color.ty, "color");
+    assert_eq!(color.vec.len(), 4);
+    let intensity = fields.iter().find(|f| f.name == "intensity").unwrap();
+    assert_eq!((intensity.ty.as_str(), intensity.num), ("number", 2.0));
+
+    assert!(api::set_field(
+        lamp,
+        "Light",
+        light.handle,
+        "intensity",
+        "5"
+    ));
+    assert!(api::set_field(
+        lamp,
+        "Light",
+        light.handle,
+        "color",
+        "[1,0,0,1]"
+    ));
+    let fields = api::fields(lamp, "Light", light.handle);
+    let get = |n: &str| fields.iter().find(|f| f.name == n).unwrap().clone();
+    assert_eq!(get("intensity").num, 5.0);
+    assert_eq!(get("color").vec, [1.0, 0.0, 0.0, 1.0]);
+    // Putting a field's old JSON back restores it (undo).
+    assert!(api::set_field(
+        lamp,
+        "Light",
+        light.handle,
+        "intensity",
+        &intensity.json
+    ));
+    assert_eq!(
+        api::fields(lamp, "Light", light.handle)
+            .iter()
+            .find(|f| f.name == "intensity")
+            .unwrap()
+            .num,
+        2.0
+    );
+
+    // A kept component's data is edited as data, and saved so.
+    let spinner = &comps[1];
+    assert!(api::set_field(
+        lamp,
+        "Spinner",
+        spinner.handle,
+        "speed",
+        "7"
+    ));
+    let saved = manager::serialize(s).unwrap();
+    assert!(saved.contains("\"speed\":7"), "{saved}");
+
+    assert!(api::component_kinds().iter().any(|k| k == "Camera"));
+    assert!(api::add_component(lamp, "Camera") > 0.0);
+    assert_eq!(api::components(lamp).len(), 3);
+    assert!(api::remove_component(lamp, "Spinner", spinner.handle));
+    assert!(api::components(lamp).iter().all(|c| c.kind != "Spinner"));
+    assert_eq!(api::add_component(lamp, "Nope"), 0.0);
+    platypus_engine_api::editor::reset();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn scene_names_come_from_their_files() {
     assert_eq!(scene_name_of("scenes/level.scene.json"), "level");

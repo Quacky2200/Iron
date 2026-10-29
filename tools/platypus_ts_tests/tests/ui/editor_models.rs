@@ -111,6 +111,13 @@ fn the_editor_history_passes() {
     assert!(failures.is_empty(), "\n{failures}");
 }
 
+// M5-EDT-37
+#[test]
+fn the_editor_inspector_model_passes() {
+    let failures = run_editor_test("inspector.test.ts", "edi_", 968_000);
+    assert!(failures.is_empty(), "\n{failures}");
+}
+
 // M5-EDT-31..33
 #[test]
 fn the_editor_file_dialog_passes() {

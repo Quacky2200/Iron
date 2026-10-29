@@ -67,6 +67,19 @@ pub fn remove_opaque(object: ObjectId, handle: u64) -> bool {
     })
 }
 
+/// Replaces an object's opaque component of the same stand-in handle (an edit of its data).
+pub(crate) fn set_opaque(object: ObjectId, opaque: Opaque) {
+    OPAQUE_OF.with(|o| {
+        if let Some(c) = o
+            .borrow_mut()
+            .get_mut(&object)
+            .and_then(|l| l.iter_mut().find(|c| c.handle == opaque.handle))
+        {
+            *c = opaque;
+        }
+    });
+}
+
 fn add_opaque(object: ObjectId, opaque: Opaque) {
     OPAQUE_OF.with(|o| o.borrow_mut().entry(object).or_default().push(opaque));
 }

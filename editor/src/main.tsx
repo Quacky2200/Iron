@@ -3,12 +3,13 @@
 
 // The Platypus editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
 // Inspector, Console, Project) and a status bar. `platypus-app editor` runs it like a game
-// (`platypus-build build editor` first). The Hierarchy and Scene view show the editor's
-// own world (a demo scene for now); the Inspector is a placeholder.
+// (`platypus-build build editor` first). The Hierarchy, Scene view and Inspector show and edit
+// the editor's own world: the project's scene (scenes.ts), every edit undoable (history.ts).
 import "./editor-ui.css";
 import "./editor.css";
 
 import { Console } from "./Console.tsx";
+import { Inspector } from "./Inspector.tsx";
 import { Dock, type DockPanel } from "./Dock.tsx";
 import { type DockNode, group, parseLayout, type Rect as DockRect, serializeLayout, split } from "./dock.ts";
 import { ALL_FILES, SCENE_FILTER, stemOf } from "./file-dialog.ts";
@@ -165,14 +166,6 @@ function GameView({ rect }: { rect: DockRect }) {
   return <box style={{ width: rect.width, height: rect.height }} />;
 }
 
-function Placeholder({ title, note, width, height }: { title: string; note: string; width: number; height: number }) {
-  return (
-    <box className="placeholder" style={{ width, height }}>
-      <Text className="placeholder-title">{title}</Text>
-      <Text className="placeholder-note">{note}</Text>
-    </box>
-  );
-}
 
 function App() {
   const screen = useScreenSize();
@@ -606,20 +599,7 @@ function App() {
       game: { title: TITLES.game!, seeThrough: true, render: (r) => <GameView rect={r} /> },
       inspector: {
         title: TITLES.inspector!,
-        render: (s) => (
-          <Placeholder
-            title="Inspector"
-            note={
-              selectedObjects.length === 0
-                ? "Nothing selected"
-                : `${selectedObjects.length} selected: ${selectedObjects
-                    .slice(0, 3)
-                    .map((g) => g.name)
-                    .join(", ")}`
-            }
-            {...s}
-          />
-        ),
+        render: (s) => <Inspector objects={selectedObjects} width={s.width} height={s.height} exec={exec} />,
       },
       console: { title: TITLES.console!, render: (s) => <Console {...s} /> },
     }),
@@ -656,4 +636,3 @@ if (!first || !openScene(first)) buildDemoScene();
 createRoot().render(<App />);
 console.log("Platypus editor started (UI: editor/src/main.tsx:1)");
 if (first) console.log(`Opened ${first}`);
-console.warn("The Inspector is a placeholder (TODO.md M5.e)");

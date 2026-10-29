@@ -980,6 +980,70 @@ fn gen_component(c: &Component) -> Vec<String> {
     o
 }
 
+/// A string as a JSON (and Rust raw-string-safe) literal.
+fn json_str(s: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// A field's default as the saved value (JSON text).
+fn default_json(f: &Field) -> String {
+    let wrap = |t: &str, v: &[f64]| {
+        let parts: Vec<String> = v.iter().map(|x| format!("{x:?}")).collect();
+        format!("{{\"$type\":\"{t}\",\"value\":[{}]}}", parts.join(","))
+    };
+    match f.default {
+        Dv::None => "null".into(),
+        Dv::Bool(b) => b.to_string(),
+        Dv::Int(i) => i.to_string(),
+        Dv::Float(x) if x.is_finite() => format!("{x:?}"),
+        Dv::Float(_) => "null".into(),
+        // Rust source: not a value the editor can show before it is saved.
+        Dv::Str(s) if s.starts_with('=') => "null".into(),
+        Dv::Str(s) => json_str(s),
+        Dv::Tuple(t) => match f.ty {
+            "color" | "color?" => wrap("Color", t),
+            "v2" => wrap("Vector2", t),
+            "v3" => wrap("Vector3", t),
+            _ => format!(
+                "[{}]",
+                t.iter()
+                    .map(|x| format!("{x:?}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        },
+    }
+}
+
+/// The `register_fields` list of a component (the editor's Inspector).
+fn field_docs(c: &Component) -> String {
+    let items: Vec<String> = c
+        .fields
+        .iter()
+        .filter(|f| !c.skip_save.contains(&f.ts))
+        .map(|f| {
+            format!(
+                "platypus_kinds::FieldDoc {{ name: {}.into(), ty: {}.into(), default: serde_json::from_str({}).unwrap_or_default(), doc: {}.into() }}",
+                json_str(f.ts),
+                json_str(f.ty),
+                json_str(&default_json(f)),
+                json_str(f.doc)
+            )
+        })
+        .collect();
+    format!("vec![{}]", items.join(", "))
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=gen/components.rs");
@@ -1001,6 +1065,11 @@ fn main() {
             ));
         } else {
             out.push(format!("    platypus_kinds::register({}_kind());", c.low));
+            out.push(format!(
+                "    platypus_kinds::register_fields(\"{}\", {});",
+                c.name,
+                field_docs(c)
+            ));
         }
     }
     out.push("}".into());

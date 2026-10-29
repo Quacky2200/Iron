@@ -1507,6 +1507,17 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         scenes and copied-in assets get `.meta` files (`platypus_core::meta`, `Editor.ensureMeta`) (`M5-SCN-11..13`).
         A compiler fix came with it: a generic promise function no longer makes a `then` for every pair of types
         (`M9-TS-3523`)
+      - [x] E5: the Inspector (`Inspector.tsx`, `inspector.ts`; `EditorScene.components` / `fields` / `setField` /
+        `addComponent` / `removeComponent` / `componentKinds` over the kinds, `platypus_scenes/src/inspect.rs`): name,
+        enabled, Transform (local position, Euler angles, scale), a foldout per component with number, checkbox,
+        text, choice, vector and colour fields, live, every edit undoable; Add / Remove Component; kept (opaque)
+        components edited as data. Field types and enum options from `platypus_kinds::register_fields` (the
+        generated render components; others from their saved values) (`M5-EDT-35..37`)
+        - [ ] Later (E5b): editing references (objects, components) and assets by drop or picker; a colour picker;
+          several objects at once (mixed values; only the last selected is shown); tag and layer editing; schemas for
+          the hand-written kinds (physics, audio, animation) and for script `@property` fields (needs the project's
+          code in the editor, E11); scrubbing numbers by dragging the label; the startup compile went from ~0.5 s to
+          ~2 s with the editor's growth (lowering), worth a look
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into

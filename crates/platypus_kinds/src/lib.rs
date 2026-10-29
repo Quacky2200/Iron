@@ -46,6 +46,32 @@ pub struct Kind {
     pub destroy: Box<dyn Fn(u64)>,
 }
 
+/// A field of a kind as the editor's Inspector shows it: its type (`f64`, `bool`, `string`,
+/// `enum:a|b|c`, `color`, `v2`, `v3`, `texture`, ...), the value it starts with (as saved) and a
+/// line of documentation. Kinds that register none are shown from their saved values alone.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldDoc {
+    pub name: String,
+    pub ty: String,
+    pub default: Value,
+    pub doc: String,
+}
+
+thread_local! {
+    static FIELDS: RefCell<std::collections::HashMap<String, Vec<FieldDoc>>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+/// Says what a kind's fields are (for the editor), replacing what was said before.
+pub fn register_fields(kind: &str, fields: Vec<FieldDoc>) {
+    FIELDS.with(|f| f.borrow_mut().insert(kind.to_owned(), fields));
+}
+
+/// A kind's fields in order (empty when it registered none).
+pub fn fields_of(kind: &str) -> Vec<FieldDoc> {
+    FIELDS.with(|f| f.borrow().get(kind).cloned().unwrap_or_default())
+}
+
 thread_local! {
     static KINDS: RefCell<Vec<Rc<Kind>>> = const { RefCell::new(Vec::new()) };
     static COMPONENTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };

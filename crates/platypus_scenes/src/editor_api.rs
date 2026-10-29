@@ -8,6 +8,7 @@
 //! (`platypus_engine_api::editor`'s rules).
 
 use crate::data::{Saver, load_objects};
+use crate::inspect::{ComponentInfo, FieldInfo};
 use crate::manager;
 use platypus_api::{Handle, platypus_api};
 use platypus_engine_api::editor::{files, project_op};
@@ -61,9 +62,58 @@ pub fn scene_name_of(path: &str) -> String {
     file.to_string()
 }
 
-#[platypus_api(namespace = "EditorScene", handles(GameObject = ObjectId))]
+#[platypus_api(
+    namespace = "EditorScene",
+    handles(GameObject = ObjectId),
+    records(
+        /// A component of an object as the Inspector lists it.
+        ComponentInfo = ComponentInfo [kind: string, handle: f64, opaque: bool],
+        /// A component's field: its type, value (as saved, and typed) and choices.
+        FieldInfo = FieldInfo [name: string, ty: string, json: string, num: f64, flag: bool, text: string, vec: Vec<f64>, options: string, doc: string, read_only: bool]
+    )
+)]
 pub mod editor_scene_api {
     use super::*;
+    use crate::inspect;
+
+    /// An object's components: the registered kinds' in registration order, then those kept from
+    /// a file whose kind isn't registered here (`opaque`, a game's scripts).
+    pub fn components(object: ObjectId) -> Vec<ComponentInfo> {
+        project_op("components", |_| Ok(inspect::components(object)))
+    }
+
+    /// A component's fields with their current values.
+    pub fn fields(object: ObjectId, kind: &str, handle: f64) -> Vec<FieldInfo> {
+        project_op("fields", |_| {
+            Ok(inspect::fields(object, kind, handle as u64))
+        })
+    }
+
+    /// Sets one field from JSON text (a field's `json`, or a plain array for a vector or colour).
+    pub fn set_field(object: ObjectId, kind: &str, handle: f64, name: &str, json: &str) -> bool {
+        project_op("setField", |_| {
+            inspect::set_field(object, kind, handle as u64, name, json).map(|()| true)
+        })
+    }
+
+    /// Adds a component of a registered kind; its handle (0 when it failed).
+    pub fn add_component(object: ObjectId, kind: &str) -> f64 {
+        project_op("addComponent", |_| {
+            inspect::add(object, kind).map(|h| h as f64)
+        })
+    }
+
+    /// Removes a component (registered or kept from a file).
+    pub fn remove_component(object: ObjectId, kind: &str, handle: f64) -> bool {
+        project_op("removeComponent", |_| {
+            inspect::remove(object, kind, handle as u64).map(|()| true)
+        })
+    }
+
+    /// The kinds a component can be added of, by name.
+    pub fn component_kinds() -> Vec<String> {
+        project_op("componentKinds", |_| Ok(inspect::kinds()))
+    }
 
     fn none() -> ObjectId {
         ObjectId::from_raw(0)

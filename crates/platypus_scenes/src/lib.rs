@@ -17,6 +17,7 @@ mod data_tests;
 mod editor_api;
 #[cfg(test)]
 mod editor_tests;
+mod inspect;
 mod kinds;
 #[cfg(test)]
 mod kinds_tests;
