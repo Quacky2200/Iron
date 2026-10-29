@@ -1,3 +1,6 @@
+// Copyright 2026 The Platypus Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Repro for four paint/layout issues the Fluid desktop hit (its docs/platypus.md, items 1-4).
 // Every cell is a dark square; what should appear in it is red (in row 1: glass whose colour
 // stays even). Each case sits next to a control that does the same thing a way that works. Cases

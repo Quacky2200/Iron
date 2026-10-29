@@ -3349,7 +3349,7 @@ interface PlatypusStyle :: placeContent?: string;
 interface PlatypusStyle :: placeItems?: string;
 interface PlatypusStyle :: placeSelf?: string;
 interface PlatypusStyle :: pointerEvents?: "auto" | "none";
-interface PlatypusStyle :: position?: "relative" | "absolute" | "fixed";
+interface PlatypusStyle :: position?: "static" | "relative" | "absolute" | "fixed";
 interface PlatypusStyle :: r?: number | string;
 interface PlatypusStyle :: right?: Length;
 interface PlatypusStyle :: rotate?: string;
