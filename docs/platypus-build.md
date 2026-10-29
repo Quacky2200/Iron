@@ -210,7 +210,7 @@ builds and is type-checked with the same default (the build writes it into `buil
    inlined; every `url()` is rewritten: a file up to 32 KiB becomes a `data:` URL, a larger one is copied to `build/` as
    `name-<hash>.ext` and the URL is relative to `game.css`. A `url()` that does not exist stays as written, with a warning (the
    Charm font is not in the repository).
-6. **Assets.** `.meta` files are made for new assets (`assets.rs`; existing ones and their GUIDs are kept; a moved file keeps its
+6. **Assets.** `.meta` files are made for new assets (`assets.rs`, over the helpers in `platypus_core::meta`, which the editor uses too; existing ones and their GUIDs are kept; a moved file keeps its
    GUID when the move is unambiguous). Every string literal of the program that names an existing asset file under the game folder
    (`Texture.load("assets/x.png")`, `Model.load`, `loadFont`, `scenes/*.scene.json`, sounds) is copied with its `.meta` to the same
    relative path in `build/`. Paths follow `platypus_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then

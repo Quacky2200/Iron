@@ -957,6 +957,10 @@ What the QuickJS-era sources of the examples (`git show main:examples/<name>/src
   ...) by [lower/asyncs.rs](../tools/platypus_ts/src/lower/asyncs.rs). `void` shares `number`'s class;
   `number`, `string` and `boolean` always exist; `T[]` too when `Promise.all` appears. A `Promise<T>` needs
   `T` written somewhere in the program, and awaiting needs the value's `Promise<T>` class to exist.
+- **Lazy helpers.** The per-type helpers (`__then$K$V`, `__fulfill$K`, ...) are lowered only when something calls them
+  (`is_lazy_helper` in `lower/mod.rs`), and the program's own types are not paired with each other for `then`. A
+  generic promise function makes a class per program type; lowering a `then` for every pair (and counting the helpers as
+  always reachable) took the editor from 1 MB of object code to 57 MB and from 0.5 s to 70 s (`M9-TS-3523`).
 - **Generic promises.** `async function load<T>(x: T): Promise<T>`, `new Promise<T>(..)`, `Promise<T[]>` and
   a `class Box<T>` holding a `Promise<T>` work: the rewrite emits `__asyncG<T>(..)` / `__newPromiseG<T>(..)`
   (and annotates the coroutine's `__p: Promise<T>`) for a type that mentions a type parameter, and the

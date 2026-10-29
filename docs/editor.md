@@ -23,6 +23,8 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
 | [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
 | [editor.rs](../crates/platypus_engine_api/src/editor.rs), [editor/open.rs](../crates/platypus_engine_api/src/editor/open.rs), [editor/project.rs](../crates/platypus_engine_api/src/editor/project.rs), [editor/files.rs](../crates/platypus_engine_api/src/editor/files.rs) | The `Editor` namespace |
+| [scenes.ts](../editor/src/scenes.ts) | The open scene: recent files per project (PlayerPrefs), window title, game cameras, the start scene |
+| [meta.rs](../crates/platypus_core/src/meta.rs) | `.meta` helpers (GUIDs, importer settings, `ensure`), shared with `platypus-build` |
 | [logging.rs](../crates/platypus_app/src/logging.rs) | The capture layer that feeds the log |
 
 ## Running it
@@ -72,6 +74,8 @@ declarations are generated. All calls answer at once; there are no ops and no pr
 | `Editor.rename(path, name)` | Renames a file or folder in its folder, `.meta` included; refuses a taken or unusable name; returns the new path |
 | `Editor.trash(path)` | Moves a file or folder (and its `.meta`) into the project's trash; returns the id `restore` takes |
 | `Editor.restore(id)` | Puts a trashed item back where it was; returns its path. Refuses when something is there now |
+| `Editor.ensureMeta(path)` | Gives an asset a `.meta` file if it has none (`platypus_core::meta::ensure`); returns its GUID ("" for a file that isn't an asset) |
+| `Editor.startScene` | The project's `startScene` from `project.json` ("" for none) |
 | `Editor.lastError` | Why the last file call failed ("" when it worked) |
 
 **The log.** `logging::init` adds a capture layer (filtered like the other layers). While the editor is enabled, each
@@ -86,7 +90,8 @@ allowed. A copy creates at most 10,000 files and skips symlinks. `files.rs` hold
 `readText` reads files up to a size limit.
 
 An asset's `.meta` file (its GUID) goes wherever the asset goes: `move`, `rename` and `trash` take it along, and listings
-hide `.meta` files. `trash` moves the item into `.platypus/trash/<id>/` in the project, next to a `.origin` note with
+hide `.meta` files. `copyIn` gives each copied asset a `.meta`, and the editor calls `ensureMeta` on a saved scene. The
+helpers live in `platypus_core::meta` (moved from `platypus-build`'s `assets.rs`); `.fbx` counts as a model. `trash` moves the item into `.platypus/trash/<id>/` in the project, next to a `.origin` note with
 its old path; `restore` reads the note and moves it back once. The trash folder itself can't be trashed.
 
 **Opening files.** A relative path is looked up in the current folder, the editor's folder, then the source tree the
@@ -351,7 +356,7 @@ see-through panels show the world.
 - **Demo scene.** `buildDemoScene()` ([demo-scene.ts](../editor/src/demo-scene.ts)) runs at startup: a
   floor, four shapes, the three kinds of light, a `Main Camera` (its `rect` is empty, so it draws
   nowhere until the Game panel gives it one), an audio source and a reflection probe, so every icon
-  shows. It stands in until scenes open from the project.
+  shows. It stands in only when the project has no last or start scene to open.
 - **Hierarchy.** A `TreeView` over `visibleObjects()`, with `GameObject.id` as node ids and an icon by
   component (`kindOf`). `useSceneTree` computes a key of `id:parentId:name` per object in `onEditorFrame`
   and rebuilds the tree only when it changes, so adding, moving or renaming objects shows at once.
@@ -365,10 +370,24 @@ see-through panels show the world.
 - **Selection** is the tree's selected ids, shared with the Scene view: selecting in either updates the
   other (`select`), and the Inspector (a placeholder) names the selected objects.
 - **Game.** `GameView` sets `Camera.main`'s `rect` to the panel's box while it is shown and to an empty
-  rect when it is hidden or unmounted, so the game's camera draws only inside the Game tab.
+  rect when it is hidden or unmounted, so the game's camera draws only inside the Game tab (see Game cameras below).
 - **Project** is the project browser.
-- **File > Open Scene** (Ctrl+O) shows the file dialog over `scenes` with the scene filter; the chosen path is logged, as
-  opening it isn't implemented yet.
+- **File menu.** New Scene, Open Scene (Ctrl+O; the file dialog over `scenes` with the scene filter), Open Recent (the
+  project's last 8 scenes, kept in PlayerPrefs as `editor.recent:<project>`; a file that fails to open is dropped from
+  the list), Clear Recent, Save (Ctrl+S; Save As when the scene has no file), Save As and Exit. They work through
+  `EditorScene`. New, Open and Exit first ask "Save changes?" (Save, Don't Save, Cancel) when the history is dirty. A
+  save marks the history saved, adds the scene to the recent list and calls `Editor.ensureMeta` on the file. The save
+  dialog keeps a start folder that doesn't exist yet (`FileDialog.tsx`), so a new project's `scenes` folder is made on save.
+- **GameObject menu.** Create Empty, 3D Object (Cube, Sphere, ...), Light and Camera; each is an undoable command and
+  selects the new object.
+- **Window title.** `windowTitle`: the scene's name (or "Untitled") with `*` while unsaved, then the project and
+  "Platypus Editor".
+- **Startup scene.** The editor opens the project's most recent scene if it still exists, else `Editor.startScene`;
+  the demo scene is built only when neither is there.
+- **Game cameras.** `placeGameCameras` (`scenes.ts`, every frame) gives `Camera.main` the Game panel's rect while it is
+  shown and an empty rect for every other game camera, so they draw nowhere else. Each camera's own `rect` is kept
+  (`authored`; a zero rect means the whole view) and `withAuthoredCameras` puts it back while saving, so a saved scene
+  holds the cameras' real rects, not the editor's.
 - **View > Show Grid / Show Gizmos** toggle the Scene view's `grid` and `gizmos` props.
 - Window > Save / Load / Reset Layout keeps the layout in PlayerPrefs (`editor.layout`), and the saved
   layout loads at start. Unimplemented menu items log what they would do.
@@ -392,6 +411,8 @@ see-through panels show the world.
   is unchanged (its own camera, grid and icons; `M5-EDT-29`), and selecting Cube in the Hierarchy names it in the
   Inspector and draws its handles (`M5-EDT-30`), and File > Open Scene shows the file dialog, Escape closes it, and New Folder in the
   Project browser asks for a name (`M5-EDT-34`, compared by pixels in the middle of the window).
+- Scenes: `platypus_core::meta::ensure` (`M5-SCN-12`, in `meta.rs`) and the smoke test `M5-SCN-13` (New Scene, a Cube,
+  Ctrl+S, Enter writes `scenes/Untitled.scene.json` and its `.meta`; a second run with `startScene` opens it).
 - Undo: the history (`M5-UNDO-02` to `-05`, `editor/test/history.test.ts`), `EditorScene` snapshots and restore in
   `editor_tests.rs` (`M5-UNDO-01`), scene save / new / open (`M5-SCN-11`), and the smoke test `M5-UNDO-06` (Delete on
   Cube, Ctrl+Z, Ctrl+Y, Ctrl+D, a Hierarchy drag and its undo, each in the status bar).
@@ -412,6 +433,7 @@ see-through panels show the world.
   gizmos and handles are drawn for the selection only.
 - Hierarchy drags only drop onto a row (it becomes the last child); there is no dropping between rows to reorder.
 - Undoing a delete doesn't restore references to the object from others (they stay empty). Duplicates keep the same name.
+- Only one scene is edited at a time (Open replaces the loaded scenes); there is no prefab editing and no scene tabs.
 - Panels can't be closed or reopened yet, nor float in windows of their own.
 - The modal backdrop does not dim what is under it yet, and Tab is not kept inside a dialog (focus can leave it).
 - The Project browser has no context menu; New Folder, Rename and Delete are on its toolbar and keys.
