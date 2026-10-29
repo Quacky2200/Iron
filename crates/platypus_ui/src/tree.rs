@@ -3071,13 +3071,18 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Where `child`'s layout position counts from, given its parent's scrolled content
     /// origin `inherited` (the parents and containing blocks are placed before it).
     fn child_origin(&self, child: NodeId, inherited: (f32, f32)) -> (NodeId, f32, f32) {
+        let node = self.nodes.get(&child);
         // Fixed nodes are laid out by the root and never scroll.
-        if self.nodes.get(&child).is_some_and(|n| is_fixed(child, n)) {
+        if node.is_some_and(|n| is_fixed(child, n)) {
             return (child, 0.0, 0.0);
         }
         // An absolute box in a static parent is placed in its containing block (the nearest
-        // positioned ancestor, or the root), inside that box's scrolled content.
-        if let Some(block) = self.layout.containing_block(child)
+        // positioned ancestor, or the root), inside that box's scrolled content. Outside list
+        // markers are the exception: their insets (`right: 100%; top: 0`) only cancel the
+        // containing block's size, so they hang off their own item.
+        let marker = node.is_some_and(|n| n.generated == Some(PseudoElement::Marker));
+        if !marker
+            && let Some(block) = self.layout.containing_block(child)
             && let Some(r) = self.rects.get(&block)
         {
             let (sx, sy) = self.scroll.get(&block).copied().unwrap_or_default();
