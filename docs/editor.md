@@ -14,11 +14,13 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [tree.ts](../editor/src/tree.ts), [TreeView.tsx](../editor/src/TreeView.tsx) | Tree view |
 | [console.ts](../editor/src/console.ts), [log.ts](../editor/src/log.ts), [Console.tsx](../editor/src/Console.tsx) | Console model, the log feed, the panel |
 | [project.ts](../editor/src/project.ts), [ProjectBrowser.tsx](../editor/src/ProjectBrowser.tsx) | Project file model (promises over `Editor`) and the browser |
+| [modal.ts](../editor/src/modal.ts), [Modal.tsx](../editor/src/Modal.tsx) | The stack of open dialogs, `ModalHost`, `Modal`, `confirmDialog`, `textDialog` |
+| [file-dialog.ts](../editor/src/file-dialog.ts), [FileDialog.tsx](../editor/src/FileDialog.tsx) | The open / save / folder dialog: its logic (filters, names, typed paths) and the component |
 | [SceneView.tsx](../editor/src/SceneView.tsx), [scene-camera.ts](../editor/src/scene-camera.ts), [handles.ts](../editor/src/handles.ts), [frame.ts](../editor/src/frame.ts) | The Scene view, its camera model, transform handles, `onEditorFrame` |
 | [screen.ts](../editor/src/screen.ts), [classes.ts](../editor/src/classes.ts), [demo-scene.ts](../editor/src/demo-scene.ts) | `useScreenSize`, `cx()` class lists, the demo scene |
 | [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
 | [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
-| [editor.rs](../crates/platypus_engine_api/src/editor.rs), [editor/open.rs](../crates/platypus_engine_api/src/editor/open.rs), [editor/project.rs](../crates/platypus_engine_api/src/editor/project.rs) | The `Editor` namespace |
+| [editor.rs](../crates/platypus_engine_api/src/editor.rs), [editor/open.rs](../crates/platypus_engine_api/src/editor/open.rs), [editor/project.rs](../crates/platypus_engine_api/src/editor/project.rs), [editor/files.rs](../crates/platypus_engine_api/src/editor/files.rs) | The `Editor` namespace |
 | [logging.rs](../crates/platypus_app/src/logging.rs) | The capture layer that feeds the log |
 
 ## Running it
@@ -56,10 +58,19 @@ declarations are generated. All calls answer at once; there are no ops and no pr
 | `Editor.project` | The project folder's full path ("" without one) |
 | `Editor.logSince(seq)` | The kept `LogRecord`s (`seq`, `level` 0 trace to 4 error, `target`, `message`, `timeMs`) with `seq` above the argument, oldest first |
 | `Editor.openFile(path, line, col)` | Opens the file at that place in the user's code editor |
-| `Editor.listDir(path)` | `ProjectEntry[]` (`name`, `dir`, `size`) of a project folder ("" is the root): folders first, by name, without dot files |
+| `Editor.listDir(path)` | `ProjectEntry[]` (`name`, `dir`, `size`) of a project folder ("" is the root): folders first, by name, without dot files and `.meta` files |
 | `Editor.copyIn(sources, dir)` | Copies files or whole folders from outside into a project folder, renaming (`a (2).png`) instead of overwriting; returns the new project paths |
 | `Editor.move(path, dir)` | Moves a project file or folder into a project folder; refuses overwriting and moving a folder into itself; returns the new path |
-| `Editor.lastError` | Why the last `listDir`, `copyIn` or `move` failed ("" when it worked) |
+| `Editor.readText(path)` | A project file's text ("" when it can't be read: see `lastError`) |
+| `Editor.writeText(path, text)` | Writes a project file, making its folders; the text goes to a temporary file beside it, which then replaces the old file in one step. False when it failed |
+| `Editor.exists(path)` | Whether a project path exists |
+| `Editor.stat(path)` | A `FileStat` (`exists`, `dir`, `size`, `modified_ms` since 1970, 0 when unknown) |
+| `Editor.freeName(dir, name)` | A path in `dir` that isn't taken: `dir/name`, else `dir/name (2).ext`, ... |
+| `Editor.createDir(path)` | Makes a folder (and those above it); returns its path ("" if it exists or failed) |
+| `Editor.rename(path, name)` | Renames a file or folder in its folder, `.meta` included; refuses a taken or unusable name; returns the new path |
+| `Editor.trash(path)` | Moves a file or folder (and its `.meta`) into the project's trash; returns the id `restore` takes |
+| `Editor.restore(id)` | Puts a trashed item back where it was; returns its path. Refuses when something is there now |
+| `Editor.lastError` | Why the last file call failed ("" when it worked) |
 
 **The log.** `logging::init` adds a capture layer (filtered like the other layers). While the editor is enabled, each
 event becomes a `LogRecord` in a ring of 5,000 (`LOG_LIMIT`); the message is the `message` field followed by the other
@@ -69,7 +80,12 @@ order. `seq` counts up from 1, so a reader asks for what it hasn't seen.
 **Files.** Paths are relative to the project and go through `editor/project.rs`: `platypus_core::resolve_asset`'s
 rules (no absolute paths, drives, schemes or `..`), and through symlinks the real path must still be inside. `copyIn`'s
 sources are the exception, being outside: only paths dropped on the window this session (`allow_sources`) are
-allowed. A copy creates at most 10,000 files and skips symlinks.
+allowed. A copy creates at most 10,000 files and skips symlinks. `files.rs` holds the calls above `copyIn` and `move`;
+`readText` reads files up to a size limit.
+
+An asset's `.meta` file (its GUID) goes wherever the asset goes: `move`, `rename` and `trash` take it along, and listings
+hide `.meta` files. `trash` moves the item into `.platypus/trash/<id>/` in the project, next to a `.origin` note with
+its old path; `restore` reads the note and moves it back once. The trash folder itself can't be trashed.
 
 **Opening files.** A relative path is looked up in the current folder, the editor's folder, then the source tree the
 program was built from, taking the first where it exists. The command comes from `PLATYPUS_EDITOR_OPEN` if set: split
@@ -98,7 +114,8 @@ highlighted index at each level; a submenu shows while its item is highlighted.
   and Escape (one level at a time). Separators and disabled items are skipped.
 - **From anywhere:** `input.on("keydown")` (gameplay keys, which arrive whatever has focus, except
   text fields) runs accelerators (`findAccelerator`, matched by `code` and modifiers), Alt+letter
-  opens the menu starting with that letter, and F10 highlights the bar.
+  opens the menu starting with that letter, and F10 highlights the bar. None of this runs while a modal dialog is
+  open (`modalOpen()`).
 
 Accelerators are written like `Ctrl+Shift+S`, `F5`, `Delete`, `Ctrl++`; `acceleratorLabel` shows
 them normalized.
@@ -169,6 +186,26 @@ again.
 skipping hosts right after a URL scheme. Each link is its own `Text` element (spans aren't hit
 targets of their own), and clicking it calls `Editor.openFile(path, line, col)`.
 
+### Modal, dialogs and FileDialog ([modal.ts](../editor/src/modal.ts), [Modal.tsx](../editor/src/Modal.tsx), [file-dialog.ts](../editor/src/file-dialog.ts), [FileDialog.tsx](../editor/src/FileDialog.tsx))
+
+Dialogs are drawn by the editor's own UI, not the OS. `modal.ts` keeps the stack of open dialogs (`pushModal(render)`,
+`closeModal(id)`, `modalOpen()`, `subscribeModals`); `ModalHost`, rendered once at the end of the editor UI, draws them over
+everything. `Modal` is the shell: a backdrop that takes the pointer, a centred box with a title, focus on open, Escape
+to cancel (`onCancel`) and Enter for the default action (`onEnter`). `Button` is its button. Two dialogs return promises:
+
+- `confirmDialog({ title, message, buttons, cancel })` answers with the label of the button pressed (the first is
+  the default; Escape answers `cancel`, "" by default).
+- `textDialog({ title, label, initial, ok, check })` asks for a line of text; "" when cancelled. `check` gives the reason
+  a value can't be used ("" when it can).
+
+`fileDialog({ mode, title, filters, dir, name, ok })` shows the open, save or folder dialog and answers with the chosen
+project path, or "" when cancelled. It has breadcrumbs, the folder's entries (folders first; double-click or Enter opens,
+Backspace goes up), a name field that also takes a typed path, the type list, New Folder, and an overwrite check
+when saving. `file-dialog.ts` holds the logic as plain functions: `matches` and `shownEntries` (folders always, files
+that pass the filter, only folders in folder mode), `withExtension` (a saved name gets the filter's first extension once),
+`resolveTyped` (a typed path relative to the folder, or to the root with `/`, `.` and `..` worked out; null when it
+leaves the project or names a drive) and `stemOf`. Ready filters: `SCENE_FILTER`, `PREFAB_FILTER`, `MODEL_FILTER`, `ALL_FILES`.
+
 ### ProjectBrowser ([project.ts](../editor/src/project.ts), [ProjectBrowser.tsx](../editor/src/ProjectBrowser.tsx))
 
 The project folder's files on a `VirtualList`: breadcrumbs (the project's name, then each
@@ -183,6 +220,12 @@ inside a folder. Double-click or Enter opens a folder, Backspace goes up. It use
   (move), highlights the folder, and stops propagation so the innermost one wins.
 - `onDrop` calls `copyIn` with the dropped paths or `moveInto` with the item's path, then logs
   the result and lists the folder again.
+
+The toolbar and keys work on the selected item (not `..`), each through a dialog: New Folder (a `textDialog`, then
+`Editor.createDir`), Rename (F2; `Editor.rename`) and Delete (Del; a `confirmDialog`, then `Editor.trash`). Each logs
+its result (a failure as a warning with `Editor.lastError`) and lists the folder again. Props: `onOpenFile(path)`
+is called for a file opened by double-click or Enter, and `onTrashed(path, id)` after a delete, so the editor can undo
+it with `Editor.restore(id)`.
 
 `project.ts` turns the `Editor` file calls into promises (`listDir`, `copyIn`, `moveInto`), reading
 `Editor.lastError` when one fails. `useScreenSize()` ([screen.ts](../editor/src/screen.ts)) gives the
@@ -277,27 +320,31 @@ see-through panels show the world.
 - **Game.** `GameView` sets `Camera.main`'s `rect` to the panel's box while it is shown and to an empty
   rect when it is hidden or unmounted, so the game's camera draws only inside the Game tab.
 - **Project** is the project browser.
+- **File > Open Scene** (Ctrl+O) shows the file dialog over `scenes` with the scene filter; the chosen path is logged, as
+  opening it isn't implemented yet.
 - **View > Show Grid / Show Gizmos** toggle the Scene view's `grid` and `gizmos` props.
 - Window > Save / Load / Reset Layout keeps the layout in PlayerPrefs (`editor.layout`), and the saved
   layout loads at start. Unimplemented menu items log what they would do.
 
 ## Tests and checks
 
-- `editor/test/*.test.ts` (`models`, `log`, `project`, `scene-camera`, `handles`) are plain TypeScript with a
+- `editor/test/*.test.ts` (`models`, `log`, `project`, `scene-camera`, `handles`, `file-dialog`) are plain TypeScript with a
   tiny helper, [check.ts](../editor/test/check.ts). Each file's `run()` returns what failed, one line each.
   [editor_models.rs](../tools/platypus_ts_tests/tests/ui/editor_models.rs) bundles each file like a game and compiles
   it natively with the whole engine API, in the normal, GC-stress and collection-off modes; every mode must give "".
   Run it with `cargo test -p platypus_ts_tests --test ui editor_models`.
 - IDs: the models (`M5-EDT-06` to `-14`, `-18`, `-19`), the log feed (`M5-EDT-20`), the Scene camera's controls and
   axis gizmo (`M5-EDT-22`), the transform handles' math (`M5-EDT-24`), project paths and `Editor` without a project
-  (`M5-DND-08`).
+  (`M5-DND-08`), the file dialog's filters, saved names and typed paths (`M5-EDT-31` to `-33`).
 - Rust units: the capture layer in `logging.rs` (`M5-EDT-25`), `Editor.openFile` (`M5-EDT-26`), the `Editor`
-  namespace needing a project (`M5-EDT-27`) and the project file ops (`M5-DND-12`).
+  namespace needing a project (`M5-EDT-27`), the project file ops (`M5-DND-12`) and those of `files.rs`: write and
+  read, stat and new folders, rename, trash and restore (`M5-EFS-02` to `-05`).
 - Smoke test `M5-EDT-28` (`tools/platypus_build/tests/editor_smoke.rs`): builds `editor/` and runs
   `platypus-app editor --project examples/arcade --bench` with `clickText` input. It needs a built host and a GPU.
   Shorter runs in the same file compare `--bench-shots` pictures of the Scene view: after the Game tab and back the view
   is unchanged (its own camera, grid and icons; `M5-EDT-29`), and selecting Cube in the Hierarchy names it in the
-  Inspector and draws its handles (`M5-EDT-30`).
+  Inspector and draws its handles (`M5-EDT-30`), and File > Open Scene shows the file dialog, Escape closes it, and New Folder in the
+  Project browser asks for a name (`M5-EDT-34`, compared by pixels in the middle of the window).
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
 - `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor
@@ -314,5 +361,7 @@ see-through panels show the world.
 - The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;
   gizmos and handles are drawn for the selection only.
 - Panels can't be closed or reopened yet, nor float in windows of their own.
+- The modal backdrop does not dim what is under it yet, and Tab is not kept inside a dialog (focus can leave it).
+- The Project browser has no context menu; New Folder, Rename and Delete are on its toolbar and keys.
 - Accelerators don't run while a text field has focus (its keys don't reach `input`).
 - No native menus yet (TODO.md M5.e).
