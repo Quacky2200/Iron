@@ -2159,6 +2159,9 @@ Left:
   - [x] Built with `platypus-build build editor` and run natively (release screenshot checked by eye); the model tests run
     natively (`editor/test`, `tools/platypus_ts_tests/tests/ui/editor_models.rs`). The React component tests that ran
     through QuickJS (`menubar.test.tsx`, `project-browser.test.tsx`) were not ported (M5-DND-10 struck).
+  - [x] The Scene view lost its grid and icons after the Game tab and back, showing the game camera: renders and effects
+    that a UI event caused ran without the scene current (`Native::settle`, the panels' and windows' settle), so the
+    remounted view's `new GameObject` camera was never made (`M9-API-1518`, `M5-EDT-29`).
   - [ ] Editor follow-ups: a manual check of the Scene view controls, menus and drag and drop in the window (M5-EDT-21,
     M5-EDT-23, M5-DND-11); the editor source still works around the compiler gaps listed as "Found by the editor, still open"
     in tools/platypus_ts/TODO.md (mixed-type class lists, an intersection array, conditional spreads, written return types

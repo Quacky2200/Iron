@@ -619,9 +619,14 @@ impl Native {
         self.rt.dispatch_handlers(&mut ev)
     }
 
-    /// Commits what the event handlers changed and runs what they queued.
+    /// Commits what the event handlers changed and runs what they queued. Components render and
+    /// effects run here, so the scene is current (`new GameObject`, `GameObject.roots`).
     pub fn settle(&mut self, scene: &mut Scene, ui: &mut UiTree) {
-        for e in self.rt.settle(ui) {
+        let errors = {
+            let _scope = platypus_scene::api::enter(scene);
+            self.rt.settle(ui)
+        };
+        for e in errors {
             tracing::warn!(target: "ui", "{e}");
         }
         self.after_script(scene, ui);
@@ -1646,6 +1651,41 @@ register(B);
         assert_eq!(scene.local(made).unwrap().position.x, 3.0);
         assert!(scene.find("Failed").is_some(), "the missing file rejected");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M9-API-1518
+    #[test]
+    fn components_rendered_by_an_event_see_the_scene() {
+        // The editor's Scene view makes its camera in a `useState` initializer when its tab is
+        // clicked, and its App reads `GameObject.roots` while rendering a selection.
+        let (mut n, mut scene, mut ui) = start(
+            "function Panel(): UiElement {
+               const [made] = useState(() => new GameObject(\"Made\"));
+               useEffect(() => {
+                 made.transform.localPosition = new Vector3(GameObject.roots.length, 0, 0);
+               }, [made]);
+               return <text>{\"roots=\" + GameObject.roots.length}</text>;
+             }
+             function App(): UiElement {
+               const [open, setOpen] = useState(false);
+               return <box style={{ width: 100 }} onClick={() => setOpen(true)}>{open ? <Panel /> : <text>closed</text>}</box>;
+             }
+             new GameObject(\"First\");
+             function boot(): number {
+               UiRoot.mount(0, <App />);
+               return 0;
+             }
+             const booted = boot();",
+        );
+        let target = ui.children(ROOT)[0];
+        let click = UiEvent::new(EventKind::Click, vec![target], Modifiers::default());
+        n.ui_event(&mut scene, &click);
+        n.settle(&mut scene, &mut ui);
+        let made = scene
+            .find("Made")
+            .expect("made while the click's render ran");
+        assert_eq!(dump(&ui, ROOT), "root(box(text(text:roots=2)))");
+        assert_eq!(scene.local(made).unwrap().position.x, 2.0, "the effect too");
     }
 
     // M9-API-808

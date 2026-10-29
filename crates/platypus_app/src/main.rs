@@ -1324,7 +1324,7 @@ impl App {
             if let Surface::Panel(id) = surface
                 && let Some(p) = self.panels.map.get_mut(&id)
             {
-                native_render::panel_settle(id, &mut p.tree);
+                native_render::panel_settle(&mut self.scene.scene, id, &mut p.tree);
             }
             if let Surface::Window(key) = surface
                 && let Some(w) = self.windows.map.get_mut(&platypus_platform::WindowKey(key))
@@ -1332,7 +1332,7 @@ impl App {
                 let _current = platypus_engine_api::window::enter_current(
                     platypus_engine_api::window::WindowRef(key),
                 );
-                native_render::window_settle(key, &mut w.tree);
+                native_render::window_settle(&mut self.scene.scene, key, &mut w.tree);
                 n.settle(&mut self.scene.scene, &mut self.ui);
                 self.native_after();
             } else {

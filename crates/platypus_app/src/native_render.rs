@@ -486,8 +486,10 @@ pub(super) fn window_event(
     })
 }
 
-/// Commits what the handlers of a window's events changed.
-pub(super) fn window_settle(key: u32, tree: &mut UiTree) {
+/// Commits what the handlers of a window's events changed (renders and effects, with the scene
+/// current).
+pub(super) fn window_settle(scene: &mut platypus_scene::Scene, key: u32, tree: &mut UiTree) {
+    let _scope = platypus_scene::api::enter(scene);
     let errors = st(|s| {
         s.windows
             .get_mut(&key)
@@ -519,8 +521,10 @@ pub(super) fn panel_event(
     })
 }
 
-/// Commits what the handlers of a panel's events changed.
-pub(super) fn panel_settle(id: u32, tree: &mut UiTree) {
+/// Commits what the handlers of a panel's events changed (renders and effects, with the scene
+/// current).
+pub(super) fn panel_settle(scene: &mut platypus_scene::Scene, id: u32, tree: &mut UiTree) {
+    let _scope = platypus_scene::api::enter(scene);
     let errors = st(|s| {
         s.runtimes
             .get_mut(&id)

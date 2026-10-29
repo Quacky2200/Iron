@@ -581,7 +581,9 @@ bundle (`build/game.js`) is refused.
   `frame` (`Time` via `platypus_engine_api::time::advance`, `ts_rt_timers_advance(now_ms)`, microtasks, `NativeHost::update`),
   `pre_render`, `ui_events` (a `UiEvent` becomes a `platypus_ui_native::Event` for `Runtime::dispatch`), and after each of them the
   mounts (`platypus_ts_ui::take_mounts`, `UiRoot.mount(target, element)`), `Runtime::flush`, script faults and UI errors to the log.
-  Every call runs inside `platypus_scene::api::enter(&mut app.scene.scene)`.
+  Every call runs inside `platypus_scene::api::enter(&mut app.scene.scene)`, including `Native::settle` (and the world panels'
+  and windows' `panel_settle` / `window_settle`), which renders the components a UI event's handlers changed and runs their
+  effects: a `useState` initializer there may make a `GameObject` or read `GameObject.roots` (`M9-API-1518`).
 - **Console.** `console.log` goes to the `script` log target through `ts_rt_set_console`.
 - **Host wiring** (`native.rs`, `native_pump.rs`, `game_input.rs`):
   - *Input.* Keys, mouse, wheel and gamepad events go to `platypus_engine_api::input` (`game_input::apply_native`, the same argument lists as `__platypus_input`), so `getKey*` and the `onKeyDown` closures work. UI events run through the compiled handlers *inside* the interaction layer's dispatch (`Native::ui_event`, with `Runtime::dispatch_handlers`; world panels go through `native_render::panel_event` the same way), so `preventDefault()` reaches the default actions; `Native::settle` commits afterwards. `platypus_ts_ui::take_node_commands()` (`ref.focus()`, `blur()`, `scrollTo()`, `scrollBy()`, `scrollIntoView()`) is applied to the UI by `App::apply_node_commands`.
