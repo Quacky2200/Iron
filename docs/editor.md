@@ -1,89 +1,85 @@
 # The editor
 
-The editor is `platypus_editor` (`platypus_editor.exe` on Windows): the same program as `platypus-app`, running
-an editor UI written with Platypus's own React UI, like a game. Its components live in a shared
-library, `@platypus/editor-ui`, so games and tools can use them too.
-
-The editor's UI (`editor/`) is a QuickJS bundle, a deprecated backend: `platypus_editor` passes `--force` implicitly (it logs the deprecation
-note once and runs). Porting the editor to platypus_ts is part of the removal plan in TODO.md.
+The editor is a game like any other: `editor/` is built with `platypus-build build editor` and run by the one host,
+`platypus-app editor --project <folder>`. Its UI is Platypus's own React UI, compiled natively by platypus_ts. There is
+no second binary, no QuickJS bundle and no separate component package: the components (menubar, docking, virtual
+list, tree view, console, project browser, Scene view) are modules of `editor/src`, so a game can copy them in.
 
 | Path | Role |
 |---|---|
-| [bin/platypus_editor.rs](../crates/platypus_app/src/bin/platypus_editor.rs) | The second binary: includes main.rs as a module and calls its `main` |
-| [editor.rs](../crates/platypus_app/src/editor.rs) | `ENABLED`, where the UI lives, the project folder, `EditorHost` (log feed, `editor.*` ops), opening files in a code editor |
-| [project.rs](../crates/platypus_app/src/project.rs) | File operations on the project folder (list, copy in, move), confined to it |
-| [logging.rs](../crates/platypus_app/src/logging.rs) | The capture layer and ring buffer the console reads |
-| [editor/](../editor/src/main.tsx) | The editor's UI (a Bun workspace built to `editor/build`) |
-| [js/editor-ui](../js/editor-ui/src/index.ts) | `@platypus/editor-ui`: `MenuBar`, `Dock`, `VirtualList`, `TreeView`, `Console`, `ProjectBrowser`, `SceneView`, `onEditorFrame` and their models |
+| [editor/src/main.tsx](../editor/src/main.tsx) | The editor's UI: menubar, dock, status bar, demo scene, Hierarchy, Game, Project |
+| [menu.ts](../editor/src/menu.ts), [MenuBar.tsx](../editor/src/MenuBar.tsx) | Menubar model and component |
+| [dock.ts](../editor/src/dock.ts), [Dock.tsx](../editor/src/Dock.tsx) | Dock layout model and component |
+| [virtual.ts](../editor/src/virtual.ts), [VirtualList.tsx](../editor/src/VirtualList.tsx) | Virtual list |
+| [tree.ts](../editor/src/tree.ts), [TreeView.tsx](../editor/src/TreeView.tsx) | Tree view |
+| [console.ts](../editor/src/console.ts), [log.ts](../editor/src/log.ts), [Console.tsx](../editor/src/Console.tsx) | Console model, the log feed, the panel |
+| [project.ts](../editor/src/project.ts), [ProjectBrowser.tsx](../editor/src/ProjectBrowser.tsx) | Project file model (promises over `Editor`) and the browser |
+| [SceneView.tsx](../editor/src/SceneView.tsx), [scene-camera.ts](../editor/src/scene-camera.ts), [handles.ts](../editor/src/handles.ts), [frame.ts](../editor/src/frame.ts) | The Scene view, its camera model, transform handles, `onEditorFrame` |
+| [screen.ts](../editor/src/screen.ts), [classes.ts](../editor/src/classes.ts), [demo-scene.ts](../editor/src/demo-scene.ts) | `useScreenSize`, `cx()` class lists, the demo scene |
+| [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
+| [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
+| [editor.rs](../crates/platypus_engine_api/src/editor.rs), [editor/open.rs](../crates/platypus_engine_api/src/editor/open.rs), [editor/project.rs](../crates/platypus_engine_api/src/editor/project.rs) | The `Editor` namespace |
+| [logging.rs](../crates/platypus_app/src/logging.rs) | The capture layer that feeds the log |
 
-## One program, two binaries
+## Running it
 
-`crates/platypus_app` has two binary targets. `platypus-app` (the host of every game) is `src/main.rs`. `platypus_editor` is
-`src/bin/platypus_editor.rs`, which includes main.rs with `#[path = "../main.rs"] mod app;` and
-re-exports the modules that reach each other through `crate::` (`info`, `models`, `particles`,
-which main.rs declares `pub(crate)`). The `[[bin]]` entry sets `test = false`, so the tests don't
-run twice.
+```bash
+cd tools && cargo run -p platypus_build -- build ../editor
+cargo run --release -p platypus_app -- editor --project examples/arcade
+```
 
-`editor::ENABLED` compares `env!("CARGO_BIN_NAME")` with `platypus_editor` at compile time. Where it
-is true:
+`editor` is the game folder (the editor's own UI); `--project <folder>` is the project it works on. The editor folder
+builds like any game (`project.json`, `tsconfig.json`, `src/`; `editor/build` is ignored by git), so `--screenshot`,
+`--frames` and `platypus-build dev editor` work as for games.
 
-- `platypus_editor [project]`: `parse_args` keeps the folder argument (default: the current folder)
-  as the project (`editor::set_project`, made absolute; `__platypus_info.app.project`) and runs
-  `editor::ui_folder()` instead: `PLATYPUS_EDITOR_UI`, else an `editor` folder next to the executable
-  (a packaged editor), else the workspace's `editor/`.
-  The folder is a game folder like any other (`build/game.js`, `build/game.css`, `package.json` for
-  the title and window size), so `--screenshot`, hot reload and `bun run dev` work as for games.
-- `main` turns on log capture before anything logs.
-- `__platypus_info.app.isEditor` is true (`Application.isEditor`).
-- `editor.*` ops run. In `platypus-app` they log a warning and do nothing, so games can't use them.
+With `--project`, the host (`main.rs`):
 
-## The log feed
+- turns on `Editor` for that folder (`platypus_engine_api::editor::enable`, the path made absolute; the editor's own
+  folder is used for relative paths in `openFile`) and keeps the log from the start, before anything logs;
+- sets `Application.isEditor`;
+- passes the paths dropped on the window from the system to `Editor`'s allow list (`file_drop.rs`).
 
-`logging::init` adds `CaptureLayer` (filtered like the other layers) to the subscriber. While
-`capture(true)` is on, each event becomes a `LogRecord { seq, level, target, message, time_ms }` in
-a static ring buffer of 5,000 records; the message is the `message` field followed by the other
-fields as ` name=value`. Scripts' `console.*` logs with target `script`, so the buffer has engine
-and script lines in order.
+Without `--project` the `Editor` calls do nothing and fail, so games can't use them.
 
-`EditorHost::pump` runs once per frame, right after `tick`. Once the scripts have sent
-`editor.logHistory`, it calls `__platypus_log(flat)` with the records it hasn't sent, flat as
-`[seq, level, target, message, timeMs, ...]` (level 0 trace to 4 error). `editor.logHistory`
-resets its position to 0, so a reloaded UI gets the whole history again; `log.ts` keeps the
-newest `seq` it has seen and skips older ones. Errors from `__platypus_log` go to stderr, not the log,
-which would feed them back.
+## The `Editor` namespace
 
-## Ops
+Declared with `#[platypus_api]` in [editor.rs](../crates/platypus_engine_api/src/editor.rs), so its TypeScript
+declarations are generated. All calls answer at once; there are no ops and no promises on the Rust side.
 
-| Op | Args | Does |
-|---|---|---|
-| `editor.logHistory` | none | Starts the feed from the first kept record |
-| `editor.openFile` | `path, line, col` | Opens the file at that place in the user's code editor |
-| `editor.listDir` | `id, path` | Answers `{ path, entries: [{ name, dir, size }] }`: folders first, by name, without dot files |
-| `editor.copyIn` | `id, [sources], dir` | Copies files or whole folders from outside into a project folder, renaming (`a (2).png`) instead of overwriting; answers `{ created }` |
-| `editor.move` | `id, path, dir` | Moves a project file or folder into a project folder; refuses overwriting and moving a folder into itself; answers `{ path }` |
+| Member | Does |
+|---|---|
+| `Editor.isAvailable` | True when the host runs the editor on a project |
+| `Editor.project` | The project folder's full path ("" without one) |
+| `Editor.logSince(seq)` | The kept `LogRecord`s (`seq`, `level` 0 trace to 4 error, `target`, `message`, `timeMs`) with `seq` above the argument, oldest first |
+| `Editor.openFile(path, line, col)` | Opens the file at that place in the user's code editor |
+| `Editor.listDir(path)` | `ProjectEntry[]` (`name`, `dir`, `size`) of a project folder ("" is the root): folders first, by name, without dot files |
+| `Editor.copyIn(sources, dir)` | Copies files or whole folders from outside into a project folder, renaming (`a (2).png`) instead of overwriting; returns the new project paths |
+| `Editor.move(path, dir)` | Moves a project file or folder into a project folder; refuses overwriting and moving a folder into itself; returns the new path |
+| `Editor.lastError` | Why the last `listDir`, `copyIn` or `move` failed ("" when it worked) |
 
-The file ops answer a frame later through `__platypus_editor_fs([id, ok, json or error, ...])`,
-sent by `EditorHost::pump`; `project.ts` turns them into promises. Their paths are relative to the
-project and go through `project::resolve`: `platypus_core::resolve_asset`'s rules (no absolute paths,
-drives, schemes or `..`), and through symlinks the real path must still be inside. `copyIn`'s
-sources are the exception, being outside: only paths dropped on the window this session
-(`EditorHost::allow_sources`, fed by the file drag code) are allowed. A copy creates at most
-10,000 files and skips symlinks.
+**The log.** `logging::init` adds a capture layer (filtered like the other layers). While the editor is enabled, each
+event becomes a `LogRecord` in a ring of 5,000 (`LOG_LIMIT`); the message is the `message` field followed by the other
+fields as ` name=value`. Scripts' `console.*` logs with target `script`, so the ring has engine and script lines in
+order. `seq` counts up from 1, so a reader asks for what it hasn't seen.
 
-`editor.openFile` resolves a relative path against the current folder, the UI's folder, then the
-source tree the program was built from, taking the first where it exists. The command comes from
-`PLATYPUS_EDITOR_OPEN` if set: split on spaces (double quotes group), with `{file}`, `{line}` and
-`{col}` filled in, e.g. `subl "{file}:{line}:{col}"`. Otherwise it is `code -g file:line:col` when
-`code` is on PATH (`which` tries PATHEXT's extensions on Windows, where it is `code.cmd`, and the
-process gets `CREATE_NO_WINDOW`). With neither, it logs how to set one up.
+**Files.** Paths are relative to the project and go through `editor/project.rs`: `platypus_core::resolve_asset`'s
+rules (no absolute paths, drives, schemes or `..`), and through symlinks the real path must still be inside. `copyIn`'s
+sources are the exception, being outside: only paths dropped on the window this session (`allow_sources`) are
+allowed. A copy creates at most 10,000 files and skips symlinks.
 
-## `@platypus/editor-ui`
+**Opening files.** A relative path is looked up in the current folder, the editor's folder, then the source tree the
+program was built from, taking the first where it exists. The command comes from `PLATYPUS_EDITOR_OPEN` if set: split
+on spaces (double quotes group), with `{file}`, `{line}` and `{col}` filled in, e.g. `subl "{file}:{line}:{col}"`.
+Otherwise it is `code -g file:line:col` when `code` is on PATH (`which` tries PATHEXT's extensions on Windows, where it
+is `code.cmd`, and the process gets `CREATE_NO_WINDOW`). With neither, it logs how to set one up.
 
-Each component has a model module of plain functions (tested with `bun test` without React) and a
-React component that draws it. Styles are in `editor-ui.css` (bundled into the app's `game.css`),
-coloured through `--platypus-*` custom properties.
+## The editor's components
 
-### MenuBar ([menu.ts](../js/editor-ui/src/menu.ts), [MenuBar.tsx](../js/editor-ui/src/MenuBar.tsx))
+Each component has a model module of plain functions (tested natively, without React) and a React component that
+draws it. Styles are in `editor-ui.css` (bundled into the app's `game.css`), coloured through `--platypus-*` custom
+properties.
+
+### MenuBar ([menu.ts](../editor/src/menu.ts), [MenuBar.tsx](../editor/src/MenuBar.tsx))
 
 `menus: Menu[]`, each with `MenuItem`s: `label`, `accelerator`, `action`, `submenu`, `checked`,
 `disabled`, `separator`. The state is a `MenuState { top, open, path }`: the open top menu and the
@@ -103,7 +99,7 @@ highlighted index at each level; a submenu shows while its item is highlighted.
 Accelerators are written like `Ctrl+Shift+S`, `F5`, `Delete`, `Ctrl++`; `acceleratorLabel` shows
 them normalized.
 
-### Dock ([dock.ts](../js/editor-ui/src/dock.ts), [Dock.tsx](../js/editor-ui/src/Dock.tsx))
+### Dock ([dock.ts](../editor/src/dock.ts), [Dock.tsx](../editor/src/Dock.tsx))
 
 A layout is a tree of `DockSplit { direction: "row" | "column", children, sizes }` (sizes are
 fractions adding to 1) with `DockGroup { tabs, active }` leaves. Every operation returns a new
@@ -131,7 +127,7 @@ pixels, for a camera drawing into it), and drags use it:
   follows the pointer. Releasing calls `dockTab`. The drag state is kept in a ref too, since
   pointer moves render a tick later.
 
-### VirtualList ([virtual.ts](../js/editor-ui/src/virtual.ts), [VirtualList.tsx](../js/editor-ui/src/VirtualList.tsx))
+### VirtualList ([virtual.ts](../editor/src/virtual.ts), [VirtualList.tsx](../editor/src/VirtualList.tsx))
 
 Fixed row height. The list is a scrolling box (`overflowY: auto`, `height` from props) with a
 spacer as tall as all rows; only rows in `visibleRange(scrollTop, height, rowHeight, count,
@@ -142,7 +138,7 @@ frame before React catches up. The handle (`ref`) has `scrollToIndex(index, alig
 With `keyboard` on (the default), arrows, Page Up/Down and Home/End move `selected` (`keyIndex`)
 and scroll it into view.
 
-### TreeView ([tree.ts](../js/editor-ui/src/tree.ts), [TreeView.tsx](../js/editor-ui/src/TreeView.tsx))
+### TreeView ([tree.ts](../editor/src/tree.ts), [TreeView.tsx](../editor/src/TreeView.tsx))
 
 `roots: TreeNode[]` (`id`, `label`, `children`, `data`) and a `TreeState { expanded, selected,
 focus, anchor }` the parent keeps. `flatten` turns the expanded part into rows (iteratively, so
@@ -154,10 +150,11 @@ without `onActivate`): `renderRename(node, done)` or a default text field that c
 blur and cancels on Escape, then `onRename(node, name)`. Expanded nodes show a CSS chevron (a
 rotated square with two borders), since system fonts may lack the triangle glyphs.
 
-### Console ([console.ts](../js/editor-ui/src/console.ts), [log.ts](../js/editor-ui/src/log.ts), [Console.tsx](../js/editor-ui/src/Console.tsx))
+### Console ([console.ts](../editor/src/console.ts), [log.ts](../editor/src/log.ts), [Console.tsx](../editor/src/Console.tsx))
 
-`log.ts` installs `__platypus_log`, keeps up to 10,000 `LogEntry`s and is read through
-`useSyncExternalStore` (subscribing sends `editor.logHistory` once). The panel has Clear,
+`log.ts` keeps up to 10,000 `LogEntry`s and is read through `useSyncExternalStore`. Subscribing
+starts the feed (`startLog`): `onEditorFrame` calls `Editor.logSince(lastSeq)` every frame, so the whole
+history comes first and then each new record, once (`addRecords` skips seqs already seen). The panel has Clear,
 Collapse (identical level and message shown once with a count, `collapse`), a search box over
 message and target, and Info / Warn / Error toggles with counts (`countLevels`, debug counts as
 info). Rows show a level dot, the time and the first line of the message, coloured by level. It
@@ -166,9 +163,9 @@ again.
 
 `parseLinks` finds `path/file.ext:line[:col]` (relative, absolute, Windows drives, backslashes),
 skipping hosts right after a URL scheme. Each link is its own `Text` element (spans aren't hit
-targets of their own), and clicking it calls `openInEditor`, the `editor.openFile` op.
+targets of their own), and clicking it calls `Editor.openFile(path, line, col)`.
 
-### ProjectBrowser ([project.ts](../js/editor-ui/src/project.ts), [ProjectBrowser.tsx](../js/editor-ui/src/ProjectBrowser.tsx))
+### ProjectBrowser ([project.ts](../editor/src/project.ts), [ProjectBrowser.tsx](../editor/src/ProjectBrowser.tsx))
 
 The project folder's files on a `VirtualList`: breadcrumbs (the project's name, then each
 folder), a status and Refresh; rows with a folder or file icon, the name and the size, and `..`
@@ -183,10 +180,11 @@ inside a folder. Double-click or Enter opens a folder, Backspace goes up. It use
 - `onDrop` calls `copyIn` with the dropped paths or `moveInto` with the item's path, then logs
   the result and lists the folder again.
 
-`useScreenSize()` gives the window size in UI pixels, re-rendering on `Screen.onChange` (added to
-`@platypus/engine` for this).
+`project.ts` turns the `Editor` file calls into promises (`listDir`, `copyIn`, `moveInto`), reading
+`Editor.lastError` when one fails. `useScreenSize()` ([screen.ts](../editor/src/screen.ts)) gives the
+window size in UI pixels, re-rendering on `Screen.onChange`.
 
-## The Scene view ([SceneView.tsx](../js/editor-ui/src/SceneView.tsx), [scene-camera.ts](../js/editor-ui/src/scene-camera.ts), [frame.ts](../js/editor-ui/src/frame.ts))
+## The Scene view ([SceneView.tsx](../editor/src/SceneView.tsx), [scene-camera.ts](../editor/src/scene-camera.ts), [frame.ts](../editor/src/frame.ts))
 
 The editor's world is the engine's: the Scene view is a camera in it, drawing into the panel's box.
 
@@ -215,7 +213,7 @@ pivot along the view direction (an orthographic view sits farther back and takes
 Pointer capture keeps a drag going outside the panel. A left click that doesn't move selects nothing
 (`onSelect(null)`), and the context menu is suppressed.
 
-**Frame callbacks.** `onEditorFrame(fn)` ([frame.ts](../js/editor-ui/src/frame.ts)) calls `fn` every frame
+**Frame callbacks.** `onEditorFrame(fn)` ([frame.ts](../editor/src/frame.ts)) calls `fn` every frame
 after scripts and animation have moved things. It makes one hidden object (`HideAndDontSave`,
 `dontDestroyOnLoad`) with a component whose `onLateUpdate` calls the listeners, and returns the function
 that unsubscribes. The Scene view and the live Hierarchy use it.
@@ -244,7 +242,7 @@ distance spheres. `Gizmos.present(camera)` then sends them to the Scene camera, 
 view (faint where hidden) and are replaced next frame. The lines belong to that camera, so the Game view
 never shows them. See [world-rendering.md](world-rendering.md#editor-grid-and-gizmo-lines).
 
-**Transform handles** ([handles.ts](../js/editor-ui/src/handles.ts)). Like Unity: Q is the view tool, W move,
+**Transform handles** ([handles.ts](../editor/src/handles.ts)). Like Unity: Q is the view tool, W move,
 E rotate and R scale (keys, or the toolbar in the panel). The handles sit on the last selected object and
 keep a constant size on screen (`HANDLE_PIXELS`). `handles.ts` is plain math over an abstract `HandleView`
 (world to panel pixels, rays, units per pixel), so it is tested without a camera (`M5-EDT-24`). It lays out
@@ -281,19 +279,27 @@ see-through panels show the world.
 
 ## Tests and checks
 
-- `js/editor-ui/test/models.test.ts`: the models (`M5-EDT-06` to `-14`, `-18`, `-19`);
-  `menubar.test.tsx`: the React menubar through the real reconciler with dispatched events
-  (`M5-EDT-14`); `log.test.ts`: the log feed (`M5-EDT-20`).
-- `js/editor-ui/test/scene-camera.test.ts`: the Scene camera's controls and axis gizmo (`M5-EDT-22`);
-  `handles.test.ts`: the transform handles' math (`M5-EDT-24`);
-  `js/engine/test/gizmos.test.ts` (`Gizmos`, `M5-RND-23`) and the `HideFlags` cases in `scenes.test.ts` (`M5-SCN-06`).
-  The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes have goldens (`M5-RND-22`, `-23`).
-- Rust units in `editor.rs` (`M5-EDT-16`, `-17`) and `logging.rs` (`M5-EDT-15`); `project.rs`
-  (`M5-DND-07`); `project.test.ts` and `project-browser.test.tsx` (`M5-DND-08`, `-10`).
-- `bun run screenshots editor` renders `tests/output/editor.png` with `platypus_editor` (`M5-EDT-21`,
-  checked by eye). There is no golden: the editor uses system fonts.
+- `editor/test/*.test.ts` (`models`, `log`, `project`, `scene-camera`, `handles`) are plain TypeScript with a
+  tiny helper, [check.ts](../editor/test/check.ts). Each file's `run()` returns what failed, one line each.
+  [editor_models.rs](../tools/platypus_ts_tests/tests/ui/editor_models.rs) bundles each file like a game and compiles
+  it natively with the whole engine API, in the normal, GC-stress and collection-off modes; every mode must give "".
+  Run it with `cargo test -p platypus_ts_tests --test ui editor_models`.
+- IDs: the models (`M5-EDT-06` to `-14`, `-18`, `-19`), the log feed (`M5-EDT-20`), the Scene camera's controls and
+  axis gizmo (`M5-EDT-22`), the transform handles' math (`M5-EDT-24`), project paths and `Editor` without a project
+  (`M5-DND-08`).
+- Rust units: the capture layer in `logging.rs` (`M5-EDT-25`), `Editor.openFile` (`M5-EDT-26`), the `Editor`
+  namespace needing a project (`M5-EDT-27`) and the project file ops (`M5-DND-12`).
+- Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
+  have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
+- `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor
+  (`M5-EDT-21`, checked by eye). There is no golden: the editor uses system fonts.
 
-## Limits
+## Limits and known gaps
+
+- The editor source works around gaps in platypus_ts (listed in `tools/platypus_ts/TODO.md`, "TypeScript gaps"):
+  class lists are built by `cx()` ([classes.ts](../editor/src/classes.ts)), the `..` row is told apart by index,
+  drop handlers are set directly on the element, some components carry a `: ReactNode` return annotation, and
+  `parseLayout` reads its JSON into a typed `SavedNode`. Remove each when the gap closes.
 
 - Fixed row heights only; no tab reordering by position in the strip (a drop in a strip appends).
 - The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;

@@ -10,11 +10,11 @@ cargo run -p platypus_build -- build ../examples/hello
 
 | Command | What |
 |---|---|
-| `build <game> [--no-tsc] [--aot] [--cook] [--no-compile] [--no-prebuild]` | Builds `<game>/build`. |
+| `build <game> [--no-tsc] [--aot] [--cook] [--no-compile] [--no-prebuild] [--check-unused]` | Builds `<game>/build`. `--check-unused` also lowers the program's own functions nothing calls (a build skips them), so their errors show. The editor (`editor/`) builds like any game. |
 | `types [<game>] [--out file]` | Writes `<game>/types/platypus.d.ts` (type declarations for `tsc`). |
 | `assets <folder>... [--prune]` | Writes `.meta` GUID files (it replaced the Bun `scripts/assets.ts`, which is deleted). |
 | `dev <game> [--no-tsc]` | Rebuilds on every change and signals the running app. |
-| `check <examples folder> [--tsc]` | Builds every game in the folder and prints a table; `--tsc` also type-checks each with the generated `types/platypus.d.ts` (`bun run typecheck` runs it). |
+| `check <examples folder> [--tsc] [--full] [--check-unused]` | Builds every game in the folder and prints a table (`--check-unused` as for `build`); `--tsc` also type-checks each with the generated `types/platypus.d.ts` (`bun run typecheck` runs it). |
 | `init [<dir>] [flags]` | Writes a default `project.json`, a self-contained `tsconfig.json` and `types/platypus.d.ts` (see "`project.json`"). |
 | `init --editor-files [<dir>...]` | Rewrites only `tsconfig.json` and `types/platypus.d.ts` of a game, or of every game in a folder (see "Editor files"). |
 | `package <game> [flags]` | One executable for the game: `build/<exe>.exe` (see "Packaging a single executable"). |
@@ -35,7 +35,7 @@ says to rebuild with `platypus-build build` (`M9-APP-06`). A stale `dist/` can b
 `platypus_app` runs only games compiled by `platypus-build build` (`build/game.pbundle`, or a `.ts` / `.tsx` file). A folder or file that
 holds only a QuickJS bundle (`build/game.js`, or a `.js` path) is refused with "... is a QuickJS bundle: QuickJS is no longer part of
 Platypus; rebuild the game with `platypus-build build`" and a non-zero exit (`M9-APP-02`). `--force` no longer exists; passing it is an
-argument error (`M9-APP-01`). The `platypus_editor` binary was removed with it (the editor is to be re-made natively in TypeScript).
+argument error (`M9-APP-01`). The `platypus_editor` binary was removed with it; the editor is a game (`editor/`) run as `platypus-app editor --project <folder>` ([editor.md](editor.md)).
 
 ## `project.json`: the project file
 
@@ -509,7 +509,7 @@ section is parsed and rebuilt; no `rc.exe`, no other tool). The version info is 
 (replacing the host's), and the host's build script (`crates/platypus_app/build.rs`) turns it into a 256 x 256 window icon that
 both hosts set for a game without `icon`, and, on Windows with the MSVC linker, into a `.res` file (`platypus_core::icon::windows_res`:
 the seven sizes as the `MAINICON` group and version info with `ProductName` / `FileDescription` `Platypus`) linked into
-`platypus-app.exe` and `platypus_editor.exe`, so plain `cargo build` binaries show it too. Tests `M9-ICO-01..06`.
+`platypus-app.exe`, so plain `cargo build` binaries show it too. Tests `M9-ICO-01..06`.
 
 **The payload** (`platypus_core::payload`, format version 1) is appended after the host (and after the resource edit):
 
@@ -544,7 +544,7 @@ copied to `data/` with the same relative paths:
 `dataRequired` is **false** when the game has no data files (hello) or when the embedded essentials are all of them (a `.meta`
 file does not count): such a game also starts without a `data/` folder. Otherwise it is true.
 
-**How the exe finds its payload.** At startup `platypus_app` (`payload.rs`, called from `parse_args` in `main.rs`; not in `platypus_editor`)
+**How the exe finds its payload.** At startup `platypus_app` (`payload.rs`, called from `parse_args` in `main.rs`)
 opens its own executable and looks for the trailer at the end of the file (a plain `platypus_app` has none: `Ok(None)`, normal start). If
 the file is a signed PE it also looks right before the Authenticode certificate table (data directory 4, 8-byte aligned), so a payload
 survives signing. The payload's table of contents is hashed into an id; the files are extracted once into

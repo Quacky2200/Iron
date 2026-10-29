@@ -34,9 +34,8 @@ next. The plan with every item is [TODO.md](../TODO.md); how the code works is [
 - **Benchmarks**: `platypus-build bench` measures every example natively (the QuickJS comparison was dropped with QuickJS).
 - **QuickJS** (the first script backend) was removed on 2026-10-28: the host runs only compiled games and refuses a
   QuickJS bundle with a pointer to `platypus-build build`.
-- **The editor** (M5.e): the `platypus_editor` binary is gone with QuickJS; the editor is to be re-made natively in
-  TypeScript at its previous state (menubar, docking, console, project browser, a Scene view with gizmos; no Inspector
-  or undo). The `editor/` sources stay until then.
+- **The editor** (M5.e): native TypeScript in `editor/` (menubar, docking, console, project browser, a Scene view with
+  gizmos; no Inspector or undo), run by `platypus-app editor --project <folder>`.
 - **Platforms**: developed and tested on Windows (Vulkan by default, DX12 optional). Linux and macOS are untested.
 
 ## Benchmarks

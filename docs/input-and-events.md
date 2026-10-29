@@ -157,6 +157,13 @@ queues restyle keys, see [css.md](css.md)) and **returns the events to dispatch,
   `Input::SetPointerCapture(id)` / `ReleasePointerCapture(id)`, from the `setPointerCapture` /
   `releasePointerCapture` ops handled in `App::tick`, so they apply next frame. Tests: M3-EVT-06.
 
+In compiled games `PlatypusElement.setPointerCapture(pointerId)` / `releasePointerCapture(pointerId)` are node commands
+(the same `Input::SetPointerCapture` / `ReleasePointerCapture`), and a `ref` to an element or, on a function component,
+a React 19 `ref` prop (`Ref<T>` / `RefObject<T>`, `useImperativeHandle`) reaches them ([ui-native.md](ui-native.md)).
+Event objects have `currentTarget` (the element whose handler runs, null after the dispatch) and `defaultPrevented`,
+a getter, so it reads true when asked after a handler called `preventDefault()`. SVG elements take `textAnchor`,
+`fontSize` and `fontWeight` attributes.
+
 `UiEvent` carries the DOM-like fields (position, `button`, `buttons` bitmask 1/2/4/8/16, `detail`
 click count, wheel deltas, modifiers, key/code/repeat, focus `related`, optional `ScrollInfo`).
 `script_args()` builds `[type, path, data, strings?]` where `data` is a fixed-order number array:

@@ -271,7 +271,7 @@ sky in linear HDR colours (the sun is usually brighter than 1). Scripts set it w
 ## Planar mirrors
 
 A `Mirror` component on an object with a `MeshRenderer` sends `render.mirror component object [nx ny nz]`
-(the local normal: +y for planes, +z for quads). `WorldViews::views` turns it into
+(the local normal: with no normal set, +z on a quad `MeshRenderer` and +y otherwise; a written normal wins, `M5-RND-26`). `WorldViews::views` turns it into
 `MeshInstance.mirror = Some(Mirror { normal, point })` in world space (the object's matrix applied to the
 normal and its origin).
 

@@ -594,7 +594,7 @@ prelude classes `INTL_SEGMENTER`, `INTL_LOCALE` and `INTL_DISPLAYNAMES` in `lowe
   with `== null`.
 - **AggregateError.** `new AggregateError(errors, message?, options?)` with `errors: Error[]` (a copy of the
   argument) and `name` `"AggregateError"`.
-- **Not built:** `Error.stack` and `Error.captureStackTrace`.
+- `Error.stack` is the error's first line (`toString()`), without frames (`M9-TS-3507`). **Not built:** `Error.captureStackTrace`.
 - Tests: `bench/uri.ts` with `tests/uri.rs` and `bench/errors2.ts` with `tests/errors2.rs` (M9-TS-287..295), expected
   values from `bench/gen_uri_expected.ts` and `bench/gen_errors2_expected.ts` (bun). `bench/add_module.py` scaffolds
   a new bun-compared test module.
@@ -843,7 +843,7 @@ differences) are listed in [platypus-ts-spike.md](research/platypus-ts-spike.md)
   the elements with `typeof` / `Array.isArray`; `.length` of a union of arrays reads the member the tag names
   (`union_length`); `xs.flat(depth) as number[]` copies the elements of that member and throws a `TypeError` when the depth did
   not reach them (bun returns the nested arrays under the wrong type); a local `const d = 2` counts as a constant. Indexing such
-  a union and `JSON.stringify` of one are not supported. `M9-TS-3224`, `3313..3316`.
+  a union is not supported; `JSON.stringify` writes the member it holds (`M9-TS-3506`; `JSON.parse` into a union is an error). `M9-TS-3224`, `3313..3316`.
 - **A tuple as a rest parameter.** `function f(...args: [string, number?])`: the arguments from there on make the tuple (a missing
   optional element is undefined); `f(...pair)` with a tuple of that type passes it as it is. Not for function values.
 - **Facade chunks need the thing they are written for.** A `//# when a|b&c` header triggers on `a`, or on `b` and `c` both; the

@@ -96,8 +96,8 @@ games these are native Rust:
 
 QuickJS was deleted on 2026-10-28: `platypus_script`, `platypus_native`, `rquickjs`, `js/engine`, `js/react`, the JS fixtures, the
 bun build paths and the `platypus_editor` binary are gone. `platypus_app` refuses a QuickJS bundle (`build/game.js`) with a pointer
-to `platypus-build build`; `--force` no longer exists. The editor is to be re-made natively in TypeScript (TODO.md); `js/editor-ui`
-and `editor/` stay as sources until then.
+to `platypus-build build`; `--force` no longer exists. The editor is now native TypeScript in `editor/` (`platypus-app editor
+--project <folder>`, [editor.md](editor.md)); `js/` is deleted.
 
 ## How games differ
 

@@ -552,7 +552,7 @@ form of a handle, an opaque `HandleBox` object with a JS class per handle, `plat
 `register_quickjs` were removed with QuickJS, with their tests `M9-API-100..113`, `-120`..`-125`.)
 
 - *Arrays.* `&[String]` (or `Vec<String>`, owned) is an array of strings (manifest type `strings`, `ExtTy::StrArr` in the compiled lowering; an optional one left out is empty; `M9-API-1621`, `M9-TS-3323`); `&[f64]` an array of numbers; `&[V]` an array of value instances, objects or arrays. Typed arrays and array results are not built.
-- *Namespaces.* Every `#[platypus_api]` module of the engine is a namespace the compiler links: math (value classes: `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds`, `Pose`, `Color`, `Keyframe`, `TimeSpan`, `DateTime`, `TimeSince`, `TimeUntil`); scene and objects (`Scene`, `GameObject`, `Transform`, `SceneManager`, `Prefab`, `HideFlags`, `LayerMask`); services (`Time`, `input`, `Random` / `Rng`, `Debug`, `Log`, `Console`, `PlayerPrefs`, `Assets`, `Application`, `SystemInfo`, `Cursor`, `Screen`, `QualitySettings`, `Gizmos`); animation (`AnimationCurve`, `AnimationClip`, `Animation`, `Animator`, `AnimationController` and its builders); audio (`audio`, `AudioSource`, `AudioListener`); physics (`Physics`, `Rigidbody`, colliders, joints, `Rope`, `Physics2D` and its 2D classes); rendering data (`Camera`, `Light`, `MeshRenderer`, `SkinnedMeshRenderer`, `SpriteRenderer`, `LineRenderer`, `LineRenderer2D`, `LODGroup`, `Mirror`, `ReflectionProbe`, `PlaneRenderer`, `WorldPanel`, `ParticleSystem`, `Cloth`, `Material`, `Sprite`, `Texture`, `Mesh`, `Model`, `Primitives`, `RenderSettings`). The compiler gets their manifests from the engine crates (`platypus_ts` `engine_manifests`).
+- *Namespaces.* Every `#[platypus_api]` module of the engine is a namespace the compiler links: math (value classes: `Mathf`, `Vector2/3/4`, `Vector2Int/3Int`, `Quaternion`, `Matrix4x4`, `Rect`, `RectInt`, `Ray`, `Plane`, `Bounds`, `Pose`, `Color`, `Keyframe`, `TimeSpan`, `DateTime`, `TimeSince`, `TimeUntil`); scene and objects (`Scene`, `GameObject`, `Transform`, `SceneManager`, `Prefab`, `HideFlags`, `LayerMask`); services (`Time`, `input`, `Random` / `Rng`, `Debug`, `Log`, `Console`, `PlayerPrefs`, `Assets`, `Application`, `SystemInfo`, `Cursor`, `Screen`, `QualitySettings`, `Gizmos`, `Editor`); animation (`AnimationCurve`, `AnimationClip`, `Animation`, `Animator`, `AnimationController` and its builders); audio (`audio`, `AudioSource`, `AudioListener`); physics (`Physics`, `Rigidbody`, colliders, joints, `Rope`, `Physics2D` and its 2D classes); rendering data (`Camera`, `Light`, `MeshRenderer`, `SkinnedMeshRenderer`, `SpriteRenderer`, `LineRenderer`, `LineRenderer2D`, `LODGroup`, `Mirror`, `ReflectionProbe`, `PlaneRenderer`, `WorldPanel`, `ParticleSystem`, `Cloth`, `Material`, `Sprite`, `Texture`, `Mesh`, `Model`, `Primitives`, `RenderSettings`). The compiler gets their manifests from the engine crates (`platypus_ts` `engine_manifests`).
 
 **Callbacks.** A `Callback<(..)>` parameter (listener APIs: `input.onKeyDown(f)`, `Assets.onChanged`, `SceneManager.onSceneLoaded`,
 `Screen.onChange`, `ParticleSystem.onStopped`, `Playback.onEnded`, ...) takes a script closure, rooted as described under "Callbacks" above; the listener
@@ -665,7 +665,7 @@ scale factor (not the UI scale, not the render scale).
 
 On or off, in order: `--fps` / `--no-fps` on the command line; off with `PLATYPUS_FPS=0` (or `false`, `off`, `no`) or `"platypus": { "fps": false }`
 in `package.json`; otherwise on, except in `--screenshot` runs (off unless `--fps`, so goldens and the `screenshots` tool's renders don't change).
-`platypus_editor` has it off unless `--fps`. A short screenshot run shows the partial window.
+The editor's `project.json` turns it off (`"fps": false`); `--fps` still shows it. A short screenshot run shows the partial window.
 
 ## Fog, light shafts and exposure in native games (2026-10-21)
 
@@ -726,6 +726,11 @@ games too. The renderer-side parts send the same ops as the QuickJS classes (`re
   docs"). **`Spline`** (knots, tangent modes, `evaluate` / `tangent` by distance, `segmentPoint`,
   `sample`, `nearest`, `version`) and **`SplineAnimate`** are native Rust too (see "Enums, records, lists, rest parameters and
   docs"); the TypeScript copies in `facade.ts` are gone.
+- **`Camera.worldToScreenPoint(p)`, `screenPointToRay(p)` and `pixelRect`** (UI pixels, over the camera's `rect`) are the other
+  way and the camera's box on screen; the editor's Scene view uses them for icons and handles.
+- **`Editor`** (`editor.rs`, `editor/open.rs`, `editor/project.rs`) is what the editor game asks of the host: `logSince(seq)`,
+  `openFile(path, line, col)`, `listDir`, `copyIn`, `move` (each file call answers at once, `lastError` says why one failed),
+  the properties `project` and `isAvailable`. It works only after `platypus-app editor --project <folder>`; see [editor.md](editor.md).
 - **`Camera.screenToWorldPoint(p)`** is a facade method (frustum maths over `rect`, `Screen.width` / `height`, `fieldOfView` or
   `orthographicSize` and the transform). The other `viewportTo...` / `screenPointToRay` members are not there yet.
 - **Facade chunk requirements.** A chunk header may end with `@ Name ..`: `//# when Spline @ Vector3`. The chunk is added only
