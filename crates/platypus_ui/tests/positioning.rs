@@ -176,3 +176,121 @@ fn an_empty_flex_item_wider_than_its_clip_shrinks_like_css() {
         Rect::new(0.0, 0.0, 96.0, 96.0)
     );
 }
+
+/// A static 100x100 box at (50, 30) styled with `style` (and `left: 20px`, which a static box
+/// ignores) holding an 8x8 absolute box at `right: 0; bottom: 0`. Returns the tree, the box
+/// and the absolute box.
+fn corner_box(style: &[(&str, Value)]) -> (UiTree, u32, u32) {
+    let mut d = Dom::new();
+    let mut s = vec![
+        ("marginLeft", px(50.0)),
+        ("marginTop", px(30.0)),
+        ("width", px(100.0)),
+        ("height", px(100.0)),
+        ("left", px(20.0)),
+    ];
+    s.extend_from_slice(style);
+    let parent = d.add(0, "box", &s);
+    let child = d.add(
+        parent,
+        "box",
+        &[
+            ("position", "absolute".into()),
+            ("right", px(0.0)),
+            ("bottom", px(0.0)),
+            ("width", px(8.0)),
+            ("height", px(8.0)),
+        ],
+    );
+    (d.build(""), parent, child)
+}
+
+// M2-LAY-11
+#[test]
+fn transforms_filters_and_containment_make_a_containing_block() {
+    // Without any, the containing block is the 400x400 root.
+    let (mut t, parent, child) = corner_box(&[]);
+    assert_eq!(rect(&mut t, child), Rect::new(392.0, 392.0, 8.0, 8.0));
+    assert_eq!(rect(&mut t, parent), Rect::new(50.0, 30.0, 100.0, 100.0));
+    for (prop, value) in [
+        ("transform", "rotate(0deg)"),
+        ("translate", "0px"),
+        ("filter", "blur(2px)"),
+        ("filter", "grayscale(1)"),
+        ("filter", "drop-shadow(2px 2px 0 black)"),
+        ("backdropFilter", "blur(4px)"),
+        ("perspective", "500px"),
+        ("transformStyle", "preserve-3d"),
+        ("willChange", "opacity, transform"),
+        ("willChange", "filter"),
+        ("contain", "paint"),
+        ("contain", "layout"),
+        ("contain", "content"),
+    ] {
+        let (mut t, parent, child) = corner_box(&[(prop, value.into())]);
+        // The box holds its absolute child, and stays where it is: it is still static, so
+        // `left` doesn't move it.
+        assert_eq!(
+            rect(&mut t, child),
+            Rect::new(142.0, 122.0, 8.0, 8.0),
+            "{prop}: {value}"
+        );
+        assert_eq!(
+            rect(&mut t, parent),
+            Rect::new(50.0, 30.0, 100.0, 100.0),
+            "{prop}: {value}"
+        );
+    }
+    // These don't.
+    for (prop, value) in [
+        ("willChange", "opacity"),
+        ("contain", "size"),
+        ("contain", "style"),
+        ("opacity", "0.5"),
+        ("transform", "none"),
+    ] {
+        let (mut t, _, child) = corner_box(&[(prop, value.into())]);
+        assert_eq!(
+            rect(&mut t, child),
+            Rect::new(392.0, 392.0, 8.0, 8.0),
+            "{prop}: {value}"
+        );
+    }
+}
+
+// M2-LAY-12
+#[test]
+fn a_transform_added_or_removed_later_moves_the_absolute_child() {
+    use common::{n, op};
+    use platypus_core::Commit;
+    use platypus_ui::opcodes::{SET_ATTRS, SET_STYLE};
+    let (mut t, parent, child) = corner_box(&[]);
+    t.add_stylesheet(".turned { transform: rotate(0deg); } .lifted { will-change: transform; }");
+    let commit = |t: &mut UiTree, ops: Vec<Value>| {
+        let errors = t.apply_commit(&Commit { ops });
+        assert!(errors.is_empty(), "{errors:?}");
+    };
+    let class = |c: &str| op(SET_ATTRS, &[n(parent), "className".into(), c.into()]);
+    assert_eq!(rect(&mut t, child), Rect::new(392.0, 392.0, 8.0, 8.0));
+    // By a class (the cascade restyles it).
+    commit(&mut t, vec![class("turned")]);
+    assert_eq!(rect(&mut t, child), Rect::new(142.0, 122.0, 8.0, 8.0));
+    commit(&mut t, vec![class("")]);
+    assert_eq!(rect(&mut t, child), Rect::new(392.0, 392.0, 8.0, 8.0));
+    commit(&mut t, vec![class("lifted")]);
+    assert_eq!(rect(&mut t, child), Rect::new(142.0, 122.0, 8.0, 8.0));
+    commit(&mut t, vec![class("")]);
+    // By an inline style.
+    let style = |v: Value| op(SET_STYLE, &[n(parent), "filter".into(), v]);
+    commit(&mut t, vec![style("blur(1px)".into())]);
+    assert_eq!(rect(&mut t, child), Rect::new(142.0, 122.0, 8.0, 8.0));
+    commit(&mut t, vec![style(Value::Null)]);
+    assert_eq!(rect(&mut t, child), Rect::new(392.0, 392.0, 8.0, 8.0));
+    // A positioned box keeps its own position and insets with a transform.
+    let pos = |k: &str, v: Value| op(SET_STYLE, &[n(parent), k.into(), v]);
+    commit(&mut t, vec![pos("position", "relative".into())]);
+    assert_eq!(rect(&mut t, parent), Rect::new(70.0, 30.0, 100.0, 100.0));
+    commit(&mut t, vec![pos("transform", "scale(1)".into())]);
+    assert_eq!(rect(&mut t, parent), Rect::new(70.0, 30.0, 100.0, 100.0));
+    assert_eq!(rect(&mut t, child), Rect::new(162.0, 122.0, 8.0, 8.0));
+}

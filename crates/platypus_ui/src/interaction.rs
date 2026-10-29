@@ -386,8 +386,12 @@ impl Interaction {
                 };
                 for event in self.pointer.wheel(tree, dx, dy) {
                     let prevented = dispatch(&event);
-                    if event.kind == EventKind::Wheel && !prevented {
-                        self.scroll_chain(tree, &event.path, dx, dy, dispatch);
+                    if event.kind == EventKind::Wheel
+                        && !prevented
+                        && let Some(target) = event.path.first()
+                    {
+                        let path = tree.scroll_path(*target);
+                        self.scroll_chain(tree, &path, dx, dy, dispatch);
                     }
                 }
             }
@@ -772,7 +776,7 @@ impl Interaction {
         let Some(origin) = origin else {
             return;
         };
-        let path = tree.event_path(origin);
+        let path = tree.scroll_path(origin);
         let page = |id: &NodeId, tree: &UiTree| {
             tree.padding_box(*id)
                 .map_or(0.0, |b| b.height * SCROLL_PAGE)
@@ -833,7 +837,7 @@ impl Interaction {
         dispatch: &mut dyn FnMut(&UiEvent) -> bool,
     ) {
         tree.layout_if_needed();
-        let ancestors: Vec<NodeId> = tree.event_path(id).into_iter().skip(1).collect();
+        let ancestors: Vec<NodeId> = tree.scroll_path(id).into_iter().skip(1).collect();
         // How far smooth scrolls inside will still move the element (they start later).
         let (mut ax, mut ay) = (0.0, 0.0);
         for container in ancestors {
@@ -879,7 +883,7 @@ impl Interaction {
         };
         let path = tree
             .hit_test(x, y)
-            .map(|t| tree.event_path(t))
+            .map(|t| tree.scroll_path(t))
             .unwrap_or_default();
         let Some(bar) = tree.scrollbar_at(&path, x, y) else {
             return false;

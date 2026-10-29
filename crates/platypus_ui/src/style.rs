@@ -96,6 +96,9 @@ pub struct Visual {
     /// `isolation: isolate` (accepted; every z-indexed element already stacks on its
     /// own in Platypus's simplified model).
     pub isolate: bool,
+    /// `willChange` names a property that makes a containing block (`transform`, `filter`,
+    /// ...); see [`makes_containing_block`].
+    pub will_change: bool,
     /// `overflowX`, `overflowY` as specified (see [`Overflow::computed`]).
     pub overflow: [Overflow; 2],
     /// `clipPath`: clips the element and its descendants.
@@ -187,6 +190,7 @@ impl Default for Visual {
             order: 0,
             z_index: None,
             isolate: false,
+            will_change: false,
             overflow: [Overflow::Visible; 2],
             clip_path: None,
             clip_rect: None,
@@ -1093,6 +1097,8 @@ fn apply_property(
                 _ => return Err(invalid()),
             }
         }
+        "willChange" => visual.will_change = parse_will_change(kw()?).ok_or_else(invalid)?,
+        "contain" => style.contain = parse_contain(kw()?).ok_or_else(invalid)?,
         "overflow" => set_overflow(
             style,
             visual,
@@ -1253,6 +1259,81 @@ fn apply_property(
         _ => return Err(StyleError::UnknownProperty(prop.to_owned())),
     }
     Ok(())
+}
+
+/// `willChange`: whether the list names a property whose non-initial value would make the
+/// element a containing block for absolute descendants (CSS says the hint does that too).
+/// Other names are accepted and mean nothing.
+fn parse_will_change(text: &str) -> Option<bool> {
+    let text = text.trim();
+    if text == "auto" {
+        return Some(false);
+    }
+    let names: Vec<&str> = text.split(',').map(str::trim).collect();
+    if names
+        .iter()
+        .any(|n| n.is_empty() || n.contains(char::is_whitespace))
+    {
+        return None;
+    }
+    Some(names.iter().any(|n| {
+        matches!(
+            *n,
+            "transform"
+                | "translate"
+                | "rotate"
+                | "scale"
+                | "perspective"
+                | "filter"
+                | "backdrop-filter"
+                | "transform-style"
+                | "contain"
+        )
+    }))
+}
+
+/// `contain`: `none`, `strict`, `content` or any of `size`, `inline-size`, `layout`, `style`
+/// and `paint`. Only layout and paint containment are kept (size containment isn't
+/// implemented; style containment changes nothing Platypus has).
+fn parse_contain(text: &str) -> Option<taffy::Contain> {
+    use taffy::Contain;
+    match text.trim() {
+        "none" => return Some(Contain::NONE),
+        "strict" | "content" => return Some(Contain::CONTENT),
+        _ => {}
+    }
+    let mut out = Contain::NONE;
+    let mut seen = Vec::new();
+    for word in text.split_whitespace() {
+        if seen.contains(&word) {
+            return None;
+        }
+        seen.push(word);
+        match word {
+            "layout" => out = out.union(Contain::LAYOUT),
+            "paint" => out = out.union(Contain::PAINT),
+            "size" | "inline-size" | "style" => {}
+            _ => return None,
+        }
+    }
+    (!seen.is_empty()).then_some(out)
+}
+
+/// Whether an element with this style is the containing block of its absolute descendants
+/// even when its `position` is `static`: a transform (or `perspective`, `preserve-3d`), a
+/// filter, a backdrop filter, layout or paint containment, or `willChange` naming one of them.
+pub fn makes_containing_block(style: &Style, visual: &Visual) -> bool {
+    visual
+        .transform
+        .as_ref()
+        .is_some_and(|t| !t.spec.is_none() || t.perspective.is_some() || t.preserve_3d)
+        || visual.filter_blur > 0.0
+        || visual.filter_matrix.is_some()
+        || !visual.drop_shadows.is_empty()
+        || visual.backdrop_blur > 0.0
+        || visual.backdrop_matrix.is_some()
+        || visual.will_change
+        || style.contain.establishes_independent_formatting_context()
 }
 
 /// Resets `prop` to its initial value.
@@ -1509,6 +1590,8 @@ pub(crate) fn copy_prop(
         "order" => visual.order = v.order,
         "zIndex" => visual.z_index = v.z_index,
         "isolation" => visual.isolate = v.isolate,
+        "willChange" => visual.will_change = v.will_change,
+        "contain" => style.contain = d.contain,
         "transition" => visual.transitions = v.transitions,
         "transitionProperty" => visual.transitions.property = v.transitions.property,
         "transitionDuration" => visual.transitions.duration = v.transitions.duration,

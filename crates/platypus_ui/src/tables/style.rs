@@ -250,7 +250,7 @@ pub const STYLE_PROPS: &[StyleProp] = &[
             Lit("absolute"),
             Lit("fixed"),
         ],
-        r#"`static` (the default) is no containing block for absolute children. `fixed` places the element against the window and paints it above the tree."#,
+        r#"`static` (the default) is no containing block for absolute children (unless a transform, filter, backdrop filter, `perspective`, `contain` or `willChange` makes one). `fixed` places the element against the window and paints it above the tree."#,
     ),
     sp(
         "",
@@ -679,6 +679,18 @@ images to try first: `url(sword.png) 4 4, pointer` (PNG, JPEG or `.cur`, up to
         "isolation",
         &[Lit("auto"), Lit("isolate")],
         r#"Accepted; every z-indexed element already stacks on its own."#,
+    ),
+    sp(
+        "",
+        "willChange",
+        STR,
+        r#"`auto` or a list of property names. Naming `transform`, `filter`, `perspective`, `backdrop-filter` (or `translate`, `rotate`, `scale`, `transform-style`, `contain`) makes the element a containing block for absolute children, as those properties do."#,
+    ),
+    sp(
+        "",
+        "contain",
+        STR,
+        r#"`none`, `strict`, `content` or any of `size`, `inline-size`, `layout`, `style`, `paint`. Layout and paint containment make an independent formatting context and a containing block for absolute children; paint containment also clips the content to the padding box. Size containment is accepted and ignored."#,
     ),
     sp(
         "Clipping",

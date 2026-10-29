@@ -883,6 +883,65 @@ fn radial_gradients_fade_from_transparent_like_wgpu() {
     assert!(mid[0] >= 250 && mid[1] > 60 && mid[1] < 230, "{mid:?}");
 }
 
+// M2-GLES-18
+#[test]
+fn dropdowns_escape_a_static_clip_but_not_a_positioned_one_like_wgpu() {
+    let mut s = Scene::new();
+    let outer = s.at(
+        0,
+        "box",
+        [10.0, 10.0, 200.0, 140.0],
+        &[("backgroundColor", "#303030")],
+    );
+    // A static `overflow: hidden` bar: its absolute dropdown belongs to the outer box and
+    // shows in full below the bar.
+    let bar = s.at(
+        outer,
+        "box",
+        [0.0, 0.0, 120.0, 30.0],
+        &[
+            ("position", "static"),
+            ("overflow", "hidden"),
+            ("borderRadius", "6px"),
+            ("backgroundColor", "white"),
+        ],
+    );
+    s.at(
+        bar,
+        "box",
+        [0.0, 20.0, 80.0, 100.0],
+        &[("backgroundColor", "orange")],
+    );
+    // A positioned one clips its dropdown at its 30px height.
+    let held = s.at(
+        outer,
+        "box",
+        [130.0, 0.0, 60.0, 30.0],
+        &[
+            ("overflow", "hidden"),
+            ("borderRadius", "6px"),
+            ("backgroundColor", "white"),
+        ],
+    );
+    s.at(
+        held,
+        "box",
+        [0.0, 20.0, 50.0, 100.0],
+        &[("backgroundColor", "orange")],
+    );
+    let Some(px) = same("escaping dropdown", s, (220, 160), 1.0, 6, 0.002) else {
+        return;
+    };
+    let at = |x: usize, y: usize| &px[(y * 220 + x) * 4..(y * 220 + x) * 4 + 3];
+    // Orange below the static bar, the outer grey below the positioned one.
+    assert!(
+        at(50, 110)[0] > 200 && at(50, 110)[2] < 80,
+        "{:?}",
+        at(50, 110)
+    );
+    assert!(at(160, 90)[0] < 80, "{:?}", at(160, 90));
+}
+
 // M2-GLES-13
 #[test]
 fn masks_and_layers_inside_clips_match_wgpu() {

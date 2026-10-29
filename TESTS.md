@@ -110,6 +110,8 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-LAY-08 | Integration | An absolute box whose parent is static is placed in its containing block, as CSS says: in Fluid's menu bar (title without `position`), `left: 100%; bottom: 0` puts it at the absolute bar's right edge and bottom; with no insets it stays at its static position (the parent's content box) even when the containing block is the root. |
 | M2-LAY-09 | Integration | In the same bar with a `position: relative` title, `left: 100%` / `bottom: 0`, `right: -8px` / `top: 0`, `right: 0` / `bottom: 0` and `left: 0` / `top: 0` place the 8x8 box against the title's padding box. |
 | M2-LAY-10 | Integration | An empty 96x96 box in a 48x48 `overflow: hidden` box (a flex row, the default) shrinks to 48 wide like a CSS flex item (automatic minimum size 0); with `flexShrink: 0` or a `display: block` parent it keeps 96x96. |
+| M2-LAY-11 | Integration | A static box with a transform (`rotate(0deg)`, `translate`), a filter (blur, colour, drop shadow), a backdrop filter, `perspective`, `transform-style: preserve-3d`, `will-change: transform` / `filter`, or `contain: paint` / `layout` / `content` is the containing block of its absolute child (`right: 0; bottom: 0` lands in its corner) and stays put (its `left` still ignored); `will-change: opacity`, `contain: size` / `style`, `opacity` and `transform: none` make none. |
+| M2-LAY-12 | Integration | Adding and removing a transform or `will-change` by a class, or a filter by an inline style, moves the absolute child between the box and the root; a relative box keeps its insets with a transform. |
 
 ### Drawing
 | ID | Kind | Checks |
@@ -150,6 +152,7 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-GLES-15 | Unit | The GLES path trims the driver once, no sooner than a second after the first frame shown, and not with `PLATYPUS_GLES_TRIM=0`. |
 | M2-GLES-16 | Integration | Two stacked `backdrop-filter: blur(10px) saturate(1.6)` glass boxes over a blue/orange split: the GLES executor reads only inside each box (even colour up to the shared edge) and matches the wgpu one. |
 | M2-GLES-17 | Integration | A radial gradient from `transparent` 44px to red 52px matches between the two executors and fades without darkening. |
+| M2-GLES-18 | Integration | An absolute dropdown in a static rounded `overflow: hidden` bar shows in full below it while one in a positioned bar is clipped at its height, the same in both executors. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |
@@ -269,6 +272,9 @@ layout pass):
 | M3-BRD-03 | Unit + Golden | Outline properties parse (shorthand defaults, `auto`, negative offsets; `hidden` rejected); a solid outline sits outside the box past its offset, and a dashed one follows rounded corners. |
 | M3-BRD-04 | Unit + Golden | `border-image` shorthand and longhands parse; the nine pieces map slices to the border (fill, round tiles, scaled-down widths, outset); tiling along an axis; an image 9-slice, a gradient border and a filled one render. |
 | M3-CLIP-01 | Unit + Integration + Golden | SVG path data flattens (relative commands, curves, arcs, flags without separators; malformed data rejected); `polygon()` and `path()` clips resolve against the reference box and hit testing follows them (evenodd holes); a triangle, a framed hole and a clipped opacity group render. |
+| M3-CLIP-02 | Integration | Drawing: an absolute dropdown whose containing block is outside a static `overflow: hidden` bar is drawn without the bar's clip (its siblings before and after keep it); a clipping containing block, a positioned bar, a transformed bar and the root behave as CSS says; a `clip-path` between still clips it, an opacity group outside the bar still holds it, one inside the bar keeps the clip (a known limit). |
+| M3-CLIP-03 | Integration | Hit testing matches: the dropdown is hit below the bar and over it, a positioned bar's dropdown is not hit outside the bar, and the bar's clipped-off siblings stay unhittable. |
+| M3-CLIP-04 | Integration | Scrolling: a dropdown in a static scroller doesn't move when it scrolls, its `scroll_path` skips the scroller, and the wheel over it doesn't scroll the scroller (over the scroller's own content it does). |
 | M3-FX-01 | Unit | `opacity` accepts numbers, numeric strings and percentages. |
 | M3-FX-02 | Unit + Golden | Filter chains parse (amount defaults and limits, blurs combine, colour functions compose in order, bad functions rejected; no `drop-shadow` in `backdrop-filter`); grayscale, brightness, invert, hue-rotate, sepia, a shape-following drop shadow and a greying backdrop filter render. |
 | M3-FX-03 | Unit + Golden | `image-rendering` parses and inherits; a scaled-up image blends between texels by default and keeps them pure when `pixelated`. |

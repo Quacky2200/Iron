@@ -25,13 +25,16 @@ use crate::paint::{
     BackgroundClip, BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle, Overflow, Shadow,
     inner_corners, resolve_radii,
 };
-use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword};
+use crate::style::{Visual, WideKeyword, apply_style, apply_wide_keyword, makes_containing_block};
 use crate::text::{self, Band, Brush, TextEngine};
 use crate::text_style::{
     ComputedText, Direction, TextOverflow, TextProps, UserSelect, is_text_prop,
 };
 use crate::transform::{Homography, Mat4, TransformContext};
 use crate::units::{UnitContext, Uses};
+
+mod escape;
+use escape::DrawOut;
 
 /// The root container every React root renders into.
 pub const ROOT: NodeId = NodeId(0);
@@ -327,6 +330,27 @@ fn is_fixed(id: NodeId, node: &Node) -> bool {
     (node.visual.fixed || is_modal(node)) && id != ROOT && !is_contents(node)
 }
 
+/// The style Taffy lays `node` out with. A static element that is a containing block
+/// anyway (a transform, a filter, ...; see [`makes_containing_block`]) is `relative` there
+/// with no insets: Taffy only knows `position` for that, and a static box ignores insets.
+/// The tree keeps the authored style, so painting and scripts still see `static`.
+fn layout_style(node: &Node) -> std::borrow::Cow<'_, Style> {
+    if node.style.position != Position::Static || !makes_containing_block(&node.style, &node.visual)
+    {
+        return std::borrow::Cow::Borrowed(&node.style);
+    }
+    std::borrow::Cow::Owned(Style {
+        position: Position::Relative,
+        inset: taffy::Rect {
+            left: taffy::LengthPercentageAuto::auto(),
+            right: taffy::LengthPercentageAuto::auto(),
+            top: taffy::LengthPercentageAuto::auto(),
+            bottom: taffy::LengthPercentageAuto::auto(),
+        },
+        ..node.style.clone()
+    })
+}
+
 /// An open modal dialog: fixed, in the top layer.
 fn is_modal(node: &Node) -> bool {
     node.kind == DIALOG && node.attrs.open && node.attrs.modal
@@ -411,6 +435,12 @@ pub struct UiTree<L: LayoutEngine = TaffyLayout> {
     /// What each node and its descendants may paint over, as of the last layout (see
     /// [`Self::compute_ink`]); drawing skips subtrees outside the clips around them.
     ink: HashMap<NodeId, Rect>,
+    /// Absolute boxes whose containing block is further up than their parent, and that
+    /// block, as of the last layout. The `overflow` clips and scrolling of the elements in
+    /// between don't apply to them (see [`Self::escapes_clip_of`]).
+    escapes: HashMap<NodeId, NodeId>,
+    /// The elements in between: some descendant of each escapes its clip.
+    escape_paths: HashSet<NodeId>,
     /// `…` laid out in the style of text blocks with `text-overflow: ellipsis`.
     ellipses: HashMap<NodeId, parley::Layout<Brush>>,
     /// Nodes whose list marker may need adding, removing or renumbering.
@@ -522,6 +552,8 @@ impl<L: LayoutEngine> UiTree<L> {
             finished: HashMap::default(),
             text_bands: HashMap::default(),
             ink: HashMap::default(),
+            escapes: HashMap::default(),
+            escape_paths: HashSet::default(),
             layout_texts: HashMap::default(),
             text_selection: None,
             pseudo_styles: HashMap::default(),
@@ -929,10 +961,10 @@ impl<L: LayoutEngine> UiTree<L> {
         let text_child = self.children(marker).first().copied();
         if let Some(node) = self.nodes.get_mut(&marker) {
             let restyled = node.style != style || node.visual != visual;
-            node.style = style.clone();
+            node.style = style;
             node.visual = visual;
             if restyled {
-                self.layout.set_style(marker, &style);
+                self.sync_layout_style(marker);
                 if let Some(root) = self.text_root_of(marker) {
                     self.dirty_text.insert(root);
                 }
@@ -971,8 +1003,7 @@ impl<L: LayoutEngine> UiTree<L> {
         };
         if let Some(d) = display {
             node.style.display = d;
-            let style = node.style.clone();
-            self.layout.set_style(id, &style);
+            self.sync_layout_style(id);
         }
         let was_fixed = self.fixed.contains(&id);
         self.update_fixed(id);
@@ -1137,8 +1168,7 @@ impl<L: LayoutEngine> UiTree<L> {
         let want = taffy::LengthPercentage::length(if markers { 24.0 } else { 0.0 });
         if node.style.padding.left != want {
             node.style.padding.left = want;
-            let style = node.style.clone();
-            self.layout.set_style(id, &style);
+            self.sync_layout_style(id);
             self.needs_layout = true;
         }
     }
@@ -1280,10 +1310,10 @@ impl<L: LayoutEngine> UiTree<L> {
         let text_child = self.children(span).first().copied();
         if let Some(node) = self.nodes.get_mut(&span) {
             let restyled = node.style != style || node.visual != visual;
-            node.style = style.clone();
+            node.style = style;
             node.visual = visual;
             if restyled {
-                self.layout.set_style(span, &style);
+                self.sync_layout_style(span);
                 if let Some(root) = self.text_root_of(span) {
                     self.dirty_text.insert(root);
                 }
@@ -1732,12 +1762,14 @@ impl<L: LayoutEngine> UiTree<L> {
         let node = self.nodes.get_mut(&id).expect("checked above");
         node.vars = vars;
         let text_changed = node.visual.text != visual.text;
-        let style_changed = node.style != style;
+        // A transform or filter coming or going also changes the containing block Taffy sees.
+        let style_changed = node.style != style
+            || makes_containing_block(&node.style, &node.visual)
+                != makes_containing_block(&style, &visual);
         node.style = style;
         node.visual = visual;
         if style_changed {
-            let style = node.style.clone();
-            self.layout.set_style(id, &style);
+            self.sync_layout_style(id);
         }
         if boxes_changed {
             self.update_fixed(id);
@@ -2448,9 +2480,7 @@ impl<L: LayoutEngine> UiTree<L> {
 
         // Sync with the layout engine once per commit, not once per op.
         for id in styles_changed {
-            if let Some(node) = self.nodes.get(&id) {
-                self.layout.set_style(id, &node.style);
-            }
+            self.sync_layout_style(id);
         }
         self.structure_changed
             .extend(children_changed.iter().copied());
@@ -3011,6 +3041,7 @@ impl<L: LayoutEngine> UiTree<L> {
             },
         );
         self.rects.clear();
+        let mut escapes = Vec::new();
         let mut stack = vec![(ROOT, 0.0_f32, 0.0_f32)];
         while let Some((id, parent_x, parent_y)) = stack.pop() {
             if let Some(node) = self.nodes.get(&id)
@@ -3019,9 +3050,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 // No box: its children are placed in the layout parent's space.
                 self.rects
                     .insert(id, Rect::new(parent_x, parent_y, 0.0, 0.0));
-                stack.extend(
-                    (node.children.iter()).map(|c| self.child_origin(*c, (parent_x, parent_y))),
-                );
+                self.place_children(node, (parent_x, parent_y), &mut stack, &mut escapes);
                 continue;
             }
             let Some(l) = self.layout.layout(id) else {
@@ -3057,38 +3086,63 @@ impl<L: LayoutEngine> UiTree<L> {
                     None => (0.0, 0.0),
                 };
                 // Inline content inside text is positioned by the text engine.
-                stack.extend(
-                    (node.children.iter()).map(|c| self.child_origin(*c, (x - sx, y - sy))),
-                );
+                self.place_children(node, (x - sx, y - sy), &mut stack, &mut escapes);
             }
         }
+        self.set_escapes(escapes);
         self.compute_ink();
         self.refresh_editors();
         self.needs_layout = false;
         true
     }
 
+    /// Queues `node`'s children for the rect pass with the origin each counts from (see
+    /// [`Self::child_origin`]), noting those placed in a containing block further up.
+    fn place_children(
+        &self,
+        node: &Node,
+        inherited: (f32, f32),
+        stack: &mut Vec<(NodeId, f32, f32)>,
+        escapes: &mut Vec<(NodeId, NodeId)>,
+    ) {
+        for c in &node.children {
+            let (x, y, block) = self.child_origin(*c, inherited);
+            stack.push((*c, x, y));
+            if let Some(block) = block {
+                escapes.push((*c, block));
+            }
+        }
+    }
+
     /// Where `child`'s layout position counts from, given its parent's scrolled content
-    /// origin `inherited` (the parents and containing blocks are placed before it).
-    fn child_origin(&self, child: NodeId, inherited: (f32, f32)) -> (NodeId, f32, f32) {
+    /// origin `inherited` (the parents and containing blocks are placed before it), and its
+    /// containing block when that is further up than its parent.
+    fn child_origin(&self, child: NodeId, inherited: (f32, f32)) -> (f32, f32, Option<NodeId>) {
         let node = self.nodes.get(&child);
         // Fixed nodes are laid out by the root and never scroll.
         if node.is_some_and(|n| is_fixed(child, n)) {
-            return (child, 0.0, 0.0);
+            return (0.0, 0.0, None);
         }
         // An absolute box in a static parent is placed in its containing block (the nearest
         // positioned ancestor, or the root), inside that box's scrolled content. Outside list
         // markers are the exception: their insets (`right: 100%; top: 0`) only cancel the
-        // containing block's size, so they hang off their own item.
+        // containing block's size, so they hang off their own item (and its clips).
         let marker = node.is_some_and(|n| n.generated == Some(PseudoElement::Marker));
         if !marker
             && let Some(block) = self.layout.containing_block(child)
             && let Some(r) = self.rects.get(&block)
         {
             let (sx, sy) = self.scroll.get(&block).copied().unwrap_or_default();
-            return (child, r.x - sx, r.y - sy);
+            return (r.x - sx, r.y - sy, Some(block));
         }
-        (child, inherited.0, inherited.1)
+        (inherited.0, inherited.1, None)
+    }
+
+    /// The style Taffy lays `id` out with (see [`layout_style`]), sent to it.
+    fn sync_layout_style(&mut self, id: NodeId) {
+        if let Some(node) = self.nodes.get(&id) {
+            self.layout.set_style(id, &layout_style(node));
+        }
     }
 
     /// Fills [`Self::ink`]: each laid-out node's rect (and its text, which may run past
@@ -3789,11 +3843,19 @@ impl<L: LayoutEngine> UiTree<L> {
         for id in self.fixed_paint_order().iter().rev() {
             let inherited = self.pointer_events_of(self.parent(*id));
             let visible = self.computed_text(*id).visible;
-            if let Some(hit) = self.hit(*id, x, y, inherited, visible, TransformContext::ROOT) {
-                return Some(hit);
+            let hit = self.hit(
+                *id,
+                (x, y),
+                inherited,
+                visible,
+                TransformContext::ROOT,
+                None,
+            );
+            if hit.is_some() {
+                return hit;
             }
         }
-        self.hit(ROOT, x, y, true, true, TransformContext::ROOT)
+        self.hit(ROOT, (x, y), true, true, TransformContext::ROOT, None)
     }
 
     /// `node`'s own 4×4 transform (with its parent's `perspective`), if it has one.
@@ -3877,19 +3939,24 @@ impl<L: LayoutEngine> UiTree<L> {
         true
     }
 
-    /// `x`, `y` are window coordinates; each element maps them into its own plane.
+    /// `(x, y)` is in window coordinates; each element maps it into its own plane.
+    /// `clipped`, when set, is the outermost ancestor whose `overflow` clip hides the point:
+    /// only absolute boxes that escape it (and their subtrees) can still be hit.
     fn hit(
         &self,
         id: NodeId,
-        x: f32,
-        y: f32,
+        (wx, wy): (f32, f32),
         inherited: bool,
         visible: bool,
         xf: TransformContext,
+        clipped: Option<NodeId>,
     ) -> Option<NodeId> {
-        let (wx, wy) = (x, y);
         let node = self.nodes.get(&id)?;
         if node.style.display == Display::None || self.leaving.contains_key(&id) {
+            return None;
+        }
+        let clipped = clipped.filter(|o| !self.escapes_clip_of(id, *o));
+        if clipped.is_some() && !self.holds_escapes(id) {
             return None;
         }
         // `visibility: hidden` elements can't be hit, but visible children can.
@@ -3901,7 +3968,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 .iter()
                 .rev()
                 .filter(|c| !self.nodes.get(c).is_some_and(|n| is_fixed(**c, n)))
-                .find_map(|c| self.hit(*c, wx, wy, enabled, shown, xf));
+                .find_map(|c| self.hit(*c, (wx, wy), enabled, shown, xf, clipped));
         }
         let rect = *self.rects.get(&id)?;
         let (plane, child_xf, _) = self.transform_step(node, rect, xf)?;
@@ -3922,18 +3989,30 @@ impl<L: LayoutEngine> UiTree<L> {
         }
         let enabled = node.visual.pointer_events.unwrap_or(inherited);
         let children_visible =
-            overflow_clip(&node.visual, rect, &l, radii).is_none_or(|clip| clip.contains(x, y));
-        if !is_inline_container(&node.kind) && children_visible {
+            overflow_clip(node, rect, &l, radii).is_none_or(|clip| clip.contains(x, y));
+        // Where this clip hides the point, absolute boxes inside that escape it can still be
+        // hit (`None`: no child can be).
+        let child_clipped = match clipped {
+            Some(o) => Some(Some(o)),
+            None if children_visible => Some(None),
+            None if self.holds_escapes(id) => Some(Some(id)),
+            None => None,
+        };
+        if !is_inline_container(&node.kind)
+            && let Some(child_clipped) = child_clipped
+        {
             for child in self.paint_order(node).iter().rev() {
                 if self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
                     continue;
                 }
-                if let Some(hit) = self.hit(*child, wx, wy, enabled, shown, child_xf) {
-                    return Some(hit);
+                let hit = self.hit(*child, (wx, wy), enabled, shown, child_xf, child_clipped);
+                if hit.is_some() {
+                    return hit;
                 }
             }
         }
-        if !enabled || !shown || id == ROOT {
+        // Clipped away itself.
+        if clipped.is_some() || !enabled || !shown || id == ROOT {
             return None;
         }
         if !rect.contains_rounded(radii, x, y) {
@@ -4049,7 +4128,7 @@ impl<L: LayoutEngine> UiTree<L> {
     /// are skipped. A node with opacity but nothing to group just scales its alpha.
     pub fn draw_list(&mut self) -> Vec<DrawCmd> {
         self.layout_if_needed();
-        let mut out = Vec::new();
+        let mut out = DrawOut::default();
         self.collect(
             ROOT,
             &ComputedText::default(),
@@ -4066,7 +4145,7 @@ impl<L: LayoutEngine> UiTree<L> {
             self.collect(id, &text, TransformContext::ROOT, None, &mut out);
         }
         self.collect_drag_image(&mut out);
-        out
+        out.cmds
     }
 
     /// Draws element `id` again over everything, moved by (dx, dy) and translucent, as
@@ -4081,7 +4160,7 @@ impl<L: LayoutEngine> UiTree<L> {
         self.drag_image
     }
 
-    fn collect_drag_image(&self, out: &mut Vec<DrawCmd>) {
+    fn collect_drag_image(&self, out: &mut DrawOut) {
         const OPACITY: f32 = 0.6;
         let Some((id, dx, dy)) = self.drag_image else {
             return;
@@ -4125,15 +4204,16 @@ impl<L: LayoutEngine> UiTree<L> {
         out.push(DrawCmd::PopTransform);
     }
 
-    /// `cull`, when set, is the area the clips around `id` leave visible, in its layout
-    /// space: a subtree whose ink lies outside it isn't drawn.
-    fn collect(
+    /// Draws `id` and its subtree (through [`Self::collect`], which handles absolute boxes
+    /// that escape clips). `cull`, when set, is the area the clips around `id` leave visible,
+    /// in its layout space: a subtree whose ink lies outside it isn't drawn.
+    fn collect_node(
         &self,
         id: NodeId,
         inherited: &ComputedText,
         xf: TransformContext,
         cull: Option<Rect>,
-        out: &mut Vec<DrawCmd>,
+        out: &mut DrawOut,
     ) {
         if let (Some(cull), Some(ink)) = (cull, self.ink.get(&id))
             && !overlaps(*ink, cull)
@@ -4390,13 +4470,14 @@ impl<L: LayoutEngine> UiTree<L> {
         // clip-path (and legacy `clip`) clip the element and everything inside it;
         // `overflow` clips only the children, to the padding box.
         if transformed {
-            out.push(DrawCmd::PushTransform(plane));
+            out.open(DrawCmd::PushTransform(plane), None);
         }
         let self_clips = self.self_clips(node, rect, &l, radii);
-        for clip in &self_clips {
-            out.push(DrawCmd::PushClip(clip.clone()));
+        let clip_count = self_clips.len();
+        for clip in self_clips {
+            out.open(DrawCmd::PushClip(clip), None);
         }
-        let overflow_clip = overflow_clip(v, rect, &l, radii);
+        let overflow_clip = overflow_clip(node, rect, &l, radii);
         // Children are culled against this node's overflow clip too, unless a transform
         // puts them in another space.
         let child_cull = match (&overflow_clip, cull) {
@@ -4439,16 +4520,19 @@ impl<L: LayoutEngine> UiTree<L> {
         {
             let start = out.len();
             let shadow_reach = shadows.clone();
-            out.push(DrawCmd::PushLayer {
-                bounds: rect,
-                blur: v.filter_blur,
-                opacity: v.opacity,
-                blend: v.mix_blend,
-                matrix: v.filter_matrix,
-                shadows,
-            });
+            out.open(
+                DrawCmd::PushLayer {
+                    bounds: rect,
+                    blur: v.filter_blur,
+                    opacity: v.opacity,
+                    blend: v.mix_blend,
+                    matrix: v.filter_matrix,
+                    shadows,
+                },
+                None,
+            );
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, child_xf, child_cull, out);
+            self.collect_children(id, &text, overflow_clip, child_xf, child_cull, out);
             self.collect_scrollbars(id, out);
             out.extend(outline);
             // The layer must cover everything drawn into it, plus the blur's spread.
@@ -4475,7 +4559,7 @@ impl<L: LayoutEngine> UiTree<L> {
                     radii: Radii::ZERO,
                 }));
             }
-            out.push(DrawCmd::PopLayer);
+            out.close(DrawCmd::PopLayer);
         } else {
             if v.opacity < 1.0 {
                 for cmd in &mut own {
@@ -4483,7 +4567,7 @@ impl<L: LayoutEngine> UiTree<L> {
                 }
             }
             out.extend(own);
-            self.collect_children(node, &text, overflow_clip, child_xf, child_cull, out);
+            self.collect_children(id, &text, overflow_clip, child_xf, child_cull, out);
             self.collect_scrollbars(id, out);
             if let Some(mut outline) = outline {
                 if v.opacity < 1.0 {
@@ -4492,29 +4576,30 @@ impl<L: LayoutEngine> UiTree<L> {
                 out.push(outline);
             }
         }
-        for _ in &self_clips {
-            out.push(DrawCmd::PopClip);
+        for _ in 0..clip_count {
+            out.close(DrawCmd::PopClip);
         }
         if transformed {
-            out.push(DrawCmd::PopTransform);
+            out.close(DrawCmd::PopTransform);
         }
     }
 
+    /// Draws `id`'s children inside its `overflow` clip, if it has one.
     fn collect_children(
         &self,
-        node: &Node,
+        id: NodeId,
         text: &ComputedText,
         clip: Option<ClipShape>,
         xf: TransformContext,
         cull: Option<Rect>,
-        out: &mut Vec<DrawCmd>,
+        out: &mut DrawOut,
     ) {
-        if node.children.is_empty() {
+        let Some(node) = self.nodes.get(&id).filter(|n| !n.children.is_empty()) else {
             return;
-        }
+        };
         let clipped = clip.is_some();
         if let Some(clip) = clip {
-            out.push(DrawCmd::PushClip(clip));
+            out.open(DrawCmd::PushClip(clip), Some(id));
         }
         for child in self.paint_order(node).iter() {
             if !self.nodes.get(child).is_some_and(|n| is_fixed(*child, n)) {
@@ -4522,7 +4607,7 @@ impl<L: LayoutEngine> UiTree<L> {
             }
         }
         if clipped {
-            out.push(DrawCmd::PopClip);
+            out.close(DrawCmd::PopClip);
         }
     }
 
@@ -4882,8 +4967,12 @@ fn overlaps(ink: Rect, visible: Rect) -> bool {
 
 /// The clip `overflow` puts on an element's children: its padding box with inner
 /// corner radii. An axis that doesn't clip (`overflow: clip visible`) is unbounded.
-fn overflow_clip(v: &Visual, rect: Rect, l: &NodeLayout, radii: Radii) -> Option<ClipShape> {
-    let [x, y] = Overflow::computed(v.overflow);
+fn overflow_clip(node: &Node, rect: Rect, l: &NodeLayout, radii: Radii) -> Option<ClipShape> {
+    let [mut x, mut y] = Overflow::computed(node.visual.overflow);
+    // Paint containment clips like `overflow: clip`.
+    if node.style.contain.contains(taffy::Contain::PAINT) {
+        [x, y] = [x, y].map(|o| if o.clips() { o } else { Overflow::Clip });
+    }
     if !x.clips() && !y.clips() {
         return None;
     }

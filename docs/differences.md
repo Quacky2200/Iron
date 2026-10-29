@@ -374,9 +374,10 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 |---|---|---|---|
 | `box-sizing` default | `border-box` (as in Taffy and s&box) | `content-box` | Matches s&box |
 | `z-index` | Orders siblings only; every z-indexed element is its own stacking context | Stacking contexts nest; z-index can lift an element above its parent's siblings | Simpler model; `isolation` is accepted and has no effect |
-| `position: fixed` | Ignores ancestor opacity, filters and clips (but not `display: none` / opacity 0) | Ancestors with transforms/filters contain it | Fixed nodes paint at the top level |
-| Containing block of `position: absolute` | The nearest ancestor with `position` other than `static` (or the root), as in CSS; `transform`, `filter` and `perspective` don't make one | Those also make a containing block | Taffy only knows `position`; set `position: relative` on a transformed box that should hold its absolute children |
-| Clipping of absolute boxes | An `overflow: hidden` ancestor clips its absolute descendants even when their containing block is further out | Only clips those whose containing block is inside it | Painting and clipping follow the element tree; layout follows the containing block |
+| `position: fixed` | Ignores ancestor opacity, filters, transforms and clips (but not `display: none` / opacity 0); a transformed or filtered ancestor doesn't contain it | Ancestors with transforms/filters (and `perspective`, `contain`, `will-change`) are its containing block | Fixed nodes are laid out by the root and paint at the top level |
+| `contain` | Only `layout` and `paint` containment (`strict` / `content` mean both); `size`, `inline-size` and `style` are accepted and ignored | Size containment sizes the box as if empty | Taffy has no size containment |
+| `will-change` | Only makes a containing block (when it names `transform`, `filter`, `perspective`, `backdrop-filter`, ...); no stacking or layer hints | Also a stacking context and a compositing hint | Nothing to promote |
+| Absolute boxes inside an opacity / blend / mask group inside a clip | A static `overflow` clip outside the group still clips an absolute box inside it whose containing block is further out | The box escapes the clip | The group is composited (and clipped) as one layer; clips inside the group, or groups outside the clip, are fine |
 
 ## Text (M3d group 4)
 
