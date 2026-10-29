@@ -784,6 +784,77 @@ fn an_external_store_and_a_literal_union_state_re_render() {
     });
 }
 
+// M9-TS-3520
+//
+// `currentTarget` is the element whose handler runs (the outer box for a press on the inner
+// one), pointer capture through it becomes a node command for the host, and `defaultPrevented`
+// reads the event as it is now: false, then true once a handler prevented it, also further out.
+#[test]
+fn current_target_default_prevented_and_pointer_capture() {
+    use platypus_ts_ui::NodeCommand;
+    in_every_gc_mode(|| {
+        let _ = platypus_ts_ui::take_node_commands();
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_captureApp() });
+        let outer = ui.tree.children(ROOT)[0];
+        let inner = ui.tree.children(outer)[0];
+        ui.notes();
+        let mut down = Event::new("pointerdown", inner);
+        ui.rt.dispatch(&mut down, &mut ui.tree);
+        let mut up = Event::new("pointerup", inner);
+        ui.rt.dispatch(&mut up, &mut ui.tree);
+        assert_eq!(ui.notes(), "down:true");
+        assert_eq!(
+            platypus_ts_ui::take_node_commands(),
+            [
+                NodeCommand::SetPointerCapture(outer.0),
+                NodeCommand::ReleasePointerCapture(outer.0)
+            ]
+        );
+        assert_eq!(
+            down.current, None,
+            "no currentTarget once the dispatch is over"
+        );
+        let mut key = Event::new("keydown", inner);
+        assert!(ui.rt.dispatch(&mut key, &mut ui.tree));
+        assert_eq!(ui.notes(), "before:false after:true outer:true");
+    });
+}
+
+// M9-TS-3521
+//
+// A function component's `ref` prop (`Ref<T>`, React 19) is filled by `useImperativeHandle`, and
+// one without a ref renders too; a `"a" | "b" | null` state starts null and keeps each tag.
+#[test]
+fn ref_props_with_imperative_handles_and_nullable_literal_state() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_pickerApp() });
+        assert_eq!(ui.notes(), "size:3");
+        let parent = ui.tree.children(ROOT)[0];
+        let first = ui.tree.children(parent)[0];
+        assert_eq!(
+            ui.dump(),
+            "root(box(box(text(text:none)),box(text(text:none))))"
+        );
+        ui.click(first);
+        assert_eq!(
+            ui.dump(),
+            "root(box(box(text(text:a)),box(text(text:none))))"
+        );
+        ui.click(first);
+        assert_eq!(
+            ui.dump(),
+            "root(box(box(text(text:b)),box(text(text:none))))"
+        );
+        ui.click(first);
+        assert_eq!(
+            ui.dump(),
+            "root(box(box(text(text:none)),box(text(text:none))))"
+        );
+    });
+}
+
 // M9-TS-3362
 //
 // `scrollIntoView`, `scrollTo` and `scrollBy` on a ref in compiled code, positional and with the

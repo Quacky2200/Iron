@@ -614,6 +614,10 @@ pub enum NodeCommand {
     /// `dataTransfer.setDragImage(element, x, y)`: the element to show under the pointer (0 for
     /// none) and where it is held.
     DragImage(u32, f64, f64),
+    /// `setPointerCapture(pointerId)`: the pointer's events go to the node until released.
+    SetPointerCapture(u32),
+    /// `releasePointerCapture(pointerId)`.
+    ReleasePointerCapture(u32),
 }
 
 thread_local! {
@@ -639,6 +643,17 @@ pub extern "C" fn ts_ui_node_focus(n: u64) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_node_blur(n: u64) {
     node_command(n, NodeCommand::Blur);
+}
+
+/// `setPointerCapture(pointerId)`; there is one pointer, so the id is not checked.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_set_capture(n: u64, _pointer: f64) {
+    node_command(n, NodeCommand::SetPointerCapture);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_node_release_capture(n: u64, _pointer: f64) {
+    node_command(n, NodeCommand::ReleasePointerCapture);
 }
 
 /// A `behavior` argument: `"auto"`, `"instant"` or `"smooth"` (left out or unknown: auto).
@@ -805,6 +820,22 @@ pub extern "C" fn ts_ui_state_ptr(init: u64) -> f64 {
     state_new(PTR, init)
 }
 
+/// An engine handle (`useState(camera)`): its 64-bit id, kept like a number (not traced).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_state_handle(init: u64) -> f64 {
+    state_new(NUM, init)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_load_handle(slot: f64) -> u64 {
+    cell_of(slot).bits.get()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_store_handle(slot: f64, v: u64) {
+    cell_of(slot).set(NUM, v);
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_load_num(slot: f64) -> f64 {
     f64::from_bits(cell_of(slot).bits.get())
@@ -919,6 +950,18 @@ pub extern "C" fn ts_ui_ev_target() -> f64 {
     with_event(|e| f64::from(e.target.raw()), 0.0)
 }
 
+/// `currentTarget`: the element whose handler runs, as a `UiNode` handle (0 outside a dispatch).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_ev_current() -> u64 {
+    with_event(|e| e.current.map_or(0, |n| u64::from(n.raw()) + 1), 0)
+}
+
+/// `defaultPrevented`: whether a handler of this event called `preventDefault()` so far.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_ev_prevented() -> bool {
+    with_event(|e| e.prevented, false)
+}
+
 type KindResolver = fn(u32) -> String;
 
 thread_local! {
@@ -992,6 +1035,9 @@ pub fn link_anchor() -> usize {
         ts_ui_load_num as *const () as usize,
         ts_ui_load_bool as *const () as usize,
         ts_ui_load_ptr as *const () as usize,
+        ts_ui_state_handle as *const () as usize,
+        ts_ui_load_handle as *const () as usize,
+        ts_ui_store_handle as *const () as usize,
         ts_ui_store_num as *const () as usize,
         ts_ui_store_bool as *const () as usize,
         ts_ui_store_ptr as *const () as usize,
@@ -1012,6 +1058,10 @@ pub fn link_anchor() -> usize {
         ts_ui_drag_image as *const () as usize,
         ts_ui_ev_kind as *const () as usize,
         ts_ui_ev_target as *const () as usize,
+        ts_ui_ev_current as *const () as usize,
+        ts_ui_ev_prevented as *const () as usize,
+        ts_ui_node_set_capture as *const () as usize,
+        ts_ui_node_release_capture as *const () as usize,
         ts_ui_ev_target_kind as *const () as usize,
         ts_ui_ev_stop as *const () as usize,
         ts_ui_ev_prevent as *const () as usize,
@@ -1166,6 +1216,8 @@ pub fn manifest_json() -> String {
             "void",
         ),
         f("evTarget", "ts_ui_ev_target", &[], "f64"),
+        f("evCurrent", "ts_ui_ev_current", &[], "handle:UiNode"),
+        f("evPrevented", "ts_ui_ev_prevented", &[], "bool"),
         f("evTargetKind", "ts_ui_ev_target_kind", &[], "string"),
         f("evStop", "ts_ui_ev_stop", &[], "void"),
         f("evPrevent", "ts_ui_ev_prevent", &[], "void"),
@@ -1234,6 +1286,16 @@ pub fn manifest_json() -> String {
         "functions": [
             node("focus", "ts_ui_node_focus", &[]),
             node("blur", "ts_ui_node_blur", &[]),
+            node(
+                "setPointerCapture",
+                "ts_ui_node_set_capture",
+                &[("pointerId", "f64")],
+            ),
+            node(
+                "releasePointerCapture",
+                "ts_ui_node_release_capture",
+                &[("pointerId", "f64")],
+            ),
             scroll("scrollTo", "ts_ui_node_scroll_to", "ScrollToOptions"),
             scroll("scrollBy", "ts_ui_node_scroll_by", "ScrollToOptions"),
             into_view,

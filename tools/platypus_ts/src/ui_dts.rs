@@ -204,9 +204,11 @@ const REACT_TYPES_TS: &str = "type ReactNode = ReactElementLike | string | numbe
 interface ReactElementLike {
   readonly __element: never;
 }
-interface Ref<T> {
+interface RefObject<T> {
   current: T;
 }
+/** What a `ref` prop takes, as React 19's `Ref<T>` (callback refs are typed on the `ref` attribute itself). */
+type Ref<T> = RefObject<T | null>;
 ";
 
 const REACT_NAMESPACE: &str = "declare namespace React {
@@ -317,6 +319,10 @@ class StyleValue {
   n: number = 0;
   s: string = \"\";
   isStr: boolean = false;
+  // `${big ? n.toFixed(1) : n}`: the text of whichever it holds.
+  toString(): string {
+    return this.isStr ? this.s : `${this.n}`;
+  }
 }
 function __sv_num(n: number): StyleValue {
   const v = new StyleValue();
@@ -396,6 +402,8 @@ fn field_init(f: &EventField) -> String {
         Init::Related => "Ui.evNum(9) === 0 ? null : new UiRelated()".into(),
         Init::Transfer => "__ui_transfer()".into(),
         Init::Dropped => "Ui.evKind() === \"dragend\" && Ui.evNum(4) === 1".into(),
+        Init::CurrentTarget => "Ui.evCurrent()".into(),
+        Init::Prevented => "Ui.evPrevented()".into(),
     }
 }
 
@@ -513,9 +521,19 @@ fn ui_event_class() -> String {
             "target" => "UiTarget",
             "relatedTarget" => "UiRelated | null",
             "dataTransfer" => "UiDataTransfer",
+            "currentTarget" => "UiNode",
             _ => f.ts,
         };
-        s += &format!("  {}: {} = {};\n", f.name, ty, field_init(f));
+        if matches!(f.init, Init::Prevented) {
+            s += &format!(
+                "  get {}(): {} {{\n    return {};\n  }}\n",
+                f.name,
+                ty,
+                field_init(f)
+            );
+        } else {
+            s += &format!("  {}: {} = {};\n", f.name, ty, field_init(f));
+        }
     }
     for (m, call) in EVENT_METHODS {
         s += &format!("  {m}(): void {{\n    {call};\n  }}\n");
@@ -602,7 +620,7 @@ mod tests {
         ));
         assert!(t.contains("type BorderStyle =\n  | \"none\"\n"));
         // `ref` receives what the Ui manifest's `UiNode` offers.
-        assert!(t.contains("interface PlatypusElement {\n  focus(): void;\n  blur(): void;\n  scrollTo(left: number, top: number): void;\n  scrollTo(options: ScrollToOptions): void;\n  scrollBy(left: number, top: number): void;\n  scrollBy(options: ScrollToOptions): void;\n  scrollIntoView(options?: ScrollIntoViewOptions): void;\n}"), "{t}");
+        assert!(t.contains("interface PlatypusElement {\n  focus(): void;\n  blur(): void;\n  setPointerCapture(pointerId: number): void;\n  releasePointerCapture(pointerId: number): void;\n  scrollTo(left: number, top: number): void;\n  scrollTo(options: ScrollToOptions): void;\n  scrollBy(left: number, top: number): void;\n  scrollBy(options: ScrollToOptions): void;\n  scrollIntoView(options?: ScrollIntoViewOptions): void;\n}"), "{t}");
         // The DOM's scroll options (M3-EVT-08 / 09 in compiled games).
         assert!(t.contains("interface ScrollIntoViewOptions {\n  block?: ScrollLogicalPosition;\n  inline?: ScrollLogicalPosition;\n  behavior?: ScrollBehavior;\n}"), "{t}");
         assert!(
@@ -651,8 +669,14 @@ mod tests {
     #[test]
     fn the_prelude_has_a_field_per_event_field_and_an_alias_per_interface() {
         let p = prelude();
+        // Every field, as a field or (read when asked) a getter.
         for f in EVENT_FIELDS {
-            assert!(p.contains(&format!("  {}: ", f.name)), "{}", f.name);
+            assert!(
+                p.contains(&format!("  {}: ", f.name))
+                    || p.contains(&format!("  get {}(): ", f.name)),
+                "{}",
+                f.name
+            );
         }
         for i in EVENT_INTERFACES {
             assert!(

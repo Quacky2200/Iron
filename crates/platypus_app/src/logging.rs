@@ -102,6 +102,7 @@ pub fn init(file: Option<PathBuf>) -> Option<PathBuf> {
     tracing_subscriber::registry()
         .with(file_layer)
         .with(console_layer)
+        .with(CaptureLayer.with_filter(filter()))
         .init();
     // Panics go to the log too (a GUI program's stderr is often nowhere).
     let default_hook = std::panic::take_hook();
@@ -112,9 +113,104 @@ pub fn init(file: Option<PathBuf>) -> Option<PathBuf> {
     opened.map(|(p, _)| p)
 }
 
+/// Gives the editor's console the log (`Editor.logSince`): every record, engine and scripts'
+/// `console.*` (target `script`), while the editor runs. The message, then any other fields as
+/// ` name=value`.
+struct CaptureLayer;
+
+#[derive(Default)]
+struct MessageVisitor {
+    message: String,
+    fields: String,
+}
+
+impl tracing::field::Visit for MessageVisitor {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        if field.name() == "message" {
+            self.message.push_str(value);
+        } else {
+            self.record_debug(field, &value);
+        }
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        use std::fmt::Write;
+        if field.name() == "message" {
+            let _ = write!(self.message, "{value:?}");
+        } else {
+            let _ = write!(self.fields, " {}={value:?}", field.name());
+        }
+    }
+}
+
+/// The record's message as the console shows it.
+fn record_text(event: &tracing::Event<'_>) -> String {
+    let mut visitor = MessageVisitor::default();
+    event.record(&mut visitor);
+    visitor.message + &visitor.fields
+}
+
+/// The editor's level numbers: 0 trace to 4 error.
+fn level_number(level: tracing::Level) -> u8 {
+    match level {
+        tracing::Level::TRACE => 0,
+        tracing::Level::DEBUG => 1,
+        tracing::Level::INFO => 2,
+        tracing::Level::WARN => 3,
+        tracing::Level::ERROR => 4,
+    }
+}
+
+impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        if !platypus_engine_api::editor::capturing() {
+            return;
+        }
+        let meta = event.metadata();
+        platypus_engine_api::editor::push_log(
+            level_number(*meta.level()),
+            meta.target(),
+            record_text(event),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // M5-EDT-25
+    #[test]
+    fn captured_records_keep_level_target_and_fields_in_order() {
+        use platypus_engine_api::editor;
+        let dir = std::env::temp_dir();
+        editor::enable(&dir, &dir);
+        let subscriber = tracing_subscriber::registry().with(CaptureLayer);
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::warn!(target: "script", "careful");
+            tracing::info!(count = 3, "loaded");
+        });
+        let got: Vec<_> = editor::editor_api::log_since(0.0)
+            .into_iter()
+            .map(|r| (r.level, r.target, r.message))
+            .collect();
+        editor::reset();
+        assert_eq!(
+            got,
+            vec![
+                (3.0, "script".to_string(), "careful".to_string()),
+                (
+                    2.0,
+                    module_path!().to_string(),
+                    "loaded count=3".to_string()
+                ),
+            ]
+        );
+    }
 
     // M5-APP-04
     #[test]

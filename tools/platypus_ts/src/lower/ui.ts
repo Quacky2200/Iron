@@ -67,12 +67,14 @@ function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): Reducer<S, A> {
 // A plain object type, not a class: a `{ current: T }` the program writes (`ref: { current:
 // PlatypusElement | null }` in its own interface) is then the same type, so the ref object itself goes
 // there, not a copy that the element would never be written into.
-type Ref<T> = { current: T };
+type RefObject<T> = { current: T };
+// React 19's `Ref<T>`: what a `ref` prop takes (the object form; callback refs are attribute-only).
+type Ref<T> = RefObject<T | null>;
 
-function useRef<T>(init: T): Ref<T> {
-  const r: Ref<T> = { current: init };
+function useRef<T>(init: T): RefObject<T> {
+  const r: RefObject<T> = { current: init };
   const slot = Ui.stateNew(r);
-  return Ui.load<Ref<T>>(slot);
+  return Ui.load<RefObject<T>>(slot);
 }
 
 function useMemo<T>(f: () => T): T {
@@ -107,12 +109,17 @@ function useContext<T>(c: Context<T>): T {
   return Ui.load<T>(slot);
 }
 
-function useImperativeHandle<T>(ref: Ref<T | null>, create: () => T): void {
+// A component's `ref` prop may be left out: then there is nothing to fill.
+function useImperativeHandle<T>(ref: Ref<T> | undefined, create: () => T): void {
   Ui.effect((): void => {
     Ui.runEffect((): (() => void) => {
-      ref.current = create();
+      if (ref !== undefined) {
+        ref.current = create();
+      }
       return (): void => {
-        ref.current = null;
+        if (ref !== undefined) {
+          ref.current = null;
+        }
       };
     });
   });

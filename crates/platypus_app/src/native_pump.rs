@@ -134,7 +134,7 @@ pub fn configure_engine(manifest: &info::Manifest, info: &info::Info) {
         company_name: manifest.company.clone(),
         identifier: manifest.identifier.clone(),
         engine_version: env!("CARGO_PKG_VERSION").into(),
-        is_editor: false,
+        is_editor: platypus_engine_api::editor::enabled(),
         run_in_background: manifest.run_in_background,
         target_frame_rate: -1,
         args: info.0["app"]["args"]

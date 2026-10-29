@@ -43,8 +43,12 @@ pub const HOOKS: &[Func] = &[
         "useLayoutEffect",
         "(f: () => void | (() => void), deps?: readonly unknown[]): void",
     ),
-    r("useRef", "<T>(init: T): Ref<T>"),
-    r("useRef", "<T>(init: null): Ref<T | null>"),
+    r("useRef", "<T>(init: T): RefObject<T>"),
+    r("useRef", "<T>(init: null): RefObject<T | null>"),
+    r(
+        "useImperativeHandle",
+        "<T>(ref: Ref<T> | undefined, create: () => T, deps?: readonly unknown[]): void",
+    ),
     r("useMemo", "<T>(f: () => T, deps: readonly unknown[]): T"),
     r(
         "useCallback",
@@ -90,7 +94,7 @@ pub const CREATE_ROOT: Func = Func {
 };
 
 /// The type names of `react` (everything else of `react` is a function of [`HOOKS`]).
-pub const REACT_TYPES: &[&str] = &["ReactNode"];
+pub const REACT_TYPES: &[&str] = &["ReactNode", "Ref", "RefObject"];
 
 /// The type names of `@platypus/react` besides the event interfaces, the element components and
 /// [`CREATE_ROOT`].

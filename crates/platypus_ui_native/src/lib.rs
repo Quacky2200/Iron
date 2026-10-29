@@ -315,20 +315,24 @@ impl Runtime {
                 .insert(start, event.strings.first().cloned().unwrap_or_default());
         }
         let capture = format!("{}:capture", event.kind);
-        let handlers = |rt: &Runtime, i: usize, name: &str| -> Vec<Handler> {
+        // The element's handlers for `name`, with the element as `currentTarget`.
+        let handlers = |rt: &Runtime, i: usize, name: &str, event: &mut Event| -> Vec<Handler> {
             match &rt.inst(i).kind {
-                Kind::Host { props, .. } => props
-                    .handlers
-                    .iter()
-                    .filter(|(n, _)| n == name)
-                    .map(|(_, h)| h.clone())
-                    .collect(),
+                Kind::Host { props, node, .. } => {
+                    event.current = Some(*node);
+                    props
+                        .handlers
+                        .iter()
+                        .filter(|(n, _)| n == name)
+                        .map(|(_, h)| h.clone())
+                        .collect()
+                }
                 _ => Vec::new(),
             }
         };
         'phases: {
             for &i in chain.iter().rev() {
-                for h in handlers(self, i, &capture) {
+                for h in handlers(self, i, &capture, event) {
                     h(event);
                 }
                 if event.stopped {
@@ -340,7 +344,7 @@ impl Runtime {
                 let name = event.kind.clone();
                 let last = if event.bubbles { chain.len() } else { 1 };
                 for &i in chain.iter().take(last) {
-                    for h in handlers(self, i, &name) {
+                    for h in handlers(self, i, &name, event) {
                         h(event);
                     }
                     if event.stopped {
@@ -349,6 +353,8 @@ impl Runtime {
                 }
             }
         }
+        // As in the DOM, `currentTarget` is null once the dispatch is over.
+        event.current = None;
         if is_field && event.kind == "input" {
             self.pending_restore.push(start);
         }

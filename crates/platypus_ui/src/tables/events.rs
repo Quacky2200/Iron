@@ -33,6 +33,11 @@ pub enum Init {
     Transfer,
     /// `dragend` of a drag that was dropped somewhere that accepted it (`detail` is 1).
     Dropped,
+    /// The element whose handler runs (`currentTarget`), as a `PlatypusElement`.
+    CurrentTarget,
+    /// Whether a handler called `preventDefault()` so far: read when asked (a getter), since a
+    /// handler can prevent it after the event object was made.
+    Prevented,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -57,6 +62,8 @@ pub const EVENT_FIELDS: &[EventField] = &[
         "{ readonly id: number; readonly value: string; readonly type: string }",
         Target,
     ),
+    f("currentTarget", "PlatypusElement", CurrentTarget),
+    f("defaultPrevented", "boolean", Prevented),
     f("clientX", "number", Num(0)),
     f("clientY", "number", Num(1)),
     f("x", "number", Num(0)),
@@ -108,7 +115,7 @@ pub const EVENT_INTERFACES: &[EventInterface] = &[
     EventInterface {
         name: "PlatypusEvent",
         extends: None,
-        fields: &["type", "target"],
+        fields: &["type", "target", "currentTarget", "defaultPrevented"],
     },
     EventInterface {
         name: "PlatypusPointerEvent",

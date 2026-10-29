@@ -186,6 +186,84 @@ fn pixel_aspect(c: CameraRef) -> f64 {
     crate::screen::screen_api::aspect() * (rect[2] / rect[3])
 }
 
+/// A camera as the screen sees it: where it is, its axes and its part of the screen in UI
+/// pixels, for the conversions between screen and world points.
+struct View {
+    position: platypus_math::V3,
+    forward: platypus_math::V3,
+    right: platypus_math::V3,
+    up: platypus_math::V3,
+    orthographic: bool,
+    size: f64,
+    fov: f64,
+    near: f64,
+    /// x, y, width, height in UI pixels (width and height at least 1e-6).
+    pixels: [f64; 4],
+}
+
+impl View {
+    fn of(c: CameraRef) -> Option<View> {
+        use platypus_math::{V3, v3};
+        use platypus_scene::api::scene_api as scene;
+        let d = CAMERAS.with(|v| v.borrow().get((c.0 as usize).checked_sub(1)?).cloned()?)?;
+        let rot = scene::rotation(d.object);
+        let [x, y, w, h] = View::pixels(d.rect);
+        Some(View {
+            position: scene::position(d.object),
+            forward: rot.rotate(v3(0.0, 0.0, -1.0)),
+            right: rot.rotate(V3::RIGHT),
+            up: rot.rotate(V3::UP),
+            orthographic: d.orthographic,
+            size: f64::from(d.orthographic_size),
+            fov: f64::from(d.fov),
+            near: f64::from(d.near),
+            pixels: [x, y, w.max(1e-6), h.max(1e-6)],
+        })
+    }
+
+    /// A camera `rect` (0 to 1 of the screen) in UI pixels.
+    fn pixels(rect: [f64; 4]) -> [f64; 4] {
+        let sw = f64::from(crate::screen::screen_api::width());
+        let sh = f64::from(crate::screen::screen_api::height());
+        [rect[0] * sw, rect[1] * sh, rect[2] * sw, rect[3] * sh]
+    }
+
+    /// Half the view's height and width at `depth` in front of the camera.
+    fn half_extent(&self, depth: f64) -> (f64, f64) {
+        let half_h = if self.orthographic {
+            self.size
+        } else {
+            (self.fov * std::f64::consts::PI / 360.0).tan() * depth
+        };
+        (half_h, half_h * self.pixels[2] / self.pixels[3])
+    }
+
+    fn screen_to_world(&self, x: f64, y: f64, depth: f64) -> platypus_math::V3 {
+        let [px, py, w, h] = self.pixels;
+        // Across the camera's area in -1..1, y up.
+        let nx = ((x - px) / w) * 2.0 - 1.0;
+        let ny = 1.0 - ((y - py) / h) * 2.0;
+        let (half_h, half_w) = self.half_extent(depth);
+        self.position
+            .add(self.forward.scale(depth))
+            .add(self.right.scale(nx * half_w))
+            .add(self.up.scale(ny * half_h))
+    }
+
+    fn world_to_screen(&self, p: platypus_math::V3) -> platypus_math::V3 {
+        let d = p.sub(self.position);
+        let depth = d.dot(self.forward);
+        let (half_h, half_w) = self.half_extent(depth);
+        let (nx, ny) = if half_h.abs() < 1e-12 {
+            (0.0, 0.0)
+        } else {
+            (d.dot(self.right) / half_w, d.dot(self.up) / half_h)
+        };
+        let [px, py, w, h] = self.pixels;
+        platypus_math::v3(px + (nx + 1.0) / 2.0 * w, py + (1.0 - ny) / 2.0 * h, depth)
+    }
+}
+
 fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
     bump();
     CAMERAS.with(|v| {
@@ -199,14 +277,16 @@ fn with<R>(c: CameraRef, f: impl FnOnce(&mut CameraData) -> R) -> Option<R> {
     handles(GameObject = ObjectId, Camera = CameraRef, Texture = TextureRef),
     values(
         Color = Rgba [r: f64, g: f64, b: f64, a: f64],
+        Vector2 = V2 [x: f64, y: f64],
         Vector3 = V3 [x: f64, y: f64, z: f64],
-        Rect = Rect [x: f64, y: f64, width: f64, height: f64]
+        Rect = Rect [x: f64, y: f64, width: f64, height: f64],
+        Ray = Ray [ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64]
     )
 )]
 pub mod camera_api {
-    use super::{CAMERAS, CameraData, CameraRef, TextureRef, pixel_aspect, with};
+    use super::{CAMERAS, CameraData, CameraRef, TextureRef, View, pixel_aspect, with};
     use crate::color::Rgba;
-    use platypus_math::{Rect, V3};
+    use platypus_math::{Ray, Rect, V2, V3};
     use platypus_scene::ObjectId;
 
     /// How many cameras exist.
@@ -415,47 +495,42 @@ pub mod camera_api {
         /// the camera.
         #[like]
         pub fn screen_to_world_point(self, p: V3) -> V3 {
-            use platypus_scene::api::scene_api as scene;
-            let Some((object, rect, orthographic, size, fov)) = with(self, |d| {
-                (
-                    d.object,
-                    d.rect,
-                    d.orthographic,
-                    f64::from(d.orthographic_size),
-                    f64::from(d.fov),
-                )
-            }) else {
-                return V3::ZERO;
+            View::of(self).map_or(V3::ZERO, |v| v.screen_to_world(p.x, p.y, p.z))
+        }
+
+        /// A world point on the screen (UI pixels from the top-left), `z` being its distance in
+        /// front of the camera (behind it: zero or less).
+        #[like]
+        pub fn world_to_screen_point(self, p: V3) -> V3 {
+            View::of(self).map_or(V3::ZERO, |v| v.world_to_screen(p))
+        }
+
+        /// The ray from the camera's near plane through a screen point (UI pixels): what is
+        /// under the pointer.
+        #[like]
+        pub fn screen_point_to_ray(self, p: V2) -> Ray {
+            use platypus_math::shapes::ray_api::create as ray;
+            let Some(v) = View::of(self) else {
+                return ray(V3::ZERO, platypus_math::v3(0.0, 0.0, -1.0));
             };
-            let (screen_w, screen_h) = (
-                f64::from(crate::screen::screen_api::width()),
-                f64::from(crate::screen::screen_api::height()),
-            );
-            // The camera's area of the screen in UI pixels, then the point across it in -1..1 (y up).
-            let w = (rect[2] * screen_w).max(1e-6);
-            let h = (rect[3] * screen_h).max(1e-6);
-            let nx = ((p.x - rect[0] * screen_w) / w) * 2.0 - 1.0;
-            let ny = 1.0 - ((p.y - rect[1] * screen_h) / h) * 2.0;
-            let aspect = w / h;
-            let pos = scene::position(object);
-            let rot = scene::rotation(object);
-            let f = rot.rotate(V3 {
-                x: 0.0,
-                y: 0.0,
-                z: -1.0,
-            });
-            let r = rot.rotate(V3::RIGHT);
-            let u = rot.rotate(V3::UP);
-            let half_h = if orthographic {
-                size
+            let origin = v.screen_to_world(p.x, p.y, v.near);
+            let direction = if v.orthographic {
+                v.forward
             } else {
-                (fov * std::f64::consts::PI / 360.0).tan() * p.z
+                origin.sub(v.position)
             };
-            let half_w = half_h * aspect;
-            V3 {
-                x: pos.x + f.x * p.z + r.x * nx * half_w + u.x * ny * half_h,
-                y: pos.y + f.y * p.z + r.y * nx * half_w + u.y * ny * half_h,
-                z: pos.z + f.z * p.z + r.z * nx * half_w + u.z * ny * half_h,
+            ray(origin, direction)
+        }
+
+        /// The camera's part of the screen in UI pixels (`rect` times the screen size).
+        #[property]
+        pub fn pixel_rect(self) -> Rect {
+            let [x, y, w, h] = View::pixels(with(self, |d| d.rect).unwrap_or([0.0, 0.0, 1.0, 1.0]));
+            Rect {
+                x,
+                y,
+                width: w,
+                height: h,
             }
         }
 
@@ -615,5 +690,54 @@ pub mod camera_api {
             })
             .unwrap_or(0.0)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platypus_math::v3;
+
+    // M9-API-1647
+    //
+    // `worldToScreenPoint` is the inverse of `screenToWorldPoint` (perspective and orthographic,
+    // a camera in the right half of an 800x600 window), `screenPointToRay` starts on the near plane
+    // and goes through the point, and `pixelRect` is `rect` in UI pixels.
+    #[test]
+    fn world_and_screen_points_and_rays_agree() {
+        reset();
+        crate::screen::update(800, 600, 1.0);
+        let mut scene = platypus_scene::Scene::new();
+        let go = scene.create("Camera");
+        let _scope = platypus_scene::api::enter(&mut scene);
+        platypus_scene::api::scene_api::set_position(go, v3(1.0, 2.0, 10.0));
+        let cam = CameraRef::attach(go);
+        cam.set_rect_parts(0.5, 0.0, 0.5, 1.0);
+        let r = cam.pixel_rect();
+        assert_eq!((r.x, r.y, r.width, r.height), (400.0, 0.0, 400.0, 600.0));
+        for ortho in [false, true] {
+            cam.set_orthographic(ortho);
+            let p = v3(450.0, 120.0, 7.0);
+            let w = cam.screen_to_world_point(p);
+            let back = cam.world_to_screen_point(w);
+            assert!(
+                (back.x - p.x).abs() < 1e-6 && (back.y - p.y).abs() < 1e-6,
+                "{back:?}"
+            );
+            assert!((back.z - 7.0).abs() < 1e-9);
+            let ray = cam.screen_point_to_ray(platypus_math::v2(450.0, 120.0));
+            let n = f64::from(cam.near_clip_plane());
+            let near = cam.screen_to_world_point(v3(450.0, 120.0, n));
+            assert!((ray.ox - near.x).abs() < 1e-9 && (ray.oz - near.z).abs() < 1e-9);
+            // Along the ray, from the near plane to depth 7, is the point at depth 7.
+            let along = (7.0 - n) / -ray.dz;
+            assert!((ray.ox + ray.dx * along - w.x).abs() < 1e-6, "{ortho}");
+            assert!((ray.oy + ray.dy * along - w.y).abs() < 1e-6, "{ortho}");
+        }
+        // The middle of its part of the screen is straight ahead.
+        cam.set_orthographic(false);
+        let ahead = cam.world_to_screen_point(v3(1.0, 2.0, 0.0));
+        assert_eq!((ahead.x, ahead.y, ahead.z), (600.0, 300.0, 10.0));
+        reset();
     }
 }

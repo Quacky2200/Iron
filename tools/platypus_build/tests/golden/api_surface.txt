@@ -313,6 +313,7 @@ declare class Camera :: orthographicSize: number;
 declare class Camera :: readonly exposure: number;
 declare class Camera :: readonly gameObject: GameObject;
 declare class Camera :: readonly physicalExposure: number;
+declare class Camera :: readonly pixelRect: Rect;
 declare class Camera :: readonly rectHeight: number;
 declare class Camera :: readonly rectWidth: number;
 declare class Camera :: readonly rectX: number;
@@ -322,6 +323,7 @@ declare class Camera :: readonly transform: Transform;
 declare class Camera :: rect: Rect;
 declare class Camera :: resetExposure(): void;
 declare class Camera :: sceneGrid: boolean;
+declare class Camera :: screenPointToRay(p: Vector2Like): Ray;
 declare class Camera :: screenToWorldPoint(p: Vector3Like): Vector3;
 declare class Camera :: set layerCullDistances(v: readonly number[]);
 declare class Camera :: setRect(x: number, y: number, width: number, height: number): void;
@@ -330,6 +332,7 @@ declare class Camera :: static attach(object: GameObject): Camera;
 declare class Camera :: static findOn(object: GameObject): Camera;
 declare class Camera :: static readonly main: Camera | undefined;
 declare class Camera :: targetTexture: Texture;
+declare class Camera :: worldToScreenPoint(p: Vector3Like): Vector3;
 declare class CameraFollow
 declare class CameraFollow :: getComponent<T>(cls: { prototype: T }): T | undefined;
 declare class CameraFollow :: lookAtTarget: boolean;
@@ -1758,11 +1761,12 @@ declare function setTimeout(callback: (arg?: number) => void, ms?: number): numb
 declare function useCallback<F extends (...args: any[]) => any>(f: F, deps: readonly unknown[]): F;
 declare function useContext<T>(c: { Provider: unknown } & { __t?: T }): T;
 declare function useEffect(f: () => void | (() => void), deps?: readonly unknown[]): void;
+declare function useImperativeHandle<T>(ref: Ref<T> | undefined, create: () => T, deps?: readonly unknown[]): void;
 declare function useLayoutEffect(f: () => void | (() => void), deps?: readonly unknown[]): void;
 declare function useMemo<T>(f: () => T, deps: readonly unknown[]): T;
 declare function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): [S, (a: A) => void];
-declare function useRef<T>(init: T): Ref<T>;
-declare function useRef<T>(init: null): Ref<T | null>;
+declare function useRef<T>(init: T): RefObject<T>;
+declare function useRef<T>(init: null): RefObject<T | null>;
 declare function useState<T>(init: T | (() => T)): [T, (v: T | ((prev: T) => T)) => void];
 declare function useSyncExternalStore<T>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => T): T;
 declare interface AnimatorStateInfo
@@ -1847,6 +1851,12 @@ declare interface InputEvent :: value: number;
 declare interface LodLevel
 declare interface LodLevel :: renderers: MeshRenderer[];
 declare interface LodLevel :: screenRelativeTransitionHeight: number;
+declare interface LogRecord
+declare interface LogRecord :: level: number;
+declare interface LogRecord :: message: string;
+declare interface LogRecord :: seq: number;
+declare interface LogRecord :: target: string;
+declare interface LogRecord :: timeMs: number;
 declare interface MeshData
 declare interface MeshData :: bindposes?: readonly Matrix4x4[];
 declare interface MeshData :: boneWeights?: readonly BoneWeights[];
@@ -1871,6 +1881,10 @@ declare interface ProceduralSky :: sunColor?: Color;
 declare interface ProceduralSky :: sunDirection?: Vector3Like | null;
 declare interface ProceduralSky :: sunSize?: number;
 declare interface ProceduralSky :: zenith?: Color;
+declare interface ProjectEntry
+declare interface ProjectEntry :: dir: boolean;
+declare interface ProjectEntry :: name: string;
+declare interface ProjectEntry :: size: number;
 declare interface Resolution
 declare interface Resolution :: height: number;
 declare interface Resolution :: refreshRate: number;
@@ -2012,6 +2026,7 @@ declare module "@platypus/engine" :: export import CursorLockMode = globalThis.C
 declare module "@platypus/engine" :: export import DateTime = globalThis.DateTime;
 declare module "@platypus/engine" :: export import Debug = globalThis.Debug;
 declare module "@platypus/engine" :: export import EdgeCollider2D = globalThis.EdgeCollider2D;
+declare module "@platypus/engine" :: export import Editor = globalThis.Editor;
 declare module "@platypus/engine" :: export import Emitter = globalThis.Emitter;
 declare module "@platypus/engine" :: export import ExposureMetering = globalThis.ExposureMetering;
 declare module "@platypus/engine" :: export import FilterMode = globalThis.FilterMode;
@@ -2042,6 +2057,7 @@ declare module "@platypus/engine" :: export import LineRenderer2D = globalThis.L
 declare module "@platypus/engine" :: export import LoadSceneMode = globalThis.LoadSceneMode;
 declare module "@platypus/engine" :: export import LodLevel = globalThis.LodLevel;
 declare module "@platypus/engine" :: export import Log = globalThis.Log;
+declare module "@platypus/engine" :: export import LogRecord = globalThis.LogRecord;
 declare module "@platypus/engine" :: export import Material = globalThis.Material;
 declare module "@platypus/engine" :: export import Mathf = globalThis.Mathf;
 declare module "@platypus/engine" :: export import Matrix4x4 = globalThis.Matrix4x4;
@@ -2075,6 +2091,7 @@ declare module "@platypus/engine" :: export import PrimitiveMesh = globalThis.Pr
 declare module "@platypus/engine" :: export import PrimitiveType = globalThis.PrimitiveType;
 declare module "@platypus/engine" :: export import Primitives = globalThis.Primitives;
 declare module "@platypus/engine" :: export import ProceduralSky = globalThis.ProceduralSky;
+declare module "@platypus/engine" :: export import ProjectEntry = globalThis.ProjectEntry;
 declare module "@platypus/engine" :: export import QualitySettings = globalThis.QualitySettings;
 declare module "@platypus/engine" :: export import Quaternion = globalThis.Quaternion;
 declare module "@platypus/engine" :: export import QuaternionLike = globalThis.QuaternionLike;
@@ -2184,12 +2201,15 @@ declare module "@platypus/react" :: export import createRoot = globalThis.create
 declare module "react"
 declare module "react" :: export import Fragment = globalThis.Fragment;
 declare module "react" :: export import ReactNode = globalThis.ReactNode;
+declare module "react" :: export import Ref = globalThis.Ref;
+declare module "react" :: export import RefObject = globalThis.RefObject;
 declare module "react" :: export import createContext = globalThis.createContext;
 declare module "react" :: export import forwardRef = globalThis.forwardRef;
 declare module "react" :: export import memo = globalThis.memo;
 declare module "react" :: export import useCallback = globalThis.useCallback;
 declare module "react" :: export import useContext = globalThis.useContext;
 declare module "react" :: export import useEffect = globalThis.useEffect;
+declare module "react" :: export import useImperativeHandle = globalThis.useImperativeHandle;
 declare module "react" :: export import useLayoutEffect = globalThis.useLayoutEffect;
 declare module "react" :: export import useMemo = globalThis.useMemo;
 declare module "react" :: export import useReducer = globalThis.useReducer;
@@ -2295,6 +2315,16 @@ declare namespace Debug :: function log(message: string): void;
 declare namespace Debug :: function logError(message: string): void;
 declare namespace Debug :: function logException(message: string): void;
 declare namespace Debug :: function logWarning(message: string): void;
+declare namespace Editor
+declare namespace Editor :: const isAvailable: boolean;
+declare namespace Editor :: const lastError: string;
+declare namespace Editor :: const project: string;
+declare namespace Editor :: function copyIn(sources: readonly string[], dir: string): string[];
+declare namespace Editor :: function listDir(path: string): ProjectEntry[];
+declare namespace Editor :: function logSince(after: number): LogRecord[];
+declare namespace Editor :: function move(path: string, dir: string): string;
+declare namespace Editor :: function openFile(path: string, line?: number, col?: number): void;
+declare namespace Editor :: function openFile(path: string, options?: { line?: number; col?: number }): void;
 declare namespace ExposureMetering
 declare namespace ExposureMetering :: function name(index: number): ExposureMetering;
 declare namespace ExposureMetering :: function parse(name: string): number;
@@ -2914,13 +2944,17 @@ interface PlatypusDroppedFile :: readonly path: string;
 interface PlatypusElement
 interface PlatypusElement :: blur(): void;
 interface PlatypusElement :: focus(): void;
+interface PlatypusElement :: releasePointerCapture(pointerId: number): void;
 interface PlatypusElement :: scrollBy(left: number, top: number): void;
 interface PlatypusElement :: scrollBy(options: ScrollToOptions): void;
 interface PlatypusElement :: scrollIntoView(options?: ScrollIntoViewOptions): void;
 interface PlatypusElement :: scrollTo(left: number, top: number): void;
 interface PlatypusElement :: scrollTo(options: ScrollToOptions): void;
+interface PlatypusElement :: setPointerCapture(pointerId: number): void;
 interface PlatypusEvent
 interface PlatypusEvent :: preventDefault(): void;
+interface PlatypusEvent :: readonly currentTarget: PlatypusElement;
+interface PlatypusEvent :: readonly defaultPrevented: boolean;
 interface PlatypusEvent :: readonly target: { readonly id: number; readonly value: string; readonly type: string };
 interface PlatypusEvent :: readonly type: string;
 interface PlatypusEvent :: stopPropagation(): void;
@@ -2965,6 +2999,8 @@ interface PlatypusProps :: dir?: string;
 interface PlatypusProps :: disabled?: boolean;
 interface PlatypusProps :: draggable?: boolean;
 interface PlatypusProps :: fill?: string;
+interface PlatypusProps :: fontSize?: number | string;
+interface PlatypusProps :: fontWeight?: number | string;
 interface PlatypusProps :: height?: number | string;
 interface PlatypusProps :: id?: string;
 interface PlatypusProps :: key?: string | number;
@@ -3026,6 +3062,7 @@ interface PlatypusProps :: strokeLinejoin?: string;
 interface PlatypusProps :: strokeWidth?: number | string;
 interface PlatypusProps :: style?: PlatypusStyle;
 interface PlatypusProps :: tabIndex?: number;
+interface PlatypusProps :: textAnchor?: string;
 interface PlatypusProps :: title?: string;
 interface PlatypusProps :: transform?: string;
 interface PlatypusProps :: type?: string;
@@ -3324,8 +3361,8 @@ interface PlatypusWheelEvent extends PlatypusPointerEvent :: readonly deltaX: nu
 interface PlatypusWheelEvent extends PlatypusPointerEvent :: readonly deltaY: number;
 interface ReactElementLike
 interface ReactElementLike :: readonly __element: never;
-interface Ref<T>
-interface Ref<T> :: current: T;
+interface RefObject<T>
+interface RefObject<T> :: current: T;
 interface ScrollIntoViewOptions
 interface ScrollIntoViewOptions :: behavior?: ScrollBehavior;
 interface ScrollIntoViewOptions :: block?: ScrollLogicalPosition;
@@ -3345,6 +3382,7 @@ type NumberList = readonly number[] | Float32Array | Float64Array | Uint32Array 
 type Overflow = "visible" | "hidden" | "clip" | "scroll" | "auto";
 type QuaternionLike = { x: number; y: number; z: number; w: number };
 type ReactNode = ReactElementLike | string | number | boolean | null | undefined | ReactNode[];
+type Ref<T> = RefObject<T | null>;
 type ScrollBehavior = "auto" | "instant" | "smooth";
 type ScrollLogicalPosition = "start" | "center" | "end" | "nearest";
 type Vector2Like = { x: number; y: number };

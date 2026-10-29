@@ -23,6 +23,7 @@ pub mod clock;
 pub mod color;
 pub mod cursor;
 pub mod datetime;
+pub mod editor;
 pub mod gizmos;
 pub mod input;
 pub mod layers;
@@ -86,6 +87,7 @@ pub fn manifests() -> Vec<String> {
         ui_resources::ui_resources_api::MANIFEST.to_json(),
         ui_scale::ui_scale_api::MANIFEST.to_json(),
         window::window_api::MANIFEST.to_json(),
+        editor::editor_api::MANIFEST.to_json(),
         spline::spline_api::MANIFEST.to_json(),
         spline::spline_animate_api::MANIFEST.to_json(),
     ]);

@@ -110,6 +110,10 @@ impl App {
             .or(self.pointer_px.map(|(x, y)| (f64::from(x), f64::from(y))))
             .map(|(x, y)| ((x / scale) as f32, (y / scale) as f32));
         for input in self.file_drag.inputs(cursor) {
+            if let Input::FileDrop { files } = &input {
+                // The editor may copy what was dropped (and nothing else from outside).
+                platypus_engine_api::editor::allow_sources(files);
+            }
             self.handle_on(Surface::Screen, input);
         }
     }

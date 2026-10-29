@@ -694,3 +694,67 @@ function Themed(): UiElement {
 export function themedApp(): UiElement {
   return <Themed />;
 }
+
+// What the editor's panels use of an event: `currentTarget` (the element whose handler runs),
+// `defaultPrevented` read after a handler prevented it, and pointer capture through it.
+function CaptureBox(): UiElement {
+  const outer = useRef<PlatypusElement>(null);
+  return (
+    <box
+      ref={outer}
+      onPointerDown={(e: PlatypusPointerEvent) => {
+        note(`down:${e.currentTarget === outer.current}`);
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerUp={(e: PlatypusPointerEvent) => e.currentTarget.releasePointerCapture(e.pointerId)}
+      onKeyDown={(e: PlatypusKeyboardEvent) => note(`outer:${e.defaultPrevented}`)}
+    >
+      <box
+        tabIndex={0}
+        onKeyDown={(e: PlatypusKeyboardEvent) => {
+          note(`before:${e.defaultPrevented}`);
+          e.preventDefault();
+          note(`after:${e.defaultPrevented}`);
+        }}
+      />
+    </box>
+  );
+}
+
+export function captureApp(): UiElement {
+  return <CaptureBox />;
+}
+
+// React 19's `ref` prop on a function component (`Ref<T>`, left out by one of them) filled by
+// `useImperativeHandle`, and a state of a literal union that may be null.
+interface PickerHandle {
+  size(): number;
+}
+
+function Picker({ ref }: { ref?: Ref<PickerHandle> }): UiElement {
+  const [pick, setPick] = useState<"a" | "b" | null>(null);
+  useImperativeHandle(ref, () => ({ size: () => 3 }), []);
+  return (
+    <box onClick={() => setPick(pick === null ? "a" : pick === "a" ? "b" : null)}>
+      <text>{pick ?? "none"}</text>
+    </box>
+  );
+}
+
+function PickerParent(): UiElement {
+  const h = useRef<PickerHandle>(null);
+  useEffect(() => {
+    const api = h.current;
+    note(`size:${api === null ? -1 : api.size()}`);
+  }, []);
+  return (
+    <box>
+      <Picker ref={h} />
+      <Picker />
+    </box>
+  );
+}
+
+export function pickerApp(): UiElement {
+  return <PickerParent />;
+}

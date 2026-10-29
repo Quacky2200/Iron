@@ -173,6 +173,8 @@ pub struct Event {
     pub data: Vec<f64>,
     pub strings: Vec<String>,
     pub prevented: bool,
+    /// The element whose handlers are running (`currentTarget`); set by the dispatch.
+    pub current: Option<NodeId>,
     pub(crate) stopped: bool,
 }
 
@@ -185,6 +187,7 @@ impl Event {
             data: Vec::new(),
             strings: Vec::new(),
             prevented: false,
+            current: None,
             stopped: false,
         }
     }

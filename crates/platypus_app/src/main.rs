@@ -106,6 +106,9 @@ struct Args {
     /// `--renderer vulkan|gles|cpu|auto`: the renderer, over the project's `renderer` and the
     /// bundle's tier (`host.rs`).
     renderer: platypus_core::project::Renderer,
+    /// `--project <folder>`: the game is the editor (`editor/`), working on this project
+    /// (`Editor.*`, `Application.isEditor`).
+    project: Option<PathBuf>,
 }
 
 impl Args {
@@ -146,7 +149,8 @@ fn parse_args() -> Result<Args> {
 /// Parses the arguments after the program name. The game is the first argument that isn't
 /// an option, or the current folder when there's none.
 fn parse_args_from(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Args> {
-    let usage = "usage: platypus-app [game folder | game.pbundle | main.ts] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--renderer vulkan|gles|cpu] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [-- script args]
+    let usage = "usage: platypus-app [game folder | game.pbundle | main.ts] [--screenshot out.png] [--frames N] [--cook] [--fps | --no-fps] [--renderer vulkan|gles|cpu] [--video-settings-prompt | --no-video-settings-prompt] [--data folder] [--project folder] [-- script args]
+       platypus-app editor --project <folder> (the editor, working on a project folder)
        platypus-app [game] --bench [--bench-input spec.json] [--bench-out out.json] [--warmup N] [--frames N] [--fixed-dt seconds] [--size WxH]
        platypus-app --licenses (prints the third-party notices built into the program and exits)
 games are built with `platypus-build build`; arguments after -- reach scripts as Application.args;
@@ -167,6 +171,7 @@ games are built with `platypus-build build`; arguments after -- reach scripts as
         video_prompt: None,
         video_dialog: false,
         renderer: platypus_core::project::Renderer::Auto,
+        project: None,
     };
     let mut frames_given = false;
     while let Some(arg) = args.next() {
@@ -177,6 +182,7 @@ games are built with `platypus-build build`; arguments after -- reach scripts as
         }
         match arg.to_str() {
             Some("--data") => parsed.data = Some(args.next().context(usage)?.into()),
+            Some("--project") => parsed.project = Some(args.next().context(usage)?.into()),
             Some("--screenshot") => parsed.screenshot = Some(args.next().context(usage)?.into()),
             Some("--cook") => parsed.cook = true,
             Some(crash_dialog::DIALOG_FLAG) => {
@@ -284,6 +290,11 @@ fn run() -> Result<()> {
         Ok((_, root)) => Some(root),
         Err(_) => None,
     };
+    // The editor keeps the log for its console from the start.
+    if let Some(project) = &args.project {
+        let ui_root = manifest_dir.clone().unwrap_or_else(|| args.game.clone());
+        platypus_engine_api::editor::enable(project, &ui_root);
+    }
     let manifest = manifest_dir.as_deref().map(info::Manifest::load);
     let settings = manifest
         .as_ref()
@@ -1426,6 +1437,12 @@ impl App {
                         behavior,
                     },
                 ),
+                NodeCommand::SetPointerCapture(id) => {
+                    (id, Input::SetPointerCapture(platypus_core::NodeId(id)))
+                }
+                NodeCommand::ReleasePointerCapture(id) => {
+                    (id, Input::ReleasePointerCapture(platypus_core::NodeId(id)))
+                }
                 NodeCommand::DragImage(..) => unreachable!("handled above"),
             };
             let surface = self.surface_of(platypus_core::NodeId(id));
@@ -2737,6 +2754,11 @@ mod tests {
         assert!(parse(&["a", "b"]).is_err());
         assert!(parse(&["--nope"]).is_err());
         assert!(parse(&["--cook", "examples/world"]).unwrap().cook);
+        // The editor: the game is its UI, `--project` the folder it works on.
+        let args = parse(&["editor", "--project", "examples/arcade"]).unwrap();
+        assert_eq!(args.game, PathBuf::from("editor"));
+        assert_eq!(args.project, Some(PathBuf::from("examples/arcade")));
+        assert!(parse(&["editor", "--project"]).is_err());
     }
 
     /// A mono 16-bit WAV of a sine, `n` samples at 8 kHz.
