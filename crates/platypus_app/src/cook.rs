@@ -641,7 +641,7 @@ pub fn cook_game(root: &Path) -> CookReport {
             "png" | "jpg" | "jpeg" => {
                 cook_texture_file(root, &src, &importer).map(|_| report.textures += 1)
             }
-            "glb" | "gltf" => cook_model_file(root, &src).map(|_| report.models += 1),
+            "glb" | "gltf" | "fbx" => cook_model_file(root, &src).map(|_| report.models += 1),
             _ => continue,
         };
         if let Err(e) = result {

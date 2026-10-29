@@ -44,6 +44,8 @@ sys-locale = "0.3.2"
 serde_json = "1.0.154"
 platypus_pack = { path = "../platypus_pack" }
 gltf = { version = "1.4.1", default-features = false, features = ["utils", "names", "KHR_materials_unlit", "KHR_materials_emissive_strength"] }
+# FBX models (`models_fbx.rs`): bindings to the ufbx C loader (MIT OR Unlicense), built with `cc`.
+ufbx = "0.11"
 
 [features]
 # ANGLE linked into the program (Windows), not loaded from libEGL.dll: see platypus_render_gles.

@@ -1,7 +1,8 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! glTF models (`.glb` / `.gltf`): meshes, materials, textures and the node tree.
+//! glTF models (`.glb` / `.gltf`): meshes, materials, textures and the node tree. FBX files go
+//! to `models_fbx.rs`, which makes the same [`Model`].
 //!
 //! `render.model id src` loads one: its meshes and textures are uploaded under engine
 //! ids (from [`ENGINE_IDS`], so they never meet script ids) and scripts get the node tree
@@ -109,8 +110,11 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Loads `src` (relative to the game folder `root`).
+/// Loads `src` (relative to the game folder `root`): glTF, or FBX (`models_fbx.rs`).
 pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String> {
+    if src.to_lowercase().ends_with(".fbx") {
+        return crate::models_fbx::load(root, src, ids);
+    }
     let bytes = platypus_core::read_asset(root, src).map_err(|e| e.to_string())?;
     let model_dir = src.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
     let gltf = gltf::Gltf::from_slice(&bytes).map_err(|e| format!("`{src}`: {e}"))?;
@@ -422,7 +426,7 @@ pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String
     })
 }
 
-fn bounds(points: &[[f32; 3]]) -> [[f32; 3]; 2] {
+pub(crate) fn bounds(points: &[[f32; 3]]) -> [[f32; 3]; 2] {
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
     for p in points {

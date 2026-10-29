@@ -118,6 +118,11 @@ const ALLOW: &[Allow] = &[
         reason: "Bytecode Alliance (wasmtime repository): Apache-2.0 WITH LLVM-exception, the text its sibling crates ship",
     },
     Allow {
+        krate: "ufbx",
+        rule: NO_FILE,
+        reason: "ufbx/ufbx-rust: MIT OR Unlicense in Cargo.toml; the crate and the ufbx C sources it compiles in (ufbx/ufbx.c, ufbx.h by the same author, MIT or public domain) ship no licence file, so the standard MIT text with the crate's authors applies (reviewed 2026-10-29)",
+    },
+    Allow {
         krate: "dasp_sample",
         rule: NO_FILE,
         reason: "RustAudio/dasp: MIT OR Apache-2.0 in Cargo.toml",

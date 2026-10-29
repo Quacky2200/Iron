@@ -120,7 +120,7 @@ impl AssetKind {
         }
         match name.rsplit_once('.').map_or("", |(_, e)| e) {
             "png" | "jpg" | "jpeg" | "hdr" => AssetKind::Texture,
-            "glb" | "gltf" => AssetKind::Model,
+            "glb" | "gltf" | "fbx" => AssetKind::Model,
             "wav" | "ogg" | "mp3" | "flac" | "opus" => AssetKind::Audio,
             "ttf" | "otf" | "woff" | "woff2" => AssetKind::Font,
             "svg" => AssetKind::Svg,

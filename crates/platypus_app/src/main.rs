@@ -38,6 +38,7 @@ mod logging;
 mod main_window;
 mod mem_trace;
 pub(crate) mod models;
+mod models_fbx;
 mod native;
 mod native_pump;
 mod native_render;

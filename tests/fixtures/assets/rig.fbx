@@ -1,0 +1,206 @@
+; FBX 7.4.0 project file
+; Written by tests/fixtures/assets/make_fbx.py
+FBXHeaderExtension:  {
+	FBXHeaderVersion: 1003
+	FBXVersion: 7400
+	Creator: "Platypus test fixtures"
+}
+GlobalSettings:  {
+	Version: 1000
+	Properties70:  {
+		P: "UpAxis", "int", "Integer", "",2
+		P: "UpAxisSign", "int", "Integer", "",1
+		P: "FrontAxis", "int", "Integer", "",1
+		P: "FrontAxisSign", "int", "Integer", "",-1
+		P: "CoordAxis", "int", "Integer", "",0
+		P: "CoordAxisSign", "int", "Integer", "",1
+		P: "UnitScaleFactor", "double", "Number", "",1
+		P: "TimeMode", "enum", "", "",11
+	}
+}
+Objects:  {
+	Geometry: 1000, "Geometry::Column", "Mesh" {
+		Vertices: *48 {
+			a: -10.0,-10.0,0.0,10.0,-10.0,0.0,10.0,10.0,0.0,-10.0,10.0,0.0,-10.0,-10.0,100.0,10.0,-10.0,100.0,10.0,10.0,100.0,-10.0,10.0,100.0,-10.0,-10.0,100.0,10.0,-10.0,100.0,10.0,10.0,100.0,-10.0,10.0,100.0,-10.0,-10.0,200.0,10.0,-10.0,200.0,10.0,10.0,200.0,-10.0,10.0,200.0
+		}
+		PolygonVertexIndex: *48 {
+			a: 0,3,2,-2,4,5,6,-8,0,1,5,-5,1,2,6,-6,2,3,7,-7,3,0,4,-8,8,11,10,-10,12,13,14,-16,8,9,13,-13,9,10,14,-14,10,11,15,-15,11,8,12,-16
+		}
+		GeometryVersion: 124
+		LayerElementNormal: 0 {
+			Version: 102
+			Name: ""
+			MappingInformationType: "ByPolygonVertex"
+			ReferenceInformationType: "Direct"
+			Normals: *144 {
+			a: 0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0,-1.0,0.0,0.0
+		}
+		}
+		LayerElementUV: 0 {
+			Version: 101
+			Name: "UVMap"
+			MappingInformationType: "ByPolygonVertex"
+			ReferenceInformationType: "IndexToDirect"
+			UV: *8 {
+			a: 0.0,0.0,1.0,0.0,1.0,1.0,0.0,1.0
+		}
+			UVIndex: *48 {
+			a: 0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3
+		}
+		}
+		LayerElementMaterial: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "ByPolygon"
+			ReferenceInformationType: "IndexToDirect"
+			Materials: *12 {
+			a: 0,0,0,0,0,0,0,0,0,0,0,0
+		}
+		}
+		Layer: 0 {
+			Version: 100
+			LayerElement:  {
+				Type: "LayerElementNormal"
+				TypedIndex: 0
+			}
+			LayerElement:  {
+				Type: "LayerElementUV"
+				TypedIndex: 0
+			}
+			LayerElement:  {
+				Type: "LayerElementMaterial"
+				TypedIndex: 0
+			}
+		}
+	}
+	Model: 2000, "Model::Column", "Mesh" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0.0,0.0,0.0
+			P: "Lcl Rotation", "Lcl Rotation", "", "A",0.0,0.0,0.0
+		}
+		Shading: T
+		Culling: "CullingOff"
+	}
+	Model: 2001, "Model::Root", "LimbNode" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0.0,0.0,0.0
+			P: "Lcl Rotation", "Lcl Rotation", "", "A",0.0,0.0,0.0
+		}
+		Shading: T
+		Culling: "CullingOff"
+	}
+	Model: 2002, "Model::Tip", "LimbNode" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0.0,0.0,100.0
+			P: "Lcl Rotation", "Lcl Rotation", "", "A",0.0,0.0,0.0
+		}
+		Shading: T
+		Culling: "CullingOff"
+	}
+	Material: 3000, "Material::Grey", "" {
+		Version: 102
+		ShadingModel: "phong"
+		MultiLayer: 0
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.6,0.6,0.6
+			P: "DiffuseFactor", "Number", "", "A",1
+		}
+	}
+	NodeAttribute: 2101, "NodeAttribute::Root", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	NodeAttribute: 2102, "NodeAttribute::Tip", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	Deformer: 5000, "Deformer::Skin", "Skin" {
+		Version: 101
+		Link_DeformAcuracy: 50
+	}
+	Deformer: 5001, "SubDeformer::Root", "Cluster" {
+		Version: 100
+		UserData: "", ""
+		Indexes: *8 {
+			a: 0,1,2,3,4,5,6,7
+		}
+		Weights: *8 {
+			a: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0
+		}
+		Transform: *16 {
+			a: 1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0
+		}
+		TransformLink: *16 {
+			a: 1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0
+		}
+	}
+	Deformer: 5002, "SubDeformer::Tip", "Cluster" {
+		Version: 100
+		UserData: "", ""
+		Indexes: *8 {
+			a: 8,9,10,11,12,13,14,15
+		}
+		Weights: *8 {
+			a: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0
+		}
+		Transform: *16 {
+			a: 1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,-100.0,1.0
+		}
+		TransformLink: *16 {
+			a: 1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,100.0,1.0
+		}
+	}
+	AnimationStack: 6000, "AnimStack::Bend", "" {
+		Properties70:  {
+			P: "LocalStop", "KTime", "Time", "",46186158000
+			P: "ReferenceStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 6001, "AnimLayer::BaseLayer", "" {
+	}
+	AnimationCurveNode: 6002, "AnimCurveNode::R", "" {
+		Properties70:  {
+			P: "d|X", "Number", "", "A",0
+			P: "d|Y", "Number", "", "A",0
+			P: "d|Z", "Number", "", "A",0
+		}
+	}
+	AnimationCurve: 6003, "AnimCurve::", "" {
+		Default: 0
+		KeyVer: 4009
+		KeyTime: *2 {
+			a: 0,46186158000
+		}
+		KeyValueFloat: *2 {
+			a: 0.0,90.0
+		}
+		KeyAttrFlags: *1 {
+			a: 8456
+		}
+		KeyAttrDataFloat: *4 {
+			a: 0.0,0.0,0.0,0.0
+		}
+		KeyAttrRefCount: *1 {
+			a: 2
+		}
+	}
+}
+Connections:  {
+	C: "OO",2000,0
+	C: "OO",2001,0
+	C: "OO",2002,2001
+	C: "OO",2101,2001
+	C: "OO",2102,2002
+	C: "OO",1000,2000
+	C: "OO",3000,2000
+	C: "OO",5000,1000
+	C: "OO",5001,5000
+	C: "OO",5002,5000
+	C: "OO",2001,5001
+	C: "OO",2002,5002
+	C: "OO",6001,6000
+	C: "OO",6002,6001
+	C: "OP",6002,2002, "Lcl Rotation"
+	C: "OP",6003,6002, "d|X"
+}

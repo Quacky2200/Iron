@@ -1537,6 +1537,16 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         selected; undoable (`placement.ts`, `M5-DND-20`, `-21`)
         - [ ] Later: a preview while dragging over the view; dropping onto meshes (a physics ray); dropping between
           Hierarchy rows
+      - [x] E9: FBX models (`.fbx`, binary or ASCII) through the `ufbx` crate (MIT OR Unlicense, C built with `cc`;
+        notices regenerated, reviewed in `tools/platypus_notices/src/tables.rs`): `models_fbx.rs` makes the same
+        `Model` as glTF: units and axes to metres and Y-up, meshes split by material, materials (base colour,
+        emission, roughness, metalness, base colour / normal / emission textures, embedded or beside the file),
+        the node tree, skins (bones, ≤4 normalised weights, inverse bind matrices) and the takes baked to keys;
+        `.fbx` counts as a model for `.meta` files, packs and `--cook`. Test files are made by
+        `tests/fixtures/assets/make_fbx.py` (no downloads) (`M5-FBX-01..05`)
+        - [ ] Later: `.meta` importer options (scale factor, import animation / materials, colliders); blend shapes;
+          cameras and lights in the file; vertex colours; UV1; a golden of a posed FBX character; real exporter files
+          (Maya, Blender, 3ds Max) as fixtures once their licences are checked
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into

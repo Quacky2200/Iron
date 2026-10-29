@@ -519,7 +519,7 @@ pub mod model_api {
             }
         }
 
-        /// Loads a `.glb` or `.gltf` from the game folder, or `"guid:<guid>"` (once per file).
+        /// Loads a `.glb`, `.gltf` or `.fbx` from the game folder, or `"guid:<guid>"` (once per file).
         pub fn load(source: &str) -> ModelRef {
             super::load_model(source)
         }
@@ -630,12 +630,13 @@ fn instantiate_model(
 ) -> ObjectId {
     let src = model_src(m).unwrap_or_default();
     let stem = src.rsplit('/').next().unwrap_or("Model");
+    // The file's name without its extension (`.glb`, `.gltf`, `.fbx`, any case).
     let name = stem
-        .strip_suffix(".glb")
-        .or_else(|| stem.strip_suffix(".gltf"))
-        .or_else(|| stem.strip_suffix(".GLB"))
-        .or_else(|| stem.strip_suffix(".GLTF"))
-        .unwrap_or(stem);
+        .rsplit_once('.')
+        .filter(|(base, ext)| {
+            !base.is_empty() && ["glb", "gltf", "fbx"].contains(&ext.to_lowercase().as_str())
+        })
+        .map_or(stem, |(base, _)| base);
     let root = scene_api::create();
     root.set_name(name);
     if parent.to_raw() != 0 {

@@ -323,13 +323,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 # Rust crates
 
-The host is built from 430 third-party Rust crates from crates.io: the normal and build dependencies of `platypus_app` for `x86_64-pc-windows-msvc`, as Cargo.lock pins them. Each is listed under its licence with the copyright lines of its licence file (or, where the published crate has no licence file, the authors in its Cargo.toml), and the licence text follows once. A crate offered under a choice of licences (`MIT OR Apache-2.0`) is listed under the one Platypus uses: the first of MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-3-Clause, BSD-2-Clause, ISC, Zlib, Unicode-3.0, BSL-1.0, 0BSD, Unlicense, CC0-1.0, MPL-2.0 that it ships a licence file for. A crate under several licences at once (`AND`) is listed under each. Crates that word a licence differently from its usual text have their own text after it.
+The host is built from 431 third-party Rust crates from crates.io: the normal and build dependencies of `platypus_app` for `x86_64-pc-windows-msvc`, as Cargo.lock pins them. Each is listed under its licence with the copyright lines of its licence file (or, where the published crate has no licence file, the authors in its Cargo.toml), and the licence text follows once. A crate offered under a choice of licences (`MIT OR Apache-2.0`) is listed under the one Platypus uses: the first of MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-3-Clause, BSD-2-Clause, ISC, Zlib, Unicode-3.0, BSL-1.0, 0BSD, Unlicense, CC0-1.0, MPL-2.0 that it ships a licence file for. A crate under several licences at once (`AND`) is listed under each. Crates that word a licence differently from its usual text have their own text after it.
 
-Licences: MIT (311), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3-Clause (9), BSD-2-Clause (1), ISC (1), Zlib (3), Unicode-3.0 (48), BSL-1.0 (2), CC0-1.0 (1), MPL-2.0 (17).
+Licences: MIT (312), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3-Clause (9), BSD-2-Clause (1), ISC (1), Zlib (3), Unicode-3.0 (48), BSL-1.0 (2), CC0-1.0 (1), MPL-2.0 (17).
 
 ## MIT
 
-311 crates.
+312 crates.
 
 - `adler2` 2.0.1: <https://github.com/oyvindln/adler2>
   - Authors: Jonas Schievink, oyvindln
@@ -865,6 +865,8 @@ Licences: MIT (311), Apache-2.0 (19), Apache-2.0 WITH LLVM-exception (21), BSD-3
   - Copyright (c) 2019 Tokio Contributors
 - `typenum` 1.20.1: <https://github.com/paholg/typenum>
   - Copyright (c) 2014 Paho Lurie-Gregg
+- `ufbx` 0.11.5: <https://github.com/ufbx/ufbx-rust>
+  - Published without a licence file; authors: bqqbarbhg
 - `unicode-bidi` 0.3.18: <https://github.com/servo/unicode-bidi>
   - Copyright (c) 2015 The Rust Project Developers
 - `unicode-id-start` 1.5.0: <https://github.com/Boshen/unicode-id-start>
