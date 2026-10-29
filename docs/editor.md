@@ -18,7 +18,8 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [file-dialog.ts](../editor/src/file-dialog.ts), [FileDialog.tsx](../editor/src/FileDialog.tsx) | The open / save / folder dialog: its logic (filters, names, typed paths) and the component |
 | [SceneView.tsx](../editor/src/SceneView.tsx), [scene-camera.ts](../editor/src/scene-camera.ts), [handles.ts](../editor/src/handles.ts), [frame.ts](../editor/src/frame.ts) | The Scene view, its camera model, transform handles, `onEditorFrame` |
 | [history.ts](../editor/src/history.ts), [scene-edit.ts](../editor/src/scene-edit.ts) | Undo and redo: the command list, and scene edits as commands |
-| [editor_api.rs](../crates/platypus_scenes/src/editor_api.rs) | The `EditorScene` namespace |
+| [editor_api.rs](../crates/platypus_scenes/src/editor_api.rs), [inspect.rs](../crates/platypus_scenes/src/inspect.rs) | The `EditorScene` namespace; the component and field logic under the Inspector |
+| [Inspector.tsx](../editor/src/Inspector.tsx), [inspector.ts](../editor/src/inspector.ts) | The Inspector panel and its logic (number parsing, field JSON, undo commands) |
 | [screen.ts](../editor/src/screen.ts), [classes.ts](../editor/src/classes.ts), [demo-scene.ts](../editor/src/demo-scene.ts) | `useScreenSize`, `cx()` class lists, the demo scene |
 | [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
 | [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
@@ -114,8 +115,16 @@ only with `--project`: each call goes through `Editor`'s `project_op`, so a fail
 | `EditorScene.openScene(path)` | Loads a project scene file in place of the loaded scenes, keeping its path |
 | `EditorScene.saveScene(path)` | Writes the active scene as pretty JSON (folders made, old file replaced in one step); the scene takes the file's path and name (`scene_name_of`: without `.scene.json`) |
 | `EditorScene.scenePath` / `sceneName` | The active scene's file ("" if never saved) and name |
+| `EditorScene.components(object)` | `ComponentInfo[]` (`kind`, `handle`, `opaque`): the registered kinds' components in registration order, then those kept from a file whose kind isn't registered (`opaque`, a game's scripts) |
+| `EditorScene.fields(object, kind, handle)` | `FieldInfo[]` of one component: `name`, `ty` (`number`, `bool`, `string`, `enum`, `color`, `vector2/3/4`, `object`, `component`, `asset`, `json`), `json` (the saved value), the typed value (`num`, `flag`, `text`, `vec`), `options` (an enum's choices, `\|` between), `doc`, `read_only` |
+| `EditorScene.setField(object, kind, handle, name, json)` | Sets one field from JSON text (a field's `json`, or a plain array for a vector or colour), through the kind's `load`; an opaque component's data is replaced instead (`set_opaque`) |
+| `EditorScene.addComponent(object, kind)` / `removeComponent(object, kind, handle)` | Adds a component of a registered kind (returns its handle, 0 on failure); removes one, opaque ones included |
+| `EditorScene.componentKinds()` | The kinds a component can be added of, by name |
 
 It uses `SceneManager` helpers in `manager.rs`: `scene_value` (a scene as JSON), `rename_scene` and `load_scene_file`.
+The component calls live in `inspect.rs`. Field types and enum options come from the kind's schema
+(`platypus_kinds::register_fields`, written by `platypus_render_api`'s build script for the generated components); a
+hand-written kind without one is typed from its saved values.
 
 ## Undo and redo ([history.ts](../editor/src/history.ts), [scene-edit.ts](../editor/src/scene-edit.ts))
 
@@ -368,7 +377,7 @@ see-through panels show the world.
   `Editor.restore`). Handle drags, renames, deletes and Hierarchy drags are commands; the status bar says what was undone
   or redone, and the title shows `*` while the history is dirty.
 - **Selection** is the tree's selected ids, shared with the Scene view: selecting in either updates the
-  other (`select`), and the Inspector (a placeholder) names the selected objects.
+  other (`select`), and the Inspector shows the selected object (see Inspector below).
 - **Game.** `GameView` sets `Camera.main`'s `rect` to the panel's box while it is shown and to an empty
   rect when it is hidden or unmounted, so the game's camera draws only inside the Game tab (see Game cameras below).
 - **Project** is the project browser.
@@ -391,6 +400,27 @@ see-through panels show the world.
 - **View > Show Grid / Show Gizmos** toggle the Scene view's `grid` and `gizmos` props.
 - Window > Save / Load / Reset Layout keeps the layout in PlayerPrefs (`editor.layout`), and the saved
   layout loads at start. Unimplemented menu items log what they would do.
+
+## Inspector ([Inspector.tsx](../editor/src/Inspector.tsx), [inspector.ts](../editor/src/inspector.ts))
+
+The Inspector shows the selected object's name, enabled flag, tag and layer, its Transform (local position, Euler
+angles in degrees, scale), then a foldout per component from `EditorScene.components`, each with an editor per field
+from `EditorScene.fields`.
+
+- **Field editors by type.** `number`: a text field parsed by `parseNumber` and shown by `formatNumber` (at most 4
+  decimals); `bool`: a checkbox; `string`: a text field; `enum`: a choice over `options`; `vector2/3/4`: one number
+  field per component; `color`: its channels as numbers. Labels come from `labelOf` (`fieldOfView` is `Field Of View`).
+  `object`, `component`, `asset` and `json` fields are shown, not edited.
+- **Live refresh.** The panel builds a key of what it shows each editor frame and redraws only when the key changes, so
+  values follow the world (a handle drag, a script, an undo) without a redraw every frame.
+- **Undo.** Every edit is a command (`fieldCommand`, `localPoseCommand`, `addComponentCommand`,
+  `removeComponentCommand`) that keeps old and new JSON. Undo can rebuild an object with new handles, so a command finds
+  its component again by kind and place (`placeOf`, `componentAt`: the n-th component of that kind), not by handle.
+  Removing a component takes a snapshot first and undoes by restoring it.
+- **Opaque components** (a game's scripts, whose kind the editor doesn't have) are listed with their saved data and
+  edited as data: the type of each field comes from the value's shape.
+- **Add / Remove Component.** An Add Component button lists `EditorScene.componentKinds`; each component's header has
+  a Remove button. Both are undoable.
 
 ## Tests and checks
 
@@ -416,6 +446,9 @@ see-through panels show the world.
 - Undo: the history (`M5-UNDO-02` to `-05`, `editor/test/history.test.ts`), `EditorScene` snapshots and restore in
   `editor_tests.rs` (`M5-UNDO-01`), scene save / new / open (`M5-SCN-11`), and the smoke test `M5-UNDO-06` (Delete on
   Cube, Ctrl+Z, Ctrl+Y, Ctrl+D, a Hierarchy drag and its undo, each in the status bar).
+- Inspector: the `EditorScene` component calls in `editor_tests.rs` (`M5-EDT-35`: components, fields, setField, add
+  and remove, opaque data), the smoke test `M5-EDT-36` in `editor_smoke.rs`, and the logic in
+  `editor/test/inspector.test.ts` (`M5-EDT-37`, run by `editor_models`).
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
 - `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor
@@ -433,6 +466,9 @@ see-through panels show the world.
   gizmos and handles are drawn for the selection only.
 - Hierarchy drags only drop onto a row (it becomes the last child); there is no dropping between rows to reorder.
 - Undoing a delete doesn't restore references to the object from others (they stay empty). Duplicates keep the same name.
+- The Inspector shows references, assets and nested data read-only, shows one object when several are selected, has
+  no colour picker (channels are numbers), and shows tag and layer read-only. A hand-written kind without a schema is
+  typed from its saved values (no enum options or docs).
 - Only one scene is edited at a time (Open replaces the loaded scenes); there is no prefab editing and no scene tabs.
 - Panels can't be closed or reopened yet, nor float in windows of their own.
 - The modal backdrop does not dim what is under it yet, and Tab is not kept inside a dialog (focus can leave it).

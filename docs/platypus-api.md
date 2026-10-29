@@ -369,7 +369,10 @@ passes it (`GameObject.setParent(parent, keepWorld = true)` is declared this way
 `toJSON`). The file format is `scenes.ts`'s `platypus.scene` version 1, read and written with `serde_json`.
 
 The loader does not know component classes. `platypus_kinds` is a per-thread registry of *kinds* (`create`, `on`, `save`, `load`,
-`awake`, `object`, `destroy` over raw `u64` handles). `platypus_scenes` registers `Camera`, `Animation` (`clip`, `clips`,
+`awake`, `object`, `destroy` over raw `u64` handles). A kind may also say what its fields are for the editor's Inspector:
+`register_fields(kind, Vec<FieldDoc>)` (`FieldDoc`: `name`, `ty` such as `f64`, `bool`, `string`, `enum:a|b|c`, `color`, `v3`,
+`texture`, the `default` as a saved value, and a `doc` line) and `fields_of(kind)` read it back. `platypus_render_api`'s build
+script writes it for the generated components; a kind with none is typed from its saved values. `platypus_scenes` registers `Camera`, `Animation` (`clip`, `clips`,
 `playAutomatically`, `cullingType`) and `Animator` (`controller`, `speed`, `cullingMode`, `enabled`; not its parameter values
 or current state), with the shared asset kinds `AnimationController` and `AnimationClip` (the `toJson` text, the controller's
 clips inline: one `assets` entry however many components use it; a prefab or copy keeps the live one; fields a file lacks keep
