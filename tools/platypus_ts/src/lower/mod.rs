@@ -1425,12 +1425,25 @@ impl<'a> Lowerer<'a> {
                 self.lower_top_var(decl, is_const, init_body)
             }
             TopItem::Class(c) => self.lower_class_statics(c, init_body),
+            // Closures inside decide which variables of the closures around them live in cells
+            // (`test("x", () => { let s = 1; const f = () => { s++; }; })`), as for a `const`.
             TopItem::Expr(e) => {
-                let v = self.lower_expr(e, None)?;
-                init_body.push(Stmt::Eval(v));
+                let sc = scan::Scan::of_expression(e);
+                self.closure_free.extend(sc.free);
+                let saved = std::mem::replace(&mut self.captured, sc.captured);
+                let v = self.lower_expr(e, None);
+                self.captured = saved;
+                init_body.push(Stmt::Eval(v?));
                 Ok(())
             }
-            TopItem::Stmt(st) => self.lower_stmts(std::slice::from_ref(st), init_body),
+            TopItem::Stmt(st) => {
+                let sc = scan::Scan::of_statements(std::slice::from_ref(st));
+                self.closure_free.extend(sc.free);
+                let saved = std::mem::replace(&mut self.captured, sc.captured);
+                let r = self.lower_stmts(std::slice::from_ref(st), init_body);
+                self.captured = saved;
+                r
+            }
             TopItem::Module(_) => Ok(()),
         }
     }

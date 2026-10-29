@@ -1477,16 +1477,26 @@ impl<'a> Lowerer<'a> {
                 ty: to.clone(),
             });
         }
+        // A null of another type; the expression still runs (`return bad()` where `bad` sets a
+        // flag and returns null).
+        let null_of = |e: Expr, to: &Ty| {
+            let null = Expr {
+                kind: ExprKind::Null,
+                ty: to.clone(),
+            };
+            if matches!(e.kind, ExprKind::Null) {
+                null
+            } else {
+                Expr {
+                    kind: ExprKind::Seq(vec![Stmt::Eval(e)], Box::new(null)),
+                    ty: to.clone(),
+                }
+            }
+        };
         match (&e.ty, to) {
-            (Ty::Null, t) if t.is_nullable() => Ok(Expr {
-                kind: ExprKind::Null,
-                ty: to.clone(),
-            }),
+            (Ty::Null, t) if t.is_nullable() => Ok(null_of(e, to)),
             // `sprite = null`: an engine handle that is "none" (tsc has checked the declared type).
-            (Ty::Null, Ty::Handle(_)) => Ok(Expr {
-                kind: ExprKind::Null,
-                ty: to.clone(),
-            }),
+            (Ty::Null, Ty::Handle(_)) => Ok(null_of(e, to)),
             (a, b) if a.strip() == b.strip() => Ok(Expr {
                 kind: ExprKind::Cast(Box::new(e)),
                 ty: to.clone(),

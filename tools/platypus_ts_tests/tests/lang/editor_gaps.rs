@@ -252,3 +252,99 @@ fn check_unused_lowers_functions_nothing_calls() {
     let e = platypus_ts::check_unused(src, &[]).err().unwrap();
     assert!(e.contains("line 1"), "{e}");
 }
+
+// M9-TS-3510
+//
+// A `string | undefined` compared with string literals (`d !== "row" && d !== "column"`), also
+// after `JSON.parse` into an interface with optional keys.
+#[test]
+fn optional_strings_compare_with_literals() {
+    check(
+        r#"
+interface Saved { direction?: string; children?: Saved[] }
+function bad(o: Saved): boolean {
+  const d = o.direction;
+  return (d !== "row" && d !== "column") || !o.children;
+}
+function t(): string {
+  const a = JSON.parse('{"direction":"diagonal","children":[]}') as Saved;
+  const b = JSON.parse('{"direction":"row","children":[]}') as Saved;
+  const c: Saved = { direction: "column" };
+  return `${bad(a)} ${bad(b)} ${bad(c)} ${bad({})}`;
+}
+"#,
+        "eg10_",
+        950_000,
+        "true false true true",
+    );
+}
+
+// M9-TS-3511
+//
+// `return bad()` where `bad` returns `null` (typed `null`) and sets a flag: the call still runs
+// (it used to be replaced by the null it gives).
+#[test]
+fn a_call_that_returns_null_still_runs() {
+    check(
+        r#"
+function parse(x: number): string {
+  let broken = false;
+  const bad = (): null => {
+    broken = true;
+    return null;
+  };
+  const read = (n: number): number | null => {
+    if (n < 0) return bad();
+    return n;
+  };
+  const v = read(x);
+  return broken ? "broken" : `${v}`;
+}
+function t(): string {
+  return `${parse(-1)} ${parse(2)}`;
+}
+"#,
+        "eg11_",
+        951_000,
+        "broken 2",
+    );
+}
+
+// M9-TS-3512
+//
+// Top-level statements: a closure inside a callback passed at the top level shares the
+// callback's variables (`test("x", () => { let s; const key = () => { s = .. } })`); a generic
+// call's object literal argument takes the type an earlier argument fixed (`eq(range, { .. })`);
+// `filter` with a guard picks members out of a union of interfaces.
+#[test]
+fn top_level_callbacks_contextual_literals_and_union_filters() {
+    check(
+        r#"
+interface Range { start: number; end: number }
+interface G { type: "group"; id: string }
+interface S { type: "split"; id: string; children: Item[] }
+type Item = G | S;
+let out = "";
+function test(name: string, f: () => void): void { f(); }
+function eq<T>(got: T, want: T): string { return JSON.stringify(got) === JSON.stringify(want) ? "ok" : "no"; }
+test("x", () => {
+  let s = 1;
+  const key = (k: number): number => {
+    s = s + k;
+    return s;
+  };
+  key(2);
+  const r: Range = { start: 1, end: 3 };
+  const items: Item[] = [{ type: "group", id: "a" }, { type: "split", id: "b", children: [] }, { type: "group", id: "c" }];
+  const groups = items.filter((n): n is G => n.type === "group");
+  out = `${s} ${eq(r, { start: 1, end: 3 })} ${eq(r, { start: 0, end: 3 })} ${groups.map((g) => g.id).join("")}`;
+});
+function t(): string {
+  return out;
+}
+"#,
+        "eg12_",
+        952_000,
+        "3 ok no ac",
+    );
+}

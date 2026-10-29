@@ -224,12 +224,19 @@ export function parseLayout(json: string, knownTabs?: readonly string[]): DockNo
   }
   const known = knownTabs ? new Set(knownTabs) : null;
   const seen = new Set<string>();
-  const read = (o: SavedNode): DockNode | null | undefined => {
+  // A malformed part spoils the whole layout; null is a part left empty (its tabs are gone).
+  // (A flag rather than `undefined`: compiled code has one value for null and undefined.)
+  let broken = false;
+  const bad = (): null => {
+    broken = true;
+    return null;
+  };
+  const read = (o: SavedNode): DockNode | null => {
     const id = o.id;
-    if (id === undefined || seen.has(id)) return undefined;
+    if (id === undefined || seen.has(id)) return bad();
     seen.add(id);
     if (o.type === "group") {
-      if (!o.tabs) return undefined;
+      if (!o.tabs) return bad();
       const tabs = o.tabs.filter((t) => !known || known.has(t));
       if (tabs.length === 0) return null;
       const active = typeof o.active === "string" && tabs.includes(o.active) ? o.active : tabs[0]!;
@@ -237,13 +244,13 @@ export function parseLayout(json: string, knownTabs?: readonly string[]): DockNo
     }
     if (o.type === "split") {
       const direction = o.direction;
-      if ((direction !== "row" && direction !== "column") || !o.children) return undefined;
+      if ((direction !== "row" && direction !== "column") || !o.children) return bad();
       const children: DockNode[] = [];
       const sizes: number[] = [];
       const given = o.sizes ?? [];
       for (const [i, c] of o.children.entries()) {
         const node = read(c);
-        if (node === undefined) return undefined;
+        if (broken) return null;
         if (node) {
           children.push(node);
           sizes.push(given[i] ?? 0);
@@ -253,10 +260,10 @@ export function parseLayout(json: string, knownTabs?: readonly string[]): DockNo
       if (children.length === 1) return children[0]!;
       return split(id, direction, children, sizes);
     }
-    return undefined;
+    return bad();
   };
   const node = read(raw);
-  return node === undefined ? null : (node ?? group("main", []));
+  return broken ? null : (node ?? group("main", []));
 }
 
 /** Where every node sits inside `rect` (splitters take `SPLITTER` pixels between children). */

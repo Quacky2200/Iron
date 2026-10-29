@@ -378,12 +378,31 @@ impl<'a> Lowerer<'a> {
                 Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
             )
         };
-        // Pass 1: arguments that are not closures.
-        for (i, a) in args.iter().enumerate() {
+        // Pass 1: arguments that are not closures; object and array literals last, and one whose
+        // parameter is a type parameter fixed already takes that type (TypeScript types it from
+        // the context: `eq(range, { start: 0, end: 5 })`).
+        let is_literal = |e: &Expression<'a>| {
+            matches!(
+                e.get_inner_expression(),
+                Expression::ObjectExpression(_) | Expression::ArrayExpression(_)
+            )
+        };
+        let mut order: Vec<usize> = (0..args.len()).collect();
+        order.sort_by_key(|&i| args[i].as_expression().is_some_and(is_literal));
+        for i in order {
+            let a = &args[i];
             let (Some(e), Some(ann)) = (a.as_expression(), ann_for(i)) else {
                 continue;
             };
             if is_closure(e) {
+                continue;
+            }
+            if is_literal(e)
+                && let TSType::TSTypeReference(r) = ann
+                && r.type_arguments.is_none()
+                && let TSTypeName::IdentifierReference(id) = &r.type_name
+                && found.contains_key(id.name.as_str())
+            {
                 continue;
             }
             // `List({ roots, label: (n) => .. })` for `List<T>(props: ListProps<T>)`: the

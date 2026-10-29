@@ -41,8 +41,14 @@ export function startLog(): void {
 /** The entries so far (a new array after each change, for `useSyncExternalStore`). */
 export const logEntries = (): LogEntry[] => entries;
 
+/** Calls `fn` after each change, reading the engine's log from now on. */
 export function subscribeLog(fn: () => void): () => void {
   startLog();
+  return listenLog(fn);
+}
+
+/** Calls `fn` after each change (the feed itself is `startLog`'s). */
+export function listenLog(fn: () => void): () => void {
   listeners.add(fn);
   return () => {
     listeners.delete(fn);

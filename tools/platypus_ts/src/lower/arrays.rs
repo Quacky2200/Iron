@@ -988,7 +988,18 @@ impl<'a> Lowerer<'a> {
                                 // `filter((x): x is T => ..)` keeps `T`s, as TypeScript types it.
                                 let (el, e) = match self.guarded_type(cb)? {
                                     Some(t) if t != el => {
-                                        (t.clone(), mk(ExprKind::Cast(Box::new(e)), t))
+                                        // A member of a tagged union is read out of it; any other
+                                        // narrowing (`T | undefined` to `T`) is the same word.
+                                        let member = self.union_members(&el).and_then(|ms| {
+                                            ms.iter().position(|m| m.strip() == t.strip())
+                                        });
+                                        let v = match member {
+                                            Some(i) if !el.is_nullable() => {
+                                                self.project_union(e, i)
+                                            }
+                                            _ => mk(ExprKind::Cast(Box::new(e)), t.clone()),
+                                        };
+                                        (t, v)
                                     }
                                     _ => (el, e),
                                 };
