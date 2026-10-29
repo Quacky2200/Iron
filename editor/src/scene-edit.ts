@@ -141,6 +141,21 @@ export function createCommand(label: string, data: string, parentLoc: Loc | null
   };
 }
 
+/** Makes a new root object with `make` (again on redo, as the last root); undo destroys it. */
+export function makeCommand(label: string, make: () => GameObject): Command {
+  let loc: Loc = [];
+  return {
+    label,
+    run: () => {
+      const go = make();
+      loc = locate(go);
+    },
+    undo: () => {
+      find(loc)?.destroy();
+    },
+  };
+}
+
 /** Objects with none of their ancestors in the list (deleting a parent deletes its children). */
 export function topmost(objects: readonly GameObject[]): GameObject[] {
   const ids = new Set(objects.map((o) => o.id));

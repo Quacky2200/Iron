@@ -29,8 +29,9 @@ const LIST_HEIGHT = 260;
 
 function FileDialogView({ options, done }: { options: FileDialogOptions; done: (path: string) => void }) {
   const filters = options.filters && options.filters.length > 0 ? options.filters : [ALL_FILES];
-  // A starting folder that doesn't exist (yet): the project's root.
-  const [dir, setDir] = useState(() => (options.dir && Editor.stat(options.dir).dir ? options.dir : ""));
+  // A starting folder that doesn't exist yet: the project's root, except when saving (saving
+  // makes the folder).
+  const [dir, setDir] = useState(() => (options.dir && (options.mode === "save" || Editor.stat(options.dir).dir) ? options.dir : ""));
   const [filterIndex, setFilterIndex] = useState(0);
   const [name, setName] = useState(options.name ?? "");
   const [selected, setSelected] = useState(-1);
@@ -38,7 +39,7 @@ function FileDialogView({ options, done }: { options: FileDialogOptions; done: (
   const [version, setVersion] = useState(0);
   const filter = filters[filterIndex] ?? ALL_FILES;
   const entries = useMemo(() => {
-    const listed = Editor.listDir(dir);
+    const listed = dir === "" || Editor.exists(dir) ? Editor.listDir(dir) : [];
     return shownEntries(listed, filter, options.mode);
   }, [dir, filterIndex, version]);
   const root = projectFolder();

@@ -136,7 +136,9 @@ fn copy_any(from: &Path, to: &Path, budget: &mut usize) -> std::io::Result<()> {
         }
         Ok(())
     } else if meta.is_file() {
-        std::fs::copy(from, to).map(|_| ())
+        std::fs::copy(from, to)?;
+        // A new asset gets its GUID now (a copied-in `.meta` is kept).
+        platypus_core::meta::ensure(to).map(|_| ())
     } else {
         // Symlinks and other special files are skipped.
         Ok(())

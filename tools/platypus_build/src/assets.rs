@@ -8,73 +8,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-/// Asset kind by extension (lowercase), `None` for files that are not assets.
-pub fn kind(ext: &str) -> Option<&'static str> {
-    Some(match ext {
-        "png" | "jpg" | "jpeg" | "svg" | "hdr" => "texture",
-        "glb" | "gltf" | "bin" => "model",
-        "wav" | "ogg" | "mp3" | "flac" => "audio",
-        "ttf" | "otf" | "woff" | "woff2" => "font",
-        "json" => "data",
-        _ => return None,
-    })
-}
+pub use platypus_core::meta::{default_meta, is_asset, kind, new_guid, read_guid};
 
 /// Folders that hold no assets.
 const SKIP: &[&str] = &["build", "node_modules", "src", "target", "types"];
-const NOT_ASSETS: &[&str] = &[
-    "package.json",
-    "project.json",
-    "tsconfig.json",
-    "bun.lock",
-    "bun.lockb",
-];
-
-pub fn is_asset(file: &str) -> bool {
-    let name = file.rsplit('/').next().unwrap_or(file);
-    if name.ends_with(".meta") || NOT_ASSETS.contains(&name) {
-        return false;
-    }
-    name.rsplit_once('.')
-        .is_some_and(|(_, e)| kind(&e.to_lowercase()).is_some())
-}
-
-/// The default `.meta` text of an asset (the JSON `scripts/assets.ts` wrote, key order included).
-pub fn default_meta(file: &str, guid: &str) -> String {
-    let ext = file.rsplit('.').next().unwrap_or("").to_lowercase();
-    let importer = match kind(&ext).unwrap_or("data") {
-        "texture" => {
-            "{\n    \"type\": \"texture\",\n    \"filterMode\": \"bilinear\",\n    \"wrapMode\": \"repeat\",\n    \"mipmaps\": true,\n    \"anisoLevel\": 1,\n    \"linear\": false\n  }"
-        }
-        "model" => "{\n    \"type\": \"model\",\n    \"colliders\": \"none\"\n  }",
-        "audio" => "{\n    \"type\": \"audio\",\n    \"stream\": false\n  }",
-        "font" => "{\n    \"type\": \"font\"\n  }",
-        _ => "{\n    \"type\": \"data\"\n  }",
-    };
-    format!("{{\n  \"guid\": \"{guid}\",\n  \"importer\": {importer}\n}}\n")
-}
-
-/// 32 hex digits, random (a UUID v4 without dashes).
-pub fn new_guid() -> String {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static N: AtomicU64 = AtomicU64::new(0);
-    let mut bytes = [0u8; 16];
-    for half in 0..2 {
-        let mut h = RandomState::new().build_hasher();
-        h.write_u64(N.fetch_add(1, Ordering::Relaxed));
-        h.write_u128(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos()),
-        );
-        bytes[half * 8..half * 8 + 8].copy_from_slice(&h.finish().to_le_bytes());
-    }
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 
 /// Every asset file and `.meta` file under `root` (relative, `/`), sorted.
 pub fn scan(root: &Path) -> (Vec<String>, Vec<String>) {
@@ -179,12 +116,6 @@ pub fn update(root: &Path, prune: bool) -> std::io::Result<Report> {
         report.orphans.push(o);
     }
     Ok(report)
-}
-
-/// Reads the GUID of a `.meta` file (None when it is not one).
-pub fn read_guid(path: &Path) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    v["guid"].as_str().map(String::from)
 }
 
 #[cfg(test)]

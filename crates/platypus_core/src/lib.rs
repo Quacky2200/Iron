@@ -14,6 +14,7 @@ mod assets;
 pub mod glob;
 pub mod icon;
 mod ids;
+pub mod meta;
 mod ops;
 pub mod payload;
 pub mod project;

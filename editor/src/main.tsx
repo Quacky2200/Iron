@@ -11,14 +11,17 @@ import "./editor.css";
 import { Console } from "./Console.tsx";
 import { Dock, type DockPanel } from "./Dock.tsx";
 import { type DockNode, group, parseLayout, type Rect as DockRect, serializeLayout, split } from "./dock.ts";
-import { ALL_FILES, SCENE_FILTER } from "./file-dialog.ts";
+import { ALL_FILES, SCENE_FILTER, stemOf } from "./file-dialog.ts";
 import { fileDialog } from "./FileDialog.tsx";
 import { onEditorFrame } from "./frame.ts";
 import {
   canRedo,
   canUndo,
+  clearHistory,
   type Command,
   createHistory,
+  isDirty,
+  markSaved,
   perform,
   record,
   redo,
@@ -26,8 +29,21 @@ import {
   undo,
   undoLabel,
 } from "./history.ts";
-import { ModalHost } from "./Modal.tsx";
+import { confirmDialog, ModalHost } from "./Modal.tsx";
+import { baseName, parentPath } from "./project.ts";
 import {
+  clearRecent,
+  forgetScene,
+  newScene,
+  openScene,
+  placeGameCameras,
+  recentScenes,
+  saveScene,
+  startScene,
+  windowTitle,
+} from "./scenes.ts";
+import {
+  makeCommand,
   copyObjects,
   deleteCommand,
   duplicateCommand,
@@ -56,6 +72,22 @@ const HIERARCHY_TYPE = "application/x-platypus-object";
 // The scene's undo history and the objects copied (snapshots).
 const history = createHistory();
 let clipboard: string[] = [];
+
+/** The scene as the title and prompts name it: its file, else its name. */
+const sceneLabel = (): string => EditorScene.scenePath || EditorScene.sceneName || "Untitled";
+
+const PRIMITIVES: { label: string; type: PrimitiveType }[] = [
+  { label: "Cube", type: "cube" },
+  { label: "Sphere", type: "sphere" },
+  { label: "Capsule", type: "capsule" },
+  { label: "Cylinder", type: "cylinder" },
+  { label: "Plane", type: "plane" },
+];
+const LIGHTS: { label: string; type: "directional" | "point" | "spot" }[] = [
+  { label: "Directional Light", type: "directional" },
+  { label: "Point Light", type: "point" },
+  { label: "Spot Light", type: "spot" },
+];
 
 const defaultLayout = (): DockNode =>
   split("root", "column", [
@@ -117,16 +149,17 @@ function useSceneTree(): TreeNode<Thing>[] {
 
 const ICONS: Record<Thing["kind"], string> = { object: "■", light: "☀", camera: "◉", mesh: "▲", audio: "♪", probe: "◍" };
 
-/** The Game panel: the main camera draws into it while it's shown. */
+// Where `Camera.main` draws (fractions of the window): the Game panel's box while it's shown.
+let gameRect: Rect | null = null;
+
+/** The Game panel: the main camera draws into it while it's shown (scenes.ts keeps the others off). */
 function GameView({ rect }: { rect: DockRect }) {
   useEffect(() => {
-    const camera = Camera.main;
-    if (!camera) return;
     const sw = Math.max(1, Screen.width);
     const sh = Math.max(1, Screen.height);
-    camera.rect = new Rect(rect.x / sw, rect.y / sh, rect.width / sw, rect.height / sh);
+    gameRect = new Rect(rect.x / sw, rect.y / sh, rect.width / sw, rect.height / sh);
     return () => {
-      if (!camera.gameObject.destroyed) camera.rect = new Rect(0, 0, 0, 0);
+      gameRect = null;
     };
   }, [rect.x, rect.y, rect.width, rect.height]);
   return <box style={{ width: rect.width, height: rect.height }} />;
@@ -159,6 +192,18 @@ function App() {
     setStatus(text);
     console.log(text);
   };
+  const warn = (text: string) => {
+    setStatus(text);
+    console.warn(text);
+  };
+  // The game's cameras draw only in the Game panel (not from the top level: components can be
+  // added once the program has started).
+  useEffect(() => onEditorFrame(() => placeGameCameras(gameRect)), []);
+  // The window's title follows the scene and unsaved changes.
+  useEffect(() => {
+    const title = windowTitle(sceneLabel(), isDirty(history), baseName(Editor.project));
+    Window.main.title = title;
+  });
   const saveLayout = () => {
     PlayerPrefs.setString(LAYOUT_KEY, serializeLayout(layout));
     PlayerPrefs.save();
@@ -181,6 +226,77 @@ function App() {
     historyChanged();
   };
   const clearSelection = (): void => setTree((t) => ({ ...t, selected: new Set<string>(), focus: null, anchor: null }));
+
+  // Scene files.
+  const recent = recentScenes();
+  /** A new document: no history, nothing selected. */
+  const opened = (message: string): void => {
+    clearHistory(history);
+    clearSelection();
+    historyChanged();
+    say(message);
+  };
+  const startNewScene = (): void => {
+    if (newScene()) opened("New scene");
+    else warn(`New scene: ${Editor.lastError}`);
+  };
+  const openPath = (path: string): void => {
+    if (openScene(path)) opened(`Opened ${path}`);
+    else {
+      forgetScene(path);
+      warn(`Can't open ${path}: ${Editor.lastError}`);
+    }
+  };
+  const nothing = (): void => {};
+  const saveTo = (path: string, then: () => void): void => {
+    if (saveScene(path)) {
+      markSaved(history);
+      historyChanged();
+      say(`Saved ${path}`);
+      then();
+    } else warn(`Can't save ${path}: ${Editor.lastError}`);
+  };
+  const saveAs = (then: () => void): void => {
+    const current = EditorScene.scenePath;
+    void fileDialog({
+      mode: "save",
+      title: "Save Scene As",
+      filters: [SCENE_FILTER],
+      dir: current ? parentPath(current) : "scenes",
+      name: current ? stemOf(baseName(current), SCENE_FILTER) : EditorScene.sceneName,
+    }).then((path) => {
+      if (path) saveTo(path, then);
+    });
+  };
+  const save = (then: () => void): void => {
+    const current = EditorScene.scenePath;
+    if (current) saveTo(current, then);
+    else saveAs(then);
+  };
+  /** Asks to save unsaved changes first, then runs `then` (not when cancelled). */
+  const guardUnsaved = (then: () => void): void => {
+    if (!isDirty(history)) {
+      then();
+      return;
+    }
+    void confirmDialog({
+      title: "Unsaved changes",
+      message: `Save the changes to ${sceneLabel()}?`,
+      buttons: ["Save", "Don't Save", "Cancel"],
+      cancel: "Cancel",
+    }).then((answer) => {
+      if (answer === "Save") save(then);
+      else if (answer === "Don't Save") then();
+    });
+  };
+  /** A new object at the root, made by `make` (and again on redo), selected. */
+  const create = (label: string, make: () => GameObject): void => {
+    const c = makeCommand(`Create ${label}`, make);
+    exec(c);
+    const made = shownChildren(null);
+    const last = made[made.length - 1];
+    if (last) select(last, false);
+  };
 
   const selectedIds = [...tree.selected];
   const byId = new Map(visibleObjects().map((g) => [String(g.id), g]));
@@ -278,32 +394,83 @@ function App() {
     {
       label: "File",
       items: [
-        { label: "New Scene", accelerator: "Ctrl+N", action: todo("New Scene") },
+        { label: "New Scene", accelerator: "Ctrl+N", action: () => guardUnsaved(startNewScene) },
         {
           label: "Open Scene...",
           accelerator: "Ctrl+O",
           action: () =>
-            void fileDialog({ mode: "open", title: "Open Scene", filters: [SCENE_FILTER, ALL_FILES], dir: "scenes" }).then((path) => {
-              if (path) say(`Open ${path}: not implemented yet (see TODO.md M5.e)`);
+            guardUnsaved(() => {
+              void fileDialog({ mode: "open", title: "Open Scene", filters: [SCENE_FILTER, ALL_FILES], dir: "scenes" }).then((path) => {
+                if (path) openPath(path);
+              });
             }),
         },
         {
           label: "Open Recent",
           submenu: [
-            { label: "scenes/main.scene.json", action: todo("Open main.scene.json") },
-            { label: "scenes/deluxe.scene.json", action: todo("Open deluxe.scene.json") },
+            ...recent.map(
+              (path): MenuItem => ({
+                label: path,
+                action: () => guardUnsaved(() => openPath(path)),
+              }),
+            ),
             { separator: true },
-            { label: "Clear Recent", disabled: true },
+            {
+              label: "Clear Recent",
+              disabled: recent.length === 0,
+              action: () => {
+                clearRecent();
+                say("Recent scenes cleared");
+              },
+            },
           ],
         },
         { separator: true },
-        { label: "Save", accelerator: "Ctrl+S", action: todo("Save") },
-        { label: "Save As...", accelerator: "Ctrl+Shift+S", action: todo("Save As") },
+        { label: "Save", accelerator: "Ctrl+S", action: () => save(nothing) },
+        { label: "Save As...", accelerator: "Ctrl+Shift+S", action: () => saveAs(nothing) },
         { separator: true },
-        { label: "Exit", accelerator: "Alt+F4", action: () => Application.quit() },
+        { label: "Exit", accelerator: "Alt+F4", action: () => guardUnsaved(() => Application.quit()) },
       ],
     },
     { label: "Edit", items: editMenu() },
+    {
+      label: "GameObject",
+      items: [
+        { label: "Create Empty", accelerator: "Ctrl+Shift+N", action: () => create("GameObject", () => new GameObject("GameObject")) },
+        {
+          label: "3D Object",
+          submenu: PRIMITIVES.map(
+            (p): MenuItem => ({
+              label: p.label,
+              action: () => create(p.label, () => GameObject.createPrimitive(p.type, { name: p.label })),
+            }),
+          ),
+        },
+        {
+          label: "Light",
+          submenu: LIGHTS.map(
+            (l): MenuItem => ({
+              label: l.label,
+              action: () =>
+                create(l.label, () => {
+                  const go = new GameObject(l.label, { position: new Vector3(0, 3, 0), rotation: Quaternion.euler(50, -30, 0) });
+                  go.addComponent(Light, { type: l.type });
+                  return go;
+                }),
+            }),
+          ),
+        },
+        {
+          label: "Camera",
+          action: () =>
+            create("Camera", () => {
+              const go = new GameObject("Camera", { position: new Vector3(0, 1, -10) });
+              go.addComponent(Camera);
+              return go;
+            }),
+        },
+      ],
+    },
     {
       label: "View",
       items: [
@@ -483,7 +650,10 @@ const TITLES: Record<string, string> = {
   console: "Console",
 };
 
-buildDemoScene();
+// The scene this project had open last, else its start scene, else a demo to look at.
+const first = Editor.isAvailable ? startScene(Editor.startScene) : "";
+if (!first || !openScene(first)) buildDemoScene();
 createRoot().render(<App />);
 console.log("Platypus editor started (UI: editor/src/main.tsx:1)");
+if (first) console.log(`Opened ${first}`);
 console.warn("The Inspector is a placeholder (TODO.md M5.e)");

@@ -326,6 +326,25 @@ pub mod editor_api {
         file_op("restore", |root, _| files::restore(root, id))
     }
 
+    /// The project's start scene (`startScene` in its `project.json`; "" for none).
+    #[property]
+    pub fn start_scene() -> String {
+        project_root()
+            .and_then(|r| std::fs::read_to_string(r.join("project.json")).ok())
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v["startScene"].as_str().map(str::to_owned))
+            .unwrap_or_default()
+    }
+
+    /// Gives a project asset a `.meta` file (its GUID and importer settings) if it has none;
+    /// returns the GUID ("" for a file that isn't an asset).
+    pub fn ensure_meta(path: &str) -> String {
+        file_op("ensureMeta", |root, _| {
+            let file = project::resolve(root, path)?;
+            platypus_core::meta::ensure(&file).map_err(|e| format!("{path}: {e}"))
+        })
+    }
+
     /// Why the last file operation failed ("" when it worked).
     #[property]
     pub fn last_error() -> String {

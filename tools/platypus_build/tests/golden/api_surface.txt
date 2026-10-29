@@ -2326,8 +2326,10 @@ declare namespace Editor
 declare namespace Editor :: const isAvailable: boolean;
 declare namespace Editor :: const lastError: string;
 declare namespace Editor :: const project: string;
+declare namespace Editor :: const startScene: string;
 declare namespace Editor :: function copyIn(sources: readonly string[], dir: string): string[];
 declare namespace Editor :: function createDir(path: string): string;
+declare namespace Editor :: function ensureMeta(path: string): string;
 declare namespace Editor :: function exists(path: string): boolean;
 declare namespace Editor :: function freeName(dir: string, name: string): string;
 declare namespace Editor :: function listDir(path: string): ProjectEntry[];

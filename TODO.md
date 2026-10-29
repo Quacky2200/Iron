@@ -1500,6 +1500,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         under it; below the rows: to the root) and Project deletes are undoable (`M5-UNDO-01..06`)
         - [ ] Later: dropping between rows (sibling order) in the Hierarchy; references from other objects to a
           deleted one don't come back on undo; copies keep the original's name (Unity adds " (1)")
+      - [x] E4: scenes (`scenes.ts`): File > New / Open / Open Recent (per project, Clear Recent) / Save / Save As,
+        "Save changes?" before New, Open and Exit, the window title with `*`; the last scene (or the project's
+        `startScene`) opens at start, the demo scene only without one; GameObject > Create Empty / 3D Object / Light
+        / Camera (undoable); game cameras draw only in the Game panel and are saved with their own rect; saved
+        scenes and copied-in assets get `.meta` files (`platypus_core::meta`, `Editor.ensureMeta`) (`M5-SCN-11..13`).
+        A compiler fix came with it: a generic promise function no longer makes a `then` for every pair of types
+        (`M9-TS-3523`)
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into

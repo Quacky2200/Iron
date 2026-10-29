@@ -196,10 +196,80 @@ fn deletes_duplicates_and_moves_in_the_hierarchy_undo_and_redo() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// A new scene with a cube, saved with Ctrl+S (the dialog's name field starts as "Untitled";
+/// Enter saves).
+const SAVE_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "save", "frames": 120, "input": [
+    { "frame": 0, "kind": "clickText", "text": "File" },
+    { "frame": 5, "kind": "clickText", "text": "New Scene" },
+    { "frame": 12, "kind": "moveToText", "text": "New scene" },
+    { "frame": 15, "kind": "clickText", "text": "GameObject" },
+    { "frame": 20, "kind": "clickText", "text": "3D Object" },
+    { "frame": 25, "kind": "clickText", "text": "Cube" },
+    { "frame": 32, "kind": "moveToText", "text": "Create Cube" },
+    { "frame": 35, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 37, "kind": "key", "code": "KeyS" },
+    { "frame": 39, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 46, "kind": "moveToText", "text": "Save Scene As" },
+    { "frame": 50, "kind": "key", "code": "Enter" },
+    { "frame": 60, "kind": "moveToText", "text": "Saved scenes/Untitled.scene.json" }
+  ] }
+] }"#;
+
+/// The saved scene opens at start (the project's `startScene`).
+const OPEN_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "open", "frames": 30, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Cube" }
+  ] }
+] }"#;
+
+// M5-SCN-13
+#[test]
+fn a_new_scene_saves_to_the_project_and_opens_again() {
+    let project =
+        std::env::temp_dir().join(format!("platypus-editor-project-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&project);
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("project.json"), "{ \"name\": \"fixture\" }\n").unwrap();
+    let run = run_editor_on("save", SAVE_SPEC, false, &project);
+    let file = project.join("scenes/Untitled.scene.json");
+    let text = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+    for name in ["\"Cube\"", "\"Main Camera\"", "\"Directional Light\""] {
+        assert!(text.contains(name), "{name} not saved:\n{text}");
+    }
+    // The cameras are saved as the scene has them, not as the Game panel draws them.
+    assert!(
+        !text.contains("\"rect\":[0,0,0,0]") && !text.contains("\"width\": 0"),
+        "{text}"
+    );
+    assert!(
+        project.join("scenes/Untitled.scene.json.meta").is_file(),
+        "no .meta"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+
+    std::fs::write(
+        project.join("project.json"),
+        "{ \"name\": \"fixture\", \"startScene\": \"scenes/Untitled.scene.json\" }\n",
+    )
+    .unwrap();
+    let run = run_editor_on("open", OPEN_SPEC, false, &project);
+    let log = std::fs::read_to_string(run.join("run.log")).unwrap();
+    assert!(log.contains("Opened scenes/Untitled.scene.json"), "{log}");
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 /// Builds the editor and runs `platypus-app editor --project examples/arcade --bench` with the
 /// input `spec` (and `--bench-shots <dir>/shots` with `shots`), checking it ended cleanly.
 /// Returns the run's folder.
 fn run_editor(name: &str, spec: &str, shots: bool) -> std::path::PathBuf {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    run_editor_on(name, spec, shots, &repo.join("examples/arcade"))
+}
+
+/// [`run_editor`] on another project folder.
+fn run_editor_on(name: &str, spec: &str, shots: bool, project: &Path) -> std::path::PathBuf {
     // The tests run in parallel; one at a time builds `editor/build`.
     static BUILD: Mutex<()> = Mutex::new(());
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -225,7 +295,7 @@ fn run_editor(name: &str, spec: &str, shots: bool) -> std::path::PathBuf {
     let mut cmd = Command::new(&host);
     cmd.arg("editor")
         .arg("--project")
-        .arg(repo.join("examples/arcade"))
+        .arg(project)
         .args(["--bench", "--fixed-dt", "0.016", "--size", "1600x900"])
         .arg("--bench-input")
         .arg(&spec_path)
