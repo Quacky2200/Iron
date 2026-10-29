@@ -163,7 +163,7 @@ fn run(o: &Options) -> Result<(), String> {
     let host = o
         .host
         .clone()
-        .unwrap_or_else(|| repo.join("target/release").join(exe("platypus-app")));
+        .unwrap_or_else(|| crate::package::built_host(&repo, "release"));
     if !host.is_file() {
         return Err(format!(
             "{} not found (build it, or pass --host)",
@@ -255,10 +255,6 @@ fn run(o: &Options) -> Result<(), String> {
         json_path.display()
     );
     Ok(())
-}
-
-fn exe(name: &str) -> String {
-    format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
 /// One `platypus-app --bench` run, bounded in time.

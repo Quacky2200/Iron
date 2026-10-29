@@ -1,0 +1,4 @@
+# Cargo's output goes to `build/` (relative to this folder's parent: the repository root), so the
+# host is `build/release/platypus-app`. Games build into their own `<game>/build/`.
+[build]
+target-dir = "build"

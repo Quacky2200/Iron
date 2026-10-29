@@ -32,7 +32,7 @@ cd tools && cargo run --release -p platypus_ts_tests --bin sine_bench 2000
 `stress` collects at every allocation of generated code and poisons freed memory, `off` never
 collects on its own. Any change to lowering, codegen or the runtime should also pass in stress mode.
 
-The CLI (`cargo build --release -p platypus_ts`, binary `tools/target/release/platypus_ts`):
+The CLI (`cargo build --release -p platypus_ts`, binary `tools/build/release/platypus_ts`):
 
 ```
 platypus_ts file.ts [--dump-ir] [--prefix p_] [--struct-base N] [-o out.obj] [--bindings out.rs]

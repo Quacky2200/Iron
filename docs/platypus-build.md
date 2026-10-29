@@ -214,7 +214,7 @@ builds and is type-checked with the same default (the build writes it into `buil
    GUID when the move is unambiguous). Every string literal of the program that names an existing asset file under the game folder
    (`Texture.load("assets/x.png")`, `Model.load`, `loadFont`, `scenes/*.scene.json`, sounds) is copied with its `.meta` to the same
    relative path in `build/`. Paths follow `platypus_core::resolve_asset` (relative, no `..`, no drive letters or schemes). `--cook` then
-   runs `platypus-app <game> --cook` (the engine's cooker) when `target/{release,debug}/platypus-app` is found.
+   runs `platypus-app <game> --cook` (the engine's cooker) when `build/{release,debug}/platypus-app` (cargo's output) is found.
 7. **`build/game.pbundle`**, written atomically (temporary file and rename).
 
 ## Dynamic asset paths and `build/assets.plan`
@@ -478,7 +478,7 @@ codec, GUID, path).
 default stays loose; flipping it is a TODO (`tools/platypus_ts/TODO.md`, asset packs). `emoji` with `--packs`: one `assets.dat`, 157
 entries, 6.41 MB raw, 5.93 MB on disk.
 
-**The host** is `--host`, else `$PLATYPUS_HOST`, else the newest `platypus-app` next to `platypus-build` and in `target/{release,debug}/`
+**The host** is `--host`, else `$PLATYPUS_HOST`, else the newest `platypus-app` next to `platypus-build` and in `build/{release,debug}/` (cargo's output, `$CARGO_TARGET_DIR` when set)
 found going up from the game folder and the current folder, by modified time (a stale release build no longer wins over a fresh
 debug one; it lacked payload support and died with a missing `game.js`). `package` prints `host: <path>` first. A host that already carries a payload is stripped first, so
 a packaged exe can be re-packaged. A debug host is ~77 MB, a release one is much smaller: ship release.

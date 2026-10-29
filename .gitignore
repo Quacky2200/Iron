@@ -1,3 +1,7 @@
+# Cargo's output (`target-dir` in `.cargo/config.toml` and `tools/.cargo/config.toml`).
+/build/
+/tools/build/
+# The old cargo output folders, no longer written: ignored so stale copies stay out of `git status`.
 /target
 /tools/target
 node_modules/

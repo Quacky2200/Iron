@@ -191,7 +191,7 @@ Three numbers, all from `GetProcessMemoryInfo` (`PROCESS_MEMORY_COUNTERS_EX2`) o
   of image) included.
 
 **Measuring.** Build the release host (`cargo build --release -p platypus_app`) and the example, start
-`target/release/platypus-app examples/<game> --renderer gles` (a window opens), wait ~8 s without touching it, read the
+`build/release/platypus-app examples/<game> --renderer gles` (a window opens), wait ~8 s without touching it, read the
 three numbers (PowerShell: `$p.PrivateMemorySize64`, `$p.WorkingSet64`, and `WorkingSetPrivate` of
 `Win32_PerfFormattedData_PerfProc_Process` for the pid), close the window. `PLATYPUS_MEM_TRACE=1` prints the three at
 every start-up stage to stderr (the compiler's phases, the host's set-up, the window, the EGL context, the GLES

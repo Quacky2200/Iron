@@ -1,0 +1,4 @@
+# `tests/tools/shots` is a member of the `tools/` workspace: cargo started in here shares its
+# output folder (`tools/build/`, relative to this folder's parent) instead of the root's `build/`.
+[build]
+target-dir = "../../tools/build"

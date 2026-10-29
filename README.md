@@ -158,14 +158,14 @@ cargo build --release -p platypus_app
 cd tools && cargo build --release -p platypus_build && cd ..
 
 # Build an example (into examples/fog-park/build/) and run it
-tools/target/release/platypus-build build examples/fog-park
-target/release/platypus-app examples/fog-park
+tools/build/release/platypus-build build examples/fog-park
+build/release/platypus-app examples/fog-park
 
 # Render one frame to a PNG and exit
-target/release/platypus-app examples/css --screenshot out.png --frames 30
+build/release/platypus-app examples/css --screenshot out.png --frames 30
 
 # Package a game as one executable (examples/boxes/build/<name>.exe)
-tools/target/release/platypus-build package examples/boxes
+tools/build/release/platypus-build package examples/boxes
 ```
 
 A game is a folder with `project.json` (only `name` is required), `tsconfig.json` and `src/main.ts(x)`; start from

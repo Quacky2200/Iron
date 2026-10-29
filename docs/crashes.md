@@ -111,7 +111,7 @@ cargo run --release -p platypus_app -- path/to/game -- plain
 The dialog can also be shown again for any saved report, without a game (`--plain` for the plain one):
 
 ```bash
-target/release/platypus-app.exe --crash-report "C:\Users\you\AppData\Roaming\<company>\<title>\crash-1793151215.txt"
+build/release/platypus-app.exe --crash-report "C:\Users\you\AppData\Roaming\<company>\<title>\crash-1793151215.txt"
 ```
 
 ## When no dialog shows

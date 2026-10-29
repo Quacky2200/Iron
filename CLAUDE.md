@@ -61,6 +61,8 @@ On Windows the shell needs `export PATH="$HOME/.cargo/bin:$PATH"`, and building 
 libclang for the linked-in ANGLE (mozangle's bindgen): set `LIBCLANG_PATH` to an LLVM 20 or newer `bin` folder per command
 (this machine: `export LIBCLANG_PATH='C:\llvm-23.1.4\bin'`; never in a committed file). Without libclang,
 `cargo build -p platypus_app --no-default-features` leaves ANGLE out (GLES then needs `PLATYPUS_ANGLE_DIR`, else wgpu).
+Cargo writes to `build/` (the root workspace: `build/release/platypus-app.exe`) and `tools/build/` (the `tools/` workspace,
+`tools/build/release/platypus-build.exe`), set by `.cargo/config.toml` there; there is no `target/`.
 
 ```bash
 cargo fmt --all
@@ -89,7 +91,7 @@ cargo run -p platypus_app -- examples/world --cook
 ```bash
 cd tools && cargo run -p platypus_build -- package ../examples/boxes --icon icon.png
 ```
-`platypus-build package <game>` writes `<game>/build/<name>.exe`: one file holding the host (`platypus-app`, from `target/{release,debug}` or `--host`),
+`platypus-build package <game>` writes `<game>/build/<name>.exe`: one file holding the host (`platypus-app`, from `build/{release,debug}` or `--host`),
 the game's bundle, CSS and assets, and the icon and version info from `project.json`, with `THIRD-PARTY-NOTICES.md` beside it (built in; `--no-notices` skips it)
 (`docs/platypus-build.md`). `--renderer vulkan|gles|cpu` writes the exe's `renderer`.
 ```bash
@@ -128,7 +130,7 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
 - **Code style:** match the surrounding code. Comments are short and say why. Tests are named after behaviour and tagged with their `TESTS.md` ID in a comment.
 - **Notes for agents (speed):** a scan found these make work slow, so avoid them.
   - **Two levels of checks.** Per step run `cargo fmt`, the new tests, the existing tests of the area you touched (`-p <crate>`, or `cargo test -p platypus_ts_tests --test <lang|stdlib|engine|engine_api|ui> <filter>`), clippy on the crates you edited, and the `generated_dts` guard when declarations change. Run the FULL sweep (root and `tools/` fmt, clippy, `cargo test --workspace`, `PLATYPUS_TS_GC=stress cargo test -p platypus_ts_tests` (all five groups), `platypus_build check ../examples --tsc`) once at the end of a planned group of work or before a merge, then look at regressions together.
-  - **One build command shape.** Use the same command line and environment every time (same flags, `--workspace` or `-p`, `CARGO_INCREMENTAL` unchanged within a session): a different shape changes the build hash and rebuilds everything, leaving stale copies of every crate in `target/`. Never run two cargo builds at once in the shared checkout.
+  - **One build command shape.** Use the same command line and environment every time (same flags, `--workspace` or `-p`, `CARGO_INCREMENTAL` unchanged within a session): a different shape changes the build hash and rebuilds everything, leaving stale copies of every crate in `build/`. Never run two cargo builds at once in the shared checkout.
   - **Read big files in parts.** `tools/platypus_ts/src/lower/expr.rs` (about 5,800 lines), `crates/platypus_ui/src/tree.rs`, `platypus_api_macros/src/lib.rs`, `platypus_app/src/main.rs`, `TESTS.md` (326 KB) and `tools/platypus_ts/TODO.md` (long lines are cut off by Read) are huge: use Grep and read ranges, never the whole file. New code goes in a new module rather than growing these files.
   - **Notes stay short.** Keep the "Resume point" of `tools/platypus_ts/TODO.md` to about 30 lines and replace it, don't append; put history in git, not in TODO/NOTES.
   - **Line endings.** Many files are CRLF on disk (`.gitattributes` says LF): use the Edit tool, not shell tools, and do not mass-convert files in a feature commit.
@@ -144,8 +146,8 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
 - **No engine imports in games:** engine and UI names (`Vector3`, `GameObject`, `Component`, `useState`, `createRoot`, ...) are TypeScript globals declared in the generated `types/platypus.d.ts` (`platypus-build types`; `platypus-build build` passes it to `tsc` by itself). Examples import only relative files and `.css`. Old `import { .. } from "@platypus/engine"` forms still compile. There is no hand-written `.d.ts`: declarations come from `#[platypus_api]`, the UI tables and `tools/platypus_ts/src/builtins.rs` (see `docs/platypus-build.md`).
 - **Modules:** a bare import (`from "foo"`) is a file of `src/modules/` (next to the entry); there is no `node_modules` resolution, so a TypeScript package is used by copying its `.ts` source in (`docs/platypus-build.md`, "Modules and packages"). A module may not capture engine global names (it is renamed internally); unreferenced top-level functions are not compiled.
 - **Shell edits:** never create or change files with bash heredocs, `echo`/`cat` redirects or `python -c` strings, even though the tools are installed: they mangle apostrophes and backslashes on this machine. Always use the Edit/Write tools, or a Python script saved as a file (written with Write, then run).
-- **Interrupted builds:** if cargo was killed mid-build, delete the corrupt `.pdb` files under `target/` before rebuilding.
-- **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `target/debug/platypus-app.exe`.
+- **Interrupted builds:** if cargo was killed mid-build, delete the corrupt `.pdb` files under `build/` (or `tools/build/`) before rebuilding.
+- **Stale app binary:** `cargo clippy`/`cargo test` don't rebuild `build/debug/platypus-app.exe`.
   Run `cargo build -p platypus_app` before any manual check in the window. A running window locks the
   exe, so close it before rebuilding.
 - **Logs:** `platypus-app` is a GUI-subsystem program. Its log goes to `Player.log` (last run:

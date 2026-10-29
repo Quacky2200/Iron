@@ -16,7 +16,7 @@ pub fn repo_root() -> PathBuf {
 /// The command line: example names (none: every example) and the switches both tools take.
 pub struct Args {
     pub names: Vec<String>,
-    /// `--no-host-build`: use `target/release/platypus-app` as it is.
+    /// `--no-host-build`: use `build/release/platypus-app` as it is.
     pub build_host: bool,
     /// `--no-build`: run the examples' `build/` as it is.
     pub build_games: bool,
@@ -85,10 +85,7 @@ pub fn release_host(root: &Path, build: bool) -> Result<PathBuf, String> {
             return Err("building the release host failed".into());
         }
     }
-    let host = root
-        .join("target")
-        .join("release")
-        .join(format!("platypus-app{}", std::env::consts::EXE_SUFFIX));
+    let host = platypus_build::package::built_host(root, "release");
     if host.is_file() {
         Ok(host)
     } else {

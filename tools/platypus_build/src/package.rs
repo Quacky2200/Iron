@@ -526,9 +526,21 @@ fn exe_name(name: &str) -> String {
 /// The engine host's name, without extension.
 pub const HOST: &str = "platypus-app";
 
+/// Where cargo puts the root workspace's output (`[build] target-dir` in `.cargo/config.toml`).
+pub const CARGO_OUT: &str = "build";
+
+/// The `platypus-app` cargo builds in the checkout `repo` for `profile` (`release`, `debug`):
+/// under `$CARGO_TARGET_DIR` when it is set, else `<repo>/build/<profile>/`.
+pub fn built_host(repo: &Path, profile: &str) -> PathBuf {
+    let out = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo.join(CARGO_OUT));
+    out.join(profile).join(exe_name(HOST))
+}
+
 /// The engine host (`platypus-app`): `--host`, `$PLATYPUS_HOST`, the host next to this program,
-/// or the newest `target/{release,debug}/platypus-app` found going up from the game folder and
-/// the current folder.
+/// or the newest `build/{release,debug}/platypus-app` (cargo's output, [`built_host`]) found going
+/// up from the game folder and the current folder.
 pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String> {
     if let Some(p) = explicit {
         return if p.is_file() {
@@ -557,7 +569,7 @@ pub fn find_host(game: &Path, explicit: Option<&Path>) -> Result<PathBuf, String
         let s = s.canonicalize().unwrap_or(s);
         for a in s.ancestors() {
             for profile in ["release", "debug"] {
-                found.push(a.join("target").join(profile).join(exe_name(HOST)));
+                found.push(built_host(a, profile));
             }
         }
     }
@@ -1856,7 +1868,7 @@ mod tests {
     }
 
     // M9-TS-2440: needs the engine host and a GPU, so it runs on request:
-    // `cargo test -p platypus_build -- --ignored standalone` (PLATYPUS_HOST or a built target/debug/platypus-app).
+    // `cargo test -p platypus_build -- --ignored standalone` (PLATYPUS_HOST or a built build/debug/platypus-app).
     #[test]
     #[ignore = "needs platypus_app built and a GPU"]
     fn standalone_exe_runs_from_another_folder_without_the_game_folder() {

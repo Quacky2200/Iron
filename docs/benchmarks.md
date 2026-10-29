@@ -597,7 +597,7 @@ Unity's animation culling. Measured with the release host (`cargo build --releas
 machine above (AMD Ryzen 9 5900X, NVIDIA GeForce RTX 5080 on Vulkan, Windows 11 Pro 22631):
 
 ```bash
-target/release/platypus-app.exe examples/fog-white-room --bench --bench-input tools/bench/inputs/fog-white-room.json \
+build/release/platypus-app.exe examples/fog-white-room --bench --bench-input tools/bench/inputs/fog-white-room.json \
   --fixed-dt 0.0166667 --bench-out out.json
 ```
 

@@ -721,17 +721,13 @@ pub fn build(root: &Path, opts: &Options) -> Result<Report, String> {
     })
 }
 
-/// The `platypus-app` binary, for `--cook`: next to the repo's `target/`, or on the PATH.
+/// The `platypus-app` binary, for `--cook`: cargo's release or debug build in a folder above the game
+/// (`package::built_host`).
 pub fn find_platypus(root: &Path) -> Option<PathBuf> {
     let mut p = root.canonicalize().ok()?;
     while p.pop() {
-        for rel in [
-            "target/release/platypus-app.exe",
-            "target/debug/platypus-app.exe",
-            "target/release/platypus-app",
-            "target/debug/platypus-app",
-        ] {
-            let c = p.join(rel);
+        for profile in ["release", "debug"] {
+            let c = package::built_host(&p, profile);
             if c.exists() {
                 return Some(c);
             }

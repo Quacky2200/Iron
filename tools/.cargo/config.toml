@@ -1,0 +1,4 @@
+# The tools workspace's own output folder, `tools/build/` (relative to this folder's parent), so it
+# does not share the root workspace's `build/`.
+[build]
+target-dir = "build"

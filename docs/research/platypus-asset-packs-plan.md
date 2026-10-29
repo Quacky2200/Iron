@@ -134,7 +134,7 @@ pub fn cook_scene(text: &str, root: &Path) -> Result<String, String>;   // minif
   and `platypus_scenes` loads it (`platypus_build` already depends on `platypus_scenes`: `lib.rs` `manifests()`); `M9-TS-2511` a missing cooked file with `--no-cook` is an error naming the path; `M9-TS-2512` stale packs are removed.
   Use textures that need no cooker in unit tests by writing fake `.platypus/cooked/<path>.tex` files newer than their sources.
 - Acceptance: `cargo run -p platypus_build -- pack ../examples/scenes --verify --report` and the same for `world`, `classics`,
-  `platformer`, `arcade` succeed (needs `target/debug/platypus` for cooking: `cargo build -p platypus_app` first); record the report
+  `platformer`, `arcade` succeed (needs `build/debug/platypus-app` for cooking: `cargo build -p platypus_app` first); record the report
   tables in `docs/asset-packs.md`.
 
 ### Step 5. Incremental packs (`tools/platypus_build/src/pack/cache.rs`)

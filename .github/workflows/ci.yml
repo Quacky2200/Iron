@@ -17,6 +17,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> build"  # target-dir in .cargo/config.toml
 
       # Software Vulkan (llvmpipe) for headless render tests; Windows uses WARP (DX12).
       - name: Install Linux dependencies
