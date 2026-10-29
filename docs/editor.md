@@ -292,7 +292,8 @@ see-through panels show the world.
 - Smoke test `M5-EDT-28` (`tools/platypus_build/tests/editor_smoke.rs`): builds `editor/` and runs
   `platypus-app editor --project examples/arcade --bench` with `clickText` input. It needs a built host and a GPU.
   Shorter runs in the same file compare `--bench-shots` pictures of the Scene view: after the Game tab and back the view
-  is unchanged (its own camera, grid and icons; `M5-EDT-29`).
+  is unchanged (its own camera, grid and icons; `M5-EDT-29`), and selecting Cube in the Hierarchy names it in the
+  Inspector and draws its handles (`M5-EDT-30`).
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
 - `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor

@@ -2162,6 +2162,8 @@ Left:
   - [x] The Scene view lost its grid and icons after the Game tab and back, showing the game camera: renders and effects
     that a UI event caused ran without the scene current (`Native::settle`, the panels' and windows' settle), so the
     remounted view's `new GameObject` camera was never made (`M9-API-1518`, `M5-EDT-29`).
+  - [x] Selecting Cube in the Hierarchy showed "1 selected" but no handles: the same cause, the App's render after the
+    click read `GameObject.roots` as empty, so the selection matched no objects (`M5-EDT-30`).
   - [ ] Editor follow-ups: a manual check of the Scene view controls, menus and drag and drop in the window (M5-EDT-21,
     M5-EDT-23, M5-DND-11); the editor source still works around the compiler gaps listed as "Found by the editor, still open"
     in tools/platypus_ts/TODO.md (mixed-type class lists, an intersection array, conditional spreads, written return types

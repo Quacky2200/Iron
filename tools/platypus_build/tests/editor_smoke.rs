@@ -81,6 +81,30 @@ fn the_scene_view_keeps_its_camera_after_the_game_tab() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// Before and after selecting Cube in the Hierarchy; `moveToText` finds the Inspector naming
+/// it (else `bench: no text` fails the run).
+const SELECT_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "start", "frames": 20, "input": [] },
+  { "name": "cube", "frames": 30, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Cube" },
+    { "frame": 10, "kind": "moveToText", "text": "1 selected: Cube" }
+  ] }
+] }"#;
+
+// M5-EDT-30
+#[test]
+fn selecting_an_object_in_the_hierarchy_shows_its_handles() {
+    let run = run_editor("select", SELECT_SPEC, true);
+    let shot = |name: &str| run.join("shots").join(name);
+    // Cube has no icon nor wire gizmo: what changes in the view is its move handles.
+    let handles = scene_pixels_changed(&shot("01-start.png"), &shot("02-cube.png"));
+    assert!(
+        handles > 300,
+        "selecting Cube drew no handles ({handles} pixels changed)"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+}
+
 /// Builds the editor and runs `platypus-app editor --project examples/arcade --bench` with the
 /// input `spec` (and `--bench-shots <dir>/shots` with `shots`), checking it ended cleanly.
 /// Returns the run's folder.
