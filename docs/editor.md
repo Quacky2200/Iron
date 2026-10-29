@@ -19,6 +19,7 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [SceneView.tsx](../editor/src/SceneView.tsx), [scene-camera.ts](../editor/src/scene-camera.ts), [handles.ts](../editor/src/handles.ts), [frame.ts](../editor/src/frame.ts) | The Scene view, its camera model, transform handles, `onEditorFrame` |
 | [history.ts](../editor/src/history.ts), [scene-edit.ts](../editor/src/scene-edit.ts) | Undo and redo: the command list, and scene edits as commands |
 | [editor_api.rs](../crates/platypus_scenes/src/editor_api.rs), [inspect.rs](../crates/platypus_scenes/src/inspect.rs) | The `EditorScene` namespace; the component and field logic under the Inspector |
+| [placement.ts](../editor/src/placement.ts) | Placing files: `groundPoint`, `assetKind`, `placeable`, `importFolder` |
 | [Inspector.tsx](../editor/src/Inspector.tsx), [inspector.ts](../editor/src/inspector.ts) | The Inspector panel and its logic (number parsing, field JSON, undo commands) |
 | [screen.ts](../editor/src/screen.ts), [classes.ts](../editor/src/classes.ts), [demo-scene.ts](../editor/src/demo-scene.ts) | `useScreenSize`, `cx()` class lists, the demo scene |
 | [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
@@ -124,6 +125,8 @@ only with `--project`: each call goes through `Editor`'s `project_op`, so a fail
 | `EditorScene.setField(object, kind, handle, name, json)` | Sets one field from JSON text (a field's `json`, or a plain array for a vector or colour), through the kind's `load`; an opaque component's data is replaced instead (`set_opaque`) |
 | `EditorScene.addComponent(object, kind)` / `removeComponent(object, kind, handle)` | Adds a component of a registered kind (returns its handle, 0 on failure); removes one, opaque ones included |
 | `EditorScene.componentKinds()` | The kinds a component can be added of, by name |
+| `EditorScene.savePrefab(object, path)` | Writes an object and everything under it as a `.prefab.json` (`manager::prefab_file_json`: assets in the file's `assets` table, references outside it dropped, no placement of its own); false for a part of a model. `Editor.ensureMeta` gives the file its GUID |
+| `EditorScene.placePrefab(path, parent)` | Places a copy of a prefab file under `parent` (no object: the root of the active scene), last, remembering its file; none when the file isn't a prefab |
 
 It uses `SceneManager` helpers in `manager.rs`: `scene_value` (a scene as JSON), `rename_scene` and `load_scene_file`.
 The component calls live in `inspect.rs`. Field types and enum options come from the kind's schema
@@ -228,7 +231,8 @@ blur and cancels on Escape, then `onRename(node, name)`. Expanded nodes show a C
 rotated square with two borders), since system fonts may lack the triangle glyphs. With `dragType` set, rows are
 draggable (they carry their id under that data type, not while renamed) and a row dropped onto another calls
 `onDropNode(dragged, onto)`; the row under the drag gets the `over` class. A drop on itself does nothing, and the
-drop doesn't reach the list behind.
+drop doesn't reach the list behind. `acceptsDrop(e)` lets rows take other drags (files, say): such a drag gets `copy`
+and a drop calls `onDropOn(e, onto)`.
 
 ### Console ([console.ts](../editor/src/console.ts), [log.ts](../editor/src/log.ts), [Console.tsx](../editor/src/Console.tsx))
 
@@ -279,6 +283,9 @@ inside a folder. Double-click or Enter opens a folder, Backspace goes up. It use
   (move), highlights the folder, and stops propagation so the innermost one wins.
 - `onDrop` calls `copyIn` with the dropped paths or `moveInto` with the item's path, then logs
   the result and lists the folder again.
+- A Hierarchy object (`OBJECT_TYPE`, in `project.ts`) dropped on a folder gets `copy`; `onDrop` calls
+  `onDropObject(objectId, dir)`, which saves it there as a prefab (see below), and logs "Saved prefab <path>" or the
+  failure.
 
 The toolbar and keys work on the selected item (not `..`), each through a dialog: New Folder (a `textDialog`, then
 `Editor.createDir`), Rename (F2; `Editor.rename`) and Delete (Del; a `confirmDialog`, then `Editor.trash`). Each logs
@@ -359,6 +366,11 @@ centre. Ctrl snaps (1 m, 15 degrees, 0.1). `SceneView` draws the parts as SVG in
 lights up the hovered part, and reports each finished drag with `onTransformed(object, before, after)`
 so the editor can undo it.
 
+`SceneView` also takes drops: `acceptsDrop(e)` says whether a drag can land (it gets `copy`), and `onDropAt(e, point)`
+is called with the ground point under the pointer. `placement.ts` `groundPoint` casts the camera ray through the
+pointer (`screenPointToRay`) and returns where it meets the plane y = 0 in front of the camera (within 10,000 m); a
+ray that misses it gives the point `DROP_DISTANCE` (10 m) along the ray.
+
 ## The editor UI ([editor/src/main.tsx](../editor/src/main.tsx))
 
 A menubar (File, Edit, View, Window, Help with accelerators and an Open Recent submenu), a dock
@@ -374,7 +386,8 @@ see-through panels show the world.
   component (`kindOf`). `useSceneTree` computes a key of `id:parentId:name` per object in `onEditorFrame`
   and rebuilds the tree only when it changes, so adding, moving or renaming objects shows at once.
   Renaming sets `GameObject.name`.
-  Dragging a row onto another reparents it (last child; undoable; not into itself or its own children).
+  Dragging a row onto another reparents it (last child; undoable; not into itself or its own children). Model and
+  prefab files dropped on a row, or below the rows, are placed there (see Prefabs and placing models).
 - **Edit menu.** Undo / Redo (Ctrl+Z, Ctrl+Y; the labels name the command, "Undo Move"), Cut, Copy, Paste, Duplicate
   (Ctrl+D), Delete and Select All. A focus area (`scene` or `project`, set by pressing in the Hierarchy / Scene view or the
   Project browser) says what they act on: in `project` Delete trashes the selected file (`Editor.trash`, undone with
@@ -404,6 +417,29 @@ see-through panels show the world.
 - **View > Show Grid / Show Gizmos** toggle the Scene view's `grid` and `gizmos` props.
 - Window > Save / Load / Reset Layout keeps the layout in PlayerPrefs (`editor.layout`), and the saved
   layout loads at start. Unimplemented menu items log what they would do.
+
+### Prefabs and placing models
+
+`assetKind(path)` ([placement.ts](../editor/src/placement.ts)) sorts a project file by its name: `.prefab.json` is a
+prefab, `.scene.json` a scene, `.glb` / `.gltf` / `.fbx` a model. `placeable` is a model or a prefab.
+
+- **Saving a prefab.** Drag a Hierarchy object onto a folder of the Project browser. `savePrefabOf` takes a free name
+  `<dir>/<object name>.prefab.json` (`Editor.freeName`), writes it with `EditorScene.savePrefab` and gives it a
+  `.meta` (`Editor.ensureMeta`). The file holds the object and its children with an `assets` table like a scene's.
+- **Placing.** A model or prefab dragged from the Project browser or from the system lands:
+  - on the Scene view: at the ground point under the pointer, at the root;
+  - on a Hierarchy row: as that row's last child, with no point (the model's own position);
+  - below the rows: at the root.
+
+  `placeFile` runs it as a `placeCommand` (`Place <name>`): a model is `Model.load(path).instantiate`, a prefab
+  `EditorScene.placePrefab`. A failure warns with `Editor.lastError`.
+- **Double-click.** In the Project browser (`openFile`) a scene opens (after the unsaved-changes question), a model or
+  prefab is placed at the root, and any other file opens in the code editor.
+- **System files.** Files dropped from the system are first copied into the project (`Editor.copyIn`, with their
+  `.meta`): models into `assets/models`, prefabs into `assets` (`importFolder`; the folder is made if missing). The log
+  says "Imported <path>", then the copy is placed like a project file.
+- **Undo and selection.** `placeCommand` makes the object again on redo and destroys it on undo, finding the parent by
+  its place in the tree. The new object is the last child of its parent, and is selected.
 
 ## Inspector ([Inspector.tsx](../editor/src/Inspector.tsx), [inspector.ts](../editor/src/inspector.ts))
 
@@ -468,6 +504,11 @@ command's undo writes the old value back, or removes the key when the file had n
 - Project Settings: `project_edit` units (`M5-PRJ-01` to `-03`: replace in place, add last, remove with its comma),
   the `Editor` project calls in `editor.rs` (`M5-PRJ-04`) and the smoke test `M5-PRJ-05` (company typed, the file gains
   one key, Undo restores it exactly). `cond && f()` with a void `f` (the dialog buttons use it) is `M9-TS-3524`.
+- Prefabs and placing: `savePrefab` / `placePrefab` and a prefab's `assets` table reaching its copies in
+  `editor_tests.rs` (`M5-PRF-10`); the smoke test `M5-PRF-11` (Cube dragged onto the Project list is saved as
+  `assets/Cube.prefab.json` with its `.meta`, the file dragged onto the Hierarchy is placed, Ctrl+Z removes it) and
+  `M5-DND-20` (`assets/house.glb` dragged onto the Scene view is placed); the placement model in
+  `editor/test/placement.test.ts` (`M5-DND-21`, run by `editor_models`: the ground point, file kinds, import folders).
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
 - `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor
@@ -484,6 +525,9 @@ command's undo writes the old value back, or removes the key when the file had n
 - The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;
   gizmos and handles are drawn for the selection only.
 - Hierarchy drags only drop onto a row (it becomes the last child); there is no dropping between rows to reorder.
+- A placed prefab is an unlinked copy: it keeps its file's path but later edits to the file don't reach it, and there
+  is no "apply to prefab". There is no drag preview (nothing follows the pointer during a drag). Files dropped on the
+  Scene view are placed at the root, never under a selected object.
 - Undoing a delete doesn't restore references to the object from others (they stay empty). Duplicates keep the same name.
 - The Inspector shows references, assets and nested data read-only, shows one object when several are selected, has
   no colour picker (channels are numbers), and shows tag and layer read-only. A hand-written kind without a schema is

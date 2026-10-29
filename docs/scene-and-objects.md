@@ -374,6 +374,10 @@ placing copies. `PrefabData` is `{ format: "platypus.prefab", version: 1, name, 
   as scenes, so the same limits). References to objects outside the tree are dropped. The root's own
   position and rotation are removed, so a copy starts from the origin. The data is copied, so later
   changes to the original don't leak in. A model part can't be captured on its own.
+- A prefab file keeps its `assets` table when loaded (`prefab_from_data`), `prefab_json` writes it back, and
+  instantiating hands it to the loader, so a copy finds its shared meshes and textures. `manager::prefab_file_json(object)`
+  builds a file straight from an object (the editor's `EditorScene.savePrefab`): the same `Saver` fills `assets`, as for
+  a scene, and the root loses `position`, `rotation` and `prefab`.
 - `Prefab.fromData(data)` reads saved data (`toJSON()`'s output, or a bundled `.prefab.json`); other data
   is refused. `Prefab.load(path)` reads a file from the game folder through `asset.readText`, once per
   path.
