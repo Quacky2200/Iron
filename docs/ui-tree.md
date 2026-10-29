@@ -249,7 +249,9 @@ basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc:
    from (0,0), ignoring ancestor scroll. An absolute box whose containing block is not its parent
    (`LayoutEngine::containing_block`: the nearest positioned ancestor, or the root) is placed from that
    box's rect minus its scroll, because Taffy gives out-of-flow positions relative to the containing
-   block (`UiTree::child_origin` picks the origin for each child). For
+   block (`UiTree::child_origin` picks the origin for each child). Outside list markers are the
+   exception: their `right: 100%; top: 0` only cancel the containing block's size, so they are
+   placed from their item. For
    text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`;
    `finished` remembers that width, and the pass skips `finish` when it is unchanged (a scroll only
    moves things). Measuring or re-shaping a block forgets it. `text_measure_count()` counts measures.
