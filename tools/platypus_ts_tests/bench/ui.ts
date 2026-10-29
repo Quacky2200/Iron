@@ -758,3 +758,35 @@ function PickerParent(): UiElement {
 export function pickerApp(): UiElement {
   return <PickerParent />;
 }
+
+// Setters kept past their component (a promise that resolves after the panel closed, as in the
+// editor's Project browser): as in React, they do nothing once it has unmounted.
+let lateSetters: (() => void)[] = [];
+
+function Late(): UiElement {
+  const [items, setItems] = useState<string[]>([]);
+  const [n, setN] = useState(0);
+  const [s, setS] = useState(() => "x");
+  const [r, dispatch] = useReducer(counterReducer, 1);
+  lateSetters = [
+    () => setItems(["a"]),
+    () => setN((v) => v + 1),
+    () => setS("y"),
+    () => dispatch("inc"),
+  ];
+  return <text>{`${items.length}${n}${s}${r}`}</text>;
+}
+
+function LateParent(): UiElement {
+  const [on, setOn] = useState(true);
+  return <box onClick={() => setOn(!on)}>{on ? <Late /> : null}</box>;
+}
+
+export function lateApp(): UiElement {
+  return <LateParent />;
+}
+
+export function callLateSetters(): void {
+  for (const f of lateSetters) f();
+  note("called");
+}

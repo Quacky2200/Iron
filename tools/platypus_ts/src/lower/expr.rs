@@ -5772,6 +5772,10 @@ impl<'a> Lowerer<'a> {
                     || matches!(self.consts.get(name), Some(ConstInfo::Global(..)))
                 {
                     let mut callee = self.lower_ident(name)?;
+                    // `f?.(x)`: nothing happens when `f` is missing (the chain's guard).
+                    if c.optional {
+                        return self.call_closure_value(callee, c);
+                    }
                     // A function that may be missing, tested by the caller (`if (f) f()`).
                     if callee.ty.is_nullable() && matches!(callee.ty.strip(), Ty::Fn(_)) {
                         let plain = callee.ty.strip().clone();

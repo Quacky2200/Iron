@@ -41,6 +41,7 @@ pub struct JitOptions<'a> {
 pub struct Game {
     // Never dropped: see the module docs.
     _module: std::mem::ManuallyDrop<JitModule>,
+    /// Every function's address by symbol: exported `ts_<prefix>..` and local ones.
     funcs: HashMap<String, usize>,
     meta: Vec<ClassMeta>,
     prefix: String,
@@ -198,7 +199,7 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
     lap.mark("JIT set-up (symbols, ISA)");
     // Code generation recurses over expressions as lowering does (a big JSX tree nests calls a few
     // hundred deep): it gets a big stack too, not the host's main thread.
-    let exports = std::thread::scope(|s| {
+    let symbols = std::thread::scope(|s| {
         std::thread::Builder::new()
             .stack_size(64 << 20)
             .spawn_scoped(s, || codegen::generate(&mut jit, &module, true))
@@ -208,7 +209,7 @@ pub fn compile_and_load(src: &str, options: &JitOptions) -> Result<Game, String>
     })?;
     lap.mark("Cranelift code generation");
     jit.finalize_definitions().map_err(|e| e.to_string())?;
-    let funcs: HashMap<String, usize> = exports
+    let funcs: HashMap<String, usize> = symbols
         .into_iter()
         .map(|(name, id)| (name, jit.get_finalized_function(id) as usize))
         .collect();
@@ -241,6 +242,12 @@ impl Game {
             .collect();
         v.sort();
         v
+    }
+
+    /// Every compiled function, exported and local, as (symbol, address): what a crash report
+    /// needs to name the function a fault is in (`platypus_app/src/crash.rs`).
+    pub fn code_symbols(&self) -> Vec<(String, usize)> {
+        self.funcs.iter().map(|(n, a)| (n.clone(), *a)).collect()
     }
 
     /// Runs the top-level code (module variables, `register(..)`, mounting). Call it once, on the

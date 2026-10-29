@@ -855,6 +855,31 @@ fn ref_props_with_imperative_handles_and_nullable_literal_state() {
     });
 }
 
+// M9-TS-3522
+//
+// Setters, updaters and a reducer's `dispatch` kept after their component unmounted do nothing
+// (React's behaviour), instead of aborting the process; while it is mounted they still work.
+#[test]
+fn state_setters_called_after_unmount_do_nothing() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_lateApp() });
+        assert_eq!(ui.dump(), "root(box(text(text:00x1)))");
+        unsafe { ts_uic_callLateSetters() };
+        no_errors(ui.rt.settle(&mut ui.tree));
+        assert_eq!(ui.dump(), "root(box(text(text:11y2)))");
+        assert_eq!(ui.notes(), "called");
+        let parent = ui.tree.children(ROOT)[0];
+        ui.click(parent);
+        no_errors(ui.rt.settle(&mut ui.tree));
+        assert_eq!(ui.dump(), "root(box())");
+        unsafe { ts_uic_callLateSetters() };
+        no_errors(ui.rt.settle(&mut ui.tree));
+        assert_eq!(ui.notes(), "called");
+        assert_eq!(ui.dump(), "root(box())");
+    });
+}
+
 // M9-TS-3362
 //
 // `scrollIntoView`, `scrollTo` and `scrollBy` on a ref in compiled code, positional and with the

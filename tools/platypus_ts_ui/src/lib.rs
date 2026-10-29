@@ -244,10 +244,22 @@ fn with_event<R>(f: impl FnOnce(&mut Event) -> R, default: R) -> R {
     f(unsafe { &mut *p })
 }
 
+/// The cell of a slot whose component is mounted (or being rendered).
 fn cell_of(slot: f64) -> Rc<ScriptCell> {
-    CELLS
-        .with(|c| c.borrow().get(&(slot as u64)).and_then(Weak::upgrade))
-        .expect("a hook slot that is gone")
+    live_cell(slot).expect("a hook slot that is gone")
+}
+
+/// The cell of a slot, or `None` once its component has unmounted (a setter kept by a promise,
+/// a timer or a store's listener can outlive it).
+fn live_cell(slot: f64) -> Option<Rc<ScriptCell>> {
+    CELLS.with(|c| c.borrow().get(&(slot as u64)).and_then(Weak::upgrade))
+}
+
+/// A store into a slot: as in React, setting the state of an unmounted component does nothing.
+fn store(slot: f64, kind: u8, bits: u64) {
+    if let Some(cell) = live_cell(slot) {
+        cell.set(kind, bits);
+    }
 }
 
 /// The cell of the next hook of the component being rendered (made on its first render).
@@ -833,7 +845,14 @@ pub extern "C" fn ts_ui_load_handle(slot: f64) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_store_handle(slot: f64, v: u64) {
-    cell_of(slot).set(NUM, v);
+    store(slot, NUM, v);
+}
+
+/// Is the slot's component still mounted? An updater (`setN(n => n + 1)`) or a reducer's
+/// `dispatch` called after it unmounted then runs nothing, as in React.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_ui_state_live(slot: f64) -> bool {
+    live_cell(slot).is_some()
 }
 
 #[unsafe(no_mangle)]
@@ -853,17 +872,17 @@ pub extern "C" fn ts_ui_load_ptr(slot: f64) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_store_num(slot: f64, v: f64) {
-    cell_of(slot).set(NUM, v.to_bits());
+    store(slot, NUM, v.to_bits());
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_store_bool(slot: f64, v: bool) {
-    cell_of(slot).set(BOOL, u64::from(v));
+    store(slot, BOOL, u64::from(v));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ui_store_ptr(slot: f64, v: u64) {
-    cell_of(slot).set(PTR, v);
+    store(slot, PTR, v);
 }
 
 #[unsafe(no_mangle)]
@@ -1014,6 +1033,7 @@ pub fn link_anchor() -> usize {
         ts_ui_node_scroll_into_view as *const () as usize,
         ts_ui_state_slot as *const () as usize,
         ts_ui_state_empty as *const () as usize,
+        ts_ui_state_live as *const () as usize,
         ts_ui_on as *const () as usize,
         ts_ui_style_num as *const () as usize,
         ts_ui_style_str as *const () as usize,
@@ -1181,6 +1201,7 @@ pub fn manifest_json() -> String {
             &[("slot", "f64")],
             "bool",
         ),
+        f("stateLive", "ts_ui_state_live", &[("slot", "f64")], "bool"),
         f("stateNew", "ts_ui_state_num", &[("init", "f64")], "f64"),
         f("stateNew", "ts_ui_state_bool", &[("init", "bool")], "f64"),
         f("stateNew", "ts_ui_state_ptr", &[("init", "ptr")], "f64"),

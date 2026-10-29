@@ -378,3 +378,58 @@ function t(): string {
         "21 p 21 56",
     );
 }
+
+// M9-TS-3514
+//
+// `f?.(x)` on a callback that is left out does nothing, also when a closure captured `f` (a
+// destructured optional prop, as the editor's VirtualList row handler).
+#[test]
+fn optional_call_of_a_captured_missing_callback_does_nothing() {
+    check(
+        r#"
+interface Props { n: number; onPick?: (i: number) => void; other?: number }
+function make({ n, onPick, other = 2 }: Props): (() => void)[] {
+  const out: (() => void)[] = [];
+  for (let i = 0; i < n; i++) out.push(() => onPick?.(i + other));
+  return out;
+}
+function plain(f?: (i: number) => void): () => void {
+  return () => f?.(1);
+}
+function t(): string {
+  let got = "";
+  for (const h of make({ n: 2 })) h();
+  plain()();
+  for (const h of make({ n: 2, onPick: (i) => { got += `${i};`; } })) h();
+  plain((i) => { got += `p${i}`; })();
+  const twice = (g?: (n: number) => number): number | undefined => g?.(4);
+  return `${got} ${twice() === undefined} ${twice((n) => n * 2)}`;
+}
+"#,
+        "eg14_",
+        954_000,
+        "2;3;p1 true 8",
+    );
+}
+
+// M9-TS-3515
+//
+// Reversing an empty array (one with no storage yet, as `[...noRoots].reverse()` in the editor's
+// Scene view) leaves it empty; a debug build checked the slice it made over no storage.
+#[test]
+fn an_empty_array_reverses_to_an_empty_array() {
+    check(
+        r#"
+function t(): string {
+  const none: number[] = [];
+  const spread = [...new Set<string>()].reverse();
+  none.reverse();
+  const one = [7].reverse();
+  return `${none.length} ${spread.length} ${one[0]}`;
+}
+"#,
+        "eg15_",
+        955_000,
+        "0 0 7",
+    );
+}

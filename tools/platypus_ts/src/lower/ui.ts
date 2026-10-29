@@ -22,11 +22,14 @@ function useState<T>(init: T): State<T> {
   s.slot = Ui.stateNew(init);
   s.value = Ui.load<T>(s.slot);
   const slot = s.slot;
+  // After the component unmounted (a promise or a listener kept the setter), both do nothing.
   s.set = (v: T): void => {
     Ui.store(slot, v);
   };
   s.update = (f: (prev: T) => T): void => {
-    Ui.store(slot, f(Ui.load<T>(slot)));
+    if (Ui.stateLive(slot)) {
+      Ui.store(slot, f(Ui.load<T>(slot)));
+    }
   };
   return s;
 }
@@ -44,7 +47,9 @@ function useStateLazy<T>(init: () => T): State<T> {
     Ui.store(slot, v);
   };
   s.update = (f: (prev: T) => T): void => {
-    Ui.store(slot, f(Ui.load<T>(slot)));
+    if (Ui.stateLive(slot)) {
+      Ui.store(slot, f(Ui.load<T>(slot)));
+    }
   };
   return s;
 }
@@ -59,7 +64,9 @@ function useReducer<S, A>(reducer: (s: S, a: A) => S, init: S): Reducer<S, A> {
   const r = new Reducer<S, A>();
   r.state = Ui.load<S>(slot);
   r.dispatch = (a: A): void => {
-    Ui.store(slot, reducer(Ui.load<S>(slot), a));
+    if (Ui.stateLive(slot)) {
+      Ui.store(slot, reducer(Ui.load<S>(slot), a));
+    }
   };
   return r;
 }

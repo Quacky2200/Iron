@@ -323,12 +323,15 @@ impl Native {
         )
         .map_err(|e| anyhow!("compiling the game: {e}"))?;
         bundle.source = String::new();
-        // So a crash in the compiled code can be named (`crash.rs`).
-        super::crash::note_jit_functions(
-            game.function_names()
-                .into_iter()
-                .filter_map(|n| game.function(&n).map(|a| (n, a))),
-        );
+        // So a crash in the compiled code can be named (`crash.rs`): every function, local ones
+        // too, or a fault in one before the first exported function goes unnamed and unreported.
+        super::crash::note_jit_functions(game.code_symbols().into_iter().map(|(sym, a)| {
+            let name = sym
+                .strip_prefix("ts_")
+                .or_else(|| sym.strip_prefix("platypus_ts_local_"))
+                .map_or_else(|| sym.clone(), str::to_string);
+            (name, a)
+        }));
         Ok(game)
     }
 

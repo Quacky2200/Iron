@@ -975,7 +975,10 @@ pub unsafe extern "C" fn ts_rt_arr_reverse(a: *mut Array) {
     // SAFETY: indices stay inside the array.
     unsafe {
         let n = (*a).len as usize;
-        std::slice::from_raw_parts_mut(slots(a), n).reverse();
+        // An empty array may have no storage (a null `data`), which no slice may point at.
+        if n > 1 {
+            std::slice::from_raw_parts_mut(slots(a), n).reverse();
+        }
     }
 }
 
@@ -1195,6 +1198,10 @@ impl Array {
     /// # Safety
     /// This must be a byte array.
     pub unsafe fn bytes(&self) -> &[u8] {
+        // An empty array may have no storage (a null `data`).
+        if self.len == 0 {
+            return &[];
+        }
         unsafe { std::slice::from_raw_parts(self.data, self.len as usize) }
     }
 }

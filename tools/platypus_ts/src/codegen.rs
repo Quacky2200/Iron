@@ -153,9 +153,10 @@ pub fn compile(m: &Module, opt: &str) -> R<Compiled> {
     Ok(Compiled { object })
 }
 
-/// Defines every function and datum of `m` in `module`. Returns the exported functions by symbol
-/// name. The same code drives the object writer and the JIT. `far_refs`: the module's own data
-/// and function addresses are absolute (the JIT, whose code and data may be far apart).
+/// Defines every function and datum of `m` in `module`. Returns every function by symbol name,
+/// exported (`ts_<prefix>..`) and local (`platypus_ts_local_..`) alike, so the JIT can name a fault
+/// in any of them. The same code drives the object writer and the JIT. `far_refs`: the module's
+/// own data and function addresses are absolute (the JIT, whose code and data may be far apart).
 pub(crate) fn generate<M: ClifModule>(
     module: &mut M,
     m: &Module,
@@ -163,7 +164,7 @@ pub(crate) fn generate<M: ClifModule>(
 ) -> R<Vec<(String, CFuncId)>> {
     let call_conv = module.isa().default_call_conv();
     let fcfg = module.isa().frontend_config();
-    let mut exports: Vec<(String, CFuncId)> = Vec::new();
+    let mut names: Vec<(String, CFuncId)> = Vec::new();
 
     // Functions: declare all first so calls can be forward references.
     let mut cfuncs: Vec<CFuncId> = Vec::new();
@@ -182,9 +183,7 @@ pub(crate) fn generate<M: ClifModule>(
         let id = module
             .declare_function(&name, linkage, &sig)
             .map_err(|e| e.to_string())?;
-        if f.exported {
-            exports.push((name, id));
-        }
+        names.push((name, id));
         cfuncs.push(id);
     }
     // Engine functions the module calls: imports, with the C ABI of the manifest.
@@ -405,7 +404,7 @@ pub(crate) fn generate<M: ClifModule>(
             .map_err(|e| format!("{}: {e:?}", f.name))?;
         module.clear_context(&mut ctx);
     }
-    Ok(exports)
+    Ok(names)
 }
 
 fn zero(b: &mut FunctionBuilder, t: ir::Type) -> Value {
