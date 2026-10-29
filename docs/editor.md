@@ -289,6 +289,8 @@ see-through panels show the world.
   (`M5-DND-08`).
 - Rust units: the capture layer in `logging.rs` (`M5-EDT-25`), `Editor.openFile` (`M5-EDT-26`), the `Editor`
   namespace needing a project (`M5-EDT-27`) and the project file ops (`M5-DND-12`).
+- Smoke test `M5-EDT-28` (`tools/platypus_build/tests/editor_smoke.rs`): builds `editor/` and runs
+  `platypus-app editor --project examples/arcade --bench` with `clickText` input. It needs a built host and a GPU.
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
 - `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor

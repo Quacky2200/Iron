@@ -716,7 +716,8 @@ differences) are listed in [platypus-ts-spike.md](research/platypus-ts-spike.md)
 - **Assignment targets** may sit under `!` and casts: `x[i]! += d`, `m.get(k)![0]! *= 3`, `(x[i] as number) -= 1`.
 - **Strings iterate by code point**: `[...s]`, `Array.from(s)`, `Array.from(s, f)`, `for (const c of s)` (`ts_rt_str_chars_gc`).
 - **`Math.hypot(...xs)`** with any number of arguments (folded two at a time).
-- **Optional calls.** `o.cb?.(x)` on a function that may be missing does nothing when it is (`call_closure_value`).
+- **Optional calls.** `o.cb?.(x)` on a function that may be missing does nothing when it is (`call_closure_value`). So does
+  `f?.(x)` where `f` is a plain identifier (a local, parameter or captured variable): nothing is called when `f` is missing.
 - **Computed style keys** in JSX: `style={{ [props.side]: 8 }}` (the key is a string or a union member).
 - **Conditional branches.** `ok ? [a, b] : []` (the empty array takes the other branch's type); an engine object's options can be
   `cond ? { position, parent } : { position }` (each branch sets its own properties).
@@ -1258,7 +1259,9 @@ when `cond` is false.
   list means every render; a list is rewritten into `Ui.dep(..)` calls, so it may mix types). Setting state from a handler
   schedules a render; setting it during a render only keeps the value. The updater form `setN(n => n + 1)` works for
   setters bound by `const [x, setX] = useState(..)` when the argument is an arrow or function (it becomes `__up_setX`, which
-  applies the function to the latest state); a setter passed around under another name takes values only.
+  applies the function to the latest state); a setter passed around under another name takes values only. A setter,
+  updater or reducer dispatch called after its component unmounted does nothing, as in React: stores to a hook slot that
+  is gone are ignored, and updaters and `dispatch` check `Ui.stateLive(slot)` (`ts_ui_state_live`) before reading it.
 - **Closures to Rust.** The manifest type `fn:T` is a zero-parameter closure the engine roots until the description holding
   it is dropped; render functions, handlers and effects are such closures. `ptr` is any other script pointer, `handles:T`
   an array of handles.

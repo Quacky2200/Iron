@@ -95,9 +95,9 @@ exception handler that logs an access violation (`0xC0000005`) or heap corruptio
 Other exceptions are ignored. The report goes to stderr and `Player.log` and has:
 
 - the exception code, the address and what the access was (reading, writing or executing which address);
-- the nearest exported compiled game function (`name+offset`) when the address is in JIT code. `native.rs` registers the
-  functions after each compile (`note_jit_functions`); a local function that is not exported is not in the table, so it is
-  only a hint;
+- the compiled game function (`name+offset`, e.g. `crashHere+0xd`, `lambda80+0x105`) when the address is in JIT code.
+  `native.rs` registers every compiled function after each compile (`note_jit_functions`, from `Game::code_symbols()`),
+  local ones too; closures show as `lambdaN`, so a fault in compiled code always gets a report and the dialog;
 - the general registers;
 - 112 bytes of machine code around the instruction (`rip-96` to `rip+16`), for a disassembler. Left out when the fault was
   executing a bad address, since the code is not readable then;
@@ -131,7 +131,7 @@ way and then exits with code 3.
    crashed, there is no GPU) or `--plain` shows the system's message box instead: `MessageBoxW` on Windows (Yes opens the
    folder), stderr elsewhere. The folder is removed afterwards.
 
-Tests: `M9-API-917` (`--crash-dialog <folder>` parses), `M9-API-918` (the dialog reads a report's game and reason).
+Tests: `M9-API-917` (`--crash-dialog <folder>` parses), `M9-API-918` (the dialog reads a report's game and reason), `M9-API-919` (`crates/platypus_app/tests/crash_report.rs`: a fault in compiled code writes a report naming the function).
 
 ## Vsync and the frame cap
 

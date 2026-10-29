@@ -125,8 +125,9 @@ build/release/platypus-app.exe --crash-report "C:\Users\you\AppData\Roaming\<com
 ## Reading a report
 
 - **Reason**: what went wrong and where. *in the game's program* means the exe (Platypus's Rust code). *in compiled game
-  code, near `g_Arena_onUpdate+0x1c4`* names the nearest exported compiled TypeScript function. It is a hint: functions
-  that are not exported are not in the table, so the fault may be in one just after the named one.
+  code, near `g_Arena_onUpdate+0x1c4`* names the compiled TypeScript function the fault is in, with the offset into it
+  (`crashHere+0xd`, `lambda80+0x105`). Every compiled function is in the table, local ones too; closures show as
+  `lambdaN`. A fault in compiled code always gets a report and the dialog.
 - **Reading or writing a small address** (`reading 0x28`) is a null pointer plus a field offset.
 - **Registers**: which register held the bad pointer. In the example above `rdi` is `0x10`, the `0x28` read is
   `rdi + 0x18`, so the code was handed a null `Arc`: the value had been zeroed.
