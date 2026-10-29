@@ -3387,6 +3387,19 @@ impl<'a> Lowerer<'a> {
                         nty,
                     ));
                 }
+                // `cond && f()` with a void `f` (a statement, or an arrow's body): the call runs,
+                // and its `undefined` is falsy.
+                let b = if bk == Ty::Void {
+                    mk(
+                        ExprKind::Seq(
+                            vec![Stmt::Eval(b)],
+                            Box::new(mk(ExprKind::Bool(false), Ty::Bool)),
+                        ),
+                        Ty::Bool,
+                    )
+                } else {
+                    b
+                };
                 let (a, b) = (self.bool_of(a), self.bool_of(b));
                 let k = if op == LogicalOperator::And {
                     ExprKind::And(Box::new(a), Box::new(b))

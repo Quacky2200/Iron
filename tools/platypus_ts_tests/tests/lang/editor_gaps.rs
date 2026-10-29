@@ -433,3 +433,32 @@ function t(): string {
         "0 0 7",
     );
 }
+
+// M9-TS-3524
+//
+// `cond && f()` with a void `f`, as an arrow's body or a statement: `f` runs when `cond` holds.
+#[test]
+fn and_with_a_void_call_runs_the_call() {
+    check(
+        r#"
+let n = 0;
+function bump(): void { n++; }
+function t(): string {
+  const on = true;
+  const off = false;
+  const click = () => !off && bump();
+  click();
+  on && bump();
+  off && bump();
+  const f: () => void = () => on && bump();
+  f();
+  const g = (): void => { !on || bump(); };
+  g();
+  return `${n}`;
+}
+"#,
+        "eg16_",
+        956_000,
+        "4",
+    );
+}
