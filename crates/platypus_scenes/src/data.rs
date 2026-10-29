@@ -26,6 +26,59 @@ thread_local! {
     static WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     /// The prefab file an object was placed from (kept for tools; objects are saved in full).
     static PREFAB_OF: RefCell<HashMap<ObjectId, String>> = RefCell::new(HashMap::new());
+    /// Components of kinds this program doesn't register, kept per object (see [`Opaque`]).
+    static OPAQUE_OF: RefCell<HashMap<ObjectId, Vec<Opaque>>> = RefCell::new(HashMap::new());
+    static NEXT_OPAQUE: std::cell::Cell<u64> = const { std::cell::Cell::new(OPAQUE_BASE) };
+}
+
+/// Stand-in handles of opaque components start here, far from any kind's own handles.
+const OPAQUE_BASE: u64 = 1 << 48;
+
+/// A component whose kind isn't registered in this program (a game's script class, in the
+/// editor, which hasn't compiled the game's code): kept as the file had it and written back by
+/// the saver, so opening and saving a scene doesn't drop it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Opaque {
+    /// The kind's name (`type` in the file).
+    pub ty: String,
+    /// A stand-in handle, so references to it get file ids like a real component's.
+    pub handle: u64,
+    /// Its place among the object's components in the file.
+    pub index: usize,
+    /// The component's data without `id` and `type`; references are placeholders.
+    pub data: Map<String, Value>,
+}
+
+/// The opaque components on an object (kinds this program doesn't register), in file order.
+pub fn opaque_components(object: ObjectId) -> Vec<Opaque> {
+    OPAQUE_OF.with(|o| o.borrow().get(&object).cloned().unwrap_or_default())
+}
+
+/// Drops an object's opaque component with that stand-in handle; whether there was one.
+pub fn remove_opaque(object: ObjectId, handle: u64) -> bool {
+    OPAQUE_OF.with(|o| {
+        let mut o = o.borrow_mut();
+        let Some(list) = o.get_mut(&object) else {
+            return false;
+        };
+        let before = list.len();
+        list.retain(|c| c.handle != handle);
+        before != list.len()
+    })
+}
+
+fn add_opaque(object: ObjectId, opaque: Opaque) {
+    OPAQUE_OF.with(|o| o.borrow_mut().entry(object).or_default().push(opaque));
+}
+
+/// Forgets opaque components of objects that are gone.
+fn prune_opaque() {
+    OPAQUE_OF.with(|o| {
+        let mut o = o.borrow_mut();
+        if !o.is_empty() {
+            o.retain(|object, _| sc(|s| s.contains(*object)).unwrap_or(false));
+        }
+    });
 }
 
 /// Reports a problem with a scene file or a component's data. The text goes to stderr and to
@@ -174,6 +227,9 @@ impl Saver {
         for (kind, h) in components_of(object.to_raw()) {
             self.id(Key::Component(kind.name.clone(), h));
         }
+        for o in opaque_components(object) {
+            self.id(Key::Component(o.ty, o.handle));
+        }
         for c in children(object) {
             self.walk(c);
         }
@@ -282,6 +338,19 @@ impl Saver {
                 "properties": properties,
             }));
         }
+        // Opaque ones go back where they were in the file.
+        for o in opaque_components(object) {
+            let mut c = Map::new();
+            c.insert(
+                "id".into(),
+                json!(self.id(Key::Component(o.ty.clone(), o.handle))),
+            );
+            c.insert("type".into(), json!(o.ty));
+            for (k, v) in &o.data {
+                c.insert(k.clone(), self.value(v));
+            }
+            components.insert(o.index.min(components.len()), Value::Object(c));
+        }
         if !components.is_empty() {
             d.insert("components".into(), Value::Array(components));
         }
@@ -320,7 +389,9 @@ pub(crate) fn load_objects(
         pending: Vec::new(),
         woken: Vec::new(),
         disabled: Vec::new(),
+        opaque: Vec::new(),
     };
+    prune_opaque();
     let previous = sc(|s| {
         let p = s.new_tag();
         s.set_new_tag(tag);
@@ -329,6 +400,14 @@ pub(crate) fn load_objects(
     .unwrap_or(0);
     let made: Vec<ObjectId> = list.iter().map(|d| loader.build(d, parent)).collect();
     sc(|s| s.set_new_tag(previous));
+    for (object, mut opaque) in std::mem::take(&mut loader.opaque) {
+        opaque.data = opaque
+            .data
+            .iter()
+            .map(|(k, v)| (k.clone(), loader.resolve(v)))
+            .collect();
+        add_opaque(object, opaque);
+    }
     for (kind, handle, props) in std::mem::take(&mut loader.pending) {
         let props: Map<String, Value> = props
             .iter()
@@ -369,6 +448,8 @@ struct Loader {
     /// Components whose properties are set, waiting to wake.
     woken: Vec<(Rc<Kind>, u64)>,
     disabled: Vec<ObjectId>,
+    /// Components of unregistered kinds, their data not resolved yet.
+    opaque: Vec<(ObjectId, Opaque)>,
 }
 
 impl Loader {
@@ -417,16 +498,39 @@ impl Loader {
         if let Some(path) = d.get("prefab").and_then(Value::as_str) {
             set_prefab(object, path);
         }
-        for c in d
+        for (index, c) in d
             .get("components")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
+            .enumerate()
         {
             let ty = c.get("type").and_then(Value::as_str).unwrap_or_default();
             let Some(kind) = platypus_kinds::get(ty) else {
+                // Kept as it is, so saving writes it back (its references resolve below).
                 warn(format!(
-                    "{name}: unknown component {ty} (it is not registered with this game)"
+                    "{name}: unknown component {ty} (it is not registered with this game); kept as data"
+                ));
+                let handle = NEXT_OPAQUE.with(|n| {
+                    let h = n.get();
+                    n.set(h + 1);
+                    h
+                });
+                if let Some(id) = c.get("id").and_then(Value::as_u64) {
+                    self.things
+                        .insert(id, Thing::Component(ty.to_owned(), handle));
+                }
+                let mut data = c.as_object().cloned().unwrap_or_default();
+                data.remove("id");
+                data.remove("type");
+                self.opaque.push((
+                    object,
+                    Opaque {
+                        ty: ty.to_owned(),
+                        handle,
+                        index,
+                        data,
+                    },
                 ));
                 continue;
             };

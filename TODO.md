@@ -1483,6 +1483,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
     - [ ] Inspector (`@property` fields), live Hierarchy from the scene, undo/redo
       (`M5-EDT-01..03`); the 10,000-row scroll benchmark (`M5-EDT-04`); the manual docking
       check in the window (`M5-EDT-05`)
+    - [ ] **A usable editor** (2026-10-29, milestones E1..E10 of the editor roadmap):
+      - [x] E1: the editor's world loads assets from `--project` (its own UI still from `editor/`);
+        components of kinds the editor doesn't register (the game's scripts) are kept as data and
+        saved back (`Opaque` in `platypus_scenes`, `M5-SCN-10`)
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into

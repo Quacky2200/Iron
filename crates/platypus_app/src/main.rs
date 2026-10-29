@@ -270,6 +270,12 @@ fn animation_threads() -> usize {
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get().min(16)))
 }
 
+/// Where the editor's world loads assets from: the project folder (`--project`), made absolute
+/// like `Editor.project`.
+fn editor_asset_root(project: &Path) -> PathBuf {
+    std::path::absolute(project).unwrap_or_else(|_| project.to_path_buf())
+}
+
 fn run() -> Result<()> {
     let args = match parse_args() {
         Ok(a) => a,
@@ -338,10 +344,13 @@ fn run() -> Result<()> {
     // The code folder (bundle, `package.json`, icon) and the assets' folder: the same for a game
     // folder, apart for a packaged exe (`--data` also sets it for a folder).
     let (bundle_path, code_root) = resolve_bundle(&args.game)?;
+    // The editor's world loads the project's assets (scenes, models, textures by their project
+    // paths); its own UI (game.css) still comes from the code folder.
     let asset_root = asset_root::AssetRoot::new(
         args.asset_root
             .clone()
             .or_else(|| args.data.clone())
+            .or_else(|| args.project.as_ref().map(|p| editor_asset_root(p)))
             .unwrap_or_else(|| code_root.clone()),
     )
     .path()
@@ -352,7 +361,10 @@ fn run() -> Result<()> {
     platypus_core::set_asset_fs(Some(std::sync::Arc::new(vfs.clone())));
     // Dev loop: `platypus-build build` lists what a packaged build would hold; loading a file outside
     // it logs a warning (a packaged game would not find it).
-    if let Ok(plan) = std::fs::read_to_string(code_root.join("build/assets.plan")) {
+    // (Not for the editor: its plan is its own UI's, and its world is the project's.)
+    if args.project.is_none()
+        && let Ok(plan) = std::fs::read_to_string(code_root.join("build/assets.plan"))
+    {
         platypus_core::set_pack_plan(plan.lines().filter(|l| !l.is_empty()).map(str::to_owned));
     }
     lap.mark("log, manifest, asset mount");

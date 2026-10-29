@@ -7,17 +7,20 @@
 //!
 //! The loader is generic over the component kinds registered in [`platypus_kinds`]: this crate
 //! registers `Camera`, `Animation` and `Animator`; a compiled program's `NativeHost` registers
-//! one per class it has. A component of a kind that is not registered is skipped with a warning.
+//! one per class it has. A component of a kind that is not registered is kept as data (an
+//! [`Opaque`] component, with a warning) and written back when the scene is saved.
 
 mod api;
 mod data;
+#[cfg(test)]
+mod data_tests;
 mod kinds;
 #[cfg(test)]
 mod kinds_tests;
 mod manager;
 
 pub use api::{manifests, scene_manager_api};
-pub use data::{take_warnings, warn};
+pub use data::{Opaque, opaque_components, remove_opaque, take_warnings, warn};
 pub use kinds::register_engine_kinds;
 pub use manager::*;
 

@@ -501,6 +501,7 @@ layout pass):
 | M5-SCN-04 | JS unit | `GameObject.instantiate` copies objects with children and components; references inside the copy point at the copies, outside ones stay; world placement without a parent, local under one. |
 | M5-SCN-05 | — | Asset references survive moving/renaming the file (GUID in `.meta`): covered by `M5-AST-05`. |
 | M5-SCN-06 | JS unit | `HideFlags`: objects flagged `DontSave` (and their children) stay out of saved scenes; a camera on a `HideInHierarchy` object is never `Camera.main`. |
+| M5-SCN-10 | Unit | Components of kinds the program doesn't register (a game's scripts, in the editor) are kept as data and saved back in their place among the object's components, with their other keys; references to and from them get the right file ids after renumbering; a second round trip gives the same data; copies carry them (`crates/platypus_scenes/src/data_tests.rs`). |
 | M5-AST-07 | Integration (planned) | Cooking is deterministic: the same input gives byte-identical output. |
 | M5-AST-08 | Integration (planned) | Cooking per platform: BC7 / BC5 for desktop, ASTC for mobile. |
 | M5-RND-01 | Golden | A PBR sphere lit by a directional light. |
