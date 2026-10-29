@@ -3,7 +3,7 @@
 Code: the native `Texture`, `Model`, `Mesh` and `Material` API (`platypus_render_api`; the `textures.ts`, `models.ts` and
 `rendering.ts` of `js/engine` and the `__platypus_textures` / `__platypus_models` calls into JS were removed with QuickJS);
 [world_view.rs](../crates/platypus_app/src/world_view.rs) (`texture_op`, `model_op`) and
-[models.rs](../crates/platypus_app/src/models.rs) (glTF) in the app;
+[models.rs](../crates/platypus_app/src/models.rs) (glTF) and [models_fbx.rs](../crates/platypus_app/src/models_fbx.rs) (FBX) in the app;
 [world/texture.rs](../crates/platypus_render/src/world/texture.rs) and
 [world/mod.rs](../crates/platypus_render/src/world/mod.rs) (`set_texture`, `set_mesh`) in the renderer.
 How these are drawn is in [world-rendering.md](world-rendering.md).
@@ -169,13 +169,47 @@ become `Model.animations` (`AnimationClip`s with paths from the copy's root); a 
 `_modelPart`, so a saved scene stores the model path and rebuilds the nodes on load
 ([scene-and-objects.md](scene-and-objects.md#scenes)).
 
+## FBX models
+
+`Model.load("x.fbx")` works like a glTF: `models::load` sends a path ending in `.fbx` (any case) to
+[models_fbx.rs](../crates/platypus_app/src/models_fbx.rs), which makes the same `Model` (engine ids,
+`{ nodes, roots, materials, skins, animations }`), so `instantiate`, colliders, skins and animations
+need nothing new. The instance is named after the file without `.fbx`. Binary and ASCII files load
+through the `ufbx` crate (MIT OR Unlicense, its C sources built with `cc`; reviewed in
+`tools/platypus_notices/src/tables.rs`).
+
+- **Units and axes.** ufbx converts to metres and Y-up, right-handed (`SpaceConversion::ModifyGeometry`):
+  no root node is added. A mesh node keeps the file's axes in its geometry and gets a rotation that
+  turns them, so a Z-up centimetre file comes in as metres, Y-up. FBX geometric transforms (pivots) go
+  into the geometry too.
+- **Meshes** are split by material, one engine mesh per material part, made once however many nodes
+  use the mesh. Missing normals are generated. V is flipped (FBX's goes up the image, ours down).
+- **Materials and textures.** Materials come in the scene's order. A texture is the embedded content,
+  else the file the material names, beside the model (an absolute path from the artist's machine
+  falls back to its file name beside the model). It must be inside the game folder; one that cannot
+  be read gives `MISSING_TEXTURE`.
+- **Nodes** are the file's node tree with decomposed transforms.
+- **Skins.** One per skin deformer: the joints are the clusters' bones and `inverseBind` comes from
+  each cluster's geometry-to-bone matrix. Each vertex keeps its four strongest weights, made to sum
+  to 1.
+- **Takes.** Each take (animation stack) is baked with `bake_anim` into linear translation, rotation
+  and scale keys per node, the same `animations` list a glTF gives.
+
+Not read: blend shapes, cameras, lights, vertex colours, a second UV set, and `.meta` importer options
+for FBX beyond the default model ones.
+
+The test files `cube.fbx` (a 100 cm cube in a Z-up, centimetre file, two materials, one textured with
+`cube_tex.png`), and `rig.fbx` (a column skinned to two bones with one take) are written by
+`tests/fixtures/assets/make_fbx.py` (ASCII FBX 7.4, no downloads). Tests `M5-FBX-01..05` are in
+`models_fbx.rs`.
+
 ## The asset database
 
 Every asset in a game folder can have a `<file>.meta` next to it (JSON: `guid` and `importer`).
 `platypus-build assets <game> [--prune]` writes them, and `platypus-build dev` runs it before building
 (the Bun `scripts/assets.ts` and `scripts/dev.ts` are deleted).
 
-- Assets are found by extension: textures (png, jpg, jpeg, svg, hdr), models (glb, gltf, bin), audio (wav,
+- Assets are found by extension: textures (png, jpg, jpeg, svg, hdr), models (glb, gltf, fbx, bin), audio (wav,
   ogg, mp3, flac), fonts and other JSON data. Code, builds, `node_modules`, `package.json` and other
   config are skipped.
 - A new asset gets a fresh GUID and its kind's default importer. Texture defaults are `filterMode`
@@ -225,7 +259,7 @@ a build. It logs how many files it cooked, lists the ones that failed, then exit
   BC3 (16 bytes) for smooth alpha. Other sizes stay RGBA8. `encode` and `decode` do the blocks: endpoints
   come from the best diagonal of the block's colour bounding box, texels take the nearest palette entry,
   and BC1 uses its 3-colour mode for cut-outs.
-- **Models** (glb, gltf) are loaded as usual with recorded engine ids, then saved with their meshes,
+- **Models** (glb, gltf, fbx) are loaded as usual with recorded engine ids, then saved with their meshes,
   cooked textures and description (ids are renumbered on load).
 - Files go to `.platypus/cooked/<game path>.tex` and `.model` (`cooked_path`). It is a hidden folder, so the
   asset watcher and the next cook skip it.

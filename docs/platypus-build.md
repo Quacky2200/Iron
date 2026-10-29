@@ -414,7 +414,7 @@ platypus-build package <game> [--host platypus-app.exe] [--out file] [--no-build
 it); a UI-only one for a game that uses the world is warned about with the build's tier.
 
 **Third-party notices.** Every packaged exe gets `THIRD-PARTY-NOTICES.md` written beside it: the notices of everything the
-host is built from (ANGLE and the code it bundles, the Inter font, every Rust crate of the host in `Cargo.lock`). The text is
+host is built from (ANGLE and the code it bundles, the Inter font, every Rust crate of the host in `Cargo.lock`, `ufbx` for FBX models among them). The text is
 built into `platypus-build` (`include_str!` of the repository root's file), so a game folder outside the repository gets it
 too; ship it with the exe. `--no-notices` leaves the file out (the exe still prints the same text with
 `platypus-app --licenses`, which is built into the host the same way).

@@ -32,7 +32,7 @@ and Ubuntu (software Vulkan via Mesa, WARP on Windows). Its old JS job (bun test
 | Render (headless) | [platypus_render/tests](../crates/platypus_render/tests) | `headless.rs`, `ui.rs`, `world.rs` (world pass, M5-RND-05 to 15, M5-CUL-02) |
 | Golden images | `tests/golden/<id>.png` | compared inside `ui.rs` |
 | Layout fixtures | `tests/layout/*.json` | run by `layout_fixtures.rs` |
-| Fixture assets | `tests/fixtures/{assets,fonts,images}` | glTF models (`assets/`), fonts (WOFF/WOFF2, TTF) and images used by native tests. The JS bundles and sources that used to live here (`*.js`, `src/`, `package.json`) were deleted with QuickJS |
+| Fixture assets | `tests/fixtures/{assets,fonts,images}` | glTF and FBX models (`assets/`, some made by its `make_*.py` scripts), fonts (WOFF/WOFF2, TTF) and images used by native tests. The JS bundles and sources that used to live here (`*.js`, `src/`, `package.json`) were deleted with QuickJS |
 | Benchmarks | `crates/*/benches` (Criterion) | `restyle.rs`, `layout.rs`, `commits.rs` |
 
 ### `platypus_ui` integration tests ([crates/platypus_ui/tests](../crates/platypus_ui/tests))
@@ -66,7 +66,7 @@ Most tests build a tree by emitting ops directly (helpers such as `Dom` or the `
 
 ## Fixtures
 
-`tests/fixtures` holds only assets for native tests: `assets/` (glTF models such as `house.glb` and `worm.glb`),
+`tests/fixtures` holds only assets for native tests: `assets/` (glTF models such as `house.glb` and `worm.glb`, FBX models `cube.fbx` and `rig.fbx` from `make_fbx.py`),
 `fonts/` and `images/`. The QuickJS fixture bundles, the `platypus_script` conformance suite
 (`runtime_conformance_tests!`) and the tests that drove React in QuickJS are gone.
 
