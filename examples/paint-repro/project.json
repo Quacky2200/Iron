@@ -1,0 +1,8 @@
+{
+  "name": "paint-repro",
+  "title": "Platypus - Paint repro",
+  "display": {
+    "width": 1000,
+    "height": 780
+  }
+}
