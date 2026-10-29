@@ -86,9 +86,10 @@ pub fn gradient(image: &BackgroundImage, tile: Rect) -> Option<(Gradient, Affine
                 ),
             };
             let rx = rx.max(f32::EPSILON);
-            let (list, _, last) = rebase(stops, rx);
-            // Stops are a fraction of the horizontal radius; the ellipse stretches y.
-            let g = Gradient::new_radial(center, rx * last)
+            let (list, first, last) = rebase(stops, rx);
+            // Stops are a fraction of the horizontal radius; the ellipse stretches y. The
+            // rebased span starts at the first stop's radius, not at the centre.
+            let g = Gradient::new_two_point_radial(center, rx * first, center, rx * last)
                 .with_stops(list.as_slice())
                 .with_extend(extend(*repeating));
             let k = f64::from(ry.max(f32::EPSILON) / rx);

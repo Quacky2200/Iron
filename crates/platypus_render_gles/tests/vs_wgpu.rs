@@ -855,6 +855,34 @@ fn backdrop_blur_reads_only_inside_the_box_like_wgpu() {
     }
 }
 
+// M2-GLES-17
+#[test]
+fn radial_gradients_fade_from_transparent_like_wgpu() {
+    let mut s = Scene::new();
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 96.0, 96.0],
+        &[("backgroundColor", "white")],
+    );
+    s.at(
+        0,
+        "box",
+        [0.0, 0.0, 96.0, 96.0],
+        &[(
+            "backgroundImage",
+            "radial-gradient(circle, transparent 44px, #ff0000 52px)",
+        )],
+    );
+    let Some(px) = same("transparent radial fade", s, (96, 96), 1.0, 8, 0.01) else {
+        return;
+    };
+    // Halfway along the diagonal (48px out), white and red mix without darkening.
+    let o = (48.0 - 48.0 / std::f32::consts::SQRT_2).round() as usize;
+    let mid = &px[(o * 96 + o) * 4..(o * 96 + o) * 4 + 3];
+    assert!(mid[0] >= 250 && mid[1] > 60 && mid[1] < 230, "{mid:?}");
+}
+
 // M2-GLES-13
 #[test]
 fn masks_and_layers_inside_clips_match_wgpu() {

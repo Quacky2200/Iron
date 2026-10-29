@@ -2155,6 +2155,38 @@ fn backdrop_blur_blurs_only_behind_the_box() {
     assert_golden("M2-DRW-08", 120, 80, &f.pixels, TOLERANCE);
 }
 
+// M2-DRW-11
+#[test]
+fn radial_gradients_fade_from_transparent_premultiplied() {
+    let mut s = Scene::new();
+    s.add(
+        0,
+        &at(
+            0.0,
+            0.0,
+            96.0,
+            96.0,
+            &[(
+                "backgroundImage",
+                "radial-gradient(circle, transparent 44px, #ff0000 52px)".into(),
+            )],
+        ),
+    );
+    let f = render(s, (96, 96), 1.0, Color::rgb(1.0, 1.0, 1.0));
+    // Along the diagonal from the centre (48, 48), `d` px out.
+    let at = |d: f32| {
+        let o = (48.0 - d / std::f32::consts::SQRT_2).round() as u32;
+        f.px(o, o)
+    };
+    for d in [0.0, 20.0, 40.0] {
+        assert_eq!(at(d), [255, 255, 255, 255], "{d}px out");
+    }
+    // Halfway, white and red mix without darkening: `transparent` is transparent red there.
+    let mid = at(48.0);
+    assert!(mid[0] >= 250 && mid[1] > 60 && mid[1] < 230, "{mid:?}");
+    assert_eq!(at(60.0), [255, 0, 0, 255]);
+}
+
 // M2-DRW-10
 #[test]
 fn backdrop_blur_reads_only_inside_the_box() {
