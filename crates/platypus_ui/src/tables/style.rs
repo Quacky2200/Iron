@@ -244,8 +244,13 @@ pub const STYLE_PROPS: &[StyleProp] = &[
     sp(
         "",
         "position",
-        &[Lit("relative"), Lit("absolute"), Lit("fixed")],
-        r#"`fixed` places the element against the window and paints it above the tree."#,
+        &[
+            Lit("static"),
+            Lit("relative"),
+            Lit("absolute"),
+            Lit("fixed"),
+        ],
+        r#"`static` (the default) is no containing block for absolute children. `fixed` places the element against the window and paints it above the tree."#,
     ),
     sp(
         "",

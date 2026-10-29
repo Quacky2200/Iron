@@ -172,7 +172,7 @@ export const Face = () => {
   const side = s.big ? BIG : PANEL;
   return (
     <box style={{ width: side, height: side, alignItems: "center", justifyContent: "center" }}>
-     <box style={{ width: PANEL, height: PANEL }}>
+     <box style={{ position: "relative", width: PANEL, height: PANEL }}>
       {s.look ? (
         <Eyed head={s.look === "googly"} />
       ) : s.code === "1f680" ? (
@@ -233,7 +233,7 @@ function Cracks() {
 function RocketArt() {
   const r = rocket.use();
   return (
-    <box style={{ width: PANEL, height: PANEL, transform: `translate(0px, ${-40 * r.turn}px) rotate(${-45 * r.turn}deg) scale(${1 - 0.1 * r.turn})` }}>
+    <box style={{ position: "relative", width: PANEL, height: PANEL, transform: `translate(0px, ${-40 * r.turn}px) rotate(${-45 * r.turn}deg) scale(${1 - 0.1 * r.turn})` }}>
       {/* The flame is behind the rocket, as in the original: the fins cover its root. */}
       {r.flame > 0.01 && <Image src="assets/emoji/1f680-flame.svg" className={r.power > 0.5 ? "flame-big" : "flame"} style={{ position: "absolute", left: 0, top: 0, width: PANEL, height: PANEL, opacity: r.flame }} />}
       <Image src="assets/emoji/1f680-body.svg" style={{ position: "absolute", left: 0, top: 0, width: PANEL, height: PANEL }} />
@@ -286,7 +286,7 @@ function Eyed({ head }: { head: boolean }) {
     </box>
   );
   return (
-    <box style={{ width: PANEL, height: PANEL }}>
+    <box style={{ position: "relative", width: PANEL, height: PANEL }}>
       {head && (
         <box
           style={{

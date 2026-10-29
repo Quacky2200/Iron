@@ -141,7 +141,7 @@ function Arrow(props: { side: "left" | "right"; onClick: () => void }) {
     </svg>
   );
   const inner = (
-    <box className="arrow" style={{ width: 64, height: 140, alignItems: "center", justifyContent: "center", pointerEvents: "auto", cursor: "pointer" }} onClick={props.onClick}>
+    <box className="arrow" style={{ position: "relative", width: 64, height: 140, alignItems: "center", justifyContent: "center", pointerEvents: "auto", cursor: "pointer" }} onClick={props.onClick}>
       {chevron("rgba(255, 255, 255, 0.4)", false)}
       {/* The white copy on top, centred over the faint one. */}
       {chevron("#ffffff", true)}

@@ -3019,7 +3019,9 @@ impl<L: LayoutEngine> UiTree<L> {
                 // No box: its children are placed in the layout parent's space.
                 self.rects
                     .insert(id, Rect::new(parent_x, parent_y, 0.0, 0.0));
-                stack.extend(node.children.iter().map(|c| (*c, parent_x, parent_y)));
+                stack.extend(
+                    (node.children.iter()).map(|c| self.child_origin(*c, (parent_x, parent_y))),
+                );
                 continue;
             }
             let Some(l) = self.layout.layout(id) else {
@@ -3055,19 +3057,33 @@ impl<L: LayoutEngine> UiTree<L> {
                     None => (0.0, 0.0),
                 };
                 // Inline content inside text is positioned by the text engine.
-                stack.extend(node.children.iter().map(|c| {
-                    // Fixed nodes are laid out by the root and never scroll.
-                    match self.nodes.get(c).is_some_and(|n| is_fixed(*c, n)) {
-                        true => (*c, 0.0, 0.0),
-                        false => (*c, x - sx, y - sy),
-                    }
-                }));
+                stack.extend(
+                    (node.children.iter()).map(|c| self.child_origin(*c, (x - sx, y - sy))),
+                );
             }
         }
         self.compute_ink();
         self.refresh_editors();
         self.needs_layout = false;
         true
+    }
+
+    /// Where `child`'s layout position counts from, given its parent's scrolled content
+    /// origin `inherited` (the parents and containing blocks are placed before it).
+    fn child_origin(&self, child: NodeId, inherited: (f32, f32)) -> (NodeId, f32, f32) {
+        // Fixed nodes are laid out by the root and never scroll.
+        if self.nodes.get(&child).is_some_and(|n| is_fixed(child, n)) {
+            return (child, 0.0, 0.0);
+        }
+        // An absolute box in a static parent is placed in its containing block (the nearest
+        // positioned ancestor, or the root), inside that box's scrolled content.
+        if let Some(block) = self.layout.containing_block(child)
+            && let Some(r) = self.rects.get(&block)
+        {
+            let (sx, sy) = self.scroll.get(&block).copied().unwrap_or_default();
+            return (child, r.x - sx, r.y - sy);
+        }
+        (child, inherited.0, inherited.1)
     }
 
     /// Fills [`Self::ink`]: each laid-out node's rect (and its text, which may run past

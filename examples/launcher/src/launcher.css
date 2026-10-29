@@ -314,11 +314,13 @@
 /* --- Carousel ------------------------------------------------------------------------ */
 
 .stage {
+  position: relative;
   flex-direction: column;
   flex-grow: 1;
   justify-content: center;
 }
 .track {
+  position: relative;
   width: 100%;
   height: 300px;
   perspective: 1100px;

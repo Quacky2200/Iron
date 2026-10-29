@@ -375,6 +375,8 @@ The ahead-of-time compiler gives JavaScript's answer, with these exceptions (see
 | `box-sizing` default | `border-box` (as in Taffy and s&box) | `content-box` | Matches s&box |
 | `z-index` | Orders siblings only; every z-indexed element is its own stacking context | Stacking contexts nest; z-index can lift an element above its parent's siblings | Simpler model; `isolation` is accepted and has no effect |
 | `position: fixed` | Ignores ancestor opacity, filters and clips (but not `display: none` / opacity 0) | Ancestors with transforms/filters contain it | Fixed nodes paint at the top level |
+| Containing block of `position: absolute` | The nearest ancestor with `position` other than `static` (or the root), as in CSS; `transform`, `filter` and `perspective` don't make one | Those also make a containing block | Taffy only knows `position`; set `position: relative` on a transformed box that should hold its absolute children |
+| Clipping of absolute boxes | An `overflow: hidden` ancestor clips its absolute descendants even when their containing block is further out | Only clips those whose containing block is inside it | Painting and clipping follow the element tree; layout follows the containing block |
 
 ## Text (M3d group 4)
 

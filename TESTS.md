@@ -107,6 +107,9 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-UI-OP-01 | Integration | `UiTree::apply_ops` with typed `Op`s builds the same tree as the script arrays; `Op::decode` rejects bad arity, types and opcodes (`crates/platypus_ui/tests/tree.rs`). |
 | ~~M2-LAY-06~~ | Integration | A React render error unmounts the UI (with absolutely positioned boxes in it) and the tree still lays out: removing a node takes it off its containing block's out-of-flow list, so no cached layout visits it. (removed 2026-10-28: QuickJS removed) |
 | M2-LAY-07 | Integration | Appending a child to a long column measures only the new text: the cost doesn't grow with the column's length, alone or inside a row flex item sized from its content. |
+| M2-LAY-08 | Integration | An absolute box whose parent is static is placed in its containing block, as CSS says: in Fluid's menu bar (title without `position`), `left: 100%; bottom: 0` puts it at the absolute bar's right edge and bottom; with no insets it stays at its static position (the parent's content box) even when the containing block is the root. |
+| M2-LAY-09 | Integration | In the same bar with a `position: relative` title, `left: 100%` / `bottom: 0`, `right: -8px` / `top: 0`, `right: 0` / `bottom: 0` and `left: 0` / `top: 0` place the 8x8 box against the title's padding box. |
+| M2-LAY-10 | Integration | An empty 96x96 box in a 48x48 `overflow: hidden` box (a flex row, the default) shrinks to 48 wide like a CSS flex item (automatic minimum size 0); with `flexShrink: 0` or a `display: block` parent it keeps 96x96. |
 
 ### Drawing
 | ID | Kind | Checks |

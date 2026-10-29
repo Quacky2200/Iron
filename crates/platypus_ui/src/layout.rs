@@ -67,6 +67,10 @@ pub trait LayoutEngine {
     /// calling `measure` for measured leaves.
     fn compute(&mut self, root: NodeId, width: f32, height: f32, measure: &mut Measure<'_>);
     fn layout(&self, id: NodeId) -> Option<NodeLayout>;
+    /// For an out-of-flow (absolute) box whose containing block is not its parent (a
+    /// positioned ancestor further up, or the root): that box. Its [`NodeLayout`] position is
+    /// then relative to the containing block's border box, not the parent's.
+    fn containing_block(&self, id: NodeId) -> Option<NodeId>;
 }
 
 /// [`LayoutEngine`] backed by Taffy's algorithms over Platypus's own node storage.
@@ -357,6 +361,15 @@ impl LayoutEngine for TaffyLayout {
             ],
             scroll_max: [l.scroll_width(), l.scroll_height()],
         })
+    }
+
+    fn containing_block(&self, id: NodeId) -> Option<NodeId> {
+        let node = self.nodes.get(&u64::from(id.0))?;
+        if !node.style.position.is_out_of_flow() {
+            return None;
+        }
+        let block = node.hoisted_by.filter(|b| Some(*b) != node.parent)?;
+        Some(NodeId(u64::from(block) as u32))
     }
 }
 
