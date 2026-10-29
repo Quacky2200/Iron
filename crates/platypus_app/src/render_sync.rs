@@ -116,6 +116,32 @@ fn mesh_exists(mesh: u32) -> bool {
     mesh >= ENGINE_IDS || platypus_render_api::read_mesh_info(MeshRef(mesh), |_| ()).is_some()
 }
 
+/// The objects whose (first) `MeshRenderer` draws the `quad` primitive.
+fn quad_objects() -> std::collections::HashSet<platypus_scene::ObjectId> {
+    let mut out = std::collections::HashSet::new();
+    let mut seen = std::collections::HashSet::new();
+    platypus_render_api::for_each_mesh_renderer(|_, d| {
+        if seen.insert(d.object)
+            && platypus_render_api::primitive_name(MeshRef(d.mesh)).as_deref() == Some("quad")
+        {
+            out.insert(d.object);
+        }
+    });
+    out
+}
+
+/// A mirror's normal as the `mirror` op takes it: the one it was given, else +z on a quad (it
+/// faces its local +z, as the old script `Mirror` had it) and null (the host's +y) otherwise.
+fn mirror_normal(d: &platypus_render_api::MirrorData, on_quad: bool) -> Value {
+    if d.has_normal {
+        arr(&[d.normal.x, d.normal.y, d.normal.z])
+    } else if on_quad {
+        arr(&[0.0, 0.0, 1.0])
+    } else {
+        Value::Null
+    }
+}
+
 /// The mesh argument of a `cloth` op: a primitive's name, or the id of an uploaded mesh.
 fn mesh_arg(mesh: u32) -> Option<Value> {
     if !mesh_exists(mesh) {
@@ -312,7 +338,8 @@ struct Sent {
     )>,
     strokes: Track<platypus_render_api::StrokeData>,
     planes: Track<platypus_render_api::PlaneData>,
-    mirrors: Track<platypus_render_api::MirrorData>,
+    /// The mirror's data and whether it is on a quad (its default normal).
+    mirrors: Track<(platypus_render_api::MirrorData, bool)>,
     probes: Track<platypus_render_api::ProbeData>,
     lods: Track<platypus_render_api::LodData>,
     particles: Track<platypus_render_api::ParticleData>,
@@ -769,26 +796,25 @@ fn components(
         t.sweep(views, Kind::Plane);
     }
     let t = &mut sent.mirrors;
-    if t.stale([api::mirrors_version(), 0, 0]) {
+    // A renderer added or changed after the mirror can change its default normal too.
+    if t.stale([api::mirrors_version(), api::mesh_renderers_version(), 0]) {
+        let quads = quad_objects();
         api::for_each_mirror(|r, d| {
             let object = scene.adopt(d.object);
+            let on_quad = quads.contains(&d.object);
             t.update(
                 views,
                 Kind::Mirror,
                 r.0,
-                |k| k == d,
-                || d.clone(),
+                |k| k.0 == *d && k.1 == on_quad,
+                || (d.clone(), on_quad),
                 |views| {
                     views.apply(
                         "mirror",
                         &[
                             n(f64::from(r.0)),
                             n(f64::from(object)),
-                            if d.has_normal {
-                                arr(&[d.normal.x, d.normal.y, d.normal.z])
-                            } else {
-                                Value::Null
-                            },
+                            mirror_normal(d, on_quad),
                             n(f64::from(d.culling_mask)),
                         ],
                     )
@@ -1662,6 +1688,60 @@ mod tests {
         assert_eq!(v[0].meshes.len(), 1);
         assert_eq!(v[0].meshes[0].color, [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(v[0].lights.len(), 1);
+    }
+
+    // M5-RND-26
+    //
+    // A `Mirror` without a normal faces its local +z on a quad (the wall in examples/materials) and
+    // +y on anything else; a written normal wins; a quad renderer added after the mirror turns it.
+    #[test]
+    fn a_mirror_on_a_quad_faces_z_unless_given_a_normal() {
+        use platypus_core::glam::Vec3;
+        platypus_render_api::reset();
+        reset();
+        let mut scene = ScriptScene::new();
+        let mut ui = UiTree::new(100.0, 100.0);
+        let bundle = Bundle {
+            source: "class Stage extends Component {
+                late: GameObject | null = null;
+                frames = 0;
+                override onStart(): void {
+                  const wall = new GameObject(\"Wall\");
+                  wall.addComponent(MeshRenderer, { mesh: \"quad\" });
+                  wall.addComponent(Mirror);
+                  const floor = new GameObject(\"Floor\");
+                  floor.addComponent(MeshRenderer, { mesh: \"plane\" });
+                  floor.addComponent(Mirror);
+                  const tilted = new GameObject(\"Tilted\");
+                  tilted.addComponent(MeshRenderer, { mesh: \"quad\" });
+                  tilted.addComponent(Mirror, { normal: new Vector3(1, 0, 0) });
+                  const late = new GameObject(\"Late\");
+                  late.addComponent(Mirror);
+                  this.late = late;
+                }
+                override onUpdate(): void {
+                  this.frames++;
+                  if (this.frames === 2 && this.late !== null) this.late.addComponent(MeshRenderer, { mesh: \"quad\" });
+                }
+              }
+              register(Stage);"
+                .into(),
+            ..Default::default()
+        };
+        let mut native = Native::load(bundle, &mut scene.scene, &mut ui).unwrap();
+        let mut views = WorldViews::default();
+        native.frame(&mut scene.scene, &mut ui, 0.016, 16.0);
+        sync(&mut views, &mut scene, Path::new("."));
+        let normals = |v: &WorldViews| {
+            v.mirror_normals()
+                .into_iter()
+                .map(|(_, n)| n)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(normals(&views), [Vec3::Z, Vec3::Y, Vec3::X, Vec3::Y]);
+        native.frame(&mut scene.scene, &mut ui, 0.016, 32.0);
+        sync(&mut views, &mut scene, Path::new("."));
+        assert_eq!(normals(&views), [Vec3::Z, Vec3::Y, Vec3::X, Vec3::Z]);
     }
 
     // M9-API-700

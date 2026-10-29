@@ -902,6 +902,12 @@ impl WorldViews {
 
     /// The components as text, in id order: what a full rebuild must match (`render_sync`'s
     /// equivalence test). Particle systems by their settings (their particles are a simulation).
+    /// The mirrors' local normals by component id, for tests.
+    #[cfg(test)]
+    pub(crate) fn mirror_normals(&self) -> Vec<(u32, Vec3)> {
+        self.mirrors.iter().map(|(id, m)| (*id, m.1)).collect()
+    }
+
     #[cfg(test)]
     pub(crate) fn components_dump(&self) -> String {
         use std::fmt::Write;
