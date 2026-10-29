@@ -70,6 +70,47 @@ struct Pass<'s> {
 }
 
 /// The span of `T` in a written `Promise<T>`.
+/// The promise helpers written per value type (and per pair of them for `then`) that code only
+/// calls directly: lowered once something calls them. A program with a hundred types and a
+/// generic promise function would otherwise compile thousands of them.
+pub(crate) fn is_lazy_helper(name: &str) -> bool {
+    const LAZY: &[&str] = &[
+        "__then",
+        "__then2",
+        "__thenP",
+        "__then2P",
+        "__thenV",
+        "__then2V",
+        "__catch",
+        "__catchP",
+        "__catchV",
+        "__finally",
+        "__resolve",
+        "__resolved",
+        "__reject",
+        "__rejected",
+        "__rejectIf",
+        "__fulfill",
+        "__adopt",
+        "__adoptSettled",
+        "__newPromise",
+        "__onSettled",
+        "__all",
+        "__allOne",
+        "__allSettled",
+        "__settledOne",
+        "__any",
+        "__anyOne",
+        "__race",
+        "__raceOne",
+        "__withResolvers",
+        "__await",
+        "__awaitV",
+    ];
+    let base = name.split('$').next().unwrap_or(name);
+    name.contains('$') && LAZY.contains(&base)
+}
+
 fn promise_arg(t: &TSType<'_>) -> Option<oxc_span::Span> {
     let TSType::TSTypeReference(r) = t else {
         return None;
@@ -539,17 +580,20 @@ pub(crate) fn desugar(src: &str) -> Result<Option<Desugared>, String> {
     // A generic function can make a promise of any type its callers use: give the program's own
     // classes and the plain arrays a promise class each.
     if pass.generic_used {
-        let mut more: Vec<String> = BASE.iter().map(|b| format!("{b}[]")).collect();
-        for d in std::mem::take(&mut pass.decl_types) {
-            more.push(format!("{d}[]"));
-            more.push(d);
-        }
-        for t in more {
-            pass.add_type(&t);
+        for b in BASE {
+            pass.add_type(&format!("{b}[]"));
         }
     }
-    // The types the program wrote; `then` can return these. The arrays below are derived.
+    // The types the program wrote (and the plain arrays); `then` can return these. Not each of
+    // the program's own types below: a `then` for every pair of a hundred types made the editor's
+    // object 50 times as big.
     let core: Vec<String> = pass.types.keys().cloned().collect();
+    if pass.generic_used {
+        for d in std::mem::take(&mut pass.decl_types) {
+            pass.add_type(&format!("{d}[]"));
+            pass.add_type(&d);
+        }
+    }
     let base: Vec<String> = pass.types.values().cloned().collect();
     // `Promise.all` makes an array of each value, `Promise.allSettled` an array of results.
     let wants_all = src.contains("Promise.all(");

@@ -161,6 +161,28 @@ fn compile_inner(
 mod tests {
     use super::*;
 
+    // M9-TS-3523
+    #[test]
+    fn a_generic_promise_function_does_not_make_a_then_for_every_pair_of_types() {
+        // Forty types and one generic promise function: `then` copies are made for the pairs the
+        // program calls, not for 40 x 40 of them (the editor's object was once 50 times too big).
+        let mut src = String::new();
+        for i in 0..40 {
+            src += &format!(
+                "interface T{i} {{ v{i}: number }}\nexport function make{i}(): T{i} {{ return {{ v{i}: {i} }}; }}\n"
+            );
+        }
+        src += "function later<T>(v: T): Promise<T> { return Promise.resolve(v); }\n\
+                export function t(): Promise<number> { return later<number>(1).then((n) => n + 1); }\n";
+        let m = lower::lower_source(&src).unwrap();
+        let lowered = m
+            .funcs
+            .iter()
+            .filter(|f| f.name.starts_with("__then") && f.body.len() > 1)
+            .count();
+        assert!(lowered < 20, "{lowered} `then` copies lowered");
+    }
+
     // M9-TS-14
     #[test]
     fn a_discriminated_union_becomes_one_struct_with_every_variants_fields() {

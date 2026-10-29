@@ -672,7 +672,9 @@ impl<'a> Lowerer<'a> {
         let src = &self.fsrc[name];
         matches!(src.kind, FnKind::Free)
             && !src.exported
-            && (!name.starts_with("__") || components::is_scene_helper(name))
+            && (!name.starts_with("__")
+                || components::is_scene_helper(name)
+                || asyncs::is_lazy_helper(name))
     }
 
     pub(crate) fn tag(&mut self, name: &str) -> u32 {
