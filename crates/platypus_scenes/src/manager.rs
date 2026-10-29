@@ -400,6 +400,26 @@ pub fn roots(scene: u32) -> Vec<ObjectId> {
 
 /// Everything in a scene as `SceneData` JSON text.
 pub fn serialize(scene: u32) -> Option<String> {
+    scene_value(scene).map(|v| v.to_string())
+}
+
+/// Gives a loaded scene a new name and file (the editor's Save As).
+pub fn rename_scene(scene: u32, name: &str, path: Option<&str>) {
+    st(|s| {
+        if let Some(info) = s.scenes.iter_mut().find(|i| i.handle == scene) {
+            info.name = name.to_owned();
+            info.path = path.map(str::to_owned);
+        }
+    });
+}
+
+/// Loads a scene file's text in place of the loaded scenes, remembering its path.
+pub fn load_scene_file(text: &str, path: &str) -> Result<u32, String> {
+    load_scene_from(text, false, Some(path.to_owned()))
+}
+
+/// Everything in a scene as `SceneData`.
+pub fn scene_value(scene: u32) -> Option<Value> {
     crate::ensure_kinds();
     let info = info(scene)?;
     let mut saver = Saver::new(false);
@@ -424,7 +444,7 @@ pub fn serialize(scene: u32) -> Option<String> {
     if !assets.is_empty() {
         data["assets"] = Value::Object(assets);
     }
-    Some(data.to_string())
+    Some(data)
 }
 
 fn unload(scene: u32) {

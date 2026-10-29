@@ -14,8 +14,30 @@ import { type DockNode, group, parseLayout, type Rect as DockRect, serializeLayo
 import { ALL_FILES, SCENE_FILTER } from "./file-dialog.ts";
 import { fileDialog } from "./FileDialog.tsx";
 import { onEditorFrame } from "./frame.ts";
+import {
+  canRedo,
+  canUndo,
+  type Command,
+  createHistory,
+  perform,
+  record,
+  redo,
+  redoLabel,
+  undo,
+  undoLabel,
+} from "./history.ts";
 import { ModalHost } from "./Modal.tsx";
-import { type Menu } from "./menu.ts";
+import {
+  copyObjects,
+  deleteCommand,
+  duplicateCommand,
+  pasteCommand,
+  poseCommand,
+  renameCommand,
+  reparentCommand,
+  shownChildren,
+} from "./scene-edit.ts";
+import { type Menu, type MenuItem } from "./menu.ts";
 import { MenuBar } from "./MenuBar.tsx";
 import { ProjectBrowser } from "./ProjectBrowser.tsx";
 import { SceneView, visibleObjects } from "./SceneView.tsx";
@@ -28,6 +50,12 @@ const MENUBAR = 26;
 const STATUS = 22;
 const PANELS = ["hierarchy", "scene", "game", "inspector", "console", "project"];
 const LAYOUT_KEY = "editor.layout";
+/** The data type a Hierarchy row carries while dragged (its object's id). */
+const HIERARCHY_TYPE = "application/x-platypus-object";
+
+// The scene's undo history and the objects copied (snapshots).
+const history = createHistory();
+let clipboard: string[] = [];
 
 const defaultLayout = (): DockNode =>
   split("root", "column", [
@@ -124,6 +152,8 @@ function App() {
   const [status, setStatus] = useState("Ready");
   const [showGrid, setShowGrid] = useState(true);
   const [showGizmos, setShowGizmos] = useState(true);
+  // Where the pointer was last pressed: "scene" (Hierarchy, Scene view) or "project".
+  const area = useRef<string>("scene");
 
   const say = (text: string) => {
     setStatus(text);
@@ -135,10 +165,102 @@ function App() {
     say("Layout saved");
   };
   const todo = (what: string) => () => say(`${what}: not implemented yet (see TODO.md M5.e)`);
+  // Re-renders when the history changes (menu labels, the title's "*").
+  const [, setHistoryVersion] = useState(0);
+  const historyChanged = (): void => setHistoryVersion(history.version);
+  /** Runs an edit as an undoable command. */
+  const exec = (c: Command | null): void => {
+    if (!c) return;
+    perform(history, c);
+    historyChanged();
+    say(c.label);
+  };
+  /** Records an edit that already happened (a finished handle drag). */
+  const keep = (c: Command): void => {
+    record(history, c);
+    historyChanged();
+  };
+  const clearSelection = (): void => setTree((t) => ({ ...t, selected: new Set<string>(), focus: null, anchor: null }));
 
   const selectedIds = [...tree.selected];
   const byId = new Map(visibleObjects().map((g) => [String(g.id), g]));
   const selectedObjects = selectedIds.map((id) => byId.get(id)).filter((g): g is GameObject => !!g && !g.destroyed);
+  // Edits of objects only while the Hierarchy or Scene view was used last (the Project browser has its own keys).
+  const onScene = (): boolean => area.current === "scene";
+  const deleteSelected = (): void => {
+    if (!onScene()) return;
+    const c = deleteCommand(selectedObjects);
+    if (c) clearSelection();
+    exec(c);
+  };
+  const copySelected = (): void => {
+    if (!onScene()) return;
+    clipboard = copyObjects(selectedObjects);
+    say(`Copied ${clipboard.length} object${clipboard.length === 1 ? "" : "s"}`);
+  };
+  const editMenu = (): MenuItem[] => [
+    {
+      label: canUndo(history) ? `Undo ${undoLabel(history)}` : "Undo",
+      accelerator: "Ctrl+Z",
+      disabled: !canUndo(history),
+      action: () => {
+        const label = undo(history);
+        historyChanged();
+        if (label) say(`Undid ${label}`);
+      },
+    },
+    {
+      label: canRedo(history) ? `Redo ${redoLabel(history)}` : "Redo",
+      accelerator: "Ctrl+Y",
+      disabled: !canRedo(history),
+      action: () => {
+        const label = redo(history);
+        historyChanged();
+        if (label) say(`Redid ${label}`);
+      },
+    },
+    { separator: true },
+    {
+      label: "Cut",
+      accelerator: "Ctrl+X",
+      disabled: selectedIds.length === 0,
+      action: () => {
+        copySelected();
+        deleteSelected();
+      },
+    },
+    { label: "Copy", accelerator: "Ctrl+C", disabled: selectedIds.length === 0, action: copySelected },
+    {
+      label: "Paste",
+      accelerator: "Ctrl+V",
+      disabled: clipboard.length === 0,
+      action: () => {
+        // Beside the selected object (under its parent), else at the root.
+        const at = selectedObjects[selectedObjects.length - 1];
+        if (onScene()) exec(pasteCommand(clipboard, at ? at.parent : null));
+      },
+    },
+    {
+      label: "Duplicate",
+      accelerator: "Ctrl+D",
+      disabled: selectedIds.length === 0,
+      action: () => {
+        if (onScene()) exec(duplicateCommand(selectedObjects));
+      },
+    },
+    { label: "Delete", accelerator: "Delete", disabled: selectedIds.length === 0, action: deleteSelected },
+    { separator: true },
+    {
+      label: "Select All",
+      accelerator: "Ctrl+A",
+      action: () => {
+        if (!onScene()) return;
+        const all = visibleObjects().map((g) => String(g.id));
+        setTree((t) => ({ ...t, selected: new Set(all) }));
+      },
+    },
+    { label: "Preferences...", action: todo("Preferences") },
+  ];
   const select = (go: GameObject | null, additive: boolean) => {
     if (!go) {
       if (!additive) setTree((t) => ({ ...t, selected: new Set() }));
@@ -181,21 +303,7 @@ function App() {
         { label: "Exit", accelerator: "Alt+F4", action: () => Application.quit() },
       ],
     },
-    {
-      label: "Edit",
-      items: [
-        { label: "Undo", accelerator: "Ctrl+Z", action: todo("Undo") },
-        { label: "Redo", accelerator: "Ctrl+Y", action: todo("Redo") },
-        { separator: true },
-        { label: "Cut", accelerator: "Ctrl+X", disabled: selectedIds.length === 0, action: todo("Cut") },
-        { label: "Copy", accelerator: "Ctrl+C", disabled: selectedIds.length === 0, action: todo("Copy") },
-        { label: "Paste", accelerator: "Ctrl+V", action: todo("Paste") },
-        { label: "Delete", accelerator: "Delete", disabled: selectedIds.length === 0, action: todo("Delete") },
-        { separator: true },
-        { label: "Select All", accelerator: "Ctrl+A", action: todo("Select All") },
-        { label: "Preferences...", action: todo("Preferences") },
-      ],
-    },
+    { label: "Edit", items: editMenu() },
     {
       label: "View",
       items: [
@@ -243,25 +351,90 @@ function App() {
     () => ({
       hierarchy: {
         title: TITLES.hierarchy!,
-        render: ({ height }) => (
-          <TreeView
-            roots={roots}
-            state={tree}
-            onStateChange={setTree}
-            height={height}
-            renderIcon={(node) => <Text className={`icon ${node.data?.kind ?? ""}`}>{ICONS[node.data?.kind ?? "object"]}</Text>}
-            onRename={(node, name) => {
-              if (node.data) node.data.object.name = name;
-              say(`Renamed ${node.label} to ${name}`);
+        render: ({ width, height }) => (
+          <box
+            style={{ width, height, flexDirection: "column" }}
+            onPointerDown={() => {
+              area.current = "scene";
             }}
-          />
+            onDragOver={(e: PlatypusDragEvent) => {
+              // Below the rows: back to the root.
+              if (!e.dataTransfer.getData(HIERARCHY_TYPE)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(e: PlatypusDragEvent) => {
+              const go = GameObject.byId(Number(e.dataTransfer.getData(HIERARCHY_TYPE)));
+              if (go.exists()) exec(reparentCommand(go, null, shownChildren(null).length));
+            }}
+          >
+            <TreeView
+              roots={roots}
+              state={tree}
+              onStateChange={setTree}
+              height={height}
+              dragType={HIERARCHY_TYPE}
+              onDropNode={(dragged, onto) => {
+                const go = GameObject.byId(Number(dragged));
+                const parent = GameObject.byId(Number(onto));
+                if (go.exists() && parent.exists()) exec(reparentCommand(go, parent, shownChildren(parent).length));
+              }}
+              renderIcon={(node) => <Text className={`icon ${node.data?.kind ?? ""}`}>{ICONS[node.data?.kind ?? "object"]}</Text>}
+              onRename={(node, name) => {
+                if (node.data) exec(renameCommand(node.data.object, name));
+              }}
+            />
+          </box>
         ),
       },
-      project: { title: TITLES.project!, render: (s) => <ProjectBrowser {...s} /> },
+      project: {
+        title: TITLES.project!,
+        render: (s) => (
+          <box
+            style={{ width: s.width, height: s.height, flexDirection: "column" }}
+            onPointerDown={() => {
+              area.current = "project";
+            }}
+          >
+            <ProjectBrowser
+              {...s}
+              onTrashed={(path, id) => {
+                // Undo puts it back; redo deletes it again (a new trash id each time).
+                let current = id;
+                keep({
+                  label: `Delete ${path}`,
+                  run: () => {
+                    current = Editor.trash(path);
+                  },
+                  undo: () => {
+                    Editor.restore(current);
+                  },
+                });
+              }}
+            />
+          </box>
+        ),
+      },
       scene: {
         title: TITLES.scene!,
         seeThrough: true,
-        render: (r) => <SceneView rect={r} selected={selectedObjects} onSelect={select} grid={showGrid} gizmos={showGizmos} />,
+        render: (r) => (
+          <box
+            style={{ width: r.width, height: r.height, flexDirection: "column" }}
+            onPointerDown={() => {
+              area.current = "scene";
+            }}
+          >
+            <SceneView
+              rect={r}
+              selected={selectedObjects}
+              onSelect={select}
+              grid={showGrid}
+              gizmos={showGizmos}
+              onTransformed={(go, before, after) => keep(poseCommand(go, before, after))}
+            />
+          </box>
+        ),
       },
       game: { title: TITLES.game!, seeThrough: true, render: (r) => <GameView rect={r} /> },
       inspector: {

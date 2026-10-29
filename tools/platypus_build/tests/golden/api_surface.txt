@@ -2032,6 +2032,7 @@ declare module "@platypus/engine" :: export import DateTime = globalThis.DateTim
 declare module "@platypus/engine" :: export import Debug = globalThis.Debug;
 declare module "@platypus/engine" :: export import EdgeCollider2D = globalThis.EdgeCollider2D;
 declare module "@platypus/engine" :: export import Editor = globalThis.Editor;
+declare module "@platypus/engine" :: export import EditorScene = globalThis.EditorScene;
 declare module "@platypus/engine" :: export import Emitter = globalThis.Emitter;
 declare module "@platypus/engine" :: export import ExposureMetering = globalThis.ExposureMetering;
 declare module "@platypus/engine" :: export import FileStat = globalThis.FileStat;
@@ -2340,6 +2341,14 @@ declare namespace Editor :: function restore(id: string): string;
 declare namespace Editor :: function stat(path: string): FileStat;
 declare namespace Editor :: function trash(path: string): string;
 declare namespace Editor :: function writeText(path: string, text: string): boolean;
+declare namespace EditorScene
+declare namespace EditorScene :: const sceneName: string;
+declare namespace EditorScene :: const scenePath: string;
+declare namespace EditorScene :: function newScene(name: string): boolean;
+declare namespace EditorScene :: function openScene(path: string): boolean;
+declare namespace EditorScene :: function restore(data: string, parent: GameObject, index: number): GameObject;
+declare namespace EditorScene :: function saveScene(path: string): boolean;
+declare namespace EditorScene :: function snapshot(object: GameObject): string;
 declare namespace ExposureMetering
 declare namespace ExposureMetering :: function name(index: number): ExposureMetering;
 declare namespace ExposureMetering :: function parse(name: string): number;

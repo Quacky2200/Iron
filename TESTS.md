@@ -581,6 +581,13 @@ layout pass):
 | M5-EFS-03 | Unit | `exists` / `stat` (folder, size, modification time) of project paths; `createDir` makes nested folders and refuses existing ones; `freeName` numbers a taken name (`files.rs`). |
 | M5-EFS-04 | Unit | `rename` stays in the item's folder, takes its `.meta` along, refuses taken and unusable names (separators, `..`, spaces round it) and the root; a change of case only is allowed (`files.rs`). |
 | M5-EFS-05 | Unit | `trash` moves an item and its `.meta` into `.platypus/trash/<id>/` beside a note of where it was; `restore` puts it back once, and refuses when something new is in its place; the trash itself, the root and outside paths are refused (`files.rs`). |
+| M5-UNDO-01 | Unit | `EditorScene.snapshot` of an object with children and components, destroyed, then `restore`d at its old sibling place (or under a parent) builds it again the same; bad text makes nothing (`crates/platypus_scenes/src/editor_tests.rs`). |
+| M5-UNDO-02 | Integration | Undo history (`editor/src/history.ts`): commands run, undo and redo in order with their labels; a new command drops what was undone (`editor/test/history.test.ts`). |
+| M5-UNDO-03 | Integration | Undo history: commands with the same merge key fold into one entry (a drag); `record` keeps a command without running it. |
+| M5-UNDO-04 | Integration | Undo history: the saved position (dirty flag) follows undo, redo and merging; the size cap drops the oldest entries and, past the saved one, leaves the history dirty for good; clearing. |
+| M5-UNDO-05 | Integration | Undo history: a group runs in order and undoes in reverse. |
+| M5-UNDO-06 | Integration | Editor smoke: Delete on Cube, Ctrl+Z, Ctrl+Y, Ctrl+Z, Ctrl+D (duplicate) and dragging Sphere onto Floor in the Hierarchy then Ctrl+Z, each reported in the status bar (`tools/platypus_build/tests/editor_smoke.rs`). |
+| M5-SCN-11 | Unit | `EditorScene.saveScene` writes the active scene to a project file (pretty JSON, the scene named after the file), `newScene` empties the world, `openScene` loads the file again with its path; a missing file or a path outside the project fails with `Editor.lastError` (`editor_tests.rs`). |
 | M5-EDT-31 | Integration | File dialog model: filters by extension (any case), folders always listed, only folders when picking one (`editor/test/file-dialog.test.ts`). |
 | M5-EDT-32 | Integration | File dialog model: a saved name gets the filter's extension once (`level.json` → `level.scene.json`), trimmed; the stem for the name field. |
 | M5-EDT-33 | Integration | File dialog model: typed paths, relative or from the root (`/`), with `.`, `..` and backslashes, become project paths; leaving the project or a drive gives none. |

@@ -29,6 +29,10 @@ export interface TreeViewProps<T> {
   /** The rename slot: what to draw while renaming (`done(null)` cancels). Defaults to a text field. */
   renderRename?: (node: TreeNode<T>, done: (name: string | null) => void) => ReactNode;
   className?: string;
+  /** Set: rows can be dragged (carrying their id as this data type) and dropped onto other rows. */
+  dragType?: string;
+  /** A row's id dropped onto another row (`onto`). */
+  onDropNode?: (dragged: string, onto: string) => void;
 }
 
 /** The default rename field: Enter or leaving it renames, Escape cancels. */
@@ -71,10 +75,14 @@ export function TreeView<T>({
   onRename,
   renderRename,
   className,
+  dragType,
+  onDropNode,
 }: TreeViewProps<T>) {
   const rows = useMemo(() => flatten(roots, state.expanded), [roots, state.expanded]);
   const list = useRef<VirtualListHandle>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  // The row a drag is over, highlighted.
+  const [over, setOver] = useState<string | null>(null);
   const focusIndex = state.focus === null ? -1 : rows.findIndex((r) => r.node.id === state.focus);
 
   const set = (next: TreeState) => {
@@ -92,11 +100,36 @@ export function TreeView<T>({
     const row = rows[i]!;
     const { node } = row;
     const selected = state.selected.has(node.id);
-    const classes = cx("platypus-tree-row", selected ? "selected" : "", state.focus === node.id ? "focused" : "");
+    const classes = cx("platypus-tree-row", selected ? "selected" : "", state.focus === node.id ? "focused" : "", over === node.id ? "over" : "");
+    const dragging = (e: PlatypusDragEvent): string => (dragType ? e.dataTransfer.getData(dragType) : "");
     return (
       <box
         className={classes}
         style={{ paddingLeft: 4 + row.depth * indent, height: rowHeight }}
+        draggable={dragType !== undefined && renaming !== node.id}
+        onDragStart={(e: PlatypusDragEvent) => {
+          if (!dragType) return;
+          e.dataTransfer.setData(dragType, node.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(e: PlatypusDragEvent) => {
+          const from = dragging(e);
+          if (!from || from === node.id) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+          setOver(node.id);
+        }}
+        onDragLeave={() => setOver(null)}
+        onDrop={(e: PlatypusDragEvent) => {
+          const from = dragging(e);
+          setOver(null);
+          if (!from) return;
+          // Onto itself: nothing happens (not a drop on the list behind it either).
+          e.stopPropagation();
+          if (from !== node.id) onDropNode?.(from, node.id);
+        }}
+        onDragEnd={() => setOver(null)}
         onPointerDown={(e: PlatypusPointerEvent) => {
           if (e.button !== 0) return;
           onStateChange(clickSelect(rows, state, node.id, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }));

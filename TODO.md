@@ -1494,6 +1494,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         (`M5-EFS-02..05`, `M5-EDT-31..34`)
         - [ ] The modal backdrop doesn't dim what is under it (its translucent background isn't drawn); Tab isn't
           kept inside a dialog; no context menu in the Project browser yet
+      - [x] E3: undo / redo (`history.ts`: merge keys, saved position, cap; `scene-edit.ts`: commands keep where an
+        object is, not the object, so undoing a delete builds it again from an `EditorScene.snapshot`); Edit > Undo /
+        Redo / Cut / Copy / Paste / Duplicate / Delete / Select All; handle drags, renames, Hierarchy drags (onto a row:
+        under it; below the rows: to the root) and Project deletes are undoable (`M5-UNDO-01..06`)
+        - [ ] Later: dropping between rows (sibling order) in the Hierarchy; references from other objects to a
+          deleted one don't come back on undo; copies keep the original's name (Unity adds " (1)")
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; closing and reopening panels (View > Panels); floating panels in
       their own windows; accelerators while a text field has focus (keys typed into

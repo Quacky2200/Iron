@@ -151,6 +151,51 @@ fn the_file_dialog_and_prompts_open_and_close() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// Delete, undo, redo, undo and duplicate Cube, then drag Sphere onto Floor in the Hierarchy and
+/// undo that. Each `moveToText` finds the status bar's report of the step (else the run fails).
+const UNDO_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "edits", "frames": 260, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Cube" },
+    { "frame": 6, "kind": "key", "code": "Delete" },
+    { "frame": 12, "kind": "moveToText", "text": "Delete Cube" },
+    { "frame": 14, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 16, "kind": "key", "code": "KeyZ" },
+    { "frame": 18, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 24, "kind": "moveToText", "text": "Undid Delete Cube" },
+    { "frame": 26, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 28, "kind": "key", "code": "KeyY" },
+    { "frame": 30, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 36, "kind": "moveToText", "text": "Redid Delete Cube" },
+    { "frame": 38, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 40, "kind": "key", "code": "KeyZ" },
+    { "frame": 42, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 50, "kind": "clickText", "text": "Cube" },
+    { "frame": 56, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 58, "kind": "key", "code": "KeyD" },
+    { "frame": 60, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 66, "kind": "moveToText", "text": "Duplicate Cube" },
+    { "frame": 80, "kind": "moveToText", "text": "Sphere" },
+    { "frame": 82, "kind": "mouseDown" },
+    { "frame": 86, "kind": "mouseMove", "x": 70, "y": 120 },
+    { "frame": 90, "kind": "mouseMove", "x": 62, "y": 95 },
+    { "frame": 94, "kind": "mouseMove", "x": 58, "y": 70 },
+    { "frame": 98, "kind": "mouseMove", "x": 57, "y": 65 },
+    { "frame": 104, "kind": "mouseUp" },
+    { "frame": 112, "kind": "moveToText", "text": "Move Sphere" },
+    { "frame": 114, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 116, "kind": "key", "code": "KeyZ" },
+    { "frame": 118, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 126, "kind": "moveToText", "text": "Undid Move Sphere" }
+  ] }
+] }"#;
+
+// M5-UNDO-06
+#[test]
+fn deletes_duplicates_and_moves_in_the_hierarchy_undo_and_redo() {
+    let run = run_editor("undo", UNDO_SPEC, false);
+    let _ = std::fs::remove_dir_all(&run);
+}
+
 /// Builds the editor and runs `platypus-app editor --project examples/arcade --bench` with the
 /// input `spec` (and `--bench-shots <dir>/shots` with `shots`), checking it ended cleanly.
 /// Returns the run's folder.

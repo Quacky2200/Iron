@@ -623,6 +623,12 @@
   background-color: var(--platypus-accent-dim);
 }
 
+.platypus-tree-row.over {
+  background-color: var(--platypus-accent-dim);
+  outline: 1px solid var(--platypus-accent);
+  outline-offset: -1px;
+}
+
 /* Modal dialogs */
 .platypus-modal-layer {
   position: absolute;

@@ -29,7 +29,10 @@ fn quat(x: f64, y: f64, z: f64, w: f64) -> Option<[f64; 4]> {
 
 /// The manifests of this crate's script API, for the compiler.
 pub fn manifests() -> Vec<String> {
-    vec![scene_manager_api::MANIFEST.to_json()]
+    vec![
+        scene_manager_api::MANIFEST.to_json(),
+        crate::editor_api::editor_scene_api::MANIFEST.to_json(),
+    ]
 }
 
 /// An object of a scene.

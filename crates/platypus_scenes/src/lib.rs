@@ -14,6 +14,9 @@ mod api;
 mod data;
 #[cfg(test)]
 mod data_tests;
+mod editor_api;
+#[cfg(test)]
+mod editor_tests;
 mod kinds;
 #[cfg(test)]
 mod kinds_tests;
@@ -21,6 +24,7 @@ mod manager;
 
 pub use api::{manifests, scene_manager_api};
 pub use data::{Opaque, opaque_components, remove_opaque, take_warnings, warn};
+pub use editor_api::editor_scene_api;
 pub use kinds::register_engine_kinds;
 pub use manager::*;
 

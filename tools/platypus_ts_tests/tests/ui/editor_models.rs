@@ -104,6 +104,13 @@ fn the_editor_transform_handles_pass() {
     assert!(failures.is_empty(), "\n{failures}");
 }
 
+// M5-UNDO-02..05
+#[test]
+fn the_editor_history_passes() {
+    let failures = run_editor_test("history.test.ts", "edu_", 967_000);
+    assert!(failures.is_empty(), "\n{failures}");
+}
+
 // M5-EDT-31..33
 #[test]
 fn the_editor_file_dialog_passes() {
