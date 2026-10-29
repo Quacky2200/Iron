@@ -74,6 +74,10 @@ A leading `//` comment line is allowed; otherwise plain JSON.
   folder `Iron/<title>` of a game without a company when no `Platypus/<title>` exists yet. The binary magics of packaged
   games (`IRONPAYL`), packs (`IRPK`) and cooked files (`IRTX`, `IRMD`) are unchanged, so old packs and caches still open.
   Environment variables, crate names and the cooked folder (`.platypus/`, was `.iron/`) have no fallback. Tests `M9-REN-01..04`.
+- **Edited by the editor:** Edit > Project Settings changes the raw file key by key (`platypus_core::project_edit`: `get_key`, `set_key`,
+  `remove_key`). Only the text of the one top-level key is replaced, added last or removed, so `${templates}`, key order, spacing, the
+  platform sections and unknown keys stay as written. The result must still parse, or nothing is written. The keys it offers are the
+  `FIELDS` table there. See [editor.md](editor.md#project-settings).
 
 ```json
 {

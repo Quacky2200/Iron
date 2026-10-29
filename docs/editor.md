@@ -25,6 +25,7 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
 | [editor.rs](../crates/platypus_engine_api/src/editor.rs), [editor/open.rs](../crates/platypus_engine_api/src/editor/open.rs), [editor/project.rs](../crates/platypus_engine_api/src/editor/project.rs), [editor/files.rs](../crates/platypus_engine_api/src/editor/files.rs) | The `Editor` namespace |
 | [scenes.ts](../editor/src/scenes.ts) | The open scene: recent files per project (PlayerPrefs), window title, game cameras, the start scene |
+| [ProjectSettings.tsx](../editor/src/ProjectSettings.tsx), [project_edit.rs](../crates/platypus_core/src/project_edit.rs) | Edit > Project Settings, and the text edits of one `project.json` key (`get_key`, `set_key`, `remove_key`, the `FIELDS` table) |
 | [meta.rs](../crates/platypus_core/src/meta.rs) | `.meta` helpers (GUIDs, importer settings, `ensure`), shared with `platypus-build` |
 | [logging.rs](../crates/platypus_app/src/logging.rs) | The capture layer that feeds the log |
 
@@ -77,6 +78,9 @@ declarations are generated. All calls answer at once; there are no ops and no pr
 | `Editor.restore(id)` | Puts a trashed item back where it was; returns its path. Refuses when something is there now |
 | `Editor.ensureMeta(path)` | Gives an asset a `.meta` file if it has none (`platypus_core::meta::ensure`); returns its GUID ("" for a file that isn't an asset) |
 | `Editor.startScene` | The project's `startScene` from `project.json` ("" for none) |
+| `Editor.projectFields()` | `ProjectField[]` (`key`, `ty` `string` / `bool` / `enum` / `path`, `group`, `options` with `\|` between ("" is "left out"), `doc`, `value` as written with `${templates}` unexpanded, `set`: whether the file has the key), one per `project_edit::FIELDS` entry |
+| `Editor.setProjectField(key, json)` | Sets one setting from JSON text by changing only that key's text in `project.json`; an empty enum choice removes the key. Refuses an unknown setting, a wrong type, a bad enum value, an empty `name`, or an edit that would break the JSON; false with the reason in `lastError` |
+| `Editor.removeProjectField(key)` | Removes a setting so its default applies; refuses `name` |
 | `Editor.lastError` | Why the last file call failed ("" when it worked) |
 
 **The log.** `logging::init` adds a capture layer (filtered like the other layers). While the editor is enabled, each
@@ -422,6 +426,18 @@ from `EditorScene.fields`.
 - **Add / Remove Component.** An Add Component button lists `EditorScene.componentKinds`; each component's header has
   a Remove button. Both are undoable.
 
+## Project Settings ([ProjectSettings.tsx](../editor/src/ProjectSettings.tsx))
+
+Edit > Project Settings opens a dialog with `project.json`'s settings in groups (Identity, Game, Build), taken from
+`Editor.projectFields`. The inputs are the Inspector's (`TextInput`, `Checkbox`, `Choice`, exported by
+[Inspector.tsx](../editor/src/Inspector.tsx)). Each change calls `Editor.setProjectField`, which rewrites only that key's
+text in the file (`platypus_core::project_edit`): `${templates}`, key order, spacing, the platform sections and unknown
+keys stay as written, a new key goes last with the file's indentation, and an empty enum choice removes the key. A
+refusal shows `Editor.lastError` in the dialog.
+
+The dialog has its own undo history (a `history.ts` `History`, apart from the scene's) with Undo and Redo buttons. A
+command's undo writes the old value back, or removes the key when the file had none.
+
 ## Tests and checks
 
 - `editor/test/*.test.ts` (`models`, `log`, `project`, `scene-camera`, `handles`, `file-dialog`) are plain TypeScript with a
@@ -449,6 +465,9 @@ from `EditorScene.fields`.
 - Inspector: the `EditorScene` component calls in `editor_tests.rs` (`M5-EDT-35`: components, fields, setField, add
   and remove, opaque data), the smoke test `M5-EDT-36` in `editor_smoke.rs`, and the logic in
   `editor/test/inspector.test.ts` (`M5-EDT-37`, run by `editor_models`).
+- Project Settings: `project_edit` units (`M5-PRJ-01` to `-03`: replace in place, add last, remove with its comma),
+  the `Editor` project calls in `editor.rs` (`M5-PRJ-04`) and the smoke test `M5-PRJ-05` (company typed, the file gains
+  one key, Undo restores it exactly). `cond && f()` with a void `f` (the dialog buttons use it) is `M9-TS-3524`.
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
 - `cargo run --release -p platypus_app -- editor --project examples/arcade --screenshot out.png --frames 30` renders the editor
@@ -469,6 +488,9 @@ from `EditorScene.fields`.
 - The Inspector shows references, assets and nested data read-only, shows one object when several are selected, has
   no colour picker (channels are numbers), and shows tag and layer read-only. A hand-written kind without a schema is
   typed from its saved values (no enum options or docs).
+- Project Settings edits the Identity, Game and Build keys only: `layers`, `quality`, `display` and the platform sections
+  are not in the form (edit them in the file; they are kept). Path settings (`licenseFile`, `icon`, ...) are text fields,
+  with no file picker.
 - Only one scene is edited at a time (Open replaces the loaded scenes); there is no prefab editing and no scene tabs.
 - Panels can't be closed or reopened yet, nor float in windows of their own.
 - The modal backdrop does not dim what is under it yet, and Tab is not kept inside a dialog (focus can leave it).
