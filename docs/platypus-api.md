@@ -376,7 +376,11 @@ clips inline: one `assets` entry however many components use it; a prefab or cop
 their defaults, `M5-ANI-16`); a compiled
 program's `NativeHost` registers one kind per class it has (properties go through the `PROPS` table: numbers, booleans, strings,
 component and `GameObject` references, and the value classes `Vector2/3/4`, `Quaternion`, `Color`, `Rect`, ... written in
-place). A component whose kind is not registered is skipped with a warning (`take_warnings()`). References are placeholders for
+place). A component whose kind is not registered (a game's script class, in the editor, which has not compiled the game's code) is kept
+with a warning (`take_warnings()`) as an `Opaque` component of its object: its JSON data with references turned into
+placeholders, a stand-in handle so references to it get file ids, and its index among the object's components. The saver
+writes it back in its place, and `instantiate` copies carry it. `opaque_components(object)` lists them, `remove_opaque` drops
+one (`M5-SCN-10`). References are placeholders for
 kinds (`{"$ref":"GameObject","object":raw}`, `{"$ref":"Component","kind","handle"}`) that the loader and saver map to file ids.
 `instantiate` is save plus load with external references kept live. The compiler lowers `GameObject.instantiate(go, { position,
 rotation, parent })` and `prefab.instantiate({..})` onto the numeric `SceneManager.instantiate` / `Prefab.instantiate`.

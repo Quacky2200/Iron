@@ -329,7 +329,7 @@ bloom, fog), applied when that scene becomes active.
 component *asleep* (`_addComponentAsleep`, no `onAwake`); (2) set every property, resolving
 references through the file ids; (3) call `onAwake` on all components, then apply `enabled: false`.
 This lets a component refer to one that comes later in the file, and `onAwake` sees finished values.
-A component type that isn't registered is skipped with a warning.
+A component type that isn't registered is kept with a warning, as data (see `Opaque` in [platypus-api.md](platypus-api.md)), and saved back in place.
 
 **SceneManager.** Unity's API:
 

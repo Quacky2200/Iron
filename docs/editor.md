@@ -37,6 +37,10 @@ With `--project`, the host (`main.rs`):
 - turns on `Editor` for that folder (`platypus_engine_api::editor::enable`, the path made absolute; the editor's own
   folder is used for relative paths in `openFile`) and keeps the log from the start, before anything logs;
 - sets `Application.isEditor`;
+- makes the project folder (made absolute) the asset root, unless `--data` is given: scenes (`SceneManager.loadSceneAsync`),
+  models, textures, sounds, the `.meta` asset scan and the asset watcher all resolve against the project, so the editor's
+  world loads the project's files by their project paths. The editor's own UI stylesheet (`game.css`) still comes from the
+  editor's folder, and the editor's `build/assets.plan` is not used;
 - passes the paths dropped on the window from the system to `Editor`'s allow list (`file_drop.rs`).
 
 Without `--project` the `Editor` calls do nothing and fail, so games can't use them.
