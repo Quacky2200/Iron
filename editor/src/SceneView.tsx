@@ -10,26 +10,6 @@
 // (last selected) object gets Unity's transform handles (Q view, W move, E rotate, R
 // scale; math in handles.ts), drawn as SVG over the view.
 
-import {
-  AudioSource,
-  Camera,
-  Color,
-  GameObject,
-  Gizmos,
-  HideFlags,
-  input,
-  Light,
-  Matrix4x4,
-  Quaternion,
-  Rect,
-  ReflectionProbe,
-  Screen,
-  Time,
-  Vector3,
-} from "@platypus/engine";
-import { type PlatypusKeyboardEvent, type PlatypusPointerEvent, type PlatypusWheelEvent, Text } from "@platypus/react";
-import { useEffect, useRef, useState } from "react";
-
 import type { Rect as DockRect } from "./dock.ts";
 import { onEditorFrame } from "./frame.ts";
 import {
@@ -267,14 +247,14 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
         const pose = { position: t.position, rotation: t.rotation, scale: t.localScale };
         const handle = beginDrag(tool, part, handleView(), pose, frameOf(h.object), e.clientX - r.x, e.clientY - r.y);
         drag.current = { mode: "handle", x: e.clientX, y: e.clientY, moved: false, handle, object: h.object };
-        e.currentTarget?.setPointerCapture();
+        e.currentTarget?.setPointerCapture(e.pointerId);
         return;
       }
     }
     const mode = e.button === 2 ? "look" : e.button === 1 ? "pan" : e.button === 0 ? (e.altKey ? "orbit" : "click") : null;
     if (!mode) return;
     drag.current = { mode, x: e.clientX, y: e.clientY, moved: false };
-    e.currentTarget?.setPointerCapture();
+    e.currentTarget?.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: PlatypusPointerEvent) => {
     const d = drag.current;
@@ -304,7 +284,7 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
   const onPointerUp = (e: PlatypusPointerEvent) => {
     const d = drag.current;
     drag.current = null;
-    e.currentTarget?.releasePointerCapture();
+    e.currentTarget?.releasePointerCapture(e.pointerId);
     if (d?.mode === "handle" && d.moved && !d.object.destroyed) {
       const t = d.object.transform;
       onTransformed?.(d.object, d.handle.start, { position: t.position, rotation: t.rotation, scale: t.localScale });

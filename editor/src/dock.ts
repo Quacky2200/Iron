@@ -200,47 +200,58 @@ export function resize(layout: DockNode, splitId: string, index: number, delta: 
 /** The layout as JSON (what `parseLayout` reads back). */
 export const serializeLayout = (layout: DockNode): string => JSON.stringify(layout);
 
+/** A layout node as saved: any key may be missing (JSON.parse checks the types of those there). */
+interface SavedNode {
+  type?: string;
+  id?: string;
+  tabs?: string[];
+  active?: string | null;
+  direction?: string;
+  children?: SavedNode[];
+  sizes?: number[];
+}
+
 /**
  * Reads a saved layout. Malformed parts make it null; with `knownTabs`, tabs that no
  * longer exist are dropped (and groups left empty with them).
  */
 export function parseLayout(json: string, knownTabs?: readonly string[]): DockNode | null {
-  let raw: unknown;
+  let raw: SavedNode;
   try {
-    raw = JSON.parse(json);
+    raw = JSON.parse(json) as SavedNode;
   } catch {
     return null;
   }
   const known = knownTabs ? new Set(knownTabs) : null;
   const seen = new Set<string>();
-  const read = (v: unknown): DockNode | null | undefined => {
-    if (typeof v !== "object" || v === null) return undefined;
-    const o = v as Record<string, unknown>;
-    if (typeof o.id !== "string" || seen.has(o.id)) return undefined;
-    seen.add(o.id);
+  const read = (o: SavedNode): DockNode | null | undefined => {
+    const id = o.id;
+    if (id === undefined || seen.has(id)) return undefined;
+    seen.add(id);
     if (o.type === "group") {
-      if (!Array.isArray(o.tabs) || !o.tabs.every((t) => typeof t === "string")) return undefined;
-      const tabs = (o.tabs as string[]).filter((t) => !known || known.has(t));
+      if (!o.tabs) return undefined;
+      const tabs = o.tabs.filter((t) => !known || known.has(t));
       if (tabs.length === 0) return null;
       const active = typeof o.active === "string" && tabs.includes(o.active) ? o.active : tabs[0]!;
-      return group(o.id, tabs, active);
+      return group(id, tabs, active);
     }
     if (o.type === "split") {
-      if ((o.direction !== "row" && o.direction !== "column") || !Array.isArray(o.children)) return undefined;
+      const direction = o.direction;
+      if ((direction !== "row" && direction !== "column") || !o.children) return undefined;
       const children: DockNode[] = [];
       const sizes: number[] = [];
-      const given = Array.isArray(o.sizes) ? (o.sizes as unknown[]) : [];
+      const given = o.sizes ?? [];
       for (const [i, c] of o.children.entries()) {
         const node = read(c);
         if (node === undefined) return undefined;
         if (node) {
           children.push(node);
-          sizes.push(typeof given[i] === "number" ? (given[i] as number) : 0);
+          sizes.push(given[i] ?? 0);
         }
       }
       if (children.length === 0) return null;
       if (children.length === 1) return children[0]!;
-      return split(o.id, o.direction, children, sizes);
+      return split(id, direction, children, sizes);
     }
     return undefined;
   };

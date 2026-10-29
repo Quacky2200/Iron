@@ -5,9 +5,7 @@
 // in from the system are copied into the folder they're dropped on (or the one shown);
 // items dragged inside it move into a folder (a row, a breadcrumb, or `..`).
 
-import { type PlatypusDragEvent, Text } from "@platypus/react";
-import { useCallback, useEffect, useState } from "react";
-
+import { cx } from "./classes.ts";
 import {
   baseName,
   canMoveInto,
@@ -18,7 +16,6 @@ import {
   listDir,
   moveInto,
   PROJECT_PATH_TYPE,
-  type ProjectEntry,
   parentPath,
   projectFolder,
 } from "./project.ts";
@@ -108,7 +105,8 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
   });
 
   // `..` first when inside a folder.
-  const rows: (ProjectEntry & { up?: true })[] = path ? [{ name: "..", dir: true, size: 0, up: true }, ...entries] : entries;
+  const rows: ProjectEntry[] = path ? [{ name: "..", dir: true, size: 0 }, ...entries] : entries;
+  const isUp = (i: number) => path !== "" && i === 0;
   const listHeight = Math.max(0, height - TOOLBAR);
 
   return (
@@ -141,26 +139,29 @@ export function ProjectBrowser({ width, height, rowHeight = 22 }: ProjectBrowser
         empty={root ? "Empty folder: drop files here" : ""}
         onKeyDown={(e) => {
           const row = rows[selected];
-          if (e.key === "Enter" && row?.dir) open(row.up ? parentPath(path) : joinPath(path, row.name));
+          if (e.key === "Enter" && row?.dir) open(isUp(selected) ? parentPath(path) : joinPath(path, row.name));
           else if (e.key === "Backspace" && path) open(parentPath(path));
           else return;
           e.preventDefault();
         }}
         renderRow={(i) => {
           const row = rows[i]!;
-          const full = row.up ? parentPath(path) : joinPath(path, row.name);
-          const classes = ["platypus-project-row", row.dir && "dir", row.dir && over === full && "over"].filter(Boolean).join(" ");
+          const full = isUp(i) ? parentPath(path) : joinPath(path, row.name);
+          const classes = cx("platypus-project-row", row.dir ? "dir" : "", row.dir && over === full ? "over" : "");
+          // Folders take drops; files don't.
+          const drop = target(full);
           return (
             <box
               className={classes}
-              draggable={!row.up}
+              draggable={!isUp(i)}
               onDragStart={(e: PlatypusDragEvent) => {
                 e.dataTransfer.setData(PROJECT_PATH_TYPE, full);
                 e.dataTransfer.setData("text/plain", full);
                 e.dataTransfer.effectAllowed = "move";
               }}
               onDoubleClick={() => row.dir && open(full)}
-              {...(row.dir ? target(full) : {})}
+              onDragOver={row.dir ? drop.onDragOver : undefined}
+              onDrop={row.dir ? drop.onDrop : undefined}
             >
               <box className={row.dir ? "platypus-project-icon folder" : "platypus-project-icon file"} />
               <Text className="platypus-project-name">{row.name}</Text>

@@ -226,7 +226,11 @@ export function acceleratorLabel(text: string): string {
   if (!acc) return text;
   const key = acc.code.replace(/^Key/, "").replace(/^Digit/, "");
   const names: Record<string, string> = { Equal: "+", Minus: "-", Comma: ",", Period: ".", Slash: "/" };
-  return [acc.ctrl && "Ctrl", acc.alt && "Alt", acc.shift && "Shift", acc.meta && "Meta", names[key] ?? key]
-    .filter(Boolean)
-    .join("+");
+  const parts: string[] = [];
+  if (acc.ctrl) parts.push("Ctrl");
+  if (acc.alt) parts.push("Alt");
+  if (acc.shift) parts.push("Shift");
+  if (acc.meta) parts.push("Meta");
+  parts.push(names[key] ?? key);
+  return parts.join("+");
 }

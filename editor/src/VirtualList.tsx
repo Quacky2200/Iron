@@ -5,9 +5,6 @@
 // height, so lists of a million rows cost the same as ten. The engine scrolls the
 // container; rows are placed absolutely inside a spacer as tall as the whole list.
 
-import { type PlatypusElement, type PlatypusKeyboardEvent, type PlatypusScrollEvent, type PlatypusStyle, Text } from "@platypus/react";
-import { type ReactNode, type Ref, useImperativeHandle, useRef, useState } from "react";
-
 import { keyIndex, maxScroll, scrollForIndex, visibleRange } from "./virtual.ts";
 
 export interface VirtualListHandle {

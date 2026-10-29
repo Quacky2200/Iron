@@ -2,37 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The Platypus editor's UI (M5.e): a menubar, docked panels (Hierarchy, Scene, Game,
-// Inspector, Console, Project) and a status bar, built with @platypus/editor-ui.
-// `platypus_editor` loads this bundle (editor/build). The Hierarchy and Scene view show the
-// editor's own world (a demo scene for now); the Inspector is a placeholder.
+// Inspector, Console, Project) and a status bar. `platypus-app editor` runs it like a game
+// (`platypus-build build editor` first). The Hierarchy and Scene view show the editor's
+// own world (a demo scene for now); the Inspector is a placeholder.
+import "./editor-ui.css";
 import "./editor.css";
 
-import {
-  Console,
-  Dock,
-  type DockNode,
-  type DockPanel,
-  emptyTreeState,
-  group,
-  type Menu,
-  MenuBar,
-  onEditorFrame,
-  ProjectBrowser,
-  parseLayout,
-  type Rect,
-  SceneView,
-  serializeLayout,
-  split,
-  type TreeNode,
-  type TreeState,
-  TreeView,
-  useScreenSize,
-  visibleObjects,
-} from "@platypus/editor-ui";
-import { Application, AudioSource, Camera, GameObject, Light, MeshRenderer, PlayerPrefs, Rect as ViewRect, ReflectionProbe, Screen } from "@platypus/engine";
-import { createRoot, Text } from "@platypus/react";
-import { useEffect, useMemo, useState } from "react";
-
+import { Console } from "./Console.tsx";
+import { Dock, type DockPanel } from "./Dock.tsx";
+import { type DockNode, group, parseLayout, type Rect as DockRect, serializeLayout, split } from "./dock.ts";
+import { onEditorFrame } from "./frame.ts";
+import { type Menu } from "./menu.ts";
+import { MenuBar } from "./MenuBar.tsx";
+import { ProjectBrowser } from "./ProjectBrowser.tsx";
+import { SceneView, visibleObjects } from "./SceneView.tsx";
+import { useScreenSize } from "./screen.ts";
+import { emptyTreeState, type TreeNode, type TreeState } from "./tree.ts";
+import { TreeView } from "./TreeView.tsx";
 import { buildDemoScene } from "./demo-scene.ts";
 
 const MENUBAR = 26;
@@ -101,15 +87,15 @@ function useSceneTree(): TreeNode<Thing>[] {
 const ICONS: Record<Thing["kind"], string> = { object: "■", light: "☀", camera: "◉", mesh: "▲", audio: "♪", probe: "◍" };
 
 /** The Game panel: the main camera draws into it while it's shown. */
-function GameView({ rect }: { rect: Rect }) {
+function GameView({ rect }: { rect: DockRect }) {
   useEffect(() => {
     const camera = Camera.main;
     if (!camera) return;
     const sw = Math.max(1, Screen.width);
     const sh = Math.max(1, Screen.height);
-    camera.rect = new ViewRect(rect.x / sw, rect.y / sh, rect.width / sw, rect.height / sh);
+    camera.rect = new Rect(rect.x / sw, rect.y / sh, rect.width / sw, rect.height / sh);
     return () => {
-      if (!camera.gameObject.destroyed) camera.rect = new ViewRect(0, 0, 0, 0);
+      if (!camera.gameObject.destroyed) camera.rect = new Rect(0, 0, 0, 0);
     };
   }, [rect.x, rect.y, rect.width, rect.height]);
   return <box style={{ width: rect.width, height: rect.height }} />;
@@ -157,7 +143,7 @@ function App() {
     }
     const id = String(go.id);
     setTree((t) => {
-      const selected = new Set(additive ? t.selected : []);
+      const selected = additive ? new Set(t.selected) : new Set<string>();
       if (additive && selected.has(id)) selected.delete(id);
       else selected.add(id);
       return { ...t, selected, focus: id, anchor: id };

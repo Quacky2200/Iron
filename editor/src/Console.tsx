@@ -5,9 +5,6 @@
 // with counts, collapsing repeats, search, auto-scroll that pauses while you look
 // further up, and code links (`src/main.ts:12:5`) that open in your code editor.
 
-import { Input, type PlatypusPointerEvent, Text } from "@platypus/react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-
 import { type ConsoleFilter, consoleRows, countLevels, isLink, type LogEntry, parseLinks } from "./console.ts";
 import { clearLog, logEntries, openInEditor, subscribeLog } from "./log.ts";
 import { VirtualList, type VirtualListHandle } from "./VirtualList.tsx";

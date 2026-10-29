@@ -8,8 +8,6 @@
 // zooms towards the pivot, WASD/QE fly, F frames a sphere, and the axis gizmo looks
 // along an axis.
 
-import { Quaternion, Vector3 } from "@platypus/engine";
-
 const DEG = Math.PI / 180;
 
 export interface SceneCameraState {

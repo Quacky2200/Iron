@@ -53,9 +53,11 @@ export interface TreeState {
 
 export const emptyTreeState = (): TreeState => ({ expanded: new Set(), selected: new Set(), focus: null, anchor: null });
 
-const indexOf = (rows: readonly TreeRow[], id: string | null) => (id === null ? -1 : rows.findIndex((r) => r.node.id === id));
+function indexOf<T>(rows: readonly TreeRow<T>[], id: string | null): number {
+  return id === null ? -1 : rows.findIndex((r) => r.node.id === id);
+}
 
-function range(rows: readonly TreeRow[], a: string | null, b: string): Set<string> {
+function range<T>(rows: readonly TreeRow<T>[], a: string | null, b: string): Set<string> {
   const i = Math.max(0, indexOf(rows, a));
   const j = indexOf(rows, b);
   const [lo, hi] = i < j ? [i, j] : [j, i];
@@ -63,8 +65,8 @@ function range(rows: readonly TreeRow[], a: string | null, b: string): Set<strin
 }
 
 /** A click on a row: plain selects it, Ctrl toggles it, Shift selects from the anchor (Ctrl+Shift adds the range). */
-export function clickSelect(
-  rows: readonly TreeRow[],
+export function clickSelect<T>(
+  rows: readonly TreeRow<T>[],
   state: TreeState,
   id: string,
   mods: { shift?: boolean; ctrl?: boolean },
@@ -98,8 +100,8 @@ export function toggle(state: TreeState, id: string, open?: boolean): TreeState 
  * to the first child, Space toggles the focused row's selection with Ctrl. `null` when
  * the key isn't one of these.
  */
-export function treeKey(
-  rows: readonly TreeRow[],
+export function treeKey<T>(
+  rows: readonly TreeRow<T>[],
   state: TreeState,
   key: string,
   mods: { shift?: boolean; ctrl?: boolean } = {},

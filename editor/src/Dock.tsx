@@ -6,9 +6,7 @@
 // (dock.ts) the parent keeps, so it can be saved and loaded as JSON. Drags use pointer
 // capture; where things are comes from `computeRects`, matching the flex layout below.
 
-import { type PlatypusElement, type PlatypusPointerEvent, Text } from "@platypus/react";
-import { type ReactNode, useMemo, useRef, useState } from "react";
-
+import { cx } from "./classes.ts";
 import {
   activate,
   computeRects,
@@ -73,7 +71,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
   const renderNode = (node: DockNode): ReactNode =>
     node.type === "split" ? renderSplit(node) : renderGroup(node);
 
-  const renderSplit = (node: DockSplit) => {
+  const renderSplit = (node: DockSplit): ReactNode => {
     const row = node.direction === "row";
     const r = rects.get(node.id)!;
     const free = Math.max(1, (row ? r.width : r.height) - SPLITTER * (node.children.length - 1));
@@ -115,7 +113,7 @@ export function Dock({ layout, onLayoutChange, panels, rect }: DockProps) {
     );
   };
 
-  const renderGroup = (g: DockGroup) => {
+  const renderGroup = (g: DockGroup): ReactNode => {
     const r = rects.get(g.id)!;
     const box = { x: r.x, y: r.y + TAB_BAR, width: r.width, height: Math.max(0, r.height - TAB_BAR) };
     const panel = g.active ? panels[g.active] : undefined;
@@ -196,15 +194,15 @@ function Splitter({ row, onStart, onMove, onEnd }: { row: boolean; onStart: (at:
         if (e.button !== 0) return;
         e.preventDefault();
         active.current = true;
-        el.current?.setPointerCapture();
+        el.current?.setPointerCapture(e.pointerId);
         onStart(row ? e.clientX : e.clientY);
       }}
       onPointerMove={(e: PlatypusPointerEvent) => {
         if (active.current) onMove(row ? e.clientX : e.clientY);
       }}
-      onPointerUp={() => {
+      onPointerUp={(e: PlatypusPointerEvent) => {
         active.current = false;
-        el.current?.releasePointerCapture();
+        el.current?.releasePointerCapture(e.pointerId);
         onEnd();
       }}
       onLostPointerCapture={() => {
@@ -233,7 +231,7 @@ function DockTab({
 }) {
   const el = useRef<PlatypusElement>(null);
   const pressed = useRef(false);
-  const classes = ["platypus-dock-tab", active && "active", dragging && "dragging"].filter(Boolean).join(" ");
+  const classes = cx("platypus-dock-tab", active ? "active" : "", dragging ? "dragging" : "");
   return (
     <box
       ref={el}
@@ -242,16 +240,16 @@ function DockTab({
         if (e.button !== 0) return;
         pressed.current = true;
         // Moves keep coming to the tab wherever the pointer goes.
-        el.current?.setPointerCapture();
+        el.current?.setPointerCapture(e.pointerId);
         onPress(e.clientX, e.clientY);
       }}
       onPointerMove={(e: PlatypusPointerEvent) => {
         if (pressed.current) onMove(e.clientX, e.clientY);
       }}
-      onPointerUp={() => {
+      onPointerUp={(e: PlatypusPointerEvent) => {
         if (!pressed.current) return;
         pressed.current = false;
-        el.current?.releasePointerCapture();
+        el.current?.releasePointerCapture(e.pointerId);
         onRelease();
       }}
     >

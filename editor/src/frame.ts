@@ -5,8 +5,6 @@
 // live hierarchy): one hidden object with a component whose `onLateUpdate` (after
 // scripts and animation have moved things) calls the listeners.
 
-import { Component, GameObject, HideFlags } from "@platypus/engine";
-
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
@@ -15,6 +13,9 @@ class EditorFrame extends Component {
     for (const f of [...listeners]) f();
   }
 }
+
+// Components are registered by name; this one is only added here, never spawned on its own.
+register({ EditorFrame }, { spawn: false });
 
 let host: GameObject | null = null;
 

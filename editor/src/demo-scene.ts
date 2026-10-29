@@ -5,40 +5,24 @@
 // shapes on a floor, the three kinds of light, a camera, an audio source and a
 // reflection probe (so every SceneIcon shows).
 
-import {
-  AudioSource,
-  Camera,
-  Color,
-  createPrimitive,
-  GameObject,
-  Light,
-  Material,
-  MeshRenderer,
-  Quaternion,
-  Rect,
-  ReflectionProbe,
-  RenderSettings,
-  Vector3,
-} from "@platypus/engine";
-
 const paint = (go: GameObject, color: Color, o: { metallic?: number; smoothness?: number } = {}) => {
   go.getComponent(MeshRenderer)!.material = Material.create({ color, ...o });
 };
 
 export function buildDemoScene(): void {
   RenderSettings.skybox = {};
-  const floor = createPrimitive("plane", { name: "Floor", scale: new Vector3(2, 1, 2) });
+  const floor = GameObject.createPrimitive("plane", { name: "Floor", scale: new Vector3(2, 1, 2) });
   paint(floor, new Color(0.2, 0.21, 0.22, 1), { smoothness: 0.1 });
 
   const shapes = new GameObject("Shapes");
-  paint(createPrimitive("cube", { name: "Cube", parent: shapes, position: new Vector3(-2.5, 0.5, 0) }), Color.hex("#d9663a"));
-  paint(createPrimitive("sphere", { name: "Sphere", parent: shapes, position: new Vector3(0, 0.75, -1), scale: new Vector3(1.5, 1.5, 1.5) }), Color.hex("#c8ccd2"), {
+  paint(GameObject.createPrimitive("cube", { name: "Cube", parent: shapes, position: new Vector3(-2.5, 0.5, 0) }), Color.hex("#d9663a"));
+  paint(GameObject.createPrimitive("sphere", { name: "Sphere", parent: shapes, position: new Vector3(0, 0.75, -1), scale: new Vector3(1.5, 1.5, 1.5) }), Color.hex("#c8ccd2"), {
     metallic: 1,
     smoothness: 0.85,
   });
-  paint(createPrimitive("cylinder", { name: "Cylinder", parent: shapes, position: new Vector3(2.5, 1, 0.5) }), Color.hex("#3d8ef0"));
+  paint(GameObject.createPrimitive("cylinder", { name: "Cylinder", parent: shapes, position: new Vector3(2.5, 1, 0.5) }), Color.hex("#3d8ef0"));
   paint(
-    createPrimitive("capsule", { name: "Capsule", parent: shapes, position: new Vector3(0.5, 1, 2.5), rotation: Quaternion.euler(0, 0, 90) }),
+    GameObject.createPrimitive("capsule", { name: "Capsule", parent: shapes, position: new Vector3(0.5, 1, 2.5), rotation: Quaternion.euler(0, 0, 90) }),
     Color.hex("#7ac74f"),
   );
 

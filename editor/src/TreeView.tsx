@@ -5,9 +5,7 @@
 // with hundreds of thousands of nodes stay fast. Selection, expansion and focus live
 // in a `TreeState` the parent owns (tree.ts has the logic).
 
-import { Input, type PlatypusElement, type PlatypusKeyboardEvent, type PlatypusPointerEvent, Text } from "@platypus/react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-
+import { cx } from "./classes.ts";
 import { clickSelect, flatten, type TreeNode, type TreeRow, type TreeState, toggle, treeKey } from "./tree.ts";
 import { VirtualList, type VirtualListHandle } from "./VirtualList.tsx";
 
@@ -90,11 +88,11 @@ export function TreeView<T>({
     list.current?.focus();
   };
 
-  const renderRow = (i: number) => {
+  const renderRow = (i: number): ReactNode => {
     const row = rows[i]!;
     const { node } = row;
     const selected = state.selected.has(node.id);
-    const classes = ["platypus-tree-row", selected && "selected", state.focus === node.id && "focused"].filter(Boolean).join(" ");
+    const classes = cx("platypus-tree-row", selected ? "selected" : "", state.focus === node.id ? "focused" : "");
     return (
       <box
         className={classes}

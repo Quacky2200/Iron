@@ -5,10 +5,7 @@
 // moves between open menus, arrows/Home/End/Enter/Escape navigate, a press outside
 // closes, and items' accelerators work from anywhere (menu.ts has the logic).
 
-import { input } from "@platypus/engine";
-import { type PlatypusElement, type PlatypusKeyboardEvent, type PlatypusPointerEvent, Text } from "@platypus/react";
-import { useEffect, useRef, useState } from "react";
-
+import { cx } from "./classes.ts";
 import {
   acceleratorLabel,
   CLOSED,
@@ -107,7 +104,7 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
     }
   };
 
-  const renderList = (items: MenuItem[], level: number) => (
+  const renderList = (items: MenuItem[], level: number): ReactNode => (
     <box
       className={level === 0 ? "platypus-menu" : "platypus-menu platypus-submenu"}
       onPointerDown={(e: PlatypusPointerEvent) => {
@@ -119,7 +116,7 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
       {items.map((item, i) => {
         if (item.separator) return <box key={i} className="platypus-menu-separator" />;
         const highlighted = state.path[level] === i;
-        const classes = ["platypus-menu-item", highlighted && "highlighted", item.disabled && "disabled"].filter(Boolean).join(" ");
+        const classes = cx("platypus-menu-item", highlighted ? "highlighted" : "", item.disabled ? "disabled" : "");
         return (
           <box
             key={i}

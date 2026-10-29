@@ -16,6 +16,7 @@ tests/output/
 .iron/
 # Generated type declarations (`platypus-build types`, `init --editor-files`).
 examples/*/types/
+editor/types/
 tools/bench/*/types/
 # Asset import settings and GUIDs (`platypus-build assets`/`dev`): a build-host detail, rebuilt on demand.
 *.meta
