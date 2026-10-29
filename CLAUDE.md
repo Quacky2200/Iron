@@ -3,7 +3,7 @@
 An s&box-like game engine. The core is Rust. Gameplay is TypeScript compiled to native code by our own
 compiler (`tools/platypus_ts`: oxc, Platypus IR, Cranelift, JIT-loaded by `platypus-app`; no JavaScript
 engine, no Bun). UI is React-style TSX rendered by a native reconciler (`platypus_ui_native`), drawn by our
-own renderer. The editor is being re-made natively in TypeScript by another agent. Full design: `DESIGN.md`.
+own renderer. The editor (`editor/`) is a game written in TSX like the others. Full design: `DESIGN.md`.
 Plan and progress: `TODO.md`. Test IDs (e.g. `M3-EVT-01`): `TESTS.md`.
 
 **Core rule: Rust owns the world, scripts own behaviour.**
@@ -40,8 +40,7 @@ Plan and progress: `TODO.md`. Test IDs (e.g. `M3-EVT-01`): `TESTS.md`.
 | `crates/platypus_render_cpu` | CPU renderer for the UI draw list (`vello_cpu` + `softbuffer`, images decoded lazily at drawn size). An opt-in UI-only renderer of `platypus-app` (`renderer: "cpu"` or `--renderer cpu`, `cpu_gfx.rs`; never chosen automatically); its gaps are in `docs/rendering.md` |
 | `crates/platypus_pack` | Asset packs (`.ppk`): `PackWriter`, `Pack`, `Vfs` over loose folders and packs; design `docs/research/platypus-asset-packs.md` |
 | `crates/platypus_app` | The engine host `platypus-app` (the default of `cargo run -p platypus_app`), the one program for every game. It picks its renderer per run (`host.rs`): `--renderer vulkan\|gles\|cpu`, else `project.json` `renderer`, else the bundle's tier found at build time (`platypus_ts::renderer`: a program that is only UI starts on GLES through the linked-in ANGLE, `gles_gfx.rs`, with no world renderer; one that uses the 2D or 3D world on wgpu with the world renderer; `cpu` is opt-in, `cpu_gfx.rs`). A UI-only start asked for the world shows "3D Not Supported" (`notice.rs`). `platypus-app [game folder] [--screenshot out.png] [--frames N] [--fps\|--no-fps] [--renderer r]`, `platypus-app --licenses` (prints the built-in third-party notices and exits) (no folder: the current one; an FPS counter shows top right, off for `--screenshot` unless `--fps`, off with `PLATYPUS_FPS=0` or `"fps": false` in `project.json`). Loads `build/game.pbundle` (or compiles a `.ts` given directly) + `build/game.css` and wires scripts → UI → renderer; a QuickJS `build/game.js` is refused. |
-| `js/editor-ui` | The old QuickJS editor's components (`@platypus/editor-ui`); not built, kept while another agent re-makes the editor natively (then `js/` goes) |
-| `editor/` | The old QuickJS editor's UI; not built (no `platypus_editor` binary since the QuickJS removal); another agent is re-making the editor natively in TypeScript |
+| `editor/` | The editor, a game compiled like the examples: `src/` (menubar, docking, virtual list, tree view, console, project browser, Scene view and their models as plain modules), `test/` (the models' tests, run natively by `tools/platypus_ts_tests/tests/ui/editor_models.rs`). `platypus-build build editor`, then `platypus-app editor --project <folder>`: the `Editor` namespace (`platypus_engine_api::editor`: log feed, `openFile`, project file calls) works only with `--project`. See `docs/editor.md` |
 | `examples/*` | `hello`, `boxes`, `text`, `css`, `form`, `physics`, `world` (3D), `platformer` (2D), `classics` (test models), `cornell`, `materials`, `quality`, `layers`, `scenes`, `arcade` (a small game with a React HUD), `animation`, `cloth`, `sine-circle-demo` and `raindrop-demo` (MiniGameEngine ports), `shapes`, `splines`, `clock` (twelve faces), `fishtank`, `fog` (distance, height fog and light shafts in a misty clearing), `fog-teapots` (the classic distance-fog picture: teapots on a mirrored checkerboard), `fog-raider` (a PS1 tomb with fog a few metres away, its distance on keys), `fog-blocks` (a Minecraft-like hill in sky-blue fog under a cloud deck), `fog-park` (a Victorian London park: pond mist by morning, gas lanterns glowing in the fog by night), `fog-world` (an endless streamed block world: the fog is the render distance, fog culling skips the spare ring), `godrays-forest` (god rays through a forest canopy), `godrays-cell` (god rays through a barred prison window, with dust), `godrays-room` (god rays through a broken roof, a window and shutters into a dusty room, a day passing), `godrays-sunset` (a 25th-floor flat over a city as the sun sets: beams through mullions and blinds, the city's windows lighting up), `godrays-shed` (a craft's green or red scanning beam sweeping a dusty garden shed through its window and plank gaps), `godrays-lift` (a dark hotel corridor: the lift's doors open and its light floods out), `godrays-clouds` (crepuscular rays: the sun through gaps in a high cloud layer over patchwork fields), `light-units` (real-world light units: a 100000 lux courtyard and a lamplit hall, light meter and physical camera), `tunnel` (auto exposure: a road tunnel, dark inside, the exit a white blaze, dazzling on the way out), `dark-room` (eye adaptation: louvred shutters open on a dim bedroom, blinding, then settling, and close again), `emoji` (a spinner wheel picks one of 50 Noto SVG emoji, each with its own show: entrance, signature pose with sprite particles and props, scene, crowd reaction and exit; sounds synthesised by `tools/make_sfx.py`) `postfx` (post-processing: a colonnade with every built-in `PostProcess` effect switchable, depth of field, ink outlines, a custom WGSL pass; `docs/postprocessing.md`), `postfx-look` (stacked looks: noir, dream, comic, old TV, arcade), `postfx-aberration`, `postfx-focus` (depth of field, tilt-shift, blur), `postfx-outline`, `postfx-film` (vignette, grain, grading: one effect or combination each) `flow` (floats: an article with a floated picture and pull-quote, text wrapping around them), `table` (a table from a grid of `display: contents` rows), `article` (floats and a sortable table in one article) `windows` (extra OS windows: owned tools, an isolated Inspector over messages) games (built with `platypus-build build`; each is just a `project.json`, `tsconfig.json` and `src/`, no `package.json`; the `main` ones await porting) |
 | `docs/` | Implementation docs: how the code works today (pipeline, crates, events, rendering, testing). Start at `docs/README.md`. `docs/upstream/` holds reports for upstream projects (the rapier friction issue and PR) |
 | `tools/platypus_build` | `platypus-build` (build/types/assets/dev/check/package/init): module graph (`platypus_ts::modules`) -> `build/game.pbundle` (with the renderer tier, `platypus_ts::renderer`) + `game.css` + assets for a game compiled by platypus_ts, no bun; `init` writes `project.json`, a self-contained `tsconfig.json` and `types/platypus.d.ts`, `init --editor-files <game or folder>` refreshes the last two; see `docs/platypus-build.md` |
@@ -77,6 +76,9 @@ cd tools && cargo run -p platypus_build -- check ../examples --tsc
 ```
 ```bash
 cd tools && cargo run -p platypus_build -- build ../examples/hello
+```
+```bash
+cd tools && cargo run -p platypus_build -- build ../editor && cd .. && cargo run --release -p platypus_app -- editor --project examples/arcade
 ```
 ```bash
 cargo run -p platypus_app -- examples/css --screenshot out.png --frames 30
@@ -130,8 +132,8 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
   - **Read big files in parts.** `tools/platypus_ts/src/lower/expr.rs` (about 5,800 lines), `crates/platypus_ui/src/tree.rs`, `platypus_api_macros/src/lib.rs`, `platypus_app/src/main.rs`, `TESTS.md` (326 KB) and `tools/platypus_ts/TODO.md` (long lines are cut off by Read) are huge: use Grep and read ranges, never the whole file. New code goes in a new module rather than growing these files.
   - **Notes stay short.** Keep the "Resume point" of `tools/platypus_ts/TODO.md` to about 30 lines and replace it, don't append; put history in git, not in TODO/NOTES.
   - **Line endings.** Many files are CRLF on disk (`.gitattributes` says LF): use the Edit tool, not shell tools, and do not mass-convert files in a feature commit.
-  - **No QuickJS:** it was removed (2026-10-28) with `js/engine`, `js/react` and the JS fixtures; don't bring back
-    JavaScript-engine paths. `editor/` and `js/editor-ui` are another agent's (the native editor re-make): leave them alone.
+  - **No QuickJS:** it was removed (2026-10-28) with `js/engine`, `js/react` and the JS fixtures, and `js/` went with the native
+    editor (2026-10-29); don't bring back JavaScript-engine paths.
   - **Disk is tight.** No extra target dirs or worktrees. Prune stale build output with a script that keeps the newest build per crate (old hashes pile up); never run a bare `cargo clean` while another agent builds.
 - **Write clippy-clean code the first time:** write Rust the way `cargo clippy --workspace --all-targets -- -D warnings` wants it (no needless clones, borrows or returns, `is_empty()` over `len() == 0`, `&str`/`&[T]` parameters, `Default` where `new()` takes nothing, no `too_many_arguments`: group them in a struct, and so on) instead of fixing lints after the fact. Declare things once and in the right place (one interface, type or table that others reuse) rather than repeating them. Never silence a lint with `#[allow]` unless a short comment says why.
 - **CSS:** prefer standard CSS over s&box's custom extensions. The CSS parity backlog is TODO.md "M3d".
@@ -139,7 +141,7 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
   are listed in `docs/differences.md`. Check it before touching those areas, and keep it current.
 
 ## Gotchas
-- **No engine imports in games:** engine and UI names (`Vector3`, `GameObject`, `Component`, `useState`, `createRoot`, ...) are TypeScript globals declared in the generated `types/platypus.d.ts` (`platypus-build types`; `platypus-build build` passes it to `tsc` by itself). Examples import only relative files and `.css`. Old `import { .. } from "@platypus/engine"` forms still compile. When an API the examples use changes shape, update `tools/platypus_ts/src/lower/engine_ts.d.ts` (see `docs/platypus-build.md`).
+- **No engine imports in games:** engine and UI names (`Vector3`, `GameObject`, `Component`, `useState`, `createRoot`, ...) are TypeScript globals declared in the generated `types/platypus.d.ts` (`platypus-build types`; `platypus-build build` passes it to `tsc` by itself). Examples import only relative files and `.css`. Old `import { .. } from "@platypus/engine"` forms still compile. There is no hand-written `.d.ts`: declarations come from `#[platypus_api]`, the UI tables and `tools/platypus_ts/src/builtins.rs` (see `docs/platypus-build.md`).
 - **Modules:** a bare import (`from "foo"`) is a file of `src/modules/` (next to the entry); there is no `node_modules` resolution, so a TypeScript package is used by copying its `.ts` source in (`docs/platypus-build.md`, "Modules and packages"). A module may not capture engine global names (it is renamed internally); unreferenced top-level functions are not compiled.
 - **Shell edits:** never create or change files with bash heredocs, `echo`/`cat` redirects or `python -c` strings, even though the tools are installed: they mangle apostrophes and backslashes on this machine. Always use the Edit/Write tools, or a Python script saved as a file (written with Write, then run).
 - **Interrupted builds:** if cargo was killed mid-build, delete the corrupt `.pdb` files under `target/` before rebuilding.
@@ -286,6 +288,9 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
     `--renderer` (`vulkan`, `gles`, `cpu`); `type` is gone; `init` writes tsconfig.json + types (TODO.md).
   - QuickJS removed (2026-10-28): no rquickjs, `platypus_script`, `platypus_native`, `js/engine`, `js/react`, JS fixtures,
     `--force` or `platypus_editor` binary; compiled TypeScript is the only backend (TODO.md "QuickJS removed").
+  - Native editor (2026-10-29): `editor/` compiled like a game and run by `platypus-app editor --project <folder>` (the
+    `Editor` namespace), at the QuickJS editor's feature state; its model tests run natively; `js/` and
+    `tsconfig.base.json` are gone. The compiler gaps it found are fixed or listed in tools/platypus_ts/TODO.md "TypeScript gaps".
   - platypus_ts (another session, branch `claude/recursing-wright-856ffa`, ~106 commits ahead):
     an AOT compiler from TypeScript to native code (oxc → Platypus IR → Cranelift) with a precise
     GC and closures; the zombie sim and the whole SineDemo compile and run natively (M9.b2).
@@ -294,7 +299,7 @@ unknown or copyleft licence, or with a licence file inside it, fails until revie
   1. Merge platypus_ts back (from `claude/recursing-wright-856ffa`; history has been rewritten, so
      check its base first; bring it in as linear commits, no merge commits, as with other
      agents' work).
-  2. The editor (M5.e), being re-made natively in TypeScript by another agent: the manual check of the Scene view controls, an Inspector bound to
+  2. The editor (M5.e), native since 2026-10-29 (`editor/`): the manual check of the Scene view controls, an Inspector bound to
      the scene (`@property` fields), undo/redo, accessibility; then M6 (Script IO).
   - Follow-ups left inside M5.c / M5.d are unticked items there (TAA, refraction, LOD
     cross-fade, morph targets, linked prefabs, cloth self-collision, mobile texture

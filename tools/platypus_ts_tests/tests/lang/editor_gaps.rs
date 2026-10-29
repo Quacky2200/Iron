@@ -348,3 +348,33 @@ function t(): string {
         "3 ok no ac",
     );
 }
+
+// M9-TS-3513
+//
+// Settles docs/platypus-ts.md, which listed them as unsupported: generic classes and functions,
+// and destructuring assignment to existing variables, compile and run.
+#[test]
+fn generics_and_destructuring_assignment_work() {
+    check(
+        r#"
+class Box<T> {
+  constructor(public value: T) {}
+  map<U>(f: (v: T) => U): Box<U> { return new Box(f(this.value)); }
+}
+function first<T>(xs: T[]): T | undefined { return xs[0]; }
+function t(): string {
+  const b = new Box(20).map((n) => `${n + 1}`);
+  let a = 1;
+  let c = 2;
+  [a, c] = [c, a];
+  let x = 0;
+  let y = 0;
+  ({ x, y } = { x: 5, y: 6 });
+  return `${b.value} ${first(["p", "q"])} ${a}${c} ${x}${y}`;
+}
+"#,
+        "eg13_",
+        953_000,
+        "21 p 21 56",
+    );
+}

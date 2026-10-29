@@ -126,7 +126,7 @@ Next, in order:
      template literals, `===`/`<` (code unit order), `s.length`, the methods of slice 1, `String(x)`/`Number(s)`/`parseInt`/`parseFloat`, `String.fromCharCode/fromCodePoint`,
      `join`, truthiness, `switch`; a literal is a union tag or a `string` by context (`let` and array literals widen); `M9-TS-178..182`.
      Known gaps: `typeof`, `codePointAt` past the end gives NaN (not the null NaN), `s?.length`, string results of object-literal fields without a declared type,
-     `join` of non-string arrays, `replace`/`match`/`localeCompare`/`normalize` (compile errors), template/`+` chains allocate one string per `+`.
+     `join` of non-string arrays, template/`+` chains allocate one string per `+` (`replace`/`match` came with RegExp R2, `localeCompare`/`normalize` with Intl and the string slices below).
    - [x] Slice 3, boundary: `string` in `#[platypus_api]` (`&str` parameter read from the script string object, no copy unless it has a lone surrogate, which becomes U+FFFD;
      `String` result through a per-thread buffer the compiled call copies into a new script string), manifest/d.ts `string`, `GameObject.name` / `find` in `platypus_scene`;
      `M9-API-21..22`, `M9-TS-183..186`. Strings are not available in the QuickJS bindings (a compile error in the macro). `string | null` parameters are not supported.
@@ -354,6 +354,121 @@ Newest first. One line per finished step: what, test IDs, numbers if measured.
 - **External packages (2026-10-21, `M9-TS-2870..2879`):** only three pieces of `docs/research/platypus-external-packages.md` were built: bare imports resolve to `src/modules/` (a TypeScript package is used by copying its source in; `tsc` gets matching `paths`), plain top-level functions nothing refers to are not lowered, and a module's declarations cannot capture engine global names (renamed per module). Decided NOT to build, for now: `node_modules` resolution, a `packages` section in `project.json`, an allow list, licence generation and a copyleft check, `check-packages`, fetching from JSR/npm, a dynamic `any`, native plugins. Left in what was built: unreferenced classes and top-level `const` initialisers are still compiled (they may have side effects or be reached through registration); the module root is `<entry folder>/modules`; a package whose code is outside the subset still fails with the compiler's usual error.
 - **Fog, god rays and exposure family (2026-10-21, `M9-API-1501..1506`, `M9-TS-2880..2884`):** the native API for `RenderSettings` fog / height fog / light shafts / auto and fixed exposure, `Camera` exposure read-back and physical camera, `Light` volumetric / pyramid spot / light meter, `FogVolume`, `RenderStats`, `GraphicsSettings`, the quality pipeline fields, `Mesh.createFlat`, `Random.pick`; the facade static write `__xw_<Namespace>_<name>` (object-valued namespace properties from variables and `cond ? {..} : null`). 17 more examples build (`docs/research/platypus-examples-on-platypus-ts.md` section 10). Open: indexing a struct by a literal-union key (`state[key]`), `keyof typeof x`, `arr.indexOf(tag)`, `Record<string, V>`, `new Array(n).fill(x)`, `Array.from({ length }, f)`, spreads into `Math.min`, `x[i]! += d`, `.flat()` (the examples were edited instead); an indexed write at an array's length is out of bounds (no check: it crashed a program silently); scene-file keys for fog and exposure; `platypus_app` must be rebuilt after a compiler change (it lowers and compiles the bundle itself).
 
+## TypeScript gaps (audit 2026-10-29)
+
+Every known gap against TypeScript / ESM, once, with how it fails and the effort (S/M/L). From the read-only audit of
+2026-10-29 and the native editor's build; `[x]` is fixed (with its test), silent differences are also rows of
+`docs/differences.md`. Order agreed for what is left: (1) the editor's gaps and `--check-unused` (done), (2) the editor's native
+API (done), (3) cheap diagnostics and library holes, (4) null access as a catchable `TypeError`, (5) dynamic `any` / `unknown`
+P0-P1, (6) generics and modules, (7) a checker of our own and a conformance harness.
+
+**Fixed for the editor (2026-10-29):**
+- [x] Type guards `x is T` / `asserts x` (were "unsupported type annotation"); `filter` with a guard keeps `T`, reading a
+  tagged union's member out (`M9-TS-3500`, `3512`).
+- [x] Unions of interfaces: common fields, a tag compared with a literal narrows (also after an early return), an object
+  literal or spread takes its member; `"k" in s` on a union of object literal types (`M9-TS-3501`, `3506`).
+- [x] Generic inference from the context: a closure's body from the call's expected result, an object argument's plain
+  properties before its closures (generic components), an object literal argument after the arguments that fix `T`,
+  `readonly T[]`, generic aliases, defaults of a bare generic interface (`M9-TS-3502`, `3512`).
+- [x] `Record<Exclude<U, X>, V>`, `Record<I["k"], V>`, `obj[k]` with `k` a `const` of literals, computed keys of a literal
+  union in object literals (`M9-TS-3503`, `3504`; computed keys of other kinds are still an error, S11 below).
+- [x] `new Map(pairs)` of a non-literal array, template parts of different types, `JSON.stringify` of a tagged union
+  (parsing into one: J2 below) (`M9-TS-3505`, `3506`).
+- [x] `Promise.resolve` / `reject` typed by the context; a defaulted literal closure parameter left out; `const` arrows of a
+  block calling each other (written types); `Error.stack` as the first line; a call typed `null` is no longer dropped
+  (`M9-TS-3507`, `3511`).
+- [x] Closures inside a callback passed at the top level share its variables (`M9-TS-3512`).
+- [x] `any` / `unknown` / `never` say so with the line, also through a bare `T = unknown` default (`M9-TS-3508`); the
+  test ID range 3400..3499 stays with the dynamic-values plan (the editor's tests use 3500..).
+- [x] `platypus-build build|check --check-unused` lowers the functions nothing calls (`M9-TS-3509`).
+
+**Found by the editor, still open:**
+- [ ] Arrays of mixed types (`["row", sel && "selected"]`, `(string | false)[]`) become tuples, so `.filter(Boolean).join()`
+  fails: make an untyped array literal of differing element types an array of their union. M. (The editor uses `cx(..)`.)
+- [ ] An array of `A` where `(A & { up?: true })[]` is expected: struct conversion of array elements. M.
+- [ ] `{...(cond ? obj : {})}`: a conditional with `{}` does not unify; spread of a conditional. S-M.
+- [ ] `new Set(cond ? set : [])`: a `Set` and an array do not unify as iterables. S.
+- [ ] A self- or forward-referencing closure needs its return type written (`const f = (..): ReactNode =>`); a function
+  value whose result differs from the expected one (an element where `ReactNode` goes) is not adapted (no adapter closure).
+  M.
+- [ ] A top-level function parameter's non-literal default needs a type (`(d = defaultSceneCamera().distance)`). S.
+- [ ] A top-level `const f = (a, b: Lit = "x") =>` (a declared function) used as a value where `b` is optional: the
+  default is not applied through the closure. S-M.
+- [ ] A generic arrow `<T>(x: T) =>` in a `.ts` module fails to parse once bundled with TSX. S.
+- [ ] `addComponent` of a class that is not registered panics across the FFI (aborts the process) instead of throwing. S.
+
+**Syntax:** S1 class expressions (error, M); S2 decorators other than a bare `@property` (error, M-L); S3 `static {}` blocks,
+`accessor` fields (error, S-M); S4 assigning to a static accessor (error, S); S5 tagged templates and `String.raw` (error, M);
+S6 `import()`, `import.meta`, `new.target`, `#x in obj` (error, M each); S7 `<T>x` casts in `.ts` (error, S); S8 local
+`class` / `interface` / `type` in a function (error, M); S9 `namespace` / `module` / `declare` (error; decided not to build);
+S10 `catch ({ message })` (error, S); S11 computed keys other than literal unions and `Record<string, V>` (error, M); S12 JSX
+spread children, element-valued and namespaced attributes (error, S-M); S13 optional chains other than member, call and `!`
+(error, S); S14 some operators (`>>>` / unary `+` on bigint, others "unsupported operator": not enumerated) (error, S).
+
+**Types and generics:** T1 `any` / `unknown` / `never` (clear error now; needs D1, L); T2 conditional, `infer`, mapped,
+template-literal and `this` types (error, L); T3 a generic interface with `extends` (error, M); T4 index signatures other than
+`[k: string]: V`, call signatures in object types (error, M); T5 rest tuple elements (error, M); T6 qualified type names other
+than `Intl.X` / `React.X`, `typeof a.b` (error, S); T7 `typeof` of a non-constant (error, S); T8 indexed access by a non-literal
+or over fields of different types (error, M); T9 intersections of non-objects or clashing fields (error, M); T10 a generic
+function as a value or exported (error, M); T11 generic statics, accessors, constructors (error, M); T12 an override of a
+generic method is not dispatched virtually (**silent**, M); T13 constraints not checked (silent, relies on `tsc`); T14 an engine
+subclass handle does not convert to its base (`const c: Collider2D = go.getComponent(BoxCollider2D)!`) ("type mismatch",
+S-M); T15 interfaces declared twice across files are renamed, not merged (silent, M); T16 at most 64 fields per struct (error,
+M); T20 `Promise<A | B>`, `Promise<Promise<T>>`, a promise type never written (error, M); T21 `x as any` is a no-op (silent,
+needs D1); T22 `let x: number;` starts at 0 (silent); T23 `let x = null` without a type, untyped parameters, a recursive
+function without a return type (error, S).
+
+**Classes:** C1 a subclass before its base (error, S); C2 extending engine classes other than `Component` (error, M); C3
+`instanceof` of engine classes (error, M); C4 `register(cls)` of a variable (error, L); C5 `getComponents(EngineClass)` (not
+built, S).
+
+**Async and generators:** A1 async generators (error, L); A2 `yield*` as an expression, `yield` in a `yield` operand,
+`return yield` (error, M); A3 untyped generators, a return type other than the yield type (error, M); A4 `Iterable<T>`
+annotations take generators only (type error, M); A5 `Promise.all` over different types unless awaited at once (error, M);
+A6 `Promise.withResolvers` in generic code (error, S); A7 `then(f, g)` with different result kinds (error, S; the
+`Promise.reject` typing part is fixed); A8 `AbortController` (missing, M, M6); A9 timers run on the game clock, no extra
+`setTimeout` arguments (silent, S); A10 unhandled rejections are logged (settled, `M9-TS-2916`; the doc row was wrong); A11 no
+coroutines on WebAssembly (L).
+
+**Modules:** M1 `import * as ns` of a project file (error, M); M2 `export * as ns` (error, S-M); M3 anonymous
+`export default function` / `class` (error, S); M4 no `node_modules` (by design); M5 a module may not capture engine global
+names (silently renamed), unused top-level functions are skipped (see `--check-unused`); M6 JSON imports and import attributes
+(not handled, S-M); M7 import cycles deeper than 32 (error, S).
+
+**Library:** L1 `console.log` of objects and arrays, `console.table/time/assert/group/trace` (error, S-M; M with D1); L2
+`toPrecision` / `toExponential` (error, S); L3 `Object.create/defineProperty/getPrototypeOf/setPrototypeOf/is/groupBy`,
+`Map.groupBy` (error, S for `is` to L); L4 `Object.freeze` does not freeze (silent, S); L5 array `with`, `toSpliced`,
+`copyWithin` (error, S); L6 `sort()` without a comparator over other element kinds (error, S); L7 `indexOf` over object arrays
+(S); L8 `Map.get` over boolean or literal values, `new Map(map)`, map spread (error, S); L9 `structuredClone` of `Map` / `Set` /
+functions, cycles (error / silent, M); L10 weak collections are strong, no `FinalizationRegistry` (silent, M); L11 `globalThis`,
+`Proxy`, `Reflect`, `eval` (decided not to build); L12 symbols as keys, other well-known symbols (M); L13 typed-array gaps
+(`docs/differences.md`, M); L14 BigInt gaps (M); L15 legacy string methods, `String.raw`, `isWellFormed` (error, S); L16
+`Error.stack` frames, `captureStackTrace` (the first line is built; S); L17 `Object.keys` / `in` / `hasOwn` over fixed fields
+(silent, needs D1).
+
+**Dynamic values (`docs/research/platypus-dynamic-values.md`, P0-P7):** D1 no dynamic value (L); D2 untyped `JSON.parse`
+(error, M, P1); D3 `catch (e: unknown)` ignores the annotation, `e` is always an `Error` (silent, M, P1); D4
+`Record<string, unknown>` / `object` become `PlatypusStyle` with the UI prelude (silent special case, M).
+
+**Run time:** R1 `throw` of a non-`Error` (error, M, P1); R2 **a null property access is an access violation that ends the
+process, not a catchable `TypeError`** (fatal, M-L: null checks before loads, or the trap turned into a `TypeError`); R3 `null`
+and `undefined` are one value (silent, L, needs D1); R4 `==` is `===`, `-0`, NaN payloads (silent, M); R5 deep recursion
+overflows the native stack (crash, M; inferred); R6 a destroyed component's pending `await` goes on (by design).
+
+**JSON, RegExp, Date, Intl:** J1 replacer, reviver, `toJSON` (error, M); J2 `JSON.parse` into a union (error, M); J4 JSON of
+`Map` / `Set` / `Record` is `{}`, `Date` in JSON types (silent / error, M); J5 RegExp groups that did not take part are null,
+module-level regex constants lack group info, eager `matchAll` (silent, M); J6 `Date()` without `new`, spread arguments, exotic
+legacy strings (error / NaN, S); J7 Intl options read at compile time, missing members (error, M-L); J8 Temporal ISO calendar
+only, rewritten by text (silent, M).
+
+**Tooling:** G1 no checker of our own: the compiler trusts `tsc`, which is optional (L: `tsgo` or `--check`,
+`docs/research/platypus-ts-type-checking.md`); G2 functions nothing calls are skipped (`--check-unused` added); G3 one error per
+build (M); G4 poor locations: generator byte offsets, facade chunks, lazily lowered functions (S; type annotations name the line
+now); G5 Rust `Debug` names in unsupported-type messages (S; `any` / `unknown` / `never` fixed); G6 no conformance harness
+against bun or test262 (L); G7 no compile cache (M); G8 stale docs (settled 2026-10-29: generics and destructuring assignment
+work, `M9-TS-3513`; unhandled rejections are logged; string `replace` / `match` / `localeCompare` / `normalize` and setters in
+object literals exist).
+
 ## Language and library features the examples work around (to review and prioritise)
 
 Every item is something an example had to be rewritten for (or still avoids) because platypus_ts does not take plain TypeScript there. Source:
@@ -407,7 +522,7 @@ section 12, tests `M9-TS-3174..3189`): inference of `T = void` from a closure, `
 self-referring constant objects, object-literal getters, `x.constructor` construction, generic arrows in functions, big `Record<Union, V>`
 as dictionaries, strings to union members (`StrTag`), values of union type keep the union in literals, `a && b` string and object,
 `LineRenderer2D.points`, `playback.onEnded = f`, `new Color(...rgba)`, handle `Map` values and `pop`, partial `Mesh.createFlat`.
-Not done: narrowing for `in` / `instanceof` / number truthiness on tagged unions; getters only read (no setters in literals); a `Record<Union, V>`
+Not done: narrowing for `instanceof` / number truthiness on tagged unions (`in` and a tag compared with a literal narrow since 2026-10-29); a `Record<Union, V>`
 with up to 48 keys is still a struct.
 
 ## Dictionaries and leftovers (2026-10-22, `M9-TS-3190..3195`)

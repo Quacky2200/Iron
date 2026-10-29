@@ -1614,6 +1614,7 @@ Run from `tools/`: `cargo test --workspace` (the build script compiles `sim.ts` 
 | M9-TS-3510 | Integration | A `string \| undefined` compared with string literals, also after `JSON.parse` into an interface with optional keys (`tests/lang/editor_gaps.rs`). |
 | M9-TS-3511 | Integration | `return bad()` where `bad` returns `null` (typed `null`) and sets a flag: the call still runs (it was replaced by the null it gives). |
 | M9-TS-3512 | Integration | A closure inside a callback passed at the top level shares the callback's variables; a generic call's object literal argument takes the type an earlier argument fixed (`eq(range, { .. })`); `filter` with a guard picks members out of a union of interfaces. |
+| M9-TS-3513 | Integration | Generic classes and functions and destructuring assignment to existing variables compile and run (settles `docs/platypus-ts.md`, which listed them as unsupported). |
 | M9-TS-3509 | Unit | A function nothing calls is skipped by a build; `check_unused` (`platypus-build build --check-unused`) lowers it too, so its error shows. |
 | M9-SHOT-01 | Unit | `progress-shots` waits longer for effects that settle slowly: 120 frames by default, 900 for `dark-room`, 360 for `godrays-lift` (before the godrays rule), 600 for every `fog*` and other `godrays-*` example (`tests/tools/shots/src/bin/progress_shots.rs`). |
 | M9-SHOT-02 | Unit | `progress-shots` shrinks a render to the given width keeping its aspect, as JPEG (quality 85) or PNG by the file name, with the `image` crate (`tests/tools/shots/src/bin/progress_shots.rs`). |

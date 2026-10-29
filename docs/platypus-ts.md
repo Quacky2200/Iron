@@ -682,9 +682,9 @@ null is false, otherwise the struct id indexes `Module::itables[table]`, one byt
 `C` and its subclasses). A subclass must be declared after its base. Details and limits:
 [platypus-ts-classes.md](research/platypus-ts-classes.md) section 14.
 
-Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, generics, extending engine classes other than `Component`,
-throwing anything but an `Error` object, unsupported string methods (see above), object rest of unknown shapes, destructuring assignment to existing variables, `for await`, async generators, `any`/`JsValue` and anything
-dynamic. `instanceof` works on the program's own classes only. Known
+Not supported (each is a compile error naming the source line): decorators other than a bare `@property` on an instance field (no `@property` options, none on accessors), class expressions, extending engine classes other than `Component`,
+throwing anything but an `Error` object, unsupported string methods (see above), object rest of unknown shapes, `for await`, async generators, `any`/`unknown`/`JsValue` and anything
+dynamic. Generics (with the limits in "Generics" below) and destructuring assignment to existing variables are supported (`M9-TS-3513`, `M9-TS-3152`). `instanceof` works on the program's own classes only. Known
 deviations from JavaScript (`null === null` of two nullable numbers, `==` as `===`, libm last-bit
 differences) are listed in [platypus-ts-spike.md](research/platypus-ts-spike.md) sections 4 and 15.
 

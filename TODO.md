@@ -1715,7 +1715,7 @@ Research and design: [docs/research/networking-and-files.md](docs/research/netwo
   - [ ] 2D-world content on the GLES path: shapes, sprites, text meshes and the camera's clear drawn through the UI draw list
     (or a small GLES 2D pass), so `world2d` programs start on GLES too (today they go to wgpu like `world3d`).
   - [ ] wgpu failing at start (no Vulkan / DX12 device) falls back to the GLES path for `ui` games, and says so.
-  - [ ] Remove the root `tsconfig.base.json` together with the packages that still extend it (`js/editor-ui`, `editor/`;
+  - [x] Remove the root `tsconfig.base.json` (2026-10-29, with `js/`; `editor/` has its own tsconfig) together with the packages that still extend it (`js/editor-ui`, `editor/`;
     `js/engine`, `js/react` and the `tests/fixtures` JS are already gone); the examples and `tools/bench/crowd` no longer use it.
   - ANGLE no longer needs scoping to one binary (the old `ui_app_only` idea): there is one host.
   - [x] The scene counts (2026-10-28): a `GameObject`, `Transform`, scene or prefab (file or API), or a component class
@@ -2142,25 +2142,34 @@ QuickJS is gone from Platypus: `platypus_app` runs only compiled games and refus
 - [x] The `platypus_editor` binary and its host side (`editor.rs`, `project.rs`, the editor log capture and `editor.*` ops) are removed; `editor/` and `js/editor-ui` sources stay.
 
 Left:
-- [ ] **Re-make the editor natively in TypeScript at its current feature state** (another agent is on it); then delete `js/` and `editor/`.
+- [x] **Re-make the editor natively in TypeScript at its current feature state** (2026-10-29); `js/` is deleted.
   End state (decided 2026-10-28): no `js/` folder; the editor is re-made natively at its current feature state.
   - [x] `editor/project.json` (title, company, identifier, `renderer: "vulkan"`, 1600 × 900 window), replacing
     `package.json`'s `platypus` section (2026-10-28).
-  - [ ] Components into `editor/` as plain modules (relative imports: `@platypus/*` and `react` imports are erased
-    by the module graph, so `@platypus/editor-ui` can't stay a package), `init --editor-files` for its
-    `tsconfig.json` / `types/`, then drop `editor/package.json`.
-  - [ ] A native `Editor` namespace (`#[platypus_api]`) for what the QuickJS ops and pushed globals did:
-    the log feed (`logSince(seq)` records instead of `__platypus_log`), `openFile`, and the project file ops
-    (`listDir`, `copyIn`, `move`) answering directly instead of through `__platypus_editor_fs`.
-  - [ ] Gaps found by a trial build (2026-10-28):
-    - Compiler: type predicates (`(g): g is T => ..`) are an unsupported type annotation (stops the
-      build first; a guard returns a boolean, `asserts` nothing).
-    - Native API / declarations: `createPrimitive`, `op`, element `setPointerCapture` /
-      `releasePointerCapture`, `currentTarget` on pointer events, `defaultPrevented` on key events,
-      `Camera.worldToScreenPoint` / `screenPointToRay` / `pixelRect`, SVG `textAnchor`, React `Ref` /
-      `useImperativeHandle`; also check `HideFlags`, `Camera.sceneGrid` and `Gizmos.present`.
-  - [ ] Build with `platypus-build build editor` and run it natively (the `platypus_editor` binary went with
-    QuickJS); the model tests (`js/editor-ui/test`) move to native tests.
+  - [x] Components into `editor/src` as plain modules with relative imports; `init --editor-files` wrote its
+    `tsconfig.json` / `types/` (git-ignored); `editor/package.json` and `editor/node_modules` are gone.
+  - [x] A native `Editor` namespace (`platypus_engine_api::editor`): `logSince(seq)` records, `openFile`, `listDir` /
+    `copyIn` / `move` answering at once with `lastError`, `project`, `isAvailable`. The host runs the editor like any game:
+    `platypus-app editor --project <folder>` (no second binary); without `--project` the calls fail.
+  - [x] Gaps of the trial build: type guards and the other compiler gaps (tools/platypus_ts/TODO.md, "TypeScript gaps");
+    `currentTarget`, `defaultPrevented`, pointer capture, `textAnchor` / `fontSize` / `fontWeight`, `Ref` / `RefObject` /
+    `useImperativeHandle`, `Camera.worldToScreenPoint` / `screenPointToRay` / `pixelRect`. `createPrimitive` is
+    `GameObject.createPrimitive` (the native name; no free function), `op` is replaced by `Editor`; `HideFlags`,
+    `Camera.sceneGrid` and `Gizmos.present` were already native.
+  - [x] Built with `platypus-build build editor` and run natively (release screenshot checked by eye); the model tests run
+    natively (`editor/test`, `tools/platypus_ts_tests/tests/ui/editor_models.rs`). The React component tests that ran
+    through QuickJS (`menubar.test.tsx`, `project-browser.test.tsx`) were not ported (M5-DND-10 struck).
+  - [ ] Editor follow-ups: a manual check of the Scene view controls, menus and drag and drop in the window (M5-EDT-21,
+    M5-EDT-23, M5-DND-11); the editor source still works around the compiler gaps listed as "Found by the editor, still open"
+    in tools/platypus_ts/TODO.md (mixed-type class lists, an intersection array, conditional spreads, written return types
+    on self-referencing closures; `parseLayout` reads a typed `SavedNode` and flags broken parts because `unknown` and a
+    separate `undefined` are not built).
+- [ ] **TypeScript conformance after the editor** (audit 2026-10-29, list in tools/platypus_ts/TODO.md "TypeScript gaps"), in
+  this order: cheap diagnostics and library holes (G4, G5, L2, `Object.is`, L5, L7, L8, M3, S10); a null property access
+  as a catchable `TypeError` instead of a process crash (R2); dynamic `any` / `unknown` P0-P1
+  (`docs/research/platypus-dynamic-values.md`: D1-D3, R1, untyped `JSON.parse`, `console.log(obj)`); generics (T3, T10, T11,
+  T12) and modules (M1, M2, M6); a checker of our own or `tsgo` and a conformance harness against bun (G1, G6), before
+  wider TypeScript (T2, S1-S9, A1-A2). Also T14 (an engine subclass handle to its base).
 - [x] **Replace `scripts/screenshots.ts` and `scripts/progress-shots.ts` with Rust tools under `tests/tools/`** (2026-10-28: `tests/tools/shots`, `screenshots` and `progress-shots`; `scripts/` and the root `package.json` bun script are gone).
 
 ## Code review (after the platypus_ts branch is merged into `main`)
