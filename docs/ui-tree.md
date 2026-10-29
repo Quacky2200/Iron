@@ -172,7 +172,7 @@ work. `TaffyLayout` instead holds a map of `NodeData` (style, children, parent, 
 unrounded/final layout, hoisted out-of-flow children, cache) and a per-pass `View` that implements
 Taffy's tree traits, mirroring `TaffyTree`'s own view: dirty propagation up the parents
 (`mark_dirty_up`, stopping at an already-clear cache), `compute_cached_layout` caching, `round_layout`
-rounding, and hoisting of out-of-flow (absolute) children. Besides Taffy's `Cache` (nine measure
+rounding, and hoisting of out-of-flow (absolute) children (to the nearest positioned ancestor; `position: static` is in the style table, and a `NodeLayout` position of a hoisted child is relative to that box, see `containing_block`). Besides Taffy's `Cache` (nine measure
 entries, evicting), each node keeps `sizes`: up to `MAX_SIZES` (32) exact `ComputeSize` inputs with their
 results, oldest dropped. Intrinsic sizing through nested containers (a scroller inside a row flex) asks one
 node more ways than nine, so every pass re-measured whole subtrees (appending a child to a long column
@@ -246,7 +246,10 @@ basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc:
 4. Walk the tree top-down turning Taffy's parent-relative `NodeLayout` into absolute `Rect`s in
    `self.rects`. Children of a scrolled element are shifted by its (clamped) scroll offset.
    `display: contents` nodes get a zero rect at the parent origin; `position: fixed` nodes are placed
-   from (0,0), ignoring ancestor scroll. For
+   from (0,0), ignoring ancestor scroll. An absolute box whose containing block is not its parent
+   (`LayoutEngine::containing_block`: the nearest positioned ancestor, or the root) is placed from that
+   box's rect minus its scroll, because Taffy gives out-of-flow positions relative to the containing
+   block (`UiTree::child_origin` picks the origin for each child). For
    text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`;
    `finished` remembers that width, and the pass skips `finish` when it is unchanged (a scroll only
    moves things). Measuring or re-shaping a block forgets it. `text_measure_count()` counts measures.

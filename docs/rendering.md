@@ -120,7 +120,7 @@ decorations, clips and polygon clips, transforms), the glyph atlas, images (`fs_
 `cover`/`contain`, rounded clips, `image-rendering: pixelated`, tints, border-image pieces; PNG and JPEG
 from the shared `ImageCache`, SVGs rasterized at their drawn size; `SRGB8_ALPHA8` textures) and layers
 (`effects.rs`, a port of `effects.wgsl`): `Copy` is a `glBlitFramebuffer`, `Blur` two passes of the
-separable Gaussian (reads clamp at the edge), `Composite` opacity, clip, the `filter` colour matrix, drop
+separable Gaussian (reads clamp to a bounds uniform from `plan::blur_reach`, flipped to GL's y up: the canvas, or the element's box for a `contained` backdrop blur), `Composite` opacity, clip, the `filter` colour matrix, drop
 shadow tint and shift, the mask texture and the 15 blend modes (a separate program that mixes the layer with a
 copy of its parent), so opacity groups, `filter`, drop shadows, masks, `mix-blend-mode` and `backdrop-filter`
 work. Scissor rectangles are flipped to GL's bottom-left origin; a clear wipes the whole canvas as a wgpu load op
@@ -163,7 +163,7 @@ it with `platypus-app --licenses`, and `platypus-build package` writes it beside
 
 `crates/platypus_render_cpu` is a second consumer of that draw list: `vello_cpu` + `softbuffer`, no GPU API at all. It
 draws boxes, borders (also per side), gradients, images and SVGs (decoded lazily, downscaled to the size drawn,
-dropped when unused), shadows, text, clips, layers, blur and backdrop blur, and affine and perspective transforms (a
+dropped when unused), shadows, text, clips, layers, blur and backdrop blur (only inside the element's box), and affine and perspective transforms (a
 perspective subtree is drawn flat, cached and warped). **`renderer: "cpu"`** (or `--renderer cpu`; never chosen
 automatically) makes it `platypus-app`'s third UI-only path (`cpu_gfx.rs`): the window through softbuffer (resized with
 each present), the UI and the FPS counter as two layers of one render, an unchanged frame neither drawn nor presented,
@@ -176,7 +176,9 @@ picture of `css` the CPU one differs only where the list above says: its dashed 
 filled slot) are drawn solid. It is far slower than GLES on animated UI: `launcher`'s drifting background holds
 ~30 fps at 1280x720 and ~18 fps at 1920x1080 on about two cores, where GLES holds 60 fps at ~9% of one core, and
 the launcher's glows and frosted (`backdrop-filter`) controls come out darker (colour-matrix filters on layers).
-It stays an opt-in.
+Radial gradients are drawn as a two-point radial from the first stop's radius to the last's, so
+`transparent 44px, red 52px` fades over those 8 px only. Its first integration test is
+`tests/gradients.rs` (`M2-CPU-01`). It stays an opt-in.
 
 ### Memory
 
@@ -277,7 +279,7 @@ Walk `cmds` once, producing:
 | `Clear{target,color}` | Deferred (applied as the load op of the next pass on that target) |
 | `Draw{target, range, image}` | One instanced draw of `instances[range]`; with `image: Some((url, pixelated))`, the image pipeline for one background image (nearest-neighbour bind group when `pixelated`) |
 | `Copy{src,dst}` | Snapshot a texture (for backdrop blur) |
-| `Blur{tex,temp,area,sigma}` | Separable Gaussian: horizontal into `temp`, vertical back |
+| `Blur{tex,temp,area,sigma,contained}` | Separable Gaussian: horizontal into `temp`, vertical back. `plan::blur_reach(area, radius, contained, size)` gives the rows the horizontal pass writes and the bounds (first x, first y, last x, last y) that texel reads clamp to: the whole canvas, or with `contained` exactly `area`, repeating its edge pixels |
 | `Composite{src,dst,area,opacity,clip,blend,matrix,tint,shift,mask}` | Alpha-composite a layer, scissored, with clip; `blend: Option<(mode, backdrop)>` for a blend mode; `matrix` is the `filter` colour matrix, `tint`/`shift` make a drop-shadow copy, `mask: Option<(texture, MaskMode)>` multiplies by a mask |
 
 **Batching.** Consecutive boxes, shadows and glyphs stay in one `Step::Draw` regardless of draw
@@ -317,7 +319,8 @@ binding 6 (the source texture when there is no mask); `mask_at` returns 1 with n
 alpha for `Alpha`, or its sRGB luminance times alpha for `Luminance`, and `fs_composite` and
 `fs_composite_blend` multiply the colour by it.
 
-**Backdrop filter.** `Copy` the current target, blur the copy over `rect.expand(3 * blur)` (skipped
+**Backdrop filter.** `Copy` the current target, blur the copy over the element's `rect` only, as a
+`contained` `Blur` (reads clamp to the box, so a neighbouring glass box does not bleed in; skipped
 when `blur` is 0, a colour-only filter), then composite it back using a **rounded-rect clip** of the
 box, with `BackdropBlur.matrix` as the composite's `matrix`. The result is frosted glass of
 whatever was already drawn.
@@ -421,7 +424,7 @@ no layer is created).
   `color0` (`images::border_image_axis` tiles an edge); piece edges are snapped to pixels.
 
 [effects.wgsl](../crates/platypus_render/src/ui/effects.wgsl): `vs_fullscreen` (one oversized triangle),
-`fs_blur` (1D Gaussian with `radius = ceil(3 sigma)`, max `MAX_BLUR_RADIUS` = 128), `fs_composite`
+`fs_blur` (1D Gaussian with `radius = ceil(3 sigma)`, max `MAX_BLUR_RADIUS` = 128; texel reads clamp to a bounds uniform), `fs_composite`
 (`filtered_source`, opacity, `mask_at` and clip coverage), `fs_composite_blend` (the same against a backdrop copy), `fs_blit`. The same `Clip` struct and coverage function are duplicated
 in both shader files; keep them in sync with `GpuClip` in mod.rs.
 
