@@ -49,6 +49,7 @@ mod tagged;
 mod temporal;
 mod typed;
 mod types;
+mod types_index;
 mod utility;
 
 use crate::ir::*;

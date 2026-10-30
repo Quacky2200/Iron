@@ -1193,7 +1193,7 @@ impl<'a> Lowerer<'a> {
 
     /// The string literals an expression of a literal-union type can be: a literal, either arm of
     /// a conditional, a name with a known set, or a field an interface declares as a union.
-    fn expr_lits(&mut self, e: &'a Expression<'a>) -> Option<Vec<String>> {
+    pub(crate) fn expr_lits(&mut self, e: &'a Expression<'a>) -> Option<Vec<String>> {
         match e.get_inner_expression() {
             Expression::StringLiteral(s) => Some(vec![s.value.to_string()]),
             Expression::ConditionalExpression(c) => {

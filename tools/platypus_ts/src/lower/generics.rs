@@ -18,7 +18,40 @@ use super::*;
 use std::rc::Rc;
 
 /// The type parameters in scope while lowering one specialisation.
-pub(crate) type TEnv = Rc<HashMap<String, Ty>>;
+pub(crate) type TEnv = Rc<TypeEnv>;
+
+/// Each type parameter's type and, for one that indexes a type (`T[K]`), the string literals it
+/// stands for in this specialisation: `Ty::Lit` says only "a literal", and `T[K]` needs which.
+#[derive(Clone, Default)]
+pub(crate) struct TypeEnv {
+    tys: HashMap<String, Ty>,
+    pub keys: HashMap<String, Vec<String>>,
+}
+
+impl std::ops::Deref for TypeEnv {
+    type Target = HashMap<String, Ty>;
+    fn deref(&self) -> &Self::Target {
+        &self.tys
+    }
+}
+
+impl std::ops::DerefMut for TypeEnv {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tys
+    }
+}
+
+impl From<HashMap<String, Ty>> for TypeEnv {
+    fn from(tys: HashMap<String, Ty>) -> Self {
+        TypeEnv {
+            tys,
+            keys: HashMap::new(),
+        }
+    }
+}
+
+/// The literal keys of a specialisation's key parameters (`K` of `get<T, K>(o: T, k: K): T[K]`).
+pub(crate) type TKeys = Vec<(String, Vec<String>)>;
 
 /// A type parameter: its name and its default type, if any.
 pub(crate) type TParams<'a> = Vec<(String, Option<&'a TSType<'a>>)>;
@@ -93,6 +126,20 @@ impl<'a> Lowerer<'a> {
     /// The name of `base` specialised to `targs`: the same list always gives the same name.
     pub(crate) fn inst_name(&mut self, base: &str, targs: &[Ty]) -> String {
         let keys: Vec<String> = targs.iter().map(|t| self.ty_key(t)).collect();
+        self.inst_name_of(base, keys)
+    }
+
+    /// Like [`Self::inst_name`] for a specialisation whose key parameters stand for literals:
+    /// `get(o, "x")` and `get(o, "y")` are two copies, as `T["x"]` and `T["y"]` differ.
+    pub(crate) fn inst_name_keyed(&mut self, base: &str, targs: &[Ty], tkeys: &TKeys) -> String {
+        let mut keys: Vec<String> = targs.iter().map(|t| self.ty_key(t)).collect();
+        for (k, lits) in tkeys {
+            keys.push(format!("{k}={}", lits.join("|")));
+        }
+        self.inst_name_of(base, keys)
+    }
+
+    fn inst_name_of(&mut self, base: &str, keys: Vec<String>) -> String {
         let raw = format!("{base}<{}>", keys.join(","));
         if let Some(n) = self.inst_names.get(&raw) {
             return n.clone();
@@ -117,13 +164,19 @@ impl<'a> Lowerer<'a> {
     }
 
     fn make_env(tparams: &TParams<'a>, targs: &[Ty]) -> TEnv {
-        Rc::new(
+        Self::make_keyed_env(tparams, targs, &[])
+    }
+
+    fn make_keyed_env(tparams: &TParams<'a>, targs: &[Ty], keys: &[(String, Vec<String>)]) -> TEnv {
+        let mut env = TypeEnv::from(
             tparams
                 .iter()
                 .map(|(n, _)| n.clone())
                 .zip(targs.iter().cloned())
-                .collect(),
-        )
+                .collect::<HashMap<_, _>>(),
+        );
+        env.keys = keys.iter().cloned().collect();
+        Rc::new(env)
     }
 
     /// Fills `targs` up to the parameter count with defaults (resolved with the ones before).
@@ -431,7 +484,7 @@ impl<'a> Lowerer<'a> {
             if !is_closure(e) {
                 continue;
             }
-            let mut all: HashMap<String, Ty> = base.map(|b| (**b).clone()).unwrap_or_default();
+            let mut all: TypeEnv = base.map(|b| (**b).clone()).unwrap_or_default();
             all.extend(found.clone());
             let partial: TEnv = Rc::new(all);
             let saved = std::mem::replace(&mut self.tenv, partial);
@@ -439,7 +492,7 @@ impl<'a> Lowerer<'a> {
             self.tenv = saved;
             if want.is_none() {
                 self.unify_closure_annotations(e, ann, &names, &mut found, what)?;
-                let mut all: HashMap<String, Ty> = base.map(|b| (**b).clone()).unwrap_or_default();
+                let mut all: TypeEnv = base.map(|b| (**b).clone()).unwrap_or_default();
                 all.extend(found.clone());
                 let partial: TEnv = Rc::new(all);
                 let saved = std::mem::replace(&mut self.tenv, partial);
@@ -692,7 +745,12 @@ impl<'a> Lowerer<'a> {
 
     /// Declares (once) the copy of generic function `base` for `targs`; returns its name.
     pub(crate) fn instantiate_fn(&mut self, base: &str, targs: Vec<Ty>) -> R<String> {
-        let name = self.inst_name(base, &targs);
+        self.instantiate_fn_keyed(base, targs, &Vec::new())
+    }
+
+    /// [`Self::instantiate_fn`] with the literals of its key parameters (`TypeEnv::keys`).
+    fn instantiate_fn_keyed(&mut self, base: &str, targs: Vec<Ty>, keys: &TKeys) -> R<String> {
+        let name = self.inst_name_keyed(base, &targs, keys);
         if self.fids.contains_key(&name) {
             return Ok(name);
         }
@@ -704,7 +762,7 @@ impl<'a> Lowerer<'a> {
             exported: false,
             kind: FnKind::Free,
             ret_ty: None,
-            tenv: Some(Self::make_env(&g.tparams, &targs)),
+            tenv: Some(Self::make_keyed_env(&g.tparams, &targs, keys)),
         };
         self.declare_fn(&name, src)?;
         Ok(name)
@@ -718,7 +776,7 @@ impl<'a> Lowerer<'a> {
         expected: Option<&Ty>,
     ) -> R<Expr> {
         let g = self.generic_fns[base].clone();
-        let targs = self.infer_targs(
+        let mut targs = self.infer_targs(
             base,
             &g,
             c.type_arguments.as_deref(),
@@ -726,7 +784,8 @@ impl<'a> Lowerer<'a> {
             expected,
             None,
         )?;
-        let inst = self.instantiate_fn(base, targs)?;
+        let keys = self.key_args(&g, c.type_arguments.as_deref(), &c.arguments, &mut targs);
+        let inst = self.instantiate_fn_keyed(base, targs, &keys)?;
         self.call_declared(&inst, &c.arguments, None)
     }
 
@@ -840,7 +899,7 @@ impl<'a> Lowerer<'a> {
     ) -> R<Expr> {
         let class_env = self.class_tenv.get(owner).cloned().unwrap_or_default();
         let what = format!("{owner}.{m}");
-        let targs = self.infer_targs(
+        let mut targs = self.infer_targs(
             &what,
             &g,
             c.type_arguments.as_deref(),
@@ -848,12 +907,14 @@ impl<'a> Lowerer<'a> {
             None,
             Some(&class_env),
         )?;
-        let name = self.inst_name(&what, &targs);
+        let keys = self.key_args(&g, c.type_arguments.as_deref(), &c.arguments, &mut targs);
+        let name = self.inst_name_keyed(&what, &targs, &keys);
         if !self.fids.contains_key(&name) {
-            let mut env: HashMap<String, Ty> = (*class_env).clone();
+            let mut env: TypeEnv = (*class_env).clone();
             for ((n, _), t) in g.tparams.iter().zip(&targs) {
                 env.insert(n.clone(), t.clone());
             }
+            env.keys.extend(keys);
             let sid = self.classes_sid(owner);
             let src = FnSrc {
                 params: g.params,

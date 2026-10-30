@@ -85,25 +85,14 @@ impl<'a> Lowerer<'a> {
             }
             // `typeof TABLE`: the type of a top-level constant, from its initialiser.
             TSType::TSTypeQuery(q) => {
+                // `typeof a.b`: the type of `a`'s property `b` (`types_index.rs`).
+                if let TSTypeQueryExprName::QualifiedName(n) = &q.expr_name {
+                    return self.typeof_path(n, q.span.start);
+                }
                 let TSTypeQueryExprName::IdentifierReference(id) = &q.expr_name else {
-                    bail!("typeof of a qualified name")
+                    bail!("{}: unsupported `typeof` operand", self.loc(q.span.start))
                 };
-                // A local of the function being lowered: its type.
-                match self.lookup(id.name.as_str()) {
-                    Some(Binding::Direct(v)) => return Ok(self.cur.locals[v as usize].clone()),
-                    Some(Binding::Boxed(_, ty)) => return Ok(ty),
-                    None => {}
-                }
-                let Some(init) = self.const_inits.get(id.name.as_str()).copied() else {
-                    bail!("typeof {}: only a top-level constant with a value", id.name)
-                };
-                match self.guess_ty(init, 0)? {
-                    Some(t) => t,
-                    None => bail!(
-                        "typeof {}: the type of its value is not known without lowering it; write the type",
-                        id.name
-                    ),
-                }
+                self.typeof_ident(id.name.as_str())?
             }
             TSType::TSVoidKeyword(_) | TSType::TSUndefinedKeyword(_) => Ty::Void,
             TSType::TSNullKeyword(_) => Ty::Null,
@@ -265,57 +254,10 @@ impl<'a> Lowerer<'a> {
                 let ret = self.ty(&f.return_type.type_annotation, hint)?;
                 Ty::Fn(Box::new(FnTy { params, ret }))
             }
-            TSType::TSIndexedAccessType(i) => {
-                // `(typeof NAMES)[number]` where `NAMES = ["a", "b"] as const`: the union of them.
-                if matches!(i.index_type, TSType::TSNumberKeyword(_))
-                    && let Some(ms) = self.lit_members(t)
-                {
-                    for m in &ms {
-                        self.tag(m);
-                    }
-                    return Ok(Ty::Lit);
-                }
-                let obj = self.ty(&i.object_type, hint)?;
-                // `(typeof NAMES)[number]`: the element type of an array.
-                if let (TSType::TSNumberKeyword(_), Ty::Arr(el)) = (&i.index_type, obj.strip()) {
-                    return Ok((**el).clone());
-                }
-                // `(typeof TINTS)[Tint]`: the type the named fields have (one type for all).
-                if !matches!(i.index_type, TSType::TSLiteralType(_))
-                    && let Ty::Obj(sid) = obj.strip()
-                    && let Some(keys) = self
-                        .lit_members(&i.index_type)
-                        .or_else(|| self.keys_of_keyof(&i.index_type))
-                {
-                    let st = &self.m.structs[*sid];
-                    let mut found: Option<Ty> = None;
-                    for k in &keys {
-                        let Some(f) = st.field(k) else {
-                            bail!("indexed access: no field {k}")
-                        };
-                        match &found {
-                            None => found = Some(st.fields[f].ty.clone()),
-                            Some(t) if *t == st.fields[f].ty => {}
-                            Some(_) => bail!("indexed access over fields of different types"),
-                        }
-                    }
-                    return found.ok_or_else(|| "indexed access by no keys".to_string());
-                }
-                let TSType::TSLiteralType(l) = &i.index_type else {
-                    bail!("indexed access by a non-literal")
-                };
-                let TSLiteral::StringLiteral(s) = &l.literal else {
-                    bail!("indexed access by a non-string")
-                };
-                let Ty::Obj(sid) = obj.strip() else {
-                    bail!("indexed access on a non-object")
-                };
-                let st = &self.m.structs[*sid];
-                let Some(i) = st.field(s.value.as_str()) else {
-                    bail!("no field {}", s.value)
-                };
-                st.fields[i].ty.clone()
-            }
+            // `T["k"]`, `T[K]`, `T[number]`, `T[0]` (`types_index.rs`).
+            TSType::TSIndexedAccessType(i) => self.indexed_access(t, i, hint)?,
+            // `` `url(${string}` ``: a string (what it matches is `tsc`'s to check).
+            TSType::TSTemplateLiteralType(_) => Ty::Str,
             TSType::TSTypeReference(r) => {
                 // `Intl.Collator` is the prelude class `Intl_Collator`.
                 if let TSTypeName::QualifiedName(q) = &r.type_name
@@ -360,7 +302,8 @@ impl<'a> Lowerer<'a> {
                     for a in &args {
                         targs.push(self.ty(a, hint)?);
                     }
-                    return self.generic_type(id.name.as_str(), targs);
+                    let keys = self.alias_key_args(id.name.as_str(), &args, &mut targs);
+                    return self.generic_type_keyed(id.name.as_str(), targs, &keys);
                 }
                 if let Some(t) = self.alias_utility(id.name.as_str(), &args, hint)? {
                     return Ok(t);
@@ -575,7 +518,7 @@ impl<'a> Lowerer<'a> {
 
     /// The property names of `typeof NAME` (a top-level object literal), an interface or a type
     /// literal; `None` when they are not known here.
-    fn keyof_names(&mut self, t: &'a TSType<'a>) -> Option<Vec<String>> {
+    pub(crate) fn keyof_names(&mut self, t: &'a TSType<'a>) -> Option<Vec<String>> {
         match t {
             TSType::TSParenthesizedType(p) => self.keyof_names(&p.type_annotation),
             TSType::TSTypeQuery(q) => {
@@ -608,6 +551,16 @@ impl<'a> Lowerer<'a> {
                 let TSTypeName::IdentifierReference(id) = &r.type_name else {
                     return None;
                 };
+                // `keyof T` for a type parameter: the fields of what this specialisation binds.
+                if r.type_arguments.is_none()
+                    && let Some(t) = self.tenv.get(id.name.as_str())
+                {
+                    return self.field_names(t);
+                }
+                // `keyof PlatypusStyle`: the declared style properties.
+                if let Some(i) = self.style_props_iface(id.name.as_str()) {
+                    return self.member_names(&i.body.body);
+                }
                 if let Some(i) = self.ifaces.get(id.name.as_str()).copied() {
                     if !i.extends.is_empty() {
                         return None;
@@ -623,7 +576,7 @@ impl<'a> Lowerer<'a> {
 
     /// The names a key type stands for when it is `keyof typeof TABLE` / `keyof Iface`, written
     /// directly or through aliases (`type Tint = keyof typeof TINTS`).
-    fn keys_of_keyof(&mut self, t: &'a TSType<'a>) -> Option<Vec<String>> {
+    pub(crate) fn keys_of_keyof(&mut self, t: &'a TSType<'a>) -> Option<Vec<String>> {
         match t {
             TSType::TSParenthesizedType(p) => self.keys_of_keyof(&p.type_annotation),
             TSType::TSTypeOperatorType(o) if o.operator == TSTypeOperatorOperator::Keyof => {
@@ -633,6 +586,9 @@ impl<'a> Lowerer<'a> {
                 let TSTypeName::IdentifierReference(id) = &r.type_name else {
                     return None;
                 };
+                if let Some(k) = self.tenv.keys.get(id.name.as_str()) {
+                    return Some(k.clone());
+                }
                 let a = self.aliases.get(id.name.as_str()).copied()?;
                 self.keys_of_keyof(&a.type_annotation)
             }
@@ -713,6 +669,10 @@ impl<'a> Lowerer<'a> {
                 let TSTypeName::IdentifierReference(id) = &r.type_name else {
                     return None;
                 };
+                // A key parameter of this specialisation (`K` of `T[K]`): the literals it is.
+                if let Some(k) = self.tenv.keys.get(id.name.as_str()) {
+                    return Some(k.clone());
+                }
                 // An enum of the engine API (`FogMode`) is the union of its names.
                 if !self.aliases.contains_key(id.name.as_str())
                     && let Some(e) = self.manifest.enums.get(id.name.as_str())
@@ -734,22 +694,12 @@ impl<'a> Lowerer<'a> {
                 let a = self.aliases.get(id.name.as_str())?;
                 self.lit_members(&a.type_annotation)
             }
-            // `Thing["kind"]`: the type of an interface's property.
+            // `Thing["kind"]`, `Alias["a" | "b"]`, `PlatypusStyle["position"]`: the literals of the
+            // properties' types (`types_index.rs`).
             TSType::TSIndexedAccessType(i)
-                if let TSType::TSLiteralType(l) = &i.index_type
-                    && let TSLiteral::StringLiteral(key) = &l.literal
-                    && let TSType::TSTypeReference(r) = &i.object_type
-                    && let TSTypeName::IdentifierReference(id) = &r.type_name =>
+                if !matches!(i.index_type, TSType::TSNumberKeyword(_)) =>
             {
-                let iface = self.ifaces.get(id.name.as_str())?;
-                iface.body.body.iter().find_map(|m| match m {
-                    TSSignature::TSPropertySignature(p)
-                        if p.key.static_name().is_some_and(|n| n == key.value.as_str()) =>
-                    {
-                        self.lit_members(&p.type_annotation.as_ref()?.type_annotation)
-                    }
-                    _ => None,
-                })
+                self.indexed_lit_members(i)
             }
             // `(typeof NAMES)[number]` where `NAMES = ["a", "b"] as const`.
             TSType::TSIndexedAccessType(i)
@@ -804,6 +754,17 @@ impl<'a> Lowerer<'a> {
     /// `Box<number>`, `Pair<A, B>`, `Opt<T>`: the specialisation of a generic class, interface or
     /// alias, made once per list of type arguments.
     pub(crate) fn generic_type(&mut self, base: &str, targs: Vec<Ty>) -> R<Ty> {
+        self.generic_type_keyed(base, targs, &Vec::new())
+    }
+
+    /// [`Self::generic_type`] with the literals of the key parameters (`Get<P, "x">` for
+    /// `type Get<T, K extends keyof T> = T[K]`).
+    pub(crate) fn generic_type_keyed(
+        &mut self,
+        base: &str,
+        targs: Vec<Ty>,
+        keys: &generics::TKeys,
+    ) -> R<Ty> {
         if self.generic_classes.contains_key(base) {
             let tparams = self.generic_classes[base].tparams.clone();
             let targs = self.complete_targs(base, &tparams, targs)?;
@@ -818,17 +779,19 @@ impl<'a> Lowerer<'a> {
             ),
         };
         let targs = self.complete_targs(base, &tparams, targs)?;
-        let name = self.inst_name(base, &targs);
+        let name = self.inst_name_keyed(base, &targs, keys);
         if let Some(t) = self.named.get(&name) {
             return Ok(t.clone());
         }
-        let env: generics::TEnv = std::rc::Rc::new(
+        let mut env = generics::TypeEnv::from(
             tparams
                 .iter()
                 .map(|(n, _)| n.clone())
                 .zip(targs.iter().cloned())
-                .collect(),
+                .collect::<HashMap<_, _>>(),
         );
+        env.keys = keys.iter().cloned().collect();
+        let env: generics::TEnv = std::rc::Rc::new(env);
         let saved = std::mem::replace(&mut self.tenv, env);
         let r = if is_iface {
             let i = self.ifaces[base];
@@ -1157,33 +1120,41 @@ impl<'a> Lowerer<'a> {
             }
             if tys.is_empty() {
                 Ty::Null
-            } else if tys.iter().all(|t| *t == tys[0]) {
-                tys.swap_remove(0)
-            } else if self.class_decls.contains_key("StyleValue")
-                && tys.contains(&Ty::Num)
-                && tys.iter().all(|t| matches!(t, Ty::Num | Ty::Str | Ty::Lit))
-            {
-                // `number | string`: the prelude's `StyleValue` (CSS lengths and keywords).
-                self.named_type("StyleValue")?
             } else {
-                // Different types: a tagged union (`tagged.rs`). A string literal beside a
-                // `string` is a `string`.
-                let has_str = tys.contains(&Ty::Str);
-                let mut members: Vec<Ty> = Vec::new();
-                for t in tys {
-                    let t = if t == Ty::Lit && has_str { Ty::Str } else { t };
-                    if !members.contains(&t) {
-                        members.push(t);
-                    }
-                }
-                if members.len() == 1 {
-                    members.remove(0)
-                } else {
-                    self.make_union(members)
-                }
+                self.union_of(tys)?
             }
         };
         Ok(if nullable { ty.nullable() } else { ty })
+    }
+
+    /// The union of these types (none of them `null`): one type when they agree, `StyleValue`
+    /// for `number | string`, else a tagged union (`tagged.rs`).
+    pub(crate) fn union_of(&mut self, mut tys: Vec<Ty>) -> R<Ty> {
+        Ok(if tys.iter().all(|t| *t == tys[0]) {
+            tys.swap_remove(0)
+        } else if self.class_decls.contains_key("StyleValue")
+            && tys.contains(&Ty::Num)
+            && tys.iter().all(|t| matches!(t, Ty::Num | Ty::Str | Ty::Lit))
+        {
+            // `number | string`: the prelude's `StyleValue` (CSS lengths and keywords).
+            self.named_type("StyleValue")?
+        } else {
+            // Different types: a tagged union (`tagged.rs`). A string literal beside a
+            // `string` is a `string`.
+            let has_str = tys.contains(&Ty::Str);
+            let mut members: Vec<Ty> = Vec::new();
+            for t in tys {
+                let t = if t == Ty::Lit && has_str { Ty::Str } else { t };
+                if !members.contains(&t) {
+                    members.push(t);
+                }
+            }
+            if members.len() == 1 {
+                members.remove(0)
+            } else {
+                self.make_union(members)
+            }
+        })
     }
 
     // ---- unify and coerce ----

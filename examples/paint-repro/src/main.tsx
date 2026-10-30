@@ -129,7 +129,7 @@ function ear(s: number): PlatypusStyle {
 // Item 4: Fluid's menu bar at the time, inline. The bar is absolute in a fixed 134x40 box; the
 // title (`item`) is a row with no `position` (or `relative` in the control) and no fixed width;
 // the red 8x8 box is absolute inside the title with the given insets.
-function MenuBar({ itemPosition, ear }: { itemPosition: "static" | "relative"; ear: PlatypusStyle }) {
+function MenuBar({ itemPosition, ear }: { itemPosition: PlatypusStyle["position"]; ear: PlatypusStyle }) {
   return (
     <box style={{ position: "relative", width: 134, height: 40, backgroundColor: "#444" }}>
       <box

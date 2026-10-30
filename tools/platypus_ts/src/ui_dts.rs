@@ -542,12 +542,33 @@ fn ui_event_class() -> String {
     s
 }
 
+/// The compiled name of the declared `interface PlatypusStyle` (the compiled `PlatypusStyle` is a list
+/// of entries): what `PlatypusStyle["position"]` and `keyof PlatypusStyle` read.
+pub const STYLE_PROPS_IFACE: &str = "__PlatypusStyleProps";
+
+/// The named unions, `Length` and the style properties as the declarations write them, for the
+/// compiler's indexed access and `keyof` types (never lowered as a struct: it has ~260 fields).
+fn style_props_prelude() -> String {
+    let mut s = String::new();
+    for (name, members) in NAMED_TYPES {
+        s += &union_alias(name, members);
+    }
+    s += "type Length = number | string;\n";
+    s += &format!("interface {STYLE_PROPS_IFACE} {{\n");
+    for p in STYLE_PROPS {
+        s += &format!("  {}?: {};\n", p.name, ts_type(p.ty));
+    }
+    s += "}\n";
+    s
+}
+
 /// The compiled-side ambient prelude: the style classes, the aliases of the event interfaces and
 /// `UiEvent`. Added to every program that uses JSX or the hooks, after the hook helpers of `ui.ts`.
 pub fn prelude() -> &'static str {
     static TEXT: OnceLock<String> = OnceLock::new();
     TEXT.get_or_init(|| {
         let mut s = String::from(STYLE_PRELUDE);
+        s += &style_props_prelude();
         for i in EVENT_INTERFACES {
             s += &format!("type {} = UiEvent;\n", i.name);
         }

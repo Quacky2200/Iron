@@ -25,6 +25,7 @@ mod generators2;
 mod generics;
 mod globals;
 mod ifaces;
+mod indexed;
 mod inherit;
 mod iterators;
 mod jit;

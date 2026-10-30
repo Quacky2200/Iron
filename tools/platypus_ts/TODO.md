@@ -382,6 +382,20 @@ P0-P1, (6) generics and modules, (7) a checker of our own and a conformance harn
   test ID range 3400..3499 stays with the dynamic-values plan (the editor's tests use 3500..).
 - [x] `platypus-build build|check --check-unused` lowers the functions nothing calls (`M9-TS-3509`).
 
+**Indexed access types (2026-10-30, `lower/types_index.rs`):**
+- [x] T8: `T["a" | "b"]`, `T[keyof T]` over fields of different types are the union of their types; `o[k]` reads into it
+  (`M9-TS-3528`). `PlatypusStyle["prop"]` for every property kind, through the prelude's `__PlatypusStyleProps`
+  (`M9-TS-3525`); `Alias["k"]` of a type literal, nested `A["b"]["c"]`, `typeof x["k"]`, `typeof a.b` (T6's `typeof`
+  part), tuple `T[0]` / `T[number]` / `T["length"]` (`M9-TS-3526`, `3527`); `T[K]` in generic functions, methods and
+  aliases, a copy per set of key literals (`TypeEnv::keys`, `M9-TS-3529`); errors with the line (`M9-TS-3530`).
+- [ ] T8b: a key parameter whose argument is a `string` (or a value of type `keyof X`) is an error ("which keys `K` is
+  is not known in this call"); `T[K]` in a generic class's own type parameters (not a method's) gets no key literals. S-M.
+- [ ] T8c: `o[k] = v` through a key naming fields of different types is an error (TypeScript wants their intersection). S.
+- [ ] T8d: unions are ordered (`number | string` and `string | number` are two tagged unions that do not convert into
+  each other); `T[K]` follows field order so it meets `o[k]`. M.
+- [ ] T8e: a `StyleValue` (`number | string`, e.g. `PlatypusStyle["opacity"]`) compared with a number or string
+  ("cannot compare"). S.
+
 **Found by the editor, still open:**
 - [ ] Arrays of mixed types (`["row", sel && "selected"]`, `(string | false)[]`) become tuples, so `.filter(Boolean).join()`
   fails: make an untyped array literal of differing element types an array of their union. M. (The editor uses `cx(..)`.)
@@ -405,11 +419,10 @@ S10 `catch ({ message })` (error, S); S11 computed keys other than literal union
 spread children, element-valued and namespaced attributes (error, S-M); S13 optional chains other than member, call and `!`
 (error, S); S14 some operators (`>>>` / unary `+` on bigint, others "unsupported operator": not enumerated) (error, S).
 
-**Types and generics:** T1 `any` / `unknown` / `never` (clear error now; needs D1, L); T2 conditional, `infer`, mapped,
-template-literal and `this` types (error, L); T3 a generic interface with `extends` (error, M); T4 index signatures other than
+**Types and generics:** T1 `any` / `unknown` / `never` (clear error now; needs D1, L); T2 conditional, `infer`, mapped
+and `this` types (error, L; a template-literal type is a `string`, unchecked); T3 a generic interface with `extends` (error, M); T4 index signatures other than
 `[k: string]: V`, call signatures in object types (error, M); T5 rest tuple elements (error, M); T6 qualified type names other
-than `Intl.X` / `React.X`, `typeof a.b` (error, S); T7 `typeof` of a non-constant (error, S); T8 indexed access by a non-literal
-or over fields of different types (error, M); T9 intersections of non-objects or clashing fields (error, M); T10 a generic
+than `Intl.X` / `React.X` (error, S; `typeof a.b` is done); T7 `typeof` of a non-constant (error, S); T8 done (above); T9 intersections of non-objects or clashing fields (error, M); T10 a generic
 function as a value or exported (error, M); T11 generic statics, accessors, constructors (error, M); T12 an override of a
 generic method is not dispatched virtually (**silent**, M); T13 constraints not checked (silent, relies on `tsc`); T14 an engine
 subclass handle does not convert to its base (`const c: Collider2D = go.getComponent(BoxCollider2D)!`) ("type mismatch",

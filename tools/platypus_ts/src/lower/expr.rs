@@ -691,7 +691,7 @@ impl<'a> Lowerer<'a> {
             let key = self.lower_expr(&m.expression, None)?;
             if matches!(key.ty, Ty::Lit | Ty::Str) && !self.m.structs[sid].fields.is_empty() {
                 let idxs = self.key_indices(sid, &m.expression)?;
-                return Ok(self.record_index_over(arr, sid, key, &idxs));
+                return self.record_index_over(arr, sid, key, &idxs);
             }
             bail!("cannot index an object by {}", key.ty)
         }
@@ -764,37 +764,56 @@ impl<'a> Lowerer<'a> {
 
     /// `rec[key]` for a record struct: the field whose name is the key's tag.
     /// The fields a key written as `key_ast` can name: those of its union of string literals when
-    /// it is a parameter written as one, else all of them. They must have one type.
+    /// it is a parameter written as one, else all of them (but not accessor thunks or a union's slots).
     fn key_indices(&self, sid: StructId, key_ast: &Expression<'_>) -> R<Vec<usize>> {
         let fields = &self.m.structs[sid].fields;
-        let mut idxs: Vec<usize> = (0..fields.len()).collect();
+        let mut idxs: Vec<usize> = (0..fields.len())
+            .filter(|i| !fields[*i].name.starts_with("_p_") && !fields[*i].name.starts_with('$'))
+            .collect();
         if let Expression::Identifier(id) = key_ast
             && let Some(ms) = self.cur.lit_sets.get(id.name.as_str())
         {
             idxs.retain(|i| ms.contains(&fields[*i].name));
-            if idxs.is_empty() {
-                bail!("`{}` names none of the fields", id.name)
-            }
         }
-        let ty = &fields[idxs[0]].ty;
-        if idxs.iter().any(|i| fields[*i].ty != *ty) {
-            bail!("an object indexed by a key needs the fields the key can name to have one type")
+        if idxs.is_empty() {
+            bail!(
+                "{}: the key names none of the fields",
+                self.loc(oxc_span::GetSpan::span(key_ast).start)
+            )
         }
         Ok(idxs)
     }
 
-    /// `rec[key]`: the field (among `idxs`, which have one type) whose name is the key.
-    fn record_index_over(&mut self, obj: Expr, sid: StructId, key: Expr, idxs: &[usize]) -> Expr {
+    /// `rec[key]`: the field (among `idxs`) whose name is the key; the union of their types when
+    /// they differ (`o[k]` for `k: "n" | "s"` is `number | string`, as in TypeScript).
+    fn record_index_over(
+        &mut self,
+        obj: Expr,
+        sid: StructId,
+        key: Expr,
+        idxs: &[usize],
+    ) -> R<Expr> {
         let fields = self.m.structs[sid].fields.clone();
-        let ty = fields[idxs[0]].ty.clone();
+        let tys: Vec<Ty> = idxs.iter().map(|i| fields[*i].ty.clone()).collect();
+        let ty = if tys.iter().all(|t| *t == tys[0]) {
+            tys[0].clone()
+        } else {
+            self.union_nullable(tys, "")?
+        };
         let by_str = key.ty.strip() == &Ty::Str;
         let (to, tk) = (
             self.new_local(obj.ty.clone()),
             self.new_local(if by_str { Ty::Str } else { Ty::Lit }),
         );
         let (ov, kv) = (self.var_expr(to), self.var_expr(tk));
-        let field = |i: usize| mk(ExprKind::Field(Box::new(ov.clone()), sid, i), ty.clone());
-        let mut acc = field(*idxs.last().expect("one field at least"));
+        let field = |this: &mut Self, i: usize| -> R<Expr> {
+            let f = mk(
+                ExprKind::Field(Box::new(ov.clone()), sid, i),
+                fields[i].ty.clone(),
+            );
+            this.coerce(f, &ty)
+        };
+        let mut acc = field(self, *idxs.last().expect("one field at least"))?;
         for &i in idxs[..idxs.len() - 1].iter().rev() {
             let name = fields[i].name.clone();
             let want = if by_str {
@@ -808,17 +827,17 @@ impl<'a> Lowerer<'a> {
                 Ty::Bool,
             );
             acc = mk(
-                ExprKind::Cond(Box::new(is), Box::new(field(i)), Box::new(acc)),
+                ExprKind::Cond(Box::new(is), Box::new(field(self, i)?), Box::new(acc)),
                 ty.clone(),
             );
         }
-        mk(
+        Ok(mk(
             ExprKind::Seq(
                 vec![Stmt::Assign(to, obj), Stmt::Assign(tk, key)],
                 Box::new(acc),
             ),
             ty,
-        )
+        ))
     }
 
     /// For `a?.b`: evaluates `a` once; if it is null the whole chain yields null.
@@ -4688,6 +4707,14 @@ impl<'a> Lowerer<'a> {
             if matches!(key.ty, Ty::Lit | Ty::Str) {
                 let idxs = self.key_indices(sid, &m.expression)?;
                 let ty = self.m.structs[sid].fields[idxs[0]].ty.clone();
+                // `o[k] = v` for fields of different types: `v` would need to be all of them at
+                // once (TypeScript types the target as their intersection).
+                if idxs.iter().any(|i| self.m.structs[sid].fields[*i].ty != ty) {
+                    bail!(
+                        "{}: assigning through a key that names fields of different types (narrow the key first)",
+                        self.loc(m.span.start)
+                    )
+                }
                 let (to, tk) = (
                     self.new_local(arr.ty.clone()),
                     self.new_local(key.ty.clone()),
@@ -4848,9 +4875,11 @@ impl<'a> Lowerer<'a> {
                 ExprKind::Index(Box::new(a.clone()), Box::new(i.clone())),
                 t.clone(),
             ),
-            Place::Keyed(o, sid, k, _, idxs) => {
-                self.record_index_over(o.clone(), *sid, k.clone(), idxs)
-            }
+            // The fields of a keyed place have one type (checked where it is made), so the read
+            // converts nothing and cannot fail.
+            Place::Keyed(o, sid, k, _, idxs) => self
+                .record_index_over(o.clone(), *sid, k.clone(), idxs)
+                .expect("a keyed place's fields have one type"),
             Place::MapEntry(m, k, v) => {
                 let got = self.map_get_value(m.clone(), k.clone(), "a Record<string, V> lookup");
                 match got {

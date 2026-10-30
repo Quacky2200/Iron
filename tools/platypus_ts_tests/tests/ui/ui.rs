@@ -427,6 +427,33 @@ fn a_dynamic_style_object_sets_its_fields() {
     });
 }
 
+// M9-TS-3525
+//
+// `PlatypusStyle["position"]` and other style properties' declared types (keywords, `Length`,
+// numbers, `Cursor`) type values that reach the style; a property the style lacks is an error with
+// the line.
+#[test]
+fn style_property_types_come_from_the_declared_style() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        for (abs, y, w) in [(true, 0.0, 50.0), (false, 20.0, 30.0)] {
+            ui.show(unsafe { ts_uic_placedApp(abs) });
+            ui.tree.layout_if_needed();
+            let frame = ui.tree.children(ROOT)[0];
+            let placed = ui.tree.children(frame)[1];
+            let r = ui.tree.rect(placed).unwrap();
+            assert_eq!((r.x, r.y, r.width), (12.0, y, w), "absolute: {abs}");
+        }
+    });
+    let src =
+        "type W = PlatypusStyle[\"nope\"];\nexport function f(w: W): UiElement { return <box />; }";
+    let e = platypus_ts::lower::lower_source(src).err().unwrap();
+    assert!(
+        e.contains("line 1: property \"nope\" does not exist on type PlatypusStyle"),
+        "{e}"
+    );
+}
+
 // M9-TS-591
 //
 // `{...obj}` on a host element sets the object's fields as attributes; on a component it spreads

@@ -198,6 +198,28 @@ export function styledApp(w: number, withColor: boolean): UiElement {
   return <Styled st={st} />;
 }
 
+// M9-TS-3525: the declared types of style properties (`PlatypusStyle["position"]`), though the
+// compiled style is a list of entries.
+type Pos = PlatypusStyle["position"];
+
+function Placed(props: { pos: Pos; left: PlatypusStyle["left"]; width: PlatypusStyle["width"] }): UiElement {
+  const dir: PlatypusStyle["flexDirection"] = "column";
+  return (
+    <box style={{ position: "relative", flexDirection: dir, width: 100, height: 100 }}>
+      <box style={{ width: 10, height: 20 }} />
+      <box style={{ position: props.pos, left: props.left, top: 0, width: props.width, height: 10 }} />
+    </box>
+  );
+}
+
+export function placedApp(abs: boolean): UiElement {
+  const pos: PlatypusStyle["position"] = abs ? "absolute" : "relative";
+  const cursor: PlatypusStyle["cursor"] = "pointer";
+  const grow: PlatypusStyle["flexGrow"] = 1;
+  const left: PlatypusStyle["left"] = cursor === "pointer" && grow === 1 ? 12 : 0;
+  return <Placed pos={pos} left={left} width={abs ? "50%" : "30px"} />;
+}
+
 interface Common {
   className: string;
   id: string;
