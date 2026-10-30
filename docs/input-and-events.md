@@ -250,6 +250,9 @@ Tree side: [ui-tree.md](ui-tree.md#dialogs-and-the-top-layer-m3d-step-5j). `Inte
 - **Focus** (`track_modals`, run after each input): when a modal opens, the element focused before
   it is recorded (`modals`) and focus moves to its first focusable descendant, else the dialog.
   When it closes or is removed, focus returns to the recorded element if that can still take it.
+  A script may focus a field inside the modal as it opens, before `track_modals` runs; `Interaction`
+  keeps `previous_focus` (the focus before the last change) and records that, not the field, so focus is
+  given back on close (`M3-DLG-03`).
 - **Scope** (`in_modal_scope`): everything outside the top modal is inert for pointer focus,
   `tab_order` (so Tab and d-pad navigation) and `Navigate`.
 - `EventKind::Cancel` / `Close` reach scripts as `"cancel"` / `"close"`.

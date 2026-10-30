@@ -176,6 +176,10 @@ highlighted index at each level; a submenu shows while its item is highlighted.
   text fields) runs accelerators (`findAccelerator`, matched by `code` and modifiers), Alt+letter
   opens the menu starting with that letter, and F10 highlights the bar. None of this runs while a modal dialog is
   open (`modalOpen()`).
+- **In text fields:** their keys don't reach `input`, so a `keydown` handler on the editor's root
+  (`fieldAccelerator`) sees them as they bubble from the field. `fieldKeepsKey` (in `menu.ts`, with `isTextField`)
+  says which the field keeps: typing, Delete, Backspace, Escape, Enter, arrows and Ctrl+A / C / V / X. Other Ctrl / Alt
+  keys and the function keys run the menus (Undo, Redo, Save, New, Open, Duplicate, ...) and the field does not also handle them.
 
 Accelerators are written like `Ctrl+Shift+S`, `F5`, `Delete`, `Ctrl++`; `acceleratorLabel` shows
 them normalized.
@@ -257,8 +261,11 @@ targets of their own), and clicking it calls `Editor.openFile(path, line, col)`.
 
 Dialogs are drawn by the editor's own UI, not the OS. `modal.ts` keeps the stack of open dialogs (`pushModal(render)`,
 `closeModal(id)`, `modalOpen()`, `subscribeModals`); `ModalHost`, rendered once at the end of the editor UI, draws them over
-everything. `Modal` is the shell: a backdrop that takes the pointer, a centred box with a title, focus on open, Escape
-to cancel (`onCancel`) and Enter for the default action (`onEnter`). `Button` is its button. Two dialogs return promises:
+everything. `Modal` is the shell: an open modal `dialog`, so the engine's top layer does the work. Its `::backdrop`
+dims everything under it (black at 0.6: blending is in linear light, and a lighter tint hardly showed); Tab, d-pad
+and the pointer stay inside; Escape sends `cancel`, which `Modal` prevents and answers with `onCancel`; focus goes back to
+where it was when the dialog closes. It has a centred box with a title and Enter for the default action (`onEnter`).
+`Button` is its button and takes `tabIndex`, Enter and Space. Two dialogs return promises:
 
 - `confirmDialog({ title, message, buttons, cancel })` answers with the label of the button pressed (the first is
   the default; Escape answers `cancel`, "" by default).
@@ -268,7 +275,7 @@ to cancel (`onCancel`) and Enter for the default action (`onEnter`). `Button` is
 `fileDialog({ mode, title, filters, dir, name, ok })` shows the open, save or folder dialog and answers with the chosen
 project path, or "" when cancelled. It has breadcrumbs, the folder's entries (folders first; double-click or Enter opens,
 Backspace goes up), a name field that also takes a typed path, the type list, New Folder, and an overwrite check
-when saving. `file-dialog.ts` holds the logic as plain functions: `matches` and `shownEntries` (folders always, files
+when saving. It starts with focus in the name field (the list in folder mode). `file-dialog.ts` holds the logic as plain functions: `matches` and `shownEntries` (folders always, files
 that pass the filter, only folders in folder mode), `withExtension` (a saved name gets the filter's first extension once),
 `resolveTyped` (a typed path relative to the folder, or to the root with `/`, `.` and `..` worked out; null when it
 leaves the project or names a drive) and `stemOf`. Ready filters: `SCENE_FILTER`, `PREFAB_FILTER`, `MODEL_FILTER`, `ALL_FILES`.
@@ -518,6 +525,10 @@ command's undo writes the old value back, or removes the key when the file had n
 - Project Settings: `project_edit` units (`M5-PRJ-01` to `-03`: replace in place, add last, remove with its comma),
   the `Editor` project calls in `editor.rs` (`M5-PRJ-04`) and the smoke test `M5-PRJ-05` (company typed, the file gains
   one key, Undo restores it exactly). `cond && f()` with a void `f` (the dialog buttons use it) is `M9-TS-3524`.
+- Dialogs: the smoke test `M5-EDT-43` (the Hierarchy is darker behind a dialog, F2 works on the Project list after
+  Escape, Tab wraps inside New Folder). Keys in text fields: the key rule `M5-EDT-44` (`fieldKeepsKey`, in
+  `models.test.ts`) and the smoke test `M5-EDT-45` (Delete and Ctrl+A stay in the Inspector's name field, Ctrl+Z
+  undoes, Ctrl+S opens Save Scene As).
 - Panels and menus: the smoke test `M5-EDT-41` (the Console tab's close box, View > Panels > Console, Edit >
   Preferences and Help > About open and close) and the dock model `M5-EDT-42` (`hasTab`, `openTab`, in `models.test.ts`).
 - Prefabs and placing: `savePrefab` / `placePrefab` and a prefab's `assets` table reaching its copies in
@@ -557,7 +568,5 @@ command's undo writes the old value back, or removes the key when the file had n
 - Panels can't float in windows of their own.
 - The project's own code and play mode are not in the editor yet (TODO.md E11): scripts of a scene stay opaque
   components, and the Game panel shows the scene without running it.
-- The modal backdrop does not dim what is under it yet, and Tab is not kept inside a dialog (focus can leave it).
 - The Project browser has no context menu; New Folder, Rename and Delete are on its toolbar and keys.
-- Accelerators don't run while a text field has focus (its keys don't reach `input`).
 - No native menus yet (TODO.md M5.e).

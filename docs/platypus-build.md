@@ -640,8 +640,8 @@ input did what it should).
 
 `--bench-input spec.json` scripts the run: `{"warmup": N, "segments": [{"name", "warmup", "frames", "input": [...]}]}`. Input
 frames count from the segment's start (its warm-up included); kinds are `key` (`code`, optional `key`, `hold` frames),
-`keyDown` / `keyUp`, `mouseMove` / `click` (`x`, `y` in window pixels, `button`), `mouseDown` / `mouseUp`, `wheel` (`dy` lines),
-`clickText` / `moveToText` (the middle of the first screen text reading `text`, found when the frame comes), and gamepad `axis` /
+`keyDown` / `keyUp` (after each Ctrl / Shift / Alt / Windows key press or release the modifier state is sent too, as a window does, so the UI sees Ctrl+Z; `M9-BEN-04`), `mouseMove` / `click` (`x`, `y` in window pixels, `button`), `mouseDown` / `mouseUp`, `wheel` (`dy` lines),
+`clickText` / `moveToText` (the middle of the first screen text reading `text`, found when the frame comes, through transforms: `UiTree::to_window`, as a centred modal dialog is placed by a translate), and gamepad `axis` /
 `button`; `count` and `every` repeat one. They are sent as the platform sends the OS's (`window_input`), so both backends see
 the same input. The examples' scripts are in `tools/bench/inputs/<name>.json` (the example sources stay unchanged).
 

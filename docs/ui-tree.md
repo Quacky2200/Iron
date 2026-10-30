@@ -329,6 +329,8 @@ How inline content works:
 - **`UiTree::to_local(id, x, y)`** maps a window point into the plane `id` is laid out in, undoing
   the transforms of it and its ancestors (fixed elements ignore ancestor transforms). Static
   selection, text fields and backdrop clicks use it, so presses work on rotated or scaled text.
+  **`UiTree::to_window(id, x, y)`** is its inverse: a point in `id`'s plane to the window. The bench's
+  `clickText` / `moveToText` use it to find text under transforms.
 - **Drawing (`selection_cmds`):** highlight quads behind the text (default blue) and, when
   `::selection` sets a colour, the selected text drawn again in that colour, clipped to the highlight.
 - **`::selection` / `::placeholder`:** `update_pseudo_style` stores what the rules set as a

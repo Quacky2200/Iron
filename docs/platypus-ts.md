@@ -277,6 +277,8 @@ runtime in [platypus_ts_rt/src/map.rs](../tools/platypus_ts_rt/src/map.rs); desi
   (by identity); a string-literal union key is stored as a string. The old stub that treated `Set<T>` as
   an array is gone. A collection needs its types from a `new Map<K, V>()` argument, an annotation, or
   `new Map([[k, v], ...])` / `new Set(array)` (element type inferred); otherwise it is a compile error.
+  The argument may be a conditional of a collection and an array (`new Set(c ? set : [])`): each arm makes the
+  collection, an empty `[]` taking the other arm's type (`M9-TS-3531`).
 - **Raw words.** Keys and values cross into the runtime as 64-bit words: new IR nodes `ExprKind::Bits`
   (typed value to word) and `Unbits` (word back to the type). The map's key kind (0 numbers, 1 strings,
   2 objects, 3 plain words) tells equality, hashing and the collector which words are pointers.
@@ -1258,7 +1260,8 @@ when `cond` is false.
   may be an element, a string, a number or an array of elements. Elements are `UiElement` handles. `style={{ width: 10 }}` is a literal; `style={obj}` (or a literal with spread) uses the typed object's fields (`Ui.styleObj`: numbers
   and strings, optional fields left out when null); `{...obj}` on a host element does the same for attributes
   (`Ui.attrObj`: numbers, strings, booleans; handlers are written as `onX`), and `{...props}` on a component spreads into its props
-  (not with `memo`). `Text`, `Span`, `Input`, `TextArea`, `Image`, `List`, `Dialog` (from `@platypus/react`) are the intrinsic elements unless
+  (not with `memo`). A spread of a conditional, `{...(c ? handlers : {})}`, sets the taken arm's props and `{}` sets
+  none (`M9-TS-3532`). `Text`, `Span`, `Input`, `TextArea`, `Image`, `List`, `Dialog` (from `@platypus/react`) are the intrinsic elements unless
   the program declares a component of that name. A key may be a number; `{flag}` renders nothing; a style value may be undefined.
 - **Components** `function Counter(props: P): UiElement`: `<Counter a={1} />` becomes `Ui.component(ID, () => Counter({ a: 1 }))`,
   `ID` a hash of the name (it says which state belongs to which component). With no attributes the call is `Counter()`.
