@@ -150,6 +150,13 @@ Taffy has neither, so `Visual` carries `contents` and `fixed` flags.
 - **Paint:** fixed nodes draw after the root, using their parent's computed text. **Hit:**
   `hit_test` tests fixed nodes first in reverse paint order, inheriting the parent's
   `pointer_events_of`.
+- **Containing blocks of absolute boxes.** Taffy only knows `position`, so a static element for which
+  `style::makes_containing_block` holds (a transform, `translate`/`rotate`/`scale`, `perspective`,
+  `transform-style: preserve-3d`, a filter, a backdrop filter, `contain: layout|paint|strict|content`, or
+  a `willChange` naming one of them) is given `relative` without insets in the style Taffy sees
+  (`layout_style`, kept current by `sync_layout_style`). The tree keeps the authored style, so painting,
+  z-order and scripts still see `static`. A transform coming or going by class, hover or inline style
+  re-lays out. Fixed boxes are unchanged (the root lays them out).
 - **Limits:** fixed ignores ancestor clips, opacity and filters. A `display: none` or `opacity: 0`
   ancestor still hides it.
 
@@ -247,11 +254,13 @@ basis; unknown handles give 0, division by zero gives 0. `style.rs` calls `calc:
    `self.rects`. Children of a scrolled element are shifted by its (clamped) scroll offset.
    `display: contents` nodes get a zero rect at the parent origin; `position: fixed` nodes are placed
    from (0,0), ignoring ancestor scroll. An absolute box whose containing block is not its parent
-   (`LayoutEngine::containing_block`: the nearest positioned ancestor, or the root) is placed from that
+   (`LayoutEngine::containing_block`: the nearest positioned ancestor, or one made so by a transform, filter or `contain`, or the root) is placed from that
    box's rect minus its scroll, because Taffy gives out-of-flow positions relative to the containing
    block (`UiTree::child_origin` picks the origin for each child). Outside list markers are the
    exception: their `right: 100%; top: 0` only cancel the containing block's size, so they are
-   placed from their item. For
+   placed from their item. The pass also records `escapes` (box -> its containing block, when that is
+   further up than its parent) and `escape_paths` for painting, hit testing and scrolling (see
+   [Clipping](#backgrounds-borders-and-blending)). For
    text blocks, `text::finish` re-breaks lines at the final content width and applies `text-align`;
    `finished` remembers that width, and the pass skips `finish` when it is unchanged (a scroll only
    moves things). Measuring or re-shaping a block forgets it. `text_measure_count()` counts measures.
@@ -502,6 +511,15 @@ Decisions worth knowing:
   `ClipShapeSpec::Polygon`/`Path`, flattened to a `Polygon` (`Polygon::contains` for hit tests;
   curves and arcs are split into segments); `url()` is unsupported. An axis that does not clip gets an effectively unbounded clip edge
   (`UNCLIPPED`). Hit testing uses the same clip functions, so clipped-away parts cannot be hit.
+  `contain: paint` (also `strict`, `content`) clips like `overflow: clip`.
+- **Absolute boxes and clips** ([escape.rs](../crates/platypus_ui/src/tree/escape.rs)). As in CSS, an
+  `overflow` clip (and scrolling) reaches an absolute box only when the clipper is its containing block or
+  lies between them; a dropdown in a static `overflow: hidden` bar shows in full. `collect` is wrapped to
+  draw into a `DrawOut` (the draw list plus a trail of open clips, transforms and layers). For a box in
+  `escapes` it pops the escaped overflow clips, draws, and reopens the rest (clip-paths, transforms)
+  around it. Hit testing passes `clipped` down, so escaping boxes are still hit where the clip hides the
+  point. Boxes without escapes take the plain path. Limit: a clip outside an opacity, blend or mask group
+  that holds the box still clips it (`differences.md`).
 - `currentColor` is resolved here (`current()`), using the node's computed text colour.
 
 ## Transforms
@@ -566,6 +584,8 @@ them in `Visual.transform: Option<Arc<Transforms>>` (`TransformSpec` plus origin
   its children. Hit testing and drawing both read these shifted rects, and the `overflow` clip is
   on the padding box (unshifted), so scrolled content stays clipped and hittable consistently.
   `destroy_subtree` drops offsets of removed nodes.
+- **`scroll_path(id)`**: the scroll ancestors of a node, innermost first, skipping those an absolute box
+  escapes (see Clipping). Wheel, key, scrollbar and scroll-into-view scrolling use it.
 - **Scrollbars**: `scrollbars(id)` returns up to two `Scrollbar { node, vertical, track, thumb,
   thumb_color, track_color }` in absolute px. Shown for `scroll`, or `auto` with content to scroll,
   unless `scrollbarWidth: none` (thickness: `auto` 8 px, `thin` 5 px). They overlay the content
