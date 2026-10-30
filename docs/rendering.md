@@ -14,6 +14,7 @@ background: [DESIGN.md](../DESIGN.md) section 5.2; milestone tests `M2-DRW-*`, `
 | [offscreen.rs](../crates/platypus_render/src/offscreen.rs) | `OffscreenTarget`: texture + `read_pixels` (tests, screenshots) |
 | [lib.rs](../crates/platypus_render/src/lib.rs) | `Color`, re-exports, `encode_clear` |
 | [ui/mod.rs](../crates/platypus_render/src/ui/mod.rs) | `UiRenderer`, the **wgpu executor**: uploads a `FramePlan`, records and submits it |
+| [ui/pipelines.rs](../crates/platypus_render/src/ui/pipelines.rs) | `pipelines::Sources` and `CanvasPipelines`: the canvas pipelines, made lazily per blending (`canvas_format(blending)`) |
 | [ui/plan.rs](../crates/platypus_render/src/ui/plan.rs) | The **backend-neutral plan**: `plan()` turns a draw list into a `FramePlan` (no GPU object); `PlanResources` |
 | [ui/backend.rs](../crates/platypus_render/src/ui/backend.rs) | The `UiBackend` trait the app-facing renderers implement (`UiRenderer` today) |
 | [platypus_render_gles](../crates/platypus_render_gles/src/lib.rs) | `GlesRenderer`: executes a `FramePlan` with GLES 3 through EGL / ANGLE (`egl.rs`, `shaders.rs`) |
@@ -82,7 +83,7 @@ the prelude's `Component`), and every class and namespace of `platypus_render_ap
 
 | Tier | Examples |
 |---|---|
-| `ui` | article, boxes, css, flow, form, hello (a timer, no component), launcher, md-reader, table, text, windows |
+| `ui` | alpha-probe (translucent fills over a known colour, for reading pixels back: `blending`), article, boxes, css, flow, form, hello (a timer, no component), launcher, md-reader, table, text, windows |
 | `world2d` | physics (UI boxes over rapier bodies on GameObjects), raindrop-demo, shapes, sine-circle-demo, splines |
 | `world3d` | every other example (38), among them clock (its 3D faces), emoji (`WorldPanel`), fishtank (`RenderSettings` fog), platformer (`ParticleSystem`) |
 
@@ -110,9 +111,11 @@ What differs from the wgpu executor (`shaders.rs` is a GLSL ES 3.00 port of `qua
   `vec4` array across rows, as in WGSL).
 - **Instances** are instanced vertex attributes re-pointed at the draw's byte range (ES 3.0 has no
   base-instance draw); six vertices per instance, positions from `gl_VertexID`.
-- **Canvases** are `SRGB8_ALPHA8` textures, so blending is in linear light like wgpu's; the glyph pages are
-  `R8` and `SRGB8_ALPHA8`, filled from the shared `GlyphCache`'s upload queue. The final blit applies
-  the sRGB transfer itself (`Target::srgb`) for a default framebuffer that doesn't encode on write.
+- **Canvases** are `RGBA8` textures holding sRGB values (the default `Blending::Srgb`) or `SRGB8_ALPHA8` for
+  `linear` (`GlesRenderer::set_blending`; `u_globals.w` tells the shaders which); the glyph pages are
+  `R8` and `SRGB8_ALPHA8`, filled from the shared `GlyphCache`'s upload queue. The final blit has a mode
+  (`u_mode`: 0 copy, 1 encode, 2 decode) that converts between the canvas and the target (`Target::srgb`: whether
+  the target encodes on write), see "Blending" above.
 - **`gl_FragCoord` is y up**; the fragment shader turns it into the plan's y-down logical pixels.
 
 Done: the quad pass (boxes, borders and their styles, gradients, outer and inset shadows, glyphs, wavy
@@ -128,7 +131,7 @@ does; canvases filter linearly (a shifted drop shadow samples between texels). `
 the canvas transparent and blends it onto what the target holds (premultiplied, `ONE`/`ONE_MINUS_SRC_ALPHA`).
 `EglContext::window` makes a context on a winit window (Win32 HWND, Xlib; anything else is an error). Its
 surface is plain, not ANGLE's sRGB one (reading that back returned unencoded bytes, so colours were off), so
-`Target::srgb` is false and the blit encodes itself. `platypus-app`'s light path (`gles_gfx.rs`) draws its one window this way
+`Target::srgb` is false: in `srgb` the blit copies the canvas, in `linear` it encodes itself. `platypus-app`'s light path (`gles_gfx.rs`) draws its one window this way
 (no 3D world, world panels or secondary windows), swaps with vsync, skips a frame whose draw lists equal the
 last one's, and falls back to wgpu when EGL is missing (`PLATYPUS_ANGLE_DIR` names ANGLE's folder; `PLATYPUS_GLES=0`
 forces wgpu). `tests/vs_wgpu.rs` draws scenes through both executors and compares pixels
@@ -310,8 +313,9 @@ second renderer (the GLES one for `platypus-app`, through ANGLE) supplies its ow
 `GlyphCache` and `ImageCache` (their pixels are queued as uploads, written by the renderer after planning;
 `ImageInfo::key` names an image's texture in `Step::Draw`), and executes the same `Step`s over its own textures. `UiBackend`
 (backend.rs) is the app-facing trait; the wgpu `UiRenderer` implements it. The planner is tested
-without a GPU (`tests/plan.rs`, `M2-PLN-01..07`); the golden tests (`tests/ui.rs`) check the wgpu
-executor.
+without a GPU (`tests/plan.rs`, `M2-PLN-01..07`, plus the blending plan test `M2-BLEND-01`); the golden tests
+(`tests/ui.rs`, pinned to `Blending::Linear`) check the wgpu executor, and `tests/blending_over.rs`
+(`M2-BLEND-*`) its `srgb` default over the world.
 
 ### 1. Plan: commands to instances and steps (`plan.rs`)
 
@@ -443,9 +447,11 @@ zero-sized bindings).
 
 ### 3. Record and submit
 
-Steps are encoded in order into one command encoder, then a final **blit** copies the canvas
-(texture 0, always `CANVAS_FORMAT`) to the real target, whose format can differ (`blit_pipeline` is
-cached per format). Blur and composite parameters use small per-pass uniform buffers. Textures are
+Steps are encoded in order into one command encoder, then a final **blit** moves the canvas
+(texture 0, in `canvas_format(blending)`: `Rgba8Unorm` for `srgb`, `CANVAS_FORMAT` = `Rgba8UnormSrgb` for `linear`)
+to the real target, whose format can differ (`blit_pipeline` is cached per format and `Blit` mode: `Copy`
+(`fs_blit`), `Decode` (`fs_blit_decode`, sRGB values to a target that encodes on write) or `Encode`
+(`fs_blit_encode`)). Pool textures are keyed by size and format. Blur and composite parameters use small per-pass uniform buffers. Textures are
 returned to the pool afterwards. `RenderStats` (`draw_calls`, `passes`, `layers`, `instances`,
 `clips`) lets tests assert batching behaviour (for example that plain boxes share a draw call and
 no layer is created).
@@ -477,7 +483,7 @@ no layer is created).
 
 [effects.wgsl](../crates/platypus_render/src/ui/effects.wgsl): `vs_fullscreen` (one oversized triangle),
 `fs_blur` (1D Gaussian with `radius = ceil(3 sigma)`, max `MAX_BLUR_RADIUS` = 128; texel reads clamp to a bounds uniform), `fs_composite`
-(`filtered_source`, opacity, `mask_at` and clip coverage), `fs_composite_blend` (the same against a backdrop copy), `fs_blit`. The same `Clip` struct and coverage function are duplicated
+(`filtered_source`, opacity, `mask_at` and clip coverage), `fs_composite_blend` (the same against a backdrop copy), `fs_blit` / `fs_blit_decode` / `fs_blit_encode`. Both files read the blending from `Globals.srgb` (`srgb_canvas()`, `sampled()`, `canvas_to_srgb` / `canvas_from_srgb` skip or apply the conversions; the composite's `CompositeParams.mask.y` carries it); the GLES ports in `shaders.rs` and `effects.rs` do the same through `u_globals.w`. The same `Clip` struct and coverage function are duplicated
 in both shader files; keep them in sync with `GpuClip` in mod.rs.
 
 ## Glyph atlas and images
@@ -508,7 +514,8 @@ pixel into the tile on repeating axes, skips the gradient outside the tile on ot
 `OffscreenTarget::with_format(gpu, w, h, format)` creates a `RENDER_ATTACHMENT | COPY_SRC` texture;
 `read_pixels` copies to a buffer with 256-byte row padding, maps it, and returns tightly packed RGBA8
 (top row first). The app's `--screenshot` path ([main.rs](../crates/platypus_app/src/main.rs)
-`save_screenshot`) renders the draw list again into an `Rgba8UnormSrgb` offscreen target and writes
+`save_screenshot`) renders the draw list again into an `Rgba8UnormSrgb` offscreen target (the blit decodes the
+`srgb` canvas into it, so the PNG holds the same sRGB values the window shows) and writes
 a PNG with `platypus_render::testing::write_png`. It still opens a window (frames run until the target
 count), unlike tests, which are fully headless.
 

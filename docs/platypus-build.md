@@ -113,6 +113,7 @@ A leading `//` comment line is allowed; otherwise plain JSON.
 | `prebuild` | none | a command run in the game folder before compiling (`cmd /C` on Windows, `sh -c` elsewhere), e.g. to write generated sources (`md-reader`: `bun gen-docs.ts`); a failing command stops the build; `--no-prebuild` skips it |
 | `layers`, `quality`, `display` | none | layer names, quality levels and default, window mode and size (as before in `platypus`) |
 | `fps`, `runInBackground` | on / false | FPS counter, `Application.runInBackground` |
+| `blending` | `srgb` | how translucent UI colours combine: `srgb` (as browsers) or `linear` (light-correct, the engine's earlier look); an unknown value warns and means `srgb`; not written back when `srgb` ([rendering.md](rendering.md#blending-srgb-default-or-linear-light)) |
 | `videoSettingsPrompt` | off | ask the player once for window mode, resolution, vsync and quality before the window opens ([platform.md](platform.md#startup-video-settings-prompt)) |
 | `dataDir`, `include`, `exclude` | `data`, `["assets/**"]`, none | data folder name beside the exe; what `package` copies to it: paths, folders or globs (`*` inside one path part, `**` across parts, `?`; case-sensitive; a plain folder means `folder/**`), minus the `exclude` globs. An `include` entry that matches no file is a warning |
 | `windows`, `macos`, `linux`, `android`, `ios` | none | an object whose keys replace the top-level ones when building for that platform |

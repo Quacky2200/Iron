@@ -279,7 +279,7 @@ targets of their own), and clicking it calls `Editor.openFile(path, line, col)`.
 Dialogs are drawn by the editor's own UI, not the OS. `modal.ts` keeps the stack of open dialogs (`pushModal(render)`,
 `closeModal(id)`, `modalOpen()`, `subscribeModals`); `ModalHost`, rendered once at the end of the editor UI, draws them over
 everything. `Modal` is the shell: an open modal `dialog`, so the engine's top layer does the work. Its `::backdrop`
-dims everything under it (black at 0.6: blending is in linear light, and a lighter tint hardly showed); Tab, d-pad
+dims everything under it (black at 0.35: blending is in sRGB, as in browsers, so a light tint shows; it was 0.6 when blending was in linear light); Tab, d-pad
 and the pointer stay inside; Escape sends `cancel`, which `Modal` prevents and answers with `onCancel`; focus goes back to
 where it was when the dialog closes. It has a centred box with a title and Enter for the default action (`onEnter`).
 `Button` is its button and takes `tabIndex`, Enter and Space. Two dialogs return promises:

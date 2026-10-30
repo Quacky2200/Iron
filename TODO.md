@@ -181,7 +181,8 @@ Platypus/
 - [x] Golden + pixel-assertion tests, all checked by eye — `M2-DRW-01`, `M2-DRW-02`, `M2-DRW-05` (+ images), `M2-DRW-06`..`M2-DRW-08`
 - [x] 2,000 boxes in one draw call — `M2-DRW-03`
 - [x] Scale factor applied at draw time — `M2-DRW-04`
-- [ ] Later: blending happens in linear light (browsers blend in sRGB, so semi-transparent edges differ slightly); large blurs should downsample (dual Kawase) instead of up to 257 taps; per-op uniform buffers and bind groups could be pooled; gradients ignore `backgroundSize`/`Position` for now
+- [x] Blending in sRGB by default, as browsers (2026-10-30): `blending: "srgb" | "linear"` in `project.json` and `set_blending` on the renderers, one setting per frame in `FramePlan::blending`; `examples/alpha-probe`, `M2-BLEND-01..11` (docs/rendering.md "Blending"). A runtime switch for scripts is not done
+- [ ] Later: large blurs should downsample (dual Kawase) instead of up to 257 taps; per-op uniform buffers and bind groups could be pooled; gradients ignore `backgroundSize`/`Position` for now
 
 ### 6. App wiring and example
 - [x] `platypus_app`: each frame calls `tick(now)`, applies commits to `UiTree` (bad ops logged), relayouts if dirty, and draws with `UiRenderer` via `WindowSurface::present_with`
@@ -1493,8 +1494,8 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         in-editor `Modal`, `confirmDialog`, `textDialog` and `FileDialog` (open / save / folder, filters, typed paths,
         New Folder, overwrite check); New Folder, Rename (F2) and Delete (Del) in the Project browser
         (`M5-EFS-02..05`, `M5-EDT-31..34`)
-        - [x] Dialogs are modal `dialog`s (2026-10-30): a dimmed `::backdrop` (black at 0.6: blending is in linear
-          light, the old 0.4 tint barely showed), Tab and the pointer kept inside, Escape cancels, focus given back on
+        - [x] Dialogs are modal `dialog`s (2026-10-30): a dimmed `::backdrop` (black at 0.6 while blending was in linear
+          light, 0.35 since sRGB blending, the same dimming), Tab and the pointer kept inside, Escape cancels, focus given back on
           close (also when a field focuses itself as it opens: `Interaction` keeps the focus from before, `M3-DLG-03`);
           dialog buttons take Tab, Enter and Space; the bench finds text through transforms (`UiTree::to_window`)
           (`M5-EDT-43`)
