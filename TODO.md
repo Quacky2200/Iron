@@ -1567,9 +1567,13 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         the node tree, skins (bones, ≤4 normalised weights, inverse bind matrices) and the takes baked to keys;
         `.fbx` counts as a model for `.meta` files, packs and `--cook`. Test files are made by
         `tests/fixtures/assets/make_fbx.py` (no downloads) (`M5-FBX-01..05`)
-        - [ ] Later (FBX): `.meta` importer options (scale factor, import animation / materials, colliders); blend shapes;
-          cameras and lights in the file; vertex colours; UV1; a golden of a posed FBX character; real exporter files
-          (Maya, Blender, 3ds Max) as fixtures once their licences are checked
+        - [x] The `.meta` importer's `scaleFactor` scales an FBX (2026-10-30, `M5-FBX-06`); a cooked model or texture
+          goes stale when its `.meta` is newer
+        - [ ] Later (FBX): the other importer options (import animation / materials, colliders); cameras and lights in
+          the file (glTF doesn't bring them in either: no model description of them yet); vertex colours and UV1 (the
+          engine's meshes have neither: `MeshInfo` and the shaders need them first); blend shapes (no morph targets in
+          the engine); a golden of a posed FBX character; real exporter files (Maya, Blender, 3ds Max) as fixtures once
+          their licences are checked
       - [x] E10: the remaining menus: View > Panels (checked when open; closes the active tab or opens it again,
         tabs have a close box), Show Grid / Gizmos kept as preferences, Edit > Preferences (`Preferences.tsx`:
         grid, gizmos, reopening the last scene, in PlayerPrefs), Help > Documentation (opens `docs/editor.md` in the

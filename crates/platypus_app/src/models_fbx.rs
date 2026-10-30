@@ -31,13 +31,26 @@ fn mat4(m: &ufbx::Matrix) -> [f32; 16] {
     .map(|x| x as f32)
 }
 
+/// The `scaleFactor` of a model's `.meta` importer (`{"importer": {"scaleFactor": 0.5}}`), 1 when
+/// there is none or it isn't a positive number.
+fn scale_factor(root: &Path, src: &str) -> f64 {
+    platypus_core::read_asset(root, &format!("{src}.meta"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .and_then(|m| m["importer"]["scaleFactor"].as_f64())
+        .filter(|s| s.is_finite() && *s > 0.0)
+        .unwrap_or(1.0)
+}
+
 /// Loads `src` (relative to the game folder `root`).
 pub fn load(root: &Path, src: &str, ids: &mut EngineIds) -> Result<Model, String> {
     let bytes = platypus_core::read_asset(root, src).map_err(|e| e.to_string())?;
     let model_dir = src.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
+    let scale = scale_factor(root, src);
     let opts = ufbx::LoadOpts {
         target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
-        target_unit_meters: 1.0,
+        // Metres, times the `.meta` importer's `scaleFactor` (Unity's model import scale).
+        target_unit_meters: 1.0 / scale,
         // Units and axes go into the geometry and the transforms, not a root node of their own.
         space_conversion: ufbx::SpaceConversion::ModifyGeometry,
         // FBX's geometric transforms (pivots) go into the geometry, or a helper node if shared.
@@ -478,6 +491,38 @@ mod tests {
                 .contains(&json!(pivot_index))
         );
         assert_eq!(d["roots"].as_array().unwrap().len(), 1);
+    }
+
+    // M5-FBX-06
+    #[test]
+    fn the_meta_scale_factor_scales_the_model() {
+        let dir = std::env::temp_dir().join(format!("platypus-fbx-scale-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(fixtures().join("assets/cube.fbx"), dir.join("cube.fbx")).unwrap();
+        std::fs::write(
+            dir.join("cube.fbx.meta"),
+            r#"{ "guid": "x", "importer": { "type": "model", "scaleFactor": 2 } }"#,
+        )
+        .unwrap();
+        let m = load(&dir, "cube.fbx", &mut EngineIds::default()).unwrap();
+        let b = bounds(&m.meshes[0].1.positions);
+        assert!((b[1][0] - b[0][0] - 2.0).abs() < 1e-3, "{b:?}");
+        assert_eq!(
+            node(&m.description, "Cube")["position"][1]
+                .as_f64()
+                .map(|y| (y - 2.0).abs() < 1e-4),
+            Some(true)
+        );
+        // A bad factor is ignored.
+        std::fs::write(
+            dir.join("cube.fbx.meta"),
+            r#"{ "importer": { "scaleFactor": -1 } }"#,
+        )
+        .unwrap();
+        let m = load(&dir, "cube.fbx", &mut EngineIds::default()).unwrap();
+        let b = bounds(&m.meshes[0].1.positions);
+        assert!((b[1][0] - b[0][0] - 1.0).abs() < 1e-3, "{b:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // M5-FBX-02

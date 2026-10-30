@@ -474,6 +474,7 @@ layout pass):
 | M5-FBX-03 | Unit | FBX loading: a file that isn't FBX is an error; paths outside the game folder are refused. |
 | M5-FBX-04 | Unit | FBX skins (`rig.fbx`): one skin with the bones Root and Tip, inverse bind matrices from the clusters (Tip's undoes its metre), the mesh node pointing at it, four weights per vertex summing to 1, the upper half following Tip. |
 | M5-FBX-05 | Unit | FBX takes: the take "Bend" is baked into keys, Tip's rotation ending at 90 degrees about X after one second. |
+| M5-FBX-06 | Unit | An FBX's `.meta` importer `scaleFactor` scales it (2: the cube is 2 m across and its node twice as high); a missing or non-positive factor is 1 (`models_fbx.rs`). |
 | M5-GLB-02 | JS unit | `Model.load` loads once per path; `instantiate` builds the node tree as GameObjects (one child per part when a node has several), with materials and textures from the model, mesh colliders on request (`renderMesh` shapes), even when placed before loading finished; failures reject `whenLoaded` and place nothing. |
 | M5-RND-10 | Golden | Directional shadows: a soft-shadowing sun over a cube, sphere, capsule and a floating plank whose shadow lands on the sphere and the floor (shadow map fitted to the camera, normal offset and slope bias, 3 × 3 PCF). |
 | M5-RB-04 | JS unit | Colliders resize when their object or a parent is scaled, and when reparented (the old shape is removed); setting the same scale rebuilds nothing. |

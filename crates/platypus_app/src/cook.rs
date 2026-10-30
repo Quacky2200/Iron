@@ -587,12 +587,19 @@ pub fn cooked_path(root: &Path, src: &str, extension: &str) -> PathBuf {
         .join(format!("{}.{extension}", crate::reload::asset_key(src)))
 }
 
-/// The cooked file for `src` if it's newer than the source.
+/// The cooked file for `src` if it's newer than the source and its `.meta` (importer settings
+/// such as a model's `scaleFactor` change what is cooked).
 fn fresh(root: &Path, src: &str, extension: &str) -> Option<Vec<u8>> {
     let source = platypus_core::resolve_asset(root, src)?;
     let cooked = cooked_path(root, src, extension);
     let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    if modified(&cooked)? < modified(&source)? {
+    let made = modified(&cooked)?;
+    if made < modified(&source)? {
+        return None;
+    }
+    let mut meta = source.clone().into_os_string();
+    meta.push(".meta");
+    if modified(Path::new(&meta)).is_some_and(|m| made < m) {
         return None;
     }
     std::fs::read(cooked).ok()
