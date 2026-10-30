@@ -6,7 +6,7 @@
 // in a `TreeState` the parent owns (tree.ts has the logic).
 
 import { cx } from "./classes.ts";
-import { clickSelect, flatten, type TreeNode, type TreeRow, type TreeState, toggle, treeKey } from "./tree.ts";
+import { clickSelect, type DropZone, dropPlace, flatten, type TreeNode, type TreeRow, type TreeState, toggle, treeKey } from "./tree.ts";
 import { VirtualList, type VirtualListHandle } from "./VirtualList.tsx";
 
 export interface TreeViewProps<T> {
@@ -29,10 +29,14 @@ export interface TreeViewProps<T> {
   /** The rename slot: what to draw while renaming (`done(null)` cancels). Defaults to a text field. */
   renderRename?: (node: TreeNode<T>, done: (name: string | null) => void) => ReactNode;
   className?: string;
-  /** Set: rows can be dragged (carrying their id as this data type) and dropped onto other rows. */
+  /**
+   * Set: rows can be dragged (carrying their id as this data type) and dropped onto other rows
+   * (under them) or between rows (the top or bottom quarter of a row: before or after it, shown by
+   * an insertion line).
+   */
   dragType?: string;
-  /** A row's id dropped onto another row (`onto`). */
-  onDropNode?: (dragged: string, onto: string) => void;
+  /** A row's id dropped: to go under `parent` (null: a root) at `index` among its children. */
+  onMoveNode?: (dragged: string, parent: string | null, index: number) => void;
   /** Other drags a row takes (files, say). */
   acceptsDrop?: (e: PlatypusDragEvent) => boolean;
   /** One of those dropped onto a row. */
@@ -80,15 +84,18 @@ export function TreeView<T>({
   renderRename,
   className,
   dragType,
-  onDropNode,
+  onMoveNode,
   acceptsDrop,
   onDropOn,
 }: TreeViewProps<T>) {
   const rows = useMemo(() => flatten(roots, state.expanded), [roots, state.expanded]);
   const list = useRef<VirtualListHandle>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  // The row a drag is over, highlighted.
+  // The row a drag is over (highlighted, or with a line before or after it).
   const [over, setOver] = useState<string | null>(null);
+  const [zone, setZone] = useState<DropZone>("on");
+  // A row of this tree being dragged: the rows show their before / after zones.
+  const [dragging, setDragging] = useState(false);
   const focusIndex = state.focus === null ? -1 : rows.findIndex((r) => r.node.id === state.focus);
 
   const set = (next: TreeState) => {
@@ -108,8 +115,39 @@ export function TreeView<T>({
     const row = rows[i]!;
     const { node } = row;
     const selected = state.selected.has(node.id);
-    const classes = cx("platypus-tree-row", selected ? "selected" : "", state.focus === node.id ? "focused" : "", over === node.id ? "over" : "");
-    const dragging = (e: PlatypusDragEvent): string => (dragType ? e.dataTransfer.getData(dragType) : "");
+    const lit = over === node.id;
+    const classes = cx("platypus-tree-row", selected ? "selected" : "", state.focus === node.id ? "focused" : "", lit && zone === "on" ? "over" : "");
+    const draggedId = (e: PlatypusDragEvent): string => (dragType ? e.dataTransfer.getData(dragType) : "");
+    const place = lit && zone !== "on" ? dropPlace(roots, rows, i, zone) : null;
+    /** Drag handlers for a part of the row: the row itself ("on") or its top or bottom quarter. */
+    const target = (z: DropZone) => ({
+      onDragOver: (e: PlatypusDragEvent) => {
+        const from = draggedId(e);
+        const other = !from && z === "on" && acceptsDrop !== undefined && acceptsDrop(e);
+        if ((!from || (from === node.id && z === "on")) && !other) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = other ? "copy" : "move";
+        setOver(node.id);
+        setZone(z);
+      },
+      onDrop: (e: PlatypusDragEvent) => {
+        const from = draggedId(e);
+        setOver(null);
+        setDragging(false);
+        if (!from && z === "on" && acceptsDrop && acceptsDrop(e)) {
+          e.stopPropagation();
+          onDropOn?.(e, node.id);
+          return;
+        }
+        if (!from) return;
+        // Onto itself: nothing happens (not a drop on the list behind it either).
+        e.stopPropagation();
+        if (from === node.id && z === "on") return;
+        const to = dropPlace(roots, rows, i, z);
+        if (to) onMoveNode?.(from, to.parent, to.index);
+      },
+    });
     return (
       <box
         className={classes}
@@ -119,31 +157,14 @@ export function TreeView<T>({
           if (!dragType) return;
           e.dataTransfer.setData(dragType, node.id);
           e.dataTransfer.effectAllowed = "move";
+          setDragging(true);
         }}
-        onDragOver={(e: PlatypusDragEvent) => {
-          const from = dragging(e);
-          const other = !from && acceptsDrop !== undefined && acceptsDrop(e);
-          if ((!from || from === node.id) && !other) return;
-          e.preventDefault();
-          e.stopPropagation();
-          e.dataTransfer.dropEffect = other ? "copy" : "move";
-          setOver(node.id);
-        }}
+        {...target("on")}
         onDragLeave={() => setOver(null)}
-        onDrop={(e: PlatypusDragEvent) => {
-          const from = dragging(e);
+        onDragEnd={() => {
           setOver(null);
-          if (!from && acceptsDrop && acceptsDrop(e)) {
-            e.stopPropagation();
-            onDropOn?.(e, node.id);
-            return;
-          }
-          if (!from) return;
-          // Onto itself: nothing happens (not a drop on the list behind it either).
-          e.stopPropagation();
-          if (from !== node.id) onDropNode?.(from, node.id);
+          setDragging(false);
         }}
-        onDragEnd={() => setOver(null)}
         onPointerDown={(e: PlatypusPointerEvent) => {
           if (e.button !== 0) return;
           onStateChange(clickSelect(rows, state, node.id, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }));
@@ -176,6 +197,11 @@ export function TreeView<T>({
         ) : (
           <Text className="platypus-tree-label">{node.label}</Text>
         )}
+        {dragging ? <box className="platypus-tree-zone before" {...target("before")} /> : null}
+        {dragging ? <box className="platypus-tree-zone after" {...target("after")} /> : null}
+        {place ? (
+          <box className="platypus-tree-insert" style={{ left: 4 + place.depth * indent, top: zone === "before" ? -1 : rowHeight - 1 }} />
+        ) : null}
       </box>
     );
   };

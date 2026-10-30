@@ -242,6 +242,58 @@ fn menu_keys_work_in_text_fields_except_the_fields_own() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// Sphere dragged to the bottom quarter of Floor's row: an insertion line shows under Floor while
+/// dragging; the drop makes Sphere the root after Floor ("Move Sphere"), and Ctrl+Z undoes it.
+const BETWEEN_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "drag", "frames": 30, "input": [
+    { "frame": 0, "kind": "moveToText", "text": "Sphere" },
+    { "frame": 2, "kind": "mouseDown" },
+    { "frame": 6, "kind": "mouseMove", "x": 70, "y": 120 },
+    { "frame": 10, "kind": "mouseMove", "x": 70, "y": 95 },
+    { "frame": 14, "kind": "mouseMove", "x": 70, "y": 74 },
+    { "frame": 18, "kind": "mouseMove", "x": 72, "y": 73 }
+  ] },
+  { "name": "dropped", "frames": 20, "input": [
+    { "frame": 0, "kind": "mouseUp" },
+    { "frame": 8, "kind": "moveToText", "text": "Move Sphere" }
+  ] },
+  { "name": "undone", "frames": 20, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Floor" },
+    { "frame": 4, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 5, "kind": "key", "code": "KeyZ" },
+    { "frame": 6, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 12, "kind": "moveToText", "text": "Undid Move Sphere" }
+  ] }
+] }"#;
+
+// M5-EDT-47
+#[test]
+fn hierarchy_drops_between_rows_show_a_line_and_undo() {
+    let run = run_editor("between", BETWEEN_SPEC, true);
+    let shot = image::open(run.join("shots/01-drag.png"))
+        .unwrap()
+        .to_rgb8();
+    // The accent-coloured line between Floor and Shapes.
+    let accent = [61u8, 142, 240];
+    let line = (70..80).any(|y| {
+        (100..300).all(|x| {
+            let p = shot.get_pixel(x, y).0;
+            p.iter().zip(accent).all(|(a, b)| a.abs_diff(b) <= 6)
+        })
+    });
+    assert!(line, "no insertion line under Floor");
+    // After the drop, Sphere is the second row (just under Floor), so its row is selected there.
+    let dropped = image::open(run.join("shots/02-dropped.png"))
+        .unwrap()
+        .to_rgb8();
+    let sel = dropped.get_pixel(200, 86).0;
+    assert!(
+        sel[2] > 150 && sel[0] < 120,
+        "Sphere isn't under Floor: {sel:?}"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+}
+
 /// Delete, undo, redo, undo and duplicate Cube, then drag Sphere onto Floor in the Hierarchy and
 /// undo that. Each `moveToText` finds the status bar's report of the step (else the run fails).
 const UNDO_SPEC: &str = r#"{ "warmup": 30, "segments": [

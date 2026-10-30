@@ -153,6 +153,33 @@ export function treeKey<T>(
   return { ...state, selected: new Set([id]), focus: id, anchor: id };
 }
 
+/** Where on a row a drag is: its top quarter, its middle, or its bottom quarter. */
+export type DropZone = "before" | "on" | "after";
+
+/** Where a drop puts a node: under `parent` (null: a root) at `index` among its children. */
+export interface DropPlace {
+  parent: string | null;
+  index: number;
+  /** The depth the insertion line is drawn at. */
+  depth: number;
+}
+
+/**
+ * Where a drop in `zone` of row `at` puts a node: before or after the row's node among its
+ * siblings, or last under it ("on"). After an expanded node with children it goes first under
+ * it, where the line is drawn (Unity's behaviour). Null for a row that isn't there.
+ */
+export function dropPlace<T>(roots: readonly TreeNode<T>[], rows: readonly TreeRow<T>[], at: number, zone: DropZone): DropPlace | null {
+  const row = rows[at];
+  if (!row) return null;
+  if (zone === "on") return { parent: row.node.id, index: row.node.children?.length ?? 0, depth: row.depth + 1 };
+  if (zone === "after" && row.expanded) return { parent: row.node.id, index: 0, depth: row.depth + 1 };
+  const parentRow = row.parent === null ? undefined : rows.find((r) => r.node.id === row.parent);
+  const siblings = parentRow ? (parentRow.node.children ?? []) : roots;
+  const index = siblings.findIndex((n) => n.id === row.node.id);
+  return { parent: row.parent, index: zone === "before" ? index : index + 1, depth: row.depth };
+}
+
 /** Expands every ancestor of `id` so its row shows (ids along the way from `roots`). */
 export function reveal<T>(roots: readonly TreeNode<T>[], state: TreeState, id: string): TreeState {
   const path: string[] = [];

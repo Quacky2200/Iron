@@ -272,11 +272,37 @@
 
 /* Tree view */
 .platypus-tree-row {
+  position: relative;
   flex-direction: row;
   align-items: center;
   flex-grow: 1;
   white-space: nowrap;
   user-select: none;
+}
+
+/* While a row is dragged: its top and bottom quarters take drops before and after it. */
+.platypus-tree-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 25%;
+}
+
+.platypus-tree-zone.before {
+  top: 0;
+}
+
+.platypus-tree-zone.after {
+  bottom: 0;
+}
+
+/* Where a drop between rows lands. */
+.platypus-tree-insert {
+  position: absolute;
+  right: 4px;
+  height: 2px;
+  background-color: var(--platypus-accent);
+  pointer-events: none;
 }
 
 .platypus-tree-row:hover {

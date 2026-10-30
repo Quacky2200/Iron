@@ -1503,8 +1503,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         object is, not the object, so undoing a delete builds it again from an `EditorScene.snapshot`); Edit > Undo /
         Redo / Cut / Copy / Paste / Duplicate / Delete / Select All; handle drags, renames, Hierarchy drags (onto a row:
         under it; below the rows: to the root) and Project deletes are undoable (`M5-UNDO-01..06`)
-        - [ ] Later: dropping between rows (sibling order) in the Hierarchy; references from other objects to a
-          deleted one don't come back on undo; copies keep the original's name (Unity adds " (1)")
+        - [x] Dropping between rows in the Hierarchy (2026-10-30): a row's top or bottom quarter puts the dragged
+          object before or after it (after an open parent: first under it), shown by an insertion line; undoable
+          (`tree.ts` `dropPlace`, `TreeView` `onMoveNode`, `M5-EDT-46`, `-47`)
+        - [ ] Later: references from other objects to a deleted one don't come back on undo; copies keep the original's
+          name (Unity adds " (1)")
       - [x] E4: scenes (`scenes.ts`): File > New / Open / Open Recent (per project, Clear Recent) / Save / Save As,
         "Save changes?" before New, Open and Exit, the window title with `*`; the last scene (or the project's
         `startScene`) opens at start, the demo scene only without one; GameObject > Create Empty / 3D Object / Light

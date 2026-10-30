@@ -25,7 +25,7 @@ import {
   TAB_BAR,
 } from "../src/dock.ts";
 import { acceleratorLabel, CLOSED, fieldKeepsKey, findAccelerator, isTextField, type Menu, type MenuState, menuKey, nextIndex, parseAccelerator } from "../src/menu.ts";
-import { clickSelect, emptyTreeState, flatten, reveal, type TreeNode, type TreeState, treeKey } from "../src/tree.ts";
+import { clickSelect, dropPlace, emptyTreeState, flatten, reveal, type TreeNode, type TreeState, treeKey } from "../src/tree.ts";
 import { keyIndex, scrollForIndex, visibleRange } from "../src/virtual.ts";
 import { close, eq, report, same, test, yes } from "./check.ts";
 
@@ -424,6 +424,21 @@ test("a closed panel opens again in the first group, an open one is made active"
   eq(groupOf(back, "console")?.id ?? "", "a", "in the first group");
   const active = openTab(layout, "hierarchy");
   eq(groupOf(active, "hierarchy")?.active ?? "", "hierarchy", "made active where it is");
+});
+
+// M5-EDT-46
+test("a drop before, after or on a row lands among its siblings or under it", () => {
+  const roots: TreeNode<string>[] = [{ id: "a", label: "a", children: [{ id: "a1", label: "a1" }, { id: "a2", label: "a2" }] }, { id: "b", label: "b" }];
+  const rows = flatten(roots, new Set(["a"]));
+  eq(dropPlace(roots, rows, 1, "before"), { parent: "a", index: 0, depth: 1 }, "before a1");
+  eq(dropPlace(roots, rows, 2, "after"), { parent: "a", index: 2, depth: 1 }, "after a2");
+  eq(dropPlace(roots, rows, 0, "after"), { parent: "a", index: 0, depth: 1 }, "after an open parent: its first child");
+  eq(dropPlace(roots, rows, 0, "before"), { parent: null, index: 0, depth: 0 }, "before the first root");
+  eq(dropPlace(roots, rows, 3, "before"), { parent: null, index: 1, depth: 0 }, "before b");
+  eq(dropPlace(roots, rows, 3, "after"), { parent: null, index: 2, depth: 0 }, "after b");
+  eq(dropPlace(roots, rows, 3, "on"), { parent: "b", index: 0, depth: 1 }, "on b");
+  eq(dropPlace(roots, rows, 0, "on"), { parent: "a", index: 2, depth: 1 }, "on a: last");
+  yes(dropPlace(roots, rows, 9, "on") === null, "no row");
 });
 
 // M5-EDT-44

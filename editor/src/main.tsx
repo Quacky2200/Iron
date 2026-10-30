@@ -676,10 +676,10 @@ function App() {
               onStateChange={setTree}
               height={height}
               dragType={OBJECT_TYPE}
-              onDropNode={(dragged, onto) => {
+              onMoveNode={(dragged, parentId, index) => {
                 const go = GameObject.byId(Number(dragged));
-                const parent = GameObject.byId(Number(onto));
-                if (go.exists() && parent.exists()) exec(reparentCommand(go, parent, shownChildren(parent).length));
+                const parent = parentId === null ? null : GameObject.byId(Number(parentId));
+                if (go.exists() && (!parent || parent.exists())) exec(reparentCommand(go, parent, index));
               }}
               acceptsDrop={acceptsFiles}
               onDropOn={(e, onto) => {
