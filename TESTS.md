@@ -164,6 +164,10 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-BLEND-09 | Integration | The CPU renderer gives the probe's sRGB values (it always blends in sRGB). |
 | M2-BLEND-10 | Unit | The app draws screen UI over a copy of the world when blending in sRGB onto an sRGB-encoding target (not in linear, onto a plain target, or with nothing to draw), and the FPS counter joins the frame's list, under a scale transform when its scale differs. |
 | M2-BLEND-11 | Integration | 25% white over a `#3060c0` world with `render_over` gives 100,136,208 in sRGB and 142,157,210 in linear light; `render_overlay` onto an sRGB target gives the linear-light value in either mode. |
+| M2-THEME-01 | Unit | The settings portal's `color-scheme` maps 1 to dark, 2 to light and 0 (or an unknown number) to no preference, through `ReadOne`'s variant and `Read`'s doubly wrapped one alike (another type gives nothing); `gsettings` `'prefer-dark'` / `'prefer-light'` / `'default'` map the same and other output is ignored. |
+| M2-THEME-02 | Unit | A stored system scheme wins over the window's (winit) theme, `set_system_scheme` reports only real changes, and no preference means no theme (light). |
+| M2-THEME-03 | Unit | `project.json` `theme` is `system` when left out (and isn't written back) and then asks the system; `light` and `dark` are kept and force it without asking; an unknown value warns and means `system`. |
+| M2-THEME-04 | Manual | On Linux (GNOME, KDE or Fluid), switching the desktop between light and dark restyles a running game's `prefers-color-scheme` rules in the main window and its secondary windows within a frame; `theme: "dark"` keeps it dark. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

@@ -2338,9 +2338,9 @@ impl PlatformApp for App {
                 );
             }
         }
-        // `@media (resolution)` and `(prefers-color-scheme)` follow the window.
-        let dark =
-            gfx.window.as_ref().and_then(|w| w.theme()) == Some(platypus_platform::Theme::Dark);
+        // `@media (resolution)` follows the window, `(prefers-color-scheme)` the system (or the
+        // game's `theme`).
+        let dark = self.manifest.dark(gfx.window.as_deref());
         self.ui.set_media_env(platypus_ui::media::MediaEnv {
             resolution: scale,
             dark,

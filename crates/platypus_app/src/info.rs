@@ -50,9 +50,18 @@ pub struct Manifest {
     pub renderer: platypus_core::project::Renderer,
     /// `blending`: how translucent UI colours combine (`srgb`, the default, or `linear`).
     pub blending: platypus_core::project::Blending,
+    /// `theme`: the system's light/dark preference (the default), or `light` / `dark` forced.
+    pub theme: platypus_core::project::Theme,
 }
 
 impl Manifest {
+    /// Whether the UI matches `prefers-color-scheme: dark`: the forced theme, else the system's
+    /// (`window` is asked where winit knows it: Windows, macOS).
+    pub fn dark(&self, window: Option<&platypus_platform::Window>) -> bool {
+        self.theme
+            .is_dark(|| platypus_platform::theme::prefers_dark(window))
+    }
+
     /// Reads the project of `root` (`project.json`, else the `platypus` section of `package.json`,
     /// see `platypus_core::project`) for this platform and user. A broken file is logged and the
     /// defaults named after the folder are used.
@@ -119,6 +128,7 @@ impl Manifest {
             physical_units,
             renderer: p.renderer,
             blending: p.blending,
+            theme: p.theme,
         }
     }
 }

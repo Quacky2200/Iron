@@ -221,9 +221,10 @@ impl App {
         self.ui.draw_list()
     }
 
-    /// Sets the UI's media environment (resolution, the window's theme) before a light frame.
+    /// Sets the UI's media environment (resolution, the system's or the game's theme) before a
+    /// light frame.
     pub(crate) fn light_media_env(&mut self, window: &Window, scale: f32) {
-        let dark = window.theme() == Some(platypus_platform::Theme::Dark);
+        let dark = self.manifest.dark(Some(window));
         self.ui.set_media_env(platypus_ui::media::MediaEnv {
             resolution: scale,
             dark,

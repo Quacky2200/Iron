@@ -11,6 +11,7 @@ pub mod fake;
 mod gamepad;
 mod input;
 mod platform;
+pub mod theme;
 pub mod windows;
 
 pub use display::{DisplaySettings, FullScreenMode, Resolution};

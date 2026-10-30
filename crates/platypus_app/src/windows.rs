@@ -729,14 +729,17 @@ impl App {
             return;
         };
         let now_ms = self.started.elapsed().as_secs_f64() * 1000.0;
+        let manifest = &self.manifest;
         for (key, w) in self.windows.map.iter_mut() {
             let st = win::state(WindowRef(key.0));
             if st.as_ref().is_some_and(|s| s.minimized) {
                 continue;
             }
+            // The system's theme (or the game's `theme`), as the main window; offscreen windows
+            // of screenshot runs are light unless the game forces dark.
             let dark = match &w.host {
-                WindowHost::Os(window) => window.theme() == Some(platypus_platform::Theme::Dark),
-                WindowHost::Virtual { .. } => false,
+                WindowHost::Os(window) => manifest.dark(Some(window.as_ref())),
+                WindowHost::Virtual { .. } => manifest.theme.is_dark(|| false),
             };
             let first = !w.drawn;
             if draw_window(&gfx.gpu, &mut gfx.renderer, w, now_ms, dark) {

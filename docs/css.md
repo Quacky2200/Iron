@@ -81,7 +81,8 @@ Inline `style` props and stylesheet rules end up in the same `apply_style` call
   `hover`/`any-hover`. Lengths are px; `em`/`rem` are 16px.
 - **Environment.** `MediaEnv { width, height, resolution, dark, reduced_motion, pointer, hover }`
   lives on `UiTree` (`media_env`, `set_media_env`). The size follows `set_size` (UI pixels).
-  The app sets `resolution` (the DPI factor) and `dark` (from `window.theme()`) every frame in
+  The app sets `resolution` (the DPI factor) and `dark` (`Manifest::dark`: `project.json` `theme`,
+  else the system's preference, [platform.md](platform.md#system-theme)) every frame in
   `PlatformApp::frame`; reduced motion stays off and the pointer stays `fine` with hover until the
   app reports otherwise.
 - **Re-evaluation.** `UiTree.media_results` holds the last result of every rule's conditions.

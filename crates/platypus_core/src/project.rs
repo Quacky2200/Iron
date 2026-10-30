@@ -344,6 +344,47 @@ impl Blending {
     }
 }
 
+/// Which theme the game's UI matches with `prefers-color-scheme` (`theme` in `project.json`):
+/// the system's light/dark preference, or one forced (docs/platform.md "System theme").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Theme {
+    /// Follow the system (live, as it changes).
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Theme {
+    /// A value of `theme`.
+    pub fn parse(s: &str) -> Option<Theme> {
+        match s {
+            "system" => Some(Theme::System),
+            "light" => Some(Theme::Light),
+            "dark" => Some(Theme::Dark),
+            _ => None,
+        }
+    }
+
+    /// The value written in `project.json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Theme::System => "system",
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+        }
+    }
+
+    /// Whether the UI is dark: forced, or asked of the system only when following it.
+    pub fn is_dark(self, system_dark: impl FnOnce() -> bool) -> bool {
+        match self {
+            Theme::System => system_dark(),
+            Theme::Light => false,
+            Theme::Dark => true,
+        }
+    }
+}
+
 /// The note for a `project.json` that still has the old `type`.
 pub const TYPE_REPLACED: &str =
     "`type` is replaced by `renderer`; \"app\" = \"gles\", \"game\" = \"vulkan\"";
@@ -356,6 +397,8 @@ pub struct Project {
     pub renderer: Renderer,
     /// `blending`: `srgb` (the default) or `linear`.
     pub blending: Blending,
+    /// `theme`: `system` (the default), `light` or `dark`.
+    pub theme: Theme,
     pub title: String,
     /// `subtitle`: an optional second line under the title (a series' episode, say), shown by the
     /// video-settings prompt and `Application.subtitle`; `None` when unset or empty.
@@ -454,6 +497,7 @@ const KNOWN_KEYS: &[&str] = &[
     "type",
     "renderer",
     "blending",
+    "theme",
     "title",
     "subtitle",
     "company",
@@ -1025,6 +1069,9 @@ impl Project {
         if self.blending != Blending::Srgb {
             m.insert("blending".into(), self.blending.as_str().into());
         }
+        if self.theme != Theme::System {
+            m.insert("theme".into(), self.theme.as_str().into());
+        }
         if let Some(r) = self.data_required {
             m.insert("dataRequired".into(), r.into());
         }
@@ -1250,6 +1297,18 @@ fn build(
             }
         },
     };
+    let theme = match doc.get("theme") {
+        None => Theme::System,
+        Some(v) => match v.as_str().and_then(Theme::parse) {
+            Some(t) => t,
+            None => {
+                warnings.push(format!(
+                    "`theme`: expected \"system\", \"light\" or \"dark\", not {v} (system is used)"
+                ));
+                Theme::System
+            }
+        },
+    };
     let include = strings(passthrough(&mut r, "include")?);
     let exclude = strings(passthrough(&mut r, "exclude")?);
     let mut extra = Map::new();
@@ -1262,6 +1321,7 @@ fn build(
         name: project_name,
         renderer,
         blending,
+        theme,
         title,
         subtitle,
         company,
@@ -1879,6 +1939,35 @@ mod tests {
         assert_eq!(bad.warnings.len(), 1);
         assert!(bad.warnings[0].contains("`blending`") && bad.warnings[0].contains("gamma"));
         assert!(!bad.extra.contains_key("blending"), "a known key");
+    }
+
+    // M2-THEME-03
+    #[test]
+    fn theme_follows_the_system_by_default_light_and_dark_force_it_and_unknown_values_warn() {
+        let default = load_ok("theme-default", r#"{ "name": "x" }"#);
+        assert_eq!(default.theme, Theme::System);
+        assert!(default.to_json().get("theme").is_none());
+        assert!(default.theme.is_dark(|| true));
+        assert!(!default.theme.is_dark(|| false));
+        let dark = load_ok("theme-dark", r#"{ "name": "x", "theme": "dark" }"#);
+        assert_eq!(dark.theme, Theme::Dark);
+        assert!(dark.warnings.is_empty());
+        assert_eq!(dark.to_json()["theme"], "dark");
+        assert!(dark.theme.is_dark(|| false));
+        let light = load_ok("theme-light", r#"{ "name": "x", "theme": "light" }"#);
+        assert_eq!(light.theme, Theme::Light);
+        assert!(
+            !light
+                .theme
+                .is_dark(|| panic!("a forced theme never asks the system"))
+        );
+        let system = load_ok("theme-system", r#"{ "name": "x", "theme": "system" }"#);
+        assert_eq!(system.theme, Theme::System);
+        let bad = load_ok("theme-bad", r#"{ "name": "x", "theme": "sepia" }"#);
+        assert_eq!(bad.theme, Theme::System);
+        assert_eq!(bad.warnings.len(), 1);
+        assert!(bad.warnings[0].contains("`theme`") && bad.warnings[0].contains("sepia"));
+        assert!(!bad.extra.contains_key("theme"), "a known key");
     }
 
     // M9-API-1330

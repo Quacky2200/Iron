@@ -247,6 +247,41 @@ in the background and whether that pauses it.
 Tests: `M5-APP-05` (window events), `-06` (muting, in `platypus_audio/tests/audio.rs`), `-07` (`Lifecycle` and
 `FixedClock`), `-08` (the frame cap) and `-09` (manifest) in the app crate (`-10`, the JS side, was removed with QuickJS).
 
+## System theme
+
+`prefers-color-scheme` follows the system's light/dark preference, live, in every window
+([theme.rs](../crates/platypus_platform/src/theme.rs)). Each frame the app asks `Manifest::dark`
+(`info.rs`), which the main frame (`main.rs`), the light GLES/CPU frames (`light_media_env`) and the
+secondary windows (`draw_windows`) put in the UI's `MediaEnv`.
+
+- **`project.json` `theme`**: `system` (the default), `light` or `dark`. A forced theme applies on every
+  platform and window, also to the offscreen windows of screenshot runs (light otherwise); the system is
+  then never asked.
+- **Windows and macOS**: winit's `Window::theme()`.
+- **Linux**: winit reports no system theme (Wayland gives back only the theme the app set, X11 nothing),
+  so `Platform::run` calls `theme::watch` before the event loop starts. Its thread (`platypus-theme`,
+  `zbus` blocking, a Linux-only dependency) connects to the session bus and asks the XDG Settings portal
+  (`org.freedesktop.portal.Desktop`, `/org/freedesktop/portal/desktop`,
+  `org.freedesktop.portal.Settings`) for `org.freedesktop.appearance` `color-scheme` with `ReadOne`, else
+  the older `Read` (whose reply is wrapped in one more variant): 1 dark, 2 light, 0 (or anything else) no
+  preference. Without a bus or a portal answer it runs
+  `gsettings get org.gnome.desktop.interface color-scheme` once (`'prefer-dark'`, `'prefer-light'`,
+  `'default'`); with neither, winit's answer is used as before. Start-up waits up to 300 ms for the
+  first answer, so the first frame has it; a later one counts as a change.
+- **Changes**: the thread subscribes to `SettingChanged` (filtered on the namespace and key) before it
+  reads, stores each new scheme in a process-wide atomic and wakes the loop through an
+  `EventLoopProxy<()>`. `Runner::user_event` requests a redraw (as winit's `ThemeChanged` would need),
+  and the next frame restyles the main window and then the secondary ones. Only the portal gives live
+  changes; a `gsettings` answer is read once.
+- The mapping (portal number, nested variants, `gsettings` text) and the stored scheme are plain code,
+  tested on every platform; the portal calls themselves only run on Linux.
+
+To see what the portal answers: `gdbus call --session --dest org.freedesktop.portal.Desktop
+--object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadOne
+org.freedesktop.appearance color-scheme`.
+
+Tests: `M2-THEME-01` (mapping), `-02` (the stored scheme), `-03` (`project.json` `theme`).
+
 ## PlayerPrefs
 
 `PlayerPrefs` has `getInt`/`getFloat`/`getString` (with a fallback; a key of the wrong type gives the

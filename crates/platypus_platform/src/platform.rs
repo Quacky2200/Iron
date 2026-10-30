@@ -243,6 +243,11 @@ impl Platform {
     /// Opens a window and runs until it's closed. Must be called from the main thread.
     pub fn run<A: PlatformApp>(self, config: WindowConfig, app: A) -> Result<(), PlatformError> {
         let event_loop = EventLoop::new()?;
+        // A change of the system's light/dark preference wakes the loop (`user_event`).
+        let proxy = event_loop.create_proxy();
+        crate::theme::watch(move || {
+            let _ = proxy.send_event(());
+        });
         let mut runner = Runner {
             platform: self,
             config,
@@ -455,6 +460,15 @@ impl<A: PlatformApp> ApplicationHandler for Runner<A> {
                     self.app.frame();
                 }
             }
+        }
+    }
+
+    /// The system's light/dark preference changed (`theme::watch`): redraw, as after winit's
+    /// `ThemeChanged`, since each frame reads the theme for `prefers-color-scheme` (the secondary
+    /// windows are drawn after the main frame).
+    fn user_event(&mut self, _: &ActiveEventLoop, (): ()) {
+        if let Some(window) = self.main_window() {
+            window.request_redraw();
         }
     }
 
