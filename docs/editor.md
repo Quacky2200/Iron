@@ -82,8 +82,8 @@ declarations are generated. All calls answer at once; there are no ops and no pr
 | `Editor.restore(id)` | Puts a trashed item back where it was; returns its path. Refuses when something is there now |
 | `Editor.ensureMeta(path)` | Gives an asset a `.meta` file if it has none (`platypus_core::meta::ensure`); returns its GUID ("" for a file that isn't an asset) |
 | `Editor.startScene` | The project's `startScene` from `project.json` ("" for none) |
-| `Editor.projectFields()` | `ProjectField[]` (`key`, `ty` `string` / `bool` / `enum` / `path`, `group`, `options` with `\|` between ("" is "left out"), `doc`, `value` as written with `${templates}` unexpanded, `set`: whether the file has the key), one per `project_edit::FIELDS` entry |
-| `Editor.setProjectField(key, json)` | Sets one setting from JSON text by changing only that key's text in `project.json`; an empty enum choice removes the key. Refuses an unknown setting, a wrong type, a bad enum value, an empty `name`, or an edit that would break the JSON; false with the reason in `lastError` |
+| `Editor.projectFields()` | `ProjectField[]` (`key`, `ty` `string` / `bool` / `number` / `enum` / `path`; `key` may be dotted, like `display.width`, `group`, `options` with `\|` between ("" is "left out"), `doc`, `value` as written with `${templates}` unexpanded, `set`: whether the file has the key), one per `project_edit::FIELDS` entry |
+| `Editor.setProjectField(key, json)` | Sets one setting (a dotted key edits inside its section) from JSON text by changing only that key's text in `project.json`; an empty enum choice removes the key. Refuses an unknown setting, a wrong type, a bad enum value, an empty `name`, or an edit that would break the JSON; false with the reason in `lastError` |
 | `Editor.removeProjectField(key)` | Removes a setting so its default applies; refuses `name` |
 | `Editor.layerNames()` | The project's 32 layer names (`project.json` `layers` over the built-ins, "" for an unnamed layer), for the Inspector's layer choice |
 | `Editor.lastError` | Why the last file call failed ("" when it worked) |
@@ -399,6 +399,12 @@ is called with the ground point under the pointer. `placement.ts` `groundPoint` 
 pointer (`screenPointToRay`) and returns where it meets the plane y = 0 in front of the camera (within 10,000 m); a
 ray that misses it gives the point `DROP_DISTANCE` (10 m) along the ray.
 
+While a Project model or prefab is dragged over the view, `makePreview` makes the real object at once, hidden from the
+Hierarchy and never saved (so it has no undo entry), and keeps it at the ground point under the pointer. Drag events
+come with pointer moves only, so each editor frame checks that the pointer is still over the view with the button held.
+When it is not, or on drop, the preview is destroyed; a drop then places the real object as before. Files dragged in
+from the system get no preview (they are copied into the project on drop).
+
 ## The editor UI ([editor/src/main.tsx](../editor/src/main.tsx))
 
 A menubar (File, Edit, View, Window, Help with accelerators and an Open Recent submenu), a dock
@@ -467,7 +473,8 @@ prefab, `.scene.json` a scene, `.glb` / `.gltf` / `.fbx` a model. `placeable` is
   `<dir>/<object name>.prefab.json` (`Editor.freeName`), writes it with `EditorScene.savePrefab` and gives it a
   `.meta` (`Editor.ensureMeta`). The file holds the object and its children with an `assets` table like a scene's.
 - **Placing.** A model or prefab dragged from the Project browser or from the system lands:
-  - on the Scene view: at the ground point under the pointer, at the root;
+  - on the Scene view: at the ground point under the pointer, at the root (a preview follows the pointer while
+    dragging, except for system files; see the Scene view);
   - on a Hierarchy row: as that row's last child, with no point (the model's own position);
   - below the rows: at the root.
 
@@ -518,11 +525,15 @@ from `EditorScene.fields`.
 
 ## Project Settings ([ProjectSettings.tsx](../editor/src/ProjectSettings.tsx))
 
-Edit > Project Settings opens a dialog with `project.json`'s settings in groups (Identity, Game, Build), taken from
-`Editor.projectFields`. The inputs are the Inspector's (`TextInput`, `Checkbox`, `Choice`, exported by
+Edit > Project Settings opens a dialog with `project.json`'s settings in groups (Identity, Game, Build, Display, Quality, Layers), taken from
+`Editor.projectFields`. Display (`mode`, `width`, `height`, `refreshRate`, `resizable`), Quality (`default`) and the
+user Layers (3, 6 to 31) are keys inside the `display`, `quality` and `layers` objects, named with dotted keys
+(`display.width`, `quality.default`, `layers.8`); the form labels them by their last part ("Layer 8"). The inputs are the Inspector's (`TextInput`, `Checkbox`, `Choice`, exported by
 [Inspector.tsx](../editor/src/Inspector.tsx)). Each change calls `Editor.setProjectField`, which rewrites only that key's
 text in the file (`platypus_core::project_edit`): `${templates}`, key order, spacing, the platform sections and unknown
-keys stay as written, a new key goes last with the file's indentation, and an empty enum choice removes the key. A
+keys stay as written, a new key goes last with the file's indentation (inside a dotted key's section, in that
+section's own style; a missing section is added last), and an empty enum choice removes the key. An emptied layer
+name or size (a `number` field) removes its key too, and a section left empty by a removal goes. A
 refusal shows `Editor.lastError` in the dialog.
 
 The dialog has its own undo history (a `history.ts` `History`, apart from the scene's) with Undo and Redo buttons. A
@@ -562,7 +573,9 @@ command's undo writes the old value back, or removes the key when the file had n
   `editor/test/inspector.test.ts` (`M5-EDT-37`, run by `editor_models`).
 - Project Settings: `project_edit` units (`M5-PRJ-01` to `-03`: replace in place, add last, remove with its comma),
   the `Editor` project calls in `editor.rs` (`M5-PRJ-04`) and the smoke test `M5-PRJ-05` (company typed, the file gains
-  one key, Undo restores it exactly). `cond && f()` with a void `f` (the dialog buttons use it) is `M9-TS-3524`.
+  one key, Undo restores it exactly), `M5-PRJ-06` (dotted keys in `project_edit`: replace in place, add last in the
+  section's style, add the section, drop an emptied one) and `M5-PRJ-07` (the dialog's Display, Quality and Layers
+  fields). `cond && f()` with a void `f` (the dialog buttons use it) is `M9-TS-3524`.
 - Dialogs: the smoke test `M5-EDT-43` (the Hierarchy is darker behind a dialog, F2 works on the Project list after
   Escape, Tab wraps inside New Folder). Keys in text fields: the key rule `M5-EDT-44` (`fieldKeepsKey`, in
   `models.test.ts`) and the smoke test `M5-EDT-45` (Delete and Ctrl+A stay in the Inspector's name field, Ctrl+Z
@@ -572,7 +585,8 @@ command's undo writes the old value back, or removes the key when the file had n
 - Prefabs and placing: `savePrefab` / `placePrefab` and a prefab's `assets` table reaching its copies in
   `editor_tests.rs` (`M5-PRF-10`); the smoke test `M5-PRF-11` (Cube dragged onto the Project list is saved as
   `assets/Cube.prefab.json` with its `.meta`, the file dragged onto the Hierarchy is placed, Ctrl+Z removes it) and
-  `M5-DND-20` (`assets/house.glb` dragged onto the Scene view is placed); the placement model in
+  `M5-DND-20` (`assets/house.glb` dragged onto the Scene view is placed) and `M5-DND-22` (the drag preview exists while
+  the pointer is over the view and is gone after the drop or when the pointer leaves); the placement model in
   `editor/test/placement.test.ts` (`M5-DND-21`, run by `editor_models`: the ground point, file kinds, import folders).
 - Not ported: the React component tests (the menubar through the reconciler, the project browser; `M5-DND-10` is struck). The Scene view in the window is a manual check (`M5-EDT-23`); the grid and line passes
   have goldens (`M5-RND-22`, `-23`). `Gizmos` and `HideFlags` are covered in the engine's own tests.
@@ -592,14 +606,14 @@ command's undo writes the old value back, or removes the key when the file had n
 - The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;
   gizmos and handles are drawn for the selection only.
 - A placed prefab is an unlinked copy: it keeps its file's path but later edits to the file don't reach it, and there
-  is no "apply to prefab". There is no drag preview (nothing follows the pointer during a drag). Files dropped on the
+  is no "apply to prefab". Files dragged in from the system get no drag preview. Files dropped on the
   Scene view are placed at the root, never under a selected object.
 - The Inspector shows nested data read-only. Assets other than textures and sounds can't be set from files (meshes,
   materials and clips come from models and code). There is no scrubbing a number by dragging its label, and field docs
   are not shown (no tooltips yet). Script `@property` fields need the project's code in the editor (TODO.md E11); a
   kind without a schema is typed from its saved values (no enum options or docs).
-- Project Settings edits the Identity, Game and Build keys only: `layers`, `quality`, `display` and the platform sections
-  are not in the form (edit them in the file; they are kept). Path settings (`licenseFile`, `icon`, ...) are text fields,
+- Project Settings does not edit the platform sections or the per-level `quality` overrides (edit them in the file;
+  they are kept). Path settings (`licenseFile`, `icon`, ...) are text fields,
   with no file picker.
 - Only one scene is edited at a time (Open replaces the loaded scenes); there is no prefab editing and no scene tabs.
 - Panels can't float in windows of their own.

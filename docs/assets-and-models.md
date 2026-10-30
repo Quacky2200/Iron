@@ -195,8 +195,12 @@ through the `ufbx` crate (MIT OR Unlicense, its C sources built with `cc`; revie
 - **Takes.** Each take (animation stack) is baked with `bake_anim` into linear translation, rotation
   and scale keys per node, the same `animations` list a glTF gives.
 
+- **Scale factor.** The `.meta` importer's `scaleFactor` (`{"importer": {"scaleFactor": 0.5}}`, Unity's model
+  import scale) scales the model: it is passed to ufbx as the target unit (`1 / scaleFactor` metres per unit).
+  A missing or non-positive factor is 1 (`M5-FBX-06`).
+
 Not read: blend shapes, cameras, lights, vertex colours, a second UV set, and `.meta` importer options
-for FBX beyond the default model ones.
+for FBX beyond the default model ones and `scaleFactor`.
 
 The test files `cube.fbx` (a 100 cm cube in a Z-up, centimetre file, two materials, one textured with
 `cube_tex.png`), and `rig.fbx` (a column skinned to two bones with one take) are written by
@@ -264,7 +268,8 @@ a build. It logs how many files it cooked, lists the ones that failed, then exit
 - Files go to `.platypus/cooked/<game path>.tex` and `.model` (`cooked_path`). It is a hidden folder, so the
   asset watcher and the next cook skip it.
 - At run time `WorldViews::texture_op` and `model_op` ask `cooked_texture` / `cooked_model` first. A
-  cooked file is used only when it is newer than its source, and a texture only when its colour space and
+  cooked file is used only when it is newer than its source and its `.meta` (importer settings such as a model's
+  `scaleFactor` change what is cooked), and a texture only when its colour space and
   mipmap setting match the request. The filter, wrap and anisotropy stay the script's. Cooked textures go
   to `cooked_uploads`; the app calls `WorldRenderer::set_cooked_texture`, which uploads the levels as they
   are (rows of whole blocks). It refuses invalid data, and BC formats on a GPU without

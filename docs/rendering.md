@@ -133,7 +133,10 @@ surface is plain, not ANGLE's sRGB one (reading that back returned unencoded byt
 last one's, and falls back to wgpu when EGL is missing (`PLATYPUS_ANGLE_DIR` names ANGLE's folder; `PLATYPUS_GLES=0`
 forces wgpu). `tests/vs_wgpu.rs` draws scenes through both executors and compares pixels
 (`M2-GLES-02..13`: identical so far, 0 to 1 in 255); it and `tests/context.rs` need an EGL driver
-(the linked-in ANGLE, or `PLATYPUS_ANGLE_DIR` without it) and skip without one.
+(the linked-in ANGLE, or `PLATYPUS_ANGLE_DIR` without it) and skip without one. They also skip, with a printed
+note, when the driver can't make a GL object (glow's "Unable to create ... object", seen on Mesa's llvmpipe) or the
+renderer can't start (`vs_wgpu.rs` runs the GLES side through `or_skip`; `context.rs` skips when it can't make its
+texture).
 
 Kept small (see "Memory" below): the display comes from `eglGetPlatformDisplayEXT` with Direct3D 11, the
 hardware device and **no D3D debug layer** (`egl::angle_display_attribs`; ANGLE turns the layer on whenever its
