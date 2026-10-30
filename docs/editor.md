@@ -21,6 +21,8 @@ list, tree view, console, project browser, Scene view) are modules of `editor/sr
 | [editor_api.rs](../crates/platypus_scenes/src/editor_api.rs), [inspect.rs](../crates/platypus_scenes/src/inspect.rs) | The `EditorScene` namespace; the component and field logic under the Inspector |
 | [placement.ts](../editor/src/placement.ts) | Placing files: `groundPoint`, `assetKind`, `placeable`, `importFolder` |
 | [Inspector.tsx](../editor/src/Inspector.tsx), [inspector.ts](../editor/src/inspector.ts) | The Inspector panel and its logic (number parsing, field JSON, undo commands) |
+| [InspectorInputs.tsx](../editor/src/InspectorInputs.tsx), [Pickers.tsx](../editor/src/Pickers.tsx) | The Inspector's reference and colour inputs; the picker dialogs (`pickDialog`, `colorDialog`) |
+| [refs.ts](../editor/src/refs.ts) | References into deleted objects, noted before a delete and set again on undo |
 | [screen.ts](../editor/src/screen.ts), [classes.ts](../editor/src/classes.ts), [demo-scene.ts](../editor/src/demo-scene.ts) | `useScreenSize`, `cx()` class lists, the demo scene |
 | [editor.css](../editor/src/editor.css), [editor-ui.css](../editor/src/editor-ui.css) | Styles (coloured through `--platypus-*` custom properties) |
 | [editor/test](../editor/test/check.ts) | Model tests, run natively (see Tests) |
@@ -83,6 +85,7 @@ declarations are generated. All calls answer at once; there are no ops and no pr
 | `Editor.projectFields()` | `ProjectField[]` (`key`, `ty` `string` / `bool` / `enum` / `path`, `group`, `options` with `\|` between ("" is "left out"), `doc`, `value` as written with `${templates}` unexpanded, `set`: whether the file has the key), one per `project_edit::FIELDS` entry |
 | `Editor.setProjectField(key, json)` | Sets one setting from JSON text by changing only that key's text in `project.json`; an empty enum choice removes the key. Refuses an unknown setting, a wrong type, a bad enum value, an empty `name`, or an edit that would break the JSON; false with the reason in `lastError` |
 | `Editor.removeProjectField(key)` | Removes a setting so its default applies; refuses `name` |
+| `Editor.layerNames()` | The project's 32 layer names (`project.json` `layers` over the built-ins, "" for an unnamed layer), for the Inspector's layer choice |
 | `Editor.lastError` | Why the last file call failed ("" when it worked) |
 
 **The log.** `logging::init` adds a capture layer (filtered like the other layers). While the editor is enabled, each
@@ -122,7 +125,8 @@ only with `--project`: each call goes through `Editor`'s `project_op`, so a fail
 | `EditorScene.saveScene(path)` | Writes the active scene as pretty JSON (folders made, old file replaced in one step); the scene takes the file's path and name (`scene_name_of`: without `.scene.json`) |
 | `EditorScene.scenePath` / `sceneName` | The active scene's file ("" if never saved) and name |
 | `EditorScene.components(object)` | `ComponentInfo[]` (`kind`, `handle`, `opaque`): the registered kinds' components in registration order, then those kept from a file whose kind isn't registered (`opaque`, a game's scripts) |
-| `EditorScene.fields(object, kind, handle)` | `FieldInfo[]` of one component: `name`, `ty` (`number`, `bool`, `string`, `enum`, `color`, `vector2/3/4`, `object`, `component`, `asset`, `json`), `json` (the saved value), the typed value (`num`, `flag`, `text`, `vec`), `options` (an enum's choices, `\|` between), `doc`, `read_only` |
+| `EditorScene.fields(object, kind, handle)` | `FieldInfo[]` of one component: `name`, `ty` (`number`, `bool`, `string`, `enum`, `color`, `vector2/3/4`, `object`, `component`, `asset`, `json`), `json` (the saved value), the typed value (`num`, `flag`, `text`, `vec`), `options` (an enum's choices, `\|` between), `doc`, `read_only` (only nested data and references kept as file data), `refKind` (what a reference points at: `GameObject`, a component kind or an asset kind such as `Texture`; known for empty ones too, from the schema) |
+| `EditorScene.assetFromFile(kind, path)` | An asset of `kind` (`Texture`) made from a project file, as the placeholder JSON `setField` takes; "" when it can't be made (see `Editor.lastError`). Sounds are kept by path |
 | `EditorScene.setField(object, kind, handle, name, json)` | Sets one field from JSON text (a field's `json`, or a plain array for a vector or colour), through the kind's `load`; an opaque component's data is replaced instead (`set_opaque`) |
 | `EditorScene.addComponent(object, kind)` / `removeComponent(object, kind, handle)` | Adds a component of a registered kind (returns its handle, 0 on failure); removes one, opaque ones included |
 | `EditorScene.componentKinds()` | The kinds a component can be added of, by name |
@@ -132,7 +136,10 @@ only with `--project`: each call goes through `Editor`'s `project_op`, so a fail
 It uses `SceneManager` helpers in `manager.rs`: `scene_value` (a scene as JSON), `rename_scene` and `load_scene_file`.
 The component calls live in `inspect.rs`. Field types and enum options come from the kind's schema
 (`platypus_kinds::register_fields`, written by `platypus_render_api`'s build script for the generated components); a
-hand-written kind without one is typed from its saved values.
+hand-written kind without one is typed from its saved values. The hand-written kinds register theirs too:
+`platypus_physics_api` `kind_fields.rs` for the physics components, and `platypus_scenes` `kind_fields.rs` for `Camera`,
+`Animation`, `Animator`, `AudioSource`, `AudioListener` and `SplineAnimate` (types, enum choices, reference kinds, docs).
+Component placeholders name their object.
 
 ## Undo and redo ([history.ts](../editor/src/history.ts), [scene-edit.ts](../editor/src/scene-edit.ts))
 
@@ -151,7 +158,13 @@ reparent. Undoing a delete builds the objects again from a snapshot, with new id
 `locate`, `find`). Run and undo then find the right object by its place whatever its id is now. Only objects shown in
 the Hierarchy count (`shown`: not destroyed, not `HideInHierarchy`), and `restoreAt` turns a shown index into the
 sibling index that `EditorScene.restore` takes. `topmost` drops objects whose ancestor is also selected, and deletes go
-last place first so earlier places stay valid. `copyObjects` / `pasteCommand` use the same snapshots.
+last place first so earlier places stay valid. `copyObjects` / `pasteCommand` use the same snapshots. Copies are named like
+Unity's, "Cube (1)", "Cube (2)" (`duplicateName`).
+
+Undoing a delete also gives the rebuilt objects their references back ([refs.ts](../editor/src/refs.ts)). Before the
+delete, `refsInto` notes each reference field of an object outside the deleted ones that points into them, by place (the
+deleted object's `Loc`, the child path under it, and for a component its kind and place among that kind); after the undo
+`repoint` sets those fields to the rebuilt objects and components. The delete command does this as part of its undo.
 
 ## The editor's components
 
@@ -237,9 +250,13 @@ Ctrl+Space toggles). Slots: `renderIcon`, `renderLabel`, and renaming with F2 (o
 without `onActivate`): `renderRename(node, done)` or a default text field that commits on Enter or
 blur and cancels on Escape, then `onRename(node, name)`. Expanded nodes show a CSS chevron (a
 rotated square with two borders), since system fonts may lack the triangle glyphs. With `dragType` set, rows are
-draggable (they carry their id under that data type, not while renamed) and a row dropped onto another calls
-`onDropNode(dragged, onto)`; the row under the drag gets the `over` class. A drop on itself does nothing, and the
-drop doesn't reach the list behind. `acceptsDrop(e)` lets rows take other drags (files, say): such a drag gets `copy`
+draggable (they carry their id under that data type, not while renamed) and a drop calls
+`onMoveNode(dragged, parent, index)` (`parent` null: a root). While a row of the tree is dragged, each row has a top and a
+bottom quarter as drop zones (`platypus-tree-zone`); the middle drops under the row. `dropPlace(roots, rows, at, zone)`
+([tree.ts](../editor/src/tree.ts)) turns the zone into a place: before or after the row among its siblings, last under it
+for the middle, and first under it for the bottom of an expanded row with children (as Unity does). The middle lights the
+row (the `over` class); a quarter draws an accent insertion line (`platypus-tree-insert`) at the place's depth. A drop on
+itself does nothing, and the drop doesn't reach the list behind. `acceptsDrop(e)` lets rows take other drags (files, say): such a drag gets `copy`
 and a drop calls `onDropOn(e, onto)`.
 
 ### Console ([console.ts](../editor/src/console.ts), [log.ts](../editor/src/log.ts), [Console.tsx](../editor/src/Console.tsx))
@@ -397,7 +414,9 @@ see-through panels show the world.
   component (`kindOf`). `useSceneTree` computes a key of `id:parentId:name` per object in `onEditorFrame`
   and rebuilds the tree only when it changes, so adding, moving or renaming objects shows at once.
   Renaming sets `GameObject.name`.
-  Dragging a row onto another reparents it (last child; undoable; not into itself or its own children). Model and
+  Dragging a row onto the middle of another reparents it (last child), and onto the top or bottom quarter of a row puts
+  it before or after that row among its siblings, with an insertion line (`onMoveNode`; undoable, through
+  `reparentCommand`; not into itself or its own children). Model and
   prefab files dropped on a row, or below the rows, are placed there (see Prefabs and placing models).
 - **Edit menu.** Undo / Redo (Ctrl+Z, Ctrl+Y; the labels name the command, "Undo Move"), Cut, Copy, Paste, Duplicate
   (Ctrl+D), Delete and Select All. A focus area (`scene` or `project`, set by pressing in the Hierarchy / Scene view or the
@@ -470,8 +489,20 @@ from `EditorScene.fields`.
 
 - **Field editors by type.** `number`: a text field parsed by `parseNumber` and shown by `formatNumber` (at most 4
   decimals); `bool`: a checkbox; `string`: a text field; `enum`: a choice over `options`; `vector2/3/4`: one number
-  field per component; `color`: its channels as numbers. Labels come from `labelOf` (`fieldOfView` is `Field Of View`).
-  `object`, `component`, `asset` and `json` fields are shown, not edited.
+  field per component; `color`: a swatch (see below). Labels come from `labelOf` (`fieldOfView` is `Field Of View`).
+  `json` fields (nested data) are shown, not edited.
+- **References.** `object`, `component` and `asset` fields use `RefInput` ([InspectorInputs.tsx](../editor/src/InspectorInputs.tsx)).
+  A button opens a picker dialog ([Pickers.tsx](../editor/src/Pickers.tsx), `pickDialog`, like Unity's object picker): a
+  filtered list of the shown objects by path, of the objects that have the component kind, or of the project's files of
+  the asset kind (`assetExtensions`, `fitsAsset`). A Hierarchy row can be dropped on an object or component field and a
+  Project file on an asset field. A texture is made from its file with `EditorScene.assetFromFile`; a sound is kept by
+  path. `FieldInfo.refKind` says what a field may point at.
+- **Colours.** A colour's swatch opens the colour picker (`colorDialog`: a palette and a hex field).
+- **Tag and layer.** Tag is a text field. Layer is a choice of the project's layer names (`Editor.layerNames`).
+- **Choices.** A `Choice` opens a picker dialog, not a dropped-down list: z-index orders siblings only here
+  ([differences.md](differences.md)), so a list inside a row would paint under the rows after it.
+- **Several objects.** With several selected, the Inspector shows the components they share. A value that differs shows
+  "—". An edit (for a vector, only the parts edited) goes to all the objects and is one undo step.
 - **Live refresh.** The panel builds a key of what it shows each editor frame and redraws only when the key changes, so
   values follow the world (a handle drag, a script, an undo) without a redraw every frame.
 - **Undo.** Every edit is a command (`fieldCommand`, `localPoseCommand`, `addComponentCommand`,
@@ -480,6 +511,8 @@ from `EditorScene.fields`.
   Removing a component takes a snapshot first and undoes by restoring it.
 - **Opaque components** (a game's scripts, whose kind the editor doesn't have) are listed with their saved data and
   edited as data: the type of each field comes from the value's shape.
+- **Schemas.** The hand-written kinds (physics, Camera, Animation, Animator, AudioSource, AudioListener, SplineAnimate)
+  have field schemas, so they get typed editors, enum choices, reference kinds and docs like the generated ones.
 - **Add / Remove Component.** An Add Component button lists `EditorScene.componentKinds`; each component's header has
   a Remove button. Both are undoable.
 
@@ -518,7 +551,12 @@ command's undo writes the old value back, or removes the key when the file had n
   Ctrl+S, Enter writes `scenes/Untitled.scene.json` and its `.meta`; a second run with `startScene` opens it).
 - Undo: the history (`M5-UNDO-02` to `-05`, `editor/test/history.test.ts`), `EditorScene` snapshots and restore in
   `editor_tests.rs` (`M5-UNDO-01`), scene save / new / open (`M5-SCN-11`), and the smoke test `M5-UNDO-06` (Delete on
-  Cube, Ctrl+Z, Ctrl+Y, Ctrl+D, a Hierarchy drag and its undo, each in the status bar).
+  Cube, Ctrl+Z, Ctrl+Y, Ctrl+D, a Hierarchy drag and its undo, each in the status bar). References restored on undo of a
+  delete and the "Cube (1)" copy names: `M5-UNDO-07`, `-08`.
+- Hierarchy drops: `dropPlace` (`M5-EDT-46`, `models.test.ts`) and the smoke test `M5-EDT-47` (the insertion line, a drop
+  between rows, its undo).
+- Inspector references and more: `Editor.layerNames` (`M5-EDT-48`, in `editor.rs`), and `M5-EDT-49`, `-50` (the reference
+  picker, colour picker, tag and layer, several objects; `editor_tests.rs`, `inspector.test.ts`, `editor_smoke.rs`).
 - Inspector: the `EditorScene` component calls in `editor_tests.rs` (`M5-EDT-35`: components, fields, setField, add
   and remove, opaque data), the smoke test `M5-EDT-36` in `editor_smoke.rs`, and the logic in
   `editor/test/inspector.test.ts` (`M5-EDT-37`, run by `editor_models`).
@@ -553,14 +591,13 @@ command's undo writes the old value back, or removes the key when the file had n
 - Fixed row heights only; no tab reordering by position in the strip (a drop in a strip appends).
 - The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;
   gizmos and handles are drawn for the selection only.
-- Hierarchy drags only drop onto a row (it becomes the last child); there is no dropping between rows to reorder.
 - A placed prefab is an unlinked copy: it keeps its file's path but later edits to the file don't reach it, and there
   is no "apply to prefab". There is no drag preview (nothing follows the pointer during a drag). Files dropped on the
   Scene view are placed at the root, never under a selected object.
-- Undoing a delete doesn't restore references to the object from others (they stay empty). Duplicates keep the same name.
-- The Inspector shows references, assets and nested data read-only, shows one object when several are selected, has
-  no colour picker (channels are numbers), and shows tag and layer read-only. A hand-written kind without a schema is
-  typed from its saved values (no enum options or docs).
+- The Inspector shows nested data read-only. Assets other than textures and sounds can't be set from files (meshes,
+  materials and clips come from models and code). There is no scrubbing a number by dragging its label, and field docs
+  are not shown (no tooltips yet). Script `@property` fields need the project's code in the editor (TODO.md E11); a
+  kind without a schema is typed from its saved values (no enum options or docs).
 - Project Settings edits the Identity, Game and Build keys only: `layers`, `quality`, `display` and the platform sections
   are not in the form (edit them in the file; they are kept). Path settings (`licenseFile`, `icon`, ...) are text fields,
   with no file picker.

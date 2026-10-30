@@ -372,7 +372,8 @@ The loader does not know component classes. `platypus_kinds` is a per-thread reg
 `awake`, `object`, `destroy` over raw `u64` handles). A kind may also say what its fields are for the editor's Inspector:
 `register_fields(kind, Vec<FieldDoc>)` (`FieldDoc`: `name`, `ty` such as `f64`, `bool`, `string`, `enum:a|b|c`, `color`, `v3`,
 `texture`, the `default` as a saved value, and a `doc` line) and `fields_of(kind)` read it back. `platypus_render_api`'s build
-script writes it for the generated components; a kind with none is typed from its saved values. `platypus_scenes` registers `Camera`, `Animation` (`clip`, `clips`,
+script writes it for the generated components, and `kind_fields.rs` of `platypus_physics_api` (the physics components) and of
+`platypus_scenes` (below) write it by hand; a kind with none is typed from its saved values. `platypus_scenes` registers `Camera`, `Animation` (`clip`, `clips`,
 `playAutomatically`, `cullingType`) and `Animator` (`controller`, `speed`, `cullingMode`, `enabled`; not its parameter values
 or current state), with the shared asset kinds `AnimationController` and `AnimationClip` (the `toJson` text, the controller's
 clips inline: one `assets` entry however many components use it; a prefab or copy keeps the live one; fields a file lacks keep

@@ -1261,7 +1261,10 @@ when `cond` is false.
   and strings, optional fields left out when null); `{...obj}` on a host element does the same for attributes
   (`Ui.attrObj`: numbers, strings, booleans; handlers are written as `onX`), and `{...props}` on a component spreads into its props
   (not with `memo`). A spread of a conditional, `{...(c ? handlers : {})}`, sets the taken arm's props and `{}` sets
-  none (`M9-TS-3532`). `Text`, `Span`, `Input`, `TextArea`, `Image`, `List`, `Dialog` (from `@platypus/react`) are the intrinsic elements unless
+  none (`M9-TS-3532`). `useState(name)` takes `name` as a lazy initialiser only when it resolves to a function: the JSX
+  pass keeps the bindings (parameters and declarations, and whether each is a function) of the functions and blocks it is
+  in (`Finder::locals`) and resolves the name through them before the top-level functions, as TypeScript scoping does, so
+  a local `const shown = ..` is a value even when a top-level function is called `shown` (`M9-TS-3533`). `Text`, `Span`, `Input`, `TextArea`, `Image`, `List`, `Dialog` (from `@platypus/react`) are the intrinsic elements unless
   the program declares a component of that name. A key may be a number; `{flag}` renders nothing; a style value may be undefined.
 - **Components** `function Counter(props: P): UiElement`: `<Counter a={1} />` becomes `Ui.component(ID, () => Counter({ a: 1 }))`,
   `ID` a hash of the name (it says which state belongs to which component). With no attributes the call is `Counter()`.
