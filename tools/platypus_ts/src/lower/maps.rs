@@ -153,6 +153,58 @@ impl<'a> Lowerer<'a> {
         n: &'a NewExpression<'a>,
         exp: Option<&Ty>,
     ) -> R<Expr> {
+        let arg = n.arguments.first().and_then(|a| a.as_expression());
+        // `new Set(on ? set : [])`: TypeScript takes any iterable, so the arms may be a collection
+        // and an array. Each arm makes the collection (the test first, then only the arm taken).
+        if let Some(Expression::ConditionalExpression(c)) = arg.map(|e| e.get_inner_expression()) {
+            let test = self.lower_cond(&c.test)?;
+            let empty = |e: &Expression<'_>| matches!(e.get_inner_expression(), Expression::ArrayExpression(a) if a.elements.is_empty());
+            let (yes, no) = if self.unions.is_empty() {
+                (vec![], vec![])
+            } else {
+                (
+                    self.narrowings(&c.test, true),
+                    self.narrowings(&c.test, false),
+                )
+            };
+            // An empty `[]` takes the other arm's type.
+            let (a, b) = if empty(&c.consequent) && !empty(&c.alternate) {
+                let b = self.with_narrowed(no, |s| {
+                    s.lower_new_collection_of(name, n, Some(&c.alternate), exp)
+                })?;
+                let bt = b.ty.clone();
+                let a = self.with_narrowed(yes, |s| {
+                    s.lower_new_collection_of(name, n, Some(&c.consequent), Some(&bt))
+                })?;
+                (a, b)
+            } else {
+                let a = self.with_narrowed(yes, |s| {
+                    s.lower_new_collection_of(name, n, Some(&c.consequent), exp)
+                })?;
+                let at = a.ty.clone();
+                let b = self.with_narrowed(no, |s| {
+                    s.lower_new_collection_of(name, n, Some(&c.alternate), Some(&at))
+                })?;
+                (a, b)
+            };
+            let ty = self.unify(&a.ty, &b.ty)?;
+            let (a, b) = (self.coerce_ext(a, &ty)?, self.coerce_ext(b, &ty)?);
+            return Ok(mk(
+                ExprKind::Cond(Box::new(test), Box::new(a), Box::new(b)),
+                ty,
+            ));
+        }
+        self.lower_new_collection_of(name, n, arg, exp)
+    }
+
+    /// [`Self::lower_new_collection`] with `arg` as the argument.
+    fn lower_new_collection_of(
+        &mut self,
+        name: &str,
+        n: &'a NewExpression<'a>,
+        arg: Option<&'a Expression<'a>>,
+        exp: Option<&Ty>,
+    ) -> R<Expr> {
         let at = self.loc(n.span.start);
         let is_set = name.ends_with("Set");
         // The type: type arguments, else the context.
@@ -180,7 +232,6 @@ impl<'a> Lowerer<'a> {
         {
             ty = Some(t.strip().clone());
         }
-        let arg = n.arguments.first().and_then(|a| a.as_expression());
         // `new Set(items)`: the element type of the array.
         let mut source: Option<Expr> = None;
         if ty.is_none()
@@ -221,7 +272,7 @@ impl<'a> Lowerer<'a> {
                             self.lower_expr(e, ty.as_ref())?
                         }
                         _ => {
-                            return self.lower_new_collection_from(name, n, ty, None, at);
+                            return self.lower_new_collection_from(name, arg, ty, None, at);
                         }
                     }
                 }
@@ -248,9 +299,9 @@ impl<'a> Lowerer<'a> {
                 stmts.push(Stmt::Loop(it.label, body));
                 return Ok(mk(ExprKind::Seq(stmts, Box::new(self.var_expr(m))), cty));
             }
-            return self.lower_new_collection_from(name, n, ty, Some(a), at);
+            return self.lower_new_collection_from(name, arg, ty, Some(a), at);
         }
-        self.lower_new_collection_from(name, n, ty, source, at)
+        self.lower_new_collection_from(name, arg, ty, source, at)
     }
 
     /// The rest of [`Self::lower_new_collection`]: the type is known (or an error) and `source` is
@@ -258,13 +309,12 @@ impl<'a> Lowerer<'a> {
     fn lower_new_collection_from(
         &mut self,
         name: &str,
-        n: &'a NewExpression<'a>,
+        arg: Option<&'a Expression<'a>>,
         ty: Option<Ty>,
         source: Option<Expr>,
         at: String,
     ) -> R<Expr> {
         let is_set = name.ends_with("Set");
-        let arg = n.arguments.first().and_then(|a| a.as_expression());
         let mut ty = ty;
         if ty.is_none()
             && is_set

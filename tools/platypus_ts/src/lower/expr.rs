@@ -1739,6 +1739,16 @@ impl<'a> Lowerer<'a> {
         } else {
             None
         };
+        // `{...(cond ? handlers : {})}`: the arm taken sets its fields (`{}` sets none), as a
+        // spread of either object would.
+        if attr && let Expression::ConditionalExpression(_) = oe.get_inner_expression() {
+            let th = self.new_local(h.ty.clone());
+            let mut stmts = vec![Stmt::Assign(th, h)];
+            stmts.extend(self.ui_fields_of(th, oe, attr, &at, what)?);
+            let result = self.var_expr(th);
+            let ty = result.ty.clone();
+            return Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty));
+        }
         let o = self.lower_expr(oe, bag.as_ref())?;
         if let Some(bag) = &bag
             && o.ty.strip() == bag
@@ -1749,27 +1759,76 @@ impl<'a> Lowerer<'a> {
                 Ty::Handle("UiElement".into()),
             ));
         }
+        let th = self.new_local(h.ty.clone());
+        let mut stmts = vec![Stmt::Assign(th, h)];
+        stmts.extend(self.ui_fields_from(th, o, attr, &at, what)?);
+        let result = self.var_expr(th);
+        let ty = result.ty.clone();
+        Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
+    }
+
+    /// The statements that set the fields of the object `oe` on the element in `th`; a
+    /// conditional sets those of the arm taken, and an empty `{}` none.
+    fn ui_fields_of(
+        &mut self,
+        th: VarId,
+        oe: &'a Expression<'a>,
+        attr: bool,
+        at: &str,
+        what: &str,
+    ) -> R<Vec<Stmt>> {
+        match oe.get_inner_expression() {
+            Expression::ConditionalExpression(c) => {
+                let test = self.lower_cond(&c.test)?;
+                let (yes, no) = if self.unions.is_empty() {
+                    (vec![], vec![])
+                } else {
+                    (
+                        self.narrowings(&c.test, true),
+                        self.narrowings(&c.test, false),
+                    )
+                };
+                let a =
+                    self.with_narrowed(yes, |s| s.ui_fields_of(th, &c.consequent, attr, at, what))?;
+                let b =
+                    self.with_narrowed(no, |s| s.ui_fields_of(th, &c.alternate, attr, at, what))?;
+                Ok(vec![Stmt::If(test, a, b)])
+            }
+            Expression::ObjectExpression(o) if o.properties.is_empty() => Ok(vec![]),
+            _ => {
+                let o = self.lower_expr(oe, None)?;
+                self.ui_fields_from(th, o, attr, at, what)
+            }
+        }
+    }
+
+    /// The statements that set each field of the typed object `o` on the element in `th`.
+    fn ui_fields_from(
+        &mut self,
+        th: VarId,
+        o: Expr,
+        attr: bool,
+        at: &str,
+        what: &str,
+    ) -> R<Vec<Stmt>> {
         let Ty::Obj(sid) = o.ty.strip().clone() else {
             bail!(
                 "{at}: {what} needs an object with known fields, not {}",
                 o.ty
             )
         };
-        let th = self.new_local(h.ty.clone());
         let to = self.new_local(o.ty.clone());
-        let mut stmts = vec![Stmt::Assign(th, h.clone()), Stmt::Assign(to, o)];
+        let mut stmts = vec![Stmt::Assign(to, o)];
         let fields = self.m.structs[sid].fields.clone();
         for (i, f) in fields.iter().enumerate() {
             let field = mk(
                 ExprKind::Field(Box::new(self.var_expr(to)), sid, i),
                 f.ty.clone(),
             );
-            let set = self.ui_set_stmts(th, &f.name, field, attr, &at, what)?;
+            let set = self.ui_set_stmts(th, &f.name, field, attr, at, what)?;
             stmts.extend(set);
         }
-        let result = self.var_expr(th);
-        let ty = result.ty.clone();
-        Ok(mk(ExprKind::Seq(stmts, Box::new(result)), ty))
+        Ok(stmts)
     }
 
     /// The statements that set one style property or attribute `key` of the element in `th` to

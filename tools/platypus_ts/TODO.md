@@ -400,11 +400,13 @@ P0-P1, (6) generics and modules, (7) a checker of our own and a conformance harn
 - [ ] Arrays of mixed types (`["row", sel && "selected"]`, `(string | false)[]`) become tuples, so `.filter(Boolean).join()`
   fails: make an untyped array literal of differing element types an array of their union. M. (The editor uses `cx(..)`.)
 - [ ] An array of `A` where `(A & { up?: true })[]` is expected: struct conversion of array elements. M.
-- [ ] `{...(cond ? obj : {})}`: a conditional with `{}` does not unify; spread of a conditional. S-M.
-- [ ] `new Set(cond ? set : [])`: a `Set` and an array do not unify as iterables. S.
-- [ ] A self- or forward-referencing closure needs its return type written (`const f = (..): ReactNode =>`); a function
-  value whose result differs from the expected one (an element where `ReactNode` goes) is not adapted (no adapter closure).
-  M.
+- [x] `{...(cond ? obj : {})}`: in an object literal with a known type it already worked; in JSX the taken arm's props
+  are set and `{}` sets none (`lower_ui_fields`, `M9-TS-3532`; the editor's Project rows use it).
+- [x] `new Set(cond ? set : [])` / `new Map(..)`: each arm makes the collection (`lower_new_collection`, `M9-TS-3531`).
+- [ ] A self- or forward-referencing closure needs its return type written (`const f = (..): ReactNode =>`). TypeScript
+  asks for it too under `noImplicitAny` (TS7023, "referenced directly or indirectly in its own return expression"), so the
+  editor keeps those annotations. Still a gap: a function value whose result differs from the expected one (an element
+  where `ReactNode` goes) is not adapted (no adapter closure). M.
 - [ ] A top-level function parameter's non-literal default needs a type (`(d = defaultSceneCamera().distance)`). S.
 - [ ] A top-level `const f = (a, b: Lit = "x") =>` (a declared function) used as a value where `b` is optional: the
   default is not applied through the closure. S-M.

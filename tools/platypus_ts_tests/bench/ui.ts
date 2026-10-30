@@ -812,3 +812,23 @@ export function callLateSetters(): void {
   for (const f of lateSetters) f();
   note("called");
 }
+
+// M9-TS-3532: `{...(cond ? handlers : {})}` in JSX sets the taken arm's props (`{}` sets none),
+// with the arms' handlers made by a function, as the editor's Project browser rows do.
+function SpreadRow({ name, live }: { name: string; live: boolean }): UiElement {
+  const handlers = (n: string) => ({ onClick: () => note(`click:${n}`), onDoubleClick: () => note(`double:${n}`) });
+  return (
+    <box {...(live ? handlers(name) : {})}>
+      <text>{name}</text>
+    </box>
+  );
+}
+
+export function condSpreadApp(): UiElement {
+  return (
+    <box>
+      <SpreadRow name="a" live={true} />
+      <SpreadRow name="b" live={false} />
+    </box>
+  );
+}

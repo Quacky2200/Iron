@@ -462,3 +462,30 @@ function t(): string {
         "4",
     );
 }
+
+// M9-TS-3531
+//
+// `new Set(cond ? set : [])` and `new Map(cond ? [] : map)`: the argument is any iterable, so
+// the arms may be a collection and an empty array; the test runs once, then only the arm taken.
+#[test]
+fn a_collection_from_a_conditional_of_a_collection_and_an_array() {
+    check(
+        r#"
+let tests = 0;
+function on(v: boolean): boolean { tests++; return v; }
+function t(): string {
+  const s = new Set<string>(["a"]);
+  const n = new Set(on(true) ? s : []);
+  const e = new Set(on(true) ? [] : s);
+  const m = new Map<string, number>([["k", 1]]);
+  const mm = new Map(on(false) ? [] : m);
+  const typed = new Set<string>(on(false) ? s : ["x", "y"]);
+  n.add("b");
+  return `${n.size} ${s.size} ${e.size} ${mm.get("k")} ${typed.size} ${tests}`;
+}
+"#,
+        "eg17_",
+        957_000,
+        "2 1 0 1 2 4",
+    );
+}

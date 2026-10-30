@@ -882,6 +882,24 @@ fn ref_props_with_imperative_handles_and_nullable_literal_state() {
     });
 }
 
+// M9-TS-3532
+//
+// A spread of a conditional in JSX (`{...(live ? handlers(name) : {})}`) gives the element the
+// taken arm's handlers; the `{}` arm gives none.
+#[test]
+fn a_conditional_spread_in_jsx_sets_the_taken_arms_props() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_condSpreadApp() });
+        let parent = ui.tree.children(ROOT)[0];
+        let rows = ui.tree.children(parent).to_vec();
+        ui.notes();
+        ui.click(rows[0]);
+        ui.click(rows[1]);
+        assert_eq!(ui.notes(), "click:a");
+    });
+}
+
 // M9-TS-3522
 //
 // Setters, updaters and a reducer's `dispatch` kept after their component unmounted do nothing
