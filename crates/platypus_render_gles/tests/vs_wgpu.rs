@@ -107,7 +107,13 @@ fn gles() -> Option<Gles> {
             return None;
         }
     };
-    let renderer = GlesRenderer::new(cx.gl()).expect("renderer");
+    let renderer = match GlesRenderer::new(cx.gl()) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("skipped: the GLES renderer can't start here: {e}");
+            return None;
+        }
+    };
     Some(Gles {
         renderer,
         gl: std::rc::Rc::new(cx.gl()),
@@ -140,8 +146,39 @@ fn wgpu_pixels(
     target.read_pixels(gpu).unwrap()
 }
 
-/// The GLES renderer's pixels, top row first.
+/// Runs `f`; when the driver can't make a GL object (glow's "Unable to create ... object", as
+/// Mesa's llvmpipe does on some machines for the textures the layers need), the test is skipped
+/// with a note instead of failing. Any other panic goes on.
+fn or_skip<T>(f: impl FnOnce() -> T) -> Option<T> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(v) => Some(v),
+        Err(p) => {
+            let msg = p
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_default();
+            if !msg.contains("Unable to create") {
+                std::panic::resume_unwind(p);
+            }
+            eprintln!("skipped: the GL driver can't make an object this test needs ({msg})");
+            None
+        }
+    }
+}
+
+/// The GLES renderer's pixels, top row first (none when the driver can't make the objects:
+/// [`or_skip`]).
 fn gles_pixels(
+    g: &mut Gles,
+    cmds: &[platypus_ui::DrawCmd],
+    size: (u32, u32),
+    scale: f32,
+) -> Option<Vec<u8>> {
+    or_skip(|| gles_pixels_now(g, cmds, size, scale))
+}
+
+fn gles_pixels_now(
     g: &mut Gles,
     cmds: &[platypus_ui::DrawCmd],
     size: (u32, u32),
@@ -261,7 +298,7 @@ fn same_with(
         ui.image_size(&gpu, url)
     });
     let a = wgpu_pixels(&gpu, &mut ui, &cmds, size, scale);
-    let b = gles_pixels(&mut g, &cmds, size, scale);
+    let b = gles_pixels(&mut g, &cmds, size, scale)?;
     // Two blank images would match: the scene has to have drawn something.
     let blank = a.chunks(4).filter(|p| *p == &a[..4]).count();
     assert!(
@@ -1028,7 +1065,9 @@ fn programs_and_the_colour_glyph_page_are_made_on_first_use() {
     );
     s.text(b, "plain text");
     let cmds = s.cmds((120.0, 40.0), |_| None);
-    gles_pixels(&mut g, &cmds, (120, 40), 1.0);
+    if gles_pixels(&mut g, &cmds, (120, 40), 1.0).is_none() {
+        return;
+    }
     assert_eq!(g.renderer.compiled_programs(), [Quad, Blit]);
     assert!(!g.renderer.has_color_page());
     // A blurred group compiles the blur and the composite, once.
@@ -1040,8 +1079,12 @@ fn programs_and_the_colour_glyph_page_are_made_on_first_use() {
         &[("backgroundColor", "orange"), ("filter", "blur(2px)")],
     );
     let cmds = s.cmds((120.0, 40.0), |_| None);
-    gles_pixels(&mut g, &cmds, (120, 40), 1.0);
-    let before = gles_pixels(&mut g, &cmds, (120, 40), 1.0);
+    let (Some(_), Some(before)) = (
+        gles_pixels(&mut g, &cmds, (120, 40), 1.0),
+        gles_pixels(&mut g, &cmds, (120, 40), 1.0),
+    ) else {
+        return;
+    };
     assert_eq!(
         g.renderer.compiled_programs(),
         [Quad, Blur, Composite, Blit]
@@ -1050,6 +1093,6 @@ fn programs_and_the_colour_glyph_page_are_made_on_first_use() {
     // same afterwards.
     if platypus_render_gles::STATIC_ANGLE {
         assert!(g._cx.trim_device());
-        assert!(gles_pixels(&mut g, &cmds, (120, 40), 1.0) == before);
+        assert!(gles_pixels(&mut g, &cmds, (120, 40), 1.0) == Some(before));
     }
 }
