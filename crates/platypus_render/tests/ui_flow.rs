@@ -95,7 +95,9 @@ fn render(scene: Scene, size: (u32, u32)) -> Vec<u8> {
     tree.layout_if_needed();
     let target =
         OffscreenTarget::with_format(&gpu, size.0, size.1, wgpu::TextureFormat::Rgba8UnormSrgb);
+    // The goldens were made in linear light.
     let mut ui = UiRenderer::new(&gpu);
+    ui.set_blending(platypus_render::Blending::Linear);
     let cmds = tree.draw_list();
     let view = target.view().unwrap();
     ui.render(

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use platypus_ui::DrawCmd;
 
-use super::RenderStats;
+use super::{Blending, RenderStats};
 use crate::Color;
 
 pub trait UiBackend {
@@ -24,6 +24,9 @@ pub trait UiBackend {
 
     /// The folder `url(...)` images are read from (the game folder).
     fn set_asset_root(&mut self, root: PathBuf);
+
+    /// How translucent colours combine from the next frame on (sRGB by default).
+    fn set_blending(&mut self, blending: Blending);
 
     /// Loads the image at `url` and returns its natural size in pixels, or `None` if it can't
     /// be loaded (layout needs it).

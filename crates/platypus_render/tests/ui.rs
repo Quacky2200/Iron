@@ -7,7 +7,7 @@
 
 use platypus_core::{Commit, Value};
 use platypus_render::testing::{assert_golden, shared_gpu};
-use platypus_render::{Color, OffscreenTarget, RenderStats, RenderTarget, UiRenderer};
+use platypus_render::{Blending, Color, OffscreenTarget, RenderStats, RenderTarget, UiRenderer};
 use platypus_ui::UiTree;
 use platypus_ui::opcodes::*;
 
@@ -141,12 +141,25 @@ fn render(scene: Scene, logical: (u32, u32), scale: f32, clear: Color) -> Frame 
     render_with_assets(scene, logical, scale, clear, None)
 }
 
+/// The goldens and pixel checks here were made in linear light (`Blending::Linear`, the default
+/// before 2026-10-30) and keep it; the sRGB default is checked by the `M2-BLEND` tests.
 fn render_with_assets(
     scene: Scene,
     logical: (u32, u32),
     scale: f32,
     clear: Color,
     assets: Option<&std::path::Path>,
+) -> Frame {
+    render_blended(scene, logical, scale, clear, assets, Blending::Linear)
+}
+
+fn render_blended(
+    scene: Scene,
+    logical: (u32, u32),
+    scale: f32,
+    clear: Color,
+    assets: Option<&std::path::Path>,
+    blending: Blending,
 ) -> Frame {
     let gpu = shared_gpu();
     let mut tree = UiTree::new(logical.0 as f32, logical.1 as f32);
@@ -163,6 +176,7 @@ fn render_with_assets(
     );
     let target = OffscreenTarget::with_format(&gpu, w, h, wgpu::TextureFormat::Rgba8UnormSrgb);
     let mut ui = UiRenderer::new(&gpu);
+    ui.set_blending(blending);
     if let Some(root) = assets {
         ui.set_asset_root(root);
     }
@@ -2719,6 +2733,7 @@ fn scrolled_content_and_scrollbars() {
     let target = OffscreenTarget::with_format(&gpu, 160, 80, wgpu::TextureFormat::Rgba8UnormSrgb);
     let view = target.view().unwrap();
     let mut ui = UiRenderer::new(&gpu);
+    ui.set_blending(Blending::Linear);
     ui.render(
         &gpu,
         &RenderTarget {
@@ -2853,7 +2868,9 @@ fn text_fields() {
     let cmds = tree.draw_list();
     let target = OffscreenTarget::with_format(&gpu, 320, 116, wgpu::TextureFormat::Rgba8UnormSrgb);
     let view = target.view().unwrap();
-    UiRenderer::new(&gpu).render(
+    let mut ui = UiRenderer::new(&gpu);
+    ui.set_blending(Blending::Linear);
+    ui.render(
         &gpu,
         &RenderTarget {
             view: &view,

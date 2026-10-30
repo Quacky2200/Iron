@@ -15,11 +15,27 @@ precision highp float;
 precision highp int;
 precision highp sampler2D;
 
-uniform vec4 u_globals;     // x, y: viewport (physical px), z: scale
+uniform vec4 u_globals;     // x, y: viewport (physical px), z: scale, w: 1 when the canvases
+                            // hold sRGB values (`Blending::Srgb`)
 uniform sampler2D u_clips;  // 5 texels per entry: rect, rx, ry, bounds, info
 uniform sampler2D u_grads;  // 12 texels per entry: info, info2, colors[8], stops[2]
 uniform sampler2D u_mask;   // glyph coverage page (R8)
 uniform sampler2D u_color;  // glyph colour page (sRGB)
+
+bool srgb_canvas() {
+    return u_globals.w > 0.5;
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = c * 12.92;
+    vec3 high = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+    return mix(high, low, vec3(lessThanEqual(c, vec3(0.0031308))));
+}
+
+// A colour sampled from an sRGB texture (decoded to linear), in the canvas's space.
+vec3 sampled(vec3 c) {
+    return srgb_canvas() ? linear_to_srgb(c) : c;
+}
 
 const uint KIND_QUAD = 0u;
 const uint KIND_OUTER_SHADOW = 1u;
@@ -339,7 +355,7 @@ vec4 premultiply(vec4 c) {
     return vec4(c.rgb * c.a, c.a);
 }
 
-// Gradient colour at `p` for a box `rect`, as linear premultiplied RGBA.
+// Gradient colour at `p` for a box `rect`, premultiplied in the canvas's space.
 vec4 gradient_color(uint index, vec2 p, vec4 rect) {
     vec4 info = grad_texel(index, 0u);
     vec4 info2 = grad_texel(index, 1u);
@@ -379,6 +395,9 @@ vec4 gradient_color(uint index, vec2 p, vec4 rect) {
                 break;
             }
         }
+    }
+    if (srgb_canvas()) {
+        return vec4(c.rgb * c.a, c.a);
     }
     return vec4(srgb_to_linear(c.rgb) * c.a, c.a);
 }
@@ -424,7 +443,8 @@ vec4 styled_border(vec2 p) {
     }
     uint style = uint(grad_texel(entry, 0u)[side]);
     vec4 color = grad_texel(entry, 2u + side);
-    vec4 dark = vec4(color.rgb * 0.22, color.a); // about half as bright in sRGB
+    // Half as bright in sRGB (0.22 in linear light).
+    vec4 dark = vec4(color.rgb * (srgb_canvas() ? 0.5 : 0.22), color.a);
     bool top_left = side == 0u || side == 3u;
     bool outer_half = t < w * 0.5;
     float m = 1.0;
@@ -475,9 +495,12 @@ vec4 styled_border(vec2 p) {
 // `rect` is the destination (logical px, pixel-aligned in physical px), `p0` the image in
 // the atlas (px), `params.y` 1 for colour glyphs, `color0` the text colour.
 
-// Coverage adjustment for text. Blending happens in linear light, which makes dark text on
-// light backgrounds look thin; boost coverage for dark text.
+// Coverage adjustment for text. Blending in linear light makes dark text on light
+// backgrounds look thin; boost coverage for dark text there. Blending in sRGB needs none.
 float text_coverage(float a, vec4 color) {
+    if (srgb_canvas()) {
+        return a;
+    }
     float luma = dot(color.rgb / max(color.a, 1e-4), vec3(0.2126, 0.7152, 0.0722));
     float dark = 1.0 - smoothstep(0.1, 0.6, luma);
     return mix(a, pow(a, 1.0 / 1.6), dark);
@@ -495,7 +518,7 @@ vec4 glyph(vec2 p) {
     if (v_params.y > 0.5 && v_params.y < 1.5) {
         // Colour glyph (emoji): sRGB texture, decoded to linear on load.
         vec4 c = texelFetch(u_color, texel, 0);
-        return vec4(c.rgb * c.a, c.a) * v_color0.a;
+        return vec4(sampled(c.rgb) * c.a, c.a) * v_color0.a;
     }
     float a = texelFetch(u_mask, texel, 0).r;
     if (v_params.y > 1.5) {
@@ -623,7 +646,7 @@ const QUAD_MAIN: &str = r#"void main() {
 const IMAGE_MAIN: &str = r#"
 uniform sampler2D u_image;
 
-// `background-image-tint` / `border-image-tint` (linear, premultiplied); all zeros means no tint.
+// `background-image-tint` / `border-image-tint` (premultiplied); all zeros means no tint.
 vec4 image_tint(vec4 t) {
     return all(equal(t, vec4(0.0))) ? vec4(1.0) : t;
 }
@@ -661,7 +684,7 @@ void main() {
         vec2 t = vec2(repeat_x ? fract(uv.x) : uv.x, repeat_y ? fract(uv.y) : uv.y);
         vec2 at = clamp(sub.xy + t * sub.zw, sub.xy + half_texel, sub.xy + sub.zw - half_texel);
         vec4 c = textureLod(u_image, at, 0.0);
-        o_color = vec4(c.rgb * c.a, c.a) * image_tint(v_color1) * clip;
+        o_color = vec4(sampled(c.rgb) * c.a, c.a) * image_tint(v_color1) * clip;
         return;
     }
     // The sampler repeats. On axes that don't repeat, keep bilinear filtering from wrapping
@@ -669,7 +692,7 @@ void main() {
     vec2 clamped = clamp(uv, half_texel, vec2(1.0) - half_texel);
     vec2 sample_uv = vec2(repeat_x ? uv.x : clamped.x, repeat_y ? uv.y : clamped.y);
     vec4 c = textureLod(u_image, sample_uv, 0.0);
-    o_color = vec4(c.rgb * c.a, c.a) * image_tint(v_color1) * clip;
+    o_color = vec4(sampled(c.rgb) * c.a, c.a) * image_tint(v_color1) * clip;
 }
 "#;
 
@@ -689,12 +712,13 @@ void main() {
 }
 "#;
 
-/// Copies the canvas to the target pixel for pixel; `u_encode` applies the sRGB transfer for
-/// targets that don't encode on write (a window's default framebuffer).
+/// Copies the canvas to the target pixel for pixel. `u_mode` 1 applies the sRGB transfer (a
+/// linear canvas onto a target that doesn't encode on write, a window's default framebuffer),
+/// 2 undoes it (an sRGB canvas onto a target that does); 0 copies as is.
 pub const BLIT_FRAGMENT: &str = r#"#version 300 es
 precision highp float;
 uniform sampler2D u_src;
-uniform float u_encode;
+uniform float u_mode;
 layout(location = 0) out vec4 o_color;
 
 vec3 srgb_encode(vec3 c) {
@@ -703,12 +727,18 @@ vec3 srgb_encode(vec3 c) {
     return mix(high, low, vec3(lessThanEqual(c, vec3(0.0031308))));
 }
 
+vec3 srgb_decode(vec3 c) {
+    vec3 low = c / 12.92;
+    vec3 high = pow((c + 0.055) / 1.055, vec3(2.4));
+    return mix(high, low, vec3(lessThanEqual(c, vec3(0.04045))));
+}
+
 void main() {
     vec4 c = texelFetch(u_src, ivec2(gl_FragCoord.xy), 0);
-    if (u_encode > 0.5) {
-        // The canvas is premultiplied: encode the straight colour.
+    if (u_mode > 0.5) {
+        // The canvas is premultiplied: convert the straight colour.
         vec3 straight = c.a > 0.0 ? c.rgb / c.a : vec3(0.0);
-        c.rgb = srgb_encode(straight) * c.a;
+        c.rgb = (u_mode < 1.5 ? srgb_encode(straight) : srgb_decode(straight)) * c.a;
     }
     o_color = c;
 }

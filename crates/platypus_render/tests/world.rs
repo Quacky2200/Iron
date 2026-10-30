@@ -153,7 +153,10 @@ fn planes_in_perspective_with_ui_over_them() {
     assert!(errors.is_empty(), "{errors:?}");
     tree.layout_if_needed();
     let cmds = tree.draw_list();
-    UiRenderer::new(&gpu).render_overlay(&gpu, &rt, &cmds);
+    // The golden was made in linear light.
+    let mut ui = UiRenderer::new(&gpu);
+    ui.set_blending(platypus_render::Blending::Linear);
+    ui.render_overlay(&gpu, &rt, &cmds);
 
     let pixels = target.read_pixels(&gpu).unwrap();
     assert_golden("M5-RND-05", size.0, size.1, &pixels, 2);
@@ -1789,6 +1792,7 @@ fn backdrop_blur_over_the_world_blurs_the_world() {
 
     // The app's path: the world into the backdrop texture, the UI over a copy of it.
     let mut ui = UiRenderer::new(&gpu);
+    ui.set_blending(platypus_render::Blending::Linear);
     let backdrop = ui.backdrop_target(&gpu, size, rt.format);
     let world_rt = RenderTarget {
         view: &backdrop,

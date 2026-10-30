@@ -5,14 +5,30 @@
 // and analytic outer / inset box shadows. One instance per primitive.
 //
 // Geometry is in logical pixels; `globals.scale` converts to physical pixels.
-// Colours arrive linear and premultiplied, except gradient stops (sRGB, straight
-// alpha), which are interpolated in premultiplied sRGB like CSS.
+// Colours arrive premultiplied in the canvas's space (sRGB values when `globals.srgb`
+// is 1, else linear light), except gradient stops (sRGB, straight alpha), which are
+// interpolated in premultiplied sRGB like CSS.
 
 struct Globals {
     viewport: vec2<f32>, // physical pixels
     scale: f32,
-    _pad: f32,
+    srgb: f32, // 1: the canvas holds and blends sRGB values (`Blending::Srgb`)
 };
+
+fn srgb_canvas() -> bool {
+    return globals.srgb > 0.5;
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = c * 12.92;
+    let high = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+    return select(high, low, c <= vec3(0.0031308));
+}
+
+// A colour sampled from an sRGB texture (decoded to linear), in the canvas's space.
+fn sampled(c: vec3<f32>) -> vec3<f32> {
+    return select(c, linear_to_srgb(c), srgb_canvas());
+}
 
 struct Gradient {
     // x: kind (0 linear, 1 radial, 2 conic), y: stop count,
@@ -224,7 +240,7 @@ fn premultiply(c: vec4<f32>) -> vec4<f32> {
     return vec4(c.rgb * c.a, c.a);
 }
 
-// Gradient colour at `p` for a box `rect`, as linear premultiplied RGBA.
+// Gradient colour at `p` for a box `rect`, premultiplied in the canvas's space.
 fn gradient_color(index: u32, p: vec2<f32>, rect: vec4<f32>) -> vec4<f32> {
     let g = gradients[index];
     let center = rect.xy + rect.zw * 0.5;
@@ -263,6 +279,9 @@ fn gradient_color(index: u32, p: vec2<f32>, rect: vec4<f32>) -> vec4<f32> {
                 break;
             }
         }
+    }
+    if srgb_canvas() {
+        return vec4(c.rgb * c.a, c.a);
     }
     return vec4(srgb_to_linear(c.rgb) * c.a, c.a);
 }
@@ -307,7 +326,8 @@ fn styled_border(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     }
     let style = u32(entry.info[side]);
     var color = entry.colors[side];
-    let dark = vec4(color.rgb * 0.22, color.a); // about half as bright in sRGB
+    // Half as bright in sRGB (0.22 in linear light).
+    let dark = vec4(color.rgb * select(0.22, 0.5, srgb_canvas()), color.a);
     let top_left = side == 0u || side == 3u;
     let outer_half = t < w * 0.5;
     var m = 1.0;
@@ -346,10 +366,13 @@ fn styled_border(in: VsOut, p: vec2<f32>) -> vec4<f32> {
 // `rect` is the destination (logical px, pixel-aligned in physical px), `p0` the
 // image in the atlas (px), `params.y` 1 for colour glyphs, `color0` the text colour.
 
-/// Coverage adjustment for text. Blending happens in linear light, which makes
-/// dark text on light backgrounds look thin; boost coverage for dark text
-/// (a simplified version of what browsers do).
+/// Coverage adjustment for text. Blending in linear light makes dark text on
+/// light backgrounds look thin; boost coverage for dark text there (a simplified
+/// version of what browsers do). Blending in sRGB needs none.
 fn text_coverage(a: f32, color: vec4<f32>) -> f32 {
+    if srgb_canvas() {
+        return a;
+    }
     let luma = dot(color.rgb / max(color.a, 1e-4), vec3(0.2126, 0.7152, 0.0722));
     let dark = 1.0 - smoothstep(0.1, 0.6, luma);
     return mix(a, pow(a, 1.0 / 1.6), dark);
@@ -367,7 +390,7 @@ fn glyph(in: VsOut, p: vec2<f32>) -> vec4<f32> {
     if in.params.y > 0.5 && in.params.y < 1.5 {
         // Colour glyph (emoji): sRGB texture, decoded to linear on load.
         let c = textureLoad(glyph_color, texel, 0);
-        return vec4(c.rgb * c.a, c.a) * in.color0.a;
+        return vec4(sampled(c.rgb) * c.a, c.a) * in.color0.a;
     }
     var a = textureLoad(glyph_mask, texel, 0).r;
     if in.params.y > 1.5 {
@@ -657,14 +680,14 @@ fn fs_image(in: VsOut) -> @location(0) vec4<f32> {
         let t = select(uv, fract(uv), vec2(repeat_x, repeat_y));
         let at = clamp(sub.xy + t * sub.zw, sub.xy + half_texel, sub.xy + sub.zw - half_texel);
         let c = textureSampleLevel(image_tex, image_samp, at, 0.0);
-        return vec4(c.rgb * c.a, c.a) * image_tint(in.color1) * clip;
+        return vec4(sampled(c.rgb) * c.a, c.a) * image_tint(in.color1) * clip;
     }
     // The sampler repeats. On axes that don't repeat, keep bilinear filtering
     // from wrapping around to the opposite edge. sRGB textures sample as linear.
     let clamped = clamp(uv, half_texel, vec2(1.0) - half_texel);
     let sample_uv = vec2(select(clamped.x, uv.x, repeat_x), select(clamped.y, uv.y, repeat_y));
     let c = textureSampleLevel(image_tex, image_samp, sample_uv, 0.0);
-    return vec4(c.rgb * c.a, c.a) * image_tint(in.color1) * clip;
+    return vec4(sampled(c.rgb) * c.a, c.a) * image_tint(in.color1) * clip;
 }
 
 // `background-image-tint` / `border-image-tint` (linear, premultiplied); all zeros

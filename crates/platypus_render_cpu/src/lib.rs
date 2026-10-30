@@ -234,6 +234,12 @@ impl CpuRenderer {
         self.images.set_root(root.into());
     }
 
+    /// Asks for linear-light blending: `vello_cpu` blends 8-bit sRGB values (as browsers), so
+    /// this renderer always does; the request is logged once.
+    pub fn ask_linear_blending(&mut self) {
+        self.skip("linear-light blending (`blending: \"linear\"`; blended in sRGB)");
+    }
+
     /// An image's natural size, for layout (`None` if it can't be loaded).
     pub fn image_size(&mut self, url: &str) -> Option<(u32, u32)> {
         self.images.size(url)

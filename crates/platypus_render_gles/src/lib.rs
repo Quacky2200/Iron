@@ -7,8 +7,9 @@
 //! [`GlesRenderer`] plans a draw list with `plan::plan`, then runs the plan: the instances go
 //! in a vertex buffer, the gradient and clip tables in float data textures (GLES 3.0 has no
 //! storage buffers), glyph pixels from the shared `GlyphCache` into two page textures, and the
-//! `Clear` and `Draw` steps draw into `SRGB8_ALPHA8` canvases, like wgpu's, so blending is in
-//! linear light. Images come from the shared `ImageCache` (decoded and rasterized without a
+//! `Clear` and `Draw` steps draw into canvases like wgpu's: plain `RGBA8` ones holding sRGB values
+//! (`Blending::Srgb`, the default, blending as browsers do), or `SRGB8_ALPHA8` ones blending in
+//! linear light (`Blending::Linear`). Images come from the shared `ImageCache` (decoded and rasterized without a
 //! GPU), as `SRGB8_ALPHA8` textures. Layers run as the plan says: `Copy` (a framebuffer blit),
 //! `Blur` (two passes of `effects.rs`' separable Gaussian) and `Composite` (opacity, clip,
 //! `filter` matrix, drop-shadow tint and shift, mask, and the blend modes), which carry opacity
@@ -26,6 +27,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use glow::HasContext;
+pub use platypus_render::Blending;
 use platypus_render::glyphs::{COLOR_SIZE, GlyphCache, GlyphEntry, MASK_SIZE};
 use platypus_render::image_cache::{ImageCache, ImageUpload};
 use platypus_render::plan::{
@@ -146,6 +148,10 @@ pub struct GlesRenderer {
     glyph_color_sized: bool,
     canvases: Vec<Canvas>,
     canvas_size: (u32, u32),
+    /// What the canvases hold (their format follows it).
+    canvas_blending: Blending,
+    /// How translucent colours combine (docs/rendering.md "Blending").
+    blending: Blending,
     glyphs: GlyphCache,
     images: ImageCache,
     /// Image textures by the cache's key.
@@ -279,11 +285,23 @@ impl GlesRenderer {
                 glyph_color_sized: false,
                 canvases: Vec::new(),
                 canvas_size: (0, 0),
+                canvas_blending: Blending::default(),
+                blending: Blending::default(),
                 glyphs: GlyphCache::new(),
                 images: ImageCache::default(),
                 image_textures: HashMap::new(),
             })
         }
+    }
+
+    /// How translucent colours combine from the next frame on (`Blending::Srgb` by default, as
+    /// browsers; docs/rendering.md "Blending").
+    pub fn set_blending(&mut self, blending: Blending) {
+        self.blending = blending;
+    }
+
+    pub fn blending(&self) -> Blending {
+        self.blending
     }
 
     /// The programs compiled so far (they compile on first use).
@@ -330,6 +348,7 @@ impl GlesRenderer {
                 scale: target.scale,
                 clear,
                 seeded: false,
+                blending: self.blending,
             },
             &mut resources,
         );
@@ -362,9 +381,14 @@ impl GlesRenderer {
             .collect()
     }
 
-    /// (Re)creates `count` canvases of `size`, keeping the ones that fit.
-    fn canvases(&mut self, count: usize, size: (u32, u32)) -> Result<(), String> {
-        if self.canvas_size != size {
+    /// (Re)creates `count` canvases of `size` holding `blending`'s values, keeping the ones that fit.
+    fn canvases(
+        &mut self,
+        count: usize,
+        size: (u32, u32),
+        blending: Blending,
+    ) -> Result<(), String> {
+        if self.canvas_size != size || self.canvas_blending != blending {
             unsafe {
                 for c in self.canvases.drain(..) {
                     self.gl.delete_framebuffer(c.framebuffer);
@@ -372,19 +396,18 @@ impl GlesRenderer {
                 }
             }
             self.canvas_size = size;
+            self.canvas_blending = blending;
         }
+        let format = match blending {
+            Blending::Srgb => glow::RGBA8,
+            Blending::Linear => glow::SRGB8_ALPHA8,
+        };
         while self.canvases.len() < count {
             unsafe {
                 let gl = &self.gl;
                 let texture = gl.create_texture()?;
                 gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-                gl.tex_storage_2d(
-                    glow::TEXTURE_2D,
-                    1,
-                    glow::SRGB8_ALPHA8,
-                    size.0 as i32,
-                    size.1 as i32,
-                );
+                gl.tex_storage_2d(glow::TEXTURE_2D, 1, format, size.0 as i32, size.1 as i32);
                 for (p, v) in [
                     (glow::TEXTURE_MIN_FILTER, glow::LINEAR),
                     (glow::TEXTURE_MAG_FILTER, glow::LINEAR),
@@ -501,7 +524,14 @@ impl GlesRenderer {
     }
 
     /// Points a quad-family program at the frame's globals and tables.
-    unsafe fn bind_quad_uniforms(&self, program: glow::Program, size: (u32, u32), scale: f32) {
+    /// `srgb`: the canvases hold sRGB values.
+    unsafe fn bind_quad_uniforms(
+        &self,
+        program: glow::Program,
+        size: (u32, u32),
+        scale: f32,
+        srgb: bool,
+    ) {
         let gl = &self.gl;
         unsafe {
             gl.use_program(Some(program));
@@ -510,7 +540,7 @@ impl GlesRenderer {
                 size.0 as f32,
                 size.1 as f32,
                 scale,
-                0.0,
+                f32::from(u8::from(srgb)),
             );
             for (name, unit, texture) in [
                 ("u_clips", 0, self.clip_table),
@@ -608,7 +638,7 @@ impl GlesRenderer {
             clips: frame.clips.len() as u32,
             ..RenderStats::default()
         };
-        if let Err(e) = self.canvases(frame.textures, target.size) {
+        if let Err(e) = self.canvases(frame.textures, target.size, frame.blending) {
             tracing::error!("GLES renderer: {e}");
             return stats;
         }
@@ -678,6 +708,7 @@ impl GlesRenderer {
         }
 
         let scale = target.scale;
+        let srgb = frame.blending == Blending::Srgb;
         let mut pending_clear: Vec<Option<Color>> = vec![None; self.canvases.len()];
         for step in &frame.steps {
             match step {
@@ -707,7 +738,7 @@ impl GlesRenderer {
                             glow::ONE,
                             glow::ONE_MINUS_SRC_ALPHA,
                         );
-                        self.bind_quad_uniforms(program, size, scale);
+                        self.bind_quad_uniforms(program, size, scale, srgb);
                         if let Some(t) = texture {
                             gl.active_texture(glow::TEXTURE4);
                             gl.bind_texture(glow::TEXTURE_2D, Some(t));
@@ -858,7 +889,7 @@ impl GlesRenderer {
                     let backdrop = blend.map_or(*src, |(_, b)| b);
                     let clear = pending_clear[*dst].take();
                     self.begin_pass(program, *dst, area, clear, blend.is_none(), size);
-                    self.bind_quad_uniforms(program, size, scale);
+                    self.bind_quad_uniforms(program, size, scale, srgb);
                     self.bind_canvas(program, "u_src", 5, *src);
                     self.bind_canvas(program, "u_backdrop", 6, backdrop);
                     self.bind_canvas(program, "u_mask_tex", 7, mask.map_or(*src, |(m, _)| m));
@@ -917,10 +948,14 @@ impl GlesRenderer {
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(self.canvases[0].texture));
             gl.uniform_1_i32(gl.get_uniform_location(blit, "u_src").as_ref(), 0);
-            gl.uniform_1_f32(
-                gl.get_uniform_location(blit, "u_encode").as_ref(),
-                if target.srgb { 0.0 } else { 1.0 },
-            );
+            // Encode a linear canvas for a target that doesn't on write; decode an sRGB one for
+            // a target that does.
+            let mode = match (srgb, target.srgb) {
+                (false, false) => 1.0,
+                (true, true) => 2.0,
+                _ => 0.0,
+            };
+            gl.uniform_1_f32(gl.get_uniform_location(blit, "u_mode").as_ref(), mode);
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
             stats.passes += 1;
         }
@@ -934,6 +969,10 @@ impl UiBackend for GlesRenderer {
 
     fn set_asset_root(&mut self, root: PathBuf) {
         self.images.set_root(root);
+    }
+
+    fn set_blending(&mut self, blending: Blending) {
+        GlesRenderer::set_blending(self, blending);
     }
 
     fn image_size(&mut self, _: &(), url: &str) -> Option<(u32, u32)> {

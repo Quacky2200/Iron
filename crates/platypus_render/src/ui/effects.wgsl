@@ -63,8 +63,18 @@ struct CompositeParams {
     offset: vec4<f32>,   // its offset column
     tint: vec4<f32>,     // drop shadows: the source's alpha in this colour
     shift: vec4<f32>,    // xy: source shift (physical px); z: matrix on; w: tint on
-    mask: vec4<f32>,     // x: mask mode (0 none, 1 alpha, 2 luminance)
+    mask: vec4<f32>,     // x: mask mode (0 none, 1 alpha, 2 luminance); y: 1 when the
+                         // canvases hold sRGB values (`Blending::Srgb`)
 };
+
+// A canvas colour (straight alpha) as sRGB, and back.
+fn canvas_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    return select(to_srgb(c), c, composite.mask.y > 0.5);
+}
+
+fn canvas_from_srgb(c: vec3<f32>) -> vec3<f32> {
+    return select(from_srgb(c), c, composite.mask.y > 0.5);
+}
 @group(0) @binding(3) var<uniform> composite: CompositeParams;
 @group(0) @binding(4) var<storage, read> clips: array<Clip>;
 
@@ -201,9 +211,9 @@ fn mask_at(pos: vec4<f32>) -> f32 {
     if composite.mask.x < 1.5 {
         return m.a;
     }
-    // Luminance of the (premultiplied, linear) mask colour, in sRGB like CSS.
+    // Luminance of the (premultiplied) mask colour, in sRGB like CSS.
     let straight = select(vec3(0.0), m.rgb / m.a, m.a > 0.0);
-    return dot(to_srgb(straight), vec3(0.2126, 0.7152, 0.0722)) * m.a;
+    return dot(canvas_to_srgb(straight), vec3(0.2126, 0.7152, 0.0722)) * m.a;
 }
 
 // The layer's pixel under `pos`, after its drop-shadow tint and `filter` colour matrix.
@@ -216,11 +226,11 @@ fn filtered_source(pos: vec4<f32>) -> vec4<f32> {
         // CSS filter functions work on straight-alpha sRGB, like browsers.
         let straight = select(vec3(0.0), c.rgb / c.a, c.a > 0.0);
         let f = clamp(
-            composite.matrix * vec4(to_srgb(straight), c.a) + composite.offset,
+            composite.matrix * vec4(canvas_to_srgb(straight), c.a) + composite.offset,
             vec4(0.0),
             vec4(1.0),
         );
-        c = vec4(from_srgb(f.rgb) * f.a, f.a);
+        c = vec4(canvas_from_srgb(f.rgb) * f.a, f.a);
     }
     return c;
 }
@@ -335,14 +345,14 @@ fn blend(mode: u32, cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {
 fn fs_composite_blend(in: VsOut) -> @location(0) vec4<f32> {
     let s = filtered_source(in.pos) * composite.opacity * mask_at(in.pos);
     let b = textureLoad(backdrop, vec2<i32>(in.pos.xy), 0);
-    let cs = to_srgb(s.rgb / max(s.a, 1e-6));
-    let cb = to_srgb(b.rgb / max(b.a, 1e-6));
+    let cs = canvas_to_srgb(s.rgb / max(s.a, 1e-6));
+    let cb = canvas_to_srgb(b.rgb / max(b.a, 1e-6));
     let mixed = clamp(blend(u32(composite.blend), cb, cs), vec3(0.0), vec3(1.0));
     // Source-over with the blended colour where both are present.
     let a = s.a + b.a * (1.0 - s.a);
     let c = s.a * (1.0 - b.a) * cs + b.a * (1.0 - s.a) * cb + s.a * b.a * mixed;
     let straight = select(vec3(0.0), c / a, a > 0.0);
-    let result = vec4(from_srgb(straight) * a, a);
+    let result = vec4(canvas_from_srgb(straight) * a, a);
     let cover = clip_coverage_with(in.pos.xy / composite.scale, u32(composite.clip), composite.scale);
     return mix(b, result, cover);
 }
@@ -352,4 +362,22 @@ fn fs_composite_blend(in: VsOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_blit(in: VsOut) -> @location(0) vec4<f32> {
     return textureSampleLevel(src, samp, uv_at(in.pos), 0.0);
+}
+
+// A canvas of premultiplied sRGB values onto a target that encodes on write: the
+// straight colour decoded to linear (the hardware encodes it again).
+@fragment
+fn fs_blit_decode(in: VsOut) -> @location(0) vec4<f32> {
+    let c = textureLoad(src, vec2<i32>(in.pos.xy), 0);
+    let straight = select(vec3(0.0), c.rgb / c.a, c.a > 0.0);
+    return vec4(from_srgb(straight) * c.a, c.a);
+}
+
+// A linear picture (the 3D world, sampled from an sRGB texture) into a canvas of sRGB
+// values: the straight colour encoded.
+@fragment
+fn fs_blit_encode(in: VsOut) -> @location(0) vec4<f32> {
+    let c = textureLoad(src, vec2<i32>(in.pos.xy), 0);
+    let straight = select(vec3(0.0), c.rgb / c.a, c.a > 0.0);
+    return vec4(to_srgb(straight) * c.a, c.a);
 }

@@ -18,6 +18,7 @@ pub mod glyphs;
 mod gradient;
 pub mod image_cache;
 mod images;
+mod pipelines;
 pub mod plan;
 
 use std::collections::HashMap;
@@ -31,10 +32,11 @@ use atlas::GlyphAtlas;
 use glyphs::GlyphEntry;
 use gradient::GpuGradient;
 use image_cache::ImageCache;
-pub use plan::needs_backdrop;
+pub use plan::{Blending, needs_backdrop};
 use plan::{GpuClip, Instance, Step, blur_reach};
 
-/// Format of the canvas and layer textures. sRGB storage, linear blending.
+/// Format of the canvas and layer textures with `Blending::Linear`: sRGB storage, linear
+/// blending (see [`canvas_format`]).
 pub const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 /// Largest blur kernel (taps either side) a single pass will use.
@@ -68,7 +70,8 @@ pub struct RenderStats {
 struct Globals {
     viewport: [f32; 2],
     scale: f32,
-    _pad: f32,
+    /// 1 when the canvases hold sRGB values (`Blending::Srgb`).
+    srgb: f32,
 }
 
 #[repr(C)]
@@ -97,7 +100,7 @@ struct CompositeParams {
     tint: [f32; 4],
     /// xy: shift of the source (physical px); z: 1 to apply the matrix; w: 1 to tint.
     shift: [f32; 4],
-    /// x: mask mode (0 none, 1 alpha, 2 luminance).
+    /// x: mask mode (0 none, 1 alpha, 2 luminance); y: 1 when the canvases hold sRGB values.
     mask: [f32; 4],
 }
 
@@ -105,27 +108,32 @@ struct PooledTexture {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     size: (u32, u32),
+    format: wgpu::TextureFormat,
+}
+
+/// The format of the canvas and layer textures for `blending`: plain 8-bit values blended as
+/// they are (sRGB), or sRGB storage blended in linear light.
+pub fn canvas_format(blending: Blending) -> wgpu::TextureFormat {
+    match blending {
+        Blending::Srgb => wgpu::TextureFormat::Rgba8Unorm,
+        Blending::Linear => CANVAS_FORMAT,
+    }
 }
 
 pub struct UiRenderer {
-    quad_pipeline: wgpu::RenderPipeline,
-    quad_layout: wgpu::BindGroupLayout,
-    image_pipeline: wgpu::RenderPipeline,
+    /// How translucent colours combine (docs/rendering.md "Blending").
+    blending: Blending,
+    sources: pipelines::Sources,
+    /// The pipelines drawing into canvases, per blending (made when first used).
+    canvas_pipelines: HashMap<Blending, pipelines::CanvasPipelines>,
     image_samplers: images::ImageSamplers,
     images: ImageCache,
     image_textures: images::ImageTextures,
     atlas: GlyphAtlas,
-    blur_pipeline: wgpu::RenderPipeline,
-    blur_layout: wgpu::BindGroupLayout,
-    composite_pipeline: wgpu::RenderPipeline,
-    /// Composites with a blend mode: the shader mixes source and backdrop itself.
-    composite_blend_pipeline: wgpu::RenderPipeline,
-    composite_layout: wgpu::BindGroupLayout,
-    blit_layout: wgpu::BindGroupLayout,
     blit_pipeline_layout: wgpu::PipelineLayout,
-    /// By target format and whether the canvas blends over the target (overlay).
-    blit_pipelines: HashMap<(wgpu::TextureFormat, bool), wgpu::RenderPipeline>,
-    effects_module: wgpu::ShaderModule,
+    /// By target format, whether the canvas blends over the target (overlay), and the
+    /// conversion on the way.
+    blit_pipelines: HashMap<(wgpu::TextureFormat, bool, pipelines::Blit), wgpu::RenderPipeline>,
     sampler: wgpu::Sampler,
     globals: wgpu::Buffer,
     instances: wgpu::Buffer,
@@ -234,81 +242,6 @@ impl UiRenderer {
             entries: &[texture, sampler_entry],
         });
 
-        let pipeline_layout = |layout: &wgpu::BindGroupLayout| {
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[Some(layout)],
-                immediate_size: 0,
-            })
-        };
-
-        let instance_attributes = wgpu::vertex_attr_array![
-            0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
-            4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4,
-            8 => Float32x4,
-        ];
-        let premultiplied = wgpu::ColorTargetState {
-            format: CANVAS_FORMAT,
-            blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-            write_mask: wgpu::ColorWrites::ALL,
-        };
-        let quad_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ui quad"),
-            layout: Some(&pipeline_layout(&quad_layout)),
-            vertex: wgpu::VertexState {
-                module: &quad_module,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Instance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &instance_attributes,
-                })],
-            },
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &quad_module,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(premultiplied.clone())],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        let image_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ui image"),
-            layout: Some(
-                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: None,
-                    bind_group_layouts: &[Some(&quad_layout), Some(&blit_layout)],
-                    immediate_size: 0,
-                }),
-            ),
-            vertex: wgpu::VertexState {
-                module: &quad_module,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Instance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &instance_attributes,
-                })],
-            },
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &quad_module,
-                entry_point: Some("fs_image"),
-                compilation_options: Default::default(),
-                targets: &[Some(premultiplied.clone())],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
         let image_sampler = |label, filter| {
             device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some(label),
@@ -323,55 +256,15 @@ impl UiRenderer {
             smooth: image_sampler("ui images", wgpu::FilterMode::Linear),
             nearest: image_sampler("ui images (pixelated)", wgpu::FilterMode::Nearest),
         };
-
-        let fullscreen =
-            |label, layout: &wgpu::PipelineLayout, entry, target: wgpu::ColorTargetState| {
-                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some(label),
-                    layout: Some(layout),
-                    vertex: wgpu::VertexState {
-                        module: &effects_module,
-                        entry_point: Some("vs_fullscreen"),
-                        compilation_options: Default::default(),
-                        buffers: &[],
-                    },
-                    primitive: Default::default(),
-                    depth_stencil: None,
-                    multisample: Default::default(),
-                    fragment: Some(wgpu::FragmentState {
-                        module: &effects_module,
-                        entry_point: Some(entry),
-                        compilation_options: Default::default(),
-                        targets: &[Some(target)],
-                    }),
-                    multiview_mask: None,
-                    cache: None,
-                })
-            };
-        let replace = wgpu::ColorTargetState {
-            format: CANVAS_FORMAT,
-            blend: None,
-            write_mask: wgpu::ColorWrites::ALL,
+        let sources = pipelines::Sources {
+            quad_module,
+            effects_module,
+            quad_layout,
+            blur_layout,
+            composite_layout,
+            blit_layout,
         };
-        let blur_pipeline = fullscreen(
-            "ui blur",
-            &pipeline_layout(&blur_layout),
-            "fs_blur",
-            replace.clone(),
-        );
-        let composite_pipeline = fullscreen(
-            "ui composite",
-            &pipeline_layout(&composite_layout),
-            "fs_composite",
-            premultiplied,
-        );
-        let composite_blend_pipeline = fullscreen(
-            "ui composite blend",
-            &pipeline_layout(&composite_layout),
-            "fs_composite_blend",
-            replace,
-        );
-        let blit_pipeline_layout = pipeline_layout(&blit_layout);
+        let blit_pipeline_layout = sources.pipeline_layout(device, &[&sources.blit_layout]);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("ui"),
@@ -405,22 +298,15 @@ impl UiRenderer {
         );
 
         Self {
-            quad_pipeline,
-            quad_layout,
-            image_pipeline,
+            blending: Blending::default(),
+            sources,
+            canvas_pipelines: HashMap::new(),
             image_samplers,
             images: ImageCache::default(),
             image_textures: images::ImageTextures::default(),
             atlas: GlyphAtlas::new(gpu),
-            blur_pipeline,
-            blur_layout,
-            composite_pipeline,
-            composite_blend_pipeline,
-            composite_layout,
-            blit_layout,
             blit_pipeline_layout,
             blit_pipelines: HashMap::new(),
-            effects_module,
             sampler,
             globals,
             instances,
@@ -440,6 +326,16 @@ impl UiRenderer {
         })
     }
 
+    /// How translucent colours combine from the next frame on (`Blending::Srgb` by default, as
+    /// browsers; docs/rendering.md "Blending").
+    pub fn set_blending(&mut self, blending: Blending) {
+        self.blending = blending;
+    }
+
+    pub fn blending(&self) -> Blending {
+        self.blending
+    }
+
     /// Folder that `url(...)` background images are loaded from (the game folder).
     /// URLs must be relative paths inside it.
     pub fn set_asset_root(&mut self, root: impl Into<PathBuf>) {
@@ -452,7 +348,7 @@ impl UiRenderer {
         let size = self.images.image(url).map(|(_, size)| size);
         self.image_textures.apply(
             gpu,
-            &self.blit_layout,
+            &self.sources.blit_layout,
             &self.image_samplers,
             &mut self.images,
         );
@@ -473,7 +369,8 @@ impl UiRenderer {
     /// Draws `cmds` over what `target` already holds (screen UI over the 3D world):
     /// the canvas starts transparent and is blended onto the target. Backdrop filters
     /// and blend modes only see other UI this way; [`UiRenderer::render_over`] gives
-    /// them the world.
+    /// them the world. The blend onto a target that encodes sRGB on write happens in
+    /// linear light whatever the blending (the hardware's); `render_over` is exact.
     pub fn render_overlay(
         &mut self,
         gpu: &Gpu,
@@ -570,6 +467,7 @@ impl UiRenderer {
                 scale,
                 clear,
                 seeded: backdrop.is_some(),
+                blending: self.blending,
             },
             &mut WgpuResources {
                 atlas: &mut self.atlas,
@@ -583,19 +481,26 @@ impl UiRenderer {
             steps,
             textures,
             layers,
+            blending,
         } = plan;
+        let srgb = blending == Blending::Srgb;
+        let format = canvas_format(blending);
+        if !self.canvas_pipelines.contains_key(&blending) {
+            let made = self.sources.canvas(&gpu.device, format);
+            self.canvas_pipelines.insert(blending, made);
+        }
         stats.layers = layers;
         stats.clips = clip_table.len() as u32;
         // The glyphs and images the plan loaded reach their textures before the frame's draws.
         self.atlas.flush(gpu);
         self.image_textures.apply(
             gpu,
-            &self.blit_layout,
+            &self.sources.blit_layout,
             &self.image_samplers,
             &mut self.images,
         );
         let frame_textures: Vec<PooledTexture> = (0..textures)
-            .map(|_| self.take_texture(gpu, size))
+            .map(|_| self.take_texture(gpu, size, format))
             .collect();
 
         // --- Upload. ---
@@ -605,7 +510,7 @@ impl UiRenderer {
             bytemuck::bytes_of(&Globals {
                 viewport: [size.0 as f32, size.1 as f32],
                 scale,
-                _pad: 0.0,
+                srgb: f32::from(u8::from(srgb)),
             }),
         );
         if !instances.is_empty() {
@@ -652,7 +557,7 @@ impl UiRenderer {
         let device = &gpu.device;
         let quad_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ui quad"),
-            layout: &self.quad_layout,
+            layout: &self.sources.quad_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -682,8 +587,14 @@ impl UiRenderer {
         let mut pending_clear: HashMap<usize, wgpu::Color> = HashMap::new();
         // Over the world: the canvas starts as a copy of it (instead of its clear).
         if let Some(world) = backdrop {
-            let seed = self.blit_pipeline(gpu, CANVAS_FORMAT, false);
-            let bind_group = self.texture_bind_group(gpu, &self.blit_layout, world, None);
+            // An sRGB canvas gets the world's encoded values (it is read decoded).
+            let conversion = if srgb {
+                pipelines::Blit::Encode
+            } else {
+                pipelines::Blit::Copy
+            };
+            let seed = self.blit_pipeline(gpu, format, false, conversion);
+            let bind_group = self.texture_bind_group(gpu, &self.sources.blit_layout, world, None);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ui backdrop seed"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -736,6 +647,7 @@ impl UiRenderer {
             }
         };
 
+        let pipes = &self.canvas_pipelines[&blending];
         for step in &steps {
             match step {
                 Step::Clear { target, color } => {
@@ -762,10 +674,10 @@ impl UiRenderer {
                     });
                     match image_bind_group {
                         Some(bind_group) => {
-                            pass.set_pipeline(&self.image_pipeline);
+                            pass.set_pipeline(&pipes.image);
                             pass.set_bind_group(1, bind_group, &[]);
                         }
-                        None => pass.set_pipeline(&self.quad_pipeline),
+                        None => pass.set_pipeline(&pipes.quad),
                     }
                     pass.set_bind_group(0, &quad_bind_group, &[]);
                     pass.set_vertex_buffer(0, self.instances.slice(..));
@@ -814,7 +726,7 @@ impl UiRenderer {
                         });
                         let bind_group = self.texture_bind_group(
                             gpu,
-                            &self.blur_layout,
+                            &self.sources.blur_layout,
                             &frame_textures[src].view,
                             Some((2, &params)),
                         );
@@ -823,7 +735,7 @@ impl UiRenderer {
                             color_attachments: &[Some(attachment(&frame_textures[dst].view, load))],
                             ..Default::default()
                         });
-                        pass.set_pipeline(&self.blur_pipeline);
+                        pass.set_pipeline(&pipes.blur);
                         pass.set_bind_group(0, &bind_group, &[]);
                         pass.set_scissor_rect(scissor.x, scissor.y, scissor.w, scissor.h);
                         pass.draw(0..3, 0..1);
@@ -879,7 +791,7 @@ impl UiRenderer {
                                     Some((_, platypus_ui::MaskMode::Alpha)) => 1.0,
                                     Some((_, platypus_ui::MaskMode::Luminance)) => 2.0,
                                 },
-                                0.0,
+                                f32::from(u8::from(srgb)),
                                 0.0,
                                 0.0,
                             ],
@@ -888,7 +800,7 @@ impl UiRenderer {
                     });
                     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("ui composite"),
-                        layout: &self.composite_layout,
+                        layout: &self.sources.composite_layout,
                         entries: &[
                             wgpu::BindGroupEntry {
                                 binding: 0,
@@ -929,9 +841,9 @@ impl UiRenderer {
                         ..Default::default()
                     });
                     pass.set_pipeline(if blend.is_some() {
-                        &self.composite_blend_pipeline
+                        &pipes.composite_blend
                     } else {
-                        &self.composite_pipeline
+                        &pipes.composite
                     });
                     pass.set_bind_group(0, &bind_group, &[]);
                     pass.set_scissor_rect(area.x, area.y, area.w, area.h);
@@ -943,9 +855,19 @@ impl UiRenderer {
         settle(&mut encoder, &mut pending_clear, &mut stats, 0);
 
         // --- Blit the canvas to the target. ---
-        let blit = self.blit_pipeline(gpu, target.format, overlay);
-        let bind_group =
-            self.texture_bind_group(gpu, &self.blit_layout, &frame_textures[0].view, None);
+        // An sRGB canvas is decoded for a target that encodes on write.
+        let conversion = if srgb && target.format.is_srgb() {
+            pipelines::Blit::Decode
+        } else {
+            pipelines::Blit::Copy
+        };
+        let blit = self.blit_pipeline(gpu, target.format, overlay, conversion);
+        let bind_group = self.texture_bind_group(
+            gpu,
+            &self.sources.blit_layout,
+            &frame_textures[0].view,
+            None,
+        );
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ui blit"),
@@ -1006,16 +928,17 @@ impl UiRenderer {
         gpu: &Gpu,
         format: wgpu::TextureFormat,
         overlay: bool,
+        conversion: pipelines::Blit,
     ) -> wgpu::RenderPipeline {
         self.blit_pipelines
-            .entry((format, overlay))
+            .entry((format, overlay, conversion))
             .or_insert_with(|| {
                 gpu.device
                     .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                         label: Some("ui blit"),
                         layout: Some(&self.blit_pipeline_layout),
                         vertex: wgpu::VertexState {
-                            module: &self.effects_module,
+                            module: &self.sources.effects_module,
                             entry_point: Some("vs_fullscreen"),
                             compilation_options: Default::default(),
                             buffers: &[],
@@ -1024,8 +947,8 @@ impl UiRenderer {
                         depth_stencil: None,
                         multisample: Default::default(),
                         fragment: Some(wgpu::FragmentState {
-                            module: &self.effects_module,
-                            entry_point: Some("fs_blit"),
+                            module: &self.sources.effects_module,
+                            entry_point: Some(conversion.entry()),
                             compilation_options: Default::default(),
                             targets: &[Some(wgpu::ColorTargetState {
                                 format,
@@ -1042,13 +965,22 @@ impl UiRenderer {
             .clone()
     }
 
-    /// Takes a canvas-format texture of `size` from the pool, or creates one.
-    fn take_texture(&mut self, gpu: &Gpu, size: (u32, u32)) -> PooledTexture {
-        if let Some(i) = self.pool.iter().position(|t| t.size == size) {
+    /// Takes a canvas texture of `size` and `format` from the pool, or creates one.
+    fn take_texture(
+        &mut self,
+        gpu: &Gpu,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+    ) -> PooledTexture {
+        if let Some(i) = self
+            .pool
+            .iter()
+            .position(|t| t.size == size && t.format == format)
+        {
             return self.pool.swap_remove(i);
         }
-        // Drop textures of other sizes (the window was resized).
-        self.pool.retain(|t| t.size == size);
+        // Drop textures of other sizes or formats (the window was resized, the blending changed).
+        self.pool.retain(|t| t.size == size && t.format == format);
         let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ui canvas"),
             size: wgpu::Extent3d {
@@ -1059,7 +991,7 @@ impl UiRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: CANVAS_FORMAT,
+            format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_SRC
@@ -1071,6 +1003,7 @@ impl UiRenderer {
             texture,
             view,
             size,
+            format,
         }
     }
 }
@@ -1111,6 +1044,10 @@ impl backend::UiBackend for UiRenderer {
 
     fn set_asset_root(&mut self, root: PathBuf) {
         UiRenderer::set_asset_root(self, root);
+    }
+
+    fn set_blending(&mut self, blending: Blending) {
+        UiRenderer::set_blending(self, blending);
     }
 
     fn image_size(&mut self, cx: &Gpu, url: &str) -> Option<(u32, u32)> {

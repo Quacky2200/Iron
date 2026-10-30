@@ -314,6 +314,36 @@ impl Renderer {
     }
 }
 
+/// How translucent UI colours combine (`blending` in `project.json`): one setting for a whole
+/// frame of every UI renderer (docs/rendering.md "Blending").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Blending {
+    /// `src * a + dst * (1 - a)` on sRGB values, as browsers.
+    #[default]
+    Srgb,
+    /// The same sum on linear-light values (Platypus before 2026-10-30).
+    Linear,
+}
+
+impl Blending {
+    /// A value of `blending`.
+    pub fn parse(s: &str) -> Option<Blending> {
+        match s {
+            "srgb" => Some(Blending::Srgb),
+            "linear" => Some(Blending::Linear),
+            _ => None,
+        }
+    }
+
+    /// The value written in `project.json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Blending::Srgb => "srgb",
+            Blending::Linear => "linear",
+        }
+    }
+}
+
 /// The note for a `project.json` that still has the old `type`.
 pub const TYPE_REPLACED: &str =
     "`type` is replaced by `renderer`; \"app\" = \"gles\", \"game\" = \"vulkan\"";
@@ -324,6 +354,8 @@ pub struct Project {
     pub name: String,
     /// `renderer`: `vulkan`, `gles` or `cpu`; left out (or unknown), chosen from what the program uses.
     pub renderer: Renderer,
+    /// `blending`: `srgb` (the default) or `linear`.
+    pub blending: Blending,
     pub title: String,
     /// `subtitle`: an optional second line under the title (a series' episode, say), shown by the
     /// video-settings prompt and `Application.subtitle`; `None` when unset or empty.
@@ -421,6 +453,7 @@ const KNOWN_KEYS: &[&str] = &[
     "name",
     "type",
     "renderer",
+    "blending",
     "title",
     "subtitle",
     "company",
@@ -989,6 +1022,9 @@ impl Project {
         if self.renderer != Renderer::Auto {
             m.insert("renderer".into(), self.renderer.as_str().into());
         }
+        if self.blending != Blending::Srgb {
+            m.insert("blending".into(), self.blending.as_str().into());
+        }
         if let Some(r) = self.data_required {
             m.insert("dataRequired".into(), r.into());
         }
@@ -1202,6 +1238,18 @@ fn build(
             }
         },
     };
+    let blending = match doc.get("blending") {
+        None => Blending::Srgb,
+        Some(v) => match v.as_str().and_then(Blending::parse) {
+            Some(b) => b,
+            None => {
+                warnings.push(format!(
+                    "`blending`: expected \"srgb\" or \"linear\", not {v} (srgb is used)"
+                ));
+                Blending::Srgb
+            }
+        },
+    };
     let include = strings(passthrough(&mut r, "include")?);
     let exclude = strings(passthrough(&mut r, "exclude")?);
     let mut extra = Map::new();
@@ -1213,6 +1261,7 @@ fn build(
     Ok(Project {
         name: project_name,
         renderer,
+        blending,
         title,
         subtitle,
         company,
@@ -1808,6 +1857,28 @@ mod tests {
         assert!(!SystemUser.username().is_empty());
         // The full name may be empty (no display name); it never panics.
         let _ = SystemUser.full_name();
+    }
+
+    // M2-BLEND-01
+    #[test]
+    fn blending_is_srgb_by_default_linear_is_kept_and_unknown_values_warn() {
+        let default = load_ok("blending-default", r#"{ "name": "x" }"#);
+        assert_eq!(default.blending, Blending::Srgb);
+        assert!(default.to_json().get("blending").is_none());
+        let linear = load_ok(
+            "blending-linear",
+            r#"{ "name": "x", "blending": "linear" }"#,
+        );
+        assert_eq!(linear.blending, Blending::Linear);
+        assert!(linear.warnings.is_empty());
+        assert_eq!(linear.to_json()["blending"], "linear");
+        let srgb = load_ok("blending-srgb", r#"{ "name": "x", "blending": "srgb" }"#);
+        assert_eq!(srgb.blending, Blending::Srgb);
+        let bad = load_ok("blending-bad", r#"{ "name": "x", "blending": "gamma" }"#);
+        assert_eq!(bad.blending, Blending::Srgb);
+        assert_eq!(bad.warnings.len(), 1);
+        assert!(bad.warnings[0].contains("`blending`") && bad.warnings[0].contains("gamma"));
+        assert!(!bad.extra.contains_key("blending"), "a known key");
     }
 
     // M9-API-1330

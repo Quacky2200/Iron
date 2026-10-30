@@ -65,6 +65,15 @@ vec3 from_srgb(vec3 c) {
     return mix(high, low, vec3(lessThanEqual(c, vec3(0.04045))));
 }
 
+// A canvas colour (straight alpha) as sRGB, and back.
+vec3 canvas_to_srgb(vec3 c) {
+    return srgb_canvas() ? c : to_srgb(c);
+}
+
+vec3 canvas_from_srgb(vec3 c) {
+    return srgb_canvas() ? c : from_srgb(c);
+}
+
 // The fragment in the plan's pixels (y down from the top left).
 vec2 frag_pos() {
     return vec2(gl_FragCoord.x, u_globals.y - gl_FragCoord.y);
@@ -79,9 +88,9 @@ float mask_at() {
     if (u_maskmode.x < 1.5) {
         return m.a;
     }
-    // Luminance of the (premultiplied, linear) mask colour, in sRGB like CSS.
+    // Luminance of the (premultiplied) mask colour, in sRGB like CSS.
     vec3 straight = m.a > 0.0 ? m.rgb / m.a : vec3(0.0);
-    return dot(to_srgb(straight), vec3(0.2126, 0.7152, 0.0722)) * m.a;
+    return dot(canvas_to_srgb(straight), vec3(0.2126, 0.7152, 0.0722)) * m.a;
 }
 
 // The layer's pixel here, after its drop-shadow tint and `filter` colour matrix.
@@ -94,8 +103,8 @@ vec4 filtered_source() {
     if (u_shift.z > 0.5) {
         // CSS filter functions work on straight-alpha sRGB, like browsers.
         vec3 straight = c.a > 0.0 ? c.rgb / c.a : vec3(0.0);
-        vec4 f = clamp(u_matrix * vec4(to_srgb(straight), c.a) + u_offset, vec4(0.0), vec4(1.0));
-        c = vec4(from_srgb(f.rgb) * f.a, f.a);
+        vec4 f = clamp(u_matrix * vec4(canvas_to_srgb(straight), c.a) + u_offset, vec4(0.0), vec4(1.0));
+        c = vec4(canvas_from_srgb(f.rgb) * f.a, f.a);
     }
     return c;
 }
@@ -198,14 +207,14 @@ const COMPOSITE_BLEND_MAIN: &str = r#"
 void main() {
     vec4 s = filtered_source() * u_comp.x * mask_at();
     vec4 b = texelFetch(u_backdrop, ivec2(gl_FragCoord.xy), 0);
-    vec3 cs = to_srgb(s.rgb / max(s.a, 1e-6));
-    vec3 cb = to_srgb(b.rgb / max(b.a, 1e-6));
+    vec3 cs = canvas_to_srgb(s.rgb / max(s.a, 1e-6));
+    vec3 cb = canvas_to_srgb(b.rgb / max(b.a, 1e-6));
     vec3 mixed = clamp(blend(uint(u_comp.w), cb, cs), vec3(0.0), vec3(1.0));
     // Source-over with the blended colour where both are present.
     float a = s.a + b.a * (1.0 - s.a);
     vec3 c = s.a * (1.0 - b.a) * cs + b.a * (1.0 - s.a) * cb + s.a * b.a * mixed;
     vec3 straight = a > 0.0 ? c / a : vec3(0.0);
-    vec4 result = vec4(from_srgb(straight) * a, a);
+    vec4 result = vec4(canvas_from_srgb(straight) * a, a);
     float cover = clip_coverage_with(frag_pos() / u_globals.z, uint(u_comp.z));
     o_color = mix(b, result, cover);
 }

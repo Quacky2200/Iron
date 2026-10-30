@@ -11,7 +11,8 @@ use platypus_core::{Commit, Value};
 use platypus_render::Color;
 use platypus_render::glyphs::{GlyphCache, GlyphEntry};
 use platypus_render::plan::{
-    FramePlan, ImageInfo, KIND_GLYPH, PlanParams, PlanResources, Step, needs_backdrop, plan,
+    Blending, FramePlan, ImageInfo, KIND_GLYPH, PlanParams, PlanResources, Step, needs_backdrop,
+    plan,
 };
 use platypus_ui::opcodes::*;
 use platypus_ui::{DrawCmd, UiTree};
@@ -90,7 +91,12 @@ fn tree(elements: &[Element], texts: &[(u32, &str)], css: &str) -> UiTree {
 
 const CLEAR: Color = Color::rgb(0.1, 0.2, 0.3);
 
+/// Planned in linear light, the space the structure tests below were written for.
 fn plan_of(cmds: &[DrawCmd], seeded: bool, res: &mut Fake) -> FramePlan {
+    plan_in(cmds, seeded, Blending::Linear, res)
+}
+
+fn plan_in(cmds: &[DrawCmd], seeded: bool, blending: Blending, res: &mut Fake) -> FramePlan {
     plan(
         cmds,
         &PlanParams {
@@ -98,6 +104,7 @@ fn plan_of(cmds: &[DrawCmd], seeded: bool, res: &mut Fake) -> FramePlan {
             scale: 2.0,
             clear: CLEAR,
             seeded,
+            blending,
         },
         res,
     )
@@ -324,4 +331,57 @@ fn backdrop_effects_are_found_without_planning() {
     assert!(needs_backdrop(&t.draw_list()));
     let mut plain = tree(&[(0, "box", &[("width", "50"), ("height", "20")])], &[], "");
     assert!(!needs_backdrop(&plain.draw_list()));
+}
+
+// M2-BLEND-02
+#[test]
+fn colours_are_premultiplied_in_the_frames_blending_space() {
+    let mut t = tree(
+        &[(
+            0,
+            "box",
+            &[
+                ("width", "50"),
+                ("height", "20"),
+                ("backgroundColor", "rgba(255, 0, 0, 0.5)"),
+            ],
+        )],
+        &[],
+        "",
+    );
+    let cmds = t.draw_list();
+    let srgb = plan_in(&cmds, false, Blending::Srgb, &mut Fake::default());
+    assert_eq!(srgb.blending, Blending::Srgb);
+    assert_eq!(srgb.instances[0].color0, [0.5, 0.0, 0.0, 0.5]);
+    // The clear colour (linear) is encoded for an sRGB canvas: 0.1 linear is ~0.349 sRGB.
+    let Step::Clear { color, .. } = &srgb.steps[0] else {
+        panic!("a clear first");
+    };
+    assert!(
+        (color.r - 0.3492).abs() < 1e-3 && color.a == 1.0,
+        "{color:?}"
+    );
+    let linear = plan_in(&cmds, false, Blending::Linear, &mut Fake::default());
+    assert_eq!(linear.blending, Blending::Linear);
+    assert_eq!(linear.instances[0].color0, [0.5, 0.0, 0.0, 0.5]);
+    assert!(matches!(&linear.steps[0], Step::Clear { color, .. } if *color == CLEAR));
+    // A colour off the ends of the transfer curve tells the two apart.
+    let mut grey = tree(
+        &[(
+            0,
+            "box",
+            &[
+                ("width", "50"),
+                ("height", "20"),
+                ("backgroundColor", "rgba(128, 128, 128, 0.5)"),
+            ],
+        )],
+        &[],
+        "",
+    );
+    let cmds = grey.draw_list();
+    let s = plan_in(&cmds, false, Blending::Srgb, &mut Fake::default()).instances[0].color0;
+    let l = plan_in(&cmds, false, Blending::Linear, &mut Fake::default()).instances[0].color0;
+    assert!((s[0] - 0.251).abs() < 1e-3, "sRGB 128/255 * 0.5: {s:?}");
+    assert!((l[0] - 0.108).abs() < 1e-3, "linear 0.216 * 0.5: {l:?}");
 }

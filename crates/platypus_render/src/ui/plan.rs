@@ -25,6 +25,7 @@ use super::glyphs::{GlyphEntry, SUBPIXEL_BINS};
 use super::gradient;
 pub use super::gradient::GpuGradient;
 use crate::Color;
+pub use platypus_core::project::Blending;
 
 pub const KIND_QUAD: f32 = 0.0;
 pub const KIND_OUTER_SHADOW: f32 = 1.0;
@@ -314,6 +315,8 @@ pub struct PlanParams {
     pub clear: Color,
     /// The canvas starts as a copy of what is behind the UI (the 3D world) instead of a clear.
     pub seeded: bool,
+    /// The space translucent colours blend in (docs/rendering.md "Blending").
+    pub blending: Blending,
 }
 
 /// A frame, ready for a renderer to execute.
@@ -327,12 +330,18 @@ pub struct FramePlan {
     pub textures: usize,
     /// Layers the draw list opened.
     pub layers: u32,
+    /// The space the canvases hold and blend: with `Srgb` they are plain 8-bit textures of
+    /// premultiplied sRGB values, with `Linear` sRGB-format ones of linear values. Every colour
+    /// above is premultiplied in this space.
+    pub blending: Blending,
 }
 
 /// Turns `cmds` into a [`FramePlan`] for a target of `params.size`.
 pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) -> FramePlan {
     let (size, scale) = (params.size, params.scale);
-    let (clear, seeded) = (params.clear, params.seeded);
+    let (seeded, blending) = (params.seeded, params.blending);
+    let clear = canvas_clear(params.clear, blending);
+    let pm = |c: Rgba| canvas_premultiplied(c, blending);
     let mut layers = 0u32;
     // Textures of the frame's size the steps draw into; 0 is the canvas.
     let mut textures = 1usize;
@@ -445,8 +454,8 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                     radii_y: radii.y,
                     xf: [0.0; 4],
                 };
-                let background = linear_premultiplied(q.background);
-                let border_color = linear_premultiplied(q.border_color);
+                let background = pm(q.background);
+                let border_color = pm(q.border_color);
                 if q.images.is_empty() {
                     instances.push(quad(q.rect, q.radii, background, border_color, -1.0));
                     continue;
@@ -499,7 +508,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                             p1: [gap[0], gap[1], 0.0, 0.0],
                             color0: [0.0; 4],
                             // All zeros: untinted.
-                            color1: fill.tint.map_or([0.0; 4], linear_premultiplied),
+                            color1: fill.tint.map_or([0.0; 4], pm),
                             params: [
                                 KIND_IMAGE,
                                 f32::from(u8::from(repeat[0])),
@@ -529,7 +538,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                         xf: [0.0; 4],
                         p0: [0.0; 4],
                         p1: [0.0; 4],
-                        color0: linear_premultiplied(d.color),
+                        color0: pm(d.color),
                         color1: [0.0; 4],
                         params: [KIND_QUAD, 0.0, -1.0, 0.0],
                     };
@@ -551,7 +560,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                                 info: [style.index() as f32, 0.0, 0.0, 0.0],
                                 ..Default::default()
                             };
-                            entry.colors[0] = linear_premultiplied(d.color);
+                            entry.colors[0] = pm(d.color);
                             gradients.push(entry);
                             instances.push(Instance {
                                 p0: [t, 0.0, 0.0, 0.0],
@@ -588,7 +597,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                     Some(((gradients.len() - 1) as f32, rect4(rect)))
                 });
                 for run in &text.runs {
-                    let color = linear_premultiplied(run.color);
+                    let color = pm(run.color);
                     let size_px = run.font_size * gs * scale;
                     for g in &run.glyphs {
                         // Snap to whole pixels vertically and to quarter pixels
@@ -657,7 +666,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                                     s.height as f32 / scale,
                                 ],
                                 p0: [s.x as f32, s.y as f32, s.width as f32, s.height as f32],
-                                color0: linear_premultiplied(stroke_color),
+                                color0: pm(stroke_color),
                                 params: [KIND_GLYPH, if run.smooth { 0.0 } else { 2.0 }, -1.0, 0.0],
                                 ..glyph
                             });
@@ -676,7 +685,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                     xf: [0.0; 4],
                     p0: rect4(s.rect),
                     p1: circular(s.radii),
-                    color0: linear_premultiplied(s.color),
+                    color0: pm(s.color),
                     color1: [0.0; 4],
                     params: [KIND_OUTER_SHADOW, s.blur / 2.0, -1.0, 0.0],
                 });
@@ -701,7 +710,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                     xf: [0.0; 4],
                     p0: rect4(hole),
                     p1: circular(inner).map(|r| (r - s.spread).max(0.0)),
-                    color0: linear_premultiplied(s.color),
+                    color0: pm(s.color),
                     color1: [0.0; 4],
                     params: [KIND_INSET_SHADOW, s.blur / 2.0, -1.0, 0.0],
                 });
@@ -720,7 +729,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                     ..Default::default()
                 };
                 for (slot, c) in entry.colors.iter_mut().zip(colors) {
-                    *slot = linear_premultiplied(*c);
+                    *slot = pm(*c);
                 }
                 gradients.push(entry);
                 instances.push(Instance {
@@ -776,7 +785,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                                 p1: [gx, gy, 0.0, 0.0],
                                 // The piece's part of the texture (uv).
                                 color0: [src.x / iw, src.y / ih, src.width / iw, src.height / ih],
-                                color1: tint.map_or([0.0; 4], linear_premultiplied),
+                                color1: tint.map_or([0.0; 4], pm),
                                 params: [
                                     KIND_IMAGE,
                                     f32::from(u8::from(rx)),
@@ -937,7 +946,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
                                 clip: layer_clip,
                                 blend: None,
                                 matrix: None,
-                                tint: Some(linear_premultiplied(s.color)),
+                                tint: Some(pm(s.color)),
                                 shift: [s.offset_x * scale, s.offset_y * scale],
                                 mask,
                             });
@@ -1053,6 +1062,7 @@ pub fn plan(cmds: &[DrawCmd], params: &PlanParams, res: &mut dyn PlanResources) 
         steps,
         textures,
         layers,
+        blending,
     }
 }
 
@@ -1072,12 +1082,45 @@ fn srgb_to_linear(c: f32) -> f32 {
     }
 }
 
-/// sRGB straight alpha → linear premultiplied, as the shaders expect.
-pub(super) fn linear_premultiplied(c: Rgba) -> [f32; 4] {
+fn linear_to_srgb(c: f64) -> f64 {
+    if c <= 0.003_130_8 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+/// sRGB straight alpha → linear premultiplied.
+fn linear_premultiplied(c: Rgba) -> [f32; 4] {
     [
         srgb_to_linear(c.r) * c.a,
         srgb_to_linear(c.g) * c.a,
         srgb_to_linear(c.b) * c.a,
         c.a,
     ]
+}
+
+/// sRGB straight alpha → premultiplied in `blending`'s space, as the shaders expect.
+pub fn canvas_premultiplied(c: Rgba, blending: Blending) -> [f32; 4] {
+    match blending {
+        Blending::Linear => linear_premultiplied(c),
+        Blending::Srgb => [c.r * c.a, c.g * c.a, c.b * c.a, c.a],
+    }
+}
+
+/// A clear colour (linear, as [`Color`] is) in the canvases' space.
+fn canvas_clear(c: Color, blending: Blending) -> Color {
+    match blending {
+        Blending::Linear => c,
+        Blending::Srgb if c.a <= 0.0 => Color::TRANSPARENT,
+        Blending::Srgb => {
+            let encode = |v: f64| linear_to_srgb(v / c.a) * c.a;
+            Color {
+                r: encode(c.r),
+                g: encode(c.g),
+                b: encode(c.b),
+                a: c.a,
+            }
+        }
+    }
 }
