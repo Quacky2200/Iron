@@ -739,6 +739,55 @@ fn project_settings_write_project_json_and_undo() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
+/// Edit > Project Settings scrolled to the Display, Quality and Layers sections: width typed as
+/// 1600, Layer 8's name cleared, and the default quality chosen in the picker.
+const SECTIONS_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "sections", "frames": 90, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Edit" },
+    { "frame": 5, "kind": "clickText", "text": "Project Settings..." },
+    { "frame": 12, "kind": "mouseMove", "x": 800, "y": 450 },
+    { "frame": 14, "kind": "wheel", "dy": 12 },
+    { "frame": 20, "kind": "click", "x": 900, "y": 322 },
+    { "frame": 22, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 23, "kind": "key", "code": "KeyA" },
+    { "frame": 24, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 25, "kind": "key", "code": "Digit1", "key": "1" },
+    { "frame": 26, "kind": "key", "code": "Digit6", "key": "6" },
+    { "frame": 27, "kind": "key", "code": "Digit0", "key": "0" },
+    { "frame": 28, "kind": "key", "code": "Digit0", "key": "0" },
+    { "frame": 30, "kind": "key", "code": "Enter" },
+    { "frame": 36, "kind": "click", "x": 900, "y": 580 },
+    { "frame": 38, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 39, "kind": "key", "code": "KeyA" },
+    { "frame": 40, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 41, "kind": "key", "code": "Backspace" },
+    { "frame": 43, "kind": "key", "code": "Enter" },
+    { "frame": 50, "kind": "click", "x": 900, "y": 451 },
+    { "frame": 58, "kind": "clickText", "text": "High" },
+    { "frame": 66, "kind": "moveToText", "text": "Layer 8" }
+  ] }
+] }"#;
+
+// M5-PRJ-07
+#[test]
+fn project_settings_edit_display_quality_and_layers() {
+    let project = std::env::temp_dir().join(format!(
+        "platypus-editor-sections-project-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&project);
+    std::fs::create_dir_all(&project).unwrap();
+    let file = "{\n  \"name\": \"fixture\",\n  \"layers\": { \"8\": \"Detail\" },\n  \"display\": {\n    \"width\": 1280\n  },\n  \"mine\": { \"a\": 1 }\n}\n";
+    std::fs::write(project.join("project.json"), file).unwrap();
+    let run = run_editor_on("sections", SECTIONS_SPEC, true, &project);
+    assert_eq!(
+        std::fs::read_to_string(project.join("project.json")).unwrap(),
+        "{\n  \"name\": \"fixture\",\n  \"display\": {\n    \"width\": 1600\n  },\n  \"mine\": { \"a\": 1 },\n  \"quality\": {\"default\":\"High\"}\n}\n"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 /// A new scene with a cube, saved with Ctrl+S (the dialog's name field starts as "Untitled";
 /// Enter saves).
 const SAVE_SPEC: &str = r#"{ "warmup": 30, "segments": [

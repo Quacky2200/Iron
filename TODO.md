@@ -1539,8 +1539,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         (`Editor.projectFields` / `setProjectField` / `removeProjectField`), keeping unknown keys, key order and
         `${templates}`; values are checked; the dialog has its own Undo / Redo (`M5-PRJ-01..05`). A compiler fix came
         with it: `cond && f()` with a void `f` dropped the call (`M9-TS-3524`)
-        - [ ] Later: `layers`, `quality`, `display` and the platform sections in the form; a file picker for path
-          settings; showing a template's resolved value as a hint
+        - [x] `layers`, `quality` and `display` in the form (2026-10-30): dotted keys edit inside those objects
+          (`display.width`, `layers.8`, `quality.default`) with the same in-place text edits; an emptied layer name or
+          size removes its key and an emptied section goes (`M5-PRJ-06`, `-07`)
+        - [ ] Later: the platform sections and per-level quality overrides (`quality.levels.*`) in the form; a file
+          picker for path settings; showing a template's resolved value as a hint
       - [x] E7: prefab files: a Hierarchy object dragged onto a Project folder is saved as `<name>.prefab.json` (with
         its `.meta`; `EditorScene.savePrefab`, `manager::prefab_file_json`: assets in the file's table); a prefab file
         dragged onto the Hierarchy (a row: under it) or the Scene view, or double-clicked, is placed

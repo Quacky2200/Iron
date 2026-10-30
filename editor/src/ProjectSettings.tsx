@@ -2,18 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Edit > Project Settings: the project's `project.json` as a form, grouped (Identity, Game,
-// Build). Each change rewrites only that key's text in the file (`Editor.setProjectField`), so
-// unknown keys, key order and `${templates}` stay as written. The dialog keeps its own undo
-// history (its Undo / Redo buttons), apart from the scene's.
+// Build, Display, Quality, Layers; the last three are keys inside the `display`, `quality` and
+// `layers` objects, `display.width`). Each change rewrites only that key's text in the file
+// (`Editor.setProjectField`), so unknown keys, key order and `${templates}` stay as written; an
+// emptied layer name or size removes its key. The dialog keeps its own undo history (its Undo /
+// Redo buttons), apart from the scene's.
 
 import { canRedo, canUndo, type Command, createHistory, type History, perform, redo, undo } from "./history.ts";
 import { Checkbox, Choice, TextInput } from "./Inspector.tsx";
 import { closeModal, pushModal } from "./modal.ts";
 import { Button, Modal } from "./Modal.tsx";
 
-/** The JSON a field's value is written as. */
+/** A setting's label: the key, without its section (`display.width` -> `width`; `layers.8` -> `Layer 8`). */
+export function settingLabel(key: string): string {
+  if (key.startsWith("layers.")) return `Layer ${key.slice("layers.".length)}`;
+  return key.slice(key.indexOf(".") + 1);
+}
+
+/** The JSON a field's value is written as (a number as one when it reads as one; "" removes a nested key). */
 function jsonOf(f: ProjectField, value: string): string {
-  return f.ty === "bool" ? (value === "true" ? "true" : "false") : JSON.stringify(value);
+  if (f.ty === "bool") return value === "true" ? "true" : "false";
+  if (f.ty === "number" && value.trim() !== "" && Number.isFinite(Number(value))) return `${Number(value)}`;
+  return JSON.stringify(value);
 }
 
 /** Sets a setting; undo writes the old value back, or removes the key when the file had none. */
@@ -66,7 +76,7 @@ function SettingsForm({ done }: { done: () => void }) {
                 .filter((f) => f.group === g)
                 .map((f) => (
                   <box key={f.key} className="platypus-inspector-row">
-                    <Text className="platypus-inspector-label">{f.key}</Text>
+                    <Text className="platypus-inspector-label">{settingLabel(f.key)}</Text>
                     <box className="platypus-inspector-value">{editor(f)}</box>
                   </box>
                 ))}

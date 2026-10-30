@@ -69,7 +69,10 @@ fn project_value(key: &str, json: &str) -> Result<Option<serde_json::Value>, Str
         ("string" | "path", Value::String(s)) if key == "name" && s.trim().is_empty() => {
             Err("a project needs a name".into())
         }
+        // An empty layer name or size removes the key (unnamed, or the default).
+        ("string" | "number", Value::String(s)) if s.is_empty() && key.contains('.') => Ok(None),
         ("string" | "path", Value::String(_)) => Ok(Some(v)),
+        ("number", Value::Number(_)) => Ok(Some(v)),
         _ => Err(format!("{key} takes a {}", f.ty)),
     }
 }
@@ -491,6 +494,48 @@ mod tests {
             ),
             ("Default", "Lava", "Player", "")
         );
+        reset();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // M5-PRJ-06
+    #[test]
+    fn display_quality_and_layer_settings_edit_their_sections() {
+        let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let dir = std::env::temp_dir().join(format!("platypus-editor-prj6-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("project.json"),
+            "{\n  \"name\": \"x\",\n  \"layers\": { \"8\": \"A\" }\n}\n",
+        )
+        .unwrap();
+        enable(&dir, &dir);
+        let fields = editor_api::project_fields();
+        let get = |k: &str| fields.iter().find(|f| f.key == k).unwrap().clone();
+        assert_eq!(
+            (
+                get("layers.8").value.as_str(),
+                get("layers.8").group.as_str()
+            ),
+            ("A", "Layers")
+        );
+        assert_eq!(get("display.width").ty, "number");
+        assert!(editor_api::set_project_field("display.width", "1600"));
+        assert!(
+            !editor_api::set_project_field("display.width", "\"wide\""),
+            "a number"
+        );
+        assert!(editor_api::set_project_field("quality.default", "\"High\""));
+        assert!(
+            editor_api::set_project_field("layers.8", "\"\""),
+            "empty removes"
+        );
+        let text = std::fs::read_to_string(dir.join("project.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["display"]["width"], 1600);
+        assert_eq!(v["quality"]["default"], "High");
+        assert!(v.get("layers").is_none(), "{text}");
         reset();
         let _ = std::fs::remove_dir_all(&dir);
     }

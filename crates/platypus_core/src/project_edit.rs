@@ -1,17 +1,18 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Editing `project.json` as text (the editor's Project Settings): one top-level key is set,
-//! added or removed by changing only its own span, so everything else in the file (unknown keys,
-//! key order, `${templates}`, spacing, the platform sections) stays as written. [`FIELDS`] lists
-//! the keys the settings form edits, beside the loader that reads them ([`super::project`]).
+//! Editing `project.json` as text (the editor's Project Settings): one key (top-level, or a dotted
+//! path into the `layers`, `quality` and `display` sections) is set, added or removed by changing
+//! only its own span, so everything else in the file (unknown keys, key order, `${templates}`,
+//! spacing, the platform sections) stays as written. [`FIELDS`] lists the keys the settings form
+//! edits, beside the loader that reads them ([`super::project`]).
 
 use serde_json::Value;
 
 /// A key of `project.json` as the Project Settings form shows it.
 pub struct EditField {
     pub key: &'static str,
-    /// `string`, `bool`, `enum` (options) or `path` (a project file).
+    /// `string`, `bool`, `number`, `enum` (options) or `path` (a project file).
     pub ty: &'static str,
     pub group: &'static str,
     pub options: &'static [&'static str],
@@ -127,7 +128,124 @@ pub const FIELDS: &[EditField] = &[
         "Build",
         "A command run before compiling.",
     ),
+    EditField {
+        key: "display.mode",
+        ty: "enum",
+        group: "Display",
+        options: &[
+            "",
+            "Windowed",
+            "FullScreenWindow",
+            "ExclusiveFullScreen",
+            "MaximizedWindow",
+        ],
+        doc: "How the window opens the first time (later, the player's choice).",
+    },
+    field(
+        "display.width",
+        "number",
+        "Display",
+        "The window's width at first.",
+    ),
+    field(
+        "display.height",
+        "number",
+        "Display",
+        "The window's height at first.",
+    ),
+    field(
+        "display.refreshRate",
+        "number",
+        "Display",
+        "Exclusive full screen's refresh rate (Hz).",
+    ),
+    field(
+        "display.resizable",
+        "bool",
+        "Display",
+        "Whether the player can resize or maximize the window.",
+    ),
+    EditField {
+        key: "quality.default",
+        ty: "enum",
+        group: "Quality",
+        options: &["", "Low", "Medium", "High", "Ultra"],
+        doc: "The quality level a new player starts at.",
+    },
+    layer(3),
+    layer(6),
+    layer(7),
+    layer(8),
+    layer(9),
+    layer(10),
+    layer(11),
+    layer(12),
+    layer(13),
+    layer(14),
+    layer(15),
+    layer(16),
+    layer(17),
+    layer(18),
+    layer(19),
+    layer(20),
+    layer(21),
+    layer(22),
+    layer(23),
+    layer(24),
+    layer(25),
+    layer(26),
+    layer(27),
+    layer(28),
+    layer(29),
+    layer(30),
+    layer(31),
 ];
+
+/// The keys of the layers a project can name (`layers.3`, ...): Unity's user layers.
+const LAYER_KEYS: [&str; 32] = [
+    "layers.0",
+    "layers.1",
+    "layers.2",
+    "layers.3",
+    "layers.4",
+    "layers.5",
+    "layers.6",
+    "layers.7",
+    "layers.8",
+    "layers.9",
+    "layers.10",
+    "layers.11",
+    "layers.12",
+    "layers.13",
+    "layers.14",
+    "layers.15",
+    "layers.16",
+    "layers.17",
+    "layers.18",
+    "layers.19",
+    "layers.20",
+    "layers.21",
+    "layers.22",
+    "layers.23",
+    "layers.24",
+    "layers.25",
+    "layers.26",
+    "layers.27",
+    "layers.28",
+    "layers.29",
+    "layers.30",
+    "layers.31",
+];
+
+/// A user layer's name setting.
+const fn layer(n: usize) -> EditField {
+    field(
+        LAYER_KEYS[n],
+        "string",
+        "Layers",
+        "The layer's name (empty: unnamed).",
+    )
+}
 
 /// Where a top-level member of a JSON object is: the key's string, its value, and the separator
 /// span after it (a comma) if any.
@@ -239,13 +357,37 @@ fn members(text: &str) -> Result<(Vec<Member>, usize), String> {
     }
 }
 
-/// The raw value of a top-level key (JSON text, as written), if the file has it.
+/// The raw value of a key (JSON text, as written), if the file has it. A dotted key
+/// (`display.width`, `layers.8`) names a member of nested objects.
 pub fn get_key(text: &str, key: &str) -> Result<Option<String>, String> {
+    let (first, rest) = split_key(key);
     let (ms, _) = members(text)?;
-    Ok(ms
-        .iter()
-        .find(|m| m.key == key)
-        .map(|m| text[m.value.0..m.value.1].to_owned()))
+    let Some(m) = ms.iter().find(|m| m.key == first) else {
+        return Ok(None);
+    };
+    let value = &text[m.value.0..m.value.1];
+    match rest {
+        None => Ok(Some(value.to_owned())),
+        Some(rest) if value.starts_with('{') => get_key(value, rest),
+        Some(_) => Ok(None),
+    }
+}
+
+/// A dotted key's first part and the rest, if any.
+fn split_key(key: &str) -> (&str, Option<&str>) {
+    match key.split_once('.') {
+        Some((a, b)) => (a, Some(b)),
+        None => (key, None),
+    }
+}
+
+/// `value` under the dotted path `rest` (`a.b` -> `{"a": {"b": value}}`).
+fn nested(rest: &str, value: &Value) -> Value {
+    rest.rsplit('.').fold(value.clone(), |inner, k| {
+        let mut m = serde_json::Map::new();
+        m.insert(k.to_owned(), inner);
+        Value::Object(m)
+    })
 }
 
 /// The indentation of the first member (two spaces when the object is empty or on one line).
@@ -258,9 +400,30 @@ fn indent_of(text: &str, ms: &[Member]) -> String {
         .unwrap_or_else(|| "  ".into())
 }
 
-/// Sets a top-level key to `value`: its value is replaced where it is, or the key is added last.
-/// Nothing else in the text changes.
+/// Sets a key to `value`: its value is replaced where it is, or the key is added last. A dotted
+/// key is set inside its nested object (made when missing). Nothing else in the text changes.
 pub fn set_key(text: &str, key: &str, value: &Value) -> Result<String, String> {
+    let (first, rest) = split_key(key);
+    let Some(rest) = rest else {
+        return set_member(text, key, value);
+    };
+    let (ms, _) = members(text)?;
+    match ms.iter().find(|m| m.key == first) {
+        Some(m) if text[m.value.0..].starts_with('{') => {
+            let inner = set_key(&text[m.value.0..m.value.1], rest, value)?;
+            Ok(format!(
+                "{}{inner}{}",
+                &text[..m.value.0],
+                &text[m.value.1..]
+            ))
+        }
+        Some(_) => Err(format!("`{first}` isn't an object")),
+        None => set_member(text, first, &nested(rest, value)),
+    }
+}
+
+/// Sets a member of the object in `text` (see [`set_key`]).
+fn set_member(text: &str, key: &str, value: &Value) -> Result<String, String> {
     let (ms, close) = members(text)?;
     let json = serde_json::to_string(value).map_err(|e| e.to_string())?;
     if let Some(m) = ms.iter().find(|m| m.key == key) {
@@ -301,8 +464,34 @@ pub fn set_key(text: &str, key: &str, value: &Value) -> Result<String, String> {
     }
 }
 
-/// Removes a top-level key (and its comma); nothing else changes. Unchanged when it isn't there.
+/// Removes a key (and its comma); nothing else changes. Unchanged when it isn't there. A dotted
+/// key is removed from its nested object, and an object left empty goes too.
 pub fn remove_key(text: &str, key: &str) -> Result<String, String> {
+    let (first, rest) = split_key(key);
+    let Some(rest) = rest else {
+        return remove_member(text, key);
+    };
+    let (ms, _) = members(text)?;
+    let Some(m) = ms.iter().find(|m| m.key == first) else {
+        return Ok(text.to_owned());
+    };
+    let value = &text[m.value.0..m.value.1];
+    if !value.starts_with('{') {
+        return Ok(text.to_owned());
+    }
+    let inner = remove_key(value, rest)?;
+    if members(&inner)?.0.is_empty() {
+        return remove_member(text, first);
+    }
+    Ok(format!(
+        "{}{inner}{}",
+        &text[..m.value.0],
+        &text[m.value.1..]
+    ))
+}
+
+/// Removes a member of the object in `text` (see [`remove_key`]).
+fn remove_member(text: &str, key: &str) -> Result<String, String> {
     let (ms, _) = members(text)?;
     let Some(i) = ms.iter().position(|m| m.key == key) else {
         return Ok(text.to_owned());
@@ -387,5 +576,48 @@ mod tests {
         );
         assert!(set_key("[1]", "a", &Value::Null).is_err(), "not an object");
         assert!(set_key("{\"a\": \"x", "a", &Value::Null).is_err(), "broken");
+    }
+
+    // M5-PRJ-06
+    #[test]
+    fn dotted_keys_edit_nested_sections_in_place() {
+        let file = "{\n  \"name\": \"${user}\",\n  \"layers\": { \"8\": \"Detail\" },\n  \"display\": {\n    \"width\": 1280,\n    \"height\": 760\n  },\n  \"zz\": 1\n}\n";
+        assert_eq!(
+            get_key(file, "display.width").unwrap().as_deref(),
+            Some("1280")
+        );
+        assert_eq!(get_key(file, "layers.9").unwrap(), None);
+        assert_eq!(get_key(file, "name.x").unwrap(), None, "not an object");
+        // Replaced in place; added inside on the object's own line style.
+        let w = set_key(file, "display.width", &Value::from(1600)).unwrap();
+        assert_eq!(w, file.replace("1280", "1600"));
+        let l = set_key(file, "layers.9", &Value::from("Player")).unwrap();
+        assert!(
+            l.contains("\"layers\": { \"8\": \"Detail\", \"9\": \"Player\" }"),
+            "{l}"
+        );
+        let r = set_key(file, "display.resizable", &Value::Bool(false)).unwrap();
+        assert!(
+            r.contains("\"height\": 760,\n    \"resizable\": false\n  }"),
+            "{r}"
+        );
+        // A missing section is made, last.
+        let q = set_key(file, "quality.default", &Value::from("High")).unwrap();
+        assert!(
+            q.ends_with("\"zz\": 1,\n  \"quality\": {\"default\":\"High\"}\n}\n"),
+            "{q}"
+        );
+        serde_json::from_str::<Value>(&q).unwrap();
+        // Removed from the section; a section left empty goes too.
+        let gone = remove_key(file, "layers.8").unwrap();
+        assert!(!gone.contains("layers"), "{gone}");
+        serde_json::from_str::<Value>(&gone).unwrap();
+        let h = remove_key(file, "display.height").unwrap();
+        assert!(
+            h.contains("\"display\": {\n    \"width\": 1280\n  }"),
+            "{h}"
+        );
+        assert_eq!(remove_key(file, "quality.default").unwrap(), file);
+        assert!(set_key(file, "name.x", &Value::Null).is_err());
     }
 }
