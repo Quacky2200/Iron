@@ -9,7 +9,9 @@ import { cx } from "./classes.ts";
 import {
   acceleratorLabel,
   CLOSED,
+  fieldKeepsKey,
   findAccelerator,
+  isTextField,
   type Menu,
   type MenuItem,
   type MenuState,
@@ -42,6 +44,22 @@ function run(item: MenuItem) {
   }
 }
 
+/**
+ * A key pressed in a focused text field, seen by a `keydown` handler around it: runs the
+ * accelerator it is unless the field keeps it (`fieldKeepsKey`), and then prevents the field's
+ * own handling. Keys elsewhere reach the menubar through `input` instead. Returns whether it ran.
+ */
+export function fieldAccelerator(menus: readonly Menu[], e: PlatypusKeyboardEvent): boolean {
+  if (!isTextField(e.target.type) || modalOpen() || e.repeat) return false;
+  const mods = { ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey };
+  if (fieldKeepsKey(e.code, mods)) return false;
+  const item = findAccelerator(menus, e.code, mods);
+  if (!item) return false;
+  e.preventDefault();
+  run(item);
+  return true;
+}
+
 export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProps) {
   const [state, setState] = useState<MenuState>(initialState);
   const bar = useRef<PlatypusElement>(null);
@@ -64,7 +82,8 @@ export function MenuBar({ menus, className, initialState = CLOSED }: MenuBarProp
     run(item);
   };
 
-  // Accelerators and Alt+letter / F10 from anywhere (keys typed into text fields stay theirs).
+  // Accelerators and Alt+letter / F10 from anywhere (keys typed into text fields don't come
+  // here: `fieldAccelerator` runs the ones a field doesn't keep).
   useEffect(() => {
     return input.on("keydown", (e) => {
       // A modal dialog has the keys.

@@ -1557,7 +1557,10 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         grid, gizmos, reopening the last scene, in PlayerPrefs), Help > Documentation (opens `docs/editor.md` in the
         code editor) and About; the window's close box asks to save unsaved changes like File > Exit
         (`Window.main.onCloseRequested`) (`M5-EDT-41`, `-42`)
-        - [ ] Later: accelerators while a text field has focus; a code-editor command setting (it is
+        - [x] Accelerators while a text field has focus (2026-10-30): the field keeps typing, Delete and Ctrl+A / C /
+          V / X; other Ctrl / Alt keys and the function keys run the menus (`fieldAccelerator` on the editor's root,
+          `fieldKeepsKey`); bench files send the modifier state (`M5-EDT-44`, `-45`, `M9-BEN-04`)
+        - [ ] Later: a code-editor command setting (it is
           `PLATYPUS_EDITOR_OPEN` today); a manual check of the close-box prompt in the window
       - [ ] E11 (not started, decided 2026-10-29: later): the project's own code in the editor (its component kinds
         registered, so script `@property` fields are edited like the built-ins instead of as data) and play mode
@@ -1565,8 +1568,7 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         bundle JIT-loaded into the editor process with its hooks held back in edit mode
     - [ ] Later: variable row heights in the virtual list; dropping tabs at a position in
       the tab strip; floating panels in
-      their own windows; accelerators while a text field has focus (keys typed into
-      fields don't reach `input`); a golden image for the editor (needs a fixed font, the
+      their own windows; a golden image for the editor (needs a fixed font, the
       editor uses system fonts)
     - [ ] Later: native menus as a fallback (Win32 menus on Windows, NSMenu on macOS, GTK on
       Linux): `MenuBar` stops drawing itself and builds the platform menu from the same

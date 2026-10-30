@@ -71,7 +71,7 @@ import {
   shownChildren,
 } from "./scene-edit.ts";
 import { type Menu, type MenuItem } from "./menu.ts";
-import { MenuBar } from "./MenuBar.tsx";
+import { fieldAccelerator, MenuBar } from "./MenuBar.tsx";
 import { ProjectBrowser } from "./ProjectBrowser.tsx";
 import { SceneView, visibleObjects } from "./SceneView.tsx";
 import { useScreenSize } from "./screen.ts";
@@ -759,7 +759,7 @@ function App() {
 
   const dockRect = { x: 0, y: MENUBAR, width: screen.width, height: Math.max(0, screen.height - MENUBAR - STATUS) };
   return (
-    <box className="editor">
+    <box className="editor" onKeyDown={(e: PlatypusKeyboardEvent) => fieldAccelerator(menus, e)}>
       <MenuBar menus={menus} />
       <Dock layout={layout} onLayoutChange={setLayout} panels={panels} rect={dockRect} />
       <box className="statusbar">

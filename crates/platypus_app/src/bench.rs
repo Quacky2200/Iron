@@ -15,7 +15,9 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use platypus_platform::{FakePlatform, GamepadEvent, InputEvent, MouseButton, WheelDelta};
+use platypus_platform::{
+    FakePlatform, GamepadEvent, InputEvent, Modifiers, MouseButton, WheelDelta,
+};
 use platypus_platform::{WindowKey, WindowSpec};
 use serde_json::{Value, json};
 
@@ -176,6 +178,7 @@ impl Spec {
                 }
             }
             input.sort_by_key(|(f, _)| *f);
+            let input = with_modifiers(input);
             segments.push(Segment {
                 name: s["name"]
                     .as_str()
@@ -255,6 +258,34 @@ fn pad_name(name: &str) -> &'static str {
         .find(|n| **n == name)
         .copied()
         .unwrap_or("Unknown")
+}
+
+/// The steps with a `Modifiers` event after each press or release of Ctrl, Shift, Alt or the
+/// Windows key, as the window sends: the UI reads modifiers from those (Ctrl+Z in a text field).
+fn with_modifiers(input: Vec<(u32, Step)>) -> Vec<(u32, Step)> {
+    let mut held = Modifiers::default();
+    let mut out = Vec::with_capacity(input.len());
+    for (frame, step) in input {
+        let change = match &step {
+            Step::Event(InputEvent::KeyDown { code, .. }) => Some((code.clone(), true)),
+            Step::Event(InputEvent::KeyUp { code, .. }) => Some((code.clone(), false)),
+            _ => None,
+        };
+        out.push((frame, step));
+        let Some((code, down)) = change else {
+            continue;
+        };
+        let flag = match code.as_str() {
+            "ControlLeft" | "ControlRight" => &mut held.ctrl,
+            "ShiftLeft" | "ShiftRight" => &mut held.shift,
+            "AltLeft" | "AltRight" => &mut held.alt,
+            "MetaLeft" | "MetaRight" | "SuperLeft" | "SuperRight" => &mut held.meta,
+            _ => continue,
+        };
+        *flag = down;
+        out.push((frame, Step::Event(InputEvent::Modifiers(held))));
+    }
+    out
 }
 
 /// One input entry as the steps it stands for, each at its frame.
@@ -705,6 +736,28 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    // M9-BEN-04
+    #[test]
+    fn modifier_keys_send_the_modifier_state() {
+        let spec = Spec::parse(
+            r#"{ "segments": [ { "input": [
+                { "frame": 0, "kind": "keyDown", "code": "ControlLeft" },
+                { "frame": 1, "kind": "key", "code": "KeyZ" },
+                { "frame": 2, "kind": "keyUp", "code": "ControlLeft" } ] } ] }"#,
+            &BenchArgs::default(),
+        )
+        .unwrap();
+        let mods: Vec<(u32, bool)> = spec.segments[0]
+            .input
+            .iter()
+            .filter_map(|(f, s)| match s {
+                Step::Event(InputEvent::Modifiers(m)) => Some((*f, m.ctrl)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(mods, [(0, true), (2, false)]);
     }
 
     // M9-BEN-01

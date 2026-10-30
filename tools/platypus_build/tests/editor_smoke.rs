@@ -204,6 +204,44 @@ fn dialogs_dim_the_editor_keep_tab_inside_and_give_focus_back() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
+/// With the Inspector's name field focused: Delete and Ctrl+A stay with the field (Cube is not
+/// deleted), Ctrl+Z undoes the duplicate made before, and Ctrl+S asks where to save.
+const FIELD_KEYS_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "keys", "frames": 80, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Cube" },
+    { "frame": 4, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 5, "kind": "key", "code": "KeyD" },
+    { "frame": 6, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 12, "kind": "moveToText", "text": "Duplicate Cube" },
+    { "frame": 14, "kind": "click", "x": 1420, "y": 70 },
+    { "frame": 18, "kind": "key", "code": "Delete" },
+    { "frame": 20, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 21, "kind": "key", "code": "KeyA" },
+    { "frame": 22, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 26, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 27, "kind": "key", "code": "KeyZ" },
+    { "frame": 28, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 34, "kind": "moveToText", "text": "Undid Duplicate Cube" },
+    { "frame": 36, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 37, "kind": "key", "code": "KeyS" },
+    { "frame": 38, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 46, "kind": "moveToText", "text": "Save Scene As" },
+    { "frame": 48, "kind": "key", "code": "Escape" }
+  ] }
+] }"#;
+
+// M5-EDT-45
+#[test]
+fn menu_keys_work_in_text_fields_except_the_fields_own() {
+    let run = run_editor("field-keys", FIELD_KEYS_SPEC, false);
+    let log = std::fs::read_to_string(run.join("run.log")).unwrap();
+    assert!(
+        !log.contains("Delete Cube"),
+        "Delete left the field:\n{log}"
+    );
+    let _ = std::fs::remove_dir_all(&run);
+}
+
 /// Delete, undo, redo, undo and duplicate Cube, then drag Sphere onto Floor in the Hierarchy and
 /// undo that. Each `moveToText` finds the status bar's report of the step (else the run fails).
 const UNDO_SPEC: &str = r#"{ "warmup": 30, "segments": [

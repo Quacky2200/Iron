@@ -24,7 +24,7 @@ import {
   split,
   TAB_BAR,
 } from "../src/dock.ts";
-import { acceleratorLabel, CLOSED, findAccelerator, type Menu, type MenuState, menuKey, nextIndex, parseAccelerator } from "../src/menu.ts";
+import { acceleratorLabel, CLOSED, fieldKeepsKey, findAccelerator, isTextField, type Menu, type MenuState, menuKey, nextIndex, parseAccelerator } from "../src/menu.ts";
 import { clickSelect, emptyTreeState, flatten, reveal, type TreeNode, type TreeState, treeKey } from "../src/tree.ts";
 import { keyIndex, scrollForIndex, visibleRange } from "../src/virtual.ts";
 import { close, eq, report, same, test, yes } from "./check.ts";
@@ -424,6 +424,18 @@ test("a closed panel opens again in the first group, an open one is made active"
   eq(groupOf(back, "console")?.id ?? "", "a", "in the first group");
   const active = openTab(layout, "hierarchy");
   eq(groupOf(active, "hierarchy")?.active ?? "", "hierarchy", "made active where it is");
+});
+
+// M5-EDT-44
+test("a text field keeps typing, Delete and the clipboard; Ctrl and the function keys go to the menus", () => {
+  const ctrl = { ...NO_MODS, ctrl: true };
+  yes(isTextField("input") && isTextField("textarea") && !isTextField("box"), "fields");
+  for (const code of ["KeyZ", "Delete", "Backspace", "Escape", "Enter", "ArrowLeft"]) yes(fieldKeepsKey(code, NO_MODS), `${code} kept`);
+  for (const code of ["KeyA", "KeyC", "KeyV", "KeyX", "ArrowLeft", "Backspace"]) yes(fieldKeepsKey(code, ctrl), `Ctrl+${code} kept`);
+  for (const code of ["KeyZ", "KeyY", "KeyS", "KeyN", "KeyO", "KeyD"]) yes(!fieldKeepsKey(code, ctrl), `Ctrl+${code} to the menus`);
+  yes(!fieldKeepsKey("KeyS", { ...ctrl, shift: true }), "Ctrl+Shift+S");
+  yes(!fieldKeepsKey("F1", NO_MODS) && !fieldKeepsKey("F4", { ...NO_MODS, alt: true }), "F1, Alt+F4");
+  yes(!fieldKeepsKey("KeyA", { ...ctrl, alt: true }), "Ctrl+Alt+A");
 });
 
 export function run(): string {

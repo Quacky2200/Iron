@@ -123,6 +123,23 @@ export function findAccelerator(menus: readonly Menu[], code: string, mods: Omit
   return null;
 }
 
+/** Whether an event's target (`target.type`) is a text field, whose keys don't reach `input`. */
+export const isTextField = (type: string): boolean => type === "input" || type === "textarea";
+
+// What Ctrl (Cmd) does in a text field: select all, the clipboard, moving and deleting by words.
+const FIELD_COMMANDS = ["KeyA", "KeyC", "KeyV", "KeyX", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Backspace", "Delete"];
+
+/**
+ * Whether a key pressed in a focused text field is the field's own: typing, moving, Delete,
+ * Escape and Ctrl+A / C / V / X are; other Ctrl or Alt combinations and the function keys run
+ * the menus' accelerators (Undo, Redo, Save, New, Open, ...).
+ */
+export function fieldKeepsKey(code: string, mods: Omit<Accelerator, "code">): boolean {
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return false;
+  if (!mods.ctrl && !mods.alt && !mods.meta) return true;
+  return (mods.ctrl || mods.meta) && !mods.alt && FIELD_COMMANDS.includes(code);
+}
+
 /** Whether keyboard movement can stop on an item. */
 export const selectable = (item: MenuItem | undefined): boolean => !!item && !item.separator && !item.disabled;
 
