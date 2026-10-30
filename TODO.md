@@ -1585,6 +1585,11 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
           `fieldKeepsKey`); bench files send the modifier state (`M5-EDT-44`, `-45`, `M9-BEN-04`)
         - [ ] Later: a code-editor command setting (it is
           `PLATYPUS_EDITOR_OPEN` today); a manual check of the close-box prompt in the window
+      - [ ] Editor startup compile (~2.3-3.3 s in release; measured 2026-10-30: lowering ~2.3 s, Cranelift ~0.9 s,
+        GPU device and renderer setup ~0.7 s after it): most of the lowered text is the UI prelude (73,874 lines
+        against the editor's 6,935). No cheap cache: JIT code holds absolute addresses and the IR has no
+        serialisation. Options: serialise the lowered IR keyed by bundle hash and compiler version (medium), or set
+        the GPU up while compiling (medium)
       - [ ] E11 (not started, decided 2026-10-29: later): the project's own code in the editor (its component kinds
         registered, so script `@property` fields are edited like the built-ins instead of as data) and play mode
         (Play / Pause / Stop in the Game view, the scene restored on Stop). Needs a design doc first: a second
