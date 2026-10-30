@@ -880,31 +880,25 @@
 }
 
 /* Modal dialogs */
-.platypus-modal-layer {
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 100;
-}
-
+/* The dialogs are modal `dialog`s in the top layer; these boxes only hold them. */
+.platypus-modal-layer,
 .platypus-modal-slot {
   position: absolute;
   left: 0;
   top: 0;
-  background-color: rgba(0, 0, 0, 0.4);
 }
 
-.platypus-modal-backdrop {
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--platypus-font);
-  font-size: 13px;
-  color: var(--platypus-text);
+/* Dims what is under the dialog, the world's see-through panels too. Blending is in linear light
+   (docs/differences.md), so this alpha darkens about as much as 0.35 in a browser. */
+.platypus-modal::backdrop {
+  background-color: rgba(0, 0, 0, 0.6);
 }
 
 .platypus-modal {
+  font-family: var(--platypus-font);
+  font-size: 13px;
+  color: var(--platypus-text);
+  padding: 0;
   flex-direction: column;
   max-height: 90%;
   background-color: var(--platypus-panel);
@@ -996,6 +990,11 @@
 .platypus-button.disabled {
   color: var(--platypus-muted);
   background-color: var(--platypus-panel-alt);
+}
+
+.platypus-button:focus-visible {
+  outline: 2px solid var(--platypus-accent);
+  outline-offset: 1px;
 }
 
 .platypus-field {

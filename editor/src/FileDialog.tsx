@@ -10,7 +10,7 @@ import { type DialogMode, type FileFilter, ALL_FILES, resolveTyped, shownEntries
 import { closeModal, pushModal } from "./modal.ts";
 import { Button, confirmDialog, Modal, textDialog } from "./Modal.tsx";
 import { baseName, crumbs, formatSize, joinPath, parentPath, projectFolder } from "./project.ts";
-import { VirtualList } from "./VirtualList.tsx";
+import { VirtualList, type VirtualListHandle } from "./VirtualList.tsx";
 
 export interface FileDialogOptions {
   mode: DialogMode;
@@ -37,6 +37,13 @@ function FileDialogView({ options, done }: { options: FileDialogOptions; done: (
   const [selected, setSelected] = useState(-1);
   const [problem, setProblem] = useState("");
   const [version, setVersion] = useState(0);
+  // Keys start in the name field (Enter opens or saves), or the list when choosing a folder.
+  const field = useRef<PlatypusElement>(null);
+  const list = useRef<VirtualListHandle>(null);
+  useEffect(() => {
+    if (field.current) field.current.focus();
+    else list.current?.focus();
+  }, []);
   const filter = filters[filterIndex] ?? ALL_FILES;
   const entries = useMemo(() => {
     const listed = dir === "" || Editor.exists(dir) ? Editor.listDir(dir) : [];
@@ -131,6 +138,7 @@ function FileDialogView({ options, done }: { options: FileDialogOptions; done: (
         <Button label="New Folder" onClick={newFolder} />
       </box>
       <VirtualList
+        ref={list}
         className="platypus-file-list"
         count={rows.length}
         rowHeight={ROW}
@@ -160,6 +168,7 @@ function FileDialogView({ options, done }: { options: FileDialogOptions; done: (
         <box className="platypus-file-fields">
           <Text className="platypus-modal-label">Name</Text>
           <Input
+            ref={field}
             className="platypus-field"
             value={name}
             onChange={(e) => {

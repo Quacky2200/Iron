@@ -224,6 +224,9 @@ pub struct Interaction {
     /// Open modal dialogs, oldest first, with the element focused before each opened
     /// (focus goes back there when it closes).
     modals: Vec<(NodeId, Option<NodeId>)>,
+    /// What had focus before the last change (where a modal a script focused into as it
+    /// opened gives focus back).
+    previous_focus: Option<NodeId>,
     /// Drag and drop: a press that may become a drag, and the drag in progress.
     dnd: dnd::Dnd,
 }
@@ -646,6 +649,16 @@ impl Interaction {
         if let Some(dialog) = tree.top_modal()
             && !self.modals.iter().any(|(d, _)| *d == dialog)
         {
+            let inside = |id: NodeId| tree.contains(id) && tree.is_inclusive_ancestor(dialog, id);
+            // A script may have focused something in the dialog as it opened (a text field
+            // focusing itself): keep that, and give focus back to where it was before.
+            if let Some(f) = self.focused.filter(|f| inside(*f)) {
+                let before = self.previous_focus.filter(|p| !inside(*p));
+                self.modals.push((dialog, before));
+                let visible = self.keyboard;
+                self.set_focus(tree, Some(f), visible, dispatch);
+                return;
+            }
             self.modals.push((dialog, self.focused));
             let first = tab_order(tree)
                 .into_iter()
@@ -989,6 +1002,7 @@ impl Interaction {
             return;
         }
         self.focused = target;
+        self.previous_focus = old;
         if let Some(id) = old.filter(|id| tree.contains(*id)) {
             update_state(tree, id, |s| {
                 s.focus = false;

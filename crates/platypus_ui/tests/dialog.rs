@@ -196,6 +196,14 @@ fn modal_dialogs_paint_on_top_over_a_backdrop() {
     assert_eq!(p.tree.hit_test(5.0, 5.0), Some(p.dialog));
     assert_eq!(p.tree.hit_test(395.0, 395.0), Some(p.dialog));
     assert_eq!(p.tree.hit_test(152.0, 172.0), Some(p.first));
+    // M3-DLG-03: `to_window` maps a laid-out point through the dialog's centring translate,
+    // back to where it is hit (`to_local` undoes it).
+    let r = p.tree.rect(p.first).unwrap();
+    let (cx, cy) = (r.x + r.width / 2.0, r.y + r.height / 2.0);
+    let (wx, wy) = p.tree.to_window(p.first, cx, cy).unwrap();
+    assert_eq!((wx, wy), (155.0, 175.0));
+    assert_eq!(p.tree.hit_test(wx, wy), Some(p.first));
+    assert_eq!(p.tree.to_local(p.first, wx, wy), Some((cx, cy)));
 
     p.set_attr("open", false.into());
     let fills = p.fills();
@@ -229,6 +237,25 @@ fn modals_take_focus_trap_tab_and_give_focus_back() {
     // Clicks outside reach only the backdrop (the dialog), not the opener.
     p.click(10.0, 10.0);
     assert_ne!(p.ui.focused(), Some(p.opener));
+    p.set_attr("open", false.into());
+    assert_eq!(p.ui.focused(), Some(p.opener), "focus goes back");
+}
+
+// M3-DLG-03
+#[test]
+fn focus_given_back_when_a_script_focused_inside_the_modal_first() {
+    let mut p = Page::new("", &[("modal", true.into())]);
+    p.input(Input::Focus(p.opener));
+    // Opened and, before any refresh, a field inside focused by the script (as a dialog's
+    // text field does when it mounts).
+    let errors = p.tree.apply_commit(&Commit {
+        ops: vec![op(SET_ATTRS, &[n(p.dialog.0), "open".into(), true.into()])],
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+    p.tree.layout_if_needed();
+    p.input(Input::Focus(p.second));
+    p.input(Input::Refresh);
+    assert_eq!(p.ui.focused(), Some(p.second), "the script's choice stays");
     p.set_attr("open", false.into());
     assert_eq!(p.ui.focused(), Some(p.opener), "focus goes back");
 }

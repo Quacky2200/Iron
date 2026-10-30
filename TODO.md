@@ -1493,8 +1493,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         in-editor `Modal`, `confirmDialog`, `textDialog` and `FileDialog` (open / save / folder, filters, typed paths,
         New Folder, overwrite check); New Folder, Rename (F2) and Delete (Del) in the Project browser
         (`M5-EFS-02..05`, `M5-EDT-31..34`)
-        - [ ] The modal backdrop doesn't dim what is under it (its translucent background isn't drawn); Tab isn't
-          kept inside a dialog; no context menu in the Project browser yet
+        - [x] Dialogs are modal `dialog`s (2026-10-30): a dimmed `::backdrop` (black at 0.6: blending is in linear
+          light, the old 0.4 tint barely showed), Tab and the pointer kept inside, Escape cancels, focus given back on
+          close (also when a field focuses itself as it opens: `Interaction` keeps the focus from before, `M3-DLG-03`);
+          dialog buttons take Tab, Enter and Space; the bench finds text through transforms (`UiTree::to_window`)
+          (`M5-EDT-43`)
+        - [ ] No context menu in the Project browser yet
       - [x] E3: undo / redo (`history.ts`: merge keys, saved position, cap; `scene-edit.ts`: commands keep where an
         object is, not the object, so undoing a delete builds it again from an `EditorScene.snapshot`); Edit > Undo /
         Redo / Cut / Copy / Paste / Duplicate / Delete / Select All; handle drags, renames, Hierarchy drags (onto a row:

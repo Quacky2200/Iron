@@ -151,6 +151,59 @@ fn the_file_dialog_and_prompts_open_and_close() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// A dialog dims the editor under it, keeps Tab inside it and gives focus back when Escape
+/// closes it: F2 on a Project row asks again after the dialog is gone (the list has focus);
+/// in New Folder, Tab three times wraps from the name past both buttons to the name, where
+/// Enter makes the folder.
+const MODAL_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "start", "frames": 20, "input": [ { "frame": 0, "kind": "clickText", "text": "Project" } ] },
+  { "name": "open", "frames": 30, "input": [
+    { "frame": 0, "kind": "clickText", "text": "assets" },
+    { "frame": 6, "kind": "key", "code": "F2" },
+    { "frame": 14, "kind": "moveToText", "text": "New name for assets" }
+  ] },
+  { "name": "back", "frames": 80, "input": [
+    { "frame": 0, "kind": "key", "code": "Escape" },
+    { "frame": 8, "kind": "key", "code": "F2" },
+    { "frame": 16, "kind": "moveToText", "text": "New name for assets" },
+    { "frame": 18, "kind": "key", "code": "Escape" },
+    { "frame": 26, "kind": "clickText", "text": "New Folder" },
+    { "frame": 34, "kind": "moveToText", "text": "Folder name" },
+    { "frame": 36, "kind": "key", "code": "Tab" },
+    { "frame": 38, "kind": "key", "code": "Tab" },
+    { "frame": 40, "kind": "key", "code": "Tab" },
+    { "frame": 44, "kind": "key", "code": "Enter" }
+  ] }
+] }"#;
+
+// M5-EDT-43
+#[test]
+fn dialogs_dim_the_editor_keep_tab_inside_and_give_focus_back() {
+    let project = std::env::temp_dir().join(format!(
+        "platypus-editor-modal-project-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&project);
+    std::fs::create_dir_all(project.join("assets")).unwrap();
+    std::fs::write(project.join("project.json"), "{ \"name\": \"fixture\" }\n").unwrap();
+    let run = run_editor_on("modal", MODAL_SPEC, true, &project);
+    // The Hierarchy panel (left, under its rows) is darker behind the dialog.
+    let a = image::open(run.join("shots/01-start.png"))
+        .unwrap()
+        .to_rgb8();
+    let b = image::open(run.join("shots/02-open.png"))
+        .unwrap()
+        .to_rgb8();
+    let (p, q) = (a.get_pixel(150, 500), b.get_pixel(150, 500));
+    assert!(
+        p.0.iter().zip(q.0).all(|(s, t)| t + 6 < *s),
+        "not dimmed: {p:?} then {q:?}"
+    );
+    assert!(project.join("New Folder").is_dir());
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 /// Delete, undo, redo, undo and duplicate Cube, then drag Sphere onto Floor in the Hierarchy and
 /// undo that. Each `moveToText` finds the status bar's report of the step (else the run fails).
 const UNDO_SPEC: &str = r#"{ "warmup": 30, "segments": [

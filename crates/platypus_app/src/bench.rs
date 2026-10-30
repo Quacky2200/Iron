@@ -469,11 +469,10 @@ fn text_centre(app: &mut App, text: &str) -> Option<(f64, f64)> {
         .find(|(_, t)| t.trim() == text)
         .or_else(|| blocks.iter().find(|(_, t)| t.contains(text)))?;
     let r = ui.rect(found.0)?;
+    // Through transforms (a modal dialog is centred by `translate: -50% -50%`).
+    let (x, y) = ui.to_window(found.0, r.x + r.width / 2.0, r.y + r.height / 2.0)?;
     let scale = f64::from(app.scale());
-    Some((
-        f64::from(r.x + r.width / 2.0) * scale,
-        f64::from(r.y + r.height / 2.0) * scale,
-    ))
+    Some((f64::from(x) * scale, f64::from(y) * scale))
 }
 
 /// Runs the game without a window as `args` says and writes the JSON report.

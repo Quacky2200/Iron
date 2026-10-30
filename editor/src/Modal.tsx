@@ -1,10 +1,11 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Modal dialogs drawn by the editor's own UI (no OS dialogs): a backdrop that takes the pointer,
-// a centred box with a title, Escape to cancel and Enter for the default button. `ModalHost`
-// draws the open ones (modal.ts); `confirmDialog` and `textDialog` are the common ones, as
-// promises of the answer.
+// Modal dialogs drawn by the editor's own UI (no OS dialogs), as HTML's modal `<dialog>`: in the
+// top layer over a dimmed `::backdrop`, everything outside inert (Tab, d-pad and the pointer stay
+// in the dialog), focus moved in when it opens and given back when it closes, Escape to cancel
+// and Enter for the default button. `ModalHost` draws the open ones (modal.ts); `confirmDialog`
+// and `textDialog` are the common ones, as promises of the answer.
 
 import { closeModal, modals, pushModal, subscribeModals } from "./modal.ts";
 
@@ -18,48 +19,37 @@ export interface ModalProps {
   onEnter?: () => void;
 }
 
-/** The dialog's shell. Focuses itself when it opens, so keys come to it. */
+/** The dialog's shell: an open modal `dialog` (the engine keeps focus inside it). */
 export function Modal({ title, width = 420, children, onCancel, onEnter }: ModalProps) {
-  const box = useRef<PlatypusElement>(null);
-  useEffect(() => {
-    box.current?.focus();
-  }, []);
   return (
-    <box
-      className="platypus-modal-backdrop"
-      onPointerDown={(e: PlatypusPointerEvent) => {
-        e.stopPropagation();
+    <dialog
+      open
+      modal
+      className="platypus-modal"
+      style={{ width }}
+      tabIndex={-1}
+      onCancel={(e: PlatypusEvent) => {
+        // Escape: the dialog goes when the editor drops it from its stack, not by itself.
         e.preventDefault();
+        onCancel();
+      }}
+      onKeyDown={(e: PlatypusKeyboardEvent) => {
+        if (e.key === "Enter" && onEnter) {
+          e.preventDefault();
+          e.stopPropagation();
+          onEnter();
+        }
       }}
     >
-      <box
-        ref={box}
-        className="platypus-modal"
-        style={{ width }}
-        tabIndex={-1}
-        onPointerDown={(e: PlatypusPointerEvent) => e.stopPropagation()}
-        onKeyDown={(e: PlatypusKeyboardEvent) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            onCancel();
-          } else if (e.key === "Enter" && onEnter) {
-            e.preventDefault();
-            e.stopPropagation();
-            onEnter();
-          }
-        }}
-      >
-        <box className="platypus-modal-title">
-          <Text>{title}</Text>
-          <box style={{ flexGrow: 1 }} />
-          <box className="platypus-modal-close" onClick={onCancel}>
-            <Text>×</Text>
-          </box>
+      <box className="platypus-modal-title">
+        <Text>{title}</Text>
+        <box style={{ flexGrow: 1 }} />
+        <box className="platypus-modal-close" onClick={onCancel}>
+          <Text>×</Text>
         </box>
-        <box className="platypus-modal-body">{children}</box>
       </box>
-    </box>
+      <box className="platypus-modal-body">{children}</box>
+    </dialog>
   );
 }
 
@@ -70,24 +60,35 @@ export interface ButtonProps {
   disabled?: boolean;
 }
 
+/** A dialog button: clicked, or Enter / Space while focused (Tab reaches it). */
 export function Button({ label, onClick, primary = false, disabled = false }: ButtonProps) {
   const classes = primary ? "platypus-button primary" : "platypus-button";
   return (
-    <box className={disabled ? `${classes} disabled` : classes} onClick={() => !disabled && onClick()}>
+    <box
+      className={disabled ? `${classes} disabled` : classes}
+      tabIndex={disabled ? -1 : 0}
+      onClick={() => !disabled && onClick()}
+      onKeyDown={(e: PlatypusKeyboardEvent) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        // Not also the dialog's default button.
+        e.preventDefault();
+        e.stopPropagation();
+        if (!disabled) onClick();
+      }}
+    >
       <Text>{label}</Text>
     </box>
   );
 }
 
-/** The open dialogs, over everything else. */
+/** The open dialogs, over everything else (each a modal `dialog` in the top layer). */
 export function ModalHost() {
   const open = useSyncExternalStore(subscribeModals, modals);
-  const screen = { width: Screen.width, height: Screen.height };
   if (open.length === 0) return null;
   return (
-    <box className="platypus-modal-layer" style={{ width: screen.width, height: screen.height }}>
+    <box className="platypus-modal-layer">
       {open.map((m) => (
-        <box key={m.id} className="platypus-modal-slot" style={{ width: screen.width, height: screen.height }}>
+        <box key={m.id} className="platypus-modal-slot">
           {m.render()}
         </box>
       ))}

@@ -3403,6 +3403,28 @@ impl<L: LayoutEngine> UiTree<L> {
     /// Maps window point (x, y) into the plane `id` is laid out in, undoing the
     /// transforms of it and its ancestors. `None` if a transform can't be inverted.
     pub fn to_local(&self, id: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
+        let plane = self.plane_of(id)?;
+        if plane.is_identity() {
+            Some((x, y))
+        } else {
+            plane.inverse()?.apply(x, y)
+        }
+    }
+
+    /// Maps point (x, y) of the plane `id` is laid out in to the window, through the
+    /// transforms of it and its ancestors (the inverse of [`Self::to_local`]): where a
+    /// translated dialog's text is on screen, say.
+    pub fn to_window(&self, id: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
+        let plane = self.plane_of(id)?;
+        if plane.is_identity() {
+            Some((x, y))
+        } else {
+            plane.apply(x, y)
+        }
+    }
+
+    /// The mapping from the plane `id` is laid out in to the window.
+    fn plane_of(&self, id: NodeId) -> Option<Homography> {
         let mut chain = Vec::new();
         let mut at = Some(id);
         while let Some(n) = at {
@@ -3426,11 +3448,7 @@ impl<L: LayoutEngine> UiTree<L> {
             plane = p;
             xf = child;
         }
-        if plane.is_identity() {
-            Some((x, y))
-        } else {
-            plane.inverse()?.apply(x, y)
-        }
+        Some(plane)
     }
 
     /// Starts (or with Shift extends) a static text selection at window point (x, y)
