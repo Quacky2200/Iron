@@ -211,7 +211,11 @@ export function resize(layout: DockNode, splitId: string, index: number, delta: 
 /** The layout as JSON (what `parseLayout` reads back). */
 export const serializeLayout = (layout: DockNode): string => JSON.stringify(layout);
 
-/** A layout node as saved: any key may be missing (JSON.parse checks the types of those there). */
+/**
+ * A layout node as saved: any key may be missing (JSON.parse checks the types of those there).
+ * Read as this record rather than `unknown` with checks: platypus_ts has no dynamic values yet
+ * (tools/platypus_ts/TODO.md D1, D2).
+ */
 interface SavedNode {
   type?: string;
   id?: string;

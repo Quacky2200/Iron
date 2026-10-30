@@ -473,7 +473,7 @@ function App() {
     }
     const id = String(go.id);
     setTree((t) => {
-      const selected = additive ? new Set(t.selected) : new Set<string>();
+      const selected = new Set(additive ? t.selected : []);
       if (additive && selected.has(id)) selected.delete(id);
       else selected.add(id);
       return { ...t, selected, focus: id, anchor: id };

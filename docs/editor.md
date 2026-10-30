@@ -532,10 +532,12 @@ command's undo writes the old value back, or removes the key when the file had n
 
 ## Limits and known gaps
 
-- The editor source works around gaps in platypus_ts (listed in `tools/platypus_ts/TODO.md`, "TypeScript gaps"):
-  class lists are built by `cx()` ([classes.ts](../editor/src/classes.ts)), the `..` row is told apart by index,
-  drop handlers are set directly on the element, some components carry a `: ReactNode` return annotation, and
-  `parseLayout` reads its JSON into a typed `SavedNode`. Remove each when the gap closes.
+- The editor source works around gaps in platypus_ts (listed in `tools/platypus_ts/TODO.md`, "TypeScript gaps"),
+  each cited where it is: class lists are built by `cx()` ([classes.ts](../editor/src/classes.ts); mixed-type arrays),
+  the `..` row is told apart by index (struct conversion of array elements), `renderRow` carries a `: ReactNode`
+  return annotation (no adapter for a function returning an element), and `parseLayout` reads its JSON into a typed
+  `SavedNode` (no dynamic values). The other `: ReactNode` annotations are on closures that call themselves or each
+  other, which TypeScript also asks for (TS7023). Remove each when the gap closes.
 
 - Fixed row heights only; no tab reordering by position in the strip (a drop in a strip appends).
 - The Scene view has no picking in the 3D view (only icons select) and snaps only with Ctrl;

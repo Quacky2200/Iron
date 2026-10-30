@@ -55,7 +55,8 @@ export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTr
   const [over, setOver] = useState<string | null>(null);
   const root = projectFolder();
   const rootName = root ? baseName(root) : "Project";
-  // `..` first when inside a folder.
+  // `..` first when inside a folder, told apart by its place: a `(ProjectEntry & { up?: true })[]`
+  // isn't converted element by element yet (tools/platypus_ts/TODO.md, "An array of `A`").
   const rows: ProjectEntry[] = path ? [{ name: "..", dir: true, size: 0 }, ...entries] : entries;
   const isUp = (i: number) => path !== "" && i === 0;
 
@@ -221,8 +222,6 @@ export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTr
           const row = rows[i]!;
           const full = isUp(i) ? parentPath(path) : joinPath(path, row.name);
           const classes = cx("platypus-project-row", row.dir ? "dir" : "", row.dir && over === full ? "over" : "");
-          // Folders take drops; files don't.
-          const drop = target(full);
           return (
             <box
               className={classes}
@@ -233,8 +232,8 @@ export function ProjectBrowser({ width, height, rowHeight = 22, onOpenFile, onTr
                 e.dataTransfer.effectAllowed = "move";
               }}
               onDoubleClick={() => (row.dir ? open(full) : onOpenFile?.(full))}
-              onDragOver={row.dir ? drop.onDragOver : undefined}
-              onDrop={row.dir ? drop.onDrop : undefined}
+              // Folders take drops; files don't.
+              {...(row.dir ? target(full) : {})}
             >
               <box className={row.dir ? "platypus-project-icon folder" : "platypus-project-icon file"} />
               <Text className="platypus-project-name">{row.name}</Text>
