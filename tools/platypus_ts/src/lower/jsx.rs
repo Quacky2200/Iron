@@ -164,6 +164,9 @@ struct Finder<'s> {
     declared: HashSet<String>,
     /// The ones that are functions: `useState(read)` calls `read` for the first value.
     declared_fns: HashSet<String>,
+    /// Names declared inside the functions being visited, innermost last, and whether each is a
+    /// function: a local `shown` hides a top-level function `shown` for `useState(shown)`.
+    locals: Vec<HashMap<String, bool>>,
 }
 
 impl<'s> Finder<'s> {
@@ -565,7 +568,85 @@ impl<'s> Finder<'s> {
     }
 }
 
+impl Finder<'_> {
+    /// Whether `name` here names a function: the innermost local binding of it, else a top-level one.
+    fn is_function(&self, name: &str) -> bool {
+        match self.locals.iter().rev().find_map(|s| s.get(name)) {
+            Some(f) => *f,
+            None => self.declared_fns.contains(name),
+        }
+    }
+
+    /// Notes the names a function's parameters bind (none of them known to be functions).
+    fn enter(&mut self, params: &FormalParameters<'_>) {
+        let mut scope = HashMap::new();
+        for p in &params.items {
+            bound_names(&p.pattern, &mut |n| {
+                scope.insert(n.to_owned(), false);
+            });
+        }
+        self.locals.push(scope);
+    }
+
+    fn declare(&mut self, d: &VariableDeclaration<'_>) {
+        let Some(scope) = self.locals.last_mut() else {
+            return;
+        };
+        for decl in &d.declarations {
+            let is_fn = matches!(
+                &decl.init,
+                Some(Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_))
+            );
+            bound_names(&decl.id, &mut |n| {
+                scope.insert(n.to_owned(), is_fn);
+            });
+        }
+    }
+}
+
+/// Calls `f` with each name a binding pattern binds.
+fn bound_names(p: &BindingPattern<'_>, f: &mut dyn FnMut(&str)) {
+    match p {
+        BindingPattern::BindingIdentifier(id) => f(id.name.as_str()),
+        BindingPattern::ObjectPattern(o) => {
+            for prop in &o.properties {
+                bound_names(&prop.value, f);
+            }
+            if let Some(rest) = &o.rest {
+                bound_names(&rest.argument, f);
+            }
+        }
+        BindingPattern::ArrayPattern(a) => {
+            for el in a.elements.iter().flatten() {
+                bound_names(el, f);
+            }
+            if let Some(rest) = &a.rest {
+                bound_names(&rest.argument, f);
+            }
+        }
+        BindingPattern::AssignmentPattern(a) => bound_names(&a.left, f),
+    }
+}
+
 impl<'a> Visit<'a> for Finder<'_> {
+    fn visit_function(&mut self, f: &Function<'a>, flags: oxc_syntax::scope::ScopeFlags) {
+        self.enter(&f.params);
+        walk::walk_function(self, f, flags);
+        self.locals.pop();
+    }
+
+    fn visit_arrow_function_expression(&mut self, a: &ArrowFunctionExpression<'a>) {
+        self.enter(&a.params);
+        walk::walk_arrow_function_expression(self, a);
+        self.locals.pop();
+    }
+
+    fn visit_block_statement(&mut self, b: &BlockStatement<'a>) {
+        self.locals.push(HashMap::new());
+        walk::walk_block_statement(self, b);
+        self.locals.pop();
+    }
+
     fn visit_jsx_element(&mut self, e: &JSXElement<'a>) {
         let text = self.element_text(e);
         self.edits.push(Edit {
@@ -585,6 +666,7 @@ impl<'a> Visit<'a> for Finder<'_> {
     }
 
     fn visit_variable_declaration(&mut self, d: &VariableDeclaration<'a>) {
+        self.declare(d);
         // `const [a, setA] = useState(init);`
         if d.declarations.len() == 1
             && let decl = &d.declarations[0]
@@ -620,9 +702,7 @@ impl<'a> Visit<'a> for Finder<'_> {
                     Some(
                         Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_),
                     ) => true,
-                    Some(Expression::Identifier(id)) => {
-                        self.declared_fns.contains(id.name.as_str())
-                    }
+                    Some(Expression::Identifier(id)) => self.is_function(id.name.as_str()),
                     _ => false,
                 };
             let call_text = if lazy {
@@ -898,6 +978,7 @@ fn desugar_passes(src: &str) -> R<Option<String>> {
             setters: setters.clone(),
             declared: declared.clone(),
             declared_fns: declared_fns.clone(),
+            locals: Vec::new(),
         };
         finder.visit_program(&ret.program);
         if let Some(e) = finder.error {

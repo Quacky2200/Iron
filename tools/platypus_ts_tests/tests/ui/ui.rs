@@ -882,6 +882,19 @@ fn ref_props_with_imperative_handles_and_nullable_literal_state() {
     });
 }
 
+// M9-TS-3533
+//
+// `useState(name)` takes a local value named like a top-level function as the value (it was
+// called as a lazy initialiser), calls a local arrow, and calls a top-level function.
+#[test]
+fn use_state_of_a_local_value_named_like_a_function_is_the_value() {
+    in_every_gc_mode(|| {
+        let mut ui = Ui::new();
+        ui.show(unsafe { ts_uic_shadowApp() });
+        assert_eq!(ui.dump(), "root(text(text:local lazy top))");
+    });
+}
+
 // M9-TS-3532
 //
 // A spread of a conditional in JSX (`{...(live ? handlers(name) : {})}`) gives the element the

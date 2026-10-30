@@ -813,6 +813,29 @@ export function callLateSetters(): void {
   note("called");
 }
 
+// M9-TS-3533: `useState(x)` calls `x` for the first value only when `x` here is a function: a local
+// value named like a top-level function is the value itself, a local arrow is called.
+function initialLabel(): string {
+  return "top";
+}
+
+function Shadowed(): UiElement {
+  const initialLabel = "local";
+  const [a] = useState(initialLabel);
+  const read = () => "lazy";
+  const [b] = useState(read);
+  const [c] = useState(topLabel);
+  return <text>{`${a} ${b} ${c}`}</text>;
+}
+
+function topLabel(): string {
+  return initialLabel();
+}
+
+export function shadowApp(): UiElement {
+  return <Shadowed />;
+}
+
 // M9-TS-3532: `{...(cond ? handlers : {})}` in JSX sets the taken arm's props (`{}` sets none),
 // with the arms' handlers made by a function, as the editor's Project browser rows do.
 function SpreadRow({ name, live }: { name: string; live: boolean }): UiElement {

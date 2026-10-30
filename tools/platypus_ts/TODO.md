@@ -403,6 +403,9 @@ P0-P1, (6) generics and modules, (7) a checker of our own and a conformance harn
 - [x] `{...(cond ? obj : {})}`: in an object literal with a known type it already worked; in JSX the taken arm's props
   are set and `{}` sets none (`lower_ui_fields`, `M9-TS-3532`; the editor's Project rows use it).
 - [x] `new Set(cond ? set : [])` / `new Map(..)`: each arm makes the collection (`lower_new_collection`, `M9-TS-3531`).
+- [x] `useState(shown)` with a local `shown` named like a top-level function (the editor's `scene-edit.ts` `shown`)
+  was taken as a lazy initialiser; the JSX pass now resolves the name through the enclosing functions' and blocks'
+  bindings (`Finder::locals`, `M9-TS-3533`).
 - [ ] A self- or forward-referencing closure needs its return type written (`const f = (..): ReactNode =>`). TypeScript
   asks for it too under `noImplicitAny` (TS7023, "referenced directly or indirectly in its own return expression"), so the
   editor keeps those annotations. Still a gap: a function value whose result differs from the expected one (an element
