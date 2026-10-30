@@ -802,8 +802,19 @@ differences) are listed in [platypus-ts-spike.md](research/platypus-ts-spike.md)
 
 - **An object indexed by a key.** `state[key]` (read, write, `+=`, `++`) where `key` is a string-literal union member or a `string`
   names the field: a chain of comparisons over the fields, `Place::Keyed`. A key that is a *parameter written as a union of some
-  names* (`key: "fog" | "lowRes"`) can only name those fields (`FnCtx::lit_sets`), which must share one type; otherwise all fields of the
-  object must. Tables by tag (`TINTS[tint]`, `NAMES[k]`) are the same.
+  names* (`key: "fog" | "lowRes"`) can only name those fields (`FnCtx::lit_sets`); otherwise all fields of the object are named. When the
+  named fields have different types a read has the union of their types (`o[k]` is `T["a" | "b"]`, `M9-TS-3528`); writing through
+  such a key is an error with the line (TypeScript wants the intersection; not built, T8c). Tables by tag (`TINTS[tint]`,
+  `NAMES[k]`) are the same.
+- **Indexed access types** (`lower/types_index.rs`, `M9-TS-3525..3530`). `T["k"]` resolves for interfaces, aliases of type literals
+  and classes; `T["a" | "b"]` and `T[keyof T]` are the union of the fields' types; `A["b"]["c"]` nests; `typeof x["k"]` and
+  `typeof a.b.c` work. A tuple takes `T[0]`, `T[number]` (the union of its element types) and `T["length"]`. `PlatypusStyle["prop"]`
+  reads the declared type of the property from the prelude's `__PlatypusStyleProps` (keywords, `Length` = `StyleValue`, numbers,
+  `Cursor`), and `keyof PlatypusStyle` is the property names. In a generic function, method or alias `T[K]` follows the key
+  literals the call gives: the type environment (`TypeEnv::keys`) keeps them and `get(o, "x")` is a copy per set of literals,
+  returning `T["x"]` (`inst_name_keyed`). Errors name the line: a missing property, a tuple position past the end, a key parameter
+  whose argument is a plain `string`, a write through a key naming differently typed fields. Not built: T8b..T8e in
+  `tools/platypus_ts/TODO.md` (keys of a generic class's own type parameters, ordered unions, comparing a `StyleValue`).
 - **`Record<string, V>`** is a `Map<string, V>`: an object literal builds the map (`{ [k]: v }` too), `dict[k]` and `dict.name` read the
   entry (`undefined` when missing: the value type must be a number, string, object or union member, as for `Map.get`), `dict[k] = v`,
   `dict[k] += n` and `dict.name = v` write it (`Place::MapEntry`). A record struct (`Record<"a" | "b", V>`, an object literal of one
@@ -1290,7 +1301,9 @@ when `cond` is false.
 - **Ambient types** (the prelude and the `.d.ts` are both written by [ui_dts.rs](../tools/platypus_ts/src/ui_dts.rs) from the tables of
   `crates/platypus_ui/src/tables`; the hook helpers stay in [ui.ts](../tools/platypus_ts/src/lower/ui.ts)):
   `ReactNode`, `React.ReactNode`, `PlatypusElement`, `PlatypusKeyboardEvent` and the other event names, `FullScreenMode`, `Gamepad`,
-  `Collision2D` (= `Collision`) and `PlatypusStyle`. `number | string` is the class `StyleValue` (a number or a string converts where it
+  `Collision2D` (= `Collision`) and `PlatypusStyle`. The prelude also has the named unions, `Length` and
+  `interface __PlatypusStyleProps` (from `STYLE_PROPS`), because the compiled `PlatypusStyle` is a list of entries: `PlatypusStyle["prop"]`
+  and `keyof PlatypusStyle` read the declared types there (`M9-TS-3525`). `number | string` is the class `StyleValue` (a number or a string converts where it
   is expected). `PlatypusStyle` is a list of entries: `const card: PlatypusStyle = { width: 100, padding: "4px" }` builds it,
   `{ ...card, ...style, flexGrow: 1 }` concatenates (a later entry wins, `undefined` values apply nothing) and `style={card}` applies
   it. The `.d.ts` (`platypus_ts::ui_dts::declarations`) declares the same names, the `react` and `@platypus/react` modules and `JSX` for `tsc`.
