@@ -197,6 +197,68 @@ fn the_inspector_reads_and_sets_fields_of_built_in_and_kept_components() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// M5-EDT-48
+#[test]
+fn references_and_assets_are_typed_editable_fields() {
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    manager::reset();
+    let mut scene = platypus_scene::Scene::new();
+    let _scope = platypus_scene::api::enter(&mut scene);
+    let dir = project("refs");
+    let s = manager::load_scene(
+        r#"{"format":"platypus.scene","version":1,"name":"R","objects":[
+          {"id":1,"name":"Target"},
+          {"id":2,"name":"Cam","components":[{"id":3,"type":"CameraFollow","properties":{}},{"id":4,"type":"Camera","properties":{}}]}]}"#,
+        false,
+    )
+    .unwrap();
+    let (target, cam) = (manager::roots(s)[0], manager::roots(s)[1]);
+    let comps = api::components(cam);
+    let follow = comps.iter().find(|c| c.kind == "CameraFollow").unwrap();
+    let field = |kind: &str, handle: f64, name: &str| {
+        api::fields(cam, kind, handle)
+            .into_iter()
+            .find(|f| f.name == name)
+            .unwrap()
+    };
+    // An empty reference is an editable object field, by the schema.
+    let t = field("CameraFollow", follow.handle, "target");
+    assert_eq!(
+        (t.ty.as_str(), t.ref_kind.as_str(), t.read_only),
+        ("object", "GameObject", false)
+    );
+    let json = format!(r#"{{"$ref":"GameObject","object":{}}}"#, target.to_raw());
+    assert!(api::set_field(
+        cam,
+        "CameraFollow",
+        follow.handle,
+        "target",
+        &json
+    ));
+    let t = field("CameraFollow", follow.handle, "target");
+    assert_eq!((t.ty.as_str(), t.text.as_str()), ("object", "Target"));
+    // An empty texture is an asset field (the hand-written Camera's schema).
+    let camera = comps.iter().find(|c| c.kind == "Camera").unwrap();
+    let tex = field("Camera", camera.handle, "targetTexture");
+    assert_eq!(
+        (tex.ty.as_str(), tex.ref_kind.as_str()),
+        ("asset", "Texture")
+    );
+    let clear = field("Camera", camera.handle, "clearFlags");
+    assert_eq!(
+        (clear.ty.as_str(), clear.options.as_str()),
+        ("enum", "skybox|solidColor")
+    );
+    assert_eq!(api::asset_from_file("Nope", "a.png"), "");
+    assert!(
+        platypus_kinds::fields_of("AudioSource")
+            .iter()
+            .any(|f| f.name == "clip" && f.ty == "sound")
+    );
+    platypus_engine_api::editor::reset();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // M5-PRF-10
 #[test]
 fn objects_save_as_prefab_files_and_place_again() {

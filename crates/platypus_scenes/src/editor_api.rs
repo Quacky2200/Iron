@@ -69,7 +69,7 @@ pub fn scene_name_of(path: &str) -> String {
         /// A component of an object as the Inspector lists it.
         ComponentInfo = ComponentInfo [kind: string, handle: f64, opaque: bool],
         /// A component's field: its type, value (as saved, and typed) and choices.
-        FieldInfo = FieldInfo [name: string, ty: string, json: string, num: f64, flag: bool, text: string, vec: Vec<f64>, options: string, doc: string, read_only: bool]
+        FieldInfo = FieldInfo [name: string, ty: string, json: string, num: f64, flag: bool, text: string, vec: Vec<f64>, options: string, doc: string, read_only: bool, ref_kind: string]
     )
 )]
 pub mod editor_scene_api {
@@ -107,6 +107,14 @@ pub mod editor_scene_api {
     pub fn remove_component(object: ObjectId, kind: &str, handle: f64) -> bool {
         project_op("removeComponent", |_| {
             inspect::remove(object, kind, handle as u64).map(|()| true)
+        })
+    }
+
+    /// An asset of `kind` (`Texture`) made from a project file, as the placeholder JSON a field
+    /// takes (`setField`); "" when it can't be made (see `Editor.lastError`).
+    pub fn asset_from_file(kind: &str, path: &str) -> String {
+        project_op("assetFromFile", |_| {
+            inspect::asset_from_file(kind, path).map(|v| v.to_string())
         })
     }
 

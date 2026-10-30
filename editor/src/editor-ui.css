@@ -817,6 +817,87 @@
   border-radius: 3px;
 }
 
+.platypus-color-swatch.mixed {
+  background-image: linear-gradient(135deg, transparent 45%, var(--platypus-muted) 45%, var(--platypus-muted) 55%, transparent 55%);
+}
+
+/* The colour picker dialog: a palette, then a hex field. */
+.platypus-color-picker {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The object / asset picker dialog's list. */
+.platypus-pick-list {
+  flex-direction: column;
+  height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--platypus-line);
+  background-color: var(--platypus-bg);
+}
+
+.platypus-color-row {
+  flex-direction: row;
+  gap: 2px;
+}
+
+.platypus-color-cell {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.platypus-color-cell:hover {
+  border-color: #ffffff;
+}
+
+.platypus-color-hex {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* A reference: the target's name, a pick button, and a drop target. */
+.platypus-ref {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  flex-grow: 1;
+  min-width: 0;
+  height: 22px;
+  padding-left: 6px;
+  border-radius: 3px;
+  background-color: var(--platypus-bg);
+  border: 1px solid var(--platypus-line);
+}
+
+.platypus-ref.over {
+  border-color: var(--platypus-accent);
+}
+
+.platypus-ref-value {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.platypus-ref-pick {
+  width: 22px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  color: var(--platypus-muted);
+}
+
+.platypus-ref-pick:hover {
+  color: var(--platypus-text);
+  background-color: var(--platypus-hover);
+}
+
 .platypus-check {
   width: 16px;
   height: 16px;

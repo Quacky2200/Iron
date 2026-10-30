@@ -602,4 +602,5 @@ pub fn register_kinds() {
     for class in CLASSES {
         platypus_kinds::register(kind(class));
     }
+    crate::kind_fields::register();
 }

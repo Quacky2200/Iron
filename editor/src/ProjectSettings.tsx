@@ -48,7 +48,7 @@ function SettingsForm({ done }: { done: () => void }) {
       case "bool":
         return <Checkbox value={f.value === "true"} onChange={(b) => run(setCommand(f, b ? "true" : "false"))} />;
       case "enum":
-        return <Choice value={f.value} options={f.options.split("|")} onChange={(v) => run(setCommand(f, v))} />;
+        return <Choice value={f.value} title={f.key} options={f.options.split("|")} onChange={(v) => run(setCommand(f, v))} />;
       default:
         return <TextInput value={f.value} onCommit={(v) => run(setCommand(f, v))} />;
     }

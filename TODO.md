@@ -1506,8 +1506,9 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         - [x] Dropping between rows in the Hierarchy (2026-10-30): a row's top or bottom quarter puts the dragged
           object before or after it (after an open parent: first under it), shown by an insertion line; undoable
           (`tree.ts` `dropPlace`, `TreeView` `onMoveNode`, `M5-EDT-46`, `-47`)
-        - [ ] Later: references from other objects to a deleted one don't come back on undo; copies keep the original's
-          name (Unity adds " (1)")
+        - [x] References from other objects to a deleted one come back on undo (`refs.ts`: noted by place before the
+          delete, set to the rebuilt objects after); copies are named "Cube (1)", "Cube (2)" like Unity's
+          (`duplicateName`) (`M5-UNDO-07`, `-08`)
       - [x] E4: scenes (`scenes.ts`): File > New / Open / Open Recent (per project, Clear Recent) / Save / Save As,
         "Save changes?" before New, Open and Exit, the window title with `*`; the last scene (or the project's
         `startScene`) opens at start, the demo scene only without one; GameObject > Create Empty / 3D Object / Light
@@ -1521,11 +1522,18 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         text, choice, vector and colour fields, live, every edit undoable; Add / Remove Component; kept (opaque)
         components edited as data. Field types and enum options from `platypus_kinds::register_fields` (the
         generated render components; others from their saved values) (`M5-EDT-35..37`)
-        - [ ] Later (E5b): editing references (objects, components) and assets by drop or picker; a colour picker;
-          several objects at once (mixed values; only the last selected is shown); tag and layer editing; schemas for
-          the hand-written kinds (physics, audio, animation) and for script `@property` fields (needs the project's
-          code in the editor, E11); scrubbing numbers by dragging the label; the startup compile went from ~0.5 s to
-          ~2 s with the editor's growth (lowering), worth a look
+        - [x] E5b (2026-10-30): references to objects, components and assets (textures, sounds) picked in a picker
+          dialog or dropped from the Hierarchy / Project (`InspectorInputs.tsx`, `Pickers.tsx`,
+          `EditorScene.assetFromFile`, `FieldInfo.refKind`); a colour picker (palette and hex); tag and layer editable
+          (layer names from the project, `Editor.layerNames`); several objects at once (shared components, "—" for
+          mixed values, one undo step for all); schemas for the hand-written kinds (physics in `platypus_physics_api`
+          `kind_fields.rs`; Camera, Animation, Animator, AudioSource, AudioListener, SplineAnimate in
+          `platypus_scenes` `kind_fields.rs`). Choices open in a picker dialog: a dropped-down list paints under the
+          rows after it (z-index orders siblings only) (`M5-EDT-48..50`). A compiler fix came with it: `useState`
+          of a local named like a top-level function (`M9-TS-3533`)
+        - [ ] Later: schemas for script `@property` fields (needs the project's code in the editor, E11); assets other
+          than textures and sounds from files (meshes, materials, clips come from models and code); scrubbing numbers
+          by dragging the label; field docs as tooltips (no tooltips yet); the startup compile (~2 s)
       - [x] E6: Edit > Project Settings (`ProjectSettings.tsx`): `project.json`'s settings grouped (Identity, Game,
         Build) from `platypus_core::project_edit::FIELDS`; each change rewrites only that key's text
         (`Editor.projectFields` / `setProjectField` / `removeProjectField`), keeping unknown keys, key order and

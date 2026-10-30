@@ -1,30 +1,40 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// The Inspector: the selected object's name, enabled flag, layer and tag, its Transform, then a
-// foldout per component with an editor per field (number, checkbox, text, choice, vector, colour;
-// references, assets and nested data are shown, not edited). Every edit is an undoable command
-// (inspector.ts). Values follow the world each frame (a key of what is shown, as the Scene view).
+// The Inspector: the selected objects' name, enabled flag, tag and layer, their Transform, then a
+// foldout per component they all have with an editor per field (number, checkbox, text, choice,
+// vector, colour with a palette, references to objects, components and assets; nested data is
+// shown, not edited). Values that differ between the objects show "—"; an edit goes to all of them
+// as one undoable command (inspector.ts). Values follow the world each frame (a key of what is
+// shown, as the Scene view).
 
 import { cx } from "./classes.ts";
-import { type Command } from "./history.ts";
+import { type Command, group } from "./history.ts";
 import {
   addComponentCommand,
   boolJson,
+  changedParts,
+  componentAt,
   fieldCommand,
   formatNumber,
   labelOf,
   localPose,
   localPoseCommand,
+  mixed,
+  mixedParts,
   numberJson,
   parseNumber,
   removeComponentCommand,
+  sharedComponents,
   stringJson,
   vectorJson,
   withComponent,
+  withParts,
 } from "./inspector.ts";
+import { ColorInput, RefInput } from "./InspectorInputs.tsx";
+import { pickDialog } from "./Pickers.tsx";
 import { onEditorFrame } from "./frame.ts";
-import { renameCommand, enableCommand } from "./scene-edit.ts";
+import { enableCommand, layerCommand, renameCommand, tagCommand } from "./scene-edit.ts";
 
 export interface InspectorProps {
   objects: GameObject[];
@@ -35,17 +45,19 @@ export interface InspectorProps {
 }
 
 /** A number field: typing changes nothing until Enter or leaving it; Escape puts the value back. */
-export function NumberInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
-  const [text, setText] = useState(formatNumber(value));
+export function NumberInput({ value, onCommit, mixed = false }: { value: number; onCommit: (n: number) => void; mixed?: boolean }) {
+  // Several objects with different values show "—" until a number is typed.
+  const shown = mixed ? MIXED : formatNumber(value);
+  const [text, setText] = useState(shown);
   const editing = useRef(false);
   useEffect(() => {
-    if (!editing.current) setText(formatNumber(value));
-  }, [value]);
+    if (!editing.current) setText(shown);
+  }, [shown]);
   const commit = (): void => {
     editing.current = false;
     const n = parseNumber(text);
-    if (Number.isNaN(n)) setText(formatNumber(value));
-    else if (n !== value) onCommit(n);
+    if (Number.isNaN(n)) setText(shown);
+    else if (n !== value || mixed) onCommit(n);
   };
   return (
     <Input
@@ -59,7 +71,7 @@ export function NumberInput({ value, onCommit }: { value: number; onCommit: (n: 
         if (e.key === "Enter") commit();
         else if (e.key === "Escape") {
           editing.current = false;
-          setText(formatNumber(value));
+          setText(shown);
         }
       }}
       onBlur={commit}
@@ -67,16 +79,20 @@ export function NumberInput({ value, onCommit }: { value: number; onCommit: (n: 
   );
 }
 
+/** What a field shows when the selected objects' values differ. */
+const MIXED = "—";
+
 /** A text field, committed like the number field. */
-export function TextInput({ value, onCommit }: { value: string; onCommit: (s: string) => void }) {
-  const [text, setText] = useState(value);
+export function TextInput({ value, onCommit, mixed = false }: { value: string; onCommit: (s: string) => void; mixed?: boolean }) {
+  const shown = mixed ? MIXED : value;
+  const [text, setText] = useState(shown);
   const editing = useRef(false);
   useEffect(() => {
-    if (!editing.current) setText(value);
-  }, [value]);
+    if (!editing.current) setText(shown);
+  }, [shown]);
   const commit = (): void => {
     editing.current = false;
-    if (text !== value) onCommit(text);
+    if (text !== shown) onCommit(text);
   };
   return (
     <Input
@@ -90,7 +106,7 @@ export function TextInput({ value, onCommit }: { value: string; onCommit: (s: st
         if (e.key === "Enter") commit();
         else if (e.key === "Escape") {
           editing.current = false;
-          setText(value);
+          setText(shown);
         }
       }}
       onBlur={commit}
@@ -98,51 +114,61 @@ export function TextInput({ value, onCommit }: { value: string; onCommit: (s: st
   );
 }
 
-export function Checkbox({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+export function Checkbox({ value, onChange, mixed = false }: { value: boolean; onChange: (v: boolean) => void; mixed?: boolean }) {
   return (
-    <box className={value ? "platypus-check on" : "platypus-check"} onClick={() => onChange(!value)}>
-      <Text>{value ? "✓" : ""}</Text>
+    <box className={value && !mixed ? "platypus-check on" : "platypus-check"} onClick={() => onChange(mixed ? true : !value)}>
+      <Text>{mixed ? "–" : value ? "✓" : ""}</Text>
     </box>
   );
 }
 
-/** A choice among `options`: the value, and the list while open. */
-export function Choice({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** A choice among `options` (shown by `labels` when given): the value, and the list while open. */
+export function Choice({
+  value,
+  options,
+  onChange,
+  mixed = false,
+  labels,
+  title = "Choose",
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  mixed?: boolean;
+  labels?: string[];
+  title?: string;
+}) {
+  const label = (o: string): string => {
+    const i = options.indexOf(o);
+    return labels && i >= 0 ? (labels[i] ?? o) : o;
+  };
+  // The choices open in a picker dialog: a list dropped down inside a row would paint under the
+  // rows after it (z-index orders siblings only here, docs/differences.md).
+  const open = (): void => {
+    void pickDialog(
+      title,
+      options.map((o) => ({ key: o, label: o === value && !mixed ? `${label(o) || "—"}  ✓` : label(o) || "—" })),
+    ).then((o) => {
+      if (o !== null && (o !== value || mixed)) onChange(o);
+    });
+  };
   return (
-    <box className="platypus-choice" onClick={() => setOpen(!open)}>
-      <Text className="platypus-choice-value">{value || "—"}</Text>
+    <box className="platypus-choice" onClick={open}>
+      <Text className="platypus-choice-value">{mixed ? MIXED : label(value) || "—"}</Text>
       <box className="platypus-chevron open" />
-      {open ? (
-        <box className="platypus-choice-list">
-          {options.map((o) => (
-            <box
-              key={o}
-              className={o === value ? "platypus-choice-item on" : "platypus-choice-item"}
-              onClick={(e: PlatypusPointerEvent) => {
-                e.stopPropagation();
-                setOpen(false);
-                if (o !== value) onChange(o);
-              }}
-            >
-              <Text>{o}</Text>
-            </box>
-          ))}
-        </box>
-      ) : null}
     </box>
   );
 }
 
 const AXES = ["X", "Y", "Z", "W"];
 
-function VectorInput({ values, labels, onCommit }: { values: number[]; labels: string[]; onCommit: (v: number[]) => void }) {
+function VectorInput({ values, labels, onCommit, mixed = [] }: { values: number[]; labels: string[]; onCommit: (v: number[]) => void; mixed?: boolean[] }) {
   return (
     <box className="platypus-vector">
       {values.map((v, i) => (
         <box key={i} className="platypus-vector-part">
           <Text className="platypus-vector-axis">{labels[i] ?? ""}</Text>
-          <NumberInput value={v} onCommit={(n) => onCommit(withComponent(values, i, n))} />
+          <NumberInput value={v} mixed={mixed[i] ?? false} onCommit={(n) => onCommit(withComponent(values, i, n))} />
         </box>
       ))}
     </box>
@@ -159,32 +185,49 @@ function Row({ label, children, title }: { label: string; children?: ReactNode; 
   );
 }
 
-/** One field's editor. */
-function FieldEditor({ f, set }: { f: FieldInfo; set: (json: string) => void }) {
+/**
+ * One field's editor. `mixed`: the selected objects' values differ (`parts`: which parts of a
+ * vector); `set` gives every object the same JSON, `setVector` the edited parts of a vector.
+ */
+function FieldEditor({
+  f,
+  mixed,
+  parts,
+  set,
+  setVector,
+}: {
+  f: FieldInfo;
+  mixed: boolean;
+  parts: boolean[];
+  set: (json: string) => void;
+  setVector: (v: number[]) => void;
+}) {
   if (f.readOnly) return <Text className="platypus-inspector-readonly">{f.text || f.json}</Text>;
   switch (f.ty) {
     case "number":
-      return <NumberInput value={f.num} onCommit={(n) => set(numberJson(n))} />;
+      return <NumberInput value={f.num} mixed={mixed} onCommit={(n) => set(numberJson(n))} />;
     case "bool":
-      return <Checkbox value={f.flag} onChange={(b) => set(boolJson(b))} />;
+      return <Checkbox value={f.flag} mixed={mixed} onChange={(b) => set(boolJson(b))} />;
     case "string":
-      return <TextInput value={f.text} onCommit={(s) => set(stringJson(s))} />;
+      return <TextInput value={f.text} mixed={mixed} onCommit={(s) => set(stringJson(s))} />;
     case "enum":
-      return <Choice value={f.text} options={f.options.split("|")} onChange={(s) => set(stringJson(s))} />;
+      return <Choice value={f.text} mixed={mixed} title={labelOf(f.name)} options={f.options.split("|")} onChange={(s) => set(stringJson(s))} />;
     case "color": {
       const v = f.vec.length >= 4 ? f.vec : [1, 1, 1, 1];
-      const css = `rgba(${Math.round(v[0]! * 255)}, ${Math.round(v[1]! * 255)}, ${Math.round(v[2]! * 255)}, ${v[3]!})`;
       return (
-        <box className="platypus-color">
-          <box className="platypus-color-swatch" style={{ backgroundColor: css }} />
-          <VectorInput values={v} labels={["R", "G", "B", "A"]} onCommit={(c) => set(vectorJson(c))} />
-        </box>
+        <ColorInput value={v} mixed={mixed} set={(c) => set(vectorJson(c))}>
+          <VectorInput values={v} labels={["R", "G", "B", "A"]} mixed={parts} onCommit={setVector} />
+        </ColorInput>
       );
     }
     case "vector2":
     case "vector3":
     case "vector4":
-      return <VectorInput values={f.vec} labels={AXES} onCommit={(c) => set(vectorJson(c))} />;
+      return <VectorInput values={f.vec} labels={AXES} mixed={parts} onCommit={setVector} />;
+    case "object":
+    case "component":
+    case "asset":
+      return <RefInput f={f} mixed={mixed} set={set} />;
     default:
       return <Text className="platypus-inspector-readonly">{f.text || f.json}</Text>;
   }
@@ -205,7 +248,7 @@ function inspectKey(go: GameObject): string {
   return key;
 }
 
-function AddComponent({ go, exec }: { go: GameObject; exec: (c: Command | null) => void }) {
+function AddComponent({ objects, exec }: { objects: GameObject[]; exec: (c: Command | null) => void }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const kinds = open ? EditorScene.componentKinds().filter((k) => k.toLowerCase().includes(filter.toLowerCase())) : [];
@@ -224,7 +267,7 @@ function AddComponent({ go, exec }: { go: GameObject; exec: (c: Command | null) 
               onClick={() => {
                 setOpen(false);
                 setFilter("");
-                exec(addComponentCommand(go, k));
+                exec(oneStep(`Add ${k} to ${objects.length} objects`, objects.map((o) => addComponentCommand(o, k))));
               }}
             >
               <Text>{k}</Text>
@@ -236,36 +279,89 @@ function AddComponent({ go, exec }: { go: GameObject; exec: (c: Command | null) 
   );
 }
 
+/** A Transform row. */
+type Part = "position" | "euler" | "scale";
+
+/** One undoable step for several objects' edits (the one edit itself when there is one). */
+function oneStep(label: string, commands: readonly (Command | null)[]): Command | null {
+  const list = commands.filter((c): c is Command => c !== null);
+  if (list.length <= 1) return list[0] ?? null;
+  return group(label, list);
+}
+
+/** An object's field `name` on its component of `kind` at `place`, with that component. */
+function fieldOn(go: GameObject, kind: string, place: number, name: string): { c: ComponentInfo; f: FieldInfo } | null {
+  const c = componentAt(EditorScene.components(go), kind, place);
+  if (!c) return null;
+  const f = EditorScene.fields(go, c.kind, c.handle).find((x) => x.name === name);
+  return f ? { c, f } : null;
+}
+
+/** The layers a layer choice offers: the named ones, and the object's own if it has no name. */
+function layerOptions(current: number): { options: string[]; labels: string[] } {
+  const names = Editor.layerNames();
+  const options: string[] = [];
+  const labels: string[] = [];
+  names.forEach((n, i) => {
+    if (n === "" && i !== current) return;
+    options.push(`${i}`);
+    labels.push(n === "" ? `${i}` : `${i}: ${n}`);
+  });
+  return { options, labels };
+}
+
 export function Inspector({ objects, width, height, exec }: InspectorProps) {
   const [, setVersion] = useState(0);
   const [closed, setClosed] = useState<Set<string>>(new Set<string>());
-  const go = objects[objects.length - 1];
-  const goId = go ? go.id : -1;
+  const all = objects.filter((o) => !o.destroyed);
+  const go = all[all.length - 1];
+  const ids = all.map((o) => `${o.id}`).join(",");
   useEffect(() => {
     let last = "";
     return onEditorFrame(() => {
-      const o = goId < 0 ? null : GameObject.byId(goId);
-      const key = o && o.exists() ? inspectKey(o) : "";
+      let key = "";
+      for (const id of ids.split(",")) {
+        if (id === "") continue;
+        const o = GameObject.byId(Number(id));
+        key += `${o.exists() ? inspectKey(o) : "gone"};`;
+      }
       if (key !== last) {
         last = key;
         setVersion((v) => v + 1);
       }
     });
-  }, [goId]);
+  }, [ids]);
 
-  if (!go || go.destroyed) {
+  if (!go) {
     return (
       <box className="platypus-inspector" style={{ width, height }}>
         <Text className="platypus-inspector-empty">Nothing selected</Text>
       </box>
     );
   }
-  const pose = localPose(go);
-  const setPose = (what: string, position: Vector3, euler: Vector3, scale: Vector3): void =>
-    exec(localPoseCommand(go, pose, { position, euler, scale }, what));
+  const many = all.length > 1;
   const v3 = (v: Vector3): number[] => [v.x, v.y, v.z];
   const toV3 = (a: number[]): Vector3 => new Vector3(a[0] ?? 0, a[1] ?? 0, a[2] ?? 0);
-  const components = EditorScene.components(go);
+  const poses = all.map(localPose);
+  const pose = poses[poses.length - 1]!;
+  const vectors = (part: Part): number[][] => poses.map((p) => v3(p[part]));
+  /** A Transform row edited: each object takes the edited parts, keeping its others. */
+  const setPart = (what: string, part: Part, edited: number[]): void => {
+    const changed = changedParts(v3(pose[part]), edited);
+    exec(
+      oneStep(
+        `Set ${what} of ${all.length} objects`,
+        all.map((o, i) => {
+          const before = poses[i]!;
+          const after = { ...before };
+          after[part] = toV3(withParts(v3(before[part]), edited, changed));
+          return localPoseCommand(o, before, after, what);
+        }),
+      ),
+    );
+  };
+  const lists = all.map((o) => EditorScene.components(o));
+  const shared = sharedComponents(lists.reverse());
   const toggle = (key: string): void =>
     setClosed((s) => {
       const next = new Set(s);
@@ -273,20 +369,41 @@ export function Inspector({ objects, width, height, exec }: InspectorProps) {
       else next.add(key);
       return next;
     });
+  const layers = layerOptions(go.layer);
+  const differ = (get: (o: GameObject) => string): boolean => mixed(all.map(get));
 
   return (
     <box className="platypus-inspector" style={{ width, height }}>
-      {objects.length > 1 ? <Text className="platypus-inspector-note">{`${objects.length} selected: showing ${go.name}`}</Text> : null}
+      {many ? <Text className="platypus-inspector-note">{`${all.length} objects: their shared components; edits go to all`}</Text> : null}
       <box className="platypus-inspector-header">
-        <Checkbox value={go.enabled} onChange={(b) => exec(enableCommand(go, b))} />
-        <TextInput value={go.name} onCommit={(name) => exec(renameCommand(go, name))} />
+        <Checkbox
+          value={go.enabled}
+          mixed={differ((o) => `${o.enabled}`)}
+          onChange={(b) => exec(oneStep(`${b ? "Enable" : "Disable"} ${all.length} objects`, all.map((o) => enableCommand(o, b))))}
+        />
+        <TextInput
+          value={go.name}
+          mixed={differ((o) => o.name)}
+          onCommit={(name) => exec(oneStep(`Rename ${all.length} objects`, all.map((o) => renameCommand(o, name))))}
+        />
       </box>
       <box className="platypus-inspector-fields">
         <Row label="Tag">
-          <Text className="platypus-inspector-readonly">{go.tag}</Text>
+          <TextInput
+            value={go.tag}
+            mixed={differ((o) => o.tag)}
+            onCommit={(tag) => exec(oneStep(`Set Tag of ${all.length} objects`, all.map((o) => tagCommand(o, tag))))}
+          />
         </Row>
         <Row label="Layer">
-          <Text className="platypus-inspector-readonly">{`${go.layer}`}</Text>
+          <Choice
+            value={`${go.layer}`}
+            options={layers.options}
+            labels={layers.labels}
+            title="Layer"
+            mixed={differ((o) => `${o.layer}`)}
+            onChange={(l) => exec(oneStep(`Set Layer of ${all.length} objects`, all.map((o) => layerCommand(o, Number(l)))))}
+          />
         </Row>
       </box>
       <box className="platypus-inspector-section">
@@ -297,20 +414,31 @@ export function Inspector({ objects, width, height, exec }: InspectorProps) {
         {closed.has("Transform") ? null : (
           <box className="platypus-inspector-fields">
             <Row label="Position">
-              <VectorInput values={v3(pose.position)} labels={AXES} onCommit={(a) => setPose("Position", toV3(a), pose.euler, pose.scale)} />
+              <VectorInput values={v3(pose.position)} labels={AXES} mixed={mixedParts(vectors("position"))} onCommit={(a) => setPart("Position", "position", a)} />
             </Row>
             <Row label="Rotation">
-              <VectorInput values={v3(pose.euler)} labels={AXES} onCommit={(a) => setPose("Rotation", pose.position, toV3(a), pose.scale)} />
+              <VectorInput values={v3(pose.euler)} labels={AXES} mixed={mixedParts(vectors("euler"))} onCommit={(a) => setPart("Rotation", "euler", a)} />
             </Row>
             <Row label="Scale">
-              <VectorInput values={v3(pose.scale)} labels={AXES} onCommit={(a) => setPose("Scale", pose.position, pose.euler, toV3(a))} />
+              <VectorInput values={v3(pose.scale)} labels={AXES} mixed={mixedParts(vectors("scale"))} onCommit={(a) => setPart("Scale", "scale", a)} />
             </Row>
           </box>
         )}
       </box>
-      {components.map((c) => {
-        const key = `${c.kind}#${c.handle}`;
+      {shared.map((s) => {
+        const c = componentAt(EditorScene.components(go), s.kind, s.place)!;
+        const key = `${s.kind}#${s.place}`;
         const fields = EditorScene.fields(go, c.kind, c.handle);
+        /** The field on every selected object (the shown one last). */
+        const each = (name: string): { go: GameObject; c: ComponentInfo; f: FieldInfo }[] =>
+          all.flatMap((o) => {
+            const at = fieldOn(o, s.kind, s.place, name);
+            return at ? [{ go: o, c: at.c, f: at.f }] : [];
+          });
+        const setAll = (name: string, json: (f: FieldInfo) => string): void => {
+          const at = each(name);
+          exec(oneStep(`Set ${s.kind}.${name} of ${at.length} objects`, at.map((x) => fieldCommand(x.go, x.c, name, x.f.json, json(x.f)))));
+        };
         return (
           <box key={key} className="platypus-inspector-section">
             <box className="platypus-inspector-title" onClick={() => toggle(key)}>
@@ -321,7 +449,15 @@ export function Inspector({ objects, width, height, exec }: InspectorProps) {
                 className="platypus-inspector-remove"
                 onClick={(e: PlatypusPointerEvent) => {
                   e.stopPropagation();
-                  exec(removeComponentCommand(go, c));
+                  exec(
+                    oneStep(
+                      `Remove ${s.kind} from ${all.length} objects`,
+                      all.map((o) => {
+                        const oc = componentAt(EditorScene.components(o), s.kind, s.place);
+                        return oc ? removeComponentCommand(o, oc) : null;
+                      }),
+                    ),
+                  );
                 }}
               >
                 <Text>×</Text>
@@ -329,17 +465,26 @@ export function Inspector({ objects, width, height, exec }: InspectorProps) {
             </box>
             {closed.has(key) ? null : (
               <box className={cx("platypus-inspector-fields", c.opaque ? "opaque" : "")}>
-                {fields.map((f) => (
-                  <Row key={f.name} label={labelOf(f.name)}>
-                    <FieldEditor f={f} set={(json) => exec(fieldCommand(go, c, f.name, f.json, json))} />
-                  </Row>
-                ))}
+                {fields.map((f) => {
+                  const at = many ? each(f.name) : [];
+                  return (
+                    <Row key={f.name} label={labelOf(f.name)}>
+                      <FieldEditor
+                        f={f}
+                        mixed={many && mixed(at.map((x) => x.f.json))}
+                        parts={many ? mixedParts(at.map((x) => x.f.vec)) : []}
+                        set={(json) => setAll(f.name, () => json)}
+                        setVector={(edited) => setAll(f.name, (own) => vectorJson(withParts(own.vec, edited, changedParts(f.vec, edited))))}
+                      />
+                    </Row>
+                  );
+                })}
               </box>
             )}
           </box>
         );
       })}
-      <AddComponent go={go} exec={exec} />
+      <AddComponent objects={all} exec={exec} />
     </box>
   );
 }

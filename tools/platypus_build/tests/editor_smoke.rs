@@ -294,6 +294,122 @@ fn hierarchy_drops_between_rows_show_a_line_and_undo() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// A new object's CameraFollow targets Shapes/Cube (picked in the object picker); deleting Cube and
+/// undoing points the target at the rebuilt Cube; Ctrl+D on Sphere makes "Sphere (1)"; the scene
+/// is saved so the test can read the reference.
+const REFS_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "refs", "frames": 160, "input": [
+    { "frame": 0, "kind": "clickText", "text": "GameObject" },
+    { "frame": 3, "kind": "clickText", "text": "Create Empty" },
+    { "frame": 8, "kind": "clickText", "text": "Add Component" },
+    { "frame": 12, "kind": "clickText", "text": "CameraFollow" },
+    { "frame": 20, "kind": "moveToText", "text": "Add CameraFollow" },
+    { "frame": 24, "kind": "clickText", "text": "None (GameObject)" },
+    { "frame": 32, "kind": "clickText", "text": "Shapes/Cube" },
+    { "frame": 40, "kind": "moveToText", "text": "Set CameraFollow.target" },
+    { "frame": 42, "kind": "clickText", "text": "Cube" },
+    { "frame": 48, "kind": "key", "code": "Delete" },
+    { "frame": 54, "kind": "moveToText", "text": "Delete Cube" },
+    { "frame": 56, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 57, "kind": "key", "code": "KeyZ" },
+    { "frame": 58, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 64, "kind": "moveToText", "text": "Undid Delete Cube" },
+    { "frame": 66, "kind": "clickText", "text": "Sphere" },
+    { "frame": 70, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 71, "kind": "key", "code": "KeyD" },
+    { "frame": 72, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 80, "kind": "moveToText", "text": "Sphere (1)" },
+    { "frame": 82, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 83, "kind": "key", "code": "KeyS" },
+    { "frame": 84, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 92, "kind": "moveToText", "text": "Save Scene As" },
+    { "frame": 94, "kind": "key", "code": "Enter" },
+    { "frame": 104, "kind": "moveToText", "text": "Saved scenes/" }
+  ] }
+] }"#;
+
+// M5-UNDO-08
+#[test]
+fn undoing_a_delete_restores_references_and_copies_are_numbered() {
+    let project = std::env::temp_dir().join(format!(
+        "platypus-editor-refs-project-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&project);
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("project.json"), "{ \"name\": \"fixture\" }\n").unwrap();
+    let run = run_editor_on("refs", REFS_SPEC, false, &project);
+    let log = std::fs::read_to_string(run.join("run.log")).unwrap();
+    assert!(
+        log.contains("Restored GameObject's CameraFollow.target"),
+        "{log}"
+    );
+    // The one scene file saved (named after the demo scene).
+    let file = std::fs::read_dir(project.join("scenes"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| p.to_string_lossy().ends_with(".scene.json"))
+        .expect("a saved scene");
+    let text = std::fs::read_to_string(file).unwrap();
+    let scene: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let follow = scene["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|o| o["components"].as_array().cloned().unwrap_or_default())
+        .find(|c| c["type"] == "CameraFollow")
+        .expect("a CameraFollow");
+    assert_eq!(
+        follow["properties"]["target"]["$ref"], "GameObject",
+        "{text}"
+    );
+    assert!(text.contains("\"Sphere (1)\""), "{text}");
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// Two objects selected: Position Y typed for both, then a layer chosen for both and undone as one
+/// step; Point Light's colour swatch opens the colour picker and Enter sets the colour.
+const MULTI_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "multi", "frames": 60, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Capsule" },
+    { "frame": 4, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 6, "kind": "clickText", "text": "Cylinder" },
+    { "frame": 8, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 12, "kind": "moveToText", "text": "2 objects: their shared components; edits go to all" },
+    { "frame": 14, "kind": "click", "x": 1495, "y": 218 },
+    { "frame": 16, "kind": "keyDown", "code": "ControlLeft" },
+    { "frame": 17, "kind": "key", "code": "KeyA" },
+    { "frame": 18, "kind": "keyUp", "code": "ControlLeft" },
+    { "frame": 20, "kind": "key", "code": "Digit2", "key": "2" },
+    { "frame": 22, "kind": "key", "code": "Enter" },
+    { "frame": 28, "kind": "moveToText", "text": "Set Position of 2 objects" },
+    { "frame": 30, "kind": "click", "x": 1490, "y": 160 },
+    { "frame": 36, "kind": "clickText", "text": "4: Water" },
+    { "frame": 42, "kind": "moveToText", "text": "Set Layer of 2 objects" },
+    { "frame": 44, "kind": "clickText", "text": "Edit" },
+    { "frame": 48, "kind": "clickText", "text": "Undo Set Layer of 2 objects" },
+    { "frame": 54, "kind": "moveToText", "text": "Undid Set Layer of 2 objects" }
+  ] },
+  { "name": "colour", "frames": 30, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Point Light" },
+    { "frame": 8, "kind": "click", "x": 1400, "y": 319 },
+    { "frame": 16, "kind": "moveToText", "text": "Hex" }
+  ] },
+  { "name": "set", "frames": 20, "input": [
+    { "frame": 0, "kind": "key", "code": "Enter" },
+    { "frame": 8, "kind": "moveToText", "text": "Set Light.color" }
+  ] }
+] }"#;
+
+// M5-EDT-50
+#[test]
+fn the_inspector_edits_several_objects_layers_and_colours() {
+    let run = run_editor("multi", MULTI_SPEC, true);
+    let _ = std::fs::remove_dir_all(&run);
+}
+
 /// Delete, undo, redo, undo and duplicate Cube, then drag Sphere onto Floor in the Hierarchy and
 /// undo that. Each `moveToText` finds the status bar's report of the step (else the run fails).
 const UNDO_SPEC: &str = r#"{ "warmup": 30, "segments": [

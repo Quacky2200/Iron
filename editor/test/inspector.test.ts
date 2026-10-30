@@ -3,7 +3,27 @@
 
 // The Inspector's logic (editor/src/inspector.ts).
 
-import { componentAt, formatNumber, labelOf, parseNumber, placeOf, vectorJson, withComponent } from "../src/inspector.ts";
+import {
+  changedParts,
+  colorHex,
+  componentAt,
+  componentJson,
+  fitsAsset,
+  formatNumber,
+  hsv,
+  labelOf,
+  mixed,
+  mixedParts,
+  palette,
+  parseHex,
+  parseNumber,
+  placeOf,
+  sharedComponents,
+  soundJson,
+  vectorJson,
+  withComponent,
+  withParts,
+} from "../src/inspector.ts";
 import { eq, report, same, test, yes } from "./check.ts";
 
 // M5-EDT-37
@@ -46,6 +66,40 @@ test("a component is found again by kind and place", () => {
   ];
   eq(componentAt(rebuilt, "AudioSource", 1)?.handle ?? -1, 90, "after a rebuild");
   yes(componentAt(rebuilt, "Camera", 0) === null, "none");
+});
+
+// M5-EDT-49
+test("several objects: shared components, mixed values, edited vector parts", () => {
+  const a: ComponentInfo[] = [
+    { kind: "MeshRenderer", handle: 1, opaque: false },
+    { kind: "Light", handle: 2, opaque: false },
+    { kind: "Light", handle: 3, opaque: false },
+  ];
+  const b: ComponentInfo[] = [
+    { kind: "Light", handle: 7, opaque: false },
+    { kind: "MeshRenderer", handle: 8, opaque: false },
+  ];
+  eq(sharedComponents([a, b]), [{ kind: "MeshRenderer", place: 0 }, { kind: "Light", place: 0 }], "on both, by place");
+  eq(sharedComponents([a]), [{ kind: "MeshRenderer", place: 0 }, { kind: "Light", place: 0 }, { kind: "Light", place: 1 }], "one object");
+  eq(sharedComponents([]), [], "none");
+  yes(mixed(["1", "2"]) && !mixed(["1", "1"]) && !mixed([]), "mixed");
+  eq(mixedParts([[1, 2, 3], [1, 5, 3]]), [false, true, false], "parts");
+  eq(changedParts([1, 2, 3], [1, 9, 3]), [1], "changed");
+  eq(withParts([4, 5, 6], [1, 9, 3], [1]), [4, 9, 6], "own parts kept");
+});
+
+// M5-EDT-49
+test("references, assets and colours as fields take them", () => {
+  same(componentJson(null), "null", "no component");
+  same(componentJson({ kind: "Rigidbody", handle: 4, opaque: false }), `{"$ref":"Component","kind":"Rigidbody","handle":4}`, "component");
+  same(soundJson("sfx/a.wav"), `{"$type":"Sound","src":"sfx/a.wav"}`, "sound");
+  yes(fitsAsset("Texture", "art/a.PNG") && !fitsAsset("Texture", "a.wav") && !fitsAsset("Mesh", "a.png"), "files by kind");
+  same(colorHex([1, 0.5, 0, 1]), "#ff8000", "hex");
+  eq(parseHex("#f80", 0.5), [1, 0.5333333333333333, 0, 0.5], "short hex");
+  yes(parseHex("nope", 1) === null, "not hex");
+  eq(hsv(120, 1, 1), [0, 1, 0], "green");
+  eq(palette().length, 7, "six tones and greys");
+  eq(palette()[6]![0], [1, 1, 1], "white first");
 });
 
 export function run(): string {

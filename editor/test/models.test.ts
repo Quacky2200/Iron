@@ -25,6 +25,7 @@ import {
   TAB_BAR,
 } from "../src/dock.ts";
 import { acceleratorLabel, CLOSED, fieldKeepsKey, findAccelerator, isTextField, type Menu, type MenuState, menuKey, nextIndex, parseAccelerator } from "../src/menu.ts";
+import { duplicateName } from "../src/scene-edit.ts";
 import { clickSelect, dropPlace, emptyTreeState, flatten, reveal, type TreeNode, type TreeState, treeKey } from "../src/tree.ts";
 import { keyIndex, scrollForIndex, visibleRange } from "../src/virtual.ts";
 import { close, eq, report, same, test, yes } from "./check.ts";
@@ -439,6 +440,16 @@ test("a drop before, after or on a row lands among its siblings or under it", ()
   eq(dropPlace(roots, rows, 3, "on"), { parent: "b", index: 0, depth: 1 }, "on b");
   eq(dropPlace(roots, rows, 0, "on"), { parent: "a", index: 2, depth: 1 }, "on a: last");
   yes(dropPlace(roots, rows, 9, "on") === null, "no row");
+});
+
+// M5-UNDO-07
+test("copies are named like Unity's: the next free number after the name", () => {
+  same(duplicateName("Cube", ["Cube", "Sphere"]), "Cube (1)", "first copy");
+  same(duplicateName("Cube", ["Cube", "Cube (1)"]), "Cube (2)", "second copy");
+  same(duplicateName("Cube (1)", ["Cube", "Cube (1)"]), "Cube (2)", "a copy of a copy");
+  same(duplicateName("Cube", ["Cube", "Cube (4)", "Cube (2)"]), "Cube (5)", "after the highest");
+  same(duplicateName("Light (a)", ["Light (a)"]), "Light (a) (1)", "not a number");
+  same(duplicateName("Cube", ["Cubes (3)"]), "Cube (1)", "another name");
 });
 
 // M5-EDT-44

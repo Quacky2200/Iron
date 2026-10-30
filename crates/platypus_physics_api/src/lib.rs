@@ -22,6 +22,7 @@ mod comp;
 pub mod components;
 pub mod contacts;
 pub mod joints;
+mod kind_fields;
 mod kinds;
 pub mod physics2d;
 #[cfg(test)]

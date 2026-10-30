@@ -375,6 +375,17 @@ pub mod editor_api {
             .unwrap_or_default()
     }
 
+    /// The project's 32 layer names (its `project.json` `layers` over the built-ins; "" for a
+    /// layer without a name), for the Inspector's layer choice.
+    pub fn layer_names() -> Vec<String> {
+        let layers = project_root()
+            .and_then(|r| std::fs::read_to_string(r.join("project.json")).ok())
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .map(|v| v["layers"].clone())
+            .unwrap_or_default();
+        crate::layers::names_for(&layers)
+    }
+
     /// The settings of the project's `project.json`, as written (templates unexpanded).
     pub fn project_fields() -> Vec<ProjectField> {
         file_op("projectFields", |root, _| {
@@ -454,6 +465,35 @@ mod tests {
 
     /// The editor's state is one for the process: these tests take turns.
     static ONE: Mutex<()> = Mutex::new(());
+
+    // M5-EDT-48
+    #[test]
+    fn layer_names_are_the_projects_over_the_built_ins() {
+        let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let dir =
+            std::env::temp_dir().join(format!("platypus-editor-layers-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("project.json"),
+            r#"{ "name": "x", "layers": { "8": "Player", "4": "Lava", "40": "No", "9": "" } }"#,
+        )
+        .unwrap();
+        enable(&dir, &dir);
+        let names = editor_api::layer_names();
+        assert_eq!(names.len(), 32);
+        assert_eq!(
+            (
+                names[0].as_str(),
+                names[4].as_str(),
+                names[8].as_str(),
+                names[9].as_str()
+            ),
+            ("Default", "Lava", "Player", "")
+        );
+        reset();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     // M5-PRJ-04
     #[test]

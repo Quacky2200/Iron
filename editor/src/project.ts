@@ -44,6 +44,25 @@ export function moveInto(path: string, dir: string): Promise<{ path: string }> {
   return e ? Promise.reject(e) : Promise.resolve({ path: moved });
 }
 
+// Folders a file pick never looks in: build output, the editor's own data, generated types.
+const SKIPPED = ["build", ".platypus", "types", "node_modules"];
+
+/** The project's files that `fits` takes, folder by folder from the root (at most `limit`). */
+export function projectFiles(fits: (path: string) => boolean, limit = 500): string[] {
+  const out: string[] = [];
+  const dirs = [""];
+  while (dirs.length > 0 && out.length < limit) {
+    const dir = dirs.shift()!;
+    for (const e of Editor.listDir(dir)) {
+      const path = joinPath(dir, e.name);
+      if (e.dir) {
+        if (!(dir === "" && SKIPPED.includes(e.name))) dirs.push(path);
+      } else if (fits(path) && out.length < limit) out.push(path);
+    }
+  }
+  return out;
+}
+
 /** The project folder's full path, if the editor has one. */
 export function projectFolder(): string | null {
   return Editor.isAvailable ? Editor.project : null;

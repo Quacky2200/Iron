@@ -46,6 +46,25 @@ pub fn names() -> Vec<(u32, String)> {
     out
 }
 
+/// The 32 layers' names for a project's `layers` setting (`{"8": "Player"}`), built-ins first as
+/// [`names`] has them; "" for a layer without a name. For the editor, whose own layers aren't the
+/// project's.
+pub fn names_for(layers: &serde_json::Value) -> Vec<String> {
+    let mut out = vec![String::new(); 32];
+    for (l, n) in BUILT_IN {
+        out[l as usize] = n.to_string();
+    }
+    for (k, v) in layers.as_object().into_iter().flatten() {
+        if let (Ok(l), Some(n)) = (k.parse::<usize>(), v.as_str())
+            && l < 32
+            && !n.is_empty()
+        {
+            out[l] = n.to_owned();
+        }
+    }
+    out
+}
+
 /// JavaScript's `ToUint32`.
 fn to_u32(x: f64) -> u32 {
     if !x.is_finite() {

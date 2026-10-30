@@ -34,6 +34,7 @@ import {
   clearHistory,
   type Command,
   createHistory,
+  group as groupCommands,
   isDirty,
   markSaved,
   perform,
@@ -72,6 +73,7 @@ import {
 } from "./scene-edit.ts";
 import { type Menu, type MenuItem } from "./menu.ts";
 import { fieldAccelerator, MenuBar } from "./MenuBar.tsx";
+import { refsInto, repointOnUndo } from "./refs.ts";
 import { ProjectBrowser } from "./ProjectBrowser.tsx";
 import { SceneView, visibleObjects } from "./SceneView.tsx";
 import { useScreenSize } from "./screen.ts";
@@ -386,8 +388,10 @@ function App() {
   const deleteSelected = (): void => {
     if (!onScene()) return;
     const c = deleteCommand(selectedObjects);
-    if (c) clearSelection();
-    exec(c);
+    if (!c) return;
+    clearSelection();
+    // Undo builds the objects again with new ids: point other objects' references back at them.
+    exec(groupCommands(c.label, [repointOnUndo(refsInto(selectedObjects)), c]));
   };
   const copySelected = (): void => {
     if (!onScene()) return;

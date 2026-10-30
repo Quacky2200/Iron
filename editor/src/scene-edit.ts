@@ -127,13 +127,46 @@ export function enableCommand(go: GameObject, enabled: boolean): Command {
   };
 }
 
-/** Builds a snapshot at a place; undo destroys it again. */
-export function createCommand(label: string, data: string, parentLoc: Loc | null, index: number): Command {
+export function tagCommand(go: GameObject, tag: string): Command {
+  const loc = locate(go);
+  const before = go.tag;
+  return {
+    label: `Set Tag of ${go.name}`,
+    run: () => {
+      const o = find(loc);
+      if (o) o.tag = tag;
+    },
+    undo: () => {
+      const o = find(loc);
+      if (o) o.tag = before;
+    },
+  };
+}
+
+export function layerCommand(go: GameObject, layer: number): Command {
+  const loc = locate(go);
+  const before = go.layer;
+  return {
+    label: `Set Layer of ${go.name}`,
+    run: () => {
+      const o = find(loc);
+      if (o) o.layer = layer;
+    },
+    undo: () => {
+      const o = find(loc);
+      if (o) o.layer = before;
+    },
+  };
+}
+
+/** Builds a snapshot at a place (named `name` when given); undo destroys it again. */
+export function createCommand(label: string, data: string, parentLoc: Loc | null, index: number, name = ""): Command {
   const loc: Loc = parentLoc ? [...parentLoc, index] : [index];
   return {
     label,
     run: () => {
-      restoreAt(data, parentLoc, index);
+      const made = restoreAt(data, parentLoc, index);
+      if (made && name !== "") made.name = name;
     },
     undo: () => {
       find(loc)?.destroy();
@@ -208,16 +241,40 @@ export function deleteCommand(objects: readonly GameObject[]): Command | null {
   return group(items.length === 1 ? `Delete ${items[0]!.name}` : `Delete ${items.length} objects`, parts);
 }
 
-/** Copies of objects right after each (Ctrl+D). */
+/**
+ * A copy's name as Unity gives it: the name without a trailing " (n)", then " (n)" with the
+ * first n above every such number among `taken` (the siblings' names): "Cube" -> "Cube (1)",
+ * and with "Cube (1)" there too, "Cube (2)".
+ */
+export function duplicateName(name: string, taken: readonly string[]): string {
+  const m = /^(.*) \((\d+)\)$/.exec(name);
+  const base = m ? m[1]! : name;
+  let top = 0;
+  for (const t of taken) {
+    const n = /^(.*) \((\d+)\)$/.exec(t);
+    if (n && n[1] === base) top = Math.max(top, Number(n[2]));
+  }
+  return `${base} (${top + 1})`;
+}
+
+/** Copies of objects right after each (Ctrl+D), named "Cube (1)" and so on. */
 export function duplicateCommand(objects: readonly GameObject[]): Command | null {
   const tops = topmost(objects.filter(shown));
   // Last first, so each copy's place is right when made.
   const items = tops
-    .map((o) => ({ loc: locate(o), data: EditorScene.snapshot(o) }))
+    .map((o) => ({ loc: locate(o), data: EditorScene.snapshot(o), name: o.name, parent: o.parent }))
     .filter((i) => i.data !== "")
     .sort((a, b) => compareLoc(b.loc, a.loc));
   if (items.length === 0) return null;
-  const parts = items.map((i) => createCommand("", i.data, parentLocOf(i.loc), indexOf(i.loc) + 1));
+  // Names taken so far, per parent (copies of two siblings named alike get different numbers).
+  const taken = new Map<number, string[]>();
+  const parts = items.map((i) => {
+    const key = i.parent ? i.parent.id : -1;
+    const names = taken.get(key) ?? shownChildren(i.parent).map((c) => c.name);
+    const name = duplicateName(i.name, names);
+    taken.set(key, [...names, name]);
+    return createCommand("", i.data, parentLocOf(i.loc), indexOf(i.loc) + 1, name);
+  });
   return group(items.length === 1 ? `Duplicate ${tops[0]!.name}` : `Duplicate ${items.length} objects`, parts);
 }
 

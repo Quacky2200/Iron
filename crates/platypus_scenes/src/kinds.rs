@@ -306,4 +306,5 @@ pub fn register_engine_kinds() {
         animator_save,
         animator_load,
     ));
+    crate::kind_fields::register();
 }

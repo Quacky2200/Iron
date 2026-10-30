@@ -38,8 +38,11 @@ pub struct FieldInfo {
     /// An enum's choices, `|` between them.
     pub options: String,
     pub doc: String,
-    /// Shown, not edited (references, assets, nested data).
+    /// Shown, not edited (nested data, references kept from a file as data).
     pub read_only: bool,
+    /// What a reference may point at: `GameObject`, a component kind (`Rigidbody`; "" for any) or
+    /// an asset kind (`Texture`). Empty for other fields.
+    pub ref_kind: String,
 }
 
 /// The components on an object: registered kinds in registration order, then opaque ones.
@@ -122,6 +125,16 @@ fn field(name: &str, value: &Value, doc: Option<&FieldDoc>) -> FieldInfo {
             f.ty = "string".into();
             f.text = s.clone();
         }
+        // A sound is kept by its file (`{"$type":"Sound","src":path}`): an asset to choose.
+        Value::Object(o) if o.get("$type").and_then(Value::as_str) == Some("Sound") => {
+            f.ty = "asset".into();
+            f.ref_kind = "Sound".into();
+            f.text = o
+                .get("src")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+        }
         Value::Object(o) if o.get("$type").and_then(Value::as_str).is_some() => {
             let t = o["$type"].as_str().unwrap_or_default();
             f.vec = numbers(&o["value"]);
@@ -138,22 +151,37 @@ fn field(name: &str, value: &Value, doc: Option<&FieldDoc>) -> FieldInfo {
             .into();
         }
         Value::Object(o) if o.contains_key("$ref") => {
-            f.read_only = true;
-            f.ty = if o["$ref"] == "GameObject" {
-                "object"
+            let object = o["$ref"] == "GameObject";
+            f.ty = if object { "object" } else { "component" }.into();
+            f.ref_kind = if object {
+                "GameObject".into()
             } else {
-                "component"
-            }
-            .into();
+                o.get("kind")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| schema.strip_prefix("component:").map(str::to_owned))
+                    .unwrap_or_default()
+            };
+            // Live placeholders are edited; one kept from a file as data (a file id) is shown.
+            f.read_only = !o.contains_key("object") && !o.contains_key("handle");
             f.text = describe_ref(o);
         }
         Value::Object(o) if o.contains_key("$handle") => {
-            f.read_only = true;
             f.ty = "asset".into();
-            f.text = o["$handle"].as_str().unwrap_or_default().to_owned();
+            f.ref_kind = o["$handle"].as_str().unwrap_or_default().to_owned();
+            f.text = asset_label(
+                &f.ref_kind,
+                o.get("id").and_then(Value::as_u64).unwrap_or(0),
+            );
         }
         Value::Null => {
             // Not saved (a default) or an empty reference: the schema says what it is.
+            let asset = asset_kind_of(schema);
+            if let Some(kind) = schema.strip_prefix("component:") {
+                f.ty = "component".into();
+                f.ref_kind = kind.to_owned();
+                return f;
+            }
             f.ty = match schema {
                 "f64" | "i32" | "mask" => "number",
                 "bool" => "bool",
@@ -161,6 +189,14 @@ fn field(name: &str, value: &Value, doc: Option<&FieldDoc>) -> FieldInfo {
                 "color" | "color?" => "color",
                 "v2" => "vector2",
                 "v3" => "vector3",
+                "object" => {
+                    f.ref_kind = "GameObject".into();
+                    "object"
+                }
+                _ if asset.is_some() => {
+                    f.ref_kind = asset.unwrap_or_default().into();
+                    "asset"
+                }
                 _ => {
                     f.read_only = true;
                     "json"
@@ -179,8 +215,50 @@ fn field(name: &str, value: &Value, doc: Option<&FieldDoc>) -> FieldInfo {
     f
 }
 
+/// The asset kind a schema type names (`texture` -> `Texture`), if it is one.
+fn asset_kind_of(schema: &str) -> Option<&'static str> {
+    Some(match schema {
+        "texture" => "Texture",
+        "mesh" => "Mesh",
+        "material" => "Material",
+        "sprite" => "Sprite",
+        "sound" => "Sound",
+        "clip" => "AnimationClip",
+        "controller" => "AnimationController",
+        "spline" => "Spline",
+        _ => return None,
+    })
+}
+
+/// How an asset is shown: its file when it came from one, else its kind and number.
+fn asset_label(kind: &str, id: u64) -> String {
+    platypus_kinds::get_asset(kind)
+        .and_then(|k| (k.describe)(id))
+        .and_then(|d| d.get("src").and_then(Value::as_str).map(str::to_owned))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("{kind} #{id}"))
+}
+
+/// An asset of `kind` made from a project file (`{"type": kind, "src": path}`, as a scene's
+/// `assets` table has it): its placeholder.
+pub fn asset_from_file(kind: &str, path: &str) -> Result<Value, String> {
+    crate::ensure_kinds();
+    let k = platypus_kinds::get_asset(kind).ok_or_else(|| format!("no asset kind {kind}"))?;
+    let h = (k.create)(&json!({ "type": kind, "src": path }))?;
+    Ok(platypus_kinds::asset_ref(&k.name, h))
+}
+
 fn describe_ref(o: &Map<String, Value>) -> String {
-    let object = o.get("object").and_then(Value::as_u64).unwrap_or(0);
+    let object = match (o.get("object"), o.get("kind"), o.get("handle")) {
+        (Some(raw), _, _) => raw.as_u64().unwrap_or(0),
+        // A component placeholder names its kind and handle; its object is the kind's to say.
+        (None, Some(kind), Some(handle)) => kind
+            .as_str()
+            .and_then(platypus_kinds::get)
+            .and_then(|k| (k.object)(handle.as_u64().unwrap_or(0)))
+            .unwrap_or(0),
+        _ => 0,
+    };
     let name = platypus_scene::api::with_scene(|s| {
         s.name(ObjectId::from_raw(object))
             .map(str::to_owned)
