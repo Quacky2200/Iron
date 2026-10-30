@@ -1,7 +1,8 @@
 // Copyright 2026 The Platypus Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Repro for four paint/layout issues the Fluid desktop hit (its docs/platypus.md, items 1-4).
+// Repro for four paint/layout issues the Fluid desktop hit (its docs/platypus.md, items 1-4), and
+// containing blocks and clips of absolute boxes (5, 6).
 // Every cell is a dark square; what should appear in it is red (in row 1: glass whose colour
 // stays even). Each case sits next to a control that does the same thing a way that works. Cases
 // are drawn at Fluid's size (1x, 6-12px) and at 8x.
@@ -165,6 +166,45 @@ function MenuBar({ itemPosition, ear }: { itemPosition: "static" | "relative"; e
   );
 }
 
+// Item 5: a static grey box that is a containing block anyway (as CSS says: a transform, a filter,
+// a backdrop filter, `willChange` naming one, `contain: paint`) holds its absolute red square in
+// its corner. Before, the square went to the window's bottom-right corner.
+function Holder({ style }: { style: PlatypusStyle }) {
+  return (
+    <box style={{ width: 64, height: 64, marginLeft: 30, marginTop: 4, backgroundColor: "#555", ...style }}>
+      <box style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, backgroundColor: RED }} />
+    </box>
+  );
+}
+
+// Item 6: a 24px menu bar with `overflow: hidden` and an absolute red dropdown (`top: 18px`) inside
+// an item. The frame around it is `position: relative`, so it is the dropdown's containing block:
+// a static bar doesn't clip it (CSS), and the whole menu shows below the bar. A positioned or
+// transformed bar is the containing block itself and clips it to a 6px strip; a `clipPath` on
+// the item clips it wherever its containing block is.
+function Dropdown({ bar, item }: { bar: PlatypusStyle; item?: PlatypusStyle }) {
+  return (
+    <box style={{ position: "relative", width: 134, height: 80 }}>
+      <box
+        style={{
+          width: 120,
+          height: 24,
+          overflow: "hidden",
+          borderRadius: 4,
+          backgroundColor: "#666",
+          flexDirection: "row",
+          ...bar,
+        }}
+      >
+        <box style={{ width: 40, height: 24, backgroundColor: "#999" }} />
+        <box style={item ?? {}}>
+          <box style={{ position: "absolute", left: 8, top: 18, width: 80, height: 56, backgroundColor: RED }} />
+        </box>
+      </box>
+    </box>
+  );
+}
+
 function App() {
   return (
     <box style={{ width: "100%", height: "100%", backgroundColor: "#111", padding: 16, flexDirection: "column", gap: 14 }}>
@@ -236,6 +276,40 @@ function App() {
         </Cell>
         <Cell label="4e control: relative, left 0 top 0">
           <MenuBar itemPosition="relative" ear={{ left: 0, top: 0 }} />
+        </Cell>
+      </Row>
+      <Row title="5. a static box that is a containing block anyway (red square in the grey corner)">
+        <Cell label="5a transform">
+          <Holder style={{ transform: "rotate(0deg)" }} />
+        </Cell>
+        <Cell label="5b filter">
+          <Holder style={{ filter: "blur(0.5px)" }} />
+        </Cell>
+        <Cell label="5c backdrop-filter">
+          <Holder style={{ backdropFilter: "blur(2px)" }} />
+        </Cell>
+        <Cell label="5d will-change: transform">
+          <Holder style={{ willChange: "transform" }} />
+        </Cell>
+        <Cell label="5e contain: paint">
+          <Holder style={{ contain: "paint" }} />
+        </Cell>
+        <Cell label="5f control: relative">
+          <Holder style={{ position: "relative" }} />
+        </Cell>
+      </Row>
+      <Row title="6. a dropdown in an overflow: hidden bar (red menu below a static bar, a strip otherwise)">
+        <Cell label="6a static bar: escapes">
+          <Dropdown bar={{}} />
+        </Cell>
+        <Cell label="6b control: relative bar clips">
+          <Dropdown bar={{ position: "relative" }} />
+        </Cell>
+        <Cell label="6c transformed bar clips">
+          <Dropdown bar={{ transform: "rotate(0deg)" }} />
+        </Cell>
+        <Cell label="6d clipPath on the item clips">
+          <Dropdown bar={{}} item={{ flexGrow: 1, clipPath: "inset(0 0 -30px 0)" }} />
         </Cell>
       </Row>
     </box>

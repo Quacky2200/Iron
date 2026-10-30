@@ -10,8 +10,14 @@ works. What should show is red (row 1: glass that stays one even colour).
 3. Box shadows outside a rounded corner, in the same clip; 3b shrinks the same way, 3g doesn't.
 4. An absolute 8x8 box in a menu bar title: with a static title (4a) its containing block is the
    absolute bar, as in CSS; with a relative title (4b-4e), the title.
+5. A static grey box with a transform, a filter, a backdrop filter, `willChange: transform` or
+   `contain: paint` is still the containing block of its absolute red square (5f: `relative`).
+6. A dropdown in a static `overflow: hidden` bar belongs to the relative frame around it, so the bar
+   doesn't clip it (6a); a relative (6b) or transformed (6c) bar clips it, and so does a `clipPath`
+   on the item holding it (6d).
 
-APIs used: `backdropFilter`, `backgroundImage` gradients, `boxShadow`, `overflow`, `position` and insets.
+APIs used: `backdropFilter`, `backgroundImage` gradients, `boxShadow`, `clipPath`, `contain`, `filter`,
+`overflow`, `position` and insets, `transform`, `willChange`.
 
 ## Build and run
 
