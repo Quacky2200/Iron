@@ -207,9 +207,7 @@
 
 /* --- Grid ----------------------------------------------------------------------------- */
 
-/* Tiles fade out under the header and above the hints instead of being cut off. Extra
-   stops ease the fade: Platypus composites in linear light, where a straight alpha ramp looks
-   abrupt (docs/differences.md). */
+/* Tiles fade out under the header and above the hints instead of being cut off. */
 .grid-scroll {
   flex-grow: 1;
   min-height: 0;
@@ -222,12 +220,8 @@
     linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(0, 0, 0, 0.15) 3%,
-      rgba(0, 0, 0, 0.55) 6%,
       #000 9%,
       #000 91%,
-      rgba(0, 0, 0, 0.55) 94%,
-      rgba(0, 0, 0, 0.15) 97%,
       transparent 100%
     ),
     linear-gradient(#000, #000);

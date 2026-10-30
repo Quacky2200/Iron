@@ -73,7 +73,11 @@ const EGL_SOURCE: &str = if platypus_render_gles::STATIC_ANGLE {
 
 impl GlesGfx {
     /// A context and renderer on `window`, or why there isn't one.
-    fn new(window: Arc<Window>, asset_root: &Path) -> Result<Self, String> {
+    fn new(
+        window: Arc<Window>,
+        asset_root: &Path,
+        blending: platypus_render_gles::Blending,
+    ) -> Result<Self, String> {
         let dir = angle_dir();
         super::mem_trace::mark("window");
         let context = EglContext::window(dir.as_deref(), &*window)?;
@@ -81,6 +85,7 @@ impl GlesGfx {
         super::mem_trace::mark("EGL context (ANGLE: Direct3D 11 device, swap chain)");
         let mut renderer = GlesRenderer::new(context.gl())?;
         renderer.set_asset_root(asset_root.to_path_buf());
+        renderer.set_blending(blending);
         super::mem_trace::mark("GLES renderer (programs, tables)");
         Ok(Self {
             window,
@@ -134,7 +139,7 @@ pub(crate) fn unchanged(
 impl App {
     /// Starts drawing `window` with the GLES executor. `false`: it can't (the caller falls back).
     pub(crate) fn install_gles(&mut self, window: Arc<Window>) -> bool {
-        let gles = match GlesGfx::new(window.clone(), &self.asset_root) {
+        let gles = match GlesGfx::new(window.clone(), &self.asset_root, self.blending) {
             Ok(g) => g,
             Err(e) => {
                 tracing::warn!("GLES renderer unavailable ({EGL_SOURCE}): {e}");

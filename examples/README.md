@@ -7,6 +7,7 @@ Each folder is a complete game (`project.json`, `tsconfig.json`, `src/`, optiona
 | [hello](./hello/README.md) | Smallest project: one Component, a `src/modules` import |
 | [boxes](./boxes/README.md) | UI box model: flex/grid, gradients, shadows, blur |
 | [text](./text/README.md) | Text styles, runtime fonts, CJK/emoji fallback |
+| [alpha-probe](./alpha-probe/README.md) | Translucent fills, borders and glass over a blue field: how colours blend (sRGB or linear) |
 | [css](./css/README.md) | Stylesheets: selectors, pseudo-classes, `var()`, `clip-path` |
 | [form](./form/README.md) | Controlled inputs, validation, keyboard and gamepad navigation |
 | [flow](./flow/README.md) | CSS floats: a picture and pull-quote with text wrapping around them |

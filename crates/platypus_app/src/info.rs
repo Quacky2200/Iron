@@ -48,6 +48,8 @@ pub struct Manifest {
     pub physical_units: bool,
     /// `renderer`: `vulkan`, `gles`, `cpu` or (left out) chosen from the bundle's tier.
     pub renderer: platypus_core::project::Renderer,
+    /// `blending`: how translucent UI colours combine (`srgb`, the default, or `linear`).
+    pub blending: platypus_core::project::Blending,
 }
 
 impl Manifest {
@@ -116,6 +118,7 @@ impl Manifest {
             video_settings_prompt: p.video_settings_prompt,
             physical_units,
             renderer: p.renderer,
+            blending: p.blending,
         }
     }
 }

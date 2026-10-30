@@ -995,10 +995,10 @@
   top: 0;
 }
 
-/* Dims what is under the dialog, the world's see-through panels too. Blending is in linear light
-   (docs/differences.md), so this alpha darkens about as much as 0.35 in a browser. */
+/* Dims what is under the dialog, the world's see-through panels too (about a third darker, as
+   0.6 looked when blending was in linear light). */
 .platypus-modal::backdrop {
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: rgba(0, 0, 0, 0.35);
 }
 
 .platypus-modal {

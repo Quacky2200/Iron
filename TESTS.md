@@ -162,6 +162,8 @@ See [DESIGN.md](DESIGN.md) for the architecture these tests check.
 | M2-BLEND-07 | Integration | An image drawn texel for texel keeps its file's colours on sRGB and linear canvases, on wgpu and GLES. |
 | M2-BLEND-08 | Integration | Text coverage blends in sRGB: white text on black and black text on white both carry less light than in linear light, and covered pixels stay the text colour. |
 | M2-BLEND-09 | Integration | The CPU renderer gives the probe's sRGB values (it always blends in sRGB). |
+| M2-BLEND-10 | Unit | The app draws screen UI over a copy of the world when blending in sRGB onto an sRGB-encoding target (not in linear, onto a plain target, or with nothing to draw), and the FPS counter joins the frame's list, under a scale transform when its scale differs. |
+| M2-BLEND-11 | Integration | 25% white over a `#3060c0` world with `render_over` gives 100,136,208 in sRGB and 142,157,210 in linear light; `render_overlay` onto an sRGB target gives the linear-light value in either mode. |
 
 ### Box visuals (styles and draw commands, no GPU)
 | ID | Kind | Checks |

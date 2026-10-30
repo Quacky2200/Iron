@@ -51,6 +51,9 @@ impl App {
         };
         let mut renderer = CpuRenderer::new();
         renderer.set_asset_root(self.asset_root.clone());
+        if self.blending == platypus_core::project::Blending::Linear {
+            renderer.ask_linear_blending();
+        }
         tracing::info!("renderer ready (CPU: vello_cpu + softbuffer)");
         self.light_system_info(&window, "CPU (vello_cpu)", "Cpu");
         self.cpu = Some(CpuGfx {

@@ -52,6 +52,7 @@ mod prefs;
 pub(crate) mod reload;
 mod render_sync;
 pub(crate) mod sync_profile;
+mod ui_frame;
 mod video_prompt;
 mod windows;
 pub(crate) mod world_view;
@@ -569,6 +570,7 @@ fn run() -> Result<()> {
         clock: lifecycle::FixedClock::default(),
         lifecycle: lifecycle::Lifecycle::new(manifest.run_in_background, offline),
         physical_units: manifest.physical_units,
+        blending: manifest.blending,
         pipeline_warned: false,
         frames: 0,
         fps_on: fps::enabled(
@@ -751,9 +753,10 @@ fn draw_frame(
         return;
     }
     let world = world.get(gpu);
-    if platypus_render::needs_backdrop(cmds) {
-        // Backdrop blurs and blend modes read the world: draw it where the UI can
-        // sample it, then the UI over a copy of it into the target.
+    if ui_frame::over_a_copy(renderer.blending(), target.format, cmds) {
+        // Backdrop blurs and blend modes read the world, and sRGB blending can't be done
+        // by blending onto an sRGB target: draw the world where the UI can sample it, then
+        // the UI over a copy of it into the target.
         let backdrop = renderer.backdrop_target(gpu, target.size, target.format);
         let world_target = RenderTarget {
             view: &backdrop,
@@ -877,6 +880,8 @@ struct App {
     /// Real-world light units (`platypus.lightUnits`), and whether the quality level has warned
     /// about leaving out light shafts the game asked for yet.
     physical_units: bool,
+    /// How translucent UI colours combine (`blending` in `project.json`), on every renderer.
+    blending: platypus_core::project::Blending,
     pipeline_warned: bool,
     /// Scripts' `Cursor`: shown or not, how it's held, and their default image.
     script_cursor: ScriptCursor,
@@ -1817,6 +1822,7 @@ impl App {
             .set("display", display::state(window.as_deref(), &self.display));
         let mut renderer = UiRenderer::new(&gpu);
         renderer.set_asset_root(&self.asset_root);
+        renderer.set_blending(self.blending);
         let world = lazy_world::LazyWorld::new(&gpu, self.physical_units);
         // `Window.main` learns the real size and scale (its title may be the game's own).
         let title = platypus_engine_api::window::state(platypus_engine_api::window::MAIN)
@@ -1873,6 +1879,14 @@ impl App {
         let views = self.world_view.views(&self.scene, (w, h), &quads);
         let textures: Vec<&wgpu::TextureView> = textures.iter().collect();
         let scale = ui_factor(gfx);
+        let mut cmds = cmds;
+        if self.fps_on {
+            let now = self.started.elapsed().as_secs_f64();
+            let fps_scale = gfx.dpi() as f32;
+            let text = self.fps.text(now);
+            let fps_cmds = self.fps_overlay.draw_list(&text, w, h, fps_scale);
+            ui_frame::append_scaled(&mut cmds, fps_cmds, fps_scale / scale);
+        }
         draw_frame(
             &gfx.gpu,
             &mut gfx.renderer,
@@ -1887,22 +1901,6 @@ impl App {
             &textures,
             &cmds,
         );
-        if self.fps_on {
-            let now = self.started.elapsed().as_secs_f64();
-            let scale = gfx.dpi() as f32;
-            let text = self.fps.text(now);
-            let fps_cmds = self.fps_overlay.draw_list(&text, w, h, scale);
-            gfx.renderer.render_overlay(
-                &gfx.gpu,
-                &RenderTarget {
-                    view: &view,
-                    format: target.format(),
-                    size: (w, h),
-                    scale,
-                },
-                &fps_cmds,
-            );
-        }
         let pixels = target.read_pixels(&gfx.gpu)?;
         platypus_render::testing::write_png(path, w, h, &pixels)?;
         self.save_window_screenshots(path)
@@ -2390,6 +2388,7 @@ impl PlatformApp for App {
             .fps_on
             .then(|| self.fps.text(self.started.elapsed().as_secs_f64()));
         let fps_overlay = &mut self.fps_overlay;
+        let mut cmds = cmds;
         surface.present_with(gpu, |view, format, size| {
             let target = RenderTarget {
                 view,
@@ -2397,6 +2396,10 @@ impl PlatformApp for App {
                 size,
                 scale,
             };
+            if let Some(text) = &fps_text {
+                let fps_cmds = fps_overlay.draw_list(text, size.0, size.1, window_scale);
+                ui_frame::append_scaled(&mut cmds, fps_cmds, window_scale / scale);
+            }
             draw_frame(
                 gpu,
                 renderer,
@@ -2406,19 +2409,6 @@ impl PlatformApp for App {
                 &textures,
                 &cmds,
             );
-            if let Some(text) = &fps_text {
-                let fps_cmds = fps_overlay.draw_list(text, size.0, size.1, window_scale);
-                renderer.render_overlay(
-                    gpu,
-                    &RenderTarget {
-                        view,
-                        format,
-                        size,
-                        scale: window_scale,
-                    },
-                    &fps_cmds,
-                );
-            }
         });
         self.world_view.probes_rendered();
         // What it saw of the renderers animation culling watches (nothing if no view drew).
