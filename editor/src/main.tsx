@@ -356,6 +356,21 @@ function App() {
       }
     }
   };
+  /** A preview of the model or prefab a Project drag carries, hidden and never saved (no undo: it goes when the drag ends). */
+  const makePreview = (e: PlatypusDragEvent): GameObject | null => {
+    const path = e.dataTransfer.getData(PROJECT_PATH_TYPE);
+    const kind = assetKind(path);
+    if (kind !== "model" && kind !== "prefab") return null;
+    const go = kind === "prefab" ? EditorScene.placePrefab(path, noObject()) : Model.load(path).instantiate();
+    if (!go.exists()) return null;
+    const hide = (o: GameObject): void => {
+      o.hideFlags = HideFlags.HideAndDontSave;
+      for (const c of o.children) hide(c);
+    };
+    hide(go);
+    go.name = `${go.name} (preview)`;
+    return go;
+  };
   /** Saves an object as `<dir>/<name>.prefab.json` (a free name); the file's path, "" when it failed. */
   const savePrefabOf = (go: GameObject, dir: string): string => {
     if (!go.exists()) return "";
@@ -747,6 +762,7 @@ function App() {
               onTransformed={(go, before, after) => keep(poseCommand(go, before, after))}
               acceptsDrop={acceptsFiles}
               onDropAt={(e, point) => dropFiles(e, null, point)}
+              makePreview={makePreview}
             />
           </box>
         ),

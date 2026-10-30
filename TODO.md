@@ -1551,8 +1551,12 @@ for GameObjects and scene serialization (M5.a/b), which it reuses — see "Hot r
         (copied into `assets/models` with its `.meta` first) onto the Scene view lands on the ground under the
         pointer, onto the Hierarchy under the row (or at the root); double-clicking places it too; the new object is
         selected; undoable (`placement.ts`, `M5-DND-20`, `-21`)
-        - [ ] Later: a preview while dragging over the view; dropping onto meshes (a physics ray); dropping between
-          Hierarchy rows
+        - [x] A preview while dragging a Project model or prefab over the Scene view (2026-10-30): the real object,
+          hidden from the Hierarchy and never saved, at the ground point under the pointer; gone when the drag leaves
+          the view or ends (`SceneView` `makePreview`, `M5-DND-22`). Dropping between Hierarchy rows: done
+          (`M5-EDT-46`, `-47`)
+        - [ ] Later: a preview for files dragged in from the system (they are copied in on drop, not before);
+          dropping onto meshes (a physics ray)
       - [x] E9: FBX models (`.fbx`, binary or ASCII) through the `ufbx` crate (MIT OR Unlicense, C built with `cc`;
         notices regenerated, reviewed in `tools/platypus_notices/src/tables.rs`): `models_fbx.rs` makes the same
         `Model` as glTF: units and axes to metres and Y-up, meshes split by material, materials (base colour,

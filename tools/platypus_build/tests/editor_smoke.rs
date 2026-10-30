@@ -410,6 +410,73 @@ fn the_inspector_edits_several_objects_layers_and_colours() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// `assets/house.glb` dragged from the Project browser over the Scene view shows a preview there;
+/// moved off the view and released over the Project list, the preview goes again; then dragged
+/// and dropped on the view, it is placed once.
+const PREVIEW_SPEC: &str = r#"{ "warmup": 30, "segments": [
+  { "name": "start", "frames": 30, "input": [
+    { "frame": 0, "kind": "clickText", "text": "Project" },
+    { "frame": 6, "kind": "clickText", "text": "assets" },
+    { "frame": 10, "kind": "key", "code": "Enter" },
+    { "frame": 20, "kind": "moveToText", "text": "Floor" }
+  ] },
+  { "name": "over", "frames": 30, "input": [
+    { "frame": 0, "kind": "moveToText", "text": "house.glb" },
+    { "frame": 2, "kind": "mouseDown" },
+    { "frame": 6, "kind": "mouseMove", "x": 300, "y": 600 },
+    { "frame": 10, "kind": "mouseMove", "x": 600, "y": 450 },
+    { "frame": 14, "kind": "mouseMove", "x": 780, "y": 350 },
+    { "frame": 18, "kind": "mouseMove", "x": 782, "y": 352 }
+  ] },
+  { "name": "left", "frames": 30, "input": [
+    { "frame": 0, "kind": "mouseMove", "x": 600, "y": 600 },
+    { "frame": 4, "kind": "mouseMove", "x": 400, "y": 760 },
+    { "frame": 8, "kind": "mouseMove", "x": 402, "y": 762 },
+    { "frame": 12, "kind": "mouseUp" },
+    { "frame": 20, "kind": "moveToText", "text": "Floor" }
+  ] },
+  { "name": "dropped", "frames": 40, "input": [
+    { "frame": 0, "kind": "moveToText", "text": "house.glb" },
+    { "frame": 2, "kind": "mouseDown" },
+    { "frame": 6, "kind": "mouseMove", "x": 300, "y": 600 },
+    { "frame": 10, "kind": "mouseMove", "x": 600, "y": 450 },
+    { "frame": 14, "kind": "mouseMove", "x": 780, "y": 350 },
+    { "frame": 18, "kind": "mouseUp" },
+    { "frame": 26, "kind": "moveToText", "text": "Place house.glb" }
+  ] }
+] }"#;
+
+// M5-DND-22
+#[test]
+fn a_model_dragged_over_the_scene_view_shows_a_preview() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let project = std::env::temp_dir().join(format!(
+        "platypus-editor-preview-project-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&project);
+    std::fs::create_dir_all(project.join("assets")).unwrap();
+    std::fs::write(project.join("project.json"), "{ \"name\": \"fixture\" }\n").unwrap();
+    std::fs::copy(
+        repo.join("tests/fixtures/assets/house.glb"),
+        project.join("assets/house.glb"),
+    )
+    .unwrap();
+    let run = run_editor_on("preview", PREVIEW_SPEC, true, &project);
+    let shot = |name: &str| run.join("shots").join(name);
+    let shown = scene_pixels_changed(&shot("01-start.png"), &shot("02-over.png"));
+    assert!(shown > 300, "no preview over the view ({shown} pixels)");
+    let gone = scene_pixels_changed(&shot("01-start.png"), &shot("03-left.png"));
+    assert!(
+        gone < 200,
+        "the preview stayed after the drag left ({gone} pixels)"
+    );
+    let log = std::fs::read_to_string(run.join("run.log")).unwrap();
+    assert_eq!(log.matches("Place house.glb").count(), 1, "{log}");
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 /// Delete, undo, redo, undo and duplicate Cube, then drag Sphere onto Floor in the Hierarchy and
 /// undo that. Each `moveToText` finds the status bar's report of the step (else the run fails).
 const UNDO_SPEC: &str = r#"{ "warmup": 30, "segments": [

@@ -60,6 +60,12 @@ export interface SceneViewProps {
   acceptsDrop?: (e: PlatypusDragEvent) => boolean;
   /** A drop, with the ground point under the pointer (else a point in front of the camera). */
   onDropAt?: (e: PlatypusDragEvent, point: Vector3) => void;
+  /**
+   * Makes a preview of what an accepted drag would place (hidden from the Hierarchy and never
+   * saved), kept at the ground point under the pointer while the drag is over the view and
+   * destroyed when it drops or leaves. Null: no preview for this drag.
+   */
+  makePreview?: (e: PlatypusDragEvent) => GameObject | null;
 }
 
 /** An object's world position and rotation and its local scale. */
@@ -170,7 +176,7 @@ export function visibleObjects(): GameObject[] {
   return out;
 }
 
-export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true, initial, onTransformed, acceptsDrop, onDropAt }: SceneViewProps) {
+export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true, initial, onTransformed, acceptsDrop, onDropAt, makePreview }: SceneViewProps) {
   const [cameraObject] = useState(() => {
     const go = new GameObject("Scene Camera");
     go.hideFlags = HideFlags.HideAndDontSave;
@@ -192,6 +198,31 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
   const active = selected.length > 0 ? selected[selected.length - 1]! : null;
   const activeRef = useRef(active);
   activeRef.current = active && !active.destroyed ? active : null;
+
+  // A drag's preview (made by `makePreview` on the first drag over the view). Drag events come
+  // with pointer moves only, so each frame checks that the pointer is still over the view with
+  // the button held; when not, the drag left or ended elsewhere.
+  const preview = useRef<{ object: GameObject | null } | null>(null);
+  const endPreview = (): void => {
+    const p = preview.current;
+    preview.current = null;
+    if (p && p.object && !p.object.destroyed) p.object.destroy();
+  };
+  const dropPoint = (e: PlatypusDragEvent): Vector3 => {
+    const ray = camera.screenPointToRay({ x: e.clientX, y: e.clientY });
+    return groundPoint(ray.origin, ray.direction);
+  };
+  useEffect(
+    () =>
+      onEditorFrame(() => {
+        if (!preview.current) return;
+        const m = input.mousePosition;
+        const r = rectRef.current;
+        const inside = m.x >= r.x && m.y >= r.y && m.x < r.x + r.width && m.y < r.y + r.height;
+        if (!inside || !input.getMouseButton(0)) endPreview();
+      }),
+    [],
+  );
 
   useEffect(() => () => cameraObject.destroy(), [cameraObject]);
   useEffect(() => {
@@ -331,13 +362,19 @@ export function SceneView({ rect, selected, onSelect, grid = true, gizmos = true
         if (!acceptsDrop || !acceptsDrop(e)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
+        // The preview follows the ground point under the pointer.
+        if (!makePreview) return;
+        const p = preview.current ?? { object: makePreview(e) };
+        preview.current = p;
+        if (p.object && !p.object.destroyed) p.object.transform.position = dropPoint(e);
       }}
       onDrop={(e: PlatypusDragEvent) => {
+        endPreview();
         if (!onDropAt || !acceptsDrop || !acceptsDrop(e)) return;
         e.stopPropagation();
-        const ray = camera.screenPointToRay({ x: e.clientX, y: e.clientY });
-        onDropAt(e, groundPoint(ray.origin, ray.direction));
+        onDropAt(e, dropPoint(e));
       }}
+      onDragEnd={endPreview}
     >
       {view.icons.map((icon) => (
         <box
