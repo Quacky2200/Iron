@@ -245,9 +245,58 @@ resize before the next frame is black, not white.
 - Draw commands are in **logical pixels**; `RenderTarget { view, format, size (physical), scale }`
   says how to map them. Shaders receive `globals.viewport` and `globals.scale`, and every quad
   grows by one physical pixel for anti-aliasing.
-- Colours are converted by `linear_premultiplied` (sRGB to linear, premultiplied alpha). The canvas
-  (`CANVAS_FORMAT` = `Rgba8UnormSrgb`) stores sRGB but blends linearly, using
+- Colours are premultiplied by the plan in the frame's blending space (below) and blended with
   `PREMULTIPLIED_ALPHA_BLENDING`.
+
+### Blending: sRGB (default) or linear light
+
+How translucent UI colours combine is one setting for a whole frame, `platypus_core::project::Blending`:
+
+- **`srgb`** (the default, as browsers): `out = src * a + dst * (1 - a)` on the 0-255 sRGB values. A 25%
+  white fill over `#3060c0` gives `100,136,208`.
+- **`linear`** (Platypus before 2026-10-30): the same sum on linear-light values, encoded afterwards. The
+  same fill gives `142,157,210`: fades and translucent fills look lighter and greyer than in a browser.
+
+It is chosen by `"blending": "srgb" | "linear"` in `project.json` (an unknown value warns and means `srgb`),
+and by embedders with `UiRenderer::set_blending` / `GlesRenderer::set_blending` (default `srgb`). It holds
+for everything the UI renderer composites: the screen UI (alone or over the 3D world), world panels' textures
+and secondary windows. The 3D world pass is not affected: lighting, translucent materials, particles, bloom
+and fog stay in linear light, and the world reaches the UI as an encoded picture, like an image.
+
+**One place says it.** `PlanParams::blending` goes into `FramePlan::blending`. The plan premultiplies every
+colour (fills, borders, text, decorations, shadows, drop-shadow and image tints, the clear colour) in that
+space (`canvas_premultiplied`); executors read only `FramePlan::blending` to pick their canvas format and one
+shader switch.
+
+**How `srgb` works.** The canvases are plain 8-bit textures (wgpu `Rgba8Unorm`, GLES `RGBA8`) holding
+premultiplied sRGB values, so the hardware's premultiplied blend is the browser's. Each area then follows:
+
+| Area | In `srgb` |
+|---|---|
+| Solid fills, borders, decorations | Blended on sRGB values by the hardware |
+| Gradients | Interpolated in premultiplied sRGB (as before, as CSS) and kept in sRGB (no conversion to linear) |
+| Opacity groups, layers | The composite multiplies and blends canvas values: in sRGB |
+| `filter: blur()`, drop shadows, `backdrop-filter` | The blur averages canvas values: sRGB, as browsers |
+| Box shadows | Analytic coverage times the sRGB colour |
+| Filter colour functions, blend modes, luminance masks | Already worked on sRGB values; the conversions around them are skipped |
+| Images, colour glyphs (emoji) | Their textures stay sRGB-format (decoded on sampling); the shader re-encodes the sample. Filtering between texels is in linear light, a sub-pixel difference from browsers |
+| Text | Mask coverage times the sRGB colour, as browsers. The coverage boost for dark text, which made up for linear blending's thin dark text, is off |
+| `groove`/`ridge`/`inset`/`outset` shade | Half the colour in sRGB (0.22 of it in linear light: the same look) |
+
+**Edges.** The final blit decodes the canvas when the target encodes on write (wgpu sRGB surfaces and
+offscreen targets, world panel textures, GLES `SRGB8_ALPHA8` targets) and copies it as is otherwise (the GLES
+default framebuffer). Over the 3D world the canvas is seeded from the world (`render_over`), encoding it.
+Blending a canvas onto an sRGB-encoding target in hardware would happen in linear light, so in `srgb` the app
+always draws screen UI over the world with `render_over` (the world into the backdrop texture first), and the
+FPS counter joins the same draw list under a scale transform. `render_overlay` onto an encoding target
+composites in linear light in either mode (for embedders: use `render_over`); onto a plain target (the GLES
+window) it is exact.
+
+**The CPU renderer** (`vello_cpu`) blends 8-bit sRGB by itself: it is always `srgb` (`linear` is logged once
+and ignored).
+
+**`linear`** keeps the earlier path: `Rgba8UnormSrgb` / `SRGB8_ALPHA8` canvases, colours converted to linear,
+gradients and images decoded, filters and blend modes converting to sRGB and back, the dark-text boost on.
 
 ## `UiRenderer::render`
 
